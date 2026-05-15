@@ -1,0 +1,8 @@
+[Unit]
+Description=Pull and deploy Leitbild from GitHub
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/leitbild/app/deploy/pull-deploy.sh

@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll GitHub for Leitbild updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Unit=leitbild-pull-deploy.service
+
+[Install]
+WantedBy=timers.target
