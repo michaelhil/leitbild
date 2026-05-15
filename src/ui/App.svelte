@@ -53,7 +53,7 @@
   let ambulanceObjects: OperationalObject[] = []
   let incidentObjects: OperationalObject[] = []
   let selectedAmbulanceObject: OperationalObject | null = null
-  const interactiveObjectLayerIds = ['object-icons', 'object-halos', 'object-new-info']
+  const interactiveObjectLayerIds = ['object-hit-area', 'object-icons', 'object-halos', 'object-new-info']
 
   const domainType = (object: OperationalObject): string | undefined =>
     typeof object.domainData === 'object' && object.domainData !== null
@@ -142,8 +142,8 @@
 
   const routeFeatureCollection = () => ({
     type: 'FeatureCollection' as const,
-    features: ambulanceObjects
-      .filter(object => object.spatial.route?.planned)
+    features: objects
+      .filter(object => object.kind === 'mobile_entity' && object.spatial.route?.planned)
       .map(object => ({
         type: 'Feature' as const,
         id: object.id,
@@ -410,30 +410,33 @@
         data: routeFeatureCollection(),
       })
       map?.addLayer({
-        id: 'ambulance-routes-muted',
+        id: 'ambulance-routes',
         type: 'line',
         source: 'ambulance-routes',
-        filter: ['==', ['get', 'selected'], false],
         paint: {
-          'line-color': '#174ea6',
-          'line-width': 5,
-          'line-opacity': 0.55,
+          'line-color': ['case', ['get', 'selected'], '#0b57d0', '#174ea6'],
+          'line-width': ['case', ['get', 'selected'], 7, 5],
+          'line-opacity': ['case', ['get', 'selected'], 0.95, 0.65],
+          'line-blur': 0.4,
         },
-      })
-      map?.addLayer({
-        id: 'ambulance-routes-selected',
-        type: 'line',
-        source: 'ambulance-routes',
-        filter: ['==', ['get', 'selected'], true],
-        paint: {
-          'line-color': '#0b57d0',
-          'line-width': 7,
-          'line-opacity': 0.95,
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
         },
       })
       map?.addSource('objects', {
         type: 'geojson',
         data: objectFeatureCollection(),
+      })
+      map?.addLayer({
+        id: 'object-hit-area',
+        type: 'circle',
+        source: 'objects',
+        paint: {
+          'circle-radius': 22,
+          'circle-color': '#ffffff',
+          'circle-opacity': 0,
+        },
       })
       map?.addLayer({
         id: 'object-halos',
