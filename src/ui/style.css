@@ -199,9 +199,7 @@ input {
 }
 
 .object-row:hover .row-hover-card,
-.object-row:focus .row-hover-card,
-.map-marker:hover .marker-hover-card,
-.map-marker:focus .marker-hover-card {
+.object-row:focus .row-hover-card {
   display: block;
 }
 
@@ -270,10 +268,34 @@ input {
   background: var(--critical);
 }
 
-.marker-hover-card {
-  left: 46px;
-  top: -4px;
+.object-popup .maplibregl-popup-content {
+  min-width: 230px;
+  max-width: 310px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.22);
   text-align: left;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.object-popup .maplibregl-popup-tip {
+  border-top-color: var(--panel);
+  border-bottom-color: var(--panel);
+}
+
+.object-popup strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.object-popup div {
+  display: block;
+  color: var(--muted);
 }
 
 .hover-new-info {

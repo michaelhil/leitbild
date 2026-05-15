@@ -49,6 +49,7 @@
   let commandStatus = ''
   let markers = new Map<string, Marker>()
   let seenRevisions = new Map<string, number>()
+  let markerPopup: maplibregl.Popup | null = null
 
   const hospitals = (): OperationalObject[] =>
     objects.filter(object => object.kind === 'facility' && domainType(object) === 'hospital')
@@ -254,20 +255,62 @@
       .map(line => `<div>${escapeHtml(line)}</div>`)
       .join('')
     const newInfo = hasNewInfo(object) ? '<div class="hover-new-info">New information</div>' : ''
-    return `<span class="marker-hover-card"><strong>${escapeHtml(object.label)}</strong>${newInfo}${lines}</span>`
+    return `<strong>${escapeHtml(object.label)}</strong>${newInfo}${lines}`
+  }
+
+  const showMarkerPopup = (object: OperationalObject): void => {
+    const current = map
+    const point = pointOf(object)
+    if (!current || !point) return
+    const [lon, lat] = point.coordinates
+    markerPopup?.remove()
+    markerPopup = new maplibregl.Popup({
+      closeButton: false,
+      closeOnClick: false,
+      offset: 26,
+      className: 'object-popup',
+    })
+      .setLngLat([lon, lat])
+      .setHTML(hoverCardHtml(object))
+      .addTo(current)
+  }
+
+  const hideMarkerPopup = (): void => {
+    markerPopup?.remove()
+    markerPopup = null
+  }
+
+  const currentObject = (objectId: string): OperationalObject | null =>
+    objects.find(object => object.id === objectId) ?? null
+
+  const updateMarkerElement = (el: HTMLElement, object: OperationalObject): void => {
+    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}${hasNewInfo(object) ? ' has-new-info' : ''}`
+    el.innerHTML = iconHtml(iconFor(object), { size: 24, title: object.label })
   }
 
   const markerElement = (object: OperationalObject): HTMLElement => {
     const el = document.createElement('button')
     el.type = 'button'
-    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}${hasNewInfo(object) ? ' has-new-info' : ''}`
-    el.innerHTML = `${iconHtml(iconFor(object), { size: 24, title: object.label })}${hoverCardHtml(object)}`
+    updateMarkerElement(el, object)
     el.addEventListener('click', (event) => {
       event.stopPropagation()
-      selectObject(object)
+      const latest = currentObject(object.id)
+      if (latest) selectObject(latest)
     })
-    el.addEventListener('mouseenter', () => markSeen(object))
-    el.addEventListener('focus', () => markSeen(object))
+    el.addEventListener('mouseenter', () => {
+      const latest = currentObject(object.id)
+      if (!latest) return
+      markSeen(latest)
+      showMarkerPopup(latest)
+    })
+    el.addEventListener('mouseleave', hideMarkerPopup)
+    el.addEventListener('focus', () => {
+      const latest = currentObject(object.id)
+      if (!latest) return
+      markSeen(latest)
+      showMarkerPopup(latest)
+    })
+    el.addEventListener('blur', hideMarkerPopup)
     return el
   }
 
@@ -287,8 +330,9 @@
       const [lon, lat] = point.coordinates
       const existing = markers.get(object.id)
       if (existing) {
-        existing.remove()
-        markers.delete(object.id)
+        existing.setLngLat([lon, lat])
+        updateMarkerElement(existing.getElement(), object)
+        continue
       }
       const marker = new maplibregl.Marker({ element: markerElement(object), anchor: 'center' })
         .setLngLat([lon, lat])

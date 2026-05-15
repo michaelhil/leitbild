@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, SessionId } from '../src/core/model/index.ts'
-import { geoPointFromLonLat, nowIso, type ObjectId } from '../src/core/model/index.ts'
+import { geoPointFromLonLat, meters, nowIso, type ObjectId } from '../src/core/model/index.ts'
 import {
   assignToIncidentCommandKind,
   cancelDestinationCommandKind,
@@ -110,6 +110,47 @@ describe('local ambulance simulator', () => {
     if (hospitalData.emergencyDepartment.diversionStatus.state === 'unknown') throw new Error('expected known diversion status')
     expect(hospitalData.emergencyDepartment.ambulanceBaysAvailable.value).toBe(1)
     expect(hospitalData.emergencyDepartment.diversionStatus.value).toBe('limited')
+  })
+
+  test('moves toward the first route coordinate instead of skipping ahead', async () => {
+    const scenario = createOsloAmbulanceScenario()
+    const firstRoutePoint = geoPointFromLonLat(10.7387, 59.9364)
+    const engine = createAmbulanceSimEngine({
+      sessionId,
+      scenario,
+      routing: {
+        id: 'test-shaped-route',
+        route: async () => ({
+          geometry: {
+            type: 'LineString',
+            coordinates: [
+              firstRoutePoint.coordinates,
+              geoPointFromLonLat(10.7387, 59.9359).coordinates,
+              scenario.incidents[0]?.position.coordinates ?? firstRoutePoint.coordinates,
+            ],
+          },
+          distanceM: meters(1_000),
+          durationSeconds: 60,
+          provider: 'test',
+        }),
+      },
+    })
+    const initial = engine.snapshot()
+    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
+    const incident = initial.objects.find(object => object.kind === 'incident')
+    if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
+
+    const result = await engine.handleCommand(makeCommand({
+      id: 'route-first-coordinate',
+      kind: setDestinationCommandKind,
+      targetObjectIds: [ambulance.id, incident.id],
+      payload: { ambulanceId: ambulance.id, destinationId: incident.id },
+    }))
+    expect(result.ok).toBe(true)
+
+    engine.tick(1_000)
+    const movedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
+    expect(movedAmbulance?.spatial.position?.point.coordinates[1]).toBeGreaterThanOrEqual(59.936395)
   })
 
   test('creates ambulance domain objects from operator commands', async () => {

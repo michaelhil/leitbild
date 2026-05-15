@@ -582,12 +582,15 @@ export const createAmbulanceSimEngine = (config: {
         continue
       }
       const currentPoint = getPoint(ambulance)
-      const targetPoint = pointFromPosition(motion.route.coordinates[Math.min(motion.segmentIndex + 1, motion.route.coordinates.length - 1)] ?? getPoint(target).coordinates)
+      const targetIndex = Math.min(motion.segmentIndex, motion.route.coordinates.length - 1)
+      const targetPoint = pointFromPosition(motion.route.coordinates[targetIndex] ?? getPoint(target).coordinates)
+      const finalPoint = pointFromPosition(motion.route.coordinates[motion.route.coordinates.length - 1] ?? getPoint(target).coordinates)
       const nextPoint = moveTowards(currentPoint, targetPoint, motion.metersPerSecond * dtMs / 1000)
       const remainingSegment = distanceMeters(nextPoint, targetPoint)
-      const lastSegment = motion.segmentIndex >= motion.route.coordinates.length - 2
-      const arrived = lastSegment && remainingSegment < 15
-      const segmentIndex = !arrived && remainingSegment < 15 ? motion.segmentIndex + 1 : motion.segmentIndex
+      const arrived = distanceMeters(nextPoint, finalPoint) < 15
+      const segmentIndex = !arrived && remainingSegment < 15
+        ? Math.min(motion.segmentIndex + 1, motion.route.coordinates.length - 1)
+        : motion.segmentIndex
       const moving: OperationalObject = {
         ...ambulance,
         revision: ambulance.revision + 1,
