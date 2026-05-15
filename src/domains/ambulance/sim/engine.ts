@@ -1,5 +1,5 @@
 import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, ObjectId, OperationalObject, SessionId, TelemetryState } from '../../../core/model/index.ts'
-import { geoPointFromLonLat, meters, nowIso } from '../../../core/model/index.ts'
+import { confirmedFact, estimatedFact, geoPointFromLonLat, meters, nowIso, unknownFact } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
 import {
@@ -12,7 +12,7 @@ import {
   setDestinationCommandKind,
   setDestinationPayloadSchema,
 } from '../commands.ts'
-import { ambulanceDomainId, type AmbulanceDomainData, type IncidentDomainData } from '../model.ts'
+import { ambulanceDomainId, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData, type InjurySummary } from '../model.ts'
 import type { AmbulanceScenario } from '../scenario.ts'
 
 interface AmbulanceMotion {
@@ -26,6 +26,7 @@ interface EngineState {
   readonly sessionId: SessionId
   readonly objects: Map<ObjectId, OperationalObject>
   readonly motion: Map<ObjectId, AmbulanceMotion>
+  elapsedMs: number
   nextAmbulanceNumber: number
   nextHospitalNumber: number
   nextIncidentNumber: number
@@ -101,6 +102,126 @@ const makeTelemetry = (at: IsoTimestamp, heartRate: number, spo2: number): Telem
   },
 })
 
+const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimestamp): AmbulanceDomainData => ({
+  type: 'ambulance',
+  schemaVersion: 1,
+  capabilities: [
+    'advanced_life_support',
+    'oxygen',
+    'stretcher',
+    ...(equipment.includes('defibrillator') ? ['defibrillator' as const] : []),
+    ...(equipment.includes('ventilator') ? ['ventilator' as const] : []),
+  ],
+  crew: {
+    status: 'ready',
+    level: confirmedFact('advanced', at, 'scenario', 1),
+    availableSeats: confirmedFact(1, at, 'scenario', 1),
+  },
+})
+
+const makeIncidentDomainData = (triage: 'green' | 'yellow' | 'red', at: IsoTimestamp, assignedAmbulanceId?: ObjectId): IncidentDomainData => ({
+  type: 'incident',
+  schemaVersion: 1,
+  triage: confirmedFact(triage, at, 'scenario', 1),
+  victims: {
+    count: unknownFact(at, 'scenario'),
+    injuries: unknownFact(at, 'scenario'),
+    entrapment: unknownFact(at, 'scenario'),
+  },
+  hazards: unknownFact(at, 'scenario'),
+  ...(assignedAmbulanceId ? { assignedAmbulanceId } : {}),
+})
+
+const makeHospitalDomainData = (at: IsoTimestamp): HospitalDomainData => ({
+  type: 'hospital',
+  schemaVersion: 1,
+  emergencyDepartment: {
+    traumaBedsAvailable: confirmedFact(3, at, 'scenario', 1),
+    ambulanceBaysAvailable: confirmedFact(2, at, 'scenario', 1),
+    diversionStatus: confirmedFact('open', at, 'scenario', 1),
+  },
+  capabilities: ['trauma_center', 'stroke_unit', 'cardiac_catheterization'],
+})
+
+const makeEstimatedInjuries = (): InjurySummary[] => [
+  { category: 'trauma', severity: 'critical', count: 1 },
+  { category: 'respiratory', severity: 'serious', count: 1 },
+]
+
+const incidentDataOf = (object: OperationalObject): IncidentDomainData | null => {
+  const data = object.domainData
+  return typeof data === 'object'
+    && data !== null
+    && (data as { readonly type?: unknown }).type === 'incident'
+    && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
+    ? data as IncidentDomainData
+    : null
+}
+
+const hospitalDataOf = (object: OperationalObject): HospitalDomainData | null => {
+  const data = object.domainData
+  return typeof data === 'object'
+    && data !== null
+    && (data as { readonly type?: unknown }).type === 'hospital'
+    && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
+    ? data as HospitalDomainData
+    : null
+}
+
+const revealIncidentDetails = (object: OperationalObject, at: IsoTimestamp): OperationalObject | null => {
+  const data = incidentDataOf(object)
+  if (!data || data.victims.count.state !== 'unknown') return null
+  return {
+    ...object,
+    revision: object.revision + 1,
+    domainData: {
+      ...data,
+      victims: {
+        count: estimatedFact(2, at, 'simulation', 0.72),
+        injuries: estimatedFact(makeEstimatedInjuries(), at, 'simulation', 0.68),
+        entrapment: estimatedFact(false, at, 'simulation', 0.61),
+      },
+      hazards: estimatedFact(['traffic obstruction', 'possible fuel spill'], at, 'simulation', 0.55),
+    } satisfies IncidentDomainData,
+    provenance: {
+      source: 'simulator',
+      adapterId,
+      externalId: object.id,
+    },
+    timestamps: {
+      ...object.timestamps,
+      updatedAt: at,
+    },
+  }
+}
+
+const updateHospitalCapacity = (object: OperationalObject, at: IsoTimestamp): OperationalObject | null => {
+  const data = hospitalDataOf(object)
+  if (!data || data.emergencyDepartment.ambulanceBaysAvailable.state !== 'confirmed') return null
+  if (data.emergencyDepartment.ambulanceBaysAvailable.value === 1) return null
+  return {
+    ...object,
+    revision: object.revision + 1,
+    domainData: {
+      ...data,
+      emergencyDepartment: {
+        ...data.emergencyDepartment,
+        ambulanceBaysAvailable: confirmedFact(1, at, 'simulation', 1),
+        diversionStatus: confirmedFact('limited', at, 'simulation', 1),
+      },
+    } satisfies HospitalDomainData,
+    provenance: {
+      source: 'simulator',
+      adapterId,
+      externalId: object.id,
+    },
+    timestamps: {
+      ...object.timestamps,
+      updatedAt: at,
+    },
+  }
+}
+
 const createAmbulanceObject = (seed: AmbulanceScenario['ambulances'][number], at: IsoTimestamp): OperationalObject => ({
   id: seed.id,
   kind: 'mobile_entity',
@@ -139,9 +260,7 @@ const createAmbulanceObject = (seed: AmbulanceScenario['ambulances'][number], at
     updatedAt: at,
   },
   domainData: {
-    type: 'ambulance',
-    crewStatus: 'ready',
-    equipment: [...seed.equipment],
+    ...makeAmbulanceDomainData(seed.equipment, at),
   } satisfies AmbulanceDomainData,
 })
 
@@ -187,9 +306,7 @@ const createIncidentObject = (seed: AmbulanceScenario['incidents'][number], at: 
     updatedAt: at,
   },
   domainData: {
-    type: 'incident',
-    triage: seed.triage,
-    patientCount: seed.patientCount,
+    ...makeIncidentDomainData(seed.triage, at),
   } satisfies IncidentDomainData,
 })
 
@@ -224,8 +341,8 @@ const createFacilityObject = (seed: AmbulanceScenario['facilities'][number], at:
     updatedAt: at,
   },
   domainData: {
-    type: seed.facilityType,
-  },
+    ...makeHospitalDomainData(at),
+  } satisfies HospitalDomainData,
 })
 
 const upsertEvent = (object: OperationalObject, at: IsoTimestamp): SimulationEvent => ({
@@ -280,8 +397,8 @@ const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, 
     updatedAt: at,
   },
   domainData: {
-    type: 'hospital',
-  },
+    ...makeHospitalDomainData(at),
+  } satisfies HospitalDomainData,
 })
 
 const createAddedAmbulanceObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
@@ -323,9 +440,7 @@ const createAddedAmbulanceObject = (id: ObjectId, label: string, point: GeoJsonP
     updatedAt: at,
   },
   domainData: {
-    type: 'ambulance',
-    crewStatus: 'ready',
-    equipment: ['defibrillator'],
+    ...makeAmbulanceDomainData(['defibrillator', 'oxygen', 'stretcher'], at),
   } satisfies AmbulanceDomainData,
 })
 
@@ -370,9 +485,7 @@ const createAddedIncidentObject = (id: ObjectId, label: string, point: GeoJsonPo
     updatedAt: at,
   },
   domainData: {
-    type: 'incident',
-    triage: 'red',
-    patientCount: 1,
+    ...makeIncidentDomainData('red', at),
   } satisfies IncidentDomainData,
 })
 
@@ -427,6 +540,7 @@ export const createAmbulanceSimEngine = (config: {
     sessionId: config.sessionId,
     objects,
     motion: new Map(),
+    elapsedMs: 0,
     nextAmbulanceNumber: config.scenario.ambulances.length + 1,
     nextHospitalNumber: config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1,
     nextIncidentNumber: config.scenario.incidents.length + 1,
@@ -441,6 +555,25 @@ export const createAmbulanceSimEngine = (config: {
   const tick = (dtMs: number): ReadonlyArray<SimulationEvent> => {
     const events: SimulationEvent[] = []
     const at2 = nowIso()
+    state.elapsedMs += dtMs
+    if (state.elapsedMs >= 5_000) {
+      for (const object of state.objects.values()) {
+        if (object.kind !== 'incident') continue
+        const updated = revealIncidentDetails(object, at2)
+        if (!updated) continue
+        state.objects.set(updated.id, updated)
+        events.push(upsertEvent(updated, at2))
+      }
+    }
+    if (state.elapsedMs >= 10_000) {
+      for (const object of state.objects.values()) {
+        if (!isHospital(object)) continue
+        const updated = updateHospitalCapacity(object, at2)
+        if (!updated) continue
+        state.objects.set(updated.id, updated)
+        events.push(upsertEvent(updated, at2))
+      }
+    }
     for (const [ambulanceId, motion] of state.motion.entries()) {
       const ambulance = state.objects.get(ambulanceId)
       const target = state.objects.get(motion.targetObjectId)

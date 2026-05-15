@@ -105,6 +105,7 @@ input {
 }
 
 .object-row {
+  position: relative;
   width: 100%;
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr);
@@ -125,11 +126,83 @@ input {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
+.object-row.has-new-info {
+  border-color: color-mix(in srgb, var(--critical) 42%, var(--border));
+}
+
+.row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 650;
+}
+
+.new-info-dot {
+  display: inline-block;
+  vertical-align: middle;
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: color-mix(in srgb, var(--critical) 12%, #fff);
+  color: var(--critical);
+  font-size: 10px;
+  font-weight: 760;
+  text-transform: uppercase;
+}
+
 .object-meta {
   display: block;
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
+}
+
+.row-hover-card,
+.marker-hover-card {
+  position: absolute;
+  z-index: 30;
+  display: none;
+  min-width: 230px;
+  max-width: 310px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.22);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.row-hover-card {
+  position: static;
+  grid-column: 1 / -1;
+  min-width: 0;
+  max-width: none;
+  margin-top: 4px;
+  box-shadow: none;
+  background: var(--panel-strong);
+}
+
+.row-hover-card strong,
+.marker-hover-card strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.row-hover-card span,
+.marker-hover-card div {
+  display: block;
+  color: var(--muted);
+}
+
+.object-row:hover .row-hover-card,
+.object-row:focus .row-hover-card,
+.map-marker:hover .marker-hover-card,
+.map-marker:focus .marker-hover-card {
+  display: block;
 }
 
 .rail-footer {
@@ -173,6 +246,7 @@ input {
 }
 
 .map-marker {
+  position: relative;
   width: 38px;
   height: 38px;
   border: 2px solid #fff;
@@ -182,6 +256,30 @@ input {
   color: #fff;
   box-shadow: 0 4px 14px rgba(16, 24, 40, 0.35);
   cursor: pointer;
+}
+
+.map-marker.has-new-info::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: -2px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--critical);
+}
+
+.marker-hover-card {
+  left: 46px;
+  top: -4px;
+  text-align: left;
+}
+
+.hover-new-info {
+  margin-bottom: 4px;
+  color: var(--critical) !important;
+  font-weight: 700;
 }
 
 .map-marker:hover,

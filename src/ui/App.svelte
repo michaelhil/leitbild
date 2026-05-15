@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
-  import type { GeoJsonPoint, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
+  import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type Marker } from 'maplibre-gl'
+  import type { GeoJsonLineString, GeoJsonPoint, KnowledgeFact, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import {
     cancelDestinationCommandKind,
@@ -9,6 +9,7 @@
     setDestinationCommandKind,
     type CreatableAmbulanceObjectType,
   } from '../domains/ambulance/commands.ts'
+  import type { AmbulanceDomainData, HospitalDomainData, IncidentDomainData, InjurySummary } from '../domains/ambulance/model.ts'
   import { iconHtml } from './icons.ts'
 
   interface SessionSnapshot {
@@ -47,6 +48,7 @@
   let status = 'Starting'
   let commandStatus = ''
   let markers = new Map<string, Marker>()
+  let seenRevisions = new Map<string, number>()
 
   const hospitals = (): OperationalObject[] =>
     objects.filter(object => object.kind === 'facility' && domainType(object) === 'hospital')
@@ -67,6 +69,64 @@
 
   const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
     object.spatial.position?.point ?? null
+
+  const ambulanceData = (object: OperationalObject): AmbulanceDomainData | null =>
+    domainType(object) === 'ambulance' ? object.domainData as AmbulanceDomainData : null
+
+  const incidentData = (object: OperationalObject): IncidentDomainData | null =>
+    domainType(object) === 'incident' ? object.domainData as IncidentDomainData : null
+
+  const hospitalData = (object: OperationalObject): HospitalDomainData | null =>
+    domainType(object) === 'hospital' ? object.domainData as HospitalDomainData : null
+
+  const factText = <T,>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
+    !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
+
+  const listText = (values: readonly string[]): string =>
+    values.length === 0 ? 'none' : values.map(value => value.replaceAll('_', ' ')).join(', ')
+
+  const injuryText = (injuries: readonly InjurySummary[]): string =>
+    injuries.length === 0
+      ? 'none reported'
+      : injuries.map(injury => `${injury.count} ${injury.severity} ${injury.category}`).join(', ')
+
+  const escapeHtml = (value: string): string =>
+    value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+
+  const targetLabel = (ambulance: OperationalObject): string =>
+    ambulance.tasking?.currentTaskId
+      ? objects.find(object => object.id === ambulance.tasking?.currentTaskId)?.label ?? ambulance.tasking.currentTaskId
+      : 'idle'
+
+  const hasNewInfo = (object: OperationalObject): boolean =>
+    (seenRevisions.get(object.id) ?? object.revision) < object.revision
+
+  const markSeen = (object: OperationalObject): void => {
+    if ((seenRevisions.get(object.id) ?? -1) >= object.revision) return
+    seenRevisions = new Map([...seenRevisions, [object.id, object.revision]])
+    refreshMarkers()
+  }
+
+  const routeFeatureCollection = () => ({
+    type: 'FeatureCollection' as const,
+    features: ambulances()
+      .filter(object => object.spatial.route?.planned)
+      .map(object => ({
+        type: 'Feature' as const,
+        id: object.id,
+        geometry: object.spatial.route!.planned as GeoJsonLineString,
+        properties: {
+          selected: object.id === selectedAmbulanceId,
+        },
+      })),
+  })
+
+  const refreshRouteSource = (): void => {
+    const current = map
+    if (!current || !current.isStyleLoaded()) return
+    const source = current.getSource('ambulance-routes') as GeoJSONSource | undefined
+    if (source) source.setData(routeFeatureCollection())
+  }
 
   const iconFor = (object: OperationalObject): 'ambulance' | 'hospital' | 'crash' => {
     if (object.kind === 'mobile_entity') return 'ambulance'
@@ -133,6 +193,7 @@
   }
 
   const selectObject = (object: OperationalObject): void => {
+    markSeen(object)
     if (object.kind === 'mobile_entity') {
       selectedAmbulanceId = object.id
       commandStatus = `Selected ${object.label}; click an incident or hospital target`
@@ -146,24 +207,67 @@
   const applyObject = (object: OperationalObject): void => {
     objects = [...objects.filter(existing => existing.id !== object.id), object]
     refreshMarkers()
+    refreshRouteSource()
   }
 
   const removeObject = (objectId: string): void => {
     objects = objects.filter(object => object.id !== objectId)
     markers.get(objectId)?.remove()
     markers.delete(objectId)
+    refreshRouteSource()
     if (selectedAmbulanceId === objectId) selectedAmbulanceId = null
+  }
+
+  const detailLines = (object: OperationalObject): ReadonlyArray<string> => {
+    const ambulance = ambulanceData(object)
+    if (ambulance) {
+      return [
+        `Destination: ${targetLabel(object)}`,
+        `Capabilities: ${listText(ambulance.capabilities)}`,
+        `Crew: ${factText(ambulance.crew.level)}`,
+        `Seats: ${factText(ambulance.crew.availableSeats)}`,
+      ]
+    }
+    const incident = incidentData(object)
+    if (incident) {
+      return [
+        `Triage: ${factText(incident.triage)}`,
+        `Victims: ${factText(incident.victims.count, String)}`,
+        `Injuries: ${factText(incident.victims.injuries, injuryText)}`,
+        `Hazards: ${factText(incident.hazards, listText)}`,
+      ]
+    }
+    const hospital = hospitalData(object)
+    if (hospital) {
+      return [
+        `Trauma beds: ${factText(hospital.emergencyDepartment.traumaBedsAvailable, String)}`,
+        `Ambulance bays: ${factText(hospital.emergencyDepartment.ambulanceBaysAvailable, String)}`,
+        `Diversion: ${factText(hospital.emergencyDepartment.diversionStatus)}`,
+        `Capabilities: ${listText(hospital.capabilities)}`,
+      ]
+    }
+    return [object.operational.status]
+  }
+
+  const hoverCardHtml = (object: OperationalObject): string => {
+    const lines = detailLines(object)
+      .map(line => `<div>${escapeHtml(line)}</div>`)
+      .join('')
+    const newInfo = hasNewInfo(object) ? '<div class="hover-new-info">New information</div>' : ''
+    return `<span class="marker-hover-card"><strong>${escapeHtml(object.label)}</strong>${newInfo}${lines}</span>`
   }
 
   const markerElement = (object: OperationalObject): HTMLElement => {
     const el = document.createElement('button')
     el.type = 'button'
-    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}`
-    el.innerHTML = iconHtml(iconFor(object), { size: 24, title: object.label })
+    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}${hasNewInfo(object) ? ' has-new-info' : ''}`
+    el.innerHTML = `${iconHtml(iconFor(object), { size: 24, title: object.label })}${hoverCardHtml(object)}`
     el.addEventListener('click', (event) => {
       event.stopPropagation()
       selectObject(object)
     })
+    el.addEventListener('mouseenter', () => markSeen(object))
+    el.addEventListener('focus', () => markSeen(object))
     return el
   }
 
@@ -224,7 +328,9 @@
     objects = [...body.snapshot.objects]
     selectedAmbulanceId = ambulances()[0]?.id ?? null
     connectWebSocket(body.id)
+    seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
     refreshMarkers()
+    refreshRouteSource()
   }
 
   const beginPlacement = (type: CreatableAmbulanceObjectType): void => {
@@ -262,11 +368,38 @@
       }
     })
     map.on('load', () => {
+      map?.addSource('ambulance-routes', {
+        type: 'geojson',
+        data: routeFeatureCollection(),
+      })
+      map?.addLayer({
+        id: 'ambulance-routes-muted',
+        type: 'line',
+        source: 'ambulance-routes',
+        filter: ['==', ['get', 'selected'], false],
+        paint: {
+          'line-color': '#5d6b7a',
+          'line-width': 3,
+          'line-opacity': 0.55,
+        },
+      })
+      map?.addLayer({
+        id: 'ambulance-routes-selected',
+        type: 'line',
+        source: 'ambulance-routes',
+        filter: ['==', ['get', 'selected'], true],
+        paint: {
+          'line-color': '#1d66d2',
+          'line-width': 5,
+          'line-opacity': 0.85,
+        },
+      })
       void createSession()
     })
   })
 
   $: refreshMarkers()
+  $: refreshRouteSource()
 </script>
 
 <div class="app-shell">
@@ -289,9 +422,18 @@
         <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
       {#each hospitals() as object (object.id)}
-        <button class="object-row" on:click={() => selectObject(object)}>
+        <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('hospital', { size: 18 })}</span>
-          <span>{object.label}</span>
+          <span>
+            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
+            {#if hospitalData(object) as data}
+              <span class="object-meta">ER {factText(data.emergencyDepartment.diversionStatus)} · bays {factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}</span>
+            {/if}
+          </span>
+          <span class="row-hover-card">
+            <strong>{object.label}</strong>
+            {#each detailLines(object) as line}<span>{line}</span>{/each}
+          </span>
         </button>
       {/each}
     </section>
@@ -302,11 +444,15 @@
         <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
       {#each ambulances() as object (object.id)}
-        <button class:selected={selectedAmbulanceId === object.id} class="object-row" on:click={() => selectObject(object)}>
+        <button class:selected={selectedAmbulanceId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('ambulance', { size: 18 })}</span>
           <span>
-            <span>{object.label}</span>
+            <span class="row-title">{object.label} -> {targetLabel(object)}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
             <span class="object-meta">{object.operational.status}</span>
+          </span>
+          <span class="row-hover-card">
+            <strong>{object.label}</strong>
+            {#each detailLines(object) as line}<span>{line}</span>{/each}
           </span>
         </button>
       {/each}
@@ -318,11 +464,19 @@
         <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
       {#each incidents() as object (object.id)}
-        <button class="object-row" on:click={() => selectObject(object)}>
+        <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('crash', { size: 18 })}</span>
           <span>
-            <span>{object.label}</span>
-            <span class="object-meta">{object.operational.status}</span>
+            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
+            {#if incidentData(object) as data}
+              <span class="object-meta">victims {factText(data.victims.count, String)} · triage {factText(data.triage)}</span>
+            {:else}
+              <span class="object-meta">{object.operational.status}</span>
+            {/if}
+          </span>
+          <span class="row-hover-card">
+            <strong>{object.label}</strong>
+            {#each detailLines(object) as line}<span>{line}</span>{/each}
           </span>
         </button>
       {/each}
