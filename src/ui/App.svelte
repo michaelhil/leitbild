@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
-  import type { GeoJsonLineString, GeoJsonPoint, KnowledgeFact, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
+  import type { GeoJsonPoint, KnowledgeFact, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import {
     cancelDestinationCommandKind,
@@ -11,6 +11,13 @@
   } from '../domains/ambulance/commands.ts'
   import type { AmbulanceDomainData, HospitalDomainData, IncidentDomainData, InjurySummary } from '../domains/ambulance/model.ts'
   import { iconHtml, iconSvgDataUrl, type IconName } from './icons.ts'
+  import {
+    createObjectFeatureCollection,
+    createRouteFeatureCollection,
+    mapLayerIds,
+    mapSourceIds,
+    pointOf,
+  } from './map-features.ts'
 
   interface SessionSnapshot {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -20,6 +27,13 @@
   interface SessionResponse {
     readonly id: SessionId
     readonly snapshot: SessionSnapshot
+  }
+
+  interface CommandResponse {
+    readonly result: {
+      readonly ok: boolean
+      readonly reason?: string
+    }
   }
 
   interface EventMessage {
@@ -53,15 +67,17 @@
   let ambulanceObjects: OperationalObject[] = []
   let incidentObjects: OperationalObject[] = []
   let selectedAmbulanceObject: OperationalObject | null = null
-  const interactiveObjectLayerIds = ['object-hit-area', 'object-icons', 'object-halos', 'object-new-info']
+  const interactiveObjectLayerIds = [
+    mapLayerIds.objectHitArea,
+    mapLayerIds.objectIcons,
+    mapLayerIds.objectHalos,
+    mapLayerIds.objectNewInfo,
+  ]
 
   const domainType = (object: OperationalObject): string | undefined =>
     typeof object.domainData === 'object' && object.domainData !== null
       ? String((object.domainData as { readonly type?: unknown }).type ?? '')
       : undefined
-
-  const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
-    object.spatial.position?.point ?? null
 
   const ambulanceData = (object: OperationalObject): AmbulanceDomainData | null =>
     domainType(object) === 'ambulance' ? object.domainData as AmbulanceDomainData : null
@@ -117,62 +133,18 @@
     refreshObjectSource()
   }
 
-  const colorFor = (object: OperationalObject): string => {
-    if (object.kind === 'mobile_entity') return '#22845d'
-    if (object.kind === 'facility') return '#245b9f'
-    return '#c7352b'
-  }
-
-  const mapIconFor = (object: OperationalObject): IconName => {
-    if (object.kind === 'mobile_entity') return 'ambulance'
-    if (object.kind === 'facility') return 'hospital'
-    return 'crash'
-  }
-
-  const objectFeatureCollection = () => ({
-    type: 'FeatureCollection' as const,
-    features: objects
-      .filter(object => pointOf(object))
-      .map(object => ({
-        type: 'Feature' as const,
-        id: object.id,
-        geometry: pointOf(object)!,
-        properties: {
-          id: object.id,
-          color: colorFor(object),
-          icon: `object-${mapIconFor(object)}`,
-          selected: object.id === selectedAmbulanceId,
-          hasNewInfo: hasNewInfo(object),
-        },
-      })),
-  })
-
   const refreshObjectSource = (): void => {
     const current = map
-    if (!current || !current.isStyleLoaded()) return
-    const source = current.getSource('objects') as GeoJSONSource | undefined
-    if (source) source.setData(objectFeatureCollection())
+    if (!current) return
+    const source = current.getSource(mapSourceIds.objects) as GeoJSONSource | undefined
+    if (source) source.setData(createObjectFeatureCollection(objects, selectedAmbulanceId, hasNewInfo))
   }
-
-  const routeFeatureCollection = () => ({
-    type: 'FeatureCollection' as const,
-    features: objects
-      .filter(object => object.kind === 'mobile_entity' && object.spatial.route?.planned)
-      .map(object => ({
-        type: 'Feature' as const,
-        id: object.id,
-        geometry: object.spatial.route!.planned as GeoJsonLineString,
-        properties: {
-          selected: object.id === selectedAmbulanceId,
-        },
-      })),
-  })
 
   const refreshRouteSource = (): void => {
     const current = map
-    if (!current || !current.isStyleLoaded()) return
-    const source = current.getSource('ambulance-routes') as GeoJSONSource | undefined
-    if (source) source.setData(routeFeatureCollection())
+    if (!current) return
+    const source = current.getSource(mapSourceIds.ambulanceRoutes) as GeoJSONSource | undefined
+    if (source) source.setData(createRouteFeatureCollection(objects, selectedAmbulanceId))
   }
 
   const categoryLabel = (type: CreatableAmbulanceObjectType): string => {
@@ -187,6 +159,16 @@
     return `Incident ${incidentObjects.length + 1}`
   }
 
+  const syncSessionSnapshot = async (): Promise<void> => {
+    if (!sessionId) return
+    const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/snapshot`, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`snapshot sync failed: ${response.status}`)
+    const body = await response.json() as SessionResponse
+    objects = [...body.snapshot.objects]
+    refreshObjectSource()
+    refreshRouteSource()
+  }
+
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
     if (!sessionId) return
     const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
@@ -196,7 +178,15 @@
     })
     if (!response.ok) {
       commandStatus = `Command failed: ${response.status}`
+      return
     }
+    const body = await response.json() as CommandResponse
+    if (!body.result.ok) {
+      commandStatus = `Command rejected: ${body.result.reason ?? 'unknown reason'}`
+      return
+    }
+    commandStatus = 'Command accepted'
+    await syncSessionSnapshot()
   }
 
   const createObject = async (): Promise<void> => {
@@ -419,33 +409,47 @@
         await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
         refreshObjectSource()
       })()
-      map?.addSource('ambulance-routes', {
+      map?.addSource(mapSourceIds.ambulanceRoutes, {
         type: 'geojson',
-        data: routeFeatureCollection(),
+        data: createRouteFeatureCollection(objects, selectedAmbulanceId),
       })
       map?.addLayer({
-        id: 'ambulance-routes',
+        id: mapLayerIds.routeCasing,
         type: 'line',
-        source: 'ambulance-routes',
+        source: mapSourceIds.ambulanceRoutes,
         paint: {
-          'line-color': ['case', ['get', 'selected'], '#0b57d0', '#174ea6'],
-          'line-width': ['case', ['get', 'selected'], 7, 5],
-          'line-opacity': ['case', ['get', 'selected'], 0.95, 0.65],
-          'line-blur': 0.4,
+          'line-color': '#ffffff',
+          'line-width': ['case', ['get', 'selected'], 10, 8],
+          'line-opacity': 0.92,
+          'line-blur': 0.15,
         },
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
         },
       })
-      map?.addSource('objects', {
+      map?.addLayer({
+        id: mapLayerIds.routeLine,
+        type: 'line',
+        source: mapSourceIds.ambulanceRoutes,
+        paint: {
+          'line-color': ['case', ['get', 'selected'], '#0b57d0', '#2563eb'],
+          'line-width': ['case', ['get', 'selected'], 6, 4],
+          'line-opacity': ['case', ['get', 'selected'], 1, 0.82],
+        },
+        layout: {
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+      })
+      map?.addSource(mapSourceIds.objects, {
         type: 'geojson',
-        data: objectFeatureCollection(),
+        data: createObjectFeatureCollection(objects, selectedAmbulanceId, hasNewInfo),
       })
       map?.addLayer({
-        id: 'object-hit-area',
+        id: mapLayerIds.objectHitArea,
         type: 'circle',
-        source: 'objects',
+        source: mapSourceIds.objects,
         paint: {
           'circle-radius': 22,
           'circle-color': '#ffffff',
@@ -453,9 +457,9 @@
         },
       })
       map?.addLayer({
-        id: 'object-halos',
+        id: mapLayerIds.objectHalos,
         type: 'circle',
-        source: 'objects',
+        source: mapSourceIds.objects,
         filter: ['==', ['get', 'selected'], true],
         paint: {
           'circle-radius': 22,
@@ -466,9 +470,9 @@
         },
       })
       map?.addLayer({
-        id: 'object-icons',
+        id: mapLayerIds.objectIcons,
         type: 'symbol',
-        source: 'objects',
+        source: mapSourceIds.objects,
         layout: {
           'icon-image': ['get', 'icon'],
           'icon-size': 1,
@@ -477,9 +481,9 @@
         },
       })
       map?.addLayer({
-        id: 'object-new-info',
+        id: mapLayerIds.objectNewInfo,
         type: 'circle',
-        source: 'objects',
+        source: mapSourceIds.objects,
         filter: ['==', ['get', 'hasNewInfo'], true],
         paint: {
           'circle-radius': 6,
