@@ -30,6 +30,16 @@ cp deploy/leitbild.service /etc/systemd/system/leitbild.service
 systemctl daemon-reload
 systemctl enable --now leitbild
 systemctl restart leitbild
-curl -fsS http://127.0.0.1:4177/health >/dev/null
+for attempt in 1 2 3 4 5; do
+  if curl -fsS http://127.0.0.1:4177/health >/dev/null; then
+    echo "Leitbild health check passed on attempt $attempt"
+    break
+  fi
+  if [ "$attempt" = "5" ]; then
+    echo "Leitbild health check failed after $attempt attempts" >&2
+    exit 1
+  fi
+  sleep 1
+done
 
 echo "Leitbild deployed $REMOTE_SHA"
