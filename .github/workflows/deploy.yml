@@ -33,8 +33,8 @@ jobs:
             set -e
             mkdir -p /opt/leitbild/data /opt/leitbild/osrm-data
             cd /opt/leitbild/app
-            bun install --frozen-lockfile
-            bun run build:ui
+            /root/.bun/bin/bun install --frozen-lockfile
+            /root/.bun/bin/bun run build:ui
             cp deploy/leitbild.service /etc/systemd/system/leitbild.service
             systemctl daemon-reload
             systemctl enable --now leitbild
