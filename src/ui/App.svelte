@@ -605,12 +605,12 @@
     </section>
 
     <footer class="rail-footer">
-      {#if selectedAmbulanceObject as ambulance}
+      {#if selectedAmbulanceObject}
         <div class="selected-card">
-          <strong>{ambulance.label}</strong>
-          <div class="object-meta">{ambulance.operational.status}</div>
-          {#if ambulance.tasking?.currentTaskId}
-            <div class="object-meta">Destination: {objects.find(object => object.id === ambulance.tasking?.currentTaskId)?.label ?? ambulance.tasking.currentTaskId}</div>
+          <strong>{selectedAmbulanceObject.label}</strong>
+          <div class="object-meta">{selectedAmbulanceObject.operational.status}</div>
+          {#if selectedAmbulanceObject.tasking?.currentTaskId}
+            <div class="object-meta">Destination: {objects.find(object => object.id === selectedAmbulanceObject?.tasking?.currentTaskId)?.label ?? selectedAmbulanceObject.tasking.currentTaskId}</div>
             <button class="command-button" on:click={cancelDestination}>{@html iconHtml('stop', { size: 16 })} Cancel destination</button>
           {:else}
             <div class="object-meta">Click a hospital or incident target.</div>
