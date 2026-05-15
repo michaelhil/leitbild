@@ -94,6 +94,20 @@
   const routeSummary = (ambulance: OperationalObject): string =>
     ambulance.tasking?.currentTaskId ? `Target: ${targetLabel(ambulance)}` : 'Target: none'
 
+  const hospitalSummary = (object: OperationalObject): string => {
+    const data = hospitalData(object)
+    return data
+      ? `ER ${factText(data.emergencyDepartment.diversionStatus)} · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
+      : object.operational.status
+  }
+
+  const incidentSummary = (object: OperationalObject): string => {
+    const data = incidentData(object)
+    return data
+      ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}`
+      : object.operational.status
+  }
+
   const hasNewInfo = (object: OperationalObject): boolean =>
     (seenRevisions.get(object.id) ?? object.revision) < object.revision
 
@@ -523,20 +537,18 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Hospitals <span>{hospitalObjects.length}</span></h2>
+        <h2>Hospitals <span>{objects.filter(object => object.kind === 'facility').length}</span></h2>
         <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if hospitalObjects.length === 0}
+      {#if objects.filter(object => object.kind === 'facility').length === 0}
         <div class="empty-row">No hospitals</div>
       {/if}
-      {#each hospitalObjects as object (object.id)}
+      {#each objects.filter(object => object.kind === 'facility') as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('hospital', { size: 18 })}</span>
           <span>
             <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            {#if hospitalData(object) as data}
-              <span class="object-meta">ER {factText(data.emergencyDepartment.diversionStatus)} · bays {factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}</span>
-            {/if}
+            <span class="object-meta">{hospitalSummary(object)}</span>
           </span>
           <span class="row-hover-card">
             <strong>{object.label}</strong>
@@ -548,13 +560,13 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Ambulances <span>{ambulanceObjects.length}</span></h2>
+        <h2>Ambulances <span>{objects.filter(object => object.kind === 'mobile_entity').length}</span></h2>
         <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if ambulanceObjects.length === 0}
+      {#if objects.filter(object => object.kind === 'mobile_entity').length === 0}
         <div class="empty-row">No ambulances</div>
       {/if}
-      {#each ambulanceObjects as object (object.id)}
+      {#each objects.filter(object => object.kind === 'mobile_entity') as object (object.id)}
         <button class:selected={selectedAmbulanceId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('ambulance', { size: 18 })}</span>
           <span>
@@ -571,22 +583,18 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Incidents <span>{incidentObjects.length}</span></h2>
+        <h2>Incidents <span>{objects.filter(object => object.kind === 'incident').length}</span></h2>
         <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if incidentObjects.length === 0}
+      {#if objects.filter(object => object.kind === 'incident').length === 0}
         <div class="empty-row">No incidents</div>
       {/if}
-      {#each incidentObjects as object (object.id)}
+      {#each objects.filter(object => object.kind === 'incident') as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('crash', { size: 18 })}</span>
           <span>
             <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            {#if incidentData(object) as data}
-              <span class="object-meta">victims {factText(data.victims.count, String)} · triage {factText(data.triage)}</span>
-            {:else}
-              <span class="object-meta">{object.operational.status}</span>
-            {/if}
+            <span class="object-meta">{incidentSummary(object)}</span>
           </span>
           <span class="row-hover-card">
             <strong>{object.label}</strong>
