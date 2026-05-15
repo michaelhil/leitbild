@@ -34,14 +34,8 @@ export const createOsloAmbulanceScenario = (): AmbulanceScenario => ({
     {
       id: 'amb:a12' as ObjectId,
       label: 'Ambulance A-12',
-      position: geoPointFromLonLat(10.7522, 59.9139),
+      position: geoPointFromLonLat(10.7387, 59.9365),
       equipment: ['defibrillator', 'ventilator'],
-    },
-    {
-      id: 'amb:b07' as ObjectId,
-      label: 'Ambulance B-07',
-      position: geoPointFromLonLat(10.7340, 59.9215),
-      equipment: ['defibrillator'],
     },
   ],
   incidents: [
@@ -59,12 +53,6 @@ export const createOsloAmbulanceScenario = (): AmbulanceScenario => ({
       label: 'Oslo University Hospital',
       position: geoPointFromLonLat(10.7387, 59.9365),
       facilityType: 'hospital',
-    },
-    {
-      id: 'facility:station-central' as ObjectId,
-      label: 'Central Ambulance Station',
-      position: geoPointFromLonLat(10.7501, 59.9104),
-      facilityType: 'station',
     },
   ],
 })

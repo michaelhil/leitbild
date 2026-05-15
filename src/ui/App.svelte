@@ -1,8 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
-  import type { OperationalObject, SessionId } from '../core/model/index.ts'
-  import { assignToIncidentCommandKind } from '../domains/ambulance/commands.ts'
+  import maplibregl, { type Map as MapLibreMap, type Marker } from 'maplibre-gl'
+  import type { GeoJsonPoint, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
+  import { geoPointFromLonLat } from '../core/model/index.ts'
+  import {
+    cancelDestinationCommandKind,
+    createObjectCommandKind,
+    setDestinationCommandKind,
+    type CreatableAmbulanceObjectType,
+  } from '../domains/ambulance/commands.ts'
+  import { iconHtml } from './icons.ts'
 
   interface SessionSnapshot {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -24,67 +31,166 @@
     }
   }
 
+  interface CreateDraft {
+    readonly objectType: CreatableAmbulanceObjectType
+    readonly point: GeoJsonPoint
+    label: string
+  }
+
   let mapElement: HTMLDivElement
   let map: MapLibreMap | null = null
   let sessionId: SessionId | null = null
   let objects: OperationalObject[] = []
-  let selectedId: string | null = null
+  let selectedAmbulanceId: string | null = null
+  let placementMode: CreatableAmbulanceObjectType | null = null
+  let createDraft: CreateDraft | null = null
   let status = 'Starting'
   let commandStatus = ''
+  let markers = new Map<string, Marker>()
 
-  const selectedObject = (): OperationalObject | null =>
-    objects.find(object => object.id === selectedId) ?? objects[0] ?? null
+  const hospitals = (): OperationalObject[] =>
+    objects.filter(object => object.kind === 'facility' && domainType(object) === 'hospital')
 
-  const ambulanceObjects = (): OperationalObject[] =>
+  const ambulances = (): OperationalObject[] =>
     objects.filter(object => object.kind === 'mobile_entity')
 
-  const incidentObjects = (): OperationalObject[] =>
-    objects.filter(object => object.kind === 'incident' && object.lifecycle === 'active')
+  const incidents = (): OperationalObject[] =>
+    objects.filter(object => object.kind === 'incident')
 
-  const colorFor = (object: OperationalObject): string => {
-    if (object.kind === 'incident') return object.operational.priority === 'critical' ? '#c7352b' : '#b7791f'
-    if (object.kind === 'facility') return '#586174'
-    if (object.operational.status === 'available') return '#22845d'
-    if (object.operational.status === 'en_route') return '#1d66d2'
-    return '#8b5cf6'
+  const selectedAmbulance = (): OperationalObject | null =>
+    objects.find(object => object.id === selectedAmbulanceId) ?? null
+
+  const domainType = (object: OperationalObject): string | undefined =>
+    typeof object.domainData === 'object' && object.domainData !== null
+      ? String((object.domainData as { readonly type?: unknown }).type ?? '')
+      : undefined
+
+  const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
+    object.spatial.position?.point ?? null
+
+  const iconFor = (object: OperationalObject): 'ambulance' | 'hospital' | 'crash' => {
+    if (object.kind === 'mobile_entity') return 'ambulance'
+    if (object.kind === 'facility') return 'hospital'
+    return 'crash'
   }
 
-  const featureCollection = () => ({
-    type: 'FeatureCollection' as const,
-    features: objects
-      .filter(object => object.spatial.position)
-      .map(object => ({
-        type: 'Feature' as const,
-        id: object.id,
-        geometry: object.spatial.position!.point,
-        properties: {
-          id: object.id,
-          label: object.label,
-          kind: object.kind,
-          status: object.operational.status,
-          color: colorFor(object),
-          selected: object.id === selectedId,
-        },
-      })),
-  })
+  const categoryLabel = (type: CreatableAmbulanceObjectType): string => {
+    if (type === 'hospital') return 'Hospital'
+    if (type === 'ambulance') return 'Ambulance'
+    return 'Incident'
+  }
 
-  const refreshMapSource = (): void => {
-    const current = map
-    if (!current || !current.isStyleLoaded()) return
-    const source = current.getSource('objects') as GeoJSONSource | undefined
-    if (source) source.setData(featureCollection())
+  const defaultName = (type: CreatableAmbulanceObjectType): string => {
+    if (type === 'hospital') return `Hospital ${hospitals().length + 1}`
+    if (type === 'ambulance') return `Ambulance ${ambulances().length + 1}`
+    return `Incident ${incidents().length + 1}`
+  }
+
+  const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
+    if (!sessionId) return
+    const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, targetObjectIds, payload }),
+    })
+    if (!response.ok) {
+      commandStatus = `Command failed: ${response.status}`
+    }
+  }
+
+  const createObject = async (): Promise<void> => {
+    if (!createDraft) return
+    const draft = createDraft
+    createDraft = null
+    placementMode = null
+    commandStatus = `Creating ${draft.objectType}`
+    await sendCommand(createObjectCommandKind, {
+      objectType: draft.objectType,
+      label: draft.label.trim() || defaultName(draft.objectType),
+      point: draft.point,
+    })
+  }
+
+  const setDestination = async (destination: OperationalObject): Promise<void> => {
+    const ambulance = selectedAmbulance()
+    if (!ambulance) {
+      commandStatus = 'Select an ambulance first'
+      return
+    }
+    if (destination.id === ambulance.id) return
+    commandStatus = `Sending ${ambulance.label} to ${destination.label}`
+    await sendCommand(setDestinationCommandKind, {
+      ambulanceId: ambulance.id,
+      destinationId: destination.id,
+    }, [ambulance.id, destination.id])
+  }
+
+  const cancelDestination = async (): Promise<void> => {
+    const ambulance = selectedAmbulance()
+    if (!ambulance) return
+    commandStatus = `Stopping ${ambulance.label}`
+    await sendCommand(cancelDestinationCommandKind, { ambulanceId: ambulance.id }, [ambulance.id])
+  }
+
+  const selectObject = (object: OperationalObject): void => {
+    if (object.kind === 'mobile_entity') {
+      selectedAmbulanceId = object.id
+      commandStatus = `Selected ${object.label}; click an incident or hospital target`
+      return
+    }
+    if (selectedAmbulanceId && (object.kind === 'incident' || domainType(object) === 'hospital')) {
+      void setDestination(object)
+    }
   }
 
   const applyObject = (object: OperationalObject): void => {
     objects = [...objects.filter(existing => existing.id !== object.id), object]
-    if (!selectedId) selectedId = object.id
-    refreshMapSource()
+    refreshMarkers()
   }
 
   const removeObject = (objectId: string): void => {
     objects = objects.filter(object => object.id !== objectId)
-    if (selectedId === objectId) selectedId = objects[0]?.id ?? null
-    refreshMapSource()
+    markers.get(objectId)?.remove()
+    markers.delete(objectId)
+    if (selectedAmbulanceId === objectId) selectedAmbulanceId = null
+  }
+
+  const markerElement = (object: OperationalObject): HTMLElement => {
+    const el = document.createElement('button')
+    el.type = 'button'
+    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}`
+    el.innerHTML = iconHtml(iconFor(object), { size: 24, title: object.label })
+    el.addEventListener('click', (event) => {
+      event.stopPropagation()
+      selectObject(object)
+    })
+    return el
+  }
+
+  const refreshMarkers = (): void => {
+    const current = map
+    if (!current) return
+    const liveIds = new Set(objects.map(object => object.id))
+    for (const [id, marker] of markers.entries()) {
+      if (!liveIds.has(id)) {
+        marker.remove()
+        markers.delete(id)
+      }
+    }
+    for (const object of objects) {
+      const point = pointOf(object)
+      if (!point) continue
+      const [lon, lat] = point.coordinates
+      const existing = markers.get(object.id)
+      if (existing) {
+        existing.remove()
+        markers.delete(object.id)
+      }
+      const marker = new maplibregl.Marker({ element: markerElement(object), anchor: 'center' })
+        .setLngLat([lon, lat])
+        .addTo(current)
+      markers.set(object.id, marker)
+    }
   }
 
   const connectWebSocket = (id: SessionId): void => {
@@ -116,36 +222,15 @@
     const body = await response.json() as SessionResponse
     sessionId = body.id
     objects = [...body.snapshot.objects]
-    selectedId = objects[0]?.id ?? null
+    selectedAmbulanceId = ambulances()[0]?.id ?? null
     connectWebSocket(body.id)
-    refreshMapSource()
+    refreshMarkers()
   }
 
-  const issueDispatch = async (): Promise<void> => {
-    if (!sessionId) return
-    const ambulance = ambulanceObjects().find(object => object.operational.status === 'available')
-    const incident = incidentObjects()[0]
-    if (!ambulance || !incident) {
-      commandStatus = 'No available ambulance and open incident pair'
-      return
-    }
-    commandStatus = 'Issuing dispatch command'
-    const response = await fetch(`/api/session/${encodeURIComponent(sessionId)}/command`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: assignToIncidentCommandKind,
-        targetObjectIds: [ambulance.id, incident.id],
-        payload: {
-          ambulanceId: ambulance.id,
-          incidentId: incident.id,
-        },
-        expectedRevision: ambulance.revision,
-      }),
-    })
-    if (!response.ok) {
-      commandStatus = `Command request failed: ${response.status}`
-    }
+  const beginPlacement = (type: CreatableAmbulanceObjectType): void => {
+    placementMode = type
+    createDraft = null
+    commandStatus = `Click map to place new ${type}`
   }
 
   onMount(() => {
@@ -161,124 +246,124 @@
             attribution: '© OpenStreetMap contributors',
           },
         },
-        layers: [
-          {
-            id: 'osm',
-            type: 'raster',
-            source: 'osm',
-          },
-        ],
+        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
       },
       center: [10.7522, 59.9139],
       zoom: 12,
     })
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-left')
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
+    map.on('click', (event) => {
+      if (!placementMode) return
+      const type = placementMode
+      createDraft = {
+        objectType: type,
+        point: geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat),
+        label: defaultName(type),
+      }
+    })
     map.on('load', () => {
-      if (!map) return
-      map.addSource('objects', {
-        type: 'geojson',
-        data: featureCollection(),
-      })
-      map.addLayer({
-        id: 'object-circles',
-        type: 'circle',
-        source: 'objects',
-        paint: {
-          'circle-radius': ['case', ['get', 'selected'], 11, 8],
-          'circle-color': ['get', 'color'],
-          'circle-stroke-color': '#ffffff',
-          'circle-stroke-width': 2,
-        },
-      })
-      map.addLayer({
-        id: 'object-labels',
-        type: 'symbol',
-        source: 'objects',
-        layout: {
-          'text-field': ['get', 'label'],
-          'text-offset': [0, 1.2],
-          'text-size': 12,
-          'text-anchor': 'top',
-        },
-        paint: {
-          'text-color': '#17202a',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 1.5,
-        },
-      })
-      map.on('click', 'object-circles', (event) => {
-        const feature = event.features?.[0]
-        const id = feature?.properties?.id as string | undefined
-        if (id) {
-          selectedId = id
-          refreshMapSource()
-        }
-      })
-      refreshMapSource()
       void createSession()
     })
   })
 
-  $: refreshMapSource()
+  $: refreshMarkers()
 </script>
 
 <div class="app-shell">
-  <main class="map-region">
-    <div class="map" bind:this={mapElement}></div>
-    <div class="topbar">
-      <span class="brand">Leitbild</span>
-      <span class="status-pill">{status}</span>
-      {#if sessionId}
-        <span class="status-pill">{sessionId}</span>
-      {/if}
-    </div>
-  </main>
-
-  <aside class="side-panel">
-    <header class="panel-header">
-      <div class="brand">Ambulance Dispatch Sandbox</div>
-      <div class="object-meta">{objects.length} operational objects</div>
+  <aside class="control-rail">
+    <header class="rail-header">
+      <div class="brand">Leitbild</div>
+      <div class="object-meta">{status}</div>
     </header>
 
-    <section class="object-list">
-      {#each objects as object (object.id)}
-        <button class:object-row class:selected={selectedId === object.id} on:click={() => { selectedId = object.id; refreshMapSource() }}>
+    {#if placementMode}
+      <div class="placement-banner">
+        Click map to place new {placementMode}
+        <button class="icon-button" on:click={() => { placementMode = null; createDraft = null }}>{@html iconHtml('x', { size: 16 })}</button>
+      </div>
+    {/if}
+
+    <section class="category">
+      <div class="category-header">
+        <h2>Hospitals</h2>
+        <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
+      </div>
+      {#each hospitals() as object (object.id)}
+        <button class="object-row" on:click={() => selectObject(object)}>
+          <span>{@html iconHtml('hospital', { size: 18 })}</span>
+          <span>{object.label}</span>
+        </button>
+      {/each}
+    </section>
+
+    <section class="category">
+      <div class="category-header">
+        <h2>Ambulances</h2>
+        <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
+      </div>
+      {#each ambulances() as object (object.id)}
+        <button class:selected={selectedAmbulanceId === object.id} class="object-row" on:click={() => selectObject(object)}>
+          <span>{@html iconHtml('ambulance', { size: 18 })}</span>
           <span>
-            <span class="object-label">{object.label}</span>
-            <span class="object-meta">{object.kind} · {object.operational.status}</span>
-          </span>
-          <span class:severity-critical={object.operational.priority === 'critical'} class:severity-warning={object.operational.priority === 'high'} class:severity-normal={object.operational.priority === 'normal'}>
-            {object.operational.priority ?? ''}
+            <span>{object.label}</span>
+            <span class="object-meta">{object.operational.status}</span>
           </span>
         </button>
       {/each}
-
-      {#if selectedObject() as object}
-        <section>
-          <h2>{object.label}</h2>
-          <div class="object-meta">Revision {object.revision} · {object.operational.status}</div>
-          {#if object.telemetry}
-            <div class="signal-grid">
-              {#each Object.values(object.telemetry.signals) as signal (signal.signalId)}
-                <div class="signal">
-                  <div class="object-meta">{signal.label}</div>
-                  <div class="signal-value">{signal.latest} {signal.unit}</div>
-                  <div class:severity-critical={signal.severity === 'critical'} class:severity-warning={signal.severity === 'warning'} class:severity-normal={signal.severity === 'normal'}>
-                    {signal.severity}
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </section>
-      {/if}
     </section>
 
-    <footer class="panel-footer">
-      <button class="command-button" disabled={!sessionId} on:click={issueDispatch}>Dispatch available ambulance</button>
+    <section class="category">
+      <div class="category-header">
+        <h2>Incidents</h2>
+        <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
+      </div>
+      {#each incidents() as object (object.id)}
+        <button class="object-row" on:click={() => selectObject(object)}>
+          <span>{@html iconHtml('crash', { size: 18 })}</span>
+          <span>
+            <span>{object.label}</span>
+            <span class="object-meta">{object.operational.status}</span>
+          </span>
+        </button>
+      {/each}
+    </section>
+
+    <footer class="rail-footer">
+      {#if selectedAmbulance() as ambulance}
+        <div class="selected-card">
+          <strong>{ambulance.label}</strong>
+          <div class="object-meta">{ambulance.operational.status}</div>
+          {#if ambulance.tasking?.currentTaskId}
+            <div class="object-meta">Destination: {objects.find(object => object.id === ambulance.tasking?.currentTaskId)?.label ?? ambulance.tasking.currentTaskId}</div>
+            <button class="command-button" on:click={cancelDestination}>{@html iconHtml('stop', { size: 16 })} Cancel destination</button>
+          {:else}
+            <div class="object-meta">Click a hospital or incident target.</div>
+          {/if}
+        </div>
+      {/if}
       {#if commandStatus}
         <div class="object-meta">{commandStatus}</div>
       {/if}
     </footer>
   </aside>
+
+  <main class="map-region">
+    <div class="map" bind:this={mapElement}></div>
+  </main>
 </div>
+
+{#if createDraft}
+  <div class="modal-backdrop">
+    <form class="modal" on:submit|preventDefault={createObject}>
+      <h2>Create new {categoryLabel(createDraft.objectType)}</h2>
+      <label>
+        Name
+        <input bind:value={createDraft.label} />
+      </label>
+      <div class="modal-actions">
+        <button type="button" on:click={() => { createDraft = null; placementMode = null }}>Cancel</button>
+        <button type="submit" class="primary">Create</button>
+      </div>
+    </form>
+  </div>
+{/if}
