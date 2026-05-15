@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type Marker } from 'maplibre-gl'
+  import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import type { GeoJsonLineString, GeoJsonPoint, KnowledgeFact, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import {
@@ -47,7 +47,6 @@
   let createDraft: CreateDraft | null = null
   let status = 'Starting'
   let commandStatus = ''
-  let markers = new Map<string, Marker>()
   let seenRevisions = new Map<string, number>()
   let markerPopup: maplibregl.Popup | null = null
 
@@ -108,7 +107,44 @@
   const markSeen = (object: OperationalObject): void => {
     if ((seenRevisions.get(object.id) ?? -1) >= object.revision) return
     seenRevisions = new Map([...seenRevisions, [object.id, object.revision]])
-    refreshMarkers()
+    refreshObjectSource()
+  }
+
+  const colorFor = (object: OperationalObject): string => {
+    if (object.kind === 'mobile_entity') return '#22845d'
+    if (object.kind === 'facility') return '#245b9f'
+    return '#c7352b'
+  }
+
+  const symbolFor = (object: OperationalObject): string => {
+    if (object.kind === 'mobile_entity') return 'A'
+    if (object.kind === 'facility') return 'H'
+    return '!'
+  }
+
+  const objectFeatureCollection = () => ({
+    type: 'FeatureCollection' as const,
+    features: objects
+      .filter(object => pointOf(object))
+      .map(object => ({
+        type: 'Feature' as const,
+        id: object.id,
+        geometry: pointOf(object)!,
+        properties: {
+          id: object.id,
+          color: colorFor(object),
+          symbol: symbolFor(object),
+          selected: object.id === selectedAmbulanceId,
+          hasNewInfo: hasNewInfo(object),
+        },
+      })),
+  })
+
+  const refreshObjectSource = (): void => {
+    const current = map
+    if (!current || !current.isStyleLoaded()) return
+    const source = current.getSource('objects') as GeoJSONSource | undefined
+    if (source) source.setData(objectFeatureCollection())
   }
 
   const routeFeatureCollection = () => ({
@@ -130,12 +166,6 @@
     if (!current || !current.isStyleLoaded()) return
     const source = current.getSource('ambulance-routes') as GeoJSONSource | undefined
     if (source) source.setData(routeFeatureCollection())
-  }
-
-  const iconFor = (object: OperationalObject): 'ambulance' | 'hospital' | 'crash' => {
-    if (object.kind === 'mobile_entity') return 'ambulance'
-    if (object.kind === 'facility') return 'hospital'
-    return 'crash'
   }
 
   const categoryLabel = (type: CreatableAmbulanceObjectType): string => {
@@ -210,14 +240,13 @@
 
   const applyObject = (object: OperationalObject): void => {
     objects = [...objects.filter(existing => existing.id !== object.id), object]
-    refreshMarkers()
+    refreshObjectSource()
     refreshRouteSource()
   }
 
   const removeObject = (objectId: string): void => {
     objects = objects.filter(object => object.id !== objectId)
-    markers.get(objectId)?.remove()
-    markers.delete(objectId)
+    refreshObjectSource()
     refreshRouteSource()
     if (selectedAmbulanceId === objectId) selectedAmbulanceId = null
   }
@@ -283,67 +312,6 @@
     markerPopup = null
   }
 
-  const currentObject = (objectId: string): OperationalObject | null =>
-    objects.find(object => object.id === objectId) ?? null
-
-  const updateMarkerElement = (el: HTMLElement, object: OperationalObject): void => {
-    el.className = `map-marker map-marker-${iconFor(object)}${selectedAmbulanceId === object.id ? ' selected' : ''}${hasNewInfo(object) ? ' has-new-info' : ''}`
-    el.innerHTML = iconHtml(iconFor(object), { size: 24, title: object.label })
-  }
-
-  const markerElement = (object: OperationalObject): HTMLElement => {
-    const el = document.createElement('button')
-    el.type = 'button'
-    updateMarkerElement(el, object)
-    el.addEventListener('click', (event) => {
-      event.stopPropagation()
-      const latest = currentObject(object.id)
-      if (latest) selectObject(latest)
-    })
-    el.addEventListener('mouseenter', () => {
-      const latest = currentObject(object.id)
-      if (!latest) return
-      markSeen(latest)
-      showMarkerPopup(latest)
-    })
-    el.addEventListener('mouseleave', hideMarkerPopup)
-    el.addEventListener('focus', () => {
-      const latest = currentObject(object.id)
-      if (!latest) return
-      markSeen(latest)
-      showMarkerPopup(latest)
-    })
-    el.addEventListener('blur', hideMarkerPopup)
-    return el
-  }
-
-  const refreshMarkers = (): void => {
-    const current = map
-    if (!current) return
-    const liveIds = new Set(objects.map(object => object.id))
-    for (const [id, marker] of markers.entries()) {
-      if (!liveIds.has(id)) {
-        marker.remove()
-        markers.delete(id)
-      }
-    }
-    for (const object of objects) {
-      const point = pointOf(object)
-      if (!point) continue
-      const [lon, lat] = point.coordinates
-      const existing = markers.get(object.id)
-      if (existing) {
-        existing.setLngLat([lon, lat])
-        updateMarkerElement(existing.getElement(), object)
-        continue
-      }
-      const marker = new maplibregl.Marker({ element: markerElement(object), anchor: 'center' })
-        .setLngLat([lon, lat])
-        .addTo(current)
-      markers.set(object.id, marker)
-    }
-  }
-
   const connectWebSocket = (id: SessionId): void => {
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(`${protocol}//${location.host}/ws?session=${encodeURIComponent(id)}`)
@@ -376,7 +344,7 @@
     selectedAmbulanceId = ambulances()[0]?.id ?? null
     connectWebSocket(body.id)
     seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
-    refreshMarkers()
+    refreshObjectSource()
     refreshRouteSource()
   }
 
@@ -449,11 +417,75 @@
           'line-opacity': 0.85,
         },
       })
+      map?.addSource('objects', {
+        type: 'geojson',
+        data: objectFeatureCollection(),
+      })
+      map?.addLayer({
+        id: 'object-circles',
+        type: 'circle',
+        source: 'objects',
+        paint: {
+          'circle-radius': ['case', ['get', 'selected'], 23, 19],
+          'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 3,
+          'circle-opacity': 0.96,
+        },
+      })
+      map?.addLayer({
+        id: 'object-symbols',
+        type: 'symbol',
+        source: 'objects',
+        layout: {
+          'text-field': ['get', 'symbol'],
+          'text-size': 17,
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#ffffff',
+        },
+      })
+      map?.addLayer({
+        id: 'object-new-info',
+        type: 'circle',
+        source: 'objects',
+        filter: ['==', ['get', 'hasNewInfo'], true],
+        paint: {
+          'circle-radius': 6,
+          'circle-color': '#c7352b',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+          'circle-translate': [14, -14],
+        },
+      })
+      map?.on('click', 'object-circles', (event) => {
+        const objectId = String(event.features?.[0]?.properties?.id ?? '')
+        const object = objects.find(candidate => candidate.id === objectId)
+        if (object) selectObject(object)
+      })
+      map?.on('mouseenter', 'object-circles', (event) => {
+        const current = map
+        if (!current) return
+        current.getCanvas().style.cursor = 'pointer'
+        const objectId = String(event.features?.[0]?.properties?.id ?? '')
+        const object = objects.find(candidate => candidate.id === objectId)
+        if (!object) return
+        markSeen(object)
+        showMarkerPopup(object)
+      })
+      map?.on('mouseleave', 'object-circles', () => {
+        const current = map
+        if (current) current.getCanvas().style.cursor = ''
+        hideMarkerPopup()
+      })
       void createSession()
     })
   })
 
-  $: refreshMarkers()
+  $: refreshObjectSource()
   $: refreshRouteSource()
 </script>
 
