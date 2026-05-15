@@ -10,7 +10,7 @@
     type CreatableAmbulanceObjectType,
   } from '../domains/ambulance/commands.ts'
   import type { AmbulanceDomainData, HospitalDomainData, IncidentDomainData, InjurySummary } from '../domains/ambulance/model.ts'
-  import { iconHtml } from './icons.ts'
+  import { iconHtml, iconSvgDataUrl, type IconName } from './icons.ts'
 
   interface SessionSnapshot {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -49,18 +49,11 @@
   let commandStatus = ''
   let seenRevisions = new Map<string, number>()
   let markerPopup: maplibregl.Popup | null = null
-
-  const hospitals = (): OperationalObject[] =>
-    objects.filter(object => object.kind === 'facility' && domainType(object) === 'hospital')
-
-  const ambulances = (): OperationalObject[] =>
-    objects.filter(object => object.kind === 'mobile_entity')
-
-  const incidents = (): OperationalObject[] =>
-    objects.filter(object => object.kind === 'incident')
-
-  const selectedAmbulance = (): OperationalObject | null =>
-    objects.find(object => object.id === selectedAmbulanceId) ?? null
+  let hospitalObjects: OperationalObject[] = []
+  let ambulanceObjects: OperationalObject[] = []
+  let incidentObjects: OperationalObject[] = []
+  let selectedAmbulanceObject: OperationalObject | null = null
+  const interactiveObjectLayerIds = ['object-icons', 'object-halos', 'object-new-info']
 
   const domainType = (object: OperationalObject): string | undefined =>
     typeof object.domainData === 'object' && object.domainData !== null
@@ -116,10 +109,10 @@
     return '#c7352b'
   }
 
-  const symbolFor = (object: OperationalObject): string => {
-    if (object.kind === 'mobile_entity') return 'A'
-    if (object.kind === 'facility') return 'H'
-    return '!'
+  const mapIconFor = (object: OperationalObject): IconName => {
+    if (object.kind === 'mobile_entity') return 'ambulance'
+    if (object.kind === 'facility') return 'hospital'
+    return 'crash'
   }
 
   const objectFeatureCollection = () => ({
@@ -133,7 +126,7 @@
         properties: {
           id: object.id,
           color: colorFor(object),
-          symbol: symbolFor(object),
+          icon: `object-${mapIconFor(object)}`,
           selected: object.id === selectedAmbulanceId,
           hasNewInfo: hasNewInfo(object),
         },
@@ -149,7 +142,7 @@
 
   const routeFeatureCollection = () => ({
     type: 'FeatureCollection' as const,
-    features: ambulances()
+    features: ambulanceObjects
       .filter(object => object.spatial.route?.planned)
       .map(object => ({
         type: 'Feature' as const,
@@ -175,9 +168,9 @@
   }
 
   const defaultName = (type: CreatableAmbulanceObjectType): string => {
-    if (type === 'hospital') return `Hospital ${hospitals().length + 1}`
-    if (type === 'ambulance') return `Ambulance ${ambulances().length + 1}`
-    return `Incident ${incidents().length + 1}`
+    if (type === 'hospital') return `Hospital ${hospitalObjects.length + 1}`
+    if (type === 'ambulance') return `Ambulance ${ambulanceObjects.length + 1}`
+    return `Incident ${incidentObjects.length + 1}`
   }
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
@@ -206,7 +199,7 @@
   }
 
   const setDestination = async (destination: OperationalObject): Promise<void> => {
-    const ambulance = selectedAmbulance()
+    const ambulance = selectedAmbulanceObject
     if (!ambulance) {
       commandStatus = 'Select an ambulance first'
       return
@@ -220,7 +213,7 @@
   }
 
   const cancelDestination = async (): Promise<void> => {
-    const ambulance = selectedAmbulance()
+    const ambulance = selectedAmbulanceObject
     if (!ambulance) return
     commandStatus = `Stopping ${ambulance.label}`
     await sendCommand(cancelDestinationCommandKind, { ambulanceId: ambulance.id }, [ambulance.id])
@@ -233,7 +226,7 @@
       commandStatus = `Selected ${object.label}; click an incident or hospital target`
       return
     }
-    if (selectedAmbulanceId && (object.kind === 'incident' || domainType(object) === 'hospital')) {
+    if (selectedAmbulanceId && (object.kind === 'incident' || object.kind === 'facility')) {
       void setDestination(object)
     }
   }
@@ -341,7 +334,7 @@
     const body = await response.json() as SessionResponse
     sessionId = body.id
     objects = [...body.snapshot.objects]
-    selectedAmbulanceId = ambulances()[0]?.id ?? null
+    selectedAmbulanceId = objects.find(object => object.kind === 'mobile_entity')?.id ?? null
     connectWebSocket(body.id)
     seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
     refreshObjectSource()
@@ -352,6 +345,19 @@
     placementMode = type
     createDraft = null
     commandStatus = `Click map to place new ${type}`
+  }
+
+  const registerMapIcon = async (current: MapLibreMap, iconId: string, iconName: IconName, color: string): Promise<void> => {
+    if (current.hasImage(iconId)) return
+    const image = new Image(40, 40)
+    image.src = iconSvgDataUrl(iconName, { stroke: color, size: 40, strokeWidth: 2.4 })
+    await image.decode()
+    current.addImage(iconId, image, { pixelRatio: 2 })
+  }
+
+  const objectFromMapEvent = (event: maplibregl.MapLayerMouseEvent): OperationalObject | null => {
+    const objectId = String(event.features?.[0]?.properties?.id ?? '')
+    return objects.find(candidate => candidate.id === objectId) ?? null
   }
 
   onMount(() => {
@@ -391,6 +397,14 @@
       }
     })
     map.on('load', () => {
+      const current = map
+      if (!current) return
+      void (async () => {
+        await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
+        await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
+        await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
+        refreshObjectSource()
+      })()
       map?.addSource('ambulance-routes', {
         type: 'geojson',
         data: routeFeatureCollection(),
@@ -401,8 +415,8 @@
         source: 'ambulance-routes',
         filter: ['==', ['get', 'selected'], false],
         paint: {
-          'line-color': '#5d6b7a',
-          'line-width': 3,
+          'line-color': '#174ea6',
+          'line-width': 5,
           'line-opacity': 0.55,
         },
       })
@@ -412,9 +426,9 @@
         source: 'ambulance-routes',
         filter: ['==', ['get', 'selected'], true],
         paint: {
-          'line-color': '#1d66d2',
-          'line-width': 5,
-          'line-opacity': 0.85,
+          'line-color': '#0b57d0',
+          'line-width': 7,
+          'line-opacity': 0.95,
         },
       })
       map?.addSource('objects', {
@@ -422,30 +436,27 @@
         data: objectFeatureCollection(),
       })
       map?.addLayer({
-        id: 'object-circles',
+        id: 'object-halos',
         type: 'circle',
         source: 'objects',
+        filter: ['==', ['get', 'selected'], true],
         paint: {
-          'circle-radius': ['case', ['get', 'selected'], 23, 19],
-          'circle-color': ['get', 'color'],
-          'circle-stroke-color': '#ffffff',
+          'circle-radius': 22,
+          'circle-color': '#ffffff',
+          'circle-stroke-color': '#1d66d2',
           'circle-stroke-width': 3,
-          'circle-opacity': 0.96,
+          'circle-opacity': 0.82,
         },
       })
       map?.addLayer({
-        id: 'object-symbols',
+        id: 'object-icons',
         type: 'symbol',
         source: 'objects',
         layout: {
-          'text-field': ['get', 'symbol'],
-          'text-size': 17,
-          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          'text-allow-overlap': true,
-          'text-ignore-placement': true,
-        },
-        paint: {
-          'text-color': '#ffffff',
+          'icon-image': ['get', 'icon'],
+          'icon-size': 1,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
         },
       })
       map?.addLayer({
@@ -458,33 +469,37 @@
           'circle-color': '#c7352b',
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
-          'circle-translate': [14, -14],
+          'circle-translate': [12, -12],
         },
       })
-      map?.on('click', 'object-circles', (event) => {
-        const objectId = String(event.features?.[0]?.properties?.id ?? '')
-        const object = objects.find(candidate => candidate.id === objectId)
-        if (object) selectObject(object)
-      })
-      map?.on('mouseenter', 'object-circles', (event) => {
-        const current = map
-        if (!current) return
-        current.getCanvas().style.cursor = 'pointer'
-        const objectId = String(event.features?.[0]?.properties?.id ?? '')
-        const object = objects.find(candidate => candidate.id === objectId)
-        if (!object) return
-        markSeen(object)
-        showMarkerPopup(object)
-      })
-      map?.on('mouseleave', 'object-circles', () => {
-        const current = map
-        if (current) current.getCanvas().style.cursor = ''
-        hideMarkerPopup()
-      })
+      for (const layerId of interactiveObjectLayerIds) {
+        map?.on('click', layerId, (event) => {
+          const object = objectFromMapEvent(event)
+          if (object) selectObject(object)
+        })
+        map?.on('mouseenter', layerId, (event) => {
+          const currentMap = map
+          if (!currentMap) return
+          currentMap.getCanvas().style.cursor = 'pointer'
+          const object = objectFromMapEvent(event)
+          if (!object) return
+          markSeen(object)
+          showMarkerPopup(object)
+        })
+        map?.on('mouseleave', layerId, () => {
+          const currentMap = map
+          if (currentMap) currentMap.getCanvas().style.cursor = ''
+          hideMarkerPopup()
+        })
+      }
       void createSession()
     })
   })
 
+  $: hospitalObjects = objects.filter(object => object.kind === 'facility')
+  $: ambulanceObjects = objects.filter(object => object.kind === 'mobile_entity')
+  $: incidentObjects = objects.filter(object => object.kind === 'incident')
+  $: selectedAmbulanceObject = ambulanceObjects.find(object => object.id === selectedAmbulanceId) ?? null
   $: refreshObjectSource()
   $: refreshRouteSource()
 </script>
@@ -505,13 +520,13 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Hospitals <span>{hospitals().length}</span></h2>
+        <h2>Hospitals <span>{hospitalObjects.length}</span></h2>
         <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if hospitals().length === 0}
+      {#if hospitalObjects.length === 0}
         <div class="empty-row">No hospitals</div>
       {/if}
-      {#each hospitals() as object (object.id)}
+      {#each hospitalObjects as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('hospital', { size: 18 })}</span>
           <span>
@@ -530,13 +545,13 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Ambulances <span>{ambulances().length}</span></h2>
+        <h2>Ambulances <span>{ambulanceObjects.length}</span></h2>
         <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if ambulances().length === 0}
+      {#if ambulanceObjects.length === 0}
         <div class="empty-row">No ambulances</div>
       {/if}
-      {#each ambulances() as object (object.id)}
+      {#each ambulanceObjects as object (object.id)}
         <button class:selected={selectedAmbulanceId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('ambulance', { size: 18 })}</span>
           <span>
@@ -553,13 +568,13 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Incidents <span>{incidents().length}</span></h2>
+        <h2>Incidents <span>{incidentObjects.length}</span></h2>
         <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
-      {#if incidents().length === 0}
+      {#if incidentObjects.length === 0}
         <div class="empty-row">No incidents</div>
       {/if}
-      {#each incidents() as object (object.id)}
+      {#each incidentObjects as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('crash', { size: 18 })}</span>
           <span>
@@ -579,7 +594,7 @@
     </section>
 
     <footer class="rail-footer">
-      {#if selectedAmbulance() as ambulance}
+      {#if selectedAmbulanceObject as ambulance}
         <div class="selected-card">
           <strong>{ambulance.label}</strong>
           <div class="object-meta">{ambulance.operational.status}</div>

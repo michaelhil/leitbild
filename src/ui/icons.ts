@@ -19,3 +19,14 @@ export const iconHtml = (name: IconName, options: {
   const title = options.title ? `<title>${options.title}</title>` : ''
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"${cls}>${title}${paths[name]}</svg>`
 }
+
+export const iconSvgDataUrl = (name: IconName, options: {
+  readonly stroke: string
+  readonly size?: number
+  readonly strokeWidth?: number
+}): string => {
+  const size = options.size ?? 40
+  const strokeWidth = options.strokeWidth ?? 2.2
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${options.stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round">${paths[name]}</svg>`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}

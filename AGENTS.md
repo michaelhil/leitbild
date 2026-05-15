@@ -28,6 +28,17 @@
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep domain-specific logic in domain modules; keep `core` use-case agnostic.
 
+## Map Rendering Rules
+
+- Use MapLibre as Leitbild's base geospatial rendering engine.
+- Render geospatial truth with native MapLibre sources/layers: entity positions, routes, trails, zones, uncertainty geometry, alert areas, selection halos, and large-fleet views.
+- Do not use MapLibre DOM markers for core object rendering; DOM marker anchoring can drift from the true projected coordinate across zoom levels.
+- Use Lucide-style SVG artwork only as MapLibre-native registered images/symbols, not as free-floating marker DOM.
+- Use Svelte/HTML overlays for rich operational UI: hover cards, selected object panels, ECG/vitals mini-trends, command menus, adaptive UI widgets, and pinned callouts.
+- Object-attached rich overlays must be positioned by a controlled overlay manager using object id, object lon/lat, and `map.project([lon, lat])`; update overlays on object changes, map move/zoom/resize, and cull when off-screen or too dense.
+- Keep rich overlays sparse: selected, hovered, pinned, high-priority, or study-condition-specific objects. Native layers carry the fleet.
+- Maintain explicit map layer ordering: base map, routes/trails/zones, object halos, object icons, new-info indicators, then popups/HTML overlays.
+
 ## Commands
 
 - `bun test` runs tests.
