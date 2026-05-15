@@ -1,0 +1,169 @@
+import { z } from 'zod'
+import { actorIdSchema, domainIdSchema, objectIdSchema, type ActorId, type DomainId, type ObjectId } from './ids.ts'
+import { geoJsonGeometrySchema, geoJsonLineStringSchema, geoJsonPointSchema, metersSchema, type GeoJsonGeometry, type GeoJsonLineString, type GeoJsonPoint, type Meters } from './geo.ts'
+import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
+import { provenanceSchema, type Provenance } from './provenance.ts'
+import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
+import { alertStateSchema, type AlertState } from './alerts.ts'
+
+export const objectKindSchema = z.enum(['mobile_entity', 'incident', 'facility', 'zone', 'patient'])
+export type ObjectKind = z.infer<typeof objectKindSchema>
+
+export const objectLifecycleSchema = z.enum(['active', 'inactive', 'resolved', 'removed'])
+export type ObjectLifecycle = z.infer<typeof objectLifecycleSchema>
+
+export interface PositionFix {
+  readonly point: GeoJsonPoint
+  readonly headingDeg?: number
+  readonly speedMps?: number
+  readonly accuracyM?: Meters
+  readonly observedAt: IsoTimestamp
+  readonly staleAfterMs?: number
+}
+
+export interface RouteGeometry {
+  readonly planned?: GeoJsonLineString
+  readonly etaSeconds?: number
+  readonly source: 'simulator' | 'operator' | 'ai' | 'import'
+}
+
+export interface SpatialUncertainty {
+  readonly kind: 'radius'
+  readonly radiusM: Meters
+  readonly confidence?: number
+}
+
+export interface SpatialReferenceFrame {
+  readonly kind: 'wgs84'
+}
+
+export interface SpatialState {
+  readonly position?: PositionFix
+  readonly geometry?: GeoJsonGeometry
+  readonly route?: RouteGeometry
+  readonly uncertainty?: SpatialUncertainty
+  readonly frame: SpatialReferenceFrame
+}
+
+export interface OperationalState {
+  readonly status: string
+  readonly priority?: 'low' | 'normal' | 'high' | 'critical'
+  readonly intent?: string
+  readonly mode: 'simulated' | 'live' | 'replay'
+}
+
+export interface TaskingState {
+  readonly currentTaskId?: ObjectId
+  readonly assignedBy?: ActorId
+  readonly assignedAt?: IsoTimestamp
+}
+
+export interface OwnershipState {
+  readonly ownerUserId: ActorId
+  readonly lockMode: 'soft' | 'hard'
+}
+
+export interface CommunicationState {
+  readonly state: 'connected' | 'degraded' | 'lost' | 'unknown'
+  readonly lastContactAt?: IsoTimestamp
+}
+
+export interface ObjectTimestamps {
+  readonly createdAt: IsoTimestamp
+  readonly updatedAt: IsoTimestamp
+}
+
+export interface OperationalObject {
+  readonly id: ObjectId
+  readonly kind: ObjectKind
+  readonly domain: DomainId
+  readonly label: string
+  readonly lifecycle: ObjectLifecycle
+  readonly revision: number
+  readonly spatial: SpatialState
+  readonly operational: OperationalState
+  readonly telemetry?: TelemetryState
+  readonly tasking?: TaskingState
+  readonly alerts: ReadonlyArray<AlertState>
+  readonly ownership?: OwnershipState
+  readonly communication?: CommunicationState
+  readonly provenance: Provenance
+  readonly timestamps: ObjectTimestamps
+  readonly domainData?: unknown
+}
+
+export const positionFixSchema = z.object({
+  point: geoJsonPointSchema,
+  headingDeg: z.number().finite().min(0).max(360).optional(),
+  speedMps: z.number().finite().nonnegative().optional(),
+  accuracyM: metersSchema.optional(),
+  observedAt: isoTimestampSchema,
+  staleAfterMs: z.number().finite().positive().optional(),
+})
+
+export const routeGeometrySchema = z.object({
+  planned: geoJsonLineStringSchema.optional(),
+  etaSeconds: z.number().finite().nonnegative().optional(),
+  source: z.enum(['simulator', 'operator', 'ai', 'import']),
+})
+
+export const spatialUncertaintySchema = z.object({
+  kind: z.literal('radius'),
+  radiusM: metersSchema,
+  confidence: z.number().finite().min(0).max(1).optional(),
+})
+
+export const spatialStateSchema = z.object({
+  position: positionFixSchema.optional(),
+  geometry: geoJsonGeometrySchema.optional(),
+  route: routeGeometrySchema.optional(),
+  uncertainty: spatialUncertaintySchema.optional(),
+  frame: z.object({ kind: z.literal('wgs84') }),
+})
+
+export const operationalStateSchema = z.object({
+  status: z.string().min(1),
+  priority: z.enum(['low', 'normal', 'high', 'critical']).optional(),
+  intent: z.string().min(1).optional(),
+  mode: z.enum(['simulated', 'live', 'replay']),
+})
+
+export const taskingStateSchema = z.object({
+  currentTaskId: objectIdSchema.optional(),
+  assignedBy: actorIdSchema.optional(),
+  assignedAt: isoTimestampSchema.optional(),
+})
+
+export const ownershipStateSchema = z.object({
+  ownerUserId: actorIdSchema,
+  lockMode: z.enum(['soft', 'hard']),
+})
+
+export const communicationStateSchema = z.object({
+  state: z.enum(['connected', 'degraded', 'lost', 'unknown']),
+  lastContactAt: isoTimestampSchema.optional(),
+})
+
+export const objectTimestampsSchema = z.object({
+  createdAt: isoTimestampSchema,
+  updatedAt: isoTimestampSchema,
+})
+
+export const operationalObjectSchema = z.object({
+  id: objectIdSchema,
+  kind: objectKindSchema,
+  domain: domainIdSchema,
+  label: z.string().min(1),
+  lifecycle: objectLifecycleSchema,
+  revision: z.number().int().nonnegative(),
+  spatial: spatialStateSchema,
+  operational: operationalStateSchema,
+  telemetry: telemetryStateSchema.optional(),
+  tasking: taskingStateSchema.optional(),
+  alerts: z.array(alertStateSchema),
+  ownership: ownershipStateSchema.optional(),
+  communication: communicationStateSchema.optional(),
+  provenance: provenanceSchema,
+  timestamps: objectTimestampsSchema,
+  domainData: z.unknown().optional(),
+})

@@ -1,0 +1,30 @@
+import { $ } from 'bun'
+
+const host = process.env.HETZNER_HOST
+const user = process.env.HETZNER_USER ?? 'root'
+const port = process.env.HETZNER_PORT ?? '22'
+
+if (!host) {
+  throw new Error('HETZNER_HOST is required')
+}
+
+const target = `${user}@${host}`
+const ssh = async (command: string): Promise<void> => {
+  await $`ssh -p ${port} ${target} ${command}`
+}
+
+await $`bun install --frozen-lockfile`
+await $`bun run check`
+await $`bun test`
+await $`bun run build:ui`
+
+await ssh('mkdir -p /opt/leitbild/app /opt/leitbild/data /opt/leitbild/osrm-data')
+await $`rsync -az --delete --exclude node_modules --exclude .git --exclude data -e "ssh -p ${port}" ./ ${target}:/opt/leitbild/app/`
+
+await ssh('cd /opt/leitbild/app && bun install --frozen-lockfile')
+await ssh('cd /opt/leitbild/app && bun run build:ui')
+await ssh('cp /opt/leitbild/app/deploy/leitbild.service /etc/systemd/system/leitbild.service')
+await ssh('systemctl daemon-reload && systemctl enable --now leitbild && systemctl restart leitbild')
+await ssh('curl -fsS http://127.0.0.1:4177/health >/dev/null')
+
+console.log('Leitbild deploy complete')

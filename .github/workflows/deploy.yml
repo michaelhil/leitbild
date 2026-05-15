@@ -1,0 +1,43 @@
+name: Deploy Leitbild
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test
+      - run: bun run build:ui
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/hetzner
+          chmod 600 ~/.ssh/hetzner
+          ssh-keyscan -p "${{ secrets.HETZNER_PORT || '22' }}" "${{ secrets.HETZNER_HOST }}" >> ~/.ssh/known_hosts
+      - name: Deploy
+        env:
+          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          HETZNER_USER: ${{ secrets.HETZNER_USER }}
+          HETZNER_PORT: ${{ secrets.HETZNER_PORT }}
+        run: |
+          export HETZNER_USER="${HETZNER_USER:-root}"
+          export HETZNER_PORT="${HETZNER_PORT:-22}"
+          rsync -az --delete --exclude node_modules --exclude .git --exclude data -e "ssh -i ~/.ssh/hetzner -p ${HETZNER_PORT}" ./ "${HETZNER_USER}@${HETZNER_HOST}:/opt/leitbild/app/"
+          ssh -i ~/.ssh/hetzner -p "${HETZNER_PORT}" "${HETZNER_USER}@${HETZNER_HOST}" '
+            set -e
+            mkdir -p /opt/leitbild/data /opt/leitbild/osrm-data
+            cd /opt/leitbild/app
+            bun install --frozen-lockfile
+            bun run build:ui
+            cp deploy/leitbild.service /etc/systemd/system/leitbild.service
+            systemctl daemon-reload
+            systemctl enable --now leitbild
+            systemctl restart leitbild
+            curl -fsS http://127.0.0.1:4177/health >/dev/null
+          '

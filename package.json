@@ -1,0 +1,30 @@
+{
+  "name": "leitbild",
+  "version": "0.1.0",
+  "description": "A research platform for map-based control-center work",
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "start": "bun run build:ui && bun run src/index.ts",
+    "dev": "bun run build:ui && bun --watch src/index.ts",
+    "build:ui": "vite build",
+    "check": "tsc --noEmit",
+    "deploy": "bun run scripts/deploy.ts",
+    "test": "bun test",
+    "health": "bun run check && bun test"
+  },
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "maplibre-gl": "^5.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.8.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}
