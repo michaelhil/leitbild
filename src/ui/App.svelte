@@ -1,16 +1,12 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
-  import type { GeoJsonPoint, KnowledgeFact, ObjectId, OperationalObject, SessionId } from '../core/model/index.ts'
+  import type { GeoJsonPoint, OperationalObject, SessionId } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
-  import {
-    cancelDestinationCommandKind,
-    createObjectCommandKind,
-    setDestinationCommandKind,
-    type CreatableAmbulanceObjectType,
-  } from '../domains/ambulance/commands.ts'
-  import type { AmbulanceDomainData, HospitalDomainData, IncidentDomainData, InjurySummary } from '../domains/ambulance/model.ts'
-  import { iconHtml, iconSvgDataUrl, type IconName } from './icons.ts'
+  import { createPackRegistry } from '../core/packs/registry.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectCategory, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import { ambulancePack } from '../domains/ambulance/pack.ts'
+  import { iconHtml, iconSvgDataUrl, isIconName, type IconName } from './icons.ts'
   import {
     createObjectFeatureCollection,
     createRouteFeatureCollection,
@@ -47,26 +43,32 @@
   }
 
   interface CreateDraft {
-    readonly objectType: CreatableAmbulanceObjectType
+    readonly objectType: PackCreateObjectType
     readonly point: GeoJsonPoint
     label: string
   }
 
+  interface CategoryRow {
+    readonly category: PackObjectCategory
+    readonly objects: ReadonlyArray<OperationalObject>
+    readonly createType?: PackCreateObjectType
+  }
+
   let mapElement: HTMLDivElement
   let map: MapLibreMap | null = null
+  const packRegistry = createPackRegistry([ambulancePack])
+  const activePack: LeitbildPack = packRegistry.require('ambulance')
   let sessionId: SessionId | null = null
   let objects: OperationalObject[] = []
-  let selectedAmbulanceId: string | null = null
-  let placementMode: CreatableAmbulanceObjectType | null = null
+  let selectedControllerId: string | null = null
+  let placementMode: PackCreateObjectType | null = null
   let createDraft: CreateDraft | null = null
   let status = 'Starting'
   let commandStatus = ''
   let seenRevisions = new Map<string, number>()
   let markerPopup: maplibregl.Popup | null = null
-  let hospitalObjects: OperationalObject[] = []
-  let ambulanceObjects: OperationalObject[] = []
-  let incidentObjects: OperationalObject[] = []
-  let selectedAmbulanceObject: OperationalObject | null = null
+  let selectedControllerObject: OperationalObject | null = null
+  let categoryRows: ReadonlyArray<CategoryRow> = []
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
     mapLayerIds.objectIcons,
@@ -74,54 +76,15 @@
     mapLayerIds.objectNewInfo,
   ]
 
-  const domainType = (object: OperationalObject): string | undefined =>
-    typeof object.domainData === 'object' && object.domainData !== null
-      ? String((object.domainData as { readonly type?: unknown }).type ?? '')
-      : undefined
-
-  const ambulanceData = (object: OperationalObject): AmbulanceDomainData | null =>
-    domainType(object) === 'ambulance' ? object.domainData as AmbulanceDomainData : null
-
-  const incidentData = (object: OperationalObject): IncidentDomainData | null =>
-    domainType(object) === 'incident' ? object.domainData as IncidentDomainData : null
-
-  const hospitalData = (object: OperationalObject): HospitalDomainData | null =>
-    domainType(object) === 'hospital' ? object.domainData as HospitalDomainData : null
-
-  const factText = <T,>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
-    !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
-
-  const listText = (values: readonly string[]): string =>
-    values.length === 0 ? 'none' : values.map(value => value.replaceAll('_', ' ')).join(', ')
-
-  const injuryText = (injuries: readonly InjurySummary[]): string =>
-    injuries.length === 0
-      ? 'none reported'
-      : injuries.map(injury => `${injury.count} ${injury.severity} ${injury.category}`).join(', ')
-
   const escapeHtml = (value: string): string =>
     value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
-  const targetLabel = (ambulance: OperationalObject): string =>
-    ambulance.tasking?.currentTaskId
-      ? objects.find(object => object.id === ambulance.tasking?.currentTaskId)?.label ?? ambulance.tasking.currentTaskId
-      : 'idle'
+  const presentationFor = (object: OperationalObject): PackObjectPresentation =>
+    activePack.presentObject(object, { objects })
 
-  const routeSummary = (ambulance: OperationalObject): string =>
-    ambulance.tasking?.currentTaskId ? `Target: ${targetLabel(ambulance)}` : 'Target: none'
-
-  const hospitalSummary = (object: OperationalObject): string => {
-    const data = hospitalData(object)
-    return data
-      ? `ER ${factText(data.emergencyDepartment.diversionStatus)} · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
-      : object.operational.status
-  }
-
-  const incidentSummary = (object: OperationalObject): string => {
-    const data = incidentData(object)
-    return data
-      ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}`
-      : object.operational.status
+  const iconForPresentation = (presentation: PackObjectPresentation): IconName => {
+    if (!isIconName(presentation.icon)) throw new Error(`pack ${activePack.id} requested unknown icon: ${presentation.icon}`)
+    return presentation.icon
   }
 
   const hasNewInfo = (object: OperationalObject): boolean =>
@@ -137,27 +100,18 @@
     const current = map
     if (!current) return
     const source = current.getSource(mapSourceIds.objects) as GeoJSONSource | undefined
-    if (source) source.setData(createObjectFeatureCollection(objects, selectedAmbulanceId, hasNewInfo))
+    if (source) source.setData(createObjectFeatureCollection(objects, selectedControllerId, hasNewInfo, presentationFor))
   }
 
   const refreshRouteSource = (): void => {
     const current = map
     if (!current) return
-    const source = current.getSource(mapSourceIds.ambulanceRoutes) as GeoJSONSource | undefined
-    if (source) source.setData(createRouteFeatureCollection(objects, selectedAmbulanceId))
+    const source = current.getSource(mapSourceIds.plannedRoutes) as GeoJSONSource | undefined
+    if (source) source.setData(createRouteFeatureCollection(objects, selectedControllerId))
   }
 
-  const categoryLabel = (type: CreatableAmbulanceObjectType): string => {
-    if (type === 'hospital') return 'Hospital'
-    if (type === 'ambulance') return 'Ambulance'
-    return 'Incident'
-  }
-
-  const defaultName = (type: CreatableAmbulanceObjectType): string => {
-    if (type === 'hospital') return `Hospital ${hospitalObjects.length + 1}`
-    if (type === 'ambulance') return `Ambulance ${ambulanceObjects.length + 1}`
-    return `Incident ${incidentObjects.length + 1}`
-  }
+  const defaultName = (type: PackCreateObjectType): string =>
+    activePack.defaultObjectLabel(type.id, { objects })
 
   const syncSessionSnapshot = async (): Promise<void> => {
     if (!sessionId) return
@@ -194,43 +148,45 @@
     const draft = createDraft
     createDraft = null
     placementMode = null
-    commandStatus = `Creating ${draft.objectType}`
-    await sendCommand(createObjectCommandKind, {
-      objectType: draft.objectType,
-      label: draft.label.trim() || defaultName(draft.objectType),
-      point: draft.point,
-    })
+    commandStatus = `Creating ${draft.objectType.label}`
+    const command = activePack.buildCreateObjectCommand(
+      draft.objectType.id,
+      draft.label.trim() || defaultName(draft.objectType),
+      draft.point,
+    )
+    await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const setDestination = async (destination: OperationalObject): Promise<void> => {
-    const ambulance = selectedAmbulanceObject
-    if (!ambulance) {
-      commandStatus = 'Select an ambulance first'
+    const controller = selectedControllerObject
+    if (!controller) {
+      commandStatus = 'Select a controller first'
       return
     }
-    if (destination.id === ambulance.id) return
-    commandStatus = `Sending ${ambulance.label} to ${destination.label}`
-    await sendCommand(setDestinationCommandKind, {
-      ambulanceId: ambulance.id,
-      destinationId: destination.id,
-    }, [ambulance.id, destination.id])
+    if (destination.id === controller.id) return
+    if (!activePack.isTarget(controller, destination, { objects })) return
+    commandStatus = `Sending ${controller.label} to ${destination.label}`
+    const command = activePack.buildSetTargetCommand(controller, destination, { objects })
+    await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const cancelDestination = async (): Promise<void> => {
-    const ambulance = selectedAmbulanceObject
-    if (!ambulance) return
-    commandStatus = `Stopping ${ambulance.label}`
-    await sendCommand(cancelDestinationCommandKind, { ambulanceId: ambulance.id }, [ambulance.id])
+    const controller = selectedControllerObject
+    if (!controller) return
+    commandStatus = `Stopping ${controller.label}`
+    const command = activePack.buildCancelTargetCommand(controller, { objects })
+    await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const selectObject = (object: OperationalObject): void => {
     markSeen(object)
-    if (object.kind === 'mobile_entity') {
-      selectedAmbulanceId = object.id
-      commandStatus = `Selected ${object.label}; click an incident or hospital target`
+    if (activePack.isController(object)) {
+      selectedControllerId = object.id
+      commandStatus = `Selected ${object.label}; click a valid target`
       return
     }
-    if (selectedAmbulanceId && (object.kind === 'incident' || object.kind === 'facility')) {
+    const controller = selectedControllerObject
+    if (controller && activePack.isTarget(controller, object, { objects })) {
       void setDestination(object)
     }
   }
@@ -245,38 +201,11 @@
     objects = objects.filter(object => object.id !== objectId)
     refreshObjectSource()
     refreshRouteSource()
-    if (selectedAmbulanceId === objectId) selectedAmbulanceId = null
+    if (selectedControllerId === objectId) selectedControllerId = null
   }
 
   const detailLines = (object: OperationalObject): ReadonlyArray<string> => {
-    const ambulance = ambulanceData(object)
-    if (ambulance) {
-      return [
-        `Destination: ${targetLabel(object)}`,
-        `Capabilities: ${listText(ambulance.capabilities)}`,
-        `Crew: ${factText(ambulance.crew.level)}`,
-        `Seats: ${factText(ambulance.crew.availableSeats)}`,
-      ]
-    }
-    const incident = incidentData(object)
-    if (incident) {
-      return [
-        `Triage: ${factText(incident.triage)}`,
-        `Victims: ${factText(incident.victims.count, String)}`,
-        `Injuries: ${factText(incident.victims.injuries, injuryText)}`,
-        `Hazards: ${factText(incident.hazards, listText)}`,
-      ]
-    }
-    const hospital = hospitalData(object)
-    if (hospital) {
-      return [
-        `Trauma beds: ${factText(hospital.emergencyDepartment.traumaBedsAvailable, String)}`,
-        `Ambulance bays: ${factText(hospital.emergencyDepartment.ambulanceBaysAvailable, String)}`,
-        `Diversion: ${factText(hospital.emergencyDepartment.diversionStatus)}`,
-        `Capabilities: ${listText(hospital.capabilities)}`,
-      ]
-    }
-    return [object.operational.status]
+    return presentationFor(object).detailLines
   }
 
   const hoverCardHtml = (object: OperationalObject): string => {
@@ -338,17 +267,17 @@
     const body = await response.json() as SessionResponse
     sessionId = body.id
     objects = [...body.snapshot.objects]
-    selectedAmbulanceId = objects.find(object => object.kind === 'mobile_entity')?.id ?? null
+    selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
     connectWebSocket(body.id)
     seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
     refreshObjectSource()
     refreshRouteSource()
   }
 
-  const beginPlacement = (type: CreatableAmbulanceObjectType): void => {
+  const beginPlacement = (type: PackCreateObjectType): void => {
     placementMode = type
     createDraft = null
-    commandStatus = `Click map to place new ${type}`
+    commandStatus = `Click map to place new ${type.label.toLowerCase()}`
   }
 
   const registerMapIcon = async (current: MapLibreMap, iconId: string, iconName: IconName, color: string): Promise<void> => {
@@ -409,14 +338,14 @@
         await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
         refreshObjectSource()
       })()
-      map?.addSource(mapSourceIds.ambulanceRoutes, {
+      map?.addSource(mapSourceIds.plannedRoutes, {
         type: 'geojson',
-        data: createRouteFeatureCollection(objects, selectedAmbulanceId),
+        data: createRouteFeatureCollection(objects, selectedControllerId),
       })
       map?.addLayer({
         id: mapLayerIds.routeCasing,
         type: 'line',
-        source: mapSourceIds.ambulanceRoutes,
+        source: mapSourceIds.plannedRoutes,
         paint: {
           'line-color': '#ffffff',
           'line-width': ['case', ['get', 'selected'], 10, 8],
@@ -431,7 +360,7 @@
       map?.addLayer({
         id: mapLayerIds.routeLine,
         type: 'line',
-        source: mapSourceIds.ambulanceRoutes,
+        source: mapSourceIds.plannedRoutes,
         paint: {
           'line-color': ['case', ['get', 'selected'], '#0b57d0', '#2563eb'],
           'line-width': ['case', ['get', 'selected'], 6, 4],
@@ -444,7 +373,7 @@
       })
       map?.addSource(mapSourceIds.objects, {
         type: 'geojson',
-        data: createObjectFeatureCollection(objects, selectedAmbulanceId, hasNewInfo),
+        data: createObjectFeatureCollection(objects, selectedControllerId, hasNewInfo, presentationFor),
       })
       map?.addLayer({
         id: mapLayerIds.objectHitArea,
@@ -517,10 +446,12 @@
     })
   })
 
-  $: hospitalObjects = objects.filter(object => object.kind === 'facility')
-  $: ambulanceObjects = objects.filter(object => object.kind === 'mobile_entity')
-  $: incidentObjects = objects.filter(object => object.kind === 'incident')
-  $: selectedAmbulanceObject = ambulanceObjects.find(object => object.id === selectedAmbulanceId) ?? null
+  $: selectedControllerObject = objects.find(object => object.id === selectedControllerId && activePack.isController(object)) ?? null
+  $: categoryRows = activePack.categories.map(category => ({
+    category,
+    objects: objects.filter(object => category.matches(object)),
+    createType: activePack.createObjectTypes.find(type => type.categoryId === category.id),
+  }))
   $: refreshObjectSource()
   $: refreshRouteSource()
 </script>
@@ -534,90 +465,52 @@
 
     {#if placementMode}
       <div class="placement-banner">
-        Click map to place new {placementMode}
+        Click map to place new {placementMode.label.toLowerCase()}
         <button class="icon-button" on:click={() => { placementMode = null; createDraft = null }}>{@html iconHtml('x', { size: 16 })}</button>
       </div>
     {/if}
 
-    <section class="category">
-      <div class="category-header">
-        <h2>Hospitals <span>{objects.filter(object => object.kind === 'facility').length}</span></h2>
-        <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
-      </div>
-      {#if objects.filter(object => object.kind === 'facility').length === 0}
-        <div class="empty-row">No hospitals</div>
-      {/if}
-      {#each objects.filter(object => object.kind === 'facility') as object (object.id)}
-        <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-          <span>{@html iconHtml('hospital', { size: 18 })}</span>
-          <span>
-            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            <span class="object-meta">{hospitalSummary(object)}</span>
-          </span>
-          <span class="row-hover-card">
-            <strong>{object.label}</strong>
-            {#each detailLines(object) as line}<span>{line}</span>{/each}
-          </span>
-        </button>
-      {/each}
-    </section>
-
-    <section class="category">
-      <div class="category-header">
-        <h2>Ambulances <span>{objects.filter(object => object.kind === 'mobile_entity').length}</span></h2>
-        <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
-      </div>
-      {#if objects.filter(object => object.kind === 'mobile_entity').length === 0}
-        <div class="empty-row">No ambulances</div>
-      {/if}
-      {#each objects.filter(object => object.kind === 'mobile_entity') as object (object.id)}
-        <button class:selected={selectedAmbulanceId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-          <span>{@html iconHtml('ambulance', { size: 18 })}</span>
-          <span>
-            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            <span class="object-meta">{routeSummary(object)} · {object.operational.status}</span>
-          </span>
-          <span class="row-hover-card">
-            <strong>{object.label}</strong>
-            {#each detailLines(object) as line}<span>{line}</span>{/each}
-          </span>
-        </button>
-      {/each}
-    </section>
-
-    <section class="category">
-      <div class="category-header">
-        <h2>Incidents <span>{objects.filter(object => object.kind === 'incident').length}</span></h2>
-        <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
-      </div>
-      {#if objects.filter(object => object.kind === 'incident').length === 0}
-        <div class="empty-row">No incidents</div>
-      {/if}
-      {#each objects.filter(object => object.kind === 'incident') as object (object.id)}
-        <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-          <span>{@html iconHtml('crash', { size: 18 })}</span>
-          <span>
-            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            <span class="object-meta">{incidentSummary(object)}</span>
-          </span>
-          <span class="row-hover-card">
-            <strong>{object.label}</strong>
-            {#each detailLines(object) as line}<span>{line}</span>{/each}
-          </span>
-        </button>
-      {/each}
-    </section>
+    {#each categoryRows as row (row.category.id)}
+      <section class="category">
+        <div class="category-header">
+          <h2>{row.category.label} <span>{row.objects.length}</span></h2>
+          {#if row.createType}
+            <button
+              class="icon-button"
+              title="Add {row.category.label.toLowerCase()}"
+              on:click={() => row.createType && beginPlacement(row.createType)}
+            >{@html iconHtml('plus', { size: 16 })}</button>
+          {/if}
+        </div>
+        {#if row.objects.length === 0}
+          <div class="empty-row">{row.category.emptyLabel}</div>
+        {/if}
+        {#each row.objects as object (object.id)}
+          <button class:selected={selectedControllerId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
+            <span>{@html iconHtml(iconForPresentation(presentationFor(object)), { size: 18 })}</span>
+            <span>
+              <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
+              <span class="object-meta">{presentationFor(object).summary}</span>
+            </span>
+            <span class="row-hover-card">
+              <strong>{object.label}</strong>
+              {#each detailLines(object) as line}<span>{line}</span>{/each}
+            </span>
+          </button>
+        {/each}
+      </section>
+    {/each}
 
     <footer class="rail-footer">
-      {#if selectedAmbulanceObject}
+      {#if selectedControllerObject}
         <div class="selected-card">
-          <strong>{selectedAmbulanceObject.label}</strong>
-          <div class="object-meta">{selectedAmbulanceObject.operational.status}</div>
-          {#if selectedAmbulanceObject.tasking?.currentTaskId}
-            <div class="object-meta">Destination: {objects.find(object => object.id === selectedAmbulanceObject?.tasking?.currentTaskId)?.label ?? selectedAmbulanceObject.tasking.currentTaskId}</div>
+          <strong>{selectedControllerObject.label}</strong>
+          <div class="object-meta">{selectedControllerObject.operational.status}</div>
+          {#if selectedControllerObject.tasking?.currentTaskId}
+            <div class="object-meta">Destination: {objects.find(object => object.id === selectedControllerObject?.tasking?.currentTaskId)?.label ?? selectedControllerObject.tasking.currentTaskId}</div>
             <button class="command-button" on:click={cancelDestination}>{@html iconHtml('stop', { size: 16 })} Cancel destination</button>
           {:else}
-            <div class="object-meta">Click a hospital or incident target.</div>
+            <div class="object-meta">Click a valid target.</div>
           {/if}
         </div>
       {/if}
@@ -635,7 +528,7 @@
 {#if createDraft}
   <div class="modal-backdrop">
     <form class="modal" on:submit|preventDefault={createObject}>
-      <h2>Create new {categoryLabel(createDraft.objectType)}</h2>
+      <h2>Create new {createDraft.objectType.label}</h2>
       <label>
         Name
         <input bind:value={createDraft.label} />

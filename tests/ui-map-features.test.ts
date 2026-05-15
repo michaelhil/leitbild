@@ -4,6 +4,7 @@ import { nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
+import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createObjectFeatureCollection, createRouteFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
 
@@ -51,7 +52,7 @@ describe('map feature projection', () => {
     if (!updatedAmbulance?.spatial.route?.planned) throw new Error('dispatch did not produce a planned route')
 
     const routeFeatures = createRouteFeatureCollection(updatedObjects, ambulance.id)
-    expect(mapSourceIds.ambulanceRoutes).toBe('ambulance-route-source')
+    expect(mapSourceIds.plannedRoutes).toBe('planned-route-source')
     expect(routeFeatures.features).toHaveLength(1)
     expect(routeFeatures.features[0]?.id).toBe(ambulance.id)
     expect(routeFeatures.features[0]?.properties.selected).toBe(true)
@@ -69,7 +70,12 @@ describe('map feature projection', () => {
     const ambulance = objects.find(object => object.kind === 'mobile_entity')
     if (!ambulance) throw new Error('scenario missing ambulance')
 
-    const objectFeatures = createObjectFeatureCollection(objects, ambulance.id, object => object.id === ambulance.id)
+    const objectFeatures = createObjectFeatureCollection(
+      objects,
+      ambulance.id,
+      object => object.id === ambulance.id,
+      object => ambulancePack.presentObject(object, { objects }),
+    )
     const ambulanceFeature = objectFeatures.features.find(feature => feature.id === ambulance.id)
 
     expect(objectFeatures.features).toHaveLength(3)

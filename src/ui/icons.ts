@@ -9,6 +9,9 @@ const paths: Readonly<Record<IconName, string>> = {
   stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
 }
 
+export const isIconName = (name: string): name is IconName =>
+  Object.hasOwn(paths, name)
+
 export const iconHtml = (name: IconName, options: {
   readonly size?: number
   readonly className?: string
