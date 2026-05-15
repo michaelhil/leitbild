@@ -99,6 +99,9 @@
       ? objects.find(object => object.id === ambulance.tasking?.currentTaskId)?.label ?? ambulance.tasking.currentTaskId
       : 'idle'
 
+  const routeSummary = (ambulance: OperationalObject): string =>
+    ambulance.tasking?.currentTaskId ? `Target: ${targetLabel(ambulance)}` : 'Target: none'
+
   const hasNewInfo = (object: OperationalObject): boolean =>
     (seenRevisions.get(object.id) ?? object.revision) < object.revision
 
@@ -396,7 +399,15 @@
             attribution: '© OpenStreetMap contributors',
           },
         },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
+        layers: [{
+          id: 'osm',
+          type: 'raster',
+          source: 'osm',
+          paint: {
+            'raster-contrast': 0.18,
+            'raster-saturation': 0.12,
+          },
+        }],
       },
       center: [10.7522, 59.9139],
       zoom: 12,
@@ -462,9 +473,12 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Hospitals</h2>
+        <h2>Hospitals <span>{hospitals().length}</span></h2>
         <button class="icon-button" title="Add hospital" on:click={() => beginPlacement('hospital')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
+      {#if hospitals().length === 0}
+        <div class="empty-row">No hospitals</div>
+      {/if}
       {#each hospitals() as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('hospital', { size: 18 })}</span>
@@ -484,15 +498,18 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Ambulances</h2>
+        <h2>Ambulances <span>{ambulances().length}</span></h2>
         <button class="icon-button" title="Add ambulance" on:click={() => beginPlacement('ambulance')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
+      {#if ambulances().length === 0}
+        <div class="empty-row">No ambulances</div>
+      {/if}
       {#each ambulances() as object (object.id)}
         <button class:selected={selectedAmbulanceId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('ambulance', { size: 18 })}</span>
           <span>
-            <span class="row-title">{object.label} -> {targetLabel(object)}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-            <span class="object-meta">{object.operational.status}</span>
+            <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
+            <span class="object-meta">{routeSummary(object)} · {object.operational.status}</span>
           </span>
           <span class="row-hover-card">
             <strong>{object.label}</strong>
@@ -504,9 +521,12 @@
 
     <section class="category">
       <div class="category-header">
-        <h2>Incidents</h2>
+        <h2>Incidents <span>{incidents().length}</span></h2>
         <button class="icon-button" title="Add incident" on:click={() => beginPlacement('incident')}>{@html iconHtml('plus', { size: 16 })}</button>
       </div>
+      {#if incidents().length === 0}
+        <div class="empty-row">No incidents</div>
+      {/if}
       {#each incidents() as object (object.id)}
         <button class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
           <span>{@html iconHtml('crash', { size: 18 })}</span>

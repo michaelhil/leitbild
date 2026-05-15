@@ -24,6 +24,10 @@ input {
   font: inherit;
 }
 
+button {
+  box-sizing: border-box;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 360px minmax(0, 1fr);
@@ -85,6 +89,22 @@ input {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0;
+}
+
+.category-header h2 span {
+  margin-left: 4px;
+  color: var(--text);
+  font-weight: 760;
+}
+
+.empty-row {
+  padding: 9px 10px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  font-size: 12px;
+  margin-bottom: 6px;
 }
 
 .icon-button {
@@ -155,6 +175,9 @@ input {
   color: var(--muted);
   font-size: 12px;
   margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row-hover-card,
@@ -247,6 +270,11 @@ input {
   position: relative;
   width: 38px;
   height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
   border: 2px solid #fff;
   border-radius: 999px;
   display: grid;
@@ -254,6 +282,16 @@ input {
   color: #fff;
   box-shadow: 0 4px 14px rgba(16, 24, 40, 0.35);
   cursor: pointer;
+  line-height: 0;
+  appearance: none;
+  transform: translateZ(0);
+}
+
+.map-marker svg {
+  display: block;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
 }
 
 .map-marker.has-new-info::after {
