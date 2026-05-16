@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ObjectId, SessionId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ObjectId, ControlInstanceId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
@@ -8,7 +8,7 @@ import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createObjectFeatureCollection, createRouteFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
 
-const sessionId = 'session:ui-map-features' as SessionId
+const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
 
 const makeCommand = (config: {
@@ -17,7 +17,7 @@ const makeCommand = (config: {
   readonly payload: unknown
 }): CommandEnvelope => ({
   id: `command:${crypto.randomUUID()}` as CommandId,
-  sessionId,
+  controlInstanceId,
   actorId,
   kind: config.kind,
   targetObjectIds: config.targetObjectIds,
@@ -28,7 +28,7 @@ const makeCommand = (config: {
 describe('map feature projection', () => {
   test('projects routed ambulances into route GeoJSON without changing coordinate order', async () => {
     const engine = createAmbulanceSimEngine({
-      sessionId,
+      controlInstanceId,
       scenario: createOsloAmbulanceScenario(),
       routing: createDirectRoutingAdapter(),
     })
@@ -62,7 +62,7 @@ describe('map feature projection', () => {
 
   test('projects positioned objects into native MapLibre symbol features', () => {
     const engine = createAmbulanceSimEngine({
-      sessionId,
+      controlInstanceId,
       scenario: createOsloAmbulanceScenario(),
       routing: createDirectRoutingAdapter(),
     })

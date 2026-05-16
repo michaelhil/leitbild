@@ -34,6 +34,62 @@ button {
   min-height: 100vh;
 }
 
+.instance-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: start center;
+  padding: 40px 20px;
+  box-sizing: border-box;
+}
+
+.instance-panel {
+  width: min(760px, 100%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12);
+}
+
+.instance-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.instance-panel .command-button {
+  width: auto;
+  margin-top: 0;
+}
+
+.instance-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.instance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.instance-row:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
 .control-rail {
   position: relative;
   z-index: 4;

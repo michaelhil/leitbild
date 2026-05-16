@@ -8,7 +8,7 @@ V1 includes a local in-process ambulance simulator adapter, but the adapter cont
 
 ## Rationale
 
-The simulator owns world evolution and domain rules. Leitbild owns sessions, users, commands, state projection, UI, event logs, and research instrumentation.
+The simulator owns world evolution and domain rules. Leitbild owns control instances, actors, commands, state projection, UI, event logs, and metrics instrumentation.
 
 ## Consequences
 

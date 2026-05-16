@@ -2,7 +2,7 @@
 
 Leitbild is a research platform for map-based control-center work.
 
-The first vertical slice focuses on ambulance dispatch while keeping the core model, session handling, simulation boundary, and map architecture use-case agnostic.
+The first vertical slice focuses on ambulance dispatch while keeping the core model, control instance handling, simulation boundary, and map architecture use-case agnostic.
 
 ## Commands
 

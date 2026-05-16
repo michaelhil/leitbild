@@ -12,9 +12,10 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   domain: ambulanceDomainId,
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const engine = createAmbulanceSimEngine({
-      sessionId: config.sessionId,
+      controlInstanceId: config.controlInstanceId,
       scenario: createOsloAmbulanceScenario(),
       routing: adapterConfig.routing,
+      ...(config.initialObjects ? { initialObjects: config.initialObjects } : {}),
     })
     const handlers = new Set<SimulationEventHandler>()
     const interval = setInterval(() => {

@@ -59,7 +59,7 @@ export interface TaskingState {
 }
 
 export interface OwnershipState {
-  readonly ownerUserId: ActorId
+  readonly ownerActorId: ActorId
   readonly lockMode: 'soft' | 'hard'
 }
 
@@ -135,7 +135,7 @@ export const taskingStateSchema = z.object({
 })
 
 export const ownershipStateSchema = z.object({
-  ownerUserId: actorIdSchema,
+  ownerActorId: actorIdSchema,
   lockMode: z.enum(['soft', 'hard']),
 })
 

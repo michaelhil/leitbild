@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { actorIdSchema, commandIdSchema, objectIdSchema, sessionIdSchema, type ActorId, type CommandId, type ObjectId, type SessionId } from './ids.ts'
+import { actorIdSchema, clientIdSchema, commandIdSchema, objectIdSchema, controlInstanceIdSchema, type ActorId, type ClientId, type CommandId, type ObjectId, type ControlInstanceId } from './ids.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
 export interface CommandEnvelope {
   readonly id: CommandId
-  readonly sessionId: SessionId
+  readonly controlInstanceId: ControlInstanceId
   readonly actorId: ActorId
+  readonly clientId?: ClientId
   readonly kind: string
   readonly targetObjectIds: ReadonlyArray<ObjectId>
   readonly payload: unknown
@@ -28,8 +29,9 @@ export type CommandResult =
 
 export const commandEnvelopeSchema = z.object({
   id: commandIdSchema,
-  sessionId: sessionIdSchema,
+  controlInstanceId: controlInstanceIdSchema,
   actorId: actorIdSchema,
+  clientId: clientIdSchema.optional(),
   kind: z.string().min(1),
   targetObjectIds: z.array(objectIdSchema),
   payload: z.custom<unknown>(value => value !== undefined, 'payload is required'),

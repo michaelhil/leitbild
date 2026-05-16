@@ -10,11 +10,11 @@ The first implementation is static and built in. Leitbild will not add GitHub-ba
 
 ## Rationale
 
-Leitbild must support multiple operational domains without letting the core UI or session model become ambulance-specific. A pack-shaped interface gives the project a clear seam between generic control-center functionality and domain-specific behavior.
+Leitbild must support multiple operational domains without letting the core UI or control instance model become ambulance-specific. A pack-shaped interface gives the project a clear seam between generic control-center functionality and domain-specific behavior.
 
 The installable unit should remain simple. Splitting domain, simulation, scenario, UI, and asset behavior into separate user-facing pack types would create management overhead and unclear compatibility rules. Instead, those are contribution sections inside one pack.
 
-Dynamic GitHub installation is deliberately deferred. Remote pack loading would freeze a still-young interface and introduce code-trust, compatibility, update, and study-validity concerns before they are needed.
+Dynamic GitHub installation is deliberately deferred. Remote pack loading would freeze a still-young interface and introduce code-trust, compatibility, update, and run-validity concerns before they are needed.
 
 ## Consequences
 
@@ -23,7 +23,7 @@ Dynamic GitHub installation is deliberately deferred. Remote pack loading would 
 - Domain-specific UI names should stay inside domain pack modules.
 - Static built-in packs are registered in code first.
 - Future GitHub-distributed packs should follow the same interface, manifest, namespace, validation, and activation model documented in `docs/packs.md`.
-- Pack code is trusted code. Installing a future code pack is equivalent to adding executable code to a study platform.
+- Pack code is trusted code. Installing a future code pack is equivalent to adding executable code to a control-center platform.
 
 ## Deferred
 

@@ -10,7 +10,7 @@ import {
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import type { SessionId } from '../src/core/model/index.ts'
+import type { ControlInstanceId } from '../src/core/model/index.ts'
 
 describe('pack architecture', () => {
   test('registers static packs by unique id', () => {
@@ -23,7 +23,7 @@ describe('pack architecture', () => {
 
   test('ambulance pack builds domain commands behind the generic pack interface', () => {
     const engine = createAmbulanceSimEngine({
-      sessionId: 'session:pack-architecture' as SessionId,
+      controlInstanceId: 'control-instance:pack-architecture' as ControlInstanceId,
       scenario: createOsloAmbulanceScenario(),
       routing: createDirectRoutingAdapter(),
     })

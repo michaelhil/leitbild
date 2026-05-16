@@ -8,7 +8,7 @@
 - Maintain exactly one main HTTP server at `src/core/api/server.ts`.
 - Keep simulation conceptually separate from Leitbild core. Local simulators must use the same adapter boundary as remote simulators.
 - Validate external input at trust boundaries: HTTP, WebSocket, simulation feeds, file imports, AI-generated dashboard specs, and generated code.
-- Scope real-time broadcasts by session/study. Never broadcast events globally unless the event is explicitly global.
+- Scope real-time broadcasts by control instance. Never broadcast events globally unless the event is explicitly global.
 - Avoid silent fallbacks, silent skips, empty catches, or unexplained defaulting when failure should be visible.
 
 ## No Mock Or Dummy Functionality
@@ -36,7 +36,7 @@
 - Use Lucide-style SVG artwork only as MapLibre-native registered images/symbols, not as free-floating marker DOM.
 - Use Svelte/HTML overlays for rich operational UI: hover cards, selected object panels, ECG/vitals mini-trends, command menus, adaptive UI widgets, and pinned callouts.
 - Object-attached rich overlays must be positioned by a controlled overlay manager using object id, object lon/lat, and `map.project([lon, lat])`; update overlays on object changes, map move/zoom/resize, and cull when off-screen or too dense.
-- Keep rich overlays sparse: selected, hovered, pinned, high-priority, or study-condition-specific objects. Native layers carry the fleet.
+- Keep rich overlays sparse: selected, hovered, pinned, high-priority, or scenario-condition-specific objects. Native layers carry the fleet.
 - Maintain explicit map layer ordering: base map, routes/trails/zones, object halos, object icons, new-info indicators, then popups/HTML overlays.
 
 ## Commands

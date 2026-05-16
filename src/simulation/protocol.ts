@@ -1,8 +1,8 @@
 import type { CommandEnvelope, CommandResult, OperationalObject, Provenance, TelemetryState } from '../core/model/index.ts'
-import type { IsoTimestamp, ObjectId, SessionId } from '../core/model/index.ts'
+import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 
 export interface SimulationSnapshot {
-  readonly sessionId: SessionId
+  readonly controlInstanceId: ControlInstanceId
   readonly objects: ReadonlyArray<OperationalObject>
   readonly capturedAt: IsoTimestamp
 }
@@ -44,5 +44,6 @@ export interface SimulationAdapter {
 }
 
 export interface SimulationConnectionConfig {
-  readonly sessionId: SessionId
+  readonly controlInstanceId: ControlInstanceId
+  readonly initialObjects?: ReadonlyArray<OperationalObject>
 }

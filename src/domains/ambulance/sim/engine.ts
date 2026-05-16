@@ -1,4 +1,4 @@
-import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, ObjectId, OperationalObject, SessionId, TelemetryState } from '../../../core/model/index.ts'
+import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
 import { confirmedFact, estimatedFact, geoPointFromLonLat, meters, nowIso, unknownFact } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
@@ -23,7 +23,7 @@ interface AmbulanceMotion {
 }
 
 interface EngineState {
-  readonly sessionId: SessionId
+  readonly controlInstanceId: ControlInstanceId
   readonly objects: Map<ObjectId, OperationalObject>
   readonly motion: Map<ObjectId, AmbulanceMotion>
   elapsedMs: number
@@ -362,8 +362,51 @@ const isHospital = (object: OperationalObject): boolean =>
   && object.domainData !== null
   && (object.domainData as { readonly type?: unknown }).type === 'hospital'
 
+const isAmbulance = (object: OperationalObject): boolean =>
+  object.kind === 'mobile_entity'
+  && typeof object.domainData === 'object'
+  && object.domainData !== null
+  && (object.domainData as { readonly type?: unknown }).type === 'ambulance'
+
 const isDestinationTarget = (object: OperationalObject): boolean =>
   object.kind === 'incident' || isHospital(object)
+
+const nextNumberAfter = (objects: Iterable<OperationalObject>, prefix: string, fallback: number): number => {
+  let highest = fallback - 1
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\d+)$`)
+  for (const object of objects) {
+    const match = object.id.match(pattern)
+    if (!match) continue
+    const value = Number(match[1])
+    if (Number.isInteger(value) && value > highest) highest = value
+  }
+  return highest + 1
+}
+
+const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<ObjectId, OperationalObject>): AmbulanceMotion | null => {
+  if (!isAmbulance(ambulance)) return null
+  if (ambulance.operational.status !== 'assigned' && ambulance.operational.status !== 'en_route') return null
+  const targetObjectId = ambulance.tasking?.currentTaskId
+  const route = ambulance.spatial.route?.planned
+  if (!targetObjectId || !route || route.coordinates.length === 0) return null
+  if (!objects.has(targetObjectId)) return null
+  const currentPoint = getPoint(ambulance)
+  let closestIndex = 0
+  let closestDistance = Number.POSITIVE_INFINITY
+  for (let index = 0; index < route.coordinates.length; index++) {
+    const distance = distanceMeters(currentPoint, pointFromPosition(route.coordinates[index] ?? currentPoint.coordinates))
+    if (distance < closestDistance) {
+      closestDistance = distance
+      closestIndex = index
+    }
+  }
+  return {
+    targetObjectId,
+    metersPerSecond: 18,
+    route,
+    segmentIndex: Math.min(closestIndex + 1, route.coordinates.length - 1),
+  }
+}
 
 const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
@@ -527,27 +570,37 @@ const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: s
 }
 
 export const createAmbulanceSimEngine = (config: {
-  readonly sessionId: SessionId
+  readonly controlInstanceId: ControlInstanceId
   readonly scenario: AmbulanceScenario
   readonly routing: RoutingAdapter
+  readonly initialObjects?: ReadonlyArray<OperationalObject>
 }): AmbulanceSimEngine => {
   const at = nowIso()
   const objects = new Map<ObjectId, OperationalObject>()
-  for (const ambulance of config.scenario.ambulances) objects.set(ambulance.id, createAmbulanceObject(ambulance, at))
-  for (const incident of config.scenario.incidents) objects.set(incident.id, createIncidentObject(incident, at))
-  for (const facility of config.scenario.facilities) objects.set(facility.id, createFacilityObject(facility, at))
+  if (config.initialObjects) {
+    for (const object of config.initialObjects) objects.set(object.id, object)
+  } else {
+    for (const ambulance of config.scenario.ambulances) objects.set(ambulance.id, createAmbulanceObject(ambulance, at))
+    for (const incident of config.scenario.incidents) objects.set(incident.id, createIncidentObject(incident, at))
+    for (const facility of config.scenario.facilities) objects.set(facility.id, createFacilityObject(facility, at))
+  }
+  const motion = new Map<ObjectId, AmbulanceMotion>()
+  for (const object of objects.values()) {
+    const restoredMotion = restoredMotionFor(object, objects)
+    if (restoredMotion) motion.set(object.id, restoredMotion)
+  }
   const state: EngineState = {
-    sessionId: config.sessionId,
+    controlInstanceId: config.controlInstanceId,
     objects,
-    motion: new Map(),
+    motion,
     elapsedMs: 0,
-    nextAmbulanceNumber: config.scenario.ambulances.length + 1,
-    nextHospitalNumber: config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1,
-    nextIncidentNumber: config.scenario.incidents.length + 1,
+    nextAmbulanceNumber: nextNumberAfter(objects.values(), 'amb:', config.scenario.ambulances.length + 1),
+    nextHospitalNumber: nextNumberAfter(objects.values(), 'facility:hospital-', config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1),
+    nextIncidentNumber: nextNumberAfter(objects.values(), 'incident:', config.scenario.incidents.length + 1),
   }
 
   const snapshot = (): SimulationSnapshot => ({
-    sessionId: state.sessionId,
+    controlInstanceId: state.controlInstanceId,
     objects: [...state.objects.values()],
     capturedAt: nowIso(),
   })

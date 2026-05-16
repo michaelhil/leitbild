@@ -1,17 +1,24 @@
-import type { DomainEvent, ObjectId, OperationalObject } from '../model/index.ts'
+import { z } from 'zod'
+import { operationalObjectSchema, type DomainEvent, type ObjectId, type OperationalObject } from '../model/index.ts'
 
-export interface SessionStateSnapshot {
+export interface ControlInstanceStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly seq: number
 }
 
-export interface SessionStateStore {
+export const controlInstanceStateSnapshotSchema = z.object({
+  objects: z.array(operationalObjectSchema),
+  seq: z.number().int().nonnegative(),
+})
+
+export interface ControlInstanceStateStore {
   readonly apply: (event: DomainEvent) => void
-  readonly snapshot: () => SessionStateSnapshot
+  readonly hydrate: (snapshot: ControlInstanceStateSnapshot) => void
+  readonly snapshot: () => ControlInstanceStateSnapshot
   readonly getObject: (id: ObjectId) => OperationalObject | undefined
 }
 
-export const createSessionStateStore = (): SessionStateStore => {
+export const createControlInstanceStateStore = (): ControlInstanceStateStore => {
   const objects = new Map<ObjectId, OperationalObject>()
   let seq = 0
 
@@ -37,8 +44,15 @@ export const createSessionStateStore = (): SessionStateStore => {
     }
   }
 
+  const hydrate = (snapshot: ControlInstanceStateSnapshot): void => {
+    objects.clear()
+    for (const object of snapshot.objects) objects.set(object.id, object)
+    seq = snapshot.seq
+  }
+
   return {
     apply,
+    hydrate,
     snapshot: () => ({ objects: [...objects.values()], seq }),
     getObject: (id: ObjectId) => objects.get(id),
   }

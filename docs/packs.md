@@ -2,7 +2,7 @@
 
 A **Leitbild Pack** is a namespaced bundle of operational-domain capability.
 
-Leitbild itself owns sessions, users, roles, command envelopes, event ordering, state projection, map rendering, persistence, research logs, and AI integration boundaries. Packs contribute domain-specific behavior behind those core seams.
+Leitbild itself owns control instances, actors, roles, command envelopes, event ordering, state projection, map rendering, persistence, audit logs, metrics, and AI integration boundaries. Packs contribute domain-specific behavior behind those core seams.
 
 ## User-Facing Model
 
@@ -24,7 +24,7 @@ A pack may contain:
 - domain schemas and domain object data validators
 - command kinds and payload validators
 - simulation adapters or local simulation engines
-- scenarios and study configurations
+- scenarios and run configurations
 - object icons, map symbols, and style rules
 - object categories, summaries, hover details, and inspectors
 - command/action builders for UI controls
@@ -70,7 +70,7 @@ Installation should mirror the Samsinn pack model:
 - validate namespace and compatibility
 - move into the final pack directory
 - register contributions
-- notify active UIs and sessions
+- notify active UIs and control instances
 
 Suggested environment variable:
 
@@ -136,11 +136,11 @@ Packs must not shadow core contribution names.
 
 ## Composition
 
-Multiple packs should eventually be active in one study, for example ambulance + police + drone.
+Multiple packs should eventually be active in one control instance, for example ambulance + police + drone.
 
 Composition rules:
 
-- Leitbild owns the session clock.
+- Leitbild owns the control instance clock.
 - Leitbild owns event ordering.
 - Leitbild owns command envelopes and actor identity.
 - Leitbild owns permissions and ownership rules.

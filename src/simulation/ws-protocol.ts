@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { commandEnvelopeSchema, domainIdSchema, sessionIdSchema } from '../core/model/index.ts'
+import { commandEnvelopeSchema, domainIdSchema, controlInstanceIdSchema } from '../core/model/index.ts'
 
 export const simulationProtocolVersion = 1
 
@@ -7,7 +7,7 @@ export const leitbildToSimulationMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('hello'),
     protocolVersion: z.literal(simulationProtocolVersion),
-    sessionId: sessionIdSchema,
+    controlInstanceId: controlInstanceIdSchema,
     domain: domainIdSchema,
   }),
   z.object({
