@@ -163,7 +163,7 @@ describe('local ambulance simulator', () => {
     expect(hospitalData.emergencyDepartment.diversionStatus.value).toBe('limited')
   })
 
-  test('moves toward the first route coordinate instead of skipping ahead', async () => {
+  test('follows shaped route coordinates instead of jumping straight to the destination', async () => {
     const scenario = createOsloAmbulanceScenario()
     const firstRoutePoint = geoPointFromLonLat(10.7387, 59.9364)
     const engine = createAmbulanceSimEngine({
@@ -201,7 +201,10 @@ describe('local ambulance simulator', () => {
 
     engine.tick(1_000)
     const movedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
-    expect(movedAmbulance?.spatial.position?.point.coordinates[1]).toBeGreaterThanOrEqual(59.936395)
+    if (!movedAmbulance?.spatial.position || !ambulance.spatial.position) throw new Error('missing moved ambulance position')
+    expect(movedAmbulance.spatial.position.point.coordinates[0]).toBeCloseTo(ambulance.spatial.position.point.coordinates[0], 4)
+    expect(movedAmbulance.spatial.position.point.coordinates[1]).toBeLessThan(ambulance.spatial.position.point.coordinates[1])
+    expect(movedAmbulance.spatial.position.point.coordinates[1]).toBeGreaterThan(59.9363)
   })
 
   test('starts moving immediately when the route begins at the ambulance position', async () => {
@@ -230,6 +233,51 @@ describe('local ambulance simulator', () => {
     if (!movedAmbulance?.spatial.position) throw new Error('missing moved ambulance position')
     expect(movedAmbulance.spatial.position.point.coordinates).not.toEqual(initialPoint.coordinates)
     expect(movedAmbulance.spatial.position.speedMps).toBeGreaterThan(0)
+  })
+
+  test('consumes the full movement budget across dense route geometry', async () => {
+    const scenario = createOsloAmbulanceScenario()
+    const start = scenario.ambulances[0]?.position
+    if (!start) throw new Error('scenario missing ambulance start')
+    const [startLon, startLat] = start.coordinates
+    const denseCoordinates = Array.from({ length: 50 }, (_value, index) =>
+      geoPointFromLonLat(startLon, startLat + index * 0.00001).coordinates)
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId,
+      scenario,
+      routing: {
+        id: 'test-dense-route',
+        route: async () => ({
+          geometry: {
+            type: 'LineString',
+            coordinates: denseCoordinates,
+          },
+          distanceM: meters(55),
+          durationSeconds: 4,
+          provider: 'test',
+        }),
+      },
+    })
+    const initial = engine.snapshot()
+    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
+    const incident = initial.objects.find(object => object.kind === 'incident')
+    if (!ambulance || !incident || !ambulance.spatial.position) throw new Error('scenario missing ambulance or incident')
+
+    const result = await engine.handleCommand(makeCommand({
+      id: 'dense-route-budget',
+      kind: setDestinationCommandKind,
+      targetObjectIds: [ambulance.id, incident.id],
+      payload: { ambulanceId: ambulance.id, destinationId: incident.id },
+    }))
+    expect(result.ok).toBe(true)
+
+    engine.tick(1_000)
+    const movedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
+    if (!movedAmbulance?.spatial.position) throw new Error('missing moved ambulance position')
+
+    const movedMeters = (movedAmbulance.spatial.position.point.coordinates[1] - startLat) * 110_540
+    expect(movedMeters).toBeGreaterThan(13)
+    expect(movedMeters).toBeLessThan(17)
   })
 
   test('uses the same default motion profile for new and restored motion', async () => {

@@ -84,6 +84,53 @@ const moveTowards = (from: GeoJsonPoint, to: GeoJsonPoint, metersToMove: number)
   return geoPointFromLonLat(fromLon + (toLon - fromLon) * ratio, fromLat + (toLat - fromLat) * ratio)
 }
 
+interface RouteAdvance {
+  readonly point: GeoJsonPoint
+  readonly segmentIndex: number
+  readonly headingTarget: GeoJsonPoint
+}
+
+const advanceAlongRoute = (config: {
+  readonly currentPoint: GeoJsonPoint
+  readonly route: GeoJsonLineString
+  readonly segmentIndex: number
+  readonly metersToMove: number
+}): RouteAdvance => {
+  if (config.route.coordinates.length === 0 || config.metersToMove <= 0) {
+    return {
+      point: config.currentPoint,
+      segmentIndex: Math.max(0, config.segmentIndex),
+      headingTarget: config.currentPoint,
+    }
+  }
+  let point = config.currentPoint
+  let segmentIndex = Math.min(config.segmentIndex, config.route.coordinates.length - 1)
+  let remainingMeters = config.metersToMove
+  let headingTarget = pointFromPosition(config.route.coordinates[segmentIndex] ?? config.currentPoint.coordinates)
+
+  while (remainingMeters > 0 && segmentIndex < config.route.coordinates.length) {
+    const targetPoint = pointFromPosition(config.route.coordinates[segmentIndex] ?? point.coordinates)
+    headingTarget = targetPoint
+    const segmentDistance = distanceMeters(point, targetPoint)
+    if (segmentDistance > remainingMeters) {
+      return {
+        point: moveTowards(point, targetPoint, remainingMeters),
+        segmentIndex,
+        headingTarget,
+      }
+    }
+    point = targetPoint
+    remainingMeters -= segmentDistance
+    segmentIndex += 1
+  }
+
+  return {
+    point,
+    segmentIndex: Math.min(segmentIndex, config.route.coordinates.length - 1),
+    headingTarget,
+  }
+}
+
 const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
   const [fromLon, fromLat] = from.coordinates
   const [toLon, toLat] = to.coordinates
@@ -670,15 +717,16 @@ export const createAmbulanceSimEngine = (config: {
         continue
       }
       const currentPoint = getPoint(ambulance)
-      const targetIndex = Math.min(motion.segmentIndex, motion.route.coordinates.length - 1)
-      const targetPoint = pointFromPosition(motion.route.coordinates[targetIndex] ?? getPoint(target).coordinates)
       const finalPoint = pointFromPosition(motion.route.coordinates[motion.route.coordinates.length - 1] ?? getPoint(target).coordinates)
-      const nextPoint = moveTowards(currentPoint, targetPoint, motion.metersPerSecond * dtMs / 1000)
-      const remainingSegment = distanceMeters(nextPoint, targetPoint)
+      const routeAdvance = advanceAlongRoute({
+        currentPoint,
+        route: motion.route,
+        segmentIndex: motion.segmentIndex,
+        metersToMove: motion.metersPerSecond * dtMs / 1000,
+      })
+      const nextPoint = routeAdvance.point
       const arrived = distanceMeters(nextPoint, finalPoint) < 15
-      const segmentIndex = !arrived && remainingSegment < 15
-        ? Math.min(motion.segmentIndex + 1, motion.route.coordinates.length - 1)
-        : motion.segmentIndex
+      const segmentIndex = arrived ? motion.segmentIndex : routeAdvance.segmentIndex
       const moving: OperationalObject = {
         ...ambulance,
         revision: ambulance.revision + 1,
@@ -686,7 +734,7 @@ export const createAmbulanceSimEngine = (config: {
           ...ambulance.spatial,
           position: {
             point: nextPoint,
-            headingDeg: bearingDeg(currentPoint, targetPoint),
+            headingDeg: bearingDeg(currentPoint, routeAdvance.headingTarget),
             speedMps: arrived ? 0 : motion.metersPerSecond,
             accuracyM: meters(8),
             observedAt: at2,
