@@ -146,7 +146,10 @@ const routeStateKey = (object: OperationalObject | undefined): string => {
   if (!object || !route) return ''
   return [
     object.tasking?.currentTaskId ?? '',
+    object.spatial.position?.point.coordinates.join(',') ?? '',
     object.spatial.route?.etaSeconds ?? '',
+    object.spatial.route?.progress?.segmentIndex ?? '',
+    object.spatial.route?.progress?.remainingDistanceM ?? '',
     object.spatial.route?.source ?? '',
     route.coordinates.map(coordinate => `${coordinate[0]},${coordinate[1]}`).join(';'),
   ].join('|')

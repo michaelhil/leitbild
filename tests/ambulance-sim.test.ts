@@ -278,6 +278,8 @@ describe('local ambulance simulator', () => {
     const movedMeters = (movedAmbulance.spatial.position.point.coordinates[1] - startLat) * 110_540
     expect(movedMeters).toBeGreaterThan(13)
     expect(movedMeters).toBeLessThan(17)
+    expect(movedAmbulance.spatial.route?.progress?.remainingDistanceM).toBeGreaterThan(0)
+    expect(movedAmbulance.spatial.route?.etaSeconds).toBeGreaterThan(0)
   })
 
   test('uses the same default motion profile for new and restored motion', async () => {

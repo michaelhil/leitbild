@@ -60,6 +60,38 @@ describe('map feature projection', () => {
     expect(routeFeatures.features[0]?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.route.planned.coordinates[0])
   })
 
+  test('projects remaining route when route progress is available', async () => {
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId,
+      scenario: createOsloAmbulanceScenario(),
+      routing: createDirectRoutingAdapter(),
+    })
+    const initial = engine.snapshot()
+    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
+    const incident = initial.objects.find(object => object.kind === 'incident')
+    if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
+
+    const result = await engine.handleCommand(makeCommand({
+      kind: setDestinationCommandKind,
+      targetObjectIds: [ambulance.id, incident.id],
+      payload: {
+        ambulanceId: ambulance.id,
+        destinationId: incident.id,
+      },
+    }))
+    expect(result.ok).toBe(true)
+    engine.tick(1_000)
+
+    const updatedObjects = engine.snapshot().objects
+    const updatedAmbulance = updatedObjects.find(object => object.id === ambulance.id)
+    if (!updatedAmbulance?.spatial.position || !updatedAmbulance.spatial.route?.planned) throw new Error('missing moved ambulance route')
+
+    const routeFeatures = createRouteFeatureCollection(updatedObjects, ambulance.id)
+
+    expect(routeFeatures.features[0]?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.position.point.coordinates)
+    expect(routeFeatures.features[0]?.geometry.coordinates.length).toBeLessThanOrEqual(updatedAmbulance.spatial.route.planned.coordinates.length + 1)
+  })
+
   test('projects positioned objects into native MapLibre symbol features', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,

@@ -25,7 +25,15 @@ export interface PositionFix {
 export interface RouteGeometry {
   readonly planned?: GeoJsonLineString
   readonly etaSeconds?: number
+  readonly progress?: RouteProgress
   readonly source: 'simulator' | 'operator' | 'ai' | 'import'
+}
+
+export interface RouteProgress {
+  readonly segmentIndex: number
+  readonly remainingDistanceM?: Meters
+  readonly advancedDistanceM?: Meters
+  readonly updatedAt: IsoTimestamp
 }
 
 export interface SpatialUncertainty {
@@ -106,6 +114,12 @@ export const positionFixSchema = z.object({
 export const routeGeometrySchema = z.object({
   planned: geoJsonLineStringSchema.optional(),
   etaSeconds: z.number().finite().nonnegative().optional(),
+  progress: z.object({
+    segmentIndex: z.number().int().nonnegative(),
+    remainingDistanceM: metersSchema.optional(),
+    advancedDistanceM: metersSchema.optional(),
+    updatedAt: isoTimestampSchema,
+  }).optional(),
   source: z.enum(['simulator', 'operator', 'ai', 'import']),
 })
 

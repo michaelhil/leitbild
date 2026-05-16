@@ -33,6 +33,22 @@ const targetLabel = (object: OperationalObject, objects: ReadonlyArray<Operation
     ? objects.find(candidate => candidate.id === object.tasking?.currentTaskId)?.label ?? object.tasking.currentTaskId
     : 'idle'
 
+const formatDurationMmSs = (seconds: number): string => {
+  const boundedSeconds = Math.max(0, Math.ceil(seconds))
+  const minutes = Math.floor(boundedSeconds / 60)
+  const remainingSeconds = boundedSeconds % 60
+  return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+const formatArrivalClock = (seconds: number, now: Date = new Date()): string =>
+  new Date(now.getTime() + Math.max(0, Math.ceil(seconds)) * 1000)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+const etaText = (object: OperationalObject): string | null =>
+  object.spatial.route?.etaSeconds === undefined
+    ? null
+    : `ETA: ${formatDurationMmSs(object.spatial.route.etaSeconds)} · Arrives ${formatArrivalClock(object.spatial.route.etaSeconds)}`
+
 const parseAmbulanceData = (object: OperationalObject): AmbulanceDomainData | null => {
   const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
   return parsed.success ? parsed.data : null
@@ -54,6 +70,7 @@ const ambulanceDetails = (
   objects: ReadonlyArray<OperationalObject>,
 ): ReadonlyArray<string> => [
   `Destination: ${targetLabel(object, objects)}`,
+  ...(etaText(object) ? [etaText(object)!] : []),
   `Capabilities: ${listText(data.capabilities)}`,
   `Crew: ${factText(data.crew.level)}`,
   `Seats: ${factText(data.crew.availableSeats)}`,

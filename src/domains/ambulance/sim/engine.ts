@@ -1,5 +1,5 @@
-import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
-import { confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, meters, motionProfileFor, nowIso, unknownFact } from '../../../core/model/index.ts'
+import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
+import { advanceAlongRoute, confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters, unknownFact } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
 import {
@@ -59,76 +59,6 @@ const getPoint = (object: OperationalObject): GeoJsonPoint => {
     throw new Error(`object ${object.id} has no position`)
   }
   return point
-}
-
-const pointFromPosition = (position: GeoJsonPosition2D): GeoJsonPoint => ({
-  type: 'Point',
-  coordinates: position,
-})
-
-const distanceMeters = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
-  const [fromLon, fromLat] = from.coordinates
-  const [toLon, toLat] = to.coordinates
-  const meanLatRad = ((fromLat + toLat) / 2) * Math.PI / 180
-  const dx = (toLon - fromLon) * 111_320 * Math.cos(meanLatRad)
-  const dy = (toLat - fromLat) * 110_540
-  return Math.sqrt(dx * dx + dy * dy)
-}
-
-const moveTowards = (from: GeoJsonPoint, to: GeoJsonPoint, metersToMove: number): GeoJsonPoint => {
-  const distance = distanceMeters(from, to)
-  if (distance <= metersToMove || distance === 0) return to
-  const ratio = metersToMove / distance
-  const [fromLon, fromLat] = from.coordinates
-  const [toLon, toLat] = to.coordinates
-  return geoPointFromLonLat(fromLon + (toLon - fromLon) * ratio, fromLat + (toLat - fromLat) * ratio)
-}
-
-interface RouteAdvance {
-  readonly point: GeoJsonPoint
-  readonly segmentIndex: number
-  readonly headingTarget: GeoJsonPoint
-}
-
-const advanceAlongRoute = (config: {
-  readonly currentPoint: GeoJsonPoint
-  readonly route: GeoJsonLineString
-  readonly segmentIndex: number
-  readonly metersToMove: number
-}): RouteAdvance => {
-  if (config.route.coordinates.length === 0 || config.metersToMove <= 0) {
-    return {
-      point: config.currentPoint,
-      segmentIndex: Math.max(0, config.segmentIndex),
-      headingTarget: config.currentPoint,
-    }
-  }
-  let point = config.currentPoint
-  let segmentIndex = Math.min(config.segmentIndex, config.route.coordinates.length - 1)
-  let remainingMeters = config.metersToMove
-  let headingTarget = pointFromPosition(config.route.coordinates[segmentIndex] ?? config.currentPoint.coordinates)
-
-  while (remainingMeters > 0 && segmentIndex < config.route.coordinates.length) {
-    const targetPoint = pointFromPosition(config.route.coordinates[segmentIndex] ?? point.coordinates)
-    headingTarget = targetPoint
-    const segmentDistance = distanceMeters(point, targetPoint)
-    if (segmentDistance > remainingMeters) {
-      return {
-        point: moveTowards(point, targetPoint, remainingMeters),
-        segmentIndex,
-        headingTarget,
-      }
-    }
-    point = targetPoint
-    remainingMeters -= segmentDistance
-    segmentIndex += 1
-  }
-
-  return {
-    point,
-    segmentIndex: Math.min(segmentIndex, config.route.coordinates.length - 1),
-    headingTarget,
-  }
 }
 
 const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
@@ -469,7 +399,7 @@ const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<Ob
   let closestIndex = 0
   let closestDistance = Number.POSITIVE_INFINITY
   for (let index = 0; index < route.coordinates.length; index++) {
-    const distance = distanceMeters(currentPoint, pointFromPosition(route.coordinates[index] ?? currentPoint.coordinates))
+    const distance = routeDistanceMeters(currentPoint, pointFromPosition(route.coordinates[index] ?? currentPoint.coordinates))
     if (distance < closestDistance) {
       closestDistance = distance
       closestIndex = index
@@ -487,7 +417,7 @@ const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<Ob
 const initialSegmentIndexFor = (currentPoint: GeoJsonPoint, route: GeoJsonLineString): number => {
   if (route.coordinates.length <= 1) return 0
   const firstPoint = pointFromPosition(route.coordinates[0] ?? currentPoint.coordinates)
-  return distanceMeters(currentPoint, firstPoint) < 2 ? 1 : 0
+  return routeDistanceMeters(currentPoint, firstPoint) < 2 ? 1 : 0
 }
 
 const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
@@ -716,6 +646,11 @@ export const createAmbulanceSimEngine = (config: {
         state.motion.delete(ambulanceId)
         continue
       }
+      const currentRoute = ambulance.spatial.route
+      if (!currentRoute) {
+        state.motion.delete(ambulanceId)
+        continue
+      }
       const currentPoint = getPoint(ambulance)
       const finalPoint = pointFromPosition(motion.route.coordinates[motion.route.coordinates.length - 1] ?? getPoint(target).coordinates)
       const routeAdvance = advanceAlongRoute({
@@ -725,13 +660,25 @@ export const createAmbulanceSimEngine = (config: {
         metersToMove: motion.metersPerSecond * dtMs / 1000,
       })
       const nextPoint = routeAdvance.point
-      const arrived = distanceMeters(nextPoint, finalPoint) < 15
+      const arrived = routeDistanceMeters(nextPoint, finalPoint) < 15
       const segmentIndex = arrived ? motion.segmentIndex : routeAdvance.segmentIndex
+      const remainingDistanceM = remainingDistanceAlongRoute(motion.route, nextPoint, segmentIndex)
+      const etaSeconds = arrived ? 0 : Math.ceil(remainingDistanceM / motion.metersPerSecond)
       const moving: OperationalObject = {
         ...ambulance,
         revision: ambulance.revision + 1,
         spatial: {
           ...ambulance.spatial,
+          route: {
+            ...currentRoute,
+            etaSeconds,
+            progress: {
+              segmentIndex,
+              remainingDistanceM,
+              advancedDistanceM: routeAdvance.advancedDistanceM,
+              updatedAt: at2,
+            },
+          },
           position: {
             point: nextPoint,
             headingDeg: bearingDeg(currentPoint, routeAdvance.headingTarget),

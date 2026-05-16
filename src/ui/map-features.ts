@@ -1,4 +1,5 @@
 import type { GeoJsonLineString, GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
+import { remainingRouteGeometry } from '../core/model/index.ts'
 
 export const mapSourceIds = {
   objects: 'objects',
@@ -74,12 +75,21 @@ export const createRouteFeatureCollection = (
   type: 'FeatureCollection',
   features: objects
     .filter(object => object.kind === 'mobile_entity' && object.spatial.route?.planned)
-    .map(object => ({
-      type: 'Feature',
-      id: object.id,
-      geometry: object.spatial.route!.planned as GeoJsonLineString,
-      properties: {
-        selected: object.id === selectedObjectId,
-      },
-    })),
+    .flatMap(object => {
+      const route = object.spatial.route?.planned
+      if (!route) return []
+      const point = pointOf(object)
+      const geometry = point && object.spatial.route?.progress
+        ? remainingRouteGeometry(route, point, object.spatial.route.progress.segmentIndex)
+        : route
+      if (!geometry) return []
+      return [{
+        type: 'Feature',
+        id: object.id,
+        geometry,
+        properties: {
+          selected: object.id === selectedObjectId,
+        },
+      }]
+    }),
 })
