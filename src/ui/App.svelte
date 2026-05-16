@@ -36,6 +36,7 @@
   let selectedControllerObject: OperationalObject | null = null
   let categoryRows: ReadonlyArray<CategoryRow> = []
   let controlInstanceSocket: WebSocket | null = null
+  let placementCursor: { readonly icon: IconName; readonly color: string } | null = null
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -222,6 +223,7 @@
   }
 
   const beginPlacement = (type: PackCreateObjectType): void => {
+    if (!isIconName(type.icon)) throw new Error(`pack ${activePack.id} requested unknown create cursor icon: ${type.icon}`)
     placementMode = type
     createDraft = null
     commandStatus = `Click map to place new ${type.label.toLowerCase()}`
@@ -235,6 +237,7 @@
       point,
       label: defaultName(type),
     }
+    placementMode = null
   }
 
   const cancelPlacement = (): void => {
@@ -243,12 +246,34 @@
   }
 
   onMount(() => {
+    const handleKeydown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') cancelPlacement()
+    }
+    const handleClick = (event: MouseEvent): void => {
+      if (!placementMode) return
+      const target = event.target
+      if (!(target instanceof Element)) return
+      if (target.closest('.map-region')) return
+      cancelPlacement()
+      event.stopImmediatePropagation()
+      event.stopPropagation()
+      event.preventDefault()
+    }
+    window.addEventListener('keydown', handleKeydown)
+    window.addEventListener('click', handleClick, { capture: true })
     routeMode = routeModeFromPath()
     if (routeMode === 'picker') {
       void loadInstances()
-      return
+      return () => {
+        window.removeEventListener('keydown', handleKeydown)
+        window.removeEventListener('click', handleClick, { capture: true })
+      }
     }
     void joinControlInstance()
+    return () => {
+      window.removeEventListener('keydown', handleKeydown)
+      window.removeEventListener('click', handleClick, { capture: true })
+    }
   })
 
   onDestroy(() => {
@@ -262,6 +287,9 @@
     objects: objects.filter(object => category.matches(object)),
     createType: activePack.createObjectTypes.find(type => type.categoryId === category.id),
   }))
+  $: placementCursor = placementMode && isIconName(placementMode.icon)
+    ? { icon: placementMode.icon, color: placementMode.color }
+    : null
 </script>
 
 {#if routeMode === 'picker'}
@@ -292,6 +320,7 @@
         {objects}
         {selectedControllerId}
         {placementMode}
+        {placementCursor}
         {hasNewInfo}
         {presentationFor}
         onObjectSelected={selectObject}

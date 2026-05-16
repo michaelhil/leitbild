@@ -29,9 +29,9 @@
   </header>
 
   {#if placementMode}
-    <div class="placement-banner">
-      Click map to place new {placementMode.label.toLowerCase()}
-      <button class="icon-button" on:click={cancelPlacement}>{@html iconHtml('x', { size: 16 })}</button>
+      <div class="placement-banner">
+        Click map to place new {placementMode.label.toLowerCase()}
+      <button class="icon-button" on:click|stopPropagation={cancelPlacement}>{@html iconHtml('x', { size: 16 })}</button>
     </div>
   {/if}
 
@@ -43,7 +43,7 @@
           <button
             class="icon-button"
             title="Add {row.category.label.toLowerCase()}"
-            on:click={() => row.createType && beginPlacement(row.createType)}
+            on:click|stopPropagation={() => row.createType && beginPlacement(row.createType)}
           >{@html iconHtml('plus', { size: 16 })}</button>
         {/if}
       </div>
@@ -73,7 +73,7 @@
         <div class="object-meta">{selectedControllerObject.operational.status}</div>
         {#if selectedControllerObject.tasking?.currentTaskId}
           <div class="object-meta">Destination: {objects.find(object => object.id === selectedControllerObject?.tasking?.currentTaskId)?.label ?? selectedControllerObject.tasking.currentTaskId}</div>
-          <button class="command-button" on:click={cancelDestination}>{@html iconHtml('stop', { size: 16 })} Cancel destination</button>
+          <button class="command-button" on:click|stopPropagation={cancelDestination}>{@html iconHtml('stop', { size: 16 })} Cancel destination</button>
         {:else}
           <div class="object-meta">Click a valid target.</div>
         {/if}

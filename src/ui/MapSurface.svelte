@@ -16,6 +16,7 @@
   export let objects: ReadonlyArray<OperationalObject>
   export let selectedControllerId: string | null
   export let placementMode: PackCreateObjectType | null
+  export let placementCursor: { readonly icon: IconName; readonly color: string } | null
   export let hasNewInfo: (object: OperationalObject) => boolean
   export let presentationFor: (object: OperationalObject) => PackObjectPresentation
   export let onObjectSelected: (object: OperationalObject) => void
@@ -55,6 +56,18 @@
   const refreshSources = (): void => {
     refreshObjectSource()
     refreshRouteSource()
+  }
+
+  const placementCursorCss = (): string => {
+    if (!placementCursor) return ''
+    const url = iconSvgDataUrl(placementCursor.icon, { stroke: placementCursor.color, size: 32, strokeWidth: 2.6 })
+    return `url("${url}") 16 16, pointer`
+  }
+
+  const refreshCanvasCursor = (): void => {
+    const canvas = map?.getCanvas()
+    if (!canvas) return
+    canvas.style.cursor = placementCursorCss()
   }
 
   const detailLines = (object: OperationalObject): ReadonlyArray<string> =>
@@ -197,7 +210,7 @@
         if (object) onObjectSelected(object)
       })
       current.on('mouseenter', layerId, (event) => {
-        current.getCanvas().style.cursor = 'pointer'
+        current.getCanvas().style.cursor = placementCursor ? placementCursorCss() : 'pointer'
         const object = objectFromMapEvent(event)
         if (!object) return
         onObjectSeen(object)
@@ -205,7 +218,7 @@
         showMarkerPopup(object)
       })
       current.on('mouseleave', layerId, () => {
-        current.getCanvas().style.cursor = ''
+        refreshCanvasCursor()
         hideMarkerPopup()
       })
     }
@@ -268,6 +281,11 @@
     selectedControllerId
     renderRevision
     refreshSources()
+  }
+
+  $: {
+    placementCursor
+    refreshCanvasCursor()
   }
 </script>
 

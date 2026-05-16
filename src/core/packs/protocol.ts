@@ -19,6 +19,8 @@ export interface PackCreateObjectType {
   readonly id: string
   readonly label: string
   readonly categoryId: string
+  readonly icon: string
+  readonly color: string
 }
 
 export interface PackCommandRequest {
