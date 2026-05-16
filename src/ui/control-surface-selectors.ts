@@ -16,6 +16,12 @@ export const selectedControllerObjectFor = (
 ): OperationalObject | null =>
   objects.find(object => object.id === selectedControllerId && pack.isController(object)) ?? null
 
+const compareOperationalObjectsForRail = (left: OperationalObject, right: OperationalObject): number => {
+  const labelComparison = left.label.localeCompare(right.label, undefined, { numeric: true, sensitivity: 'base' })
+  if (labelComparison !== 0) return labelComparison
+  return left.id.localeCompare(right.id, undefined, { numeric: true, sensitivity: 'base' })
+}
+
 export const categoryRowsFor = (
   objects: ReadonlyArray<OperationalObject>,
   pack: LeitbildPack,
@@ -24,7 +30,7 @@ export const categoryRowsFor = (
     const createType = pack.createObjectTypes.find(type => type.categoryId === category.id)
     return {
       category,
-      objects: objects.filter(object => category.matches(object)),
+      objects: [...objects.filter(object => category.matches(object))].sort(compareOperationalObjectsForRail),
       ...(createType === undefined ? {} : { createType }),
     }
   })

@@ -29,6 +29,31 @@ describe('control surface selectors', () => {
     ])
   })
 
+  test('keeps category object order deterministic regardless of incoming object order', () => {
+    const objects = scenarioObjects()
+    const ambulance = objects.find(object => ambulancePack.isController(object))
+    if (!ambulance) throw new Error('scenario fixture missing ambulance')
+    const laterAmbulance = {
+      ...ambulance,
+      id: 'amb:b2' as typeof ambulance.id,
+      label: 'Ambulance B-2',
+    }
+    const earlierAmbulance = {
+      ...ambulance,
+      id: 'amb:a1' as typeof ambulance.id,
+      label: 'Ambulance A-1',
+    }
+
+    const rows = categoryRowsFor([laterAmbulance, ...objects, earlierAmbulance], ambulancePack)
+    const ambulanceRow = rows.find(row => row.category.id === 'ambulances')
+
+    expect(ambulanceRow?.objects.map(object => object.label)).toEqual([
+      'Ambulance A-1',
+      'Ambulance A-12',
+      'Ambulance B-2',
+    ])
+  })
+
   test('selects controllers only when the active pack accepts the object as controllable', () => {
     const objects = scenarioObjects()
     const ambulance = objects.find(object => ambulancePack.isController(object))
