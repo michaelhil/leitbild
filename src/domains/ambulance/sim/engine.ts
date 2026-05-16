@@ -1,5 +1,5 @@
-import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
-import { confirmedFact, estimatedFact, geoPointFromLonLat, meters, nowIso, unknownFact } from '../../../core/model/index.ts'
+import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, GeoJsonPosition2D, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
+import { confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, meters, motionProfileFor, nowIso, unknownFact } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
 import {
@@ -18,6 +18,7 @@ import { applyAmbulanceArrivalInteraction } from './interactions.ts'
 
 interface AmbulanceMotion {
   readonly targetObjectId: ObjectId
+  readonly motionProfileId: string
   readonly metersPerSecond: number
   readonly route: GeoJsonLineString
   readonly segmentIndex: number
@@ -41,6 +42,16 @@ export interface AmbulanceSimEngine {
 
 const adapterId = 'adapter:ambulance-local' as AdapterId
 const domain = ambulanceDomainId as DomainId
+const defaultAmbulanceMotionProfileId = 'normal'
+
+const ambulanceMotionProfiles: MotionProfileSet = {
+  defaultProfileId: defaultAmbulanceMotionProfileId,
+  profiles: [
+    { id: 'normal', label: 'Normal response', metersPerSecond: 15 },
+    { id: 'emergency', label: 'Emergency response', metersPerSecond: 22 },
+    { id: 'slow', label: 'Congested traffic', metersPerSecond: 8 },
+  ],
+}
 
 const getPoint = (object: OperationalObject): GeoJsonPoint => {
   const point = object.spatial.position?.point
@@ -419,7 +430,8 @@ const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<Ob
   }
   return {
     targetObjectId,
-    metersPerSecond: 18,
+    motionProfileId: defaultMotionProfile(ambulanceMotionProfiles).id,
+    metersPerSecond: defaultMotionProfile(ambulanceMotionProfiles).metersPerSecond,
     route,
     segmentIndex: Math.min(closestIndex + 1, route.coordinates.length - 1),
   }
@@ -834,9 +846,11 @@ export const createAmbulanceSimEngine = (config: {
         }
       : incident
     state.objects.set(updatedIncident.id, updatedIncident)
+    const motionProfile = motionProfileFor(ambulanceMotionProfiles, defaultAmbulanceMotionProfileId)
     state.motion.set(updatedAmbulance.id, {
       targetObjectId: updatedIncident.id,
-      metersPerSecond: 15,
+      motionProfileId: motionProfile.id,
+      metersPerSecond: motionProfile.metersPerSecond,
       route: routeResult.geometry,
       segmentIndex: initialSegmentIndexFor(getPoint(updatedAmbulance), routeResult.geometry),
     })

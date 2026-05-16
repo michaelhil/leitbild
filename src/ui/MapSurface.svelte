@@ -12,6 +12,13 @@
     mapSourceIds,
     pointOf,
   } from './map-features.ts'
+  import {
+    createDisplayMotionState,
+    displayObjectsFor,
+    hasActiveDisplayMotion,
+    reconcileDisplayMotionState,
+    type DisplayMotionState,
+  } from './display-motion.ts'
 
   export let objects: ReadonlyArray<OperationalObject>
   export let selectedControllerId: string | null
@@ -34,6 +41,9 @@
   let routeSourceDirty = false
   let lastRouteRevision = -1
   let lastSelectedControllerId: string | null = null
+  let displayMotionState: DisplayMotionState = createDisplayMotionState()
+  let previousMotionObjects: ReadonlyArray<OperationalObject> = []
+  let displayFrame: number | null = null
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -45,11 +55,11 @@
   const escapeHtml = (value: string): string =>
     value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
-  const refreshObjectSource = (): void => {
+  const refreshObjectSource = (sourceObjects: ReadonlyArray<OperationalObject> = objects): void => {
     const current = map
     if (!current || !loaded) return
     const source = current.getSource(mapSourceIds.objects) as GeoJSONSource | undefined
-    if (source) source.setData(createObjectFeatureCollection([...objects], selectedControllerId, hasNewInfo, presentationFor))
+    if (source) source.setData(createObjectFeatureCollection([...sourceObjects], selectedControllerId, hasNewInfo, presentationFor))
   }
 
   const refreshRouteSource = (): void => {
@@ -70,10 +80,29 @@
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = null
-      if (objectSourceDirty) refreshObjectSource()
+      const nowMs = performance.now()
+      if (objectSourceDirty) refreshObjectSource(displayObjectsFor(objects, displayMotionState, nowMs))
       if (routeSourceDirty) refreshRouteSource()
       objectSourceDirty = false
       routeSourceDirty = false
+    })
+  }
+
+  const stopDisplayAnimation = (): void => {
+    if (displayFrame === null) return
+    cancelAnimationFrame(displayFrame)
+    displayFrame = null
+  }
+
+  const scheduleDisplayAnimation = (): void => {
+    if (displayFrame !== null) return
+    displayFrame = requestAnimationFrame(() => {
+      displayFrame = null
+      const nowMs = performance.now()
+      refreshObjectSource(displayObjectsFor(objects, displayMotionState, nowMs))
+      if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
+        scheduleDisplayAnimation()
+      }
     })
   }
 
@@ -292,6 +321,7 @@
 
   onDestroy(() => {
     if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
+    stopDisplayAnimation()
     hideMarkerPopup()
     map?.remove()
     map = null
@@ -303,10 +333,21 @@
     selectedControllerId
     routeRevision
     renderRevision
+    const nowMs = performance.now()
+    displayMotionState = reconcileDisplayMotionState({
+      previousState: displayMotionState,
+      previousObjects: previousMotionObjects,
+      nextObjects: objects,
+      nowMs,
+    })
+    previousMotionObjects = objects
     const routesChanged = routeRevision !== lastRouteRevision || selectedControllerId !== lastSelectedControllerId
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
     scheduleSourceRefresh({ objects: true, routes: routesChanged })
+    if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
+      scheduleDisplayAnimation()
+    }
   }
 
   $: {

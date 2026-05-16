@@ -232,6 +232,40 @@ describe('local ambulance simulator', () => {
     expect(movedAmbulance.spatial.position.speedMps).toBeGreaterThan(0)
   })
 
+  test('uses the same default motion profile for new and restored motion', async () => {
+    const scenario = createOsloAmbulanceScenario()
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId: 'control-instance:test-motion-profile' as ControlInstanceId,
+      scenario,
+      routing: createDirectRoutingAdapter(),
+    })
+    const initial = engine.snapshot()
+    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
+    const incident = initial.objects.find(object => object.kind === 'incident')
+    if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
+
+    const result = await engine.handleCommand(makeCommand({
+      id: 'dispatch-motion-profile',
+      kind: assignToIncidentCommandKind,
+      targetObjectIds: [ambulance.id, incident.id],
+      payload: { ambulanceId: ambulance.id, incidentId: incident.id },
+    }))
+    expect(result.ok).toBe(true)
+    engine.tick(1_000)
+    const moving = engine.snapshot().objects.find(object => object.id === ambulance.id)
+    expect(moving?.spatial.position?.speedMps).toBe(15)
+
+    const restoredEngine = createAmbulanceSimEngine({
+      controlInstanceId: 'control-instance:test-restored-motion-profile' as ControlInstanceId,
+      scenario,
+      routing: createDirectRoutingAdapter(),
+      initialObjects: engine.snapshot().objects,
+    })
+    restoredEngine.tick(1_000)
+    const restoredMoving = restoredEngine.snapshot().objects.find(object => object.id === ambulance.id)
+    expect(restoredMoving?.spatial.position?.speedMps).toBe(15)
+  })
+
   test('creates ambulance domain objects from operator commands', async () => {
     const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
     const result = await connection.sendCommand(makeCommand({
