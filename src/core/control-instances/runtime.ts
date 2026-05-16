@@ -1,13 +1,18 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId } from '../model/index.ts'
 import { nowIso } from '../model/index.ts'
-import type { SimulationConnection, SimulationEvent } from '../../simulation/protocol.ts'
+import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
 
-export type ControlInstanceEventHandler = (event: DomainEvent) => void
+export interface ControlInstanceEventNotification {
+  readonly type: 'event.notification'
+  readonly events: ReadonlyArray<DomainEvent>
+}
+
+export type ControlInstanceEventHandler = (event: ControlInstanceEventNotification) => void
 
 export interface ControlInstanceRuntime {
   readonly id: ControlInstanceId
@@ -35,17 +40,29 @@ export const createControlInstanceRuntime = async (config: {
   let seq = Math.max(config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
 
-  const publishNow = async (event: DomainEvent): Promise<void> => {
-    state.apply(event)
-    events.push(event)
-    await config.eventLog.append(event)
+  const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
+    if (domainEvents.length === 0) return
+    for (const event of domainEvents) {
+      state.apply(event)
+      events.push(event)
+    }
+    await config.eventLog.appendMany(domainEvents)
     await config.snapshotStore.save(state.snapshot())
-    for (const handler of handlers) handler(event)
+    const notification: ControlInstanceEventNotification = { type: 'event.notification', events: domainEvents }
+    for (const handler of handlers) handler(notification)
+  }
+
+  const publishMany = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
+    const previousPublish = publishQueue
+    publishQueue = (async (): Promise<void> => {
+      await previousPublish
+      await publishManyNow(domainEvents)
+    })()
+    await publishQueue
   }
 
   const publish = async (event: DomainEvent): Promise<void> => {
-    publishQueue = publishQueue.then(() => publishNow(event))
-    await publishQueue
+    await publishMany([event])
   }
 
   const nextBase = (simEvent: SimulationEvent): Omit<DomainEvent, 'type'> => ({
@@ -56,20 +73,22 @@ export const createControlInstanceRuntime = async (config: {
     provenance: simEvent.provenance,
   })
 
-  const publishSimulationEvent = async (simEvent: SimulationEvent): Promise<void> => {
+  const domainEventFromSimulationEvent = (simEvent: SimulationEvent): DomainEvent => {
     if (simEvent.type === 'object.upserted') {
-      await publish({ ...nextBase(simEvent), type: 'object.upserted', object: simEvent.object })
-      return
+      return { ...nextBase(simEvent), type: 'object.upserted', object: simEvent.object }
     }
     if (simEvent.type === 'object.deleted') {
-      await publish({ ...nextBase(simEvent), type: 'object.deleted', objectId: simEvent.objectId })
-      return
+      return { ...nextBase(simEvent), type: 'object.deleted', objectId: simEvent.objectId }
     }
-    await publish({ ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry })
+    return { ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry }
   }
 
-  const unsubscribeSimulation = config.simulation.subscribe((event) => {
-    void publishSimulationEvent(event)
+  const publishSimulationEmission = async (emission: SimulationEmission): Promise<void> => {
+    await publishMany(emission.events.map(domainEventFromSimulationEvent))
+  }
+
+  const unsubscribeSimulation = config.simulation.subscribe((emission) => {
+    void publishSimulationEmission(emission)
   })
 
   if (config.restoredSnapshot) {

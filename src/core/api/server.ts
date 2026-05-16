@@ -1,7 +1,8 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
-import { controlInstanceIdSchema, type DomainEvent, type ControlInstanceId } from '../model/index.ts'
+import { controlInstanceIdSchema, type ControlInstanceId } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
+import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
 import { handleControlInstanceApi } from './control-instance-routes.ts'
 import { json } from './responses.ts'
 
@@ -37,10 +38,10 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const socketsByControlInstance = new Map<ControlInstanceId, Set<ServerWebSocket<WSData>>>()
   const unsubscribersByControlInstance = new Map<ControlInstanceId, () => void>()
 
-  const broadcastToControlInstance = (controlInstanceId: ControlInstanceId, event: DomainEvent): void => {
+  const broadcastToControlInstance = (controlInstanceId: ControlInstanceId, notification: ControlInstanceEventNotification): void => {
     const sockets = socketsByControlInstance.get(controlInstanceId)
     if (!sockets) return
-    const message = JSON.stringify({ type: 'event', event })
+    const message = JSON.stringify({ type: 'events', events: notification.events })
     for (const socket of sockets) socket.send(message)
   }
 

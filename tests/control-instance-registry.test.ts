@@ -70,6 +70,26 @@ describe('control instance registry', () => {
     await runtime.close()
   })
 
+  test('notifies subscribers with event arrays while preserving canonical event order', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const registry = createRegistry(dataDir)
+    const runtime = await registry.create()
+    const notifications: DomainEvent[][] = []
+    const unsubscribe = runtime.subscribe(notification => {
+      notifications.push([...notification.events])
+    })
+
+    await issueDispatchCommand(runtime)
+    unsubscribe()
+
+    const flattened = notifications.flat()
+    expect(notifications.every(notification => notification.length > 0)).toBe(true)
+    expect(flattened.map(event => event.seq)).toEqual([...flattened.map(event => event.seq)].sort((a, b) => a - b))
+    expect(flattened.some(event => event.type === 'object.upserted')).toBe(true)
+    expect(flattened.some(event => event.type === 'command.result')).toBe(true)
+    await runtime.close()
+  })
+
   test('rejoins an existing control instance by id', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const registry = createRegistry(dataDir)

@@ -28,7 +28,14 @@ export type SimulationEvent =
       readonly provenance: Provenance
     }
 
-export type SimulationEventHandler = (event: SimulationEvent) => void
+export interface SimulationEmission {
+  readonly type: 'event.emission'
+  readonly events: ReadonlyArray<SimulationEvent>
+  readonly emittedAt: IsoTimestamp
+  readonly providerId: string
+}
+
+export type SimulationEventHandler = (emission: SimulationEmission) => void
 
 export interface SimulationConnection {
   readonly getSnapshot: () => Promise<SimulationSnapshot>

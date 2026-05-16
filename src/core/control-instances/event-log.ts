@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 import { domainEventSchema, type DomainEvent } from '../model/index.ts'
 
 export interface EventLog {
-  readonly append: (event: DomainEvent) => Promise<void>
+  readonly appendMany: (events: ReadonlyArray<DomainEvent>) => Promise<void>
   readonly readAll: () => Promise<ReadonlyArray<DomainEvent>>
   readonly readAfter: (seq: number) => Promise<ReadonlyArray<DomainEvent>>
 }
@@ -40,9 +40,10 @@ export const createJsonlEventLog = (path: string): EventLog => {
   const readAll = async (): Promise<ReadonlyArray<DomainEvent>> => readEvents(path)
 
   return {
-    append: async (event: DomainEvent): Promise<void> => {
+    appendMany: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+      if (events.length === 0) return
       await mkdir(dirname(path), { recursive: true })
-      await appendFile(path, `${JSON.stringify(event)}\n`, 'utf8')
+      await appendFile(path, events.map(event => JSON.stringify(event)).join('\n') + '\n', 'utf8')
     },
     readAll,
     readAfter: async (seq: number): Promise<ReadonlyArray<DomainEvent>> =>

@@ -13,8 +13,8 @@
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from './control-instance-client.ts'
   import {
-    applyControlInstanceEventMessage,
-    parseControlInstanceEventMessage,
+    applyControlInstanceEventBatchMessage,
+    parseControlInstanceEventBatchMessage,
   } from './control-instance-events.ts'
   import {
     categoryRowsFor,
@@ -43,6 +43,7 @@
   let categoryRows: ReadonlyArray<CategoryRow> = []
   let controlInstanceSocket: WebSocket | null = null
   let placementCursor: { readonly icon: IconName; readonly color: string } | null = null
+  let routeRevision = 0
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -172,19 +173,22 @@
     socket.onmessage = (message) => {
       let parsed
       try {
-        parsed = parseControlInstanceEventMessage(message.data as string)
+        parsed = parseControlInstanceEventBatchMessage(message.data as string)
       } catch (err) {
         status = err instanceof Error ? err.message : 'Invalid WebSocket message'
         return
       }
       if (!parsed) return
-      const applied = applyControlInstanceEventMessage({ objects, selectedControllerId }, parsed)
+      const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId }, parsed)
       if (applied.objectUpdate) {
         objects = [...applied.objectUpdate.objects]
         selectedControllerId = applied.objectUpdate.selectedControllerId
       }
       if (applied.commandStatusUpdate) {
         commandStatus = applied.commandStatusUpdate.commandStatus
+      }
+      if (applied.routesChanged) {
+        routeRevision += 1
       }
     }
   }
@@ -310,6 +314,7 @@
         {selectedControllerId}
         {placementMode}
         {placementCursor}
+        {routeRevision}
         {hasNewInfo}
         {presentationFor}
         onObjectSelected={selectObject}
