@@ -26,6 +26,7 @@
   let map: MapLibreMap | null = null
   let markerPopup: maplibregl.Popup | null = null
   let loaded = false
+  let renderRevision = 0
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -49,6 +50,11 @@
     if (!current || !loaded) return
     const source = current.getSource(mapSourceIds.plannedRoutes) as GeoJSONSource | undefined
     if (source) source.setData(createRouteFeatureCollection([...objects], selectedControllerId))
+  }
+
+  const refreshSources = (): void => {
+    refreshObjectSource()
+    refreshRouteSource()
   }
 
   const detailLines = (object: OperationalObject): ReadonlyArray<string> =>
@@ -195,6 +201,7 @@
         const object = objectFromMapEvent(event)
         if (!object) return
         onObjectSeen(object)
+        renderRevision += 1
         showMarkerPopup(object)
       })
       current.on('mouseleave', layerId, () => {
@@ -244,8 +251,7 @@
         addMapSourcesAndLayers(current)
         addObjectInteractions(current)
         loaded = true
-        refreshObjectSource()
-        refreshRouteSource()
+        refreshSources()
       })()
     })
   })
@@ -257,8 +263,12 @@
     loaded = false
   })
 
-  $: refreshObjectSource()
-  $: refreshRouteSource()
+  $: {
+    objects
+    selectedControllerId
+    renderRevision
+    refreshSources()
+  }
 </script>
 
 <div class="map" bind:this={mapElement}></div>

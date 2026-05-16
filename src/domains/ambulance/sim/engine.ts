@@ -408,6 +408,12 @@ const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<Ob
   }
 }
 
+const initialSegmentIndexFor = (currentPoint: GeoJsonPoint, route: GeoJsonLineString): number => {
+  if (route.coordinates.length <= 1) return 0
+  const firstPoint = pointFromPosition(route.coordinates[0] ?? currentPoint.coordinates)
+  return distanceMeters(currentPoint, firstPoint) < 2 ? 1 : 0
+}
+
 const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
   kind: 'facility',
@@ -803,7 +809,7 @@ export const createAmbulanceSimEngine = (config: {
       targetObjectId: updatedIncident.id,
       metersPerSecond: 15,
       route: routeResult.geometry,
-      segmentIndex: 0,
+      segmentIndex: initialSegmentIndexFor(getPoint(updatedAmbulance), routeResult.geometry),
     })
     return { ok: true, commandId: command.id, acceptedAt: at3 }
   }

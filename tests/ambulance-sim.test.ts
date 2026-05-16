@@ -153,6 +153,34 @@ describe('local ambulance simulator', () => {
     expect(movedAmbulance?.spatial.position?.point.coordinates[1]).toBeGreaterThanOrEqual(59.936395)
   })
 
+  test('starts moving immediately when the route begins at the ambulance position', async () => {
+    const scenario = createOsloAmbulanceScenario()
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId,
+      scenario,
+      routing: createDirectRoutingAdapter(),
+    })
+    const initial = engine.snapshot()
+    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
+    const incident = initial.objects.find(object => object.kind === 'incident')
+    if (!ambulance || !incident || !ambulance.spatial.position) throw new Error('scenario missing ambulance or incident')
+    const initialPoint = ambulance.spatial.position.point
+
+    const result = await engine.handleCommand(makeCommand({
+      id: 'route-starts-at-ambulance',
+      kind: setDestinationCommandKind,
+      targetObjectIds: [ambulance.id, incident.id],
+      payload: { ambulanceId: ambulance.id, destinationId: incident.id },
+    }))
+    expect(result.ok).toBe(true)
+
+    engine.tick(1_000)
+    const movedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
+    if (!movedAmbulance?.spatial.position) throw new Error('missing moved ambulance position')
+    expect(movedAmbulance.spatial.position.point.coordinates).not.toEqual(initialPoint.coordinates)
+    expect(movedAmbulance.spatial.position.speedMps).toBeGreaterThan(0)
+  })
+
   test('creates ambulance domain objects from operator commands', async () => {
     const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
     const result = await connection.sendCommand(makeCommand({
