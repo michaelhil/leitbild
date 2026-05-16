@@ -64,7 +64,6 @@ const routeKeyFor = (object: OperationalObject): string => {
   return [
     object.tasking?.currentTaskId ?? '',
     object.operational.status,
-    object.spatial.route?.etaSeconds ?? '',
     object.spatial.route?.source ?? '',
     route.coordinates.map(coordinate => `${coordinate[0]},${coordinate[1]}`).join(';'),
   ].join('|')

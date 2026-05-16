@@ -34,6 +34,7 @@
   let mapElement: HTMLDivElement
   let map: MapLibreMap | null = null
   let markerPopup: maplibregl.Popup | null = null
+  let hoveredObjectId: string | null = null
   let loaded = false
   let renderRevision = 0
   let refreshFrame: number | null = null
@@ -62,6 +63,15 @@
     if (source) source.setData(createObjectFeatureCollection([...sourceObjects], selectedControllerId, hasNewInfo, presentationFor))
   }
 
+  const objectById = (
+    objectId: string | null,
+    sourceObjects: ReadonlyArray<OperationalObject> = objects,
+  ): OperationalObject | null => (
+    objectId === null
+      ? null
+      : sourceObjects.find(candidate => candidate.id === objectId) ?? null
+  )
+
   const refreshRouteSource = (): void => {
     const current = map
     if (!current || !loaded) return
@@ -81,7 +91,9 @@
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = null
       const nowMs = performance.now()
-      if (objectSourceDirty) refreshObjectSource(displayObjectsFor(objects, displayMotionState, nowMs))
+      const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
+      if (objectSourceDirty) refreshObjectSource(displayObjects)
+      refreshMarkerPopup(displayObjects)
       if (routeSourceDirty) refreshRouteSource()
       objectSourceDirty = false
       routeSourceDirty = false
@@ -99,7 +111,9 @@
     displayFrame = requestAnimationFrame(() => {
       displayFrame = null
       const nowMs = performance.now()
-      refreshObjectSource(displayObjectsFor(objects, displayMotionState, nowMs))
+      const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
+      refreshObjectSource(displayObjects)
+      refreshMarkerPopup(displayObjects)
       if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
         scheduleDisplayAnimation()
       }
@@ -133,22 +147,34 @@
     const current = map
     const point = pointOf(object)
     if (!current || !point) return
+    hoveredObjectId = object.id
     const [lon, lat] = point.coordinates
-    markerPopup?.remove()
-    markerPopup = new maplibregl.Popup({
+    markerPopup = markerPopup ?? new maplibregl.Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 26,
       className: 'object-popup',
     })
+    markerPopup
       .setLngLat([lon, lat])
       .setHTML(hoverCardHtml(object))
       .addTo(current)
   }
 
   const hideMarkerPopup = (): void => {
+    hoveredObjectId = null
     markerPopup?.remove()
     markerPopup = null
+  }
+
+  const refreshMarkerPopup = (sourceObjects: ReadonlyArray<OperationalObject> = objects): void => {
+    const object = objectById(hoveredObjectId, sourceObjects)
+    const point = object ? pointOf(object) : null
+    if (!markerPopup || !object || !point) return
+    const [lon, lat] = point.coordinates
+    markerPopup
+      .setLngLat([lon, lat])
+      .setHTML(hoverCardHtml(object))
   }
 
   const registerMapIcon = async (current: MapLibreMap, iconId: string, iconName: IconName, color: string): Promise<void> => {
@@ -345,6 +371,7 @@
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
     scheduleSourceRefresh({ objects: true, routes: routesChanged })
+    refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
