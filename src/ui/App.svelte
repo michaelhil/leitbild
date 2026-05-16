@@ -5,21 +5,27 @@
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { ambulancePack } from '../domains/ambulance/pack.ts'
   import { isIconName, type IconName } from './icons.ts'
+  import {
+    createControlInstance,
+    joinControlInstance as joinControlInstanceClient,
+    listControlInstances,
+    sendControlInstanceCommand,
+    syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
+  } from './control-instance-client.ts'
+  import {
+    applyControlInstanceEventMessage,
+    parseControlInstanceEventMessage,
+  } from './control-instance-events.ts'
+  import {
+    categoryRowsFor,
+    placementCursorFor,
+    selectedControllerObjectFor,
+  } from './control-surface-selectors.ts'
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
   import MapSurface from './MapSurface.svelte'
-  import type { CategoryRow, CommandResponse, ControlInstanceListResponse, ControlInstanceResponse, ControlInstanceSummary, CreateDraft } from './types.ts'
-
-  interface EventMessage {
-    readonly type: 'event'
-    readonly event: {
-      readonly type: string
-      readonly object?: OperationalObject
-      readonly objectId?: string
-      readonly result?: { readonly ok: boolean; readonly reason?: string }
-    }
-  }
+  import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
 
   const packRegistry = createPackRegistry([ambulancePack])
   const activePack: LeitbildPack = packRegistry.require('ambulance')
@@ -55,9 +61,7 @@
   }
 
   const loadInstances = async (): Promise<void> => {
-    const response = await fetch('/api/control-instances', { cache: 'no-store' })
-    if (!response.ok) throw new Error(`control instance list failed: ${response.status}`)
-    const body = await response.json() as ControlInstanceListResponse
+    const body = await listControlInstances()
     instances = body.controlInstances
     status = 'Ready'
   }
@@ -68,9 +72,7 @@
 
   const createInstance = async (): Promise<void> => {
     status = 'Creating Control Instance'
-    const response = await fetch('/api/control-instances', { method: 'POST' })
-    if (!response.ok) throw new Error(`control instance create failed: ${response.status}`)
-    const body = await response.json() as ControlInstanceResponse
+    const body = await createControlInstance()
     openInstance(body.id)
   }
 
@@ -79,24 +81,19 @@
 
   const syncControlInstanceSnapshot = async (): Promise<void> => {
     if (!controlInstanceId) return
-    const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/snapshot`, { cache: 'no-store' })
-    if (!response.ok) throw new Error(`snapshot sync failed: ${response.status}`)
-    const body = await response.json() as ControlInstanceResponse
+    const body = await syncControlInstanceSnapshotClient(controlInstanceId)
     objects = [...body.snapshot.objects]
   }
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
     if (!controlInstanceId) return
-    const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/commands`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind, targetObjectIds, payload }),
-    })
-    if (!response.ok) {
-      commandStatus = `Command failed: ${response.status}`
+    let body
+    try {
+      body = await sendControlInstanceCommand(controlInstanceId, { kind, targetObjectIds, payload })
+    } catch (err) {
+      commandStatus = err instanceof Error ? err.message : 'command failed'
       return
     }
-    const body = await response.json() as CommandResponse
     if (!body.result.ok) {
       commandStatus = `Command rejected: ${body.result.reason ?? 'unknown reason'}`
       return
@@ -153,15 +150,6 @@
     }
   }
 
-  const applyObject = (object: OperationalObject): void => {
-    objects = [...objects.filter(existing => existing.id !== object.id), object]
-  }
-
-  const removeObject = (objectId: string): void => {
-    objects = objects.filter(object => object.id !== objectId)
-    if (selectedControllerId === objectId) selectedControllerId = null
-  }
-
   const detailLines = (object: OperationalObject): ReadonlyArray<string> => {
     return presentationFor(object).detailLines
   }
@@ -182,12 +170,21 @@
       status = 'WebSocket error'
     }
     socket.onmessage = (message) => {
-      const parsed = JSON.parse(message.data as string) as EventMessage
-      if (parsed.type !== 'event') return
-      if (parsed.event.type === 'object.upserted' && parsed.event.object) applyObject(parsed.event.object)
-      if (parsed.event.type === 'object.deleted' && parsed.event.objectId) removeObject(parsed.event.objectId)
-      if (parsed.event.type === 'command.result' && parsed.event.result) {
-        commandStatus = parsed.event.result.ok ? 'Command accepted' : `Command rejected: ${parsed.event.result.reason ?? 'unknown reason'}`
+      let parsed
+      try {
+        parsed = parseControlInstanceEventMessage(message.data as string)
+      } catch (err) {
+        status = err instanceof Error ? err.message : 'Invalid WebSocket message'
+        return
+      }
+      if (!parsed) return
+      const applied = applyControlInstanceEventMessage({ objects, selectedControllerId }, parsed)
+      if (applied.objectUpdate) {
+        objects = [...applied.objectUpdate.objects]
+        selectedControllerId = applied.objectUpdate.selectedControllerId
+      }
+      if (applied.commandStatusUpdate) {
+        commandStatus = applied.commandStatusUpdate.commandStatus
       }
     }
   }
@@ -212,9 +209,7 @@
 
   const joinControlInstance = async (): Promise<void> => {
     const id = controlInstanceIdFromPath()
-    const response = await fetch(`/api/control-instances/${encodeURIComponent(id)}`, { method: 'POST' })
-    if (!response.ok) throw new Error(`control instance join failed: ${response.status}`)
-    const body = await response.json() as ControlInstanceResponse
+    const body = await joinControlInstanceClient(id)
     controlInstanceId = body.id
     objects = [...body.snapshot.objects]
     selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
@@ -281,15 +276,9 @@
     controlInstanceSocket = null
   })
 
-  $: selectedControllerObject = objects.find(object => object.id === selectedControllerId && activePack.isController(object)) ?? null
-  $: categoryRows = activePack.categories.map(category => ({
-    category,
-    objects: objects.filter(object => category.matches(object)),
-    createType: activePack.createObjectTypes.find(type => type.categoryId === category.id),
-  }))
-  $: placementCursor = placementMode && isIconName(placementMode.icon)
-    ? { icon: placementMode.icon, color: placementMode.color }
-    : null
+  $: selectedControllerObject = selectedControllerObjectFor(objects, selectedControllerId, activePack)
+  $: categoryRows = categoryRowsFor(objects, activePack)
+  $: placementCursor = placementCursorFor(placementMode, activePack)
 </script>
 
 {#if routeMode === 'picker'}
