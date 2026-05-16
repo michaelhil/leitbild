@@ -14,6 +14,7 @@ import {
 } from '../commands.ts'
 import { ambulanceDomainId, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData, type InjurySummary } from '../model.ts'
 import type { AmbulanceScenario } from '../scenario.ts'
+import { applyAmbulanceArrivalInteraction } from './interactions.ts'
 
 interface AmbulanceMotion {
   readonly targetObjectId: ObjectId
@@ -117,6 +118,10 @@ const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimest
     level: confirmedFact('advanced', at, 'scenario', 1),
     availableSeats: confirmedFact(1, at, 'scenario', 1),
   },
+  transport: {
+    patientCapacity: confirmedFact(1, at, 'scenario', 1),
+    patientsOnBoard: confirmedFact(0, at, 'scenario', 1),
+  },
 })
 
 const makeIncidentDomainData = (triage: 'green' | 'yellow' | 'red', at: IsoTimestamp, assignedAmbulanceId?: ObjectId): IncidentDomainData => ({
@@ -138,6 +143,7 @@ const makeHospitalDomainData = (at: IsoTimestamp): HospitalDomainData => ({
   emergencyDepartment: {
     traumaBedsAvailable: confirmedFact(3, at, 'scenario', 1),
     ambulanceBaysAvailable: confirmedFact(2, at, 'scenario', 1),
+    patientsReceived: confirmedFact(0, at, 'scenario', 1),
     diversionStatus: confirmedFact('open', at, 'scenario', 1),
   },
   capabilities: ['trauma_center', 'stroke_unit', 'cardiac_catheterization'],
@@ -353,6 +359,17 @@ const upsertEvent = (object: OperationalObject, at: IsoTimestamp): SimulationEve
     source: 'simulator',
     adapterId,
     externalId: object.id,
+  },
+})
+
+const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): SimulationEvent => ({
+  type: 'object.deleted',
+  objectId,
+  at,
+  provenance: {
+    source: 'simulator',
+    adapterId,
+    externalId: objectId,
   },
 })
 
@@ -678,16 +695,28 @@ export const createAmbulanceSimEngine = (config: {
           updatedAt: at2,
         },
       }
-      const updated = arrived
-        ? stopAmbulance(moving, at2, target.kind === 'incident' ? 'on_scene' : 'available')
-        : moving
-      state.objects.set(ambulanceId, updated)
       if (arrived) {
         state.motion.delete(ambulanceId)
+        const stopped = stopAmbulance(moving, at2, target.kind === 'incident' ? 'on_scene' : 'available')
+        const interaction = applyAmbulanceArrivalInteraction({
+          ambulance: stopped,
+          target,
+          at: at2,
+          adapterId,
+        })
+        for (const object of interaction.upserts) {
+          state.objects.set(object.id, object)
+          events.push(upsertEvent(object, at2))
+        }
+        for (const objectId of interaction.deletes) {
+          state.objects.delete(objectId)
+          events.push(deleteEvent(objectId, at2))
+        }
       } else {
+        state.objects.set(ambulanceId, moving)
         state.motion.set(ambulanceId, { ...motion, segmentIndex })
+        events.push(upsertEvent(moving, at2))
       }
-      events.push(upsertEvent(updated, at2))
     }
     return events
   }

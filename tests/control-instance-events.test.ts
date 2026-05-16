@@ -53,6 +53,20 @@ describe('control instance event helpers', () => {
     expect(next.find(candidate => candidate.id === object.id)?.label).toBe('Updated object')
   })
 
+  test('upserts existing objects without changing their list order', () => {
+    const objects = scenarioObjects()
+    const first = objects[0]
+    const second = objects[1]
+    const third = objects[2]
+    if (!first || !second || !third) throw new Error('scenario fixture missing expected objects')
+
+    const updatedSecond = { ...second, label: 'Updated second object', revision: second.revision + 1 }
+    const next = upsertOperationalObject(objects, updatedSecond)
+
+    expect(next.map(object => object.id)).toEqual(objects.map(object => object.id))
+    expect(next[1]?.label).toBe('Updated second object')
+  })
+
   test('removes deleted objects and clears selection when the selected controller is deleted', () => {
     const objects = scenarioObjects()
     const selected = objects[0]

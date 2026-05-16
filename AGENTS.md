@@ -27,6 +27,9 @@
 - Keep files and functions small enough to remain navigable.
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep domain-specific logic in domain modules; keep `core` use-case agnostic.
+- Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
+- Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
+- Keep domain interaction rules inside simulation/domain packs. Objects may be the source or subject of events, but simulation instances emit ordered events through the adapter; objects are data, not active executable actors.
 
 ## Map Rendering Rules
 

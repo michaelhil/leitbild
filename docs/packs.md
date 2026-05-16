@@ -22,9 +22,10 @@ Example repositories:
 A pack may contain:
 
 - domain schemas and domain object data validators
+- object context schemas, context seed data, and agent-context renderers
 - command kinds and payload validators
 - simulation adapters or local simulation engines
-- scenarios and run configurations
+- scenario definitions, mission definitions, and run configurations
 - object icons, map symbols, and style rules
 - object categories, summaries, hover details, and inspectors
 - command/action builders for UI controls
@@ -111,6 +112,8 @@ Future external packs should include `leitbild.pack.json`.
     ],
     "simulationAdapters": ["ambulance.local"],
     "scenarios": ["oslo-basic"],
+    "missions": ["oslo-response-basic"],
+    "contextSchemas": ["ambulance.context.v1"],
     "ui": ["objectDisplay", "inspector", "actions"],
     "map": ["icons", "plannedRoutes"],
     "metrics": ["response_time", "time_to_scene"]
@@ -149,6 +152,20 @@ Composition rules:
 - Packs issue changes to other domains only through declared commands/events.
 
 Multi-pack simulation orchestration is deferred until there are at least two real domain packs.
+
+## Scenario, Mission, and Context Contributions
+
+Packs may contribute reusable data and schemas:
+
+- **Scenario Definitions** initialize world settings, operational objects, initial object contexts, and simulator configuration.
+- **Mission Definitions** describe goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
+- **Object Context contributions** may seed perspective-bearing awareness or provide pack-specific renderers for agent context views.
+
+Packs must keep boundaries clear:
+
+- `domainData` is pack-owned domain operational truth.
+- `context` is perspective-bearing awareness.
+- mission progress is runtime state owned by Leitbild, not static pack data.
 
 ## Trust Model
 

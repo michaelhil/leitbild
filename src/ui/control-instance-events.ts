@@ -68,8 +68,11 @@ export const parseControlInstanceEventMessage = (raw: string): ControlInstanceEv
 export const upsertOperationalObject = (
   objects: ReadonlyArray<OperationalObject>,
   object: OperationalObject,
-): ReadonlyArray<OperationalObject> =>
-  [...objects.filter(existing => existing.id !== object.id), object]
+): ReadonlyArray<OperationalObject> => {
+  const existingIndex = objects.findIndex(existing => existing.id === object.id)
+  if (existingIndex === -1) return [...objects, object]
+  return objects.map((existing, index) => index === existingIndex ? object : existing)
+}
 
 export const removeOperationalObject = (
   state: ObjectSelectionState,

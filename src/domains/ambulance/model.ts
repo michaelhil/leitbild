@@ -33,6 +33,10 @@ export const ambulanceDomainDataSchema = z.object({
     level: knowledgeFactSchema(z.enum(['basic', 'advanced', 'critical_care'])),
     availableSeats: knowledgeFactSchema(z.number().int().nonnegative()),
   }),
+  transport: z.object({
+    patientCapacity: knowledgeFactSchema(z.number().int().nonnegative()),
+    patientsOnBoard: knowledgeFactSchema(z.number().int().nonnegative()),
+  }).optional(),
 })
 export type AmbulanceDomainData = z.infer<typeof ambulanceDomainDataSchema>
 
@@ -63,6 +67,7 @@ export const hospitalDomainDataSchema = z.object({
   emergencyDepartment: z.object({
     traumaBedsAvailable: knowledgeFactSchema(z.number().int().nonnegative()),
     ambulanceBaysAvailable: knowledgeFactSchema(z.number().int().nonnegative()),
+    patientsReceived: knowledgeFactSchema(z.number().int().nonnegative()).optional(),
     diversionStatus: knowledgeFactSchema(z.enum(['open', 'limited', 'closed'])),
   }),
   capabilities: z.array(z.enum([

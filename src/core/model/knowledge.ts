@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
-export const factSourceSchema = z.enum(['scenario', 'simulation', 'operator', 'sensor', 'ai'])
+export const factSourceSchema = z.enum(['scenario', 'simulation', 'operator', 'sensor', 'ai', 'radio', 'message', 'system'])
 export type FactSource = z.infer<typeof factSourceSchema>
 
 export interface UnknownFact {

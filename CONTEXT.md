@@ -28,6 +28,26 @@ _Avoid_: Participant, User when referring to operational identity inside a contr
 A functional UI mode presented by a client.
 _Avoid_: View when referring to a domain-level UI mode
 
+**Object Context**:
+Structured, perspective-bearing artificial situation awareness attached to an operational object. It records facts, activity, references, and summaries from an asset, operator, system, or AI perspective.
+_Avoid_: using context as an untyped junk drawer, or using it for domain operational truth that belongs in `domainData`
+
+**Scenario Definition**:
+Initial setup for a control instance or simulation instance: world settings, initial objects, initial object contexts, and simulator configuration.
+_Avoid_: Mission when referring only to initial world setup
+
+**Mission Definition**:
+Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
+_Avoid_: Scenario when referring to objective/task progression
+
+**Mission Progress State**:
+Runtime execution state for a mission definition, including active stages, objective/task statuses, fired triggers, and timestamps.
+_Avoid_: storing runtime progress inside the reusable Mission Definition
+
+**Agent Context View**:
+A bounded, derived, LLM-friendly view assembled from object state, object context, mission/task state, and relevant nearby objects.
+_Avoid_: persisting generated prompt text or full event logs as canonical object state
+
 ## Relationships
 
 - A **Control Instance** has one or more **Simulation Instances**.
@@ -38,6 +58,10 @@ _Avoid_: View when referring to a domain-level UI mode
 - An **Actor** can have many **Clients**.
 - A **Client** presents one primary **Surface** at a time.
 - A future user account can map to one or more **Actors**.
+- An **Operational Object** can have optional **Object Context**.
+- A **Scenario Definition** can initialize **Operational Objects** and their **Object Context**.
+- A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Definition**.
+- **Mission Progress State** belongs to a running **Control Instance**, not to the reusable **Mission Definition**.
 
 ## Example dialogue
 
@@ -58,3 +82,4 @@ _Avoid_: View when referring to a domain-level UI mode
 - "session" was used to mean the shared world; resolved: the shared world is a **Control Instance**.
 - "instance" can mean too many things in software; resolved: technical contexts must qualify the noun as **Control Instance** or **Simulation Instance**.
 - "participant" sounded too research-specific; resolved: use **Actor** for operational identity inside a Control Instance.
+- "state" can mean canonical truth, domain state, runtime progress, or perspective. Use **domainData** for domain operational truth, **Object Context** for perspective-bearing awareness, and **Mission Progress State** for mission runtime status.

@@ -57,6 +57,7 @@ const ambulanceDetails = (
   `Capabilities: ${listText(data.capabilities)}`,
   `Crew: ${factText(data.crew.level)}`,
   `Seats: ${factText(data.crew.availableSeats)}`,
+  `Patients: ${factText(data.transport?.patientsOnBoard, String)} / ${factText(data.transport?.patientCapacity, String)}`,
 ]
 
 const incidentDetails = (data: IncidentDomainData): ReadonlyArray<string> => [
@@ -69,6 +70,7 @@ const incidentDetails = (data: IncidentDomainData): ReadonlyArray<string> => [
 const hospitalDetails = (data: HospitalDomainData): ReadonlyArray<string> => [
   `Trauma beds: ${factText(data.emergencyDepartment.traumaBedsAvailable, String)}`,
   `Ambulance bays: ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`,
+  `Patients received: ${factText(data.emergencyDepartment.patientsReceived, String)}`,
   `Diversion: ${factText(data.emergencyDepartment.diversionStatus)}`,
   `Capabilities: ${listText(data.capabilities)}`,
 ]
