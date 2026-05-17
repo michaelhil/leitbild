@@ -5,15 +5,29 @@
   import IconButton from './components/IconButton.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
 
-  export let object: OperationalObject
-  export let presentation: PackObjectPresentation
-  export let statusPresentation: PackObjectStatusPresentation
-  export let selected: boolean
-  export let hasNewInfo: boolean
-  export let visibleFields: ReadonlyArray<PackObjectField>
-  export let markSeen: (object: OperationalObject) => void
-  export let selectObject: (object: OperationalObject) => void
-  export let deleteObject: (object: OperationalObject) => Promise<void>
+  interface Props {
+    readonly object: OperationalObject
+    readonly presentation: PackObjectPresentation
+    readonly statusPresentation: PackObjectStatusPresentation
+    readonly selected: boolean
+    readonly hasNewInfo: boolean
+    readonly visibleFields: ReadonlyArray<PackObjectField>
+    readonly markSeen: (object: OperationalObject) => void
+    readonly selectObject: (object: OperationalObject) => void
+    readonly deleteObject: (object: OperationalObject) => Promise<void>
+  }
+
+  let {
+    object,
+    presentation,
+    statusPresentation,
+    selected,
+    hasNewInfo,
+    visibleFields,
+    markSeen,
+    selectObject,
+    deleteObject,
+  }: Props = $props()
 </script>
 
 <div
@@ -22,7 +36,7 @@
   class:muted={presentation.muted === true}
   class="object-row"
 >
-  <button class="object-row-main" type="button" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
+  <button class="object-row-main" type="button" onmouseenter={() => markSeen(object)} onfocus={() => markSeen(object)} onclick={() => selectObject(object)}>
     <span class="object-status">
       <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
     </span>

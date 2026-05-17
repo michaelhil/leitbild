@@ -1,36 +1,49 @@
 <script lang="ts">
   import { ChevronDown, ChevronRight, Plus } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
-  import type { PackCreateObjectType, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
+  import type { PackCreateObjectType } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
-  import FieldVisibilityMenu, { type FieldVisibilityOption } from './FieldVisibilityMenu.svelte'
+  import FieldVisibilityMenu from './FieldVisibilityMenu.svelte'
   import ObjectRow from './ObjectRow.svelte'
   import { iconHtml, type IconName } from './icons.ts'
   import type { CategoryRow } from './types.ts'
+  import type { FieldVisibilityOption, PresentedObjectRow } from './control-rail-presenter.ts'
 
-  export interface PresentedObjectRow {
-    readonly object: OperationalObject
-    readonly presentation: PackObjectPresentation
-    readonly status: PackObjectStatusPresentation
-    readonly visibleFields: ReadonlyArray<PackObjectField>
-    readonly hasNewInfo: boolean
+  interface Props {
+    readonly row: CategoryRow
+    readonly headerIcon: IconName | null
+    readonly collapsed: boolean
+    readonly fieldMenuOpen: boolean
+    readonly fieldOptions: ReadonlyArray<FieldVisibilityOption>
+    readonly presentedRows: ReadonlyArray<PresentedObjectRow>
+    readonly selectedControllerId: string | null
+    readonly isFieldVisible: (categoryId: string, field: string) => boolean
+    readonly toggleField: (categoryId: string, field: string) => void
+    readonly toggleFieldMenu: (categoryId: string) => void
+    readonly toggleCategory: (categoryId: string) => void
+    readonly beginPlacement: (type: PackCreateObjectType) => void
+    readonly markSeen: (object: OperationalObject) => void
+    readonly selectObject: (object: OperationalObject) => void
+    readonly deleteObject: (object: OperationalObject) => Promise<void>
   }
 
-  export let row: CategoryRow
-  export let headerIcon: IconName | null
-  export let collapsed: boolean
-  export let fieldMenuOpen: boolean
-  export let fieldOptions: ReadonlyArray<FieldVisibilityOption>
-  export let presentedRows: ReadonlyArray<PresentedObjectRow>
-  export let selectedControllerId: string | null
-  export let isFieldVisible: (categoryId: string, field: string) => boolean
-  export let toggleField: (categoryId: string, field: string) => void
-  export let toggleFieldMenu: (categoryId: string) => void
-  export let toggleCategory: (categoryId: string) => void
-  export let beginPlacement: (type: PackCreateObjectType) => void
-  export let markSeen: (object: OperationalObject) => void
-  export let selectObject: (object: OperationalObject) => void
-  export let deleteObject: (object: OperationalObject) => Promise<void>
+  let {
+    row,
+    headerIcon,
+    collapsed,
+    fieldMenuOpen,
+    fieldOptions,
+    presentedRows,
+    selectedControllerId,
+    isFieldVisible,
+    toggleField,
+    toggleFieldMenu,
+    toggleCategory,
+    beginPlacement,
+    markSeen,
+    selectObject,
+    deleteObject,
+  }: Props = $props()
 </script>
 
 <section class="category">

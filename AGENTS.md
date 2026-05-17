@@ -43,6 +43,16 @@
 - Treat the self-hosted vector map artifact as contextual data, not operational truth. Simulation providers and UI surfaces must discover map-context capabilities through `/map/capabilities.json` instead of hard-coding tile assumptions.
 - Do not reintroduce raster OSM base maps or raster fallback paths. Leitbild's base map is vector-only.
 
+## Svelte UI Rules
+
+- Use Svelte 5 runes for new and actively migrated UI code.
+- Use `$props` for component inputs, `$state` for local mutable UI state, `$derived` for derived UI state, and `$effect` only for synchronization with external systems, timers, browser APIs, network connections, or imperative libraries.
+- Do not add new `export let`, `$:`, `on:`, or slot-based APIs in migrated UI code unless there is a clear written reason.
+- Use modern event attributes such as `onclick` in migrated components.
+- Svelte state is client-local UI state only. Do not duplicate Control Instance Projected State into a second canonical UI store.
+- Pure TypeScript UI presenters/selectors are allowed when they concentrate real derivation logic and are tested. Delete them if they become pass-through wrappers.
+- See `docs/adr/0012-svelte-5-ui-architecture.md` before changing UI state architecture.
+
 ## Map Rendering Rules
 
 - Use MapLibre as Leitbild's base geospatial rendering engine.
