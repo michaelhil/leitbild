@@ -6,6 +6,7 @@ import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
+import { persistenceDispositionFor } from './persistence-policy.ts'
 
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
@@ -37,8 +38,8 @@ export const createControlInstanceRuntime = async (config: {
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
   const handlers = new Set<ControlInstanceEventHandler>()
-  const events: DomainEvent[] = [...(config.restoredEvents ?? [])]
-  const restoredEventSeq = events.reduce((max, event) => Math.max(max, event.seq), 0)
+  const durableEvents: DomainEvent[] = [...(config.restoredEvents ?? [])]
+  const restoredEventSeq = durableEvents.reduce((max, event) => Math.max(max, event.seq), 0)
   let seq = Math.max(config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
@@ -50,11 +51,16 @@ export const createControlInstanceRuntime = async (config: {
 
   const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
     if (domainEvents.length === 0) return
+    const eventsToPersist: DomainEvent[] = []
     for (const event of domainEvents) {
+      const previousObject = event.type === 'object.upserted' ? state.getObject(event.object.id) : undefined
       state.apply(event)
-      events.push(event)
+      if (persistenceDispositionFor(event, previousObject) === 'durable') {
+        durableEvents.push(event)
+        eventsToPersist.push(event)
+      }
     }
-    await config.eventLog.appendMany(domainEvents)
+    await config.eventLog.appendMany(eventsToPersist)
     await config.snapshotStore.save(state.snapshot())
     const notification: ControlInstanceEventNotification = { type: 'event.notification', events: domainEvents }
     for (const handler of handlers) handler(notification)
@@ -246,7 +252,7 @@ export const createControlInstanceRuntime = async (config: {
     snapshot: () => state.snapshot(),
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<DomainEvent> => {
       const afterSeq = eventsConfig?.afterSeq ?? -1
-      return events.filter(event => event.seq > afterSeq)
+      return durableEvents.filter(event => event.seq > afterSeq)
     },
     subscribe: (handler: ControlInstanceEventHandler): (() => void) => {
       handlers.add(handler)

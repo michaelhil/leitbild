@@ -88,6 +88,18 @@ _Avoid_: modeling every traffic need as individual cars before aggregate traffic
 Canonical route-awareness state describing how another object or condition affects a moving object's planned route, ETA, or movement assumptions.
 _Avoid_: hiding route impact only inside a simulation provider's private state
 
+**Projected State**:
+The current canonical operational picture for a control instance, held by the Control Instance runtime and persisted in snapshots for fast reload.
+_Avoid_: treating the durable journal or provider-private projections as the current source for UI/API/AI reads
+
+**Durable Journal**:
+Meaningful accepted control-instance history, such as commands, command results, object creation/deletion, interaction signals/effects, notifications, and semantic state changes.
+_Avoid_: using the durable journal as a full high-frequency motion trace
+
+**Live Change Feed**:
+Realtime control-instance updates broadcast to connected clients, including volatile updates that are not written to the durable journal.
+_Avoid_: expecting the live feed to be a permanent replay store
+
 ## Relationships
 
 - A **Control Instance** has one or more **Simulation Instances**.
@@ -111,6 +123,9 @@ _Avoid_: hiding route impact only inside a simulation provider's private state
 - **AI agents** are **Actors** and **Clients** that may issue commands or emit interaction signals, but their outputs are not canonical truth until accepted by handlers and committed as events.
 - The **Control Instance** event log and projected state are the canonical Leitbild truth for UI, API, AI agents, replay, metrics, and interaction handlers.
 - **Traffic Conditions** may create **Route Impacts** for ambulances or future mobile assets, but rerouting remains an explicit command or future policy decision.
+- **Projected State** is the current truth for UI, API, and AI situation reads.
+- The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
+- The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 
 ## Example dialogue
 
