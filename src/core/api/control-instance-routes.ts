@@ -93,7 +93,6 @@ const handleControlInstanceApiInner = async (
         id: scenario.id,
         title: scenario.title,
         description: scenario.description,
-        packs: scenario.packs,
         missionId: scenario.missionId,
       })),
       defaultScenarioId: config.registry.defaultScenarioId(),

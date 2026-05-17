@@ -49,22 +49,24 @@ const callRoute = async <T>(
 describe('control instance API', () => {
   test('lists and fetches scenario definitions', async () => {
     const registry = await createTestRegistry()
-    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly packs: readonly string[]; readonly requiredProviderIds?: readonly string[] }[] }>(
+    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly title: string; readonly description?: string; readonly packs?: readonly string[]; readonly requiredProviderIds?: readonly string[] }[] }>(
       registry,
       '/api/scenarios',
     )
     expect(listed.status).toBe(200)
     expect(listed.body.defaultScenarioId).toBe('oslo-ambulance-tutorial')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance-tutorial')
-    expect(listed.body.scenarios[0]?.packs).toEqual(['ambulance', 'traffic'])
+    expect(listed.body.scenarios[0]?.title).toBe('Oslo ambulance tutorial')
+    expect(listed.body.scenarios[0]?.packs).toBeUndefined()
     expect(listed.body.scenarios[0]?.requiredProviderIds).toBeUndefined()
 
-    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly initialObjects: readonly unknown[] } }>(
+    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly unknown[] } }>(
       registry,
       '/api/scenarios/oslo-ambulance-tutorial',
     )
     expect(fetched.status).toBe(200)
     expect(fetched.body.scenario.id).toBe('oslo-ambulance-tutorial')
+    expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic'])
     expect(fetched.body.scenario.initialObjects).toHaveLength(3)
   })
 
