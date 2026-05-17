@@ -1,14 +1,27 @@
 <script lang="ts">
   import type { Component } from 'svelte'
 
-  export let label: string
-  export let icon: Component
-  export let pressed: boolean | undefined = undefined
-  export let disabled = false
-  export let title = label
-  export let size = 16
-  export let variant: 'default' | 'bare' | 'ghost' = 'default'
-  export let onClick: () => void | Promise<void>
+  interface Props {
+    readonly label: string
+    readonly icon: Component
+    readonly pressed?: boolean
+    readonly disabled?: boolean
+    readonly title?: string
+    readonly size?: number
+    readonly variant?: 'default' | 'bare' | 'ghost'
+    readonly onClick: () => void | Promise<void>
+  }
+
+  let {
+    label,
+    icon: Icon,
+    pressed = undefined,
+    disabled = false,
+    title = label,
+    size = 16,
+    variant = 'default',
+    onClick,
+  }: Props = $props()
 </script>
 
 <button
@@ -18,7 +31,7 @@
   aria-pressed={pressed}
   {title}
   {disabled}
-  on:click|stopPropagation={() => void onClick()}
+  onclick={(event) => { event.stopPropagation(); void onClick() }}
 >
-  <svelte:component this={icon} size={size} strokeWidth={1.8} />
+  <Icon {size} strokeWidth={1.8} />
 </button>

@@ -1,10 +1,14 @@
 <script lang="ts">
   import type { ControlInstanceSummary } from './types.ts'
 
-  export let instances: ReadonlyArray<ControlInstanceSummary>
-  export let status: string
-  export let createInstance: () => Promise<void>
-  export let openInstance: (id: string) => void
+  interface Props {
+    readonly instances: ReadonlyArray<ControlInstanceSummary>
+    readonly status: string
+    readonly createInstance: () => Promise<void>
+    readonly openInstance: (id: string) => void
+  }
+
+  let { instances, status, createInstance, openInstance }: Props = $props()
 </script>
 
 <main class="instance-page">
@@ -14,7 +18,7 @@
         <div class="brand">Leitbild</div>
         <div class="object-meta">{status}</div>
       </div>
-      <button class="command-button" on:click={createInstance}>Create Control Instance</button>
+      <button class="command-button" onclick={createInstance}>Create Control Instance</button>
     </header>
 
     {#if instances.length === 0}
@@ -22,7 +26,7 @@
     {:else}
       <div class="instance-list">
         {#each instances as instance (instance.id)}
-          <button class="instance-row" on:click={() => openInstance(instance.id)}>
+          <button class="instance-row" onclick={() => openInstance(instance.id)}>
             <span>
               <strong>{instance.id}</strong>
               <span class="object-meta">

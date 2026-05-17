@@ -1,10 +1,14 @@
-<script lang="ts" context="module">
+<script module lang="ts">
   export type StatusTone = 'ready' | 'working' | 'error' | 'idle'
 </script>
 
 <script lang="ts">
-  export let tone: StatusTone
-  export let label: string
+  interface Props {
+    readonly tone: StatusTone
+    readonly label: string
+  }
+
+  let { tone, label }: Props = $props()
 </script>
 
 <span

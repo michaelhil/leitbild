@@ -1,14 +1,12 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { onDestroy, onMount, tick } from 'svelte'
-  import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
+  import { tick } from 'svelte'
+  import type { OperationalObject, ControlInstanceId } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackCreationGeometry, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import type { TrafficSeverity } from '../domains/traffic/model.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { ambulancePack } from '../domains/ambulance/pack.ts'
   import { trafficPack } from '../domains/traffic/pack.ts'
-  import { isIconName, type IconName } from './icons.ts'
   import {
     createControlInstance,
     joinControlInstance as joinControlInstanceClient,
@@ -25,6 +23,8 @@
     placementCursorFor,
     selectedControllerObjectFor,
   } from './control-surface-selectors.ts'
+  import { createPlacementState } from './placement-state.svelte.ts'
+  import { createRailLayoutState } from './rail-layout-state.svelte.ts'
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
@@ -44,13 +44,6 @@
     type StartupStepId,
   } from './startup.ts'
   import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
-  import {
-    defaultRailWidth,
-    minRailWidth,
-    railWidthFromPointer,
-    readStoredRailWidth,
-    storeRailWidth,
-  } from './rail-state.ts'
 
   const activePack: LeitbildPack = createCompositePack({
     id: 'leitbild-control',
@@ -58,75 +51,44 @@
     packs: [ambulancePack, trafficPack],
   })
   const appVersion = __LEITBILD_VERSION__
-  let controlInstanceId: ControlInstanceId | null = null
-  let objects: OperationalObject[] = []
-  let selectedControllerId: string | null = null
-  let placementMode: PackCreateObjectType | null = null
-  let createDraft: CreateDraft | null = null
-  let placementPoints: GeoJsonPoint[] = []
-  let status = 'Starting'
-  let commandStatus = ''
-  let routeMode: 'picker' | 'control-instance' = 'control-instance'
-  let instances: ReadonlyArray<ControlInstanceSummary> = []
-  let seenRevisions = new Map<string, number>()
-  let selectedControllerObject: OperationalObject | null = null
-  let categoryRows: ReadonlyArray<CategoryRow> = []
-  let controlInstanceSocket: WebSocket | null = null
-  let placementCursor: { readonly icon: IconName; readonly color: string } | null = null
-  let routeRevision = 0
-  let startupSteps: ReadonlyArray<StartupStep> = createStartupSteps()
-  let mapReady = false
-  let snapshotReady = false
-  let startupDismissed = false
-  let startupStatusModalOpen = false
-  let startupModalVisible = false
-  let MapSurface: Component | null = null
-  let theme: ThemeMode = 'light'
-  let railWidth = defaultRailWidth
-  let lastOpenRailWidth = defaultRailWidth
-  let railResizing = false
-  let railWidthBeforeResize = defaultRailWidth
-  let layoutRevision = 0
-  let systemStatusTone: StatusTone = 'working'
-
-  const setRailWidth = (width: number, persist = false): void => {
-    railWidth = width
-    if (width >= minRailWidth) lastOpenRailWidth = width
-    layoutRevision += 1
-    if (persist) storeRailWidth(width)
-  }
-
-  const stopRailResize = (): void => {
-    if (!railResizing) return
-    railResizing = false
-    document.body.classList.remove('rail-resizing')
-    window.removeEventListener('pointermove', handleRailPointerMove)
-    window.removeEventListener('pointerup', stopRailResize)
-    if (railWidth === 0) {
-      lastOpenRailWidth = railWidthBeforeResize
-    } else {
-      lastOpenRailWidth = railWidth
-    }
-    storeRailWidth(railWidth)
-  }
-
-  const handleRailPointerMove = (event: PointerEvent): void => {
-    if (!railResizing) return
-    setRailWidth(railWidthFromPointer(event.clientX))
-  }
-
-  const startRailResize = (event: PointerEvent): void => {
-    event.preventDefault()
-    if (railWidth === 0) {
-      setRailWidth(lastOpenRailWidth || defaultRailWidth, true)
-      return
-    }
-    railWidthBeforeResize = railWidth
-    railResizing = true
-    document.body.classList.add('rail-resizing')
-    window.addEventListener('pointermove', handleRailPointerMove)
-    window.addEventListener('pointerup', stopRailResize)
-  }
+  let controlInstanceId = $state<ControlInstanceId | null>(null)
+  let objects = $state<OperationalObject[]>([])
+  let selectedControllerId = $state<string | null>(null)
+  let status = $state('Starting')
+  let commandStatus = $state('')
+  let routeMode = $state<'picker' | 'control-instance'>('control-instance')
+  let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
+  let seenRevisions = $state(new Map<string, number>())
+  let controlInstanceSocket = $state<WebSocket | null>(null)
+  let routeRevision = $state(0)
+  let startupSteps = $state<ReadonlyArray<StartupStep>>(createStartupSteps())
+  let mapReady = $state(false)
+  let snapshotReady = $state(false)
+  let startupDismissed = $state(false)
+  let startupStatusModalOpen = $state(false)
+  let MapSurface = $state<Component | null>(null)
+  let theme = $state<ThemeMode>('light')
+  const railLayout = createRailLayoutState()
+  const placement = createPlacementState({
+    packId: activePack.id,
+    defaultName: (type) => defaultName(type),
+    setCommandStatus: (nextStatus) => {
+      commandStatus = nextStatus
+    },
+  })
+  const placementMode = $derived(placement.mode)
+  const createDraft = $derived(placement.draft)
+  const selectedControllerObject = $derived(selectedControllerObjectFor(objects, selectedControllerId, activePack))
+  const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsFor(objects, activePack))
+  const placementCursor = $derived(placementCursorFor(placementMode, activePack))
+  const systemStatusTone = $derived<StatusTone>(
+    startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
+  )
+  const startupModalVisible = $derived(startupModalShouldShow({
+    routeMode,
+    dismissed: startupDismissed,
+    steps: startupSteps,
+  }) || startupStatusModalOpen)
 
   const toggleTheme = (): void => {
     theme = toggleThemeMode()
@@ -177,7 +139,6 @@
   const closeStartupModal = (): void => {
     startupDismissed = true
     startupStatusModalOpen = false
-    startupModalVisible = false
   }
 
   const openStatusModal = (): void => {
@@ -231,11 +192,8 @@
     await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
   }
 
-  const createObject = async (): Promise<void> => {
-    if (!createDraft) return
-    const draft = createDraft
-    createDraft = null
-    placementMode = null
+  const createObject = async (draft: CreateDraft): Promise<void> => {
+    placement.clearDraft()
     commandStatus = `Creating ${draft.objectType.label}`
     const parameters = {
       severity: draft.trafficSeverity,
@@ -379,99 +337,16 @@
     failStep('map', message)
   }
 
-  const beginPlacement = (type: PackCreateObjectType): void => {
-    if (!isIconName(type.icon)) throw new Error(`pack ${activePack.id} requested unknown create cursor icon: ${type.icon}`)
-    placementMode = type
-    createDraft = null
-    placementPoints = []
-    const placementKind = type.placementKind ?? 'point'
-    commandStatus = placementKind === 'route'
-      ? `Click start point for new ${type.label.toLowerCase()}`
-      : placementKind === 'polygon'
-        ? `Click polygon vertices for new ${type.label.toLowerCase()}; press Enter to finish`
-        : `Click map to place new ${type.label.toLowerCase()}`
-  }
-
-  const defaultTrafficSeverity = (): TrafficSeverity => 'high'
-
-  const closePolygon = (points: ReadonlyArray<GeoJsonPoint>): GeoJsonPolygon => {
-    if (points.length < 3) throw new Error('traffic area requires at least three points')
-    const coordinates = points.map(point => point.coordinates)
-    const first = coordinates[0]
-    if (!first) throw new Error('traffic area requires at least one point')
-    const last = coordinates[coordinates.length - 1]
-    const closed = last && last[0] === first[0] && last[1] === first[1]
-      ? coordinates
-      : [...coordinates, first]
-    return { type: 'Polygon', coordinates: [closed] }
-  }
-
-  const defaultTrafficDraftFields = (type: PackCreateObjectType): Pick<CreateDraft, 'trafficSeverity' | 'trafficSpeedFactor' | 'trafficReason'> =>
-    type.id === 'traffic_road_segment' || type.id === 'traffic_area'
-      ? {
-          trafficSeverity: defaultTrafficSeverity(),
-          trafficSpeedFactor: 0.55,
-          trafficReason: 'Operator-created traffic condition',
-        }
-      : {}
-
-  const createDraftFor = (type: PackCreateObjectType, geometry: PackCreationGeometry): void => {
-    createDraft = { objectType: type, geometry, label: defaultName(type), ...defaultTrafficDraftFields(type) }
-    placementMode = null
-    placementPoints = []
-  }
-
-  const placeObjectDraft = (point: GeoJsonPoint): void => {
-    if (!placementMode) return
-    const placementKind = placementMode.placementKind ?? 'point'
-    if (placementKind === 'point') {
-      createDraftFor(placementMode, { kind: 'point', point })
-      return
-    }
-    if (placementKind === 'route') {
-      const nextPoints = [...placementPoints, point]
-      placementPoints = nextPoints
-      if (nextPoints.length < 2) {
-        commandStatus = `Click end point for new ${placementMode.label.toLowerCase()}`
-        return
-      }
-      const from = nextPoints[0]
-      const to = nextPoints[1]
-      if (!from || !to) throw new Error('route traffic requires start and end points')
-      createDraftFor(placementMode, { kind: 'route', from, to })
-      return
-    }
-    placementPoints = [...placementPoints, point]
-    commandStatus = placementPoints.length < 3
-      ? `Click ${3 - placementPoints.length} more point${3 - placementPoints.length === 1 ? '' : 's'} for new ${placementMode.label.toLowerCase()}`
-      : `Press Enter to finish ${placementMode.label.toLowerCase()} polygon`
-  }
-
-  const finishPolygonPlacement = (): void => {
-    if (!placementMode || (placementMode.placementKind ?? 'point') !== 'polygon') return
-    if (placementPoints.length < 3) {
-      commandStatus = `Traffic area needs ${3 - placementPoints.length} more point${3 - placementPoints.length === 2 ? 's' : ''}`
-      return
-    }
-    createDraftFor(placementMode, { kind: 'polygon', polygon: closePolygon(placementPoints) })
-  }
-
-  const cancelPlacement = (): void => {
-    placementMode = null
-    createDraft = null
-    placementPoints = []
-  }
-
-  onMount(() => {
-    theme = initialTheme()
-    if (getTheme() !== theme) document.documentElement.classList.toggle('dark', theme === 'dark')
-    railWidth = readStoredRailWidth()
-    if (railWidth > 0) lastOpenRailWidth = railWidth
+  $effect(() => {
+    const nextTheme = initialTheme()
+    theme = nextTheme
+    if (getTheme() !== nextTheme) document.documentElement.classList.toggle('dark', nextTheme === 'dark')
+    railLayout.initialize()
     const handleKeydown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') cancelPlacement()
+      if (event.key === 'Escape') placement.cancel()
       if (event.key === 'Enter' && placementMode && (placementMode.placementKind ?? 'point') === 'polygon') {
         event.preventDefault()
-        finishPolygonPlacement()
+        placement.finishPolygon()
       }
     }
     const handleClick = (event: MouseEvent): void => {
@@ -479,22 +354,23 @@
       const target = event.target
       if (!(target instanceof Element)) return
       if (target.closest('.map-region')) return
-      cancelPlacement()
+      placement.cancel()
       event.stopImmediatePropagation()
       event.stopPropagation()
       event.preventDefault()
     }
     window.addEventListener('keydown', handleKeydown)
     window.addEventListener('click', handleClick, { capture: true })
-    routeMode = routeModeFromPath()
+    const nextRouteMode = routeModeFromPath()
+    routeMode = nextRouteMode
     completeStep('route')
     completeStep('interface')
-    if (routeMode === 'picker') {
+    if (nextRouteMode === 'picker') {
       void loadInstances()
       return () => {
         window.removeEventListener('keydown', handleKeydown)
         window.removeEventListener('click', handleClick, { capture: true })
-        stopRailResize()
+        railLayout.stopResize()
       }
     }
     void loadMapSurface()
@@ -502,37 +378,23 @@
     return () => {
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('click', handleClick, { capture: true })
-      stopRailResize()
+      railLayout.stopResize()
+      controlInstanceSocket?.close()
+      controlInstanceSocket = null
     }
   })
-
-  onDestroy(() => {
-    stopRailResize()
-    controlInstanceSocket?.close()
-    controlInstanceSocket = null
-  })
-
-  $: selectedControllerObject = selectedControllerObjectFor(objects, selectedControllerId, activePack)
-  $: categoryRows = categoryRowsFor(objects, activePack)
-  $: placementCursor = placementCursorFor(placementMode, activePack)
-  $: systemStatusTone = startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working'
-  $: startupModalVisible = startupModalShouldShow({
-    routeMode,
-    dismissed: startupDismissed,
-    steps: startupSteps,
-  }) || startupStatusModalOpen
 </script>
 
 {#if routeMode === 'picker'}
   <InstancePicker {instances} {status} {createInstance} {openInstance} />
 {:else}
-  <div class:rail-collapsed={railWidth === 0} class="app-shell" style={`--rail-width: ${railWidth}px`}>
+  <div class:rail-collapsed={railLayout.collapsed} class="app-shell" style={`--rail-width: ${railLayout.width}px`}>
     <ControlRail
       {status}
       {systemStatusTone}
       {appVersion}
       {theme}
-      collapsed={railWidth === 0}
+      collapsed={railLayout.collapsed}
       {categoryRows}
       {placementMode}
       {selectedControllerId}
@@ -541,18 +403,18 @@
       {markSeen}
       {selectObject}
       {deleteObject}
-      {beginPlacement}
-      {cancelPlacement}
+      beginPlacement={placement.begin}
+      cancelPlacement={placement.cancel}
       {toggleTheme}
       {openStatusModal}
     />
     <button
       class="rail-resize-handle"
-      class:collapsed={railWidth === 0}
+      class:collapsed={railLayout.collapsed}
       type="button"
-      aria-label={railWidth === 0 ? 'Show control rail' : 'Resize control rail'}
-      title={railWidth === 0 ? 'Show control rail' : 'Drag to resize control rail'}
-      on:pointerdown={startRailResize}
+      aria-label={railLayout.collapsed ? 'Show control rail' : 'Resize control rail'}
+      title={railLayout.collapsed ? 'Show control rail' : 'Drag to resize control rail'}
+      onpointerdown={railLayout.startResize}
     ></button>
 
     <main class="map-region">
@@ -564,11 +426,11 @@
           {placementCursor}
           {theme}
           {routeRevision}
-          {layoutRevision}
+          layoutRevision={railLayout.layoutRevision}
           {hasNewInfo}
           {presentationFor}
           onObjectSelected={selectObject}
-          onPlacementPoint={placeObjectDraft}
+          onPlacementPoint={placement.placePoint}
           onObjectSeen={markSeen}
           onMapReady={handleMapReady}
           onMapError={handleMapError}
@@ -592,5 +454,5 @@
 {/if}
 
 {#if createDraft}
-  <CreateObjectModal {createDraft} {createObject} cancelCreate={cancelPlacement} />
+  <CreateObjectModal {createDraft} {createObject} cancelCreate={placement.cancel} />
 {/if}

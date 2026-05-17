@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { untrack } from 'svelte'
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import { Protocol as PmtilesProtocol } from 'pmtiles'
   import type { GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
@@ -26,28 +26,47 @@
   } from './display-motion.ts'
   import type { ThemeMode } from './theme.ts'
 
-  export let objects: ReadonlyArray<OperationalObject>
-  export let selectedControllerId: string | null
-  export let placementMode: PackCreateObjectType | null
-  export let placementCursor: { readonly icon: IconName; readonly color: string } | null
-  export let theme: ThemeMode
-  export let routeRevision: number
-  export let layoutRevision = 0
-  export let hasNewInfo: (object: OperationalObject) => boolean
-  export let presentationFor: (object: OperationalObject) => PackObjectPresentation
-  export let onObjectSelected: (object: OperationalObject) => void
-  export let onPlacementPoint: (point: GeoJsonPoint) => void
-  export let onObjectSeen: (object: OperationalObject) => void
-  export let onMapReady: () => void
-  export let onMapError: (message: string) => void
+  interface Props {
+    readonly objects: ReadonlyArray<OperationalObject>
+    readonly selectedControllerId: string | null
+    readonly placementMode: PackCreateObjectType | null
+    readonly placementCursor: { readonly icon: IconName; readonly color: string } | null
+    readonly theme: ThemeMode
+    readonly routeRevision: number
+    readonly layoutRevision?: number
+    readonly hasNewInfo: (object: OperationalObject) => boolean
+    readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+    readonly onObjectSelected: (object: OperationalObject) => void
+    readonly onPlacementPoint: (point: GeoJsonPoint) => void
+    readonly onObjectSeen: (object: OperationalObject) => void
+    readonly onMapReady: () => void
+    readonly onMapError: (message: string) => void
+  }
 
-  let mapElement: HTMLDivElement
-  let map: MapLibreMap | null = null
-  let markerPopup: maplibregl.Popup | null = null
-  let hoveredObjectId: string | null = null
-  let loaded = false
-  let renderRevision = 0
-  let refreshFrame: number | null = null
+  const {
+    objects,
+    selectedControllerId,
+    placementMode,
+    placementCursor,
+    theme,
+    routeRevision,
+    layoutRevision = 0,
+    hasNewInfo,
+    presentationFor,
+    onObjectSelected,
+    onPlacementPoint,
+    onObjectSeen,
+    onMapReady,
+    onMapError,
+  }: Props = $props()
+
+  let mapElement = $state<HTMLDivElement | null>(null)
+  let map = $state<MapLibreMap | null>(null)
+  let markerPopup = $state<maplibregl.Popup | null>(null)
+  let hoveredObjectId = $state<string | null>(null)
+  let loaded = $state(false)
+  let renderRevision = $state(0)
+  let refreshFrame = $state<number | null>(null)
   let objectSourceDirty = false
   let routeSourceDirty = false
   let trafficSourceDirty = false
@@ -60,6 +79,7 @@
   let objectInteractionsAdded = false
   let mapReadyNotified = false
   let appliedTheme: ThemeMode | null = null
+  let mapInitialized = false
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -270,17 +290,19 @@
     }
   }
 
-  onMount(() => {
+  $effect(() => {
+    if (mapInitialized || !mapElement) return
+    mapInitialized = true
     const protocol = new PmtilesProtocol({ metadata: true })
     maplibregl.addProtocol('pmtiles', protocol.tile)
     pmtilesProtocolRegistered = true
     const current = new maplibregl.Map({
       container: mapElement,
-      style: styleUrlFor(theme),
+      style: styleUrlFor(untrack(() => theme)),
       center: [10.7522, 59.9139],
       zoom: 12,
     })
-    appliedTheme = theme
+    appliedTheme = untrack(() => theme)
     map = current
     current.on('error', (event) => {
       const error = event.error
@@ -297,24 +319,25 @@
     current.on('load', () => {
       if (!loaded) void setupOperationalMapStyle(current)
     })
-  })
 
-  onDestroy(() => {
-    if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
-    stopDisplayAnimation()
-    hideMarkerPopup()
-    map?.remove()
-    if (pmtilesProtocolRegistered) {
-      maplibregl.removeProtocol('pmtiles')
-      pmtilesProtocolRegistered = false
+    return () => {
+      if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
+      stopDisplayAnimation()
+      hideMarkerPopup()
+      map?.remove()
+      if (pmtilesProtocolRegistered) {
+        maplibregl.removeProtocol('pmtiles')
+        pmtilesProtocolRegistered = false
+      }
+      map = null
+      loaded = false
+      objectInteractionsAdded = false
+      mapReadyNotified = false
+      mapInitialized = false
     }
-    map = null
-    loaded = false
-    objectInteractionsAdded = false
-    mapReadyNotified = false
   })
 
-  $: {
+  $effect(() => {
     objects
     selectedControllerId
     routeRevision
@@ -335,19 +358,19 @@
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
-  }
+  })
 
-  $: {
+  $effect(() => {
     placementCursor
     refreshCanvasCursor()
-  }
+  })
 
-  $: {
+  $effect(() => {
     layoutRevision
     map?.resize()
-  }
+  })
 
-  $: {
+  $effect(() => {
     const current = map
     if (current && appliedTheme !== null && theme !== appliedTheme) {
       appliedTheme = theme
@@ -355,7 +378,7 @@
       hideMarkerPopup()
       current.setStyle(styleUrlFor(theme))
     }
-  }
+  })
 </script>
 
 <div class="map" bind:this={mapElement}></div>

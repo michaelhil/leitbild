@@ -2,24 +2,50 @@
   import ModalShell from './components/ModalShell.svelte'
   import type { CreateDraft } from './types.ts'
 
-  export let createDraft: CreateDraft
-  export let createObject: () => Promise<void>
-  export let cancelCreate: () => void
+  interface Props {
+    readonly createDraft: CreateDraft
+    readonly createObject: (draft: CreateDraft) => Promise<void>
+    readonly cancelCreate: () => void
+  }
 
-  const isTrafficDraft = (): boolean =>
+  let { createDraft, createObject, cancelCreate }: Props = $props()
+  let label = $state('')
+  let trafficSeverity = $state<CreateDraft['trafficSeverity']>(undefined)
+  let trafficSpeedFactor = $state<CreateDraft['trafficSpeedFactor']>(undefined)
+  let trafficReason = $state<CreateDraft['trafficReason']>(undefined)
+
+  const isTrafficDraft = $derived(
     createDraft.objectType.id === 'traffic_road_segment' || createDraft.objectType.id === 'traffic_area'
+  )
+
+  $effect(() => {
+    label = createDraft.label
+    trafficSeverity = createDraft.trafficSeverity
+    trafficSpeedFactor = createDraft.trafficSpeedFactor
+    trafficReason = createDraft.trafficReason
+  })
+
+  const submitDraft = async (): Promise<void> => {
+    await createObject({
+      ...createDraft,
+      label,
+      trafficSeverity,
+      trafficSpeedFactor,
+      trafficReason,
+    })
+  }
 </script>
 
 <ModalShell title="Create new {createDraft.objectType.label}" close={cancelCreate} size="small">
-  <form class="modal-form" id="create-object-form" on:submit|preventDefault={createObject}>
+  <form class="modal-form" id="create-object-form" onsubmit={(event) => { event.preventDefault(); void submitDraft() }}>
     <label>
       Name
-      <input bind:value={createDraft.label} />
+      <input bind:value={label} />
     </label>
-    {#if isTrafficDraft()}
+    {#if isTrafficDraft}
       <label>
         Severity
-        <select bind:value={createDraft.trafficSeverity}>
+        <select bind:value={trafficSeverity}>
           <option value="low">Low</option>
           <option value="moderate">Moderate</option>
           <option value="high">High</option>
@@ -28,18 +54,18 @@
       </label>
       <label>
         Speed factor
-        <input type="number" min="0.05" max="1" step="0.05" bind:value={createDraft.trafficSpeedFactor} />
+        <input type="number" min="0.05" max="1" step="0.05" bind:value={trafficSpeedFactor} />
       </label>
       <label>
         Reason
-        <input bind:value={createDraft.trafficReason} />
+        <input bind:value={trafficReason} />
       </label>
     {/if}
   </form>
-  <svelte:fragment slot="footer">
+  {#snippet footer()}
     <div class="modal-actions">
-      <button type="button" on:click={cancelCreate}>Cancel</button>
+      <button type="button" onclick={cancelCreate}>Cancel</button>
       <button type="submit" form="create-object-form" class="primary">Create</button>
     </div>
-  </svelte:fragment>
+  {/snippet}
 </ModalShell>

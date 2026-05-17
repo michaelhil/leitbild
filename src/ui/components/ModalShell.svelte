@@ -1,16 +1,33 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import type { Snippet } from 'svelte'
   import { X } from 'lucide-svelte'
   import StatusDot, { type StatusTone } from './StatusDot.svelte'
 
-  export let title: string
-  export let close: () => void
-  export let closeOnBackdrop = true
-  export let closeOnEscape = true
-  export let showClose = true
-  export let size: 'small' | 'medium' | 'large' = 'medium'
-  export let description: string | null = null
-  export let titleTone: StatusTone | null = null
+  interface Props {
+    readonly title: string
+    readonly close: () => void
+    readonly closeOnBackdrop?: boolean
+    readonly closeOnEscape?: boolean
+    readonly showClose?: boolean
+    readonly size?: 'small' | 'medium' | 'large'
+    readonly description?: string | null
+    readonly titleTone?: StatusTone | null
+    readonly children?: Snippet
+    readonly footer?: Snippet
+  }
+
+  let {
+    title,
+    close,
+    closeOnBackdrop = true,
+    closeOnEscape = true,
+    showClose = true,
+    size = 'medium',
+    description = null,
+    titleTone = null,
+    children,
+    footer,
+  }: Props = $props()
 
   const closeFromBackdrop = (): void => {
     if (closeOnBackdrop) close()
@@ -22,17 +39,16 @@
     close()
   }
 
-  onMount(() => {
+  $effect(() => {
     window.addEventListener('keydown', handleKeydown)
-  })
-
-  onDestroy(() => {
-    window.removeEventListener('keydown', handleKeydown)
+    return () => {
+      window.removeEventListener('keydown', handleKeydown)
+    }
   })
 </script>
 
-<div class="modal-backdrop" role="presentation" on:mousedown={closeFromBackdrop}>
-  <dialog class="modal-shell {size}" open aria-modal="true" aria-label={title} on:mousedown|stopPropagation>
+<div class="modal-backdrop" role="presentation" onmousedown={closeFromBackdrop}>
+  <dialog class="modal-shell {size}" open aria-modal="true" aria-label={title} onmousedown={(event) => event.stopPropagation()}>
     <header class="modal-header">
       <div>
         <h2>
@@ -46,16 +62,20 @@
         {/if}
       </div>
       {#if showClose}
-        <button class="icon-button" type="button" aria-label="Close" title="Close" on:click|stopPropagation={close}>
+        <button class="icon-button" type="button" aria-label="Close" title="Close" onclick={(event) => { event.stopPropagation(); close() }}>
           <X size={16} strokeWidth={1.8} />
         </button>
       {/if}
     </header>
     <div class="modal-body">
-      <slot />
+      {#if children}
+        {@render children()}
+      {/if}
     </div>
     <footer class="modal-footer">
-      <slot name="footer" />
+      {#if footer}
+        {@render footer()}
+      {/if}
     </footer>
   </dialog>
 </div>

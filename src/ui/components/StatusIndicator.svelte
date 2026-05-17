@@ -3,16 +3,20 @@
   import type { PackObjectStatusIndicator, PackObjectStatusTone } from '../../core/packs/protocol.ts'
   import StatusDot from './StatusDot.svelte'
 
-  export let tone: PackObjectStatusTone
-  export let label: string
-  export let indicator: PackObjectStatusIndicator
+  interface Props {
+    readonly tone: PackObjectStatusTone
+    readonly label: string
+    readonly indicator: PackObjectStatusIndicator
+  }
 
-  const arrowIcon = () => {
+  let { tone, label, indicator }: Props = $props()
+
+  const ArrowIcon = $derived.by(() => {
     if (indicator.direction === 'left') return ArrowLeft
     if (indicator.direction === 'up') return ArrowUp
     if (indicator.direction === 'down') return ArrowDown
     return ArrowRight
-  }
+  })
 </script>
 
 {#if indicator.shape === 'arrow'}
@@ -24,7 +28,7 @@
     aria-label={label}
     role="status"
   >
-    <svelte:component this={arrowIcon()} size={15} strokeWidth={2.4} />
+    <ArrowIcon size={15} strokeWidth={2.4} />
   </span>
 {:else}
   <span class="status-indicator dot" class:pulse={indicator.pulse === true}>

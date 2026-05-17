@@ -1,22 +1,34 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
   import ModalShell from './components/ModalShell.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
   import { startupHasFailed, startupIsReady, type StartupStep } from './startup.ts'
 
-  export let steps: ReadonlyArray<StartupStep>
-  export let tone: StatusTone
-  export let retry: () => Promise<void>
-  export let close: () => void
-  export let autoCloseWhenReady = true
-  export let closeWhenReadyOnly = true
+  interface Props {
+    readonly steps: ReadonlyArray<StartupStep>
+    readonly tone: StatusTone
+    readonly retry: () => Promise<void>
+    readonly close: () => void
+    readonly autoCloseWhenReady?: boolean
+    readonly closeWhenReadyOnly?: boolean
+  }
 
-  let nowMs = performance.now()
-  let retrying = false
-  let interval: number | null = null
-  let closeDelayTimer: number | null = null
-  let fadeTimer: number | null = null
-  let fading = false
+  const {
+    steps,
+    tone,
+    retry,
+    close,
+    autoCloseWhenReady = true,
+    closeWhenReadyOnly = true,
+  }: Props = $props()
+
+  let nowMs = $state(performance.now())
+  let retrying = $state(false)
+  let closeDelayTimer = $state<number | null>(null)
+  let fadeTimer = $state<number | null>(null)
+  let fading = $state(false)
+  const ready = $derived(startupIsReady(steps))
+  const failed = $derived(startupHasFailed(steps))
+  const failedStep = $derived(steps.find(step => step.status === 'failed') ?? null)
 
   const clearCloseTimers = (): void => {
     if (closeDelayTimer !== null) window.clearTimeout(closeDelayTimer)
@@ -24,12 +36,6 @@
     closeDelayTimer = null
     fadeTimer = null
   }
-
-  const ready = (): boolean =>
-    startupIsReady(steps)
-
-  const failed = (): boolean =>
-    startupHasFailed(steps)
 
   const elapsedSeconds = (step: StartupStep): string => {
     if (!step.startedAtMs) return ''
@@ -46,9 +52,6 @@
     return 'Pending'
   }
 
-  const failedStep = (): StartupStep | null =>
-    steps.find(step => step.status === 'failed') ?? null
-
   const retryStartup = async (): Promise<void> => {
     if (retrying) return
     retrying = true
@@ -59,23 +62,21 @@
     }
   }
 
-  onMount(() => {
-    interval = window.setInterval(() => {
+  $effect(() => {
+    const interval = window.setInterval(() => {
       nowMs = performance.now()
     }, 250)
+    return () => {
+      window.clearInterval(interval)
+      clearCloseTimers()
+    }
   })
 
-  onDestroy(() => {
-    if (interval !== null) window.clearInterval(interval)
-    clearCloseTimers()
-  })
-
-  $: {
-    steps
-    if (failed()) {
+  $effect(() => {
+    if (failed) {
       clearCloseTimers()
       fading = false
-    } else if (autoCloseWhenReady && ready() && closeDelayTimer === null && fadeTimer === null && !fading) {
+    } else if (autoCloseWhenReady && ready && closeDelayTimer === null && fadeTimer === null && !fading) {
       closeDelayTimer = window.setTimeout(() => {
         closeDelayTimer = null
         fading = true
@@ -84,11 +85,11 @@
           close()
         }, 2_000)
       }, 2_000)
-    } else if (!ready()) {
+    } else if (!ready) {
       clearCloseTimers()
       fading = false
     }
-  }
+  })
 </script>
 
 <div class:fading class="startup-modal-frame">
@@ -96,8 +97,8 @@
     title="Starting Leitbild"
     description="Opening the control surface and checking each startup step."
     close={close}
-    closeOnBackdrop={!closeWhenReadyOnly || ready()}
-    closeOnEscape={!closeWhenReadyOnly || ready()}
+    closeOnBackdrop={!closeWhenReadyOnly || ready}
+    closeOnEscape={!closeWhenReadyOnly || ready}
     showClose={false}
     titleTone={tone}
     size="medium"
@@ -121,14 +122,14 @@
       </li>
     {/each}
   </ol>
-  <svelte:fragment slot="footer">
-    {#if failedStep()}
+  {#snippet footer()}
+    {#if failedStep}
       <div class="startup-actions">
-        <button class="command-button" disabled={retrying} on:click={retryStartup}>
+        <button class="command-button" disabled={retrying} onclick={retryStartup}>
           {retrying ? 'Retrying' : 'Retry'}
         </button>
       </div>
     {/if}
-  </svelte:fragment>
+  {/snippet}
   </ModalShell>
 </div>

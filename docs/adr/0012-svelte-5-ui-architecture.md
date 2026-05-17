@@ -22,7 +22,7 @@ Svelte 5 runes are the default architecture for new and actively migrated UI cod
 - Prefer snippets over slots when migrating shared composition components and when the result improves typed composition.
 - Use `.svelte.ts` modules for shared client-side UI state when the module has real depth: lifecycle, invariants, persistence, or coordination behind a small interface.
 
-Classic Svelte syntax may remain temporarily in unmigrated files, but new UI work should not introduce new `export let`, `$:`, `on:`, or slot-based APIs unless there is a written reason.
+The primary `src/ui` Svelte component surface should stay fully migrated: no `export let`, `$:` reactive statements, `on:` event directives, deprecated module-script syntax, slot-based modal APIs, or `<svelte:component>` usage unless there is a written reason.
 
 ## State Ownership Rules
 
@@ -42,6 +42,16 @@ Classic Svelte syntax may remain temporarily in unmigrated files, but new UI wor
 6. Migrate `MapSurface` carefully, keeping MapLibre lifecycle imperative and isolated.
 7. Audit remaining classic syntax and either migrate it or document why it remains.
 
+This migration is complete for the current `src/ui` component set as of the runes pass that introduced `rail-layout-state.svelte.ts` and `placement-state.svelte.ts`.
+
+## Structural Patterns
+
+- `App.svelte` coordinates Control Instance state, route selection, startup lifecycle, and lazy loading, but delegates deeper UI workflows to focused rune state modules.
+- `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, resize pointer listeners, and layout invalidation.
+- `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
+- `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
+- `MapSurface.svelte` is an imperative MapLibre adapter. Svelte effects synchronize input boundaries such as object updates, theme changes, layout resize, and placement cursor changes, but MapLibre owns its internal map lifecycle.
+
 ## Consequences
 
 Benefits:
@@ -53,7 +63,7 @@ Benefits:
 
 Costs:
 
-- Some temporary mixed syntax remains until migration phases complete.
+- Runes are now used throughout the current UI component surface, which reduces mixed-pattern overhead.
 - Runes require discipline: `$effect` can become a dumping ground if used for ordinary derivation.
 - `.svelte.ts` state modules can become shallow pass-through wrappers if created too eagerly.
 
