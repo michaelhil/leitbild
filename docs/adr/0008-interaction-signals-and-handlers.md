@@ -16,7 +16,7 @@ Objects do not directly call or mutate other objects. Simulation instances, acto
 
 The Control Instance event log and projected state are the canonical Leitbild truth for shared operational objects. Simulation providers may keep private mechanics and provider-local projections, but they learn about accepted shared state by observing committed Control Instance events. They are not mutated through a second authoritative object-state path.
 
-V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred.
+V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred. Route-impact handling may warn and update canonical route-awareness state, but automatic rerouting is deferred until explicit human, AI, or scenario policy control exists.
 
 ## Rationale
 
@@ -45,6 +45,7 @@ The chosen model follows useful patterns from event-sourced systems, Redux/Elm-s
 - Handler-local mutable memory is disallowed; durable memory belongs in object state, object context, mission progress, or the event log.
 - Handler-emitted follow-up signals and command requests are deferred until loop guards, causation tracking, and TTL semantics are implemented.
 - V1 effects should stay small: object upsert, object delete, and notification emit.
+- Traffic route-impact handlers must not silently reroute mobile assets; rerouting is a command or future declared policy.
 
 ## Rejected Alternatives
 

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { ControlInstanceId, InteractionHandler } from '../model/index.ts'
 import { controlInstanceIdSchema } from '../model/index.ts'
 import type { SimulationAdapter } from '../../simulation/protocol.ts'
+import { createSimulationHub } from '../../simulation/hub.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
@@ -27,7 +28,7 @@ export interface ControlInstanceRegistry {
 
 export const createControlInstanceRegistry = (config: {
   readonly dataDir: string
-  readonly simulationAdapter: SimulationAdapter
+  readonly simulationAdapters: ReadonlyArray<SimulationAdapter>
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
@@ -62,7 +63,7 @@ export const createControlInstanceRegistry = (config: {
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
-    const simulation = await config.simulationAdapter.connect({
+    const simulation = await createSimulationHub(config.simulationAdapters).connect({
       controlInstanceId: id,
       ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
     })

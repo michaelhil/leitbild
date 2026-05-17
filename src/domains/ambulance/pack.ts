@@ -50,6 +50,12 @@ const etaText = (object: OperationalObject): string | null =>
     ? null
     : `ETA: ${formatDurationMmSs(object.spatial.route.etaSeconds)} · Arrives ${formatArrivalClock(object.spatial.route.etaSeconds)}`
 
+const routeImpactText = (object: OperationalObject): string | null => {
+  const impacts = object.spatial.route?.impacts ?? []
+  if (impacts.length === 0) return null
+  return `Traffic impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
+}
+
 const parseAmbulanceData = (object: OperationalObject): AmbulanceDomainData | null => {
   const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
   return parsed.success ? parsed.data : null
@@ -72,6 +78,7 @@ const ambulanceDetails = (
 ): ReadonlyArray<string> => [
   `Destination: ${targetLabel(object, objects)}`,
   ...(etaText(object) ? [etaText(object)!] : []),
+  ...(routeImpactText(object) ? [routeImpactText(object)!] : []),
   `Capabilities: ${listText(data.capabilities)}`,
   `Crew: ${factText(data.crew.level)}`,
   `Seats: ${factText(data.crew.availableSeats)}`,

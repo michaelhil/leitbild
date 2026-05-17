@@ -5,8 +5,10 @@ import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
+import { trafficPack } from '../src/domains/traffic/pack.ts'
+import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createObjectFeatureCollection, createRouteFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
+import { createObjectFeatureCollection, createRouteFeatureCollection, createTrafficLineFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
 
 const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
@@ -115,5 +117,24 @@ describe('map feature projection', () => {
     expect(ambulanceFeature?.properties.icon).toBe('object-ambulance')
     expect(ambulanceFeature?.properties.selected).toBe(true)
     expect(ambulanceFeature?.properties.hasNewInfo).toBe(true)
+  })
+
+  test('projects traffic conditions into native MapLibre line features', async () => {
+    const adapter = createLocalTrafficSimulationAdapter()
+    const connection = await adapter.connect({ controlInstanceId })
+    try {
+      const objects = (await connection.getSnapshot()).objects
+      const trafficFeatures = createTrafficLineFeatureCollection(
+        objects,
+        object => trafficPack.presentObject(object, { objects }),
+      )
+
+      expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
+      expect(trafficFeatures.features).toHaveLength(1)
+      expect(trafficFeatures.features[0]?.id).toBe('traffic:ring2-slowdown')
+      expect(trafficFeatures.features[0]?.properties.color).toBe('#c2410c')
+    } finally {
+      await connection.close()
+    }
   })
 })

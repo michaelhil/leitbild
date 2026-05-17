@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { ControlInstanceId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -11,6 +11,8 @@ import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { assetArrivedAtTargetSignalType } from '../src/domains/ambulance/sim/interactions.ts'
+import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
+import { trafficPack } from '../src/domains/traffic/pack.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -21,8 +23,11 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-api-test-'))
   return createControlInstanceRegistry({
     dataDir,
-    simulationAdapter: createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-    interactionHandlers: ambulancePack.interactionHandlers ?? [],
+    simulationAdapters: [
+      createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
+      createLocalTrafficSimulationAdapter(),
+    ],
+    interactionHandlers: [ambulancePack, trafficPack].flatMap(pack => pack.interactionHandlers ?? []),
   })
 }
 
@@ -49,14 +54,14 @@ describe('control instance API', () => {
       )
       expect(joined.status).toBe(200)
       expect(joined.body.id).toBe('sandbox' as ControlInstanceId)
-      expect(joined.body.snapshot.objects).toHaveLength(3)
+      expect(joined.body.snapshot.objects).toHaveLength(4)
 
       const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly kind: string }[] }>(
         registry,
         '/api/control-instances/sandbox/objects',
       )
       expect(objects.status).toBe(200)
-      expect(objects.body.objects.map(object => object.kind).sort()).toEqual(['facility', 'incident', 'mobile_entity'])
+      expect(objects.body.objects.map(object => object.kind).sort()).toEqual(['facility', 'incident', 'mobile_entity', 'zone'])
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }
@@ -76,7 +81,7 @@ describe('control instance API', () => {
       )
       expect(created.status).toBe(201)
       expect(created.body.id).toBe('api-created' as ControlInstanceId)
-      expect(created.body.snapshot.objects).toHaveLength(3)
+      expect(created.body.snapshot.objects).toHaveLength(4)
 
       const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly loaded: boolean; readonly objectCount: number | null; readonly snapshotSeq: number | null }[] }>(
         registry,
@@ -85,7 +90,7 @@ describe('control instance API', () => {
       expect(listed.body.controlInstances).toContainEqual({
         id: 'api-created',
         loaded: true,
-        objectCount: 3,
+        objectCount: 4,
         snapshotSeq: 0,
       })
     } finally {
@@ -140,6 +145,13 @@ describe('control instance API', () => {
         `/api/control-instances/sandbox/events?afterSeq=${issued.seq}`,
       )
       expect(afterIssued.body.events.every(event => event.type !== 'command.issued')).toBe(true)
+      const snapshot = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/sandbox/snapshot',
+      )
+      const updatedAmbulance = snapshot.body.snapshot.objects.find(object => object.id === ambulance.id)
+      expect(updatedAmbulance?.spatial.route?.impacts?.map(impact => impact.sourceObjectId)).toContain('traffic:ring2-slowdown' as ObjectId)
+      expect(updatedAmbulance?.context?.facts.some(fact => fact.key === 'route.impact.traffic:ring2-slowdown')).toBe(true)
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }

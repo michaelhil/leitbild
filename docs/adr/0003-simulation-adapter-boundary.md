@@ -2,9 +2,9 @@
 
 ## Decision
 
-Leitbild talks to simulations through a stable `SimulationConnection` interface.
+Leitbild talks to simulations through stable `SimulationConnection` interfaces coordinated by a Simulation Hub when a Control Instance has multiple providers.
 
-V1 includes a local in-process ambulance simulator adapter, but the adapter contract is remote-capable and suitable for a future WebSocket adapter.
+V1 includes local in-process ambulance and traffic simulator adapters, but the adapter contract is remote-capable and suitable for a future WebSocket adapter.
 
 The Control Instance event log and projected state are the canonical Leitbild truth. Simulation instances are providers connected to a Control Instance. They may keep private state or provider-local projections for their own mechanics, but they do not own canonical Leitbild object state.
 
@@ -22,6 +22,8 @@ After events are committed, simulation providers may observe committed events to
 
 - The browser never talks directly to the simulator.
 - Local simulators must use the same adapter boundary as remote simulators.
+- Multiple providers in one Control Instance must be coordinated through the Simulation Hub, not merged into one domain provider.
+- Providers declare accepted command kinds so commands can be routed explicitly.
 - Commands have explicit issued, accepted, and rejected lifecycle events.
 - Canonical object state for UI, API, replay, metrics, and AI agents comes from the Control Instance event log projection.
 - Simulation providers may maintain private state, but must treat committed Control Instance events as the shared operational picture.

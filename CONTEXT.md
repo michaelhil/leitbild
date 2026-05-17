@@ -20,6 +20,10 @@ _Avoid_: Simulation Runtime, Sim Runtime
 The adapter-facing role of a simulation instance: it emits observations, object updates, telemetry, and interaction signals into a control instance, and observes committed control-instance events to update private mechanics or provider-local projections.
 _Avoid_: treating a provider as the canonical owner of shared Leitbild object state
 
+**Simulation Hub**:
+A control-instance-local coordinator that connects multiple simulation providers, merges their provider snapshots, routes commands to providers that accept them, forwards provider emissions, and broadcasts committed domain events back to providers.
+_Avoid_: putting multi-provider orchestration inside one domain provider
+
 **Provider Private State**:
 Simulation-internal state used for specialist mechanics, such as route following, sensor models, traffic queues, timers, or high-resolution internal entities. It is not the shared operational picture.
 _Avoid_: exposing provider private state directly as canonical API/UI/AI state
@@ -76,11 +80,20 @@ _Avoid_: arbitrary imperative code paths that bypass event ordering, validation,
 A durable attention item emitted from interaction handling or system logic for operators, AI agents, replay, and debugging. A notification is not a substitute for canonical object state.
 _Avoid_: UI-only toasts for information that should be visible to AI agents, event history, or replay
 
+**Traffic Condition**:
+An aggregate traffic object describing congestion, closure, slowdown, or access restriction over a road segment or area.
+_Avoid_: modeling every traffic need as individual cars before aggregate traffic effects are proven insufficient
+
+**Route Impact**:
+Canonical route-awareness state describing how another object or condition affects a moving object's planned route, ETA, or movement assumptions.
+_Avoid_: hiding route impact only inside a simulation provider's private state
+
 ## Relationships
 
 - A **Control Instance** has one or more **Simulation Instances**.
 - A **Simulation Definition** can create many **Simulation Instances**.
 - A **Simulation Instance** belongs to one **Control Instance** unless an explicit bridge is introduced later.
+- A **Simulation Hub** may connect several **Simulation Providers** to one **Control Instance**.
 - A **Simulation Provider** emits candidate updates and signals into a **Control Instance**.
 - A **Simulation Provider** may observe committed **Domain Events** to update **Provider Private State** or a **Provider Projection**.
 - A **Control Instance** can have many **Actors**.
@@ -97,6 +110,7 @@ _Avoid_: UI-only toasts for information that should be visible to AI agents, eve
 - **Interaction Effects** become ordered **Domain Events** only after validation and runtime commit.
 - **AI agents** are **Actors** and **Clients** that may issue commands or emit interaction signals, but their outputs are not canonical truth until accepted by handlers and committed as events.
 - The **Control Instance** event log and projected state are the canonical Leitbild truth for UI, API, AI agents, replay, metrics, and interaction handlers.
+- **Traffic Conditions** may create **Route Impacts** for ambulances or future mobile assets, but rerouting remains an explicit command or future policy decision.
 
 ## Example dialogue
 
@@ -120,3 +134,4 @@ _Avoid_: UI-only toasts for information that should be visible to AI agents, eve
 - "state" can mean canonical truth, domain state, runtime progress, or perspective. Use **domainData** for domain operational truth, **Object Context** for perspective-bearing awareness, and **Mission Progress State** for mission runtime status.
 - "event" can mean input signal, accepted state change, or UI attention. Use **Interaction Signal** for claims/observations/attempts, **Domain Event** for accepted canonical history, and **Operational Notification** for attention items.
 - "sim state" can mean provider-private mechanics or shared Leitbild truth. Use **Provider Private State** or **Provider Projection** for simulation-side state, and **Control Instance projected state** for canonical Leitbild state.
+- "traffic" can mean aggregate road conditions or individual traffic vehicles. Use **Traffic Condition** for aggregate route-affecting areas/segments; use future traffic-vehicle terminology only when individual vehicles are actually modeled.

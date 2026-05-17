@@ -26,6 +26,7 @@ export interface RouteGeometry {
   readonly planned?: GeoJsonLineString
   readonly etaSeconds?: number
   readonly progress?: RouteProgress
+  readonly impacts?: ReadonlyArray<RouteImpact>
   readonly source: 'simulator' | 'operator' | 'ai' | 'import'
 }
 
@@ -33,6 +34,15 @@ export interface RouteProgress {
   readonly segmentIndex: number
   readonly remainingDistanceM?: Meters
   readonly advancedDistanceM?: Meters
+  readonly updatedAt: IsoTimestamp
+}
+
+export interface RouteImpact {
+  readonly sourceObjectId: ObjectId
+  readonly label: string
+  readonly severity: 'low' | 'moderate' | 'high' | 'blocked'
+  readonly speedFactor?: number
+  readonly delaySeconds?: number
   readonly updatedAt: IsoTimestamp
 }
 
@@ -120,6 +130,14 @@ export const routeGeometrySchema = z.object({
     advancedDistanceM: metersSchema.optional(),
     updatedAt: isoTimestampSchema,
   }).optional(),
+  impacts: z.array(z.object({
+    sourceObjectId: objectIdSchema,
+    label: z.string().min(1),
+    severity: z.enum(['low', 'moderate', 'high', 'blocked']),
+    speedFactor: z.number().finite().positive().optional(),
+    delaySeconds: z.number().finite().nonnegative().optional(),
+    updatedAt: isoTimestampSchema,
+  })).optional(),
   source: z.enum(['simulator', 'operator', 'ai', 'import']),
 })
 

@@ -4,11 +4,13 @@ import { remainingRouteGeometry } from '../core/model/index.ts'
 export const mapSourceIds = {
   objects: 'objects',
   plannedRoutes: 'planned-route-source',
+  trafficLines: 'traffic-line-source',
 } as const
 
 export const mapLayerIds = {
   routeCasing: 'planned-route-casing',
   routeLine: 'planned-route-lines',
+  trafficLine: 'traffic-lines',
   objectHitArea: 'object-hit-area',
   objectHalos: 'object-halos',
   objectIcons: 'object-icons',
@@ -37,6 +39,12 @@ interface ObjectFeatureProperties {
 
 interface RouteFeatureProperties {
   readonly selected: boolean
+}
+
+interface TrafficFeatureProperties {
+  readonly id: string
+  readonly color: string
+  readonly severity: string
 }
 
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
@@ -91,5 +99,27 @@ export const createRouteFeatureCollection = (
           selected: object.id === selectedObjectId,
         },
       }]
+    }),
+})
+
+export const createTrafficLineFeatureCollection = (
+  objects: ReadonlyArray<OperationalObject>,
+  presentObject: (object: OperationalObject) => { readonly color: string; readonly summary: string },
+): GeoJsonFeatureCollection<GeoJsonLineString, TrafficFeatureProperties> => ({
+  type: 'FeatureCollection',
+  features: objects
+    .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'LineString')
+    .map(object => {
+      const presentation = presentObject(object)
+      return {
+        type: 'Feature',
+        id: object.id,
+        geometry: object.spatial.geometry as GeoJsonLineString,
+        properties: {
+          id: object.id,
+          color: presentation.color,
+          severity: presentation.summary,
+        },
+      }
     }),
 })

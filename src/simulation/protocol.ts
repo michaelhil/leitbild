@@ -54,6 +54,7 @@ export interface SimulationConnection {
 export interface SimulationAdapter {
   readonly id: string
   readonly domain: string
+  readonly acceptedCommandKinds: ReadonlyArray<string>
   readonly connect: (config: SimulationConnectionConfig) => Promise<SimulationConnection>
 }
 

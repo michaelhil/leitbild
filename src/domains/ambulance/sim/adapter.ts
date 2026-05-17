@@ -1,11 +1,20 @@
+import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
-import type { CommandEnvelope, CommandResult } from '../../../core/model/index.ts'
+import type { AdapterId, CommandEnvelope, CommandResult, InteractionSignal, SignalId } from '../../../core/model/index.ts'
+import { assetRoutePlannedSignalType, interactionSignalSchema } from '../../../core/model/index.ts'
 import { createOsloAmbulanceScenario } from '../scenario.ts'
 import { ambulanceDomainId } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
+import {
+  assignToIncidentCommandKind,
+  cancelDestinationCommandKind,
+  createObjectCommandKind,
+  setDestinationCommandKind,
+} from '../commands.ts'
 
 const providerId = 'ambulance-local'
+const adapterId = 'adapter:ambulance-local' as AdapterId
 
 const emit = (
   handlers: ReadonlySet<SimulationEventHandler>,
@@ -28,6 +37,12 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
 }): SimulationAdapter => ({
   id: providerId,
   domain: ambulanceDomainId,
+  acceptedCommandKinds: [
+    assignToIncidentCommandKind,
+    cancelDestinationCommandKind,
+    createObjectCommandKind,
+    setDestinationCommandKind,
+  ],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: config.controlInstanceId,
@@ -45,12 +60,39 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
       const result = await engine.handleCommand(command)
       if (result.ok) {
         const snapshot = engine.snapshot()
-        emit(handlers, snapshot.objects.map(object => ({
+        const objectEvents: SimulationEvent[] = snapshot.objects.map(object => ({
           type: 'object.upserted',
           object,
           at: snapshot.capturedAt,
           provenance: object.provenance,
-        })))
+        }))
+        const routeSignals: SimulationEvent[] = snapshot.objects
+          .filter(object => object.spatial.route?.planned && command.targetObjectIds.includes(object.id))
+          .map(object => {
+            const signal = interactionSignalSchema.parse({
+              id: `signal:${randomUUID()}` as SignalId,
+              controlInstanceId: command.controlInstanceId,
+              at: snapshot.capturedAt,
+              source: { kind: 'object', id: object.id, providerId },
+              targets: [{ kind: 'object', id: object.id }],
+              type: assetRoutePlannedSignalType,
+              severity: 'notice',
+              payload: { objectId: object.id },
+              causationId: command.id,
+            }) as InteractionSignal
+            return {
+              type: 'interaction.signal',
+              signal,
+              at: snapshot.capturedAt,
+              provenance: {
+                source: 'simulator',
+                adapterId,
+                externalId: object.id,
+                causedByCommandId: command.id,
+              },
+            }
+          })
+        emit(handlers, [...objectEvents, ...routeSignals])
       }
       return result
     }

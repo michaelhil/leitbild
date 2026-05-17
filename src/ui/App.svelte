@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type { GeoJsonPoint, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
-  import { createPackRegistry } from '../core/packs/registry.ts'
+  import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { ambulancePack } from '../domains/ambulance/pack.ts'
+  import { trafficPack } from '../domains/traffic/pack.ts'
   import { isIconName, type IconName } from './icons.ts'
   import {
     createControlInstance,
@@ -27,8 +28,11 @@
   import MapSurface from './MapSurface.svelte'
   import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
 
-  const packRegistry = createPackRegistry([ambulancePack])
-  const activePack: LeitbildPack = packRegistry.require('ambulance')
+  const activePack: LeitbildPack = createCompositePack({
+    id: 'leitbild-control',
+    name: 'Leitbild Control',
+    packs: [ambulancePack, trafficPack],
+  })
   let controlInstanceId: ControlInstanceId | null = null
   let objects: OperationalObject[] = []
   let selectedControllerId: string | null = null

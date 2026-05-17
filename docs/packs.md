@@ -24,7 +24,7 @@ A pack may contain:
 - domain schemas and domain object data validators
 - object context schemas, context seed data, and agent-context renderers
 - command kinds and payload validators
-- simulation adapters or local simulation engines
+- simulation adapters or local simulation engines, including providers that compose with other active providers through the Simulation Hub
 - scenario definitions, mission definitions, and run configurations
 - object icons, map symbols, and style rules
 - object categories, summaries, hover details, and inspectors
@@ -163,7 +163,7 @@ Composition rules:
 - Packs issue changes to other domains only through declared commands, interaction signals, and committed events.
 - Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
 
-Multi-pack simulation orchestration is deferred until there are at least two real domain packs.
+Multi-pack simulation orchestration uses the Simulation Hub once more than one provider is active in a Control Instance.
 
 ## Interaction Contributions
 
@@ -186,6 +186,14 @@ Packs must keep the distinction clear:
 - Domain events are accepted canonical history after Leitbild validates, orders, persists, and broadcasts the effects.
 
 Unknown signal payloads may be stored for audit, but must not mutate canonical state unless a registered handler validates and accepts them.
+
+## Traffic Conditions
+
+Traffic packs should model route-affecting road state first as aggregate traffic conditions: congestion zones, blocked segments, slow corridors, and access restrictions.
+
+Individual traffic vehicles may be added later as a detail layer, but aggregate traffic conditions are the preferred first operational object because they are cheaper to render, easier for operators to understand, and easier for AI agents to reason over.
+
+Traffic conditions may create route impacts for mobile assets. They should not silently reroute assets unless a future control-instance policy explicitly enables automatic rerouting.
 
 ## Scenario, Mission, and Context Contributions
 

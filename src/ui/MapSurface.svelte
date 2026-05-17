@@ -8,6 +8,7 @@
   import {
     createObjectFeatureCollection,
     createRouteFeatureCollection,
+    createTrafficLineFeatureCollection,
     mapLayerIds,
     mapSourceIds,
     pointOf,
@@ -40,6 +41,7 @@
   let refreshFrame: number | null = null
   let objectSourceDirty = false
   let routeSourceDirty = false
+  let trafficSourceDirty = false
   let lastRouteRevision = -1
   let lastSelectedControllerId: string | null = null
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
@@ -79,14 +81,23 @@
     if (source) source.setData(createRouteFeatureCollection([...objects], selectedControllerId))
   }
 
+  const refreshTrafficSource = (): void => {
+    const current = map
+    if (!current || !loaded) return
+    const source = current.getSource(mapSourceIds.trafficLines) as GeoJSONSource | undefined
+    if (source) source.setData(createTrafficLineFeatureCollection([...objects], presentationFor))
+  }
+
   const refreshSources = (): void => {
     refreshObjectSource()
+    refreshTrafficSource()
     refreshRouteSource()
   }
 
-  const scheduleSourceRefresh = (dirty: { readonly objects?: boolean; readonly routes?: boolean }): void => {
+  const scheduleSourceRefresh = (dirty: { readonly objects?: boolean; readonly routes?: boolean; readonly traffic?: boolean }): void => {
     objectSourceDirty = objectSourceDirty || dirty.objects === true
     routeSourceDirty = routeSourceDirty || dirty.routes === true
+    trafficSourceDirty = trafficSourceDirty || dirty.traffic === true
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = null
@@ -94,8 +105,10 @@
       const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
       if (objectSourceDirty) refreshObjectSource(displayObjects)
       refreshMarkerPopup(displayObjects)
+      if (trafficSourceDirty) refreshTrafficSource()
       if (routeSourceDirty) refreshRouteSource()
       objectSourceDirty = false
+      trafficSourceDirty = false
       routeSourceDirty = false
     })
   }
@@ -194,6 +207,25 @@
     current.addSource(mapSourceIds.plannedRoutes, {
       type: 'geojson',
       data: createRouteFeatureCollection([...objects], selectedControllerId),
+    })
+    current.addSource(mapSourceIds.trafficLines, {
+      type: 'geojson',
+      data: createTrafficLineFeatureCollection([...objects], presentationFor),
+    })
+    current.addLayer({
+      id: mapLayerIds.trafficLine,
+      type: 'line',
+      source: mapSourceIds.trafficLines,
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': 9,
+        'line-opacity': 0.58,
+        'line-blur': 0.4,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
     })
     current.addLayer({
       id: mapLayerIds.routeCasing,
@@ -335,6 +367,7 @@
         await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
         await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
         await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
+        await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
         addMapSourcesAndLayers(current)
         addObjectInteractions(current)
         loaded = true
@@ -370,7 +403,7 @@
     const routesChanged = routeRevision !== lastRouteRevision || selectedControllerId !== lastSelectedControllerId
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
-    scheduleSourceRefresh({ objects: true, routes: routesChanged })
+    scheduleSourceRefresh({ objects: true, routes: routesChanged, traffic: true })
     refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()

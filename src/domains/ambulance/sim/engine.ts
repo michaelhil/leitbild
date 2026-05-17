@@ -455,6 +455,11 @@ const initialSegmentIndexFor = (currentPoint: GeoJsonPoint, route: GeoJsonLineSt
   return routeDistanceMeters(currentPoint, firstPoint) < 2 ? 1 : 0
 }
 
+const routeSpeedFactor = (object: OperationalObject): number =>
+  Math.min(1, ...((object.spatial.route?.impacts ?? [])
+    .map(impact => impact.speedFactor ?? 1)
+    .filter(factor => factor > 0)))
+
 const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
   kind: 'facility',
@@ -692,13 +697,14 @@ export const createAmbulanceSimEngine = (config: {
         currentPoint,
         route: motion.route,
         segmentIndex: motion.segmentIndex,
-        metersToMove: motion.metersPerSecond * dtMs / 1000,
+        metersToMove: motion.metersPerSecond * routeSpeedFactor(ambulance) * dtMs / 1000,
       })
       const nextPoint = routeAdvance.point
       const arrived = routeDistanceMeters(nextPoint, finalPoint) < 15
       const segmentIndex = arrived ? motion.segmentIndex : routeAdvance.segmentIndex
       const remainingDistanceM = remainingDistanceAlongRoute(motion.route, nextPoint, segmentIndex)
-      const etaSeconds = arrived ? 0 : Math.ceil(remainingDistanceM / motion.metersPerSecond)
+      const effectiveSpeedMps = motion.metersPerSecond * routeSpeedFactor(ambulance)
+      const etaSeconds = arrived ? 0 : Math.ceil(remainingDistanceM / effectiveSpeedMps)
       const moving: OperationalObject = {
         ...ambulance,
         revision: ambulance.revision + 1,
@@ -717,7 +723,7 @@ export const createAmbulanceSimEngine = (config: {
           position: {
             point: nextPoint,
             headingDeg: bearingDeg(currentPoint, routeAdvance.headingTarget),
-            speedMps: arrived ? 0 : motion.metersPerSecond,
+            speedMps: arrived ? 0 : effectiveSpeedMps,
             accuracyM: meters(8),
             observedAt: at2,
             staleAfterMs: 5_000,

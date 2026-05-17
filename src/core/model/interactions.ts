@@ -19,6 +19,8 @@ import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
+export const assetRoutePlannedSignalType = 'asset.route.planned'
+
 export type InteractionEndpoint =
   | {
       readonly kind: 'object'
