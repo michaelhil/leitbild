@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Component } from 'svelte'
   import { onDestroy, onMount, tick } from 'svelte'
   import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
@@ -26,7 +27,6 @@
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
-  import MapSurface from './MapSurface.svelte'
   import StartupModal from './StartupModal.svelte'
   import {
     completeStartupStep,
@@ -68,6 +68,7 @@
   let startupDismissed = false
   let startupMinimumTimer: number | null = null
   let startupModalVisible = false
+  let MapSurface: Component | null = null
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -89,6 +90,11 @@
     const body = await listControlInstances()
     instances = body.controlInstances
     status = 'Ready'
+  }
+
+  const loadMapSurface = async (): Promise<void> => {
+    const module = await import('./MapSurface.svelte')
+    MapSurface = module.default
   }
 
   const startStep = (id: StartupStepId): void => {
@@ -434,6 +440,7 @@
         window.removeEventListener('click', handleClick, { capture: true })
       }
     }
+    void loadMapSurface()
     void joinControlInstance()
     return () => {
       if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
@@ -483,20 +490,24 @@
     />
 
     <main class="map-region">
-      <MapSurface
-        {objects}
-        {selectedControllerId}
-        {placementMode}
-        {placementCursor}
-        {routeRevision}
-        {hasNewInfo}
-        {presentationFor}
-        onObjectSelected={selectObject}
-        onPlacementPoint={placeObjectDraft}
-        onObjectSeen={markSeen}
-        onMapReady={handleMapReady}
-        onMapError={handleMapError}
-      />
+      {#if MapSurface}
+        <MapSurface
+          {objects}
+          {selectedControllerId}
+          {placementMode}
+          {placementCursor}
+          {routeRevision}
+          {hasNewInfo}
+          {presentationFor}
+          onObjectSelected={selectObject}
+          onPlacementPoint={placeObjectDraft}
+          onObjectSeen={markSeen}
+          onMapReady={handleMapReady}
+          onMapError={handleMapError}
+        />
+      {:else}
+        <div class="map-loading">Starting map...</div>
+      {/if}
     </main>
   </div>
 {/if}

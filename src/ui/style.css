@@ -35,6 +35,14 @@ button {
   min-height: 100vh;
 }
 
+.map-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--bg);
+}
+
 .instance-page {
   min-height: 100vh;
   display: grid;
