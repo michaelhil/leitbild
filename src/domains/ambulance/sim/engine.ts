@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { AdapterId, CommandEnvelope, CommandResult, DomainEvent, DomainId, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
-import { advanceAlongRoute, confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters, unknownFact } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId } from '../../../core/model/index.ts'
+import { advanceAlongRoute, defaultMotionProfile, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
 import {
@@ -13,9 +13,20 @@ import {
   setDestinationCommandKind,
   setDestinationPayloadSchema,
 } from '../commands.ts'
-import { ambulanceDomainId, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData, type InjurySummary } from '../model.ts'
+import type { IncidentDomainData } from '../model.ts'
 import type { AmbulanceScenario } from '../scenario.ts'
+import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
 import { assetArrivedAtTargetSignalType } from './interactions.ts'
+import {
+  createAddedAmbulanceObject,
+  createAddedIncidentObject,
+  createAmbulanceObject,
+  createFacilityObject,
+  createHospitalObject,
+  createIncidentObject,
+  revealIncidentDetails,
+  updateHospitalCapacity,
+} from './object-state.ts'
 
 interface AmbulanceMotion {
   readonly targetObjectId: ObjectId
@@ -42,8 +53,6 @@ export interface AmbulanceSimEngine {
   readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => void
 }
 
-const adapterId = 'adapter:ambulance-local' as AdapterId
-const domain = ambulanceDomainId as DomainId
 const defaultAmbulanceMotionProfileId = 'normal'
 
 const ambulanceMotionProfiles: MotionProfileSet = {
@@ -72,282 +81,13 @@ const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
 }
 
-const makeTelemetry = (at: IsoTimestamp, heartRate: number, spo2: number): TelemetryState => ({
-  signals: {
-    heartRate: {
-      signalId: 'heartRate',
-      label: 'Heart rate',
-      unit: 'bpm',
-      latest: heartRate,
-      samples: [{ at, value: heartRate }],
-      severity: heartRate > 120 ? 'warning' : 'normal',
-    },
-    spo2: {
-      signalId: 'spo2',
-      label: 'SpO2',
-      unit: '%',
-      latest: spo2,
-      samples: [{ at, value: spo2 }],
-      severity: spo2 < 92 ? 'critical' : spo2 < 95 ? 'warning' : 'normal',
-    },
-  },
-})
-
-const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimestamp): AmbulanceDomainData => ({
-  type: 'ambulance',
-  schemaVersion: 1,
-  capabilities: [
-    'advanced_life_support',
-    'oxygen',
-    'stretcher',
-    ...(equipment.includes('defibrillator') ? ['defibrillator' as const] : []),
-    ...(equipment.includes('ventilator') ? ['ventilator' as const] : []),
-  ],
-  crew: {
-    status: 'ready',
-    level: confirmedFact('advanced', at, 'scenario', 1),
-    availableSeats: confirmedFact(1, at, 'scenario', 1),
-  },
-  transport: {
-    patientCapacity: confirmedFact(1, at, 'scenario', 1),
-    patientsOnBoard: confirmedFact(0, at, 'scenario', 1),
-  },
-})
-
-const makeIncidentDomainData = (triage: 'green' | 'yellow' | 'red', at: IsoTimestamp, assignedAmbulanceId?: ObjectId): IncidentDomainData => ({
-  type: 'incident',
-  schemaVersion: 1,
-  triage: confirmedFact(triage, at, 'scenario', 1),
-  victims: {
-    count: unknownFact(at, 'scenario'),
-    injuries: unknownFact(at, 'scenario'),
-    entrapment: unknownFact(at, 'scenario'),
-  },
-  hazards: unknownFact(at, 'scenario'),
-  ...(assignedAmbulanceId ? { assignedAmbulanceId } : {}),
-})
-
-const makeHospitalDomainData = (at: IsoTimestamp): HospitalDomainData => ({
-  type: 'hospital',
-  schemaVersion: 1,
-  emergencyDepartment: {
-    traumaBedsAvailable: confirmedFact(3, at, 'scenario', 1),
-    ambulanceBaysAvailable: confirmedFact(2, at, 'scenario', 1),
-    patientsReceived: confirmedFact(0, at, 'scenario', 1),
-    diversionStatus: confirmedFact('open', at, 'scenario', 1),
-  },
-  capabilities: ['trauma_center', 'stroke_unit', 'cardiac_catheterization'],
-})
-
-const makeEstimatedInjuries = (): InjurySummary[] => [
-  { category: 'trauma', severity: 'critical', count: 1 },
-  { category: 'respiratory', severity: 'serious', count: 1 },
-]
-
-const incidentDataOf = (object: OperationalObject): IncidentDomainData | null => {
-  const data = object.domainData
-  return typeof data === 'object'
-    && data !== null
-    && (data as { readonly type?: unknown }).type === 'incident'
-    && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
-    ? data as IncidentDomainData
-    : null
-}
-
-const hospitalDataOf = (object: OperationalObject): HospitalDomainData | null => {
-  const data = object.domainData
-  return typeof data === 'object'
-    && data !== null
-    && (data as { readonly type?: unknown }).type === 'hospital'
-    && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
-    ? data as HospitalDomainData
-    : null
-}
-
-const revealIncidentDetails = (object: OperationalObject, at: IsoTimestamp): OperationalObject | null => {
-  const data = incidentDataOf(object)
-  if (!data || data.victims.count.state !== 'unknown') return null
-  return {
-    ...object,
-    revision: object.revision + 1,
-    domainData: {
-      ...data,
-      victims: {
-        count: estimatedFact(2, at, 'simulation', 0.72),
-        injuries: estimatedFact(makeEstimatedInjuries(), at, 'simulation', 0.68),
-        entrapment: estimatedFact(false, at, 'simulation', 0.61),
-      },
-      hazards: estimatedFact(['traffic obstruction', 'possible fuel spill'], at, 'simulation', 0.55),
-    } satisfies IncidentDomainData,
-    provenance: {
-      source: 'simulator',
-      adapterId,
-      externalId: object.id,
-    },
-    timestamps: {
-      ...object.timestamps,
-      updatedAt: at,
-    },
-  }
-}
-
-const updateHospitalCapacity = (object: OperationalObject, at: IsoTimestamp): OperationalObject | null => {
-  const data = hospitalDataOf(object)
-  if (!data || data.emergencyDepartment.ambulanceBaysAvailable.state !== 'confirmed') return null
-  if (data.emergencyDepartment.ambulanceBaysAvailable.value === 1) return null
-  return {
-    ...object,
-    revision: object.revision + 1,
-    domainData: {
-      ...data,
-      emergencyDepartment: {
-        ...data.emergencyDepartment,
-        ambulanceBaysAvailable: confirmedFact(1, at, 'simulation', 1),
-        diversionStatus: confirmedFact('limited', at, 'simulation', 1),
-      },
-    } satisfies HospitalDomainData,
-    provenance: {
-      source: 'simulator',
-      adapterId,
-      externalId: object.id,
-    },
-    timestamps: {
-      ...object.timestamps,
-      updatedAt: at,
-    },
-  }
-}
-
-const createAmbulanceObject = (seed: AmbulanceScenario['ambulances'][number], at: IsoTimestamp): OperationalObject => ({
-  id: seed.id,
-  kind: 'mobile_entity',
-  domain,
-  label: seed.label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point: seed.position,
-      headingDeg: 0,
-      speedMps: 0,
-      accuracyM: meters(8),
-      observedAt: at,
-      staleAfterMs: 5_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: 'available',
-    priority: 'normal',
-    mode: 'simulated',
-  },
-  alerts: [],
-  communication: {
-    state: 'connected',
-    lastContactAt: at,
-  },
-  provenance: {
-    source: 'simulator',
-    adapterId,
-    externalId: seed.id,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeAmbulanceDomainData(seed.equipment, at),
-  } satisfies AmbulanceDomainData,
-})
-
-const createIncidentObject = (seed: AmbulanceScenario['incidents'][number], at: IsoTimestamp): OperationalObject => ({
-  id: seed.id,
-  kind: 'incident',
-  domain,
-  label: seed.label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point: seed.position,
-      accuracyM: meters(5),
-      observedAt: at,
-      staleAfterMs: 60_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: 'open',
-    priority: seed.triage === 'red' ? 'critical' : seed.triage === 'yellow' ? 'high' : 'normal',
-    mode: 'simulated',
-  },
-  telemetry: makeTelemetry(at, seed.triage === 'red' ? 122 : 98, seed.triage === 'red' ? 91 : 96),
-  alerts: seed.triage === 'red'
-    ? [{
-        id: `${seed.id}:triage`,
-        kind: 'triage_red',
-        severity: 'critical',
-        message: 'Red triage incident requires immediate dispatch',
-        raisedAt: at,
-        acknowledged: false,
-      }]
-    : [],
-  provenance: {
-    source: 'simulator',
-    adapterId,
-    externalId: seed.id,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeIncidentDomainData(seed.triage, at),
-  } satisfies IncidentDomainData,
-})
-
-const createFacilityObject = (seed: AmbulanceScenario['facilities'][number], at: IsoTimestamp): OperationalObject => ({
-  id: seed.id,
-  kind: 'facility',
-  domain,
-  label: seed.label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point: seed.position,
-      observedAt: at,
-      staleAfterMs: 600_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: seed.facilityType,
-    priority: 'normal',
-    mode: 'simulated',
-  },
-  alerts: [],
-  provenance: {
-    source: 'simulator',
-    adapterId,
-    externalId: seed.id,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeHospitalDomainData(at),
-  } satisfies HospitalDomainData,
-})
-
 const upsertEvent = (object: OperationalObject, at: IsoTimestamp): SimulationEvent => ({
   type: 'object.upserted',
   object,
   at,
   provenance: {
     source: 'simulator',
-    adapterId,
+    adapterId: ambulanceSimAdapterId,
     externalId: object.id,
   },
 })
@@ -358,7 +98,7 @@ const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): SimulationEvent => (
   at,
   provenance: {
     source: 'simulator',
-    adapterId,
+    adapterId: ambulanceSimAdapterId,
     externalId: objectId,
   },
 })
@@ -374,7 +114,7 @@ const arrivalSignalEvent = (
     id: `signal:${randomUUID()}`,
     controlInstanceId,
     at,
-    source: { kind: 'object', id: ambulance.id, providerId: 'ambulance-local' },
+    source: { kind: 'object', id: ambulance.id, providerId: ambulanceSimProviderId },
     targets: [{ kind: 'object', id: target.id }],
     type: assetArrivedAtTargetSignalType,
     severity: 'notice',
@@ -390,7 +130,7 @@ const arrivalSignalEvent = (
     at,
     provenance: {
       source: 'simulator',
-      adapterId,
+      adapterId: ambulanceSimAdapterId,
       externalId: ambulance.id,
     },
   }
@@ -460,130 +200,6 @@ const routeSpeedFactor = (object: OperationalObject): number =>
     .map(impact => impact.speedFactor ?? 1)
     .filter(factor => factor > 0)))
 
-const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
-  id,
-  kind: 'facility',
-  domain,
-  label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point,
-      observedAt: at,
-      staleAfterMs: 600_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: 'hospital',
-    priority: 'normal',
-    mode: 'simulated',
-  },
-  alerts: [],
-  provenance: {
-    source: 'operator',
-    adapterId,
-    externalId: id,
-    causedByCommandId,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeHospitalDomainData(at),
-  } satisfies HospitalDomainData,
-})
-
-const createAddedAmbulanceObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
-  id,
-  kind: 'mobile_entity',
-  domain,
-  label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point,
-      headingDeg: 0,
-      speedMps: 0,
-      accuracyM: meters(8),
-      observedAt: at,
-      staleAfterMs: 5_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: 'available',
-    priority: 'normal',
-    mode: 'simulated',
-  },
-  alerts: [],
-  communication: {
-    state: 'connected',
-    lastContactAt: at,
-  },
-  provenance: {
-    source: 'operator',
-    adapterId,
-    externalId: id,
-    causedByCommandId,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeAmbulanceDomainData(['defibrillator', 'oxygen', 'stretcher'], at),
-  } satisfies AmbulanceDomainData,
-})
-
-const createAddedIncidentObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
-  id,
-  kind: 'incident',
-  domain,
-  label,
-  lifecycle: 'active',
-  revision: 0,
-  spatial: {
-    position: {
-      point,
-      accuracyM: meters(5),
-      observedAt: at,
-      staleAfterMs: 60_000,
-    },
-    frame: { kind: 'wgs84' },
-  },
-  operational: {
-    status: 'open',
-    priority: 'critical',
-    mode: 'simulated',
-  },
-  telemetry: makeTelemetry(at, 122, 91),
-  alerts: [{
-    id: `${id}:triage`,
-    kind: 'triage_red',
-    severity: 'critical',
-    message: 'Red triage incident requires immediate dispatch',
-    raisedAt: at,
-    acknowledged: false,
-  }],
-  provenance: {
-    source: 'operator',
-    adapterId,
-    externalId: id,
-    causedByCommandId,
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
-  domainData: {
-    ...makeIncidentDomainData('red', at),
-  } satisfies IncidentDomainData,
-})
-
 const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: string, causedByCommandId?: CommandEnvelope['id']): OperationalObject => {
   const { route: _route, ...spatialWithoutRoute } = ambulance.spatial
   const { intent: _intent, ...operationalWithoutIntent } = ambulance.operational
@@ -610,7 +226,7 @@ const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: s
     },
     provenance: {
       source: causedByCommandId ? 'operator' : 'simulator',
-      adapterId,
+      adapterId: ambulanceSimAdapterId,
       externalId: ambulance.id,
       ...(causedByCommandId ? { causedByCommandId } : {}),
     },
@@ -835,7 +451,7 @@ export const createAmbulanceSimEngine = (config: {
       },
       provenance: {
         source: 'simulator',
-        adapterId,
+        adapterId: ambulanceSimAdapterId,
         externalId: ambulance.id,
         causedByCommandId: command.id,
       },
@@ -856,7 +472,7 @@ export const createAmbulanceSimEngine = (config: {
           },
           provenance: {
             source: 'simulator',
-            adapterId,
+            adapterId: ambulanceSimAdapterId,
             externalId: incident.id,
             causedByCommandId: command.id,
           },

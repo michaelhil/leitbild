@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
-import type { AdapterId, CommandEnvelope, CommandResult, InteractionSignal, SignalId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, InteractionSignal, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema } from '../../../core/model/index.ts'
 import { createOsloAmbulanceScenario } from '../scenario.ts'
 import { ambulanceDomainId } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
+import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import {
   assignToIncidentCommandKind,
@@ -12,9 +13,6 @@ import {
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../commands.ts'
-
-const providerId = 'ambulance-local'
-const adapterId = 'adapter:ambulance-local' as AdapterId
 
 const emit = (
   handlers: ReadonlySet<SimulationEventHandler>,
@@ -27,7 +25,7 @@ const emit = (
       type: 'event.emission',
       events,
       emittedAt: firstEvent.at,
-      providerId,
+      providerId: ambulanceSimProviderId,
     })
   }
 }
@@ -35,7 +33,7 @@ const emit = (
 export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
 }): SimulationAdapter => ({
-  id: providerId,
+  id: ambulanceSimProviderId,
   domain: ambulanceDomainId,
   acceptedCommandKinds: [
     assignToIncidentCommandKind,
@@ -73,7 +71,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
               id: `signal:${randomUUID()}` as SignalId,
               controlInstanceId: command.controlInstanceId,
               at: snapshot.capturedAt,
-              source: { kind: 'object', id: object.id, providerId },
+              source: { kind: 'object', id: object.id, providerId: ambulanceSimProviderId },
               targets: [{ kind: 'object', id: object.id }],
               type: assetRoutePlannedSignalType,
               severity: 'notice',
@@ -86,7 +84,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
               at: snapshot.capturedAt,
               provenance: {
                 source: 'simulator',
-                adapterId,
+                adapterId: ambulanceSimAdapterId,
                 externalId: object.id,
                 causedByCommandId: command.id,
               },
