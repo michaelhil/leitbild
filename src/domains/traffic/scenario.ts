@@ -1,5 +1,4 @@
 import type { GeoJsonLineString, GeoJsonPolygon, ObjectId } from '../../core/model/index.ts'
-import { lat, lon } from '../../core/model/index.ts'
 import type { TrafficCondition, TrafficGeometryMode, TrafficSeverity } from './model.ts'
 
 export interface TrafficConditionSeed {
@@ -19,24 +18,5 @@ export interface TrafficScenario {
 }
 
 export const createOsloTrafficScenario = (): TrafficScenario => ({
-  conditions: [
-    {
-      id: 'traffic:ring2-slowdown' as ObjectId,
-      label: 'Ring 2 slowdown',
-      geometryMode: 'road_segment',
-      geometry: {
-        type: 'LineString',
-        coordinates: [
-          [lon(10.7400), lat(59.9355)],
-          [lon(10.7500), lat(59.9290)],
-          [lon(10.7600), lat(59.9220)],
-        ],
-      },
-      condition: 'slowdown',
-      severity: 'high',
-      speedFactor: 0.55,
-      delaySecondsEstimate: 90,
-      reason: 'Heavy traffic near the hospital access corridor',
-    },
-  ],
+  conditions: [],
 })

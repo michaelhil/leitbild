@@ -28,6 +28,7 @@
   export let placementMode: PackCreateObjectType | null
   export let placementCursor: { readonly icon: IconName; readonly color: string } | null
   export let routeRevision: number
+  export let layoutRevision = 0
   export let hasNewInfo: (object: OperationalObject) => boolean
   export let presentationFor: (object: OperationalObject) => PackObjectPresentation
   export let onObjectSelected: (object: OperationalObject) => void
@@ -459,6 +460,11 @@
   $: {
     placementCursor
     refreshCanvasCursor()
+  }
+
+  $: {
+    layoutRevision
+    map?.resize()
   }
 </script>
 

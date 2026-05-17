@@ -60,3 +60,7 @@
 - `bun test` runs tests.
 - `bun run check` should run type checking once configured.
 - `bun run health` should run project health checks once configured.
+
+## Delivery Rule
+
+- After completing code changes, push to `main` and deploy to `leitbild.samsinn.app` unless the user explicitly says not to.

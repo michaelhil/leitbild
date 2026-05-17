@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
+  import ModalShell from './components/ModalShell.svelte'
   import type { StartupStep } from './startup.ts'
 
   export let steps: ReadonlyArray<StartupStep>
@@ -49,36 +50,32 @@
   })
 </script>
 
-<div class="startup-backdrop" role="status" aria-live="polite">
-  <button class="startup-dismiss-layer" type="button" aria-label="Close startup progress" on:click={close}></button>
-  <section class="startup-modal" aria-label="Leitbild startup progress">
-    <header>
-      <div>
-        <h2>Starting Leitbild</h2>
-        <p>Opening the control surface and checking each startup step.</p>
-      </div>
-    </header>
-
-    <ol class="startup-steps">
-      {#each steps as step (step.id)}
-        <li class:done={step.status === 'done'} class:running={step.status === 'running'} class:failed={step.status === 'failed'}>
-          <span class="startup-indicator"></span>
-          <span class="startup-step-main">
-            <span class="startup-step-label">{step.label}</span>
-            {#if step.error}
-              <span class="startup-step-error">{step.error}</span>
-            {/if}
-          </span>
-          <span class="startup-step-status">
-            {statusLabel(step)}
-            {#if elapsedSeconds(step)}
-              · {elapsedSeconds(step)}
-            {/if}
-          </span>
-        </li>
-      {/each}
-    </ol>
-
+<ModalShell
+  title="Starting Leitbild"
+  description="Opening the control surface and checking each startup step."
+  close={close}
+  size="medium"
+>
+  <ol class="startup-steps" role="status" aria-live="polite">
+    {#each steps as step (step.id)}
+      <li class:done={step.status === 'done'} class:running={step.status === 'running'} class:failed={step.status === 'failed'}>
+        <span class="startup-indicator"></span>
+        <span class="startup-step-main">
+          <span class="startup-step-label">{step.label}</span>
+          {#if step.error}
+            <span class="startup-step-error">{step.error}</span>
+          {/if}
+        </span>
+        <span class="startup-step-status">
+          {statusLabel(step)}
+          {#if elapsedSeconds(step)}
+            · {elapsedSeconds(step)}
+          {/if}
+        </span>
+      </li>
+    {/each}
+  </ol>
+  <svelte:fragment slot="footer">
     {#if failedStep()}
       <div class="startup-actions">
         <button class="command-button" disabled={retrying} on:click={retryStartup}>
@@ -86,5 +83,5 @@
         </button>
       </div>
     {/if}
-  </section>
-</div>
+  </svelte:fragment>
+</ModalShell>

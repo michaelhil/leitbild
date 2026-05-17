@@ -3,7 +3,14 @@ import type { ServerWebSocket } from 'bun'
 import { controlInstanceIdSchema, type ControlInstanceId } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
-import { createMapArtifactConfigFromEnv, currentPmtilesResponse, mapCapabilitiesResponse, mapStyleResponse, type MapArtifactConfig } from '../../map/artifacts.ts'
+import {
+  createMapArtifactConfigFromEnv,
+  createMapArtifactStatus,
+  currentPmtilesResponse,
+  mapCapabilitiesResponse,
+  mapStyleResponse,
+  type MapArtifactConfig,
+} from '../../map/artifacts.ts'
 import { handleControlInstanceApi } from './control-instance-routes.ts'
 import { json } from './responses.ts'
 
@@ -65,6 +72,7 @@ const realtimeStatusFromSockets = (
 export const createHealthDetails = async (config: {
   readonly registry: ControlInstanceRegistry
   readonly realtime?: ReturnType<typeof realtimeStatusFromSockets>
+  readonly mapArtifacts: MapArtifactConfig
 }): Promise<{
   readonly ok: true
   readonly generatedAt: string
@@ -75,6 +83,7 @@ export const createHealthDetails = async (config: {
   }
   readonly registry: Awaited<ReturnType<ControlInstanceRegistry['status']>>
   readonly realtime: ReturnType<typeof realtimeStatusFromSockets>
+  readonly mapArtifacts: Awaited<ReturnType<typeof createMapArtifactStatus>>
 }> => ({
   ok: true,
   generatedAt: new Date().toISOString(),
@@ -85,6 +94,7 @@ export const createHealthDetails = async (config: {
   },
   registry: await config.registry.status(),
   realtime: config.realtime ?? emptyRealtimeStatus(),
+  mapArtifacts: await createMapArtifactStatus(config.mapArtifacts),
 })
 
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
@@ -131,9 +141,14 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     port,
     async fetch(req, serverApi) {
       const url = new URL(req.url)
-      if (url.pathname === '/health') return json({ ok: true })
+      if (url.pathname === '/health') {
+        return json({
+          ok: true,
+          mapArtifacts: await createMapArtifactStatus(mapArtifacts),
+        })
+      }
       if (url.pathname === '/health/details') {
-        return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus() }))
+        return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus(), mapArtifacts }))
       }
       if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
       if (url.pathname === '/map/style.json') return mapStyleResponse()

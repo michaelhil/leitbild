@@ -28,6 +28,7 @@
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
   import StartupModal from './StartupModal.svelte'
+  import { getTheme, initialTheme, toggleTheme as toggleThemeMode, type ThemeMode } from './theme.ts'
   import {
     completeStartupStep,
     createStartupSteps,
@@ -45,6 +46,12 @@
     name: 'Leitbild Control',
     packs: [ambulancePack, trafficPack],
   })
+  const appVersion = __LEITBILD_VERSION__
+  const railStorageKey = 'leitbild.controlRailWidth'
+  const defaultRailWidth = 360
+  const minRailWidth = 280
+  const maxRailWidth = 560
+  const collapseThreshold = 180
   let controlInstanceId: ControlInstanceId | null = null
   let objects: OperationalObject[] = []
   let selectedControllerId: string | null = null
@@ -69,6 +76,74 @@
   let startupMinimumTimer: number | null = null
   let startupModalVisible = false
   let MapSurface: Component | null = null
+  let theme: ThemeMode = 'light'
+  let railWidth = defaultRailWidth
+  let lastOpenRailWidth = defaultRailWidth
+  let railResizing = false
+  let layoutRevision = 0
+
+  const readStoredRailWidth = (): number => {
+    try {
+      const raw = localStorage.getItem(railStorageKey)
+      if (!raw) return defaultRailWidth
+      const parsed = Number(raw)
+      if (!Number.isFinite(parsed) || parsed < 0) return defaultRailWidth
+      return parsed === 0 ? 0 : Math.max(minRailWidth, Math.min(maxRailWidth, parsed))
+    } catch (error) {
+      console.warn('Unable to read Leitbild rail width preference', error)
+      return defaultRailWidth
+    }
+  }
+
+  const storeRailWidth = (width: number): void => {
+    try {
+      localStorage.setItem(railStorageKey, String(width))
+    } catch (error) {
+      console.warn('Unable to store Leitbild rail width preference', error)
+    }
+  }
+
+  const setRailWidth = (width: number, persist = false): void => {
+    railWidth = width
+    if (width >= minRailWidth) lastOpenRailWidth = width
+    layoutRevision += 1
+    if (persist) storeRailWidth(width)
+  }
+
+  const widthFromPointer = (clientX: number): number => {
+    const clamped = Math.max(0, Math.min(maxRailWidth, clientX))
+    return clamped < collapseThreshold ? 0 : Math.max(minRailWidth, clamped)
+  }
+
+  const stopRailResize = (): void => {
+    if (!railResizing) return
+    railResizing = false
+    document.body.classList.remove('rail-resizing')
+    window.removeEventListener('pointermove', handleRailPointerMove)
+    window.removeEventListener('pointerup', stopRailResize)
+    storeRailWidth(railWidth)
+  }
+
+  const handleRailPointerMove = (event: PointerEvent): void => {
+    if (!railResizing) return
+    setRailWidth(widthFromPointer(event.clientX))
+  }
+
+  const startRailResize = (event: PointerEvent): void => {
+    event.preventDefault()
+    if (railWidth === 0) {
+      setRailWidth(lastOpenRailWidth || defaultRailWidth, true)
+      return
+    }
+    railResizing = true
+    document.body.classList.add('rail-resizing')
+    window.addEventListener('pointermove', handleRailPointerMove)
+    window.addEventListener('pointerup', stopRailResize)
+  }
+
+  const toggleTheme = (): void => {
+    theme = toggleThemeMode()
+  }
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -407,6 +482,10 @@
   }
 
   onMount(() => {
+    theme = initialTheme()
+    if (getTheme() !== theme) document.documentElement.classList.toggle('dark', theme === 'dark')
+    railWidth = readStoredRailWidth()
+    if (railWidth > 0) lastOpenRailWidth = railWidth
     const handleKeydown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') cancelPlacement()
       if (event.key === 'Enter' && placementMode && (placementMode.placementKind ?? 'point') === 'polygon') {
@@ -436,8 +515,10 @@
     if (routeMode === 'picker') {
       void loadInstances()
       return () => {
+        if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
         window.removeEventListener('keydown', handleKeydown)
         window.removeEventListener('click', handleClick, { capture: true })
+        stopRailResize()
       }
     }
     void loadMapSurface()
@@ -446,11 +527,13 @@
       if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('click', handleClick, { capture: true })
+      stopRailResize()
     }
   })
 
   onDestroy(() => {
     if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
+    stopRailResize()
     controlInstanceSocket?.close()
     controlInstanceSocket = null
   })
@@ -469,9 +552,12 @@
 {#if routeMode === 'picker'}
   <InstancePicker {instances} {status} {createInstance} {openInstance} />
 {:else}
-  <div class="app-shell">
+  <div class:rail-collapsed={railWidth === 0} class="app-shell" style={`--rail-width: ${railWidth}px`}>
     <ControlRail
       {status}
+      {appVersion}
+      {theme}
+      collapsed={railWidth === 0}
       {commandStatus}
       {categoryRows}
       {placementMode}
@@ -487,7 +573,16 @@
       {beginPlacement}
       {cancelPlacement}
       {cancelDestination}
+      {toggleTheme}
     />
+    <button
+      class="rail-resize-handle"
+      class:collapsed={railWidth === 0}
+      type="button"
+      aria-label={railWidth === 0 ? 'Show control rail' : 'Resize control rail'}
+      title={railWidth === 0 ? 'Show control rail' : 'Drag to resize control rail'}
+      on:pointerdown={startRailResize}
+    ></button>
 
     <main class="map-region">
       {#if MapSurface}
@@ -497,6 +592,7 @@
           {placementMode}
           {placementCursor}
           {routeRevision}
+          {layoutRevision}
           {hasNewInfo}
           {presentationFor}
           onObjectSelected={selectObject}

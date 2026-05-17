@@ -6,7 +6,6 @@ import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.t
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { trafficPack } from '../src/domains/traffic/pack.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createObjectFeatureCollection, createRouteFeatureCollection, createTrafficAreaFeatureCollection, createTrafficLineFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
 
@@ -119,23 +118,38 @@ describe('map feature projection', () => {
     expect(ambulanceFeature?.properties.hasNewInfo).toBe(true)
   })
 
-  test('projects traffic conditions into native MapLibre line features', async () => {
-    const adapter = createLocalTrafficSimulationAdapter()
-    const connection = await adapter.connect({ controlInstanceId })
-    try {
-      const objects = (await connection.getSnapshot()).objects
-      const trafficFeatures = createTrafficLineFeatureCollection(
-        objects,
-        object => trafficPack.presentObject(object, { objects }),
-      )
-
-      expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
-      expect(trafficFeatures.features).toHaveLength(1)
-      expect(trafficFeatures.features[0]?.id).toBe('traffic:ring2-slowdown')
-      expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
-    } finally {
-      await connection.close()
+  test('projects traffic conditions into native MapLibre line features', () => {
+    const lineObject = {
+      id: 'traffic:test-road' as ObjectId,
+      kind: 'zone' as const,
+      domain: 'traffic' as DomainId,
+      label: 'Test road slowdown',
+      lifecycle: 'active' as const,
+      revision: 0,
+      spatial: {
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            geoPointFromLonLat(10.74, 59.93).coordinates,
+            geoPointFromLonLat(10.76, 59.92).coordinates,
+          ],
+        },
+        frame: { kind: 'wgs84' as const },
+      },
+      operational: { status: 'slowdown', priority: 'high' as const, mode: 'simulated' as const },
+      alerts: [],
+      provenance: { source: 'operator' as const },
+      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
     }
+    const trafficFeatures = createTrafficLineFeatureCollection(
+      [lineObject],
+      () => ({ color: '#dc2626', summary: 'road segment · high' }),
+    )
+
+    expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
+    expect(trafficFeatures.features).toHaveLength(1)
+    expect(trafficFeatures.features[0]?.id).toBe('traffic:test-road')
+    expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
   })
 
   test('projects traffic areas into native MapLibre polygon features', () => {

@@ -8,9 +8,27 @@
   --border: #d7dce3;
   --accent: #1d66d2;
   --critical: #c7352b;
+  --warning: #c17a13;
+  --success: #16834f;
   --hospital: #245b9f;
   --ambulance: #22845d;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --bg: #0e1521;
+  --panel: #111b2a;
+  --panel-strong: #1a2636;
+  --text: #e7edf5;
+  --muted: #9aa8ba;
+  --border: #2c3a4d;
+  --accent: #6aa8ff;
+  --critical: #ff6b61;
+  --warning: #f0b554;
+  --success: #43d17c;
+  --hospital: #78aef2;
+  --ambulance: #42c489;
 }
 
 body {
@@ -31,8 +49,70 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 360px minmax(0, 1fr);
+  grid-template-columns: var(--rail-width, 360px) minmax(0, 1fr);
   min-height: 100vh;
+  transition: grid-template-columns 120ms ease;
+}
+
+.app-shell.rail-collapsed .control-rail {
+  border-right-color: transparent;
+  box-shadow: none;
+}
+
+.rail-resize-handle {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: var(--rail-width, 360px);
+  z-index: 15;
+  width: 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: col-resize;
+  padding: 0;
+  transform: translateX(-5px);
+}
+
+.rail-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 2px;
+  background: transparent;
+}
+
+.rail-resize-handle:hover::before,
+.rail-resize-handle:focus-visible::before,
+.rail-resize-handle.collapsed::before,
+body.rail-resizing .rail-resize-handle::before {
+  background: color-mix(in srgb, var(--accent) 72%, transparent);
+}
+
+.rail-resize-handle.collapsed {
+  left: 0;
+  top: 50%;
+  bottom: auto;
+  width: 18px;
+  height: 48px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-left: 0;
+  border-radius: 0 999px 999px 0;
+  background: color-mix(in srgb, var(--panel) 78%, transparent);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.2);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.rail-resize-handle.collapsed::before {
+  display: none;
+}
+
+body.rail-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .map-loading {
@@ -102,24 +182,21 @@ button {
 .control-rail {
   position: relative;
   z-index: 4;
-  display: grid;
-  grid-template-rows: auto auto auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 96%, transparent);
   box-shadow: 8px 0 24px rgba(16, 24, 40, 0.12);
   max-height: 100vh;
   overflow: auto;
-}
-
-.rail-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--border);
+  min-width: 0;
 }
 
 .brand {
   font-weight: 760;
-  font-size: 18px;
+  font-size: 13px;
+  color: var(--text);
 }
 
 .placement-banner {
@@ -127,7 +204,7 @@ button {
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
   border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 10%, #fff);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
   color: var(--accent);
   display: flex;
   align-items: center;
@@ -184,6 +261,11 @@ button {
   cursor: pointer;
 }
 
+.icon-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  color: var(--accent);
+}
+
 .icon-button:hover {
   border-color: var(--accent);
   color: var(--accent);
@@ -200,7 +282,7 @@ button {
   padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   margin-bottom: 6px;
   cursor: pointer;
 }
@@ -228,7 +310,7 @@ button {
   vertical-align: middle;
   border-radius: 999px;
   padding: 1px 5px;
-  background: color-mix(in srgb, var(--critical) 12%, #fff);
+  background: color-mix(in srgb, var(--critical) 12%, var(--panel));
   color: var(--critical);
   font-size: 10px;
   font-weight: 760;
@@ -292,10 +374,61 @@ button {
 }
 
 .rail-footer {
-  align-self: end;
+  margin-top: auto;
   padding: 12px;
   border-top: 1px solid var(--border);
   background: var(--panel);
+}
+
+.system-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.system-footer .icon-button {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  color: var(--muted);
+}
+
+.version {
+  color: var(--muted);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--muted);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
+}
+
+.status-dot.ready {
+  background: var(--success);
+}
+
+.status-dot.working {
+  background: var(--warning);
+}
+
+.status-dot.error {
+  background: var(--critical);
+}
+
+.status-dot.idle {
+  background: var(--muted);
 }
 
 .selected-card {
@@ -370,43 +503,88 @@ button {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 40;
   background: rgba(17, 24, 39, 0.38);
   display: grid;
   place-items: center;
 }
 
-.modal {
+.modal-shell {
   width: min(420px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 32px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   border-radius: 8px;
   background: var(--panel);
-  padding: 18px;
+  border: 1px solid var(--border);
   box-shadow: 0 24px 60px rgba(16, 24, 40, 0.25);
 }
 
-.modal h2 {
-  margin: 0 0 14px;
+.modal-shell.small {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.modal-shell.medium {
+  width: min(540px, calc(100vw - 32px));
+}
+
+.modal-shell.large {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.modal-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
   font-size: 18px;
 }
 
-.modal label {
+.modal-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.modal-footer {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+}
+
+.modal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.modal-form label {
   display: grid;
   gap: 6px;
   color: var(--muted);
   font-size: 13px;
 }
 
-.modal input,
-.modal select {
+.modal-form input,
+.modal-form select {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 9px 10px;
   color: var(--text);
-  background: var(--panel);
+  background: var(--panel-strong);
 }
 
 .modal-actions {
-  margin-top: 16px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -424,56 +602,6 @@ button {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
-}
-
-.startup-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
-  background: rgba(17, 24, 39, 0.32);
-  backdrop-filter: blur(2px);
-}
-
-.startup-dismiss-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: 0;
-  padding: 0;
-  background: transparent;
-  cursor: default;
-}
-
-.startup-modal {
-  position: relative;
-  z-index: 1;
-  width: min(520px, calc(100vw - 32px));
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.28);
-  padding: 18px;
-}
-
-.startup-modal header {
-  margin-bottom: 14px;
-}
-
-.startup-modal h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.startup-modal p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .startup-steps {
@@ -501,7 +629,7 @@ button {
   margin-top: 3px;
   border: 2px solid var(--border);
   border-radius: 999px;
-  background: #fff;
+  background: var(--panel);
 }
 
 .startup-steps li.running .startup-indicator {

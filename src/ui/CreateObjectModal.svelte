@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ModalShell from './components/ModalShell.svelte'
   import type { CreateDraft } from './types.ts'
 
   export let createDraft: CreateDraft
@@ -9,9 +10,8 @@
     createDraft.objectType.id === 'traffic_road_segment' || createDraft.objectType.id === 'traffic_area'
 </script>
 
-<div class="modal-backdrop">
-  <form class="modal" on:submit|preventDefault={createObject}>
-    <h2>Create new {createDraft.objectType.label}</h2>
+<ModalShell title="Create new {createDraft.objectType.label}" close={cancelCreate} size="small">
+  <form class="modal-form" id="create-object-form" on:submit|preventDefault={createObject}>
     <label>
       Name
       <input bind:value={createDraft.label} />
@@ -35,9 +35,11 @@
         <input bind:value={createDraft.trafficReason} />
       </label>
     {/if}
+  </form>
+  <svelte:fragment slot="footer">
     <div class="modal-actions">
       <button type="button" on:click={cancelCreate}>Cancel</button>
-      <button type="submit" class="primary">Create</button>
+      <button type="submit" form="create-object-form" class="primary">Create</button>
     </div>
-  </form>
-</div>
+  </svelte:fragment>
+</ModalShell>

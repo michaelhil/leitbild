@@ -10,7 +10,6 @@ import { assignToIncidentCommandKind } from '../src/domains/ambulance/commands.t
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
-import { trafficDomainId } from '../src/domains/traffic/model.ts'
 
 describe('control instance registry', () => {
   const createRegistry = (dataDir: string) => createControlInstanceRegistry({
@@ -140,7 +139,7 @@ describe('control instance registry', () => {
       id: controlInstanceId,
       loaded: false,
       snapshotSeq: 0,
-      objectCount: 4,
+      objectCount: 3,
     })
   })
 
@@ -149,15 +148,14 @@ describe('control instance registry', () => {
     const controlInstanceId = 'sandbox' as ControlInstanceId
     const firstRegistry = createRegistry(dataDir)
     const firstRuntime = await firstRegistry.ensure(controlInstanceId)
-    expect(firstRuntime.snapshot().objects.filter(object => object.domain === trafficDomainId)).toHaveLength(1)
+    expect(firstRuntime.snapshot().objects).toHaveLength(3)
     expect(await firstRegistry.close(controlInstanceId)).toBe(true)
 
     const secondRegistry = createRegistry(dataDir)
     const restoredRuntime = await secondRegistry.ensure(controlInstanceId)
     const restoredObjects = restoredRuntime.snapshot().objects
 
-    expect(restoredObjects.filter(object => object.id === 'traffic:ring2-slowdown')).toHaveLength(1)
-    expect(restoredObjects).toHaveLength(4)
+    expect(restoredObjects).toHaveLength(3)
     expect(await secondRegistry.close(controlInstanceId)).toBe(true)
   })
 
