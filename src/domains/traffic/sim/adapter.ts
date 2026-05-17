@@ -80,37 +80,10 @@ const createTrafficConditionObject = (
   } satisfies TrafficDomainData,
 })
 
-const migrateTrafficObject = (object: OperationalObject): OperationalObject => {
+const restoreTrafficObject = (object: OperationalObject): OperationalObject => {
   const parsed = trafficDomainDataSchema.safeParse(object.domainData)
-  if (parsed.success) return object
-  if (
-    typeof object.domainData !== 'object'
-    || object.domainData === null
-    || (object.domainData as { readonly type?: unknown }).type !== 'traffic_condition'
-  ) return object
-  const previous = object.domainData as {
-    readonly condition?: TrafficDomainData['condition']
-    readonly severity?: TrafficDomainData['severity']
-    readonly speedFactor?: number
-    readonly reason?: { readonly value?: string }
-    readonly delaySecondsEstimate?: { readonly value?: number }
-    readonly startsAt?: string
-  }
-  const geometry = object.spatial.geometry
-  if (!geometry || (geometry.type !== 'LineString' && geometry.type !== 'Polygon')) return object
-  const at = nowIso()
-  return createTrafficConditionObject({
-    id: object.id,
-    label: object.label,
-    geometryMode: geometry.type === 'Polygon' ? 'area' : 'road_segment',
-    geometry,
-    condition: previous.condition ?? 'slowdown',
-    severity: previous.severity ?? 'high',
-    speedFactor: previous.speedFactor ?? defaultSpeedFactor,
-    reason: previous.reason?.value ?? object.label,
-    at,
-    ...(previous.delaySecondsEstimate?.value === undefined ? {} : { delaySecondsEstimate: previous.delaySecondsEstimate.value }),
-  })
+  if (!parsed.success) throw new Error(`invalid restored traffic object domain data for ${object.id}: ${parsed.error.message}`)
+  return { ...object, domainData: parsed.data }
 }
 
 const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
@@ -180,7 +153,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
     if (config.initialObjects) {
-      for (const object of config.initialObjects) objects.set(object.id, migrateTrafficObject(object))
+      for (const object of config.initialObjects) objects.set(object.id, restoreTrafficObject(object))
     } else {
       for (const condition of createOsloTrafficScenario().conditions) {
         const object = createTrafficConditionObject({

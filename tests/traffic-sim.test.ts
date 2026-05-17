@@ -20,6 +20,25 @@ const makeCommand = (payload: unknown): CommandEnvelope => ({
 })
 
 describe('local traffic simulator', () => {
+  test('rejects previous traffic condition data instead of migrating it silently', () => {
+    expect(() => trafficDomainDataSchema.parse({
+      type: 'traffic_condition',
+      schemaVersion: 1,
+      condition: 'slowdown',
+      severity: 'high',
+      affectedModes: ['road_vehicle', 'emergency_vehicle'],
+      speedFactor: 0.55,
+      reason: {
+        state: 'confirmed',
+        value: 'Existing slowdown',
+        confidence: 1,
+        updatedAt: nowIso(),
+        source: 'simulation',
+      },
+      startsAt: nowIso(),
+    })).toThrow()
+  })
+
   test('creates road-segment traffic from routed start and end points', async () => {
     const adapter = createLocalTrafficSimulationAdapter({ routing: createDirectRoutingAdapter() })
     const connection = await adapter.connect({ controlInstanceId })
