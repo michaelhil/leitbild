@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { X } from 'lucide-svelte'
+  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import StatusDot, { type StatusTone } from './StatusDot.svelte'
 
   interface Props {
@@ -39,7 +40,7 @@
     close()
   }
 
-  $effect(() => {
+  runOnMount(() => {
     window.addEventListener('keydown', handleKeydown)
     return () => {
       window.removeEventListener('keydown', handleKeydown)

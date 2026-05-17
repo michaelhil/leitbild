@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import { Protocol as PmtilesProtocol } from 'pmtiles'
   import type { GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
@@ -24,6 +23,7 @@
     reconcileDisplayMotionState,
     type DisplayMotionState,
   } from './display-motion.ts'
+  import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
 
   interface Props {
@@ -290,19 +290,20 @@
     }
   }
 
-  $effect(() => {
-    if (mapInitialized || !mapElement) return
+  runOnMount(() => {
+    if (!mapElement) throw new Error('Map surface element was not bound before map initialization')
+    if (mapInitialized) return
     mapInitialized = true
     const protocol = new PmtilesProtocol({ metadata: true })
     maplibregl.addProtocol('pmtiles', protocol.tile)
     pmtilesProtocolRegistered = true
     const current = new maplibregl.Map({
       container: mapElement,
-      style: styleUrlFor(untrack(() => theme)),
+      style: styleUrlFor(theme),
       center: [10.7522, 59.9139],
       zoom: 12,
     })
-    appliedTheme = untrack(() => theme)
+    appliedTheme = theme
     map = current
     current.on('error', (event) => {
       const error = event.error

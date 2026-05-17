@@ -6,6 +6,7 @@
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
   import type { ThemeMode } from './theme.ts'
+  import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { CategoryRow } from './types.ts'
   import {
     buildPresentedCategoryRows,
@@ -93,7 +94,7 @@
     openFieldCategoryId = null
   }
 
-  $effect(() => {
+  runOnMount(() => {
     window.addEventListener('click', handleOutsideFieldMenuClick, { capture: true })
     return () => {
       window.removeEventListener('click', handleOutsideFieldMenuClick, { capture: true })

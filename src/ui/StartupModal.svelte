@@ -1,6 +1,7 @@
 <script lang="ts">
   import ModalShell from './components/ModalShell.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
+  import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import { startupHasFailed, startupIsReady, type StartupStep } from './startup.ts'
 
   interface Props {
@@ -62,7 +63,7 @@
     }
   }
 
-  $effect(() => {
+  runOnMount(() => {
     const interval = window.setInterval(() => {
       nowMs = performance.now()
     }, 250)

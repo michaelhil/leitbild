@@ -25,6 +25,7 @@
   } from './control-surface-selectors.ts'
   import { createPlacementState } from './placement-state.svelte.ts'
   import { createRailLayoutState } from './rail-layout-state.svelte.ts'
+  import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
@@ -337,7 +338,7 @@
     failStep('map', message)
   }
 
-  $effect(() => {
+  runOnMount(() => {
     const nextTheme = initialTheme()
     theme = nextTheme
     if (getTheme() !== nextTheme) document.documentElement.classList.toggle('dark', nextTheme === 'dark')

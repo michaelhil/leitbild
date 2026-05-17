@@ -21,6 +21,7 @@ Svelte 5 runes are the default architecture for new and actively migrated UI cod
 - Use modern event attributes such as `onclick` in migrated components.
 - Prefer snippets over slots when migrating shared composition components and when the result improves typed composition.
 - Use `.svelte.ts` modules for shared client-side UI state when the module has real depth: lifecycle, invariants, persistence, or coordination behind a small interface.
+- Use `runOnMount` from `src/ui/svelte-lifecycle.svelte.ts` for mount-only external lifecycle setup. `$effect` is not an `onMount` replacement: it tracks rune reads in its synchronous body, including reads hidden inside called functions.
 
 The primary `src/ui` Svelte component surface should stay fully migrated: no `export let`, `$:` reactive statements, `on:` event directives, deprecated module-script syntax, slot-based modal APIs, or `<svelte:component>` usage unless there is a written reason.
 
@@ -51,6 +52,29 @@ This migration is complete for the current `src/ui` component set as of the rune
 - `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
 - `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
 - `MapSurface.svelte` is an imperative MapLibre adapter. Svelte effects synchronize input boundaries such as object updates, theme changes, layout resize, and placement cursor changes, but MapLibre owns its internal map lifecycle.
+- `runOnMount` is the project vocabulary for one-time setup and cleanup of browser event listeners, intervals, WebSocket startup orchestration, and MapLibre construction. It wraps setup in `untrack` so these lifecycle effects do not accidentally subscribe to the state they initialize.
+
+## Effect Policy
+
+Use raw `$effect` only when the code is meant to rerun as reactive inputs change.
+
+Examples:
+
+- Synchronize changed objects into MapLibre sources.
+- Apply a changed map theme.
+- Start or stop startup-modal autoclose timers when readiness changes.
+- Copy a new create-draft prop into local form state.
+
+Use `runOnMount` when the code is meant to run once for component lifecycle setup.
+
+Examples:
+
+- Register and unregister browser event listeners.
+- Start and clear an interval.
+- Create and destroy the MapLibre map instance.
+- Start the app's initial route/control-instance boot sequence.
+
+Do not call command, startup, socket, or map-construction functions from a raw `$effect` unless the rerun behavior is intentional and documented near the effect. Hidden rune reads through helper functions are still dependencies.
 
 ## Consequences
 
@@ -70,6 +94,7 @@ Costs:
 ## Guardrails
 
 - Do not use `$effect` to compute values that can be `$derived`.
+- Do not use raw `$effect` for mount-only external lifecycle setup; use `runOnMount`.
 - Do not add global UI stores for state that is local to one surface.
 - Do not duplicate canonical Control Instance object state in Svelte modules.
 - Do not create compatibility layers for both old and new Svelte patterns. Migrate the touched slice cleanly.

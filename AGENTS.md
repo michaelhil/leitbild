@@ -51,6 +51,7 @@
 - Use modern event attributes such as `onclick` in migrated components.
 - Prefer snippets over slots for shared modal/composition components.
 - Svelte state is client-local UI state only. Do not duplicate Control Instance Projected State into a second canonical UI store.
+- Do not use raw `$effect` as an `onMount` substitute. Use `runOnMount` from `src/ui/svelte-lifecycle.svelte.ts` for mount-only browser listeners, intervals, map construction, WebSocket startup orchestration, and similar one-time external lifecycle setup.
 - Keep MapLibre as an imperative boundary. Use Svelte effects to synchronize inputs to the map, not to make the map lifecycle itself a reactive data model.
 - Pure TypeScript UI presenters/selectors are allowed when they concentrate real derivation logic and are tested. Delete them if they become pass-through wrappers.
 - See `docs/adr/0012-svelte-5-ui-architecture.md` before changing UI state architecture.
