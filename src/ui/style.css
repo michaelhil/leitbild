@@ -399,7 +399,7 @@ body.rail-resizing {
   position: relative;
   display: inline-grid;
   place-items: center;
-  margin-top: 4px;
+  margin-top: 0;
 }
 
 .status-indicator {
@@ -757,6 +757,12 @@ body.rail-resizing {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.modal-header h2 .status-dot {
+  width: 15px;
+  height: 15px;
+  box-shadow: none;
 }
 
 .modal-header p {
