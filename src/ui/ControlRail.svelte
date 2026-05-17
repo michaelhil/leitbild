@@ -5,6 +5,7 @@
   import { ChevronDown, ChevronRight, Eye, EyeOff, Moon, Plus, Sun, X } from 'lucide-svelte'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
+  import StatusIndicator from './components/StatusIndicator.svelte'
   import { iconHtml, isIconName, type IconName } from './icons.ts'
   import type { ThemeMode } from './theme.ts'
   import type { CategoryRow } from './types.ts'
@@ -18,7 +19,6 @@
   export let placementMode: PackCreateObjectType | null
   export let selectedControllerId: string | null
   export let presentationFor: (object: OperationalObject) => PackObjectPresentation
-  export let detailLines: (object: OperationalObject) => ReadonlyArray<string>
   export let hasNewInfo: (object: OperationalObject) => boolean
   export let markSeen: (object: OperationalObject) => void
   export let selectObject: (object: OperationalObject) => void
@@ -42,24 +42,8 @@
     return `Click map to place new ${placementMode.label.toLowerCase()}`
   }
 
-  const objectStatusTone = (object: OperationalObject): StatusTone => {
-    const presentation = presentationFor(object)
-    if (presentation.status) return presentation.status.tone
-    const normalized = object.operational.status.trim().toLowerCase()
-    if (normalized.includes('error') || normalized.includes('blocked') || normalized.includes('critical')) return 'error'
-    if (normalized.includes('target') || normalized.includes('en_route') || normalized.includes('on_scene') || normalized.includes('limited')) return 'working'
-    if (normalized.includes('available') || normalized.includes('open') || normalized.includes('active')) return 'ready'
-    return 'idle'
-  }
-
-  const objectStatusLabel = (object: OperationalObject): string =>
-    presentationFor(object).status?.label ?? object.operational.status
-
-  const objectStatusPulse = (object: OperationalObject): boolean =>
-    presentationFor(object).status?.pulse === true
-
-  const objectStatusInnerTone = (object: OperationalObject): StatusTone | null =>
-    presentationFor(object).status?.innerTone ?? null
+  const objectStatus = (object: OperationalObject) =>
+    presentationFor(object).status ?? { tone: 'idle' as const, label: object.operational.status, indicator: { shape: 'dot' as const } }
 
   const categoryIcon = (row: CategoryRow): IconName | null => {
     const icon = row.createType?.icon ?? ''
@@ -75,25 +59,24 @@
     collapsedCategoryIds = { ...collapsedCategoryIds, [categoryId]: !categoryCollapsed(categoryId) }
   }
 
-  const lineKey = (line: string): string => {
-    const separatorIndex = line.indexOf(':')
-    return (separatorIndex >= 0 ? line.slice(0, separatorIndex) : line).trim()
-  }
-
-  const lineValue = (line: string): string => {
-    const separatorIndex = line.indexOf(':')
-    return (separatorIndex >= 0 ? line.slice(separatorIndex + 1) : '').trim()
-  }
-
   const dataFieldsFor = (row: CategoryRow): ReadonlyArray<string> => {
-    const keys = new Set<string>()
+    const fields = new Map<string, string>()
     for (const object of row.objects) {
-      for (const line of detailLines(object)) {
-        const key = lineKey(line)
-        if (key) keys.add(key)
+      for (const field of presentationFor(object).fields) {
+        fields.set(field.key, field.label)
       }
     }
-    return [...keys].sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }))
+    return [...fields.entries()]
+      .sort((left, right) => left[1].localeCompare(right[1], undefined, { numeric: true, sensitivity: 'base' }))
+      .map(([key]) => key)
+  }
+
+  const fieldLabel = (row: CategoryRow, fieldKey: string): string => {
+    for (const object of row.objects) {
+      const field = presentationFor(object).fields.find(candidate => candidate.key === fieldKey)
+      if (field) return field.label
+    }
+    return fieldKey
   }
 
   const visibleFieldsFor = (categoryId: string): ReadonlyArray<string> =>
@@ -110,10 +93,10 @@
     visibleFieldsByCategory = { ...visibleFieldsByCategory, [categoryId]: next }
   }
 
-  const visibleLinesForObject = (categoryId: string, object: OperationalObject): ReadonlyArray<string> => {
+  const visibleFieldsForObject = (categoryId: string, object: OperationalObject) => {
     const selected = new Set(visibleFieldsFor(categoryId))
     if (selected.size === 0) return []
-    return detailLines(object).filter(line => selected.has(lineKey(line)))
+    return presentationFor(object).fields.filter(field => selected.has(field.key))
   }
 
   const handleOutsideFieldMenuClick = (event: MouseEvent): void => {
@@ -169,7 +152,7 @@
                     {#each fields as field (field)}
                       <button class="field-toggle" type="button" on:click|stopPropagation={() => toggleField(row.category.id, field)}>
                         <svelte:component this={fieldVisible(row.category.id, field) ? Eye : EyeOff} size={13} strokeWidth={1.8} />
-                        <span>{field}</span>
+                        <span>{fieldLabel(row, field)}</span>
                       </button>
                     {/each}
                   {/if}
@@ -202,25 +185,23 @@
           <div class="empty-row">{row.category.emptyLabel}</div>
         {/if}
         {#each row.objects as object (object.id)}
+          {@const statusPresentation = objectStatus(object)}
           <div class:selected={selectedControllerId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row">
             <button class="object-row-main" type="button" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-              <span class="object-status" class:pulse={objectStatusPulse(object)}>
-                <StatusDot tone={objectStatusTone(object)} label={objectStatusLabel(object)} />
-                {#if objectStatusInnerTone(object)}
-                  <span class="status-inner-dot" data-tone={objectStatusInnerTone(object)}></span>
-                {/if}
+              <span class="object-status">
+                <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
               </span>
               <span>
                 <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-                {#each visibleLinesForObject(row.category.id, object) as line (line)}
-                  <span class="object-meta"><strong>{lineKey(line)}:</strong> {lineValue(line)}</span>
+                {#each visibleFieldsForObject(row.category.id, object) as field (field.key)}
+                  <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
                 {/each}
               </span>
               <span class="row-info" aria-label="Show {object.label} details">
                 ?
                 <span class="row-tooltip">
                   <strong>{object.label}</strong>
-                  {#each detailLines(object) as line}<span>{line}</span>{/each}
+                  {#each presentationFor(object).fields as field}<span>{field.label}: {field.value}</span>{/each}
                 </span>
               </span>
             </button>

@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { geoPointFromLonLat } from '../src/core/model/index.ts'
+import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
+import { ambulanceDomainDataSchema } from '../src/domains/ambulance/model.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
@@ -45,5 +46,43 @@ describe('pack architecture', () => {
     expect(cancelCommand.kind).toBe(cancelDestinationCommandKind)
     expect(setTargetCommand.targetObjectIds).toEqual([controller.id, target.id])
     expect(cancelCommand.targetObjectIds).toEqual([controller.id])
+  })
+
+  test('ambulance pack exposes structured fields and semantic status indicators', () => {
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId: 'control-instance:pack-presentation' as ControlInstanceId,
+      scenario: createOsloAmbulanceScenario(),
+      routing: createDirectRoutingAdapter(),
+    })
+    const objects = engine.snapshot().objects
+    const ambulance = objects.find(object => ambulancePack.isController(object))
+    const incident = objects.find(object => object.kind === 'incident')
+    const hospital = objects.find(object => object.kind === 'facility')
+    if (!ambulance || !incident || !hospital) throw new Error('scenario missing ambulance presentation fixtures')
+
+    const incidentBound: OperationalObject = {
+      ...ambulance,
+      tasking: { currentTaskId: incident.id as ObjectId },
+      operational: { ...ambulance.operational, status: 'en_route' },
+    }
+    const incidentPresentation = ambulancePack.presentObject(incidentBound, { objects: [incidentBound, incident, hospital] })
+    expect(incidentPresentation.fields.map(field => field.key)).toContain('destination')
+    expect(incidentPresentation.status?.indicator).toEqual({ shape: 'arrow', direction: 'right', pulse: true })
+
+    const data = ambulanceDomainDataSchema.parse(ambulance.domainData)
+    const hospitalBound: OperationalObject = {
+      ...ambulance,
+      tasking: { currentTaskId: hospital.id as ObjectId },
+      operational: { ...ambulance.operational, status: 'en_route' },
+      domainData: {
+        ...data,
+        transport: {
+          ...data.transport,
+          patientsOnBoard: confirmedFact(1, nowIso(), 'scenario', 1),
+        },
+      },
+    }
+    const hospitalPresentation = ambulancePack.presentObject(hospitalBound, { objects: [hospitalBound, incident, hospital] })
+    expect(hospitalPresentation.status?.indicator).toEqual({ shape: 'arrow', direction: 'left', pulse: true })
   })
 })

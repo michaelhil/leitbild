@@ -12,15 +12,29 @@ export interface PackObjectPresentation {
   readonly icon: string
   readonly color: string
   readonly summary: string
-  readonly detailLines: ReadonlyArray<string>
+  readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
 }
 
-export interface PackObjectStatusPresentation {
-  readonly tone: 'ready' | 'working' | 'error' | 'idle'
+export interface PackObjectField {
+  readonly key: string
   readonly label: string
+  readonly value: string
+}
+
+export type PackObjectStatusTone = 'ready' | 'working' | 'error' | 'idle'
+
+export interface PackObjectStatusIndicator {
+  readonly shape: 'dot' | 'arrow'
+  readonly direction?: 'left' | 'right' | 'up' | 'down'
   readonly pulse?: boolean
-  readonly innerTone?: 'ready' | 'working' | 'error' | 'idle'
+  readonly innerTone?: PackObjectStatusTone
+}
+
+export interface PackObjectStatusPresentation {
+  readonly tone: PackObjectStatusTone
+  readonly label: string
+  readonly indicator: PackObjectStatusIndicator
 }
 
 export interface PackCreateObjectType {

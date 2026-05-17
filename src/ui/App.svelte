@@ -301,10 +301,6 @@
     }
   }
 
-  const detailLines = (object: OperationalObject): ReadonlyArray<string> => {
-    return presentationFor(object).detailLines
-  }
-
   const connectWebSocket = (id: ControlInstanceId): void => {
     controlInstanceSocket?.close()
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -565,7 +561,6 @@
       {placementMode}
       {selectedControllerId}
       {presentationFor}
-      {detailLines}
       {hasNewInfo}
       {markSeen}
       {selectObject}

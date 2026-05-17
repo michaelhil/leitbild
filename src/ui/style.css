@@ -384,8 +384,8 @@ body.rail-resizing {
 .object-row-main {
   min-width: 0;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) 20px;
-  align-items: center;
+  grid-template-columns: 16px minmax(0, 1fr) 20px;
+  align-items: start;
   gap: 8px;
   border: 0;
   padding: 0;
@@ -399,9 +399,30 @@ body.rail-resizing {
   position: relative;
   display: inline-grid;
   place-items: center;
+  margin-top: 4px;
 }
 
-.object-status.pulse .status-dot {
+.status-indicator {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+.status-indicator.arrow {
+  color: var(--warning);
+}
+
+.status-indicator.arrow[data-tone="ready"] {
+  color: var(--success);
+}
+
+.status-indicator.arrow[data-tone="error"] {
+  color: var(--critical);
+}
+
+.status-indicator.pulse {
   animation: status-pulse 1.3s ease-in-out infinite;
 }
 

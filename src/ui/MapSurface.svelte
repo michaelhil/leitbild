@@ -167,12 +167,9 @@
     canvas.style.cursor = placementCursorCss()
   }
 
-  const detailLines = (object: OperationalObject): ReadonlyArray<string> =>
-    presentationFor(object).detailLines
-
   const hoverCardHtml = (object: OperationalObject): string => {
-    const lines = detailLines(object)
-      .map(line => `<div>${escapeHtml(line)}</div>`)
+    const lines = presentationFor(object).fields
+      .map(field => `<div>${escapeHtml(field.label)}: ${escapeHtml(field.value)}</div>`)
       .join('')
     const newInfo = hasNewInfo(object) ? '<div class="hover-new-info">New information</div>' : ''
     return `<strong>${escapeHtml(object.label)}</strong>${newInfo}${lines}`
