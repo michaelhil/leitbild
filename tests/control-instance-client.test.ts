@@ -69,6 +69,22 @@ describe('control instance client', () => {
     })
   })
 
+  test('passes scenario ids when creating or joining a control instance', async () => {
+    const bodies: string[] = []
+    installFetch((_input, init) => {
+      bodies.push(String(init?.body ?? ''))
+      return new Response(JSON.stringify({ id: 'control-instance:test', snapshot: { objects: [], seq: 0 } }), { status: 200 })
+    })
+
+    await createControlInstance({ scenarioId: 'oslo-ambulance-tutorial' })
+    await joinControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance-tutorial' })
+
+    expect(bodies.map(body => JSON.parse(body))).toEqual([
+      { scenarioId: 'oslo-ambulance-tutorial' },
+      { scenarioId: 'oslo-ambulance-tutorial' },
+    ])
+  })
+
   test('throws visible errors for failed API responses', async () => {
     installFetch(() => new Response('nope', { status: 503 }))
 

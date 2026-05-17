@@ -21,9 +21,8 @@ export interface ScenarioDefinition {
   readonly schemaVersion: 1
   readonly title: string
   readonly description?: string
-  readonly contributedByPackId: string
-  readonly requiredPackIds: ReadonlyArray<string>
-  readonly requiredProviderIds: ReadonlyArray<string>
+  readonly packs: ReadonlyArray<string>
+  readonly providerOverrides: Record<string, string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
@@ -47,9 +46,8 @@ export const scenarioDefinitionSchema = z.object({
   schemaVersion: z.literal(1),
   title: z.string().min(1),
   description: z.string().min(1).optional(),
-  contributedByPackId: idSchema,
-  requiredPackIds: z.array(idSchema).default([]),
-  requiredProviderIds: z.array(idSchema).default([]),
+  packs: z.array(idSchema).default([]),
+  providerOverrides: z.record(idSchema).default({}),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),

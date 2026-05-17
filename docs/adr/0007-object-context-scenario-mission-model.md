@@ -8,7 +8,7 @@ Leitbild adds optional `context` to `OperationalObject` as a structured, perspec
 
 Leitbild also introduces separate scenario and mission definition schemas:
 
-- **Scenario Definition** initializes world, objects, contexts, and provider-specific simulator configuration.
+- **Scenario Definition** initializes world, active packs, objects, contexts, and pack-keyed provider configuration.
 - **Mission Definition** describes goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 - **Mission Progress State** tracks runtime progress separately from the reusable mission definition.
 
@@ -16,7 +16,7 @@ Domain interaction rules live in packs. Objects carry capabilities, resources, l
 
 Scenario Definitions are now the only production startup format for new control instances. Restored control instances are initialized from persisted snapshots/history. Domain seed factories are rejected because they create a second initialization model beside scenarios.
 
-Scenarios may span providers. They declare required pack ids, required simulation provider ids, initial operational objects, and provider configs keyed by provider id. The Simulation Hub validates required providers and gives each provider only its relevant initial objects/config.
+Scenarios are top-level compositions, not pack-owned files. They declare active pack ids, optional provider overrides keyed by pack id, initial operational objects, and provider configs keyed by pack id. The Scenario Catalog resolves those author-facing pack choices into internal provider ids before the Simulation Hub starts providers and gives each provider only its relevant initial objects/config.
 
 ## Rationale
 
@@ -33,7 +33,7 @@ Scenario and mission are also separate concepts. Scenario data initializes a wor
 - Context schemas live in core because the awareness concept is cross-domain.
 - Agent context views are derived on demand and are not persisted as canonical state.
 - New control instances must be created through a Scenario Definition selected from the scenario catalog.
-- Built-in packs contribute static Scenario Definitions through the pack interface.
+- Built-in scenarios live at the top level and activate packs through the Scenario Catalog.
 - V1 mission logic is declarative and limited; arbitrary scripting is explicitly deferred.
-- Future pack manifests may contribute scenarios, missions, context extensions, and agent-context renderers.
+- Future pack manifests may contribute providers, context extensions, and agent-context renderers. Scenario distribution should remain top-level or data-bundle based so multi-pack scenarios do not appear owned by one pack.
 - Core does not gain a generic rule engine yet; repeated rule patterns should first emerge in real domain packs.

@@ -60,7 +60,7 @@ export interface SimulationAdapter {
 
 export interface SimulationScenarioRuntimeConfig {
   readonly scenarioId: string
-  readonly requiredProviderIds: ReadonlyArray<string>
+  readonly providerIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly providerConfigs: Record<string, unknown>

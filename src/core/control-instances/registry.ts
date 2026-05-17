@@ -30,7 +30,7 @@ export interface ControlInstanceRegistryStatus {
 
 export interface ControlInstanceRegistry {
   readonly create: (config?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
-  readonly ensure: (id: ControlInstanceId) => Promise<ControlInstanceRuntime>
+  readonly ensure: (id: ControlInstanceId, config?: { readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly get: (id: ControlInstanceId) => ControlInstanceRuntime | undefined
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
@@ -80,19 +80,18 @@ export const createControlInstanceRegistry = (config: {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
     const scenarioId = restoredSnapshot ? undefined : createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
-    const scenario = scenarioId === undefined ? undefined : config.scenarioCatalog.getScenario(scenarioId)
-    const scenarioInitialObjects = scenarioId === undefined ? undefined : config.scenarioCatalog.initialObjectsFor(scenarioId)
-    if (!restoredSnapshot && !scenario) throw new Error(`unknown scenario: ${scenarioId}`)
+    const scenarioRuntime = scenarioId === undefined ? undefined : config.scenarioCatalog.runtimeFor(scenarioId)
+    if (!restoredSnapshot && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
     const simulation = await createSimulationHub(config.simulationAdapters).connect({
       controlInstanceId: id,
-      ...(!restoredSnapshot && scenario
+      ...(!restoredSnapshot && scenarioRuntime
         ? {
             scenario: {
-              scenarioId: scenario.id,
-              requiredProviderIds: scenario.requiredProviderIds,
-              world: scenario.world,
-              initialObjects: scenarioInitialObjects ?? [],
-              providerConfigs: scenario.providerConfigs,
+              scenarioId: scenarioRuntime.scenarioId,
+              providerIds: scenarioRuntime.providers.map(provider => provider.providerId),
+              world: scenarioRuntime.scenario.world,
+              initialObjects: scenarioRuntime.initialObjects,
+              providerConfigs: scenarioRuntime.providerConfigs,
               providerConfig: {},
             },
           }
@@ -112,10 +111,13 @@ export const createControlInstanceRegistry = (config: {
     return runtime
   }
 
-  const ensure = async (id: ControlInstanceId): Promise<ControlInstanceRuntime> => {
+  const ensure = async (id: ControlInstanceId, ensureConfig?: { readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
     const existing = controlInstances.get(id)
     if (existing) return existing
-    return create({ id })
+    return create({
+      id,
+      ...(ensureConfig?.scenarioId === undefined ? {} : { scenarioId: ensureConfig.scenarioId }),
+    })
   }
 
   const close = async (id: ControlInstanceId): Promise<boolean> => {

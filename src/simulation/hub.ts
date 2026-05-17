@@ -27,7 +27,7 @@ const scenarioFor = (
   if (!scenario) return undefined
   return {
     scenarioId: scenario.scenarioId,
-    requiredProviderIds: scenario.requiredProviderIds,
+    providerIds: scenario.providerIds,
     world: scenario.world,
     initialObjects: scenario.initialObjects.filter(object => object.domain === adapter.domain),
     providerConfigs: scenario.providerConfigs,
@@ -48,7 +48,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
     domain: 'simulation-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
     connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
-      const missingProviderIds = config.scenario?.requiredProviderIds.filter(providerId => !adapterIds.has(providerId)) ?? []
+      const missingProviderIds = config.scenario?.providerIds.filter(providerId => !adapterIds.has(providerId)) ?? []
       if (missingProviderIds.length > 0) throw new Error(`missing simulation providers: ${missingProviderIds.join(', ')}`)
       const connections = await Promise.all(adapters.map(async adapter => {
         const initialObjects = restoredObjectsFor(adapter, config.initialObjects)

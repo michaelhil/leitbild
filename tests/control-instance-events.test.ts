@@ -8,7 +8,7 @@ import {
   removeOperationalObject,
   upsertOperationalObject,
 } from '../src/ui/control-instance-events.ts'
-import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 

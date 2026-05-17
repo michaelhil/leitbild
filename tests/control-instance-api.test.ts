@@ -49,20 +49,22 @@ const callRoute = async <T>(
 describe('control instance API', () => {
   test('lists and fetches scenario definitions', async () => {
     const registry = await createTestRegistry()
-    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string }[] }>(
+    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly packs: readonly string[]; readonly requiredProviderIds?: readonly string[] }[] }>(
       registry,
       '/api/scenarios',
     )
     expect(listed.status).toBe(200)
-    expect(listed.body.defaultScenarioId).toBe('ambulance:oslo-tutorial')
-    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('ambulance:oslo-tutorial')
+    expect(listed.body.defaultScenarioId).toBe('oslo-ambulance-tutorial')
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance-tutorial')
+    expect(listed.body.scenarios[0]?.packs).toEqual(['ambulance', 'traffic'])
+    expect(listed.body.scenarios[0]?.requiredProviderIds).toBeUndefined()
 
     const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly initialObjects: readonly unknown[] } }>(
       registry,
-      '/api/scenarios/ambulance%3Aoslo-tutorial',
+      '/api/scenarios/oslo-ambulance-tutorial',
     )
     expect(fetched.status).toBe(200)
-    expect(fetched.body.scenario.id).toBe('ambulance:oslo-tutorial')
+    expect(fetched.body.scenario.id).toBe('oslo-ambulance-tutorial')
     expect(fetched.body.scenario.initialObjects).toHaveLength(3)
   })
 
@@ -86,6 +88,37 @@ describe('control instance API', () => {
       expect(objects.body.objects.map(object => object.kind).sort()).toEqual(['facility', 'incident', 'mobile_entity'])
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('joins a named control instance from an explicit scenario id and rejects unknown scenarios', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const joined = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly unknown[] } }>(
+        registry,
+        '/api/control-instances/scenario-sandbox',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'oslo-ambulance-tutorial' }),
+        },
+      )
+      expect(joined.status).toBe(200)
+      expect(joined.body.snapshot.objects).toHaveLength(3)
+
+      const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
+        registry,
+        '/api/control-instances/bad-scenario-sandbox',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'missing-scenario' }),
+        },
+      )
+      expect(rejected.status).toBe(404)
+      expect(rejected.body.error.code).toBe('scenario_not_found')
+    } finally {
+      await registry.close('scenario-sandbox' as ControlInstanceId)
     }
   })
 
@@ -129,7 +162,7 @@ describe('control instance API', () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: 'api-scenario-created', scenarioId: 'ambulance:oslo-tutorial' }),
+          body: JSON.stringify({ id: 'api-scenario-created', scenarioId: 'oslo-ambulance-tutorial' }),
         },
       )
       expect(created.status).toBe(201)
@@ -141,7 +174,7 @@ describe('control instance API', () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: 'api-unknown-scenario', scenarioId: 'missing:scenario' }),
+          body: JSON.stringify({ id: 'api-unknown-scenario', scenarioId: 'missing-scenario' }),
         },
       )
       expect(rejected.status).toBe(404)

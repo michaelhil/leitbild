@@ -39,7 +39,7 @@ Domain-specific operational truth for an object. Domain packs own the schema and
 Perspective-bearing artificial situation awareness attached to an operational object. Context captures what an asset, operator, system, or AI perspective knows, remembers, observed, or was told.
 
 **Scenario Definition**:
-Validated startup definition for a new control instance: world settings, required packs/providers, initial objects, initial contexts, and provider-specific simulator configuration.
+Validated startup definition for a new control instance: world settings, active packs, optional provider overrides/configuration, initial objects, and initial contexts.
 
 **Mission Definition**:
 Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
@@ -94,18 +94,19 @@ Context activity entries are short, timestamped memory records. They are not a r
 A scenario initializes the world. It may include:
 
 - metadata: id, title, description, schema version
-- contribution and dependency identifiers: contributing pack id, required pack ids, and required simulation provider ids
+- active pack identifiers
+- optional provider overrides keyed by pack id
 - world setup: time, map center/viewport, environment values
 - initial objects
 - initial object contexts
-- provider-specific simulator configuration keyed by provider id
+- provider-specific simulator configuration keyed by pack id
 - optional mission id/reference
 
-Scenarios should be shareable as JSON and validated before use. A scenario may be pack-contributed, built-in, or later distributed through a pack repository.
+Scenarios should be shareable as JSON and validated before use. Scenarios are top-level compositions, not owned by a single pack. Packs are capabilities; scenarios are recipes that choose which capabilities are active.
 
 New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Domain-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
-Scenario startup is multi-provider. A scenario may require several simulation providers, for example ambulance plus traffic. The Simulation Hub validates required provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centralized while preserving provider boundaries.
+Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
 
 ## Mission Definition V1
 

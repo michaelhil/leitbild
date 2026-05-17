@@ -1,24 +1,20 @@
-import type { IsoTimestamp, ObjectId, ScenarioDefinition } from '../../core/model/index.ts'
-import { geoPointFromLonLat, scenarioDefinitionSchema } from '../../core/model/index.ts'
-import { trafficSimProviderId } from '../traffic/sim/constants.ts'
-import { ambulanceDomainId } from './model.ts'
-import { ambulanceSimProviderId } from './sim/constants.ts'
+import type { IsoTimestamp, ObjectId, ScenarioDefinition } from '../core/model/index.ts'
+import { geoPointFromLonLat, scenarioDefinitionSchema } from '../core/model/index.ts'
 import {
   createScenarioAmbulanceObject,
   createScenarioHospitalObject,
   createScenarioIncidentObject,
-} from './sim/object-state.ts'
+} from '../packs/ambulance/sim/object-state.ts'
 
 const scenarioStart = '2026-01-01T09:00:00.000Z' as IsoTimestamp
 
 export const osloAmbulanceTutorialScenario = scenarioDefinitionSchema.parse({
-  id: 'ambulance:oslo-tutorial',
+  id: 'oslo-ambulance-tutorial',
   schemaVersion: 1,
   title: 'Oslo ambulance tutorial',
   description: 'A small Oslo ambulance dispatch scenario with one ambulance, one incident, and one hospital.',
-  contributedByPackId: 'ambulance',
-  requiredPackIds: ['ambulance', 'traffic'],
-  requiredProviderIds: [ambulanceSimProviderId, trafficSimProviderId],
+  packs: ['ambulance', 'traffic'],
+  providerOverrides: {},
   world: {
     startsAt: scenarioStart,
     mapCenter: geoPointFromLonLat(10.7522, 59.9139),
@@ -51,7 +47,7 @@ export const osloAmbulanceTutorialScenario = scenarioDefinitionSchema.parse({
   ],
   initialContexts: [],
   providerConfigs: {
-    [ambulanceSimProviderId]: {},
-    [trafficSimProviderId]: {},
+    ambulance: {},
+    traffic: {},
   },
 }) as ScenarioDefinition

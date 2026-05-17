@@ -93,8 +93,7 @@ const handleControlInstanceApiInner = async (
         id: scenario.id,
         title: scenario.title,
         description: scenario.description,
-        requiredPackIds: scenario.requiredPackIds,
-        requiredProviderIds: scenario.requiredProviderIds,
+        packs: scenario.packs,
         missionId: scenario.missionId,
       })),
       defaultScenarioId: config.registry.defaultScenarioId(),
@@ -136,7 +135,14 @@ const handleControlInstanceApiInner = async (
 
   if (controlInstanceMatch && req.method === 'POST') {
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(controlInstanceMatch[1] ?? ''))
-    const runtime = await config.registry.ensure(controlInstanceId)
+    const raw = await readJson(req)
+    const parsed = createControlInstanceRequestSchema.omit({ id: true }).parse(raw)
+    if (parsed.scenarioId !== undefined && !config.registry.scenario(parsed.scenarioId)) {
+      return apiError(404, 'scenario_not_found', 'scenario not found')
+    }
+    const runtime = await config.registry.ensure(controlInstanceId, {
+      ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
+    })
     return json({ id: runtime.id, snapshot: runtime.snapshot() })
   }
 

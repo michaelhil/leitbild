@@ -17,7 +17,7 @@ import {
   type IncidentDomainData,
   type InjurySummary,
 } from './model.ts'
-import { osloAmbulanceTutorialScenario } from './scenario.ts'
+import { ambulanceSimProviderId } from './sim/constants.ts'
 import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
@@ -260,7 +260,10 @@ export const ambulancePack: LeitbildPack = {
   id: 'ambulance',
   name: 'Ambulance Dispatch',
   domain: ambulanceDomainId,
-  scenarios: [osloAmbulanceTutorialScenario],
+  simulationProviders: [
+    { id: ambulanceSimProviderId, label: 'Local ambulance simulator', kind: 'local' },
+  ],
+  defaultSimulationProviderId: ambulanceSimProviderId,
   categories: [
     {
       id: 'hospitals',

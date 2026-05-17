@@ -24,15 +24,29 @@ export const listControlInstances = async (): Promise<ControlInstanceListRespons
   return await readJsonResponse<ControlInstanceListResponse>(response, 'control instance list failed')
 }
 
-export const createControlInstance = async (): Promise<ControlInstanceResponse> => {
-  const response = await fetch('/api/control-instances', { method: 'POST' })
+const requestBody = (body: object): BodyInit | undefined => {
+  const text = JSON.stringify(body)
+  return text === '{}' ? undefined : text
+}
+
+export const createControlInstance = async (config: { readonly scenarioId?: string } = {}): Promise<ControlInstanceResponse> => {
+  const body = requestBody(config)
+  const response = await fetch('/api/control-instances', {
+    method: 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
+  })
   return await readJsonResponse<ControlInstanceResponse>(response, 'control instance create failed')
 }
 
 export const joinControlInstance = async (
   controlInstanceId: ControlInstanceId,
+  config: { readonly scenarioId?: string } = {},
 ): Promise<ControlInstanceResponse> => {
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}`, { method: 'POST' })
+  const body = requestBody(config)
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}`, {
+    method: 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
+  })
   return await readJsonResponse<ControlInstanceResponse>(response, 'control instance join failed')
 }
 

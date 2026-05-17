@@ -49,11 +49,11 @@ Structured, perspective-bearing artificial situation awareness attached to an op
 _Avoid_: using context as an untyped junk drawer, or using it for domain operational truth that belongs in `domainData`
 
 **Scenario Definition**:
-Validated startup definition for a new control instance: world settings, required packs/providers, initial objects, initial object contexts, and provider-specific simulator configuration. Scenarios are the only production startup format for new control instances.
+Validated startup definition for a new control instance: world settings, active packs, optional provider overrides/configuration, initial objects, and initial object contexts. Scenarios are top-level compositions, not pack-owned files, and are the only production startup format for new control instances.
 _Avoid_: Mission when referring only to initial world setup
 
 **Scenario Catalog**:
-Validated registry of Scenario Definitions and Mission Definitions contributed by active packs. Control Instance creation resolves its startup scenario through this catalog.
+Validated registry of Scenario Definitions and Mission Definitions. Control Instance creation resolves its startup scenario through this catalog, then resolves each scenario pack to that pack's default or overridden simulation provider.
 _Avoid_: hidden domain seed factories or hardcoded default simulator boot paths
 
 **Mission Definition**:

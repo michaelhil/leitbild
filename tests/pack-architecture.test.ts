@@ -2,17 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import { createCompositePack } from '../src/core/packs/composite.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
+import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/packs/ambulance/model.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
+import { trafficSimProviderId } from '../src/packs/traffic/sim/constants.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
+import { ambulanceSimProviderId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 
@@ -158,5 +161,36 @@ describe('pack architecture', () => {
       'traffic_road_segment',
     ].sort())
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
+  })
+
+  test('scenario catalog resolves scenario packs to internal simulation providers', () => {
+    const catalog = createScenarioCatalog({
+      packs: [ambulancePack, trafficPack],
+      scenarios: [osloAmbulanceTutorialScenario],
+    })
+    const runtime = catalog.runtimeFor('oslo-ambulance-tutorial')
+
+    expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic'])
+    expect(runtime?.providers.map(provider => provider.providerId).sort()).toEqual([
+      ambulanceSimProviderId,
+      trafficSimProviderId,
+    ].sort())
+    expect(runtime?.providerConfigs).toEqual({
+      [ambulanceSimProviderId]: {},
+      [trafficSimProviderId]: {},
+    })
+  })
+
+  test('scenario catalog rejects provider overrides outside the owning pack', () => {
+    expect(() => createScenarioCatalog({
+      packs: [ambulancePack, trafficPack],
+      scenarios: [{
+        ...osloAmbulanceTutorialScenario,
+        id: 'bad-provider-override',
+        providerOverrides: {
+          ambulance: trafficSimProviderId,
+        },
+      }],
+    })).toThrow('provider traffic-local is not registered by pack ambulance')
   })
 })

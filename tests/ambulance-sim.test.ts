@@ -8,7 +8,7 @@ import {
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
 import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/packs/ambulance/model.ts'
-import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createAmbulanceArrivalInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'

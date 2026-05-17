@@ -156,9 +156,14 @@
     location.href = `/i/${encodeURIComponent(id)}`
   }
 
+  const scenarioIdFromUrl = (): string | undefined => {
+    const value = new URLSearchParams(location.search).get('scenario')?.trim()
+    return value ? value : undefined
+  }
+
   const createInstance = async (): Promise<void> => {
     status = 'Creating Control Instance'
-    const body = await createControlInstance()
+    const body = await createControlInstance({ scenarioId: scenarioIdFromUrl() })
     openInstance(body.id)
   }
 
@@ -307,7 +312,7 @@
     let activeStartupStep: StartupStepId = 'control-instance'
     try {
       const id = controlInstanceIdFromPath()
-      const body = await joinControlInstanceClient(id)
+      const body = await joinControlInstanceClient(id, { scenarioId: scenarioIdFromUrl() })
       completeStep('control-instance')
       activeStartupStep = 'snapshot'
       startStep('snapshot')

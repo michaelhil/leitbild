@@ -12,7 +12,7 @@ import {
   type ControlInstanceId,
   type ObjectId,
 } from '../src/core/model/index.ts'
-import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
@@ -136,9 +136,8 @@ describe('object context, scenario, and mission model', () => {
       id: 'scenario:oslo-context-basic',
       schemaVersion: 1,
       title: 'Oslo context basic',
-      contributedByPackId: 'ambulance',
-      requiredPackIds: ['ambulance'],
-      requiredProviderIds: ['ambulance-local'],
+      packs: ['ambulance'],
+      providerOverrides: {},
       world: {
         startsAt: nowIso(),
         mapCenter: geoPointFromLonLat(10.7522, 59.9139),
@@ -149,7 +148,7 @@ describe('object context, scenario, and mission model', () => {
         objectId: object.id,
         context: object.context,
       }],
-      providerConfigs: { 'ambulance-local': { adapter: 'ambulance.local' } },
+      providerConfigs: { ambulance: { adapter: 'ambulance.local' } },
       missionId: 'mission:oslo-response-basic',
     })
 

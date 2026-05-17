@@ -7,7 +7,7 @@ import {
   hasActiveDisplayMotion,
   reconcileDisplayMotionState,
 } from '../src/ui/display-motion.ts'
-import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 

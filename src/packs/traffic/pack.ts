@@ -4,6 +4,7 @@ import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObject
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
+import { trafficSimProviderId } from './sim/constants.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
@@ -91,6 +92,10 @@ export const trafficPack: LeitbildPack = {
   id: 'traffic',
   name: 'Traffic Conditions',
   domain: trafficDomainId,
+  simulationProviders: [
+    { id: trafficSimProviderId, label: 'Local traffic simulator', kind: 'local' },
+  ],
+  defaultSimulationProviderId: trafficSimProviderId,
   categories: [
     {
       id: 'traffic',

@@ -27,7 +27,7 @@ A pack may contain:
 - object context schemas, context seed data, and agent-context renderers
 - command kinds and payload validators
 - simulation adapters or local simulation engines, including providers that compose with other active providers through the Simulation Hub
-- scenario definitions, mission definitions, and run configurations
+- provider metadata, including the pack's default simulation provider
 - object icons, map symbols, and style rules
 - object categories, summaries, hover details, and inspectors
 - command/action builders for UI controls
@@ -59,7 +59,6 @@ leitbild-pack-ambulance/
     sim/
     ui/
     metrics/
-  scenarios/
   assets/
     icons/
   tests/
@@ -105,7 +104,7 @@ Future external packs should include `leitbild.pack.json`.
   "name": "Ambulance Dispatch",
   "version": "0.1.0",
   "leitbild": ">=0.1.0",
-  "description": "Ambulance dispatch domain, local simulator, scenarios, and UI.",
+  "description": "Ambulance dispatch domain, local simulator, and UI.",
   "contributes": {
     "domains": ["ambulance_dispatch"],
     "objectTypes": ["ambulance", "hospital", "incident", "patient"],
@@ -114,7 +113,7 @@ Future external packs should include `leitbild.pack.json`.
       "ambulance.set_destination",
       "ambulance.cancel_destination"
     ],
-    "simulationAdapters": ["ambulance.local"],
+    "simulationProviders": ["ambulance-local"],
     "interactionSignals": [
       "asset.arrived_at_target",
       "facility.capacity_changed"
@@ -123,8 +122,6 @@ Future external packs should include `leitbild.pack.json`.
       "ambulance.arrival-handler",
       "ambulance.capacity-handler"
     ],
-    "scenarios": ["oslo-basic"],
-    "missions": ["oslo-response-basic"],
     "contextSchemas": ["ambulance.context.v1"],
     "ui": ["objectDisplay", "inspector", "actions"],
     "map": ["icons", "plannedRoutes"],
@@ -143,7 +140,7 @@ Pack contribution identifiers must be namespaced.
 Examples:
 
 - command kind: `ambulance.set_destination`
-- scenario: `ambulance:oslo-basic`
+- provider id: `ambulance-local`
 - UI contribution: `ambulance.object-inspector`
 - metric: `ambulance.response-time`
 
@@ -197,23 +194,23 @@ Individual traffic vehicles may be added later as a detail layer, but aggregate 
 
 Traffic conditions may create route impacts for mobile assets. They should not silently reroute assets unless a future control-instance policy explicitly enables automatic rerouting.
 
-## Scenario, Mission, and Context Contributions
+## Scenario, Mission, and Context Use
 
-Packs may contribute reusable data and schemas:
+Packs may contribute reusable data and schemas used by scenarios:
 
-- **Scenario Definitions** initialize world settings, operational objects, initial object contexts, and provider-specific simulator configuration.
-- **Mission Definitions** describe goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 - **Object Context contributions** may seed perspective-bearing awareness or provide pack-specific renderers for agent context views.
+- **Provider metadata** declares which runtime providers a pack offers and which one is the default for ordinary scenarios.
 
 Packs must keep boundaries clear:
 
 - `domainData` is pack-owned domain operational truth.
 - `context` is perspective-bearing awareness.
 - mission progress is runtime state owned by Leitbild, not static pack data.
-- scenarios are the only production startup format for new control instances.
+- scenarios are top-level compositions that list active packs; they are not owned by one pack.
+- provider ids are internal runtime wiring. Scenario APIs should expose `packs`, not low-level provider ids, unless a debug/runtime-detail endpoint explicitly asks for them.
 - restored control instances use snapshots/history, not scenarios.
 - pack helpers may construct full `OperationalObject`s, but packs must not introduce a second seed-object model beside Scenario Definitions.
-- multi-provider scenarios declare required provider ids and provider-specific config; the Simulation Hub distributes the relevant startup objects to each provider.
+- multi-pack scenarios may override a pack's default provider and may provide provider config keyed by pack id. The Scenario Catalog resolves those pack-level choices into provider ids before the Simulation Hub starts providers.
 
 ## Trust Model
 
@@ -225,8 +222,8 @@ Future installer work must make this explicit and validate:
 - namespace
 - Leitbild version compatibility
 - declared command kinds
-- declared scenarios
+- declared simulation providers
 - declared UI contributions
 - dependency and conflict metadata
 
-Data-only packs may be introduced later for lower-risk distribution of scenarios, layouts, icons, and static map data.
+Data-only scenario bundles may be introduced later for lower-risk distribution of scenarios, layouts, icons, and static map data.
