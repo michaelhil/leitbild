@@ -231,6 +231,7 @@ body.rail-resizing {
   align-items: center;
   min-width: 0;
   gap: 6px;
+  position: relative;
 }
 
 .category-icon {
@@ -253,6 +254,58 @@ body.rail-resizing {
   margin-left: 3px;
   color: var(--text);
   font-weight: 760;
+}
+
+.category-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.field-menu-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+}
+
+.field-menu {
+  position: absolute;
+  z-index: 32;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 190px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.2);
+}
+
+.field-menu-empty {
+  padding: 7px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field-toggle {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.field-toggle:hover,
+.field-toggle:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .empty-row {
@@ -317,7 +370,7 @@ body.rail-resizing {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr) 20px;
   align-items: center;
   gap: 8px;
   text-align: left;
@@ -374,7 +427,7 @@ body.rail-resizing {
   white-space: nowrap;
 }
 
-.row-hover-card,
+.row-tooltip,
 .marker-hover-card {
   position: absolute;
   z-index: 30;
@@ -392,32 +445,51 @@ body.rail-resizing {
   pointer-events: none;
 }
 
-.row-hover-card {
-  position: static;
-  grid-column: 1 / -1;
-  min-width: 0;
-  max-width: none;
-  margin-top: 4px;
-  box-shadow: none;
-  background: var(--panel-strong);
+.row-info {
+  position: relative;
+  align-self: start;
+  justify-self: end;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: help;
 }
 
-.row-hover-card strong,
+.row-info:hover,
+.row-info:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  outline: none;
+}
+
+.row-tooltip {
+  right: 0;
+  top: 24px;
+  pointer-events: none;
+  text-align: left;
+}
+
+.row-info:hover .row-tooltip,
+.row-info:focus-visible .row-tooltip {
+  display: block;
+}
+
+.row-tooltip strong,
 .marker-hover-card strong {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
 }
 
-.row-hover-card span,
+.row-tooltip span,
 .marker-hover-card div {
   display: block;
   color: var(--muted);
-}
-
-.object-row:hover .row-hover-card,
-.object-row:focus .row-hover-card {
-  display: block;
 }
 
 .system-footer {
@@ -458,20 +530,42 @@ body.rail-resizing {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
 }
 
-.status-dot.ready {
+.status-dot.ready,
+.status-dot[data-tone="ready"] {
   background: var(--success);
 }
 
-.status-dot.working {
+.status-dot.working,
+.status-dot[data-tone="working"] {
   background: var(--warning);
 }
 
-.status-dot.error {
+.status-dot.error,
+.status-dot[data-tone="error"] {
   background: var(--critical);
 }
 
-.status-dot.idle {
+.status-dot.idle,
+.status-dot[data-tone="idle"] {
   background: var(--muted);
+}
+
+.status-dot-button {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.status-dot-button:hover,
+.status-dot-button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  outline: none;
 }
 
 .command-button {
@@ -579,6 +673,9 @@ body.rail-resizing {
 .modal-header h2 {
   margin: 0;
   font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .modal-header p {
@@ -645,6 +742,11 @@ body.rail-resizing {
   margin: 0;
   display: grid;
   gap: 8px;
+}
+
+.startup-modal-frame.fading .modal-backdrop {
+  opacity: 0;
+  transition: opacity 2s ease;
 }
 
 .startup-steps li {

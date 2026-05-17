@@ -71,9 +71,8 @@
   let startupSteps: ReadonlyArray<StartupStep> = createStartupSteps()
   let mapReady = false
   let snapshotReady = false
-  let startupMinimumElapsed = false
   let startupDismissed = false
-  let startupMinimumTimer: number | null = null
+  let startupStatusModalOpen = false
   let startupModalVisible = false
   let MapSurface: Component | null = null
   let theme: ThemeMode = 'light'
@@ -196,10 +195,16 @@
 
   const closeStartupModal = (): void => {
     startupDismissed = true
+    startupStatusModalOpen = false
     startupModalVisible = false
   }
 
+  const openStatusModal = (): void => {
+    startupStatusModalOpen = true
+  }
+
   const resetStartupForJoin = (): void => {
+    startupDismissed = false
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
     if (mapReady) completeStep('map')
   }
@@ -499,17 +504,12 @@
     }
     window.addEventListener('keydown', handleKeydown)
     window.addEventListener('click', handleClick, { capture: true })
-    startupMinimumTimer = window.setTimeout(() => {
-      startupMinimumElapsed = true
-      startupMinimumTimer = null
-    }, 5_000)
     routeMode = routeModeFromPath()
     completeStep('route')
     completeStep('interface')
     if (routeMode === 'picker') {
       void loadInstances()
       return () => {
-        if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
         window.removeEventListener('keydown', handleKeydown)
         window.removeEventListener('click', handleClick, { capture: true })
         stopRailResize()
@@ -518,7 +518,6 @@
     void loadMapSurface()
     void joinControlInstance()
     return () => {
-      if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('click', handleClick, { capture: true })
       stopRailResize()
@@ -526,7 +525,6 @@
   })
 
   onDestroy(() => {
-    if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
     stopRailResize()
     controlInstanceSocket?.close()
     controlInstanceSocket = null
@@ -538,9 +536,8 @@
   $: startupModalVisible = startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
-    minimumElapsed: startupMinimumElapsed,
     steps: startupSteps,
-  })
+  }) || startupStatusModalOpen
 </script>
 
 {#if routeMode === 'picker'}
@@ -563,6 +560,7 @@
       {beginPlacement}
       {cancelPlacement}
       {toggleTheme}
+      {openStatusModal}
     />
     <button
       class="rail-resize-handle"
@@ -599,7 +597,13 @@
 {/if}
 
 {#if startupModalVisible}
-  <StartupModal steps={startupSteps} retry={joinControlInstance} close={closeStartupModal} />
+  <StartupModal
+    steps={startupSteps}
+    retry={joinControlInstance}
+    close={closeStartupModal}
+    autoCloseWhenReady={!startupStatusModalOpen}
+    closeWhenReadyOnly={!startupStatusModalOpen}
+  />
 {/if}
 
 {#if createDraft}

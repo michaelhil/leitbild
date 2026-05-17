@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { X } from 'lucide-svelte'
+  import StatusDot, { type StatusTone } from './StatusDot.svelte'
 
   export let title: string
   export let close: () => void
   export let closeOnBackdrop = true
   export let closeOnEscape = true
+  export let showClose = true
   export let size: 'small' | 'medium' | 'large' = 'medium'
   export let description: string | null = null
+  export let titleTone: StatusTone | null = null
 
   const closeFromBackdrop = (): void => {
     if (closeOnBackdrop) close()
@@ -32,14 +35,21 @@
   <dialog class="modal-shell {size}" open aria-modal="true" aria-label={title} on:mousedown|stopPropagation>
     <header class="modal-header">
       <div>
-        <h2>{title}</h2>
+        <h2>
+          {#if titleTone}
+            <StatusDot tone={titleTone} label={title} />
+          {/if}
+          <span>{title}</span>
+        </h2>
         {#if description}
           <p>{description}</p>
         {/if}
       </div>
-      <button class="icon-button" type="button" aria-label="Close" title="Close" on:click|stopPropagation={close}>
-        <X size={16} strokeWidth={1.8} />
-      </button>
+      {#if showClose}
+        <button class="icon-button" type="button" aria-label="Close" title="Close" on:click|stopPropagation={close}>
+          <X size={16} strokeWidth={1.8} />
+        </button>
+      {/if}
     </header>
     <div class="modal-body">
       <slot />

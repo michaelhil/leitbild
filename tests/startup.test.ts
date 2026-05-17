@@ -50,28 +50,19 @@ describe('startup progress model', () => {
     expect(startupHasFailed(failed)).toBe(true)
   })
 
-  test('keeps startup modal visible for the confidence window and respects dismissal', () => {
+  test('keeps startup modal visible until the UI lifecycle dismisses it', () => {
     let steps = createStartupSteps(10)
     for (const step of steps) steps = completeStartupStep(steps, step.id, 20)
 
     expect(startupModalShouldShow({
       routeMode: 'control-instance',
       dismissed: false,
-      minimumElapsed: false,
       steps,
     })).toBe(true)
 
     expect(startupModalShouldShow({
       routeMode: 'control-instance',
-      dismissed: false,
-      minimumElapsed: true,
-      steps,
-    })).toBe(false)
-
-    expect(startupModalShouldShow({
-      routeMode: 'control-instance',
       dismissed: true,
-      minimumElapsed: false,
       steps,
     })).toBe(false)
   })
@@ -82,7 +73,6 @@ describe('startup progress model', () => {
     expect(startupModalShouldShow({
       routeMode: 'picker',
       dismissed: false,
-      minimumElapsed: false,
       steps,
     })).toBe(false)
   })

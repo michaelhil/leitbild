@@ -1,15 +1,39 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import ModalShell from './components/ModalShell.svelte'
-  import type { StartupStep } from './startup.ts'
+  import type { StatusTone } from './components/StatusDot.svelte'
+  import { startupHasFailed, startupIsReady, type StartupStep } from './startup.ts'
 
   export let steps: ReadonlyArray<StartupStep>
   export let retry: () => Promise<void>
   export let close: () => void
+  export let autoCloseWhenReady = true
+  export let closeWhenReadyOnly = true
 
   let nowMs = performance.now()
   let retrying = false
   let interval: number | null = null
+  let closeDelayTimer: number | null = null
+  let fadeTimer: number | null = null
+  let fading = false
+
+  const clearCloseTimers = (): void => {
+    if (closeDelayTimer !== null) window.clearTimeout(closeDelayTimer)
+    if (fadeTimer !== null) window.clearTimeout(fadeTimer)
+    closeDelayTimer = null
+    fadeTimer = null
+  }
+
+  const ready = (): boolean =>
+    startupIsReady(steps)
+
+  const failed = (): boolean =>
+    startupHasFailed(steps)
+
+  const titleTone = (): StatusTone => {
+    if (failed()) return 'error'
+    return ready() ? 'ready' : 'working'
+  }
 
   const elapsedSeconds = (step: StartupStep): string => {
     if (!step.startedAtMs) return ''
@@ -47,15 +71,41 @@
 
   onDestroy(() => {
     if (interval !== null) window.clearInterval(interval)
+    clearCloseTimers()
   })
+
+  $: {
+    steps
+    if (failed()) {
+      clearCloseTimers()
+      fading = false
+    } else if (autoCloseWhenReady && ready() && closeDelayTimer === null && fadeTimer === null && !fading) {
+      closeDelayTimer = window.setTimeout(() => {
+        closeDelayTimer = null
+        fading = true
+        fadeTimer = window.setTimeout(() => {
+          fadeTimer = null
+          close()
+        }, 2_000)
+      }, 2_000)
+    } else if (!ready()) {
+      clearCloseTimers()
+      fading = false
+    }
+  }
 </script>
 
-<ModalShell
-  title="Starting Leitbild"
-  description="Opening the control surface and checking each startup step."
-  close={close}
-  size="medium"
->
+<div class:fading class="startup-modal-frame">
+  <ModalShell
+    title="Starting Leitbild"
+    description="Opening the control surface and checking each startup step."
+    close={close}
+    closeOnBackdrop={!closeWhenReadyOnly || ready()}
+    closeOnEscape={!closeWhenReadyOnly || ready()}
+    showClose={false}
+    titleTone={titleTone()}
+    size="medium"
+  >
   <ol class="startup-steps" role="status" aria-live="polite">
     {#each steps as step (step.id)}
       <li class:done={step.status === 'done'} class:running={step.status === 'running'} class:failed={step.status === 'failed'}>
@@ -84,4 +134,5 @@
       </div>
     {/if}
   </svelte:fragment>
-</ModalShell>
+  </ModalShell>
+</div>

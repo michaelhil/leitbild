@@ -13,6 +13,7 @@
   class:working={tone === 'working'}
   class:error={tone === 'error'}
   class:idle={tone === 'idle'}
+  data-tone={tone}
   title={label}
   aria-label={label}
   role="status"

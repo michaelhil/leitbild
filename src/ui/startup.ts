@@ -106,9 +106,7 @@ export const startupHasFailed = (steps: ReadonlyArray<StartupStep>): boolean =>
 export const startupModalShouldShow = (config: {
   readonly routeMode: 'picker' | 'control-instance'
   readonly dismissed: boolean
-  readonly minimumElapsed: boolean
   readonly steps: ReadonlyArray<StartupStep>
 }): boolean =>
   config.routeMode === 'control-instance'
   && !config.dismissed
-  && (startupHasFailed(config.steps) || !startupIsReady(config.steps) || !config.minimumElapsed)

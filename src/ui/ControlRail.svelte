@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { ChevronDown, ChevronRight, Moon, Plus, Sun, X } from 'lucide-svelte'
+  import { ChevronDown, ChevronRight, Eye, EyeOff, Moon, Plus, Sun, X } from 'lucide-svelte'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
   import { iconHtml, isIconName, type IconName } from './icons.ts'
@@ -23,8 +23,13 @@
   export let beginPlacement: (type: PackCreateObjectType) => void
   export let cancelPlacement: () => void
   export let toggleTheme: () => void
+  export let openStatusModal: () => void
 
-  let collapsedCategoryIds = new Set<string>()
+  type VisibilityState = Record<string, ReadonlyArray<string>>
+
+  let collapsedCategoryIds: Record<string, boolean> = {}
+  let openFieldCategoryId: string | null = null
+  let visibleFieldsByCategory: VisibilityState = {}
 
   const placementText = (): string => {
     if (!placementMode) return ''
@@ -58,16 +63,51 @@
   }
 
   const categoryCollapsed = (categoryId: string): boolean =>
-    collapsedCategoryIds.has(categoryId)
+    collapsedCategoryIds[categoryId] === true
 
   const toggleCategory = (categoryId: string): void => {
-    const next = new Set(collapsedCategoryIds)
-    if (next.has(categoryId)) {
-      next.delete(categoryId)
-    } else {
-      next.add(categoryId)
+    collapsedCategoryIds = { ...collapsedCategoryIds, [categoryId]: !categoryCollapsed(categoryId) }
+  }
+
+  const lineKey = (line: string): string => {
+    const separatorIndex = line.indexOf(':')
+    return (separatorIndex >= 0 ? line.slice(0, separatorIndex) : line).trim()
+  }
+
+  const lineValue = (line: string): string => {
+    const separatorIndex = line.indexOf(':')
+    return (separatorIndex >= 0 ? line.slice(separatorIndex + 1) : '').trim()
+  }
+
+  const dataFieldsFor = (row: CategoryRow): ReadonlyArray<string> => {
+    const keys = new Set<string>()
+    for (const object of row.objects) {
+      for (const line of detailLines(object)) {
+        const key = lineKey(line)
+        if (key) keys.add(key)
+      }
     }
-    collapsedCategoryIds = next
+    return [...keys].sort((left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' }))
+  }
+
+  const visibleFieldsFor = (categoryId: string): ReadonlyArray<string> =>
+    visibleFieldsByCategory[categoryId] ?? []
+
+  const fieldVisible = (categoryId: string, field: string): boolean =>
+    visibleFieldsFor(categoryId).includes(field)
+
+  const toggleField = (categoryId: string, field: string): void => {
+    const current = visibleFieldsFor(categoryId)
+    const next = current.includes(field)
+      ? current.filter(candidate => candidate !== field)
+      : [...current, field]
+    visibleFieldsByCategory = { ...visibleFieldsByCategory, [categoryId]: next }
+  }
+
+  const visibleLinesForObject = (categoryId: string, object: OperationalObject): ReadonlyArray<string> => {
+    const selected = new Set(visibleFieldsFor(categoryId))
+    if (selected.size === 0) return []
+    return detailLines(object).filter(line => selected.has(lineKey(line)))
   }
 </script>
 
@@ -88,6 +128,32 @@
             <span class="category-icon">{@html iconHtml(headerIcon, { size: 17 })}</span>
           {/if}
           <h2>{row.category.label} <span>({row.objects.length})</span></h2>
+          <span class="category-actions">
+            <span class="field-menu-wrap">
+              <IconButton
+                label="Choose visible {row.category.label.toLowerCase()} data"
+                title="Choose visible {row.category.label.toLowerCase()} data"
+                icon={openFieldCategoryId === row.category.id ? EyeOff : Eye}
+                size={14}
+                variant="bare"
+                onClick={() => openFieldCategoryId = openFieldCategoryId === row.category.id ? null : row.category.id}
+              />
+              {#if openFieldCategoryId === row.category.id}
+                {@const fields = dataFieldsFor(row)}
+                <div class="field-menu" role="menu">
+                  {#if fields.length === 0}
+                    <div class="field-menu-empty">No data fields</div>
+                  {:else}
+                    {#each fields as field (field)}
+                      <button class="field-toggle" type="button" on:click|stopPropagation={() => toggleField(row.category.id, field)}>
+                        <svelte:component this={fieldVisible(row.category.id, field) ? Eye : EyeOff} size={13} strokeWidth={1.8} />
+                        <span>{field}</span>
+                      </button>
+                    {/each}
+                  {/if}
+                </div>
+              {/if}
+            </span>
           {#if row.createType}
             <IconButton
               label="Add {row.category.label.toLowerCase()}"
@@ -98,6 +164,7 @@
               onClick={() => row.createType && beginPlacement(row.createType)}
             />
           {/if}
+          </span>
         </div>
         <IconButton
           label="{categoryCollapsed(row.category.id) ? 'Expand' : 'Collapse'} {row.category.label.toLowerCase()}"
@@ -118,10 +185,16 @@
             <span>
               <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
               <span class="object-meta">{presentationFor(object).summary}</span>
+              {#each visibleLinesForObject(row.category.id, object) as line (line)}
+                <span class="object-meta"><strong>{lineKey(line)}:</strong> {lineValue(line)}</span>
+              {/each}
             </span>
-            <span class="row-hover-card">
-              <strong>{object.label}</strong>
-              {#each detailLines(object) as line}<span>{line}</span>{/each}
+            <span class="row-info" aria-label="Show {object.label} details">
+              ?
+              <span class="row-tooltip">
+                <strong>{object.label}</strong>
+                {#each detailLines(object) as line}<span>{line}</span>{/each}
+              </span>
             </span>
           </button>
         {/each}
@@ -130,7 +203,9 @@
   {/each}
 
   <footer class="system-footer">
-    <StatusDot tone={statusTone()} label={status} />
+    <button class="status-dot-button" type="button" aria-label="Show Leitbild status" title={status} on:click={openStatusModal}>
+      <StatusDot tone={statusTone()} label={status} />
+    </button>
     <span class="brand">Leitbild</span>
     <span class="version">v{appVersion}</span>
     <IconButton
