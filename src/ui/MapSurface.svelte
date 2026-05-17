@@ -31,6 +31,8 @@
   export let onObjectSelected: (object: OperationalObject) => void
   export let onPlacementPoint: (point: GeoJsonPoint) => void
   export let onObjectSeen: (object: OperationalObject) => void
+  export let onMapReady: () => void
+  export let onMapError: (message: string) => void
 
   let mapElement: HTMLDivElement
   let map: MapLibreMap | null = null
@@ -364,16 +366,21 @@
     })
     current.on('load', () => {
       void (async () => {
-        await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
-        await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
-        await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
-        await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
-        addMapSourcesAndLayers(current)
-        addObjectInteractions(current)
-        loaded = true
-        lastRouteRevision = routeRevision
-        lastSelectedControllerId = selectedControllerId
-        refreshSources()
+        try {
+          await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
+          await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
+          await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
+          await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
+          addMapSourcesAndLayers(current)
+          addObjectInteractions(current)
+          loaded = true
+          lastRouteRevision = routeRevision
+          lastSelectedControllerId = selectedControllerId
+          refreshSources()
+          onMapReady()
+        } catch (err) {
+          onMapError(err instanceof Error ? err.message : String(err))
+        }
       })()
     })
   })

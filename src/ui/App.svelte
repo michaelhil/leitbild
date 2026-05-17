@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, tick } from 'svelte'
   import type { GeoJsonPoint, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -26,6 +26,18 @@
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
   import MapSurface from './MapSurface.svelte'
+  import StartupModal from './StartupModal.svelte'
+  import {
+    completeStartupStep,
+    createStartupSteps,
+    failStartupStep,
+    resetStartupStepsAfter,
+    startupHasFailed,
+    startupIsReady,
+    startStartupStep,
+    type StartupStep,
+    type StartupStepId,
+  } from './startup.ts'
   import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
 
   const activePack: LeitbildPack = createCompositePack({
@@ -48,6 +60,12 @@
   let controlInstanceSocket: WebSocket | null = null
   let placementCursor: { readonly icon: IconName; readonly color: string } | null = null
   let routeRevision = 0
+  let startupSteps: ReadonlyArray<StartupStep> = createStartupSteps()
+  let mapReady = false
+  let snapshotReady = false
+  let startupMinimumElapsed = false
+  let startupDismissed = false
+  let startupMinimumTimer: number | null = null
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -69,6 +87,40 @@
     const body = await listControlInstances()
     instances = body.controlInstances
     status = 'Ready'
+  }
+
+  const startStep = (id: StartupStepId): void => {
+    startupSteps = startStartupStep(startupSteps, id)
+  }
+
+  const completeStep = (id: StartupStepId): void => {
+    startupSteps = completeStartupStep(startupSteps, id)
+  }
+
+  const failStep = (id: StartupStepId, err: unknown): void => {
+    const message = err instanceof Error ? err.message : String(err)
+    startupSteps = failStartupStep(startupSteps, id, message)
+    status = message
+  }
+
+  const completeObjectsWhenReady = async (): Promise<void> => {
+    if (!mapReady || !snapshotReady) return
+    await tick()
+    completeStep('objects')
+  }
+
+  const showStartupModal = (): boolean =>
+    routeMode === 'control-instance'
+    && !startupDismissed
+    && (startupHasFailed(startupSteps) || !startupIsReady(startupSteps) || !startupMinimumElapsed)
+
+  const closeStartupModal = (): void => {
+    startupDismissed = true
+  }
+
+  const resetStartupForJoin = (): void => {
+    startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
+    if (mapReady) completeStep('map')
   }
 
   const openInstance = (id: string): void => {
@@ -164,15 +216,20 @@
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(`${protocol}//${location.host}/ws?controlInstance=${encodeURIComponent(id)}`)
     controlInstanceSocket = socket
+    startStep('realtime')
     socket.onopen = () => {
       status = 'Connected'
+      completeStep('realtime')
+      completeStep('ready')
     }
     socket.onclose = () => {
-      if (controlInstanceSocket === socket) controlInstanceSocket = null
+      if (controlInstanceSocket !== socket) return
+      controlInstanceSocket = null
       status = 'Disconnected'
     }
     socket.onerror = () => {
       status = 'WebSocket error'
+      failStep('realtime', 'WebSocket error')
     }
     socket.onmessage = (message) => {
       let parsed
@@ -216,13 +273,44 @@
   }
 
   const joinControlInstance = async (): Promise<void> => {
-    const id = controlInstanceIdFromPath()
-    const body = await joinControlInstanceClient(id)
-    controlInstanceId = body.id
-    objects = [...body.snapshot.objects]
-    selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
-    connectWebSocket(body.id)
-    seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
+    controlInstanceSocket?.close()
+    controlInstanceSocket = null
+    resetStartupForJoin()
+    snapshotReady = false
+    status = 'Starting'
+    startStep('control-instance')
+    let activeStartupStep: StartupStepId = 'control-instance'
+    try {
+      const id = controlInstanceIdFromPath()
+      const body = await joinControlInstanceClient(id)
+      completeStep('control-instance')
+      activeStartupStep = 'snapshot'
+      startStep('snapshot')
+      controlInstanceId = body.id
+      objects = [...body.snapshot.objects]
+      selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
+      seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
+      snapshotReady = true
+      completeStep('snapshot')
+      activeStartupStep = 'objects'
+      startStep('objects')
+      await completeObjectsWhenReady()
+      activeStartupStep = 'realtime'
+      connectWebSocket(body.id)
+    } catch (err) {
+      failStep(activeStartupStep, err)
+    }
+  }
+
+  const handleMapReady = (): void => {
+    mapReady = true
+    completeStep('map')
+    startStep('objects')
+    void completeObjectsWhenReady()
+  }
+
+  const handleMapError = (message: string): void => {
+    failStep('map', message)
   }
 
   const beginPlacement = (type: PackCreateObjectType): void => {
@@ -264,7 +352,13 @@
     }
     window.addEventListener('keydown', handleKeydown)
     window.addEventListener('click', handleClick, { capture: true })
+    startupMinimumTimer = window.setTimeout(() => {
+      startupMinimumElapsed = true
+      startupMinimumTimer = null
+    }, 5_000)
     routeMode = routeModeFromPath()
+    completeStep('route')
+    completeStep('interface')
     if (routeMode === 'picker') {
       void loadInstances()
       return () => {
@@ -274,12 +368,14 @@
     }
     void joinControlInstance()
     return () => {
+      if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
       window.removeEventListener('keydown', handleKeydown)
       window.removeEventListener('click', handleClick, { capture: true })
     }
   })
 
   onDestroy(() => {
+    if (startupMinimumTimer !== null) window.clearTimeout(startupMinimumTimer)
     controlInstanceSocket?.close()
     controlInstanceSocket = null
   })
@@ -324,9 +420,15 @@
         onObjectSelected={selectObject}
         onPlacementPoint={placeObjectDraft}
         onObjectSeen={markSeen}
+        onMapReady={handleMapReady}
+        onMapError={handleMapError}
       />
     </main>
   </div>
+{/if}
+
+{#if showStartupModal()}
+  <StartupModal steps={startupSteps} retry={joinControlInstance} close={closeStartupModal} />
 {/if}
 
 {#if createDraft}

@@ -414,3 +414,131 @@ button {
   border-color: var(--accent);
   color: #fff;
 }
+
+.startup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  background: rgba(17, 24, 39, 0.32);
+  backdrop-filter: blur(2px);
+}
+
+.startup-dismiss-layer {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.startup-modal {
+  position: relative;
+  z-index: 1;
+  width: min(520px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.28);
+  padding: 18px;
+}
+
+.startup-modal header {
+  margin-bottom: 14px;
+}
+
+.startup-modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.startup-modal p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.startup-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.startup-steps li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-strong);
+}
+
+.startup-indicator {
+  width: 11px;
+  height: 11px;
+  margin-top: 3px;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.startup-steps li.running .startup-indicator {
+  border-color: var(--accent);
+}
+
+.startup-steps li.done .startup-indicator {
+  border-color: #16834f;
+  background: #16834f;
+}
+
+.startup-steps li.failed .startup-indicator {
+  border-color: var(--critical);
+  background: var(--critical);
+}
+
+.startup-step-main {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.startup-step-label {
+  font-weight: 650;
+  font-size: 13px;
+}
+
+.startup-step-error {
+  color: var(--critical);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.startup-step-status {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.startup-steps li.done .startup-step-status {
+  color: #16834f;
+}
+
+.startup-steps li.failed .startup-step-status {
+  color: var(--critical);
+}
+
+.startup-actions {
+  margin-top: 14px;
+}
+
+.startup-actions .command-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
