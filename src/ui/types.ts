@@ -1,6 +1,6 @@
 import type { ControlInstanceId, OperationalObject } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
-import type { TrafficSeverity } from '../domains/traffic/model.ts'
+import type { TrafficSeverity } from '../packs/traffic/model.ts'
 
 export interface ControlInstanceSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>

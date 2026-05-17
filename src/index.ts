@@ -1,10 +1,10 @@
 import { createServer } from './core/api/server.ts'
 import { createControlInstanceRegistry } from './core/control-instances/registry.ts'
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
-import { createLocalAmbulanceSimulationAdapter } from './domains/ambulance/sim/adapter.ts'
-import { ambulancePack } from './domains/ambulance/pack.ts'
-import { createLocalTrafficSimulationAdapter } from './domains/traffic/sim/adapter.ts'
-import { trafficPack } from './domains/traffic/pack.ts'
+import { createLocalAmbulanceSimulationAdapter } from './packs/ambulance/sim/adapter.ts'
+import { ambulancePack } from './packs/ambulance/pack.ts'
+import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
+import { trafficPack } from './packs/traffic/pack.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 
 const routing = createRoutingAdapterFromEnv()

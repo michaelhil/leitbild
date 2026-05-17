@@ -6,10 +6,10 @@ import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEven
 import { nowIso } from '../src/core/model/index.ts'
 import type { ControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
-import { assignToIncidentCommandKind } from '../src/domains/ambulance/commands.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
+import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
+import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
+import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 
 describe('control instance registry', () => {

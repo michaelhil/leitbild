@@ -5,8 +5,8 @@
   import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { ambulancePack } from '../domains/ambulance/pack.ts'
-  import { trafficPack } from '../domains/traffic/pack.ts'
+  import { ambulancePack } from '../packs/ambulance/pack.ts'
+  import { trafficPack } from '../packs/traffic/pack.ts'
   import {
     createControlInstance,
     joinControlInstance as joinControlInstanceClient,

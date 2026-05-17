@@ -6,12 +6,12 @@ import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
   setDestinationCommandKind,
-} from '../src/domains/ambulance/commands.ts'
-import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/domains/ambulance/model.ts'
-import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
-import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
-import { createAmbulanceArrivalInteractionHandler } from '../src/domains/ambulance/sim/interactions.ts'
+} from '../src/packs/ambulance/commands.ts'
+import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/packs/ambulance/model.ts'
+import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
+import { createAmbulanceArrivalInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
 import type { SimulationEvent } from '../src/simulation/protocol.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { testScenarioRuntimeConfig } from './helpers.ts'

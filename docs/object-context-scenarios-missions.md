@@ -164,7 +164,7 @@ Keeping progress separate makes mission definitions reusable and makes replay/de
 
 Some domain behavior is not a user command and not a generic Leitbild-core concern. Examples include an ambulance loading patients at an incident, a hospital accepting patients, a drone draining battery, or a ship loading cargo.
 
-These behaviors should live inside the simulation/domain pack. Leitbild core should not know ambulance-specific transfer rules, hospital admission rules, drone battery logic, or maritime cargo rules.
+These behaviors should live inside the relevant pack. Leitbild core should not know ambulance-specific transfer rules, hospital admission rules, drone battery logic, or maritime cargo rules.
 
 V1 rule pattern:
 
@@ -223,5 +223,5 @@ Rejected for v1. It would be powerful but hard to validate, inspect, and test. L
 - Mission definitions are reusable data; mission progress is runtime state.
 - Agent context views are derived and must not become canonical state.
 - Scenario and mission definitions must validate at file/API boundaries before execution.
-- Domain interaction rules live in simulation/domain packs and must produce explicit events or object changes.
+- Domain interaction rules live in packs and must produce explicit events or object changes.
 - Operational objects are data, not active executable actors.

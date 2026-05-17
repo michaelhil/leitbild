@@ -2,17 +2,17 @@ import { describe, expect, test } from 'bun:test'
 import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import { createCompositePack } from '../src/core/packs/composite.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
-import { ambulancePack } from '../src/domains/ambulance/pack.ts'
-import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/domains/ambulance/model.ts'
-import { trafficPack } from '../src/domains/traffic/pack.ts'
+import { ambulancePack } from '../src/packs/ambulance/pack.ts'
+import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/packs/ambulance/model.ts'
+import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
   setDestinationCommandKind,
-} from '../src/domains/ambulance/commands.ts'
-import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
-import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
+} from '../src/packs/ambulance/commands.ts'
+import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
+import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 

@@ -4,6 +4,8 @@ A **Leitbild Pack** is a namespaced bundle of operational-domain capability.
 
 Leitbild itself owns control instances, actors, roles, command envelopes, event ordering, state projection, map rendering, persistence, audit logs, metrics, and AI integration boundaries. Packs contribute domain-specific behavior behind those core seams.
 
+Concrete pack implementations live in `src/packs/*`. The generic pack protocol, registry, and composition helpers live in `src/core/packs/*`.
+
 ## User-Facing Model
 
 There is one installable unit: the pack.
@@ -160,7 +162,7 @@ Composition rules:
 - Leitbild owns object IDs and canonical state.
 - Leitbild owns interaction signal ordering and effect commit.
 - Packs publish events through Leitbild seams.
-- Packs issue changes to other domains only through declared commands, interaction signals, and committed events.
+- Packs issue changes to other operational domains only through declared commands, interaction signals, and committed events.
 - Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
 
 Multi-pack simulation orchestration uses the Simulation Hub once more than one provider is active in a Control Instance.

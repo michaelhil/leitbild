@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
-import { createTrafficConditionCommandKind } from '../src/domains/traffic/commands.ts'
-import { trafficDomainDataSchema } from '../src/domains/traffic/model.ts'
-import { trafficConditionChangedSignalType } from '../src/domains/traffic/interactions.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
+import { createTrafficConditionCommandKind } from '../src/packs/traffic/commands.ts'
+import { trafficDomainDataSchema } from '../src/packs/traffic/model.ts'
+import { trafficConditionChangedSignalType } from '../src/packs/traffic/interactions.ts'
+import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const controlInstanceId = 'control-instance:traffic-sim-test' as ControlInstanceId

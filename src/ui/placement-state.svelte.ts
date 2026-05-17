@@ -1,6 +1,6 @@
 import type { GeoJsonPoint, GeoJsonPolygon } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry } from '../core/packs/protocol.ts'
-import type { TrafficSeverity } from '../domains/traffic/model.ts'
+import type { TrafficSeverity } from '../packs/traffic/model.ts'
 import { isIconName } from './icons.ts'
 import type { CreateDraft } from './types.ts'
 

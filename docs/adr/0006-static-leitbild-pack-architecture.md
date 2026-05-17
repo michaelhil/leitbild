@@ -6,7 +6,7 @@ Leitbild will use a single user-facing extension concept: a **Leitbild Pack**.
 
 A pack is a namespaced bundle that can contribute domain vocabulary, command schemas, simulation adapters, scenarios, map presentation, UI panels, research metrics, assets, and AI guidance.
 
-The first implementation is static and built in. Leitbild will not add GitHub-based pack installation until the pack interface has stabilized through at least one internal domain pack.
+The first implementation is static and built in. Leitbild will not add GitHub-based pack installation until the pack interface has stabilized through at least one internal pack.
 
 ## Rationale
 
@@ -20,7 +20,7 @@ Dynamic GitHub installation is deliberately deferred. Remote pack loading would 
 
 - `core` remains use-case agnostic.
 - `ui` should ask the active pack how to present objects and build domain commands.
-- Domain-specific UI names should stay inside domain pack modules.
+- Domain-specific UI names should stay inside concrete pack modules under `src/packs/*`.
 - Static built-in packs are registered in code first.
 - Future GitHub-distributed packs should follow the same interface, manifest, namespace, validation, and activation model documented in `docs/packs.md`.
 - Pack code is trusted code. Installing a future code pack is equivalent to adding executable code to a control-center platform.

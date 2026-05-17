@@ -7,8 +7,8 @@ import {
   hasActiveDisplayMotion,
   reconcileDisplayMotionState,
 } from '../src/ui/display-motion.ts'
-import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
-import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
+import { osloAmbulanceTutorialScenario } from '../src/packs/ambulance/scenario.ts'
+import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioAmbulance = (): OperationalObject => {

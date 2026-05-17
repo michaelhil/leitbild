@@ -12,7 +12,7 @@ Leitbild also introduces separate scenario and mission definition schemas:
 - **Mission Definition** describes goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 - **Mission Progress State** tracks runtime progress separately from the reusable mission definition.
 
-Domain interaction rules live in simulation/domain packs. Objects carry capabilities, resources, load, capacity, state, and context, but they do not contain executable behavior. A simulation instance may treat an object as the source or subject of an event, then emit ordered `SimulationEvent`s through the adapter.
+Domain interaction rules live in packs. Objects carry capabilities, resources, load, capacity, state, and context, but they do not contain executable behavior. A simulation instance may treat an object as the source or subject of an event, then emit ordered `SimulationEvent`s through the adapter.
 
 Scenario Definitions are now the only production startup format for new control instances. Restored control instances are initialized from persisted snapshots/history. Domain seed factories are rejected because they create a second initialization model beside scenarios.
 
