@@ -44,6 +44,10 @@ export const createControlInstanceRuntime = async (config: {
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
 
+  const keepQueueOpenAfter = async (publish: Promise<void>): Promise<void> => {
+    await Promise.allSettled([publish])
+  }
+
   const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
     if (domainEvents.length === 0) return
     for (const event of domainEvents) {
@@ -62,7 +66,7 @@ export const createControlInstanceRuntime = async (config: {
       await previousPublish
       await work()
     })()
-    publishQueue = currentPublish.catch(() => undefined)
+    publishQueue = keepQueueOpenAfter(currentPublish)
     await currentPublish
   }
 
@@ -187,10 +191,16 @@ export const createControlInstanceRuntime = async (config: {
     })
   }
 
-  const unsubscribeSimulation = config.simulation.subscribe((emission) => {
-    void publishSimulationEmission(emission).catch(err => {
+  const publishSimulationEmissionSafely = async (emission: SimulationEmission): Promise<void> => {
+    try {
+      await publishSimulationEmission(emission)
+    } catch (err) {
       console.error(err)
-    })
+    }
+  }
+
+  const unsubscribeSimulation = config.simulation.subscribe((emission) => {
+    void publishSimulationEmissionSafely(emission)
   })
 
   if (config.restoredSnapshot) {
