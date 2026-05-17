@@ -1,4 +1,5 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
+import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficSeverity } from './model.ts'
@@ -12,16 +13,14 @@ const parseTrafficData = (object: OperationalObject): TrafficDomainData | null =
   return parsed.success ? parsed.data : null
 }
 
-const field = (key: string, label: string, value: string): PackObjectField => ({ key, label, value })
-
 const trafficDetails = (data: TrafficDomainData): ReadonlyArray<PackObjectField> => [
-  field('geometry', 'Geometry', data.geometryMode.replaceAll('_', ' ')),
-  field('condition', 'Condition', data.condition.replaceAll('_', ' ')),
-  field('severity', 'Severity', data.severity),
-  field('reason', 'Reason', factText(data.reason)),
-  field('affected', 'Affected', data.affectedModes.map(mode => mode.replaceAll('_', ' ')).join(', ')),
-  ...(data.speedFactor === undefined ? [] : [field('speed-factor', 'Speed factor', `${Math.round(data.speedFactor * 100)}%`)]),
-  ...(data.delaySecondsEstimate === undefined ? [] : [field('estimated-delay', 'Estimated delay', factText(data.delaySecondsEstimate, value => `${Math.round(value)}s`))]),
+  packField('geometry', 'Geometry', data.geometryMode.replaceAll('_', ' ')),
+  packField('condition', 'Condition', data.condition.replaceAll('_', ' ')),
+  packField('severity', 'Severity', data.severity),
+  packField('reason', 'Reason', factText(data.reason)),
+  packField('affected', 'Affected', data.affectedModes.map(mode => mode.replaceAll('_', ' ')).join(', ')),
+  ...(data.speedFactor === undefined ? [] : [packField('speed-factor', 'Speed factor', `${Math.round(data.speedFactor * 100)}%`)]),
+  ...(data.delaySecondsEstimate === undefined ? [] : [packField('estimated-delay', 'Estimated delay', factText(data.delaySecondsEstimate, value => `${Math.round(value)}s`))]),
 ]
 
 const trafficColor = (severity: TrafficSeverity | undefined): string => {
@@ -114,8 +113,8 @@ export const trafficPack: LeitbildPack = {
       icon: 'traffic',
       color: trafficColor(data?.severity),
       summary: data ? `${data.geometryMode.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status,
-      status: { tone: data?.severity === 'blocked' || data?.severity === 'high' ? 'error' : 'working', label: data ? `${data.condition.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status, indicator: { shape: 'dot' } },
-      fields: data ? trafficDetails(data) : [field('error', 'Error', 'Invalid traffic domain data')],
+      status: packStatus(data?.severity === 'blocked' || data?.severity === 'high' ? 'error' : 'working', data ? `${data.condition.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status),
+      fields: data ? trafficDetails(data) : [packField('error', 'Error', 'Invalid traffic domain data')],
     }
   },
   defaultObjectLabel: (typeId, context): string => {

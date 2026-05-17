@@ -230,7 +230,7 @@ describe('control instance API', () => {
       const cleanedAmbulance = snapshot.body.snapshot.objects.find(object => object.id === ambulance.id)
       expect(cleanedAmbulance?.tasking?.currentTaskId).toBeUndefined()
       expect(cleanedAmbulance?.spatial.route).toBeUndefined()
-      expect(cleanedAmbulance?.operational.status).toBe('available')
+      expect(cleanedAmbulance?.operational.intent).toBeUndefined()
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }

@@ -1,14 +1,15 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import type { OperationalObject } from '../core/model/index.ts'
-  import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { ChevronDown, ChevronRight, Eye, EyeOff, Moon, Plus, Sun, X } from 'lucide-svelte'
+  import type { PackCreateObjectType, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
+  import { Moon, Sun, X } from 'lucide-svelte'
+  import CategorySection, { type PresentedObjectRow } from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
-  import StatusIndicator from './components/StatusIndicator.svelte'
-  import { iconHtml, isIconName, type IconName } from './icons.ts'
+  import { isIconName, type IconName } from './icons.ts'
   import type { ThemeMode } from './theme.ts'
   import type { CategoryRow } from './types.ts'
+  import type { FieldVisibilityOption } from './FieldVisibilityMenu.svelte'
 
   export let status: string
   export let systemStatusTone: StatusTone
@@ -29,6 +30,14 @@
   export let openStatusModal: () => void
 
   type VisibilityState = Record<string, ReadonlyArray<string>>
+  interface PresentedCategoryRow {
+    readonly row: CategoryRow
+    readonly headerIcon: IconName | null
+    readonly collapsed: boolean
+    readonly fieldMenuOpen: boolean
+    readonly fieldOptions: ReadonlyArray<FieldVisibilityOption>
+    readonly presentedRows: ReadonlyArray<PresentedObjectRow>
+  }
 
   let collapsedCategoryIds: Record<string, boolean> = {}
   let openFieldCategoryId: string | null = null
@@ -42,8 +51,10 @@
     return `Click map to place new ${placementMode.label.toLowerCase()}`
   }
 
-  const objectStatus = (object: OperationalObject) =>
-    presentationFor(object).status ?? { tone: 'idle' as const, label: object.operational.status, indicator: { shape: 'dot' as const } }
+  let presentedCategoryRows: ReadonlyArray<PresentedCategoryRow> = []
+
+  const objectStatus = (object: OperationalObject, presentation: PackObjectPresentation): PackObjectStatusPresentation =>
+    presentation.status ?? { tone: 'idle', label: object.operational.status, indicator: { shape: 'dot' } }
 
   const categoryIcon = (row: CategoryRow): IconName | null => {
     const icon = row.createType?.icon ?? ''
@@ -59,24 +70,14 @@
     collapsedCategoryIds = { ...collapsedCategoryIds, [categoryId]: !categoryCollapsed(categoryId) }
   }
 
-  const dataFieldsFor = (row: CategoryRow): ReadonlyArray<string> => {
+  const fieldOptionsFor = (presentedRows: ReadonlyArray<PresentedObjectRow>): ReadonlyArray<FieldVisibilityOption> => {
     const fields = new Map<string, string>()
-    for (const object of row.objects) {
-      for (const field of presentationFor(object).fields) {
-        fields.set(field.key, field.label)
-      }
+    for (const row of presentedRows) {
+      for (const field of row.presentation.fields) fields.set(field.key, field.label)
     }
     return [...fields.entries()]
       .sort((left, right) => left[1].localeCompare(right[1], undefined, { numeric: true, sensitivity: 'base' }))
-      .map(([key]) => key)
-  }
-
-  const fieldLabel = (row: CategoryRow, fieldKey: string): string => {
-    for (const object of row.objects) {
-      const field = presentationFor(object).fields.find(candidate => candidate.key === fieldKey)
-      if (field) return field.label
-    }
-    return fieldKey
+      .map(([key, label]) => ({ key, label }))
   }
 
   const visibleFieldsFor = (categoryId: string): ReadonlyArray<string> =>
@@ -93,11 +94,23 @@
     visibleFieldsByCategory = { ...visibleFieldsByCategory, [categoryId]: next }
   }
 
-  const visibleFieldsForObject = (categoryId: string, object: OperationalObject) => {
+  const visibleFieldsForObject = (categoryId: string, presentation: PackObjectPresentation) => {
     const selected = new Set(visibleFieldsFor(categoryId))
     if (selected.size === 0) return []
-    return presentationFor(object).fields.filter(field => selected.has(field.key))
+    return presentation.fields.filter(field => selected.has(field.key))
   }
+
+  const presentedRowsFor = (row: CategoryRow): ReadonlyArray<PresentedObjectRow> =>
+    row.objects.map(object => {
+      const presentation = presentationFor(object)
+      return {
+        object,
+        presentation,
+        status: objectStatus(object, presentation),
+        visibleFields: visibleFieldsForObject(row.category.id, presentation),
+        hasNewInfo: hasNewInfo(object),
+      }
+    })
 
   const handleOutsideFieldMenuClick = (event: MouseEvent): void => {
     if (!openFieldCategoryId) return
@@ -114,6 +127,18 @@
   onDestroy(() => {
     window.removeEventListener('click', handleOutsideFieldMenuClick, { capture: true })
   })
+
+  $: presentedCategoryRows = categoryRows.map(row => {
+    const presentedRows = presentedRowsFor(row)
+    return {
+      row,
+      headerIcon: categoryIcon(row),
+      collapsed: categoryCollapsed(row.category.id),
+      fieldMenuOpen: openFieldCategoryId === row.category.id,
+      fieldOptions: fieldOptionsFor(presentedRows),
+      presentedRows,
+    }
+  })
 </script>
 
 <aside class="control-rail" aria-hidden={collapsed} inert={collapsed}>
@@ -124,104 +149,24 @@
     </div>
   {/if}
 
-  {#each categoryRows as row (row.category.id)}
-    {@const headerIcon = categoryIcon(row)}
-    <section class="category">
-      <div class="category-header">
-        <div class="category-title">
-          {#if headerIcon}
-            <span class="category-icon">{@html iconHtml(headerIcon, { size: 17 })}</span>
-          {/if}
-          <h2>{row.category.label} <span>({row.objects.length})</span></h2>
-          <span class="category-actions">
-            <span class="field-menu-wrap">
-              <IconButton
-                label="Choose visible {row.category.label.toLowerCase()} data"
-                title="Choose visible {row.category.label.toLowerCase()} data"
-                icon={Eye}
-                size={14}
-                variant="bare"
-                onClick={() => openFieldCategoryId = openFieldCategoryId === row.category.id ? null : row.category.id}
-              />
-              {#if openFieldCategoryId === row.category.id}
-                {@const fields = dataFieldsFor(row)}
-                <div class="field-menu" role="menu">
-                  {#if fields.length === 0}
-                    <div class="field-menu-empty">No data fields</div>
-                  {:else}
-                    {#each fields as field (field)}
-                      <button class="field-toggle" type="button" on:click|stopPropagation={() => toggleField(row.category.id, field)}>
-                        <svelte:component this={fieldVisible(row.category.id, field) ? Eye : EyeOff} size={13} strokeWidth={1.8} />
-                        <span>{fieldLabel(row, field)}</span>
-                      </button>
-                    {/each}
-                  {/if}
-                </div>
-              {/if}
-            </span>
-          {#if row.createType}
-            <IconButton
-              label="Add {row.category.label.toLowerCase()}"
-              title="Add {row.category.label.toLowerCase()}"
-              icon={Plus}
-              size={14}
-              variant="bare"
-              onClick={() => row.createType && beginPlacement(row.createType)}
-            />
-          {/if}
-          </span>
-        </div>
-        <IconButton
-          label="{categoryCollapsed(row.category.id) ? 'Expand' : 'Collapse'} {row.category.label.toLowerCase()}"
-          title="{categoryCollapsed(row.category.id) ? 'Expand' : 'Collapse'} {row.category.label.toLowerCase()}"
-          icon={categoryCollapsed(row.category.id) ? ChevronRight : ChevronDown}
-          size={15}
-          variant="ghost"
-          onClick={() => toggleCategory(row.category.id)}
-        />
-      </div>
-      {#if !categoryCollapsed(row.category.id)}
-        {#if row.objects.length === 0}
-          <div class="empty-row">{row.category.emptyLabel}</div>
-        {/if}
-        {#each row.objects as object (object.id)}
-          {@const statusPresentation = objectStatus(object)}
-          <div
-            class:selected={selectedControllerId === object.id}
-            class:has-new-info={hasNewInfo(object)}
-            class:muted={presentationFor(object).muted === true}
-            class="object-row"
-          >
-            <button class="object-row-main" type="button" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-              <span class="object-status">
-                <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
-              </span>
-              <span>
-                <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-                {#each visibleFieldsForObject(row.category.id, object) as field (field.key)}
-                  <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
-                {/each}
-              </span>
-              <span class="row-info" aria-label="Show {object.label} details">
-                ?
-                <span class="row-tooltip">
-                  <strong>{object.label}</strong>
-                  {#each presentationFor(object).fields as field}<span>{field.label}: {field.value}</span>{/each}
-                </span>
-              </span>
-            </button>
-            <IconButton
-              label="Delete {object.label}"
-              title="Delete {object.label}"
-              icon={X}
-              size={13}
-              variant="bare"
-              onClick={() => deleteObject(object)}
-            />
-          </div>
-        {/each}
-      {/if}
-    </section>
+  {#each presentedCategoryRows as entry (entry.row.category.id)}
+    <CategorySection
+      row={entry.row}
+      headerIcon={entry.headerIcon}
+      collapsed={entry.collapsed}
+      fieldMenuOpen={entry.fieldMenuOpen}
+      fieldOptions={entry.fieldOptions}
+      presentedRows={entry.presentedRows}
+      {selectedControllerId}
+      isFieldVisible={fieldVisible}
+      {toggleField}
+      toggleFieldMenu={(categoryId) => openFieldCategoryId = openFieldCategoryId === categoryId ? null : categoryId}
+      {toggleCategory}
+      {beginPlacement}
+      {markSeen}
+      {selectObject}
+      {deleteObject}
+    />
   {/each}
 
   <footer class="system-footer">

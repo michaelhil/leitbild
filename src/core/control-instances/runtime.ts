@@ -170,10 +170,7 @@ export const createControlInstanceRuntime = async (config: {
             }
           : {}),
       },
-      operational: {
-        ...operationalWithoutIntent,
-        status: 'available',
-      },
+      operational: operationalWithoutIntent,
       provenance: {
         source: 'operator',
         causedByCommandId: command.id,

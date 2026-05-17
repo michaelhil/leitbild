@@ -44,6 +44,13 @@
     type StartupStepId,
   } from './startup.ts'
   import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
+  import {
+    defaultRailWidth,
+    minRailWidth,
+    railWidthFromPointer,
+    readStoredRailWidth,
+    storeRailWidth,
+  } from './rail-state.ts'
 
   const activePack: LeitbildPack = createCompositePack({
     id: 'leitbild-control',
@@ -51,11 +58,6 @@
     packs: [ambulancePack, trafficPack],
   })
   const appVersion = __LEITBILD_VERSION__
-  const railStorageKey = 'leitbild.controlRailWidth'
-  const defaultRailWidth = 360
-  const minRailWidth = 280
-  const maxRailWidth = 560
-  const collapseThreshold = 180
   let controlInstanceId: ControlInstanceId | null = null
   let objects: OperationalObject[] = []
   let selectedControllerId: string | null = null
@@ -87,37 +89,11 @@
   let layoutRevision = 0
   let systemStatusTone: StatusTone = 'working'
 
-  const readStoredRailWidth = (): number => {
-    try {
-      const raw = localStorage.getItem(railStorageKey)
-      if (!raw) return defaultRailWidth
-      const parsed = Number(raw)
-      if (!Number.isFinite(parsed) || parsed < 0) return defaultRailWidth
-      return parsed === 0 ? 0 : Math.max(minRailWidth, Math.min(maxRailWidth, parsed))
-    } catch (error) {
-      console.warn('Unable to read Leitbild rail width preference', error)
-      return defaultRailWidth
-    }
-  }
-
-  const storeRailWidth = (width: number): void => {
-    try {
-      localStorage.setItem(railStorageKey, String(width))
-    } catch (error) {
-      console.warn('Unable to store Leitbild rail width preference', error)
-    }
-  }
-
   const setRailWidth = (width: number, persist = false): void => {
     railWidth = width
     if (width >= minRailWidth) lastOpenRailWidth = width
     layoutRevision += 1
     if (persist) storeRailWidth(width)
-  }
-
-  const widthFromPointer = (clientX: number): number => {
-    const clamped = Math.max(0, Math.min(maxRailWidth, clientX))
-    return clamped < collapseThreshold ? 0 : Math.max(minRailWidth, clamped)
   }
 
   const stopRailResize = (): void => {
@@ -136,7 +112,7 @@
 
   const handleRailPointerMove = (event: PointerEvent): void => {
     if (!railResizing) return
-    setRailWidth(widthFromPointer(event.clientX))
+    setRailWidth(railWidthFromPointer(event.clientX))
   }
 
   const startRailResize = (event: PointerEvent): void => {

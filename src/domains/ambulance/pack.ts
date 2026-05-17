@@ -1,4 +1,5 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
+import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
 import {
   cancelDestinationCommandKind,
@@ -59,8 +60,6 @@ const routeImpactText = (object: OperationalObject): string | null => {
   return `Traffic impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
 }
 
-const field = (key: string, label: string, value: string): PackObjectField => ({ key, label, value })
-
 const parseAmbulanceData = (object: OperationalObject): AmbulanceDomainData | null => {
   const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
   return parsed.success ? parsed.data : null
@@ -81,13 +80,13 @@ const ambulanceDetails = (
   data: AmbulanceDomainData,
   objects: ReadonlyArray<OperationalObject>,
 ): ReadonlyArray<PackObjectField> => [
-  field('destination', 'Destination', targetLabel(object, objects)),
-  ...(etaText(object) ? [field('eta', 'ETA', etaText(object)!.replace(/^ETA: /, ''))] : []),
-  ...(routeImpactText(object) ? [field('traffic-impact', 'Traffic impact', routeImpactText(object)!.replace(/^Traffic impact: /, ''))] : []),
-  field('capabilities', 'Capabilities', listText(data.capabilities)),
-  field('crew', 'Crew', factText(data.crew.level)),
-  field('seats', 'Seats', factText(data.crew.availableSeats)),
-  field('patients', 'Patients', `${factText(data.transport?.patientsOnBoard, String)} / ${factText(data.transport?.patientCapacity, String)}`),
+  packField('destination', 'Destination', targetLabel(object, objects)),
+  ...(etaText(object) ? [packField('eta', 'ETA', etaText(object)!.replace(/^ETA: /, ''))] : []),
+  ...(routeImpactText(object) ? [packField('traffic-impact', 'Traffic impact', routeImpactText(object)!.replace(/^Traffic impact: /, ''))] : []),
+  packField('capabilities', 'Capabilities', listText(data.capabilities)),
+  packField('crew', 'Crew', factText(data.crew.level)),
+  packField('seats', 'Seats', factText(data.crew.availableSeats)),
+  packField('patients', 'Patients', `${factText(data.transport?.patientsOnBoard, String)} / ${factText(data.transport?.patientCapacity, String)}`),
 ]
 
 const ambulanceCapacity = (object: OperationalObject): number => {
@@ -116,15 +115,15 @@ const incidentStatus = (
   objects: ReadonlyArray<OperationalObject>,
 ): PackObjectStatusPresentation => {
   if (object.operational.status === 'resolved') {
-    return { tone: 'idle', label: 'Resolved', indicator: { shape: 'dot' } }
+    return packStatus('idle', 'Resolved')
   }
   const demand = incidentDemand(data)
   const assignedCapacity = assignedAmbulanceCapacityFor(object, objects)
   if (assignedCapacity === 0) {
-    return { tone: 'error', label: `No assigned ambulance capacity for ${demand} victim${demand === 1 ? '' : 's'}`, indicator: { shape: 'dot' } }
+    return packStatus('error', `No assigned ambulance capacity for ${demand} victim${demand === 1 ? '' : 's'}`)
   }
-  if (assignedCapacity >= demand) return { tone: 'ready', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot', pulse: true } }
-  return { tone: 'working', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot', pulse: true } }
+  if (assignedCapacity >= demand) return packStatus('ready', `Assigned capacity ${assignedCapacity}/${demand}`, { shape: 'dot', pulse: true })
+  return packStatus('working', `Assigned capacity ${assignedCapacity}/${demand}`, { shape: 'dot', pulse: true })
 }
 
 const ambulanceStatus = (
@@ -134,7 +133,7 @@ const ambulanceStatus = (
 ): PackObjectStatusPresentation => {
   const patientsOnBoard = ambulancePatientsOnBoard(data)
   if (!object.tasking?.currentTaskId && patientsOnBoard === 0) {
-    return { tone: 'ready', label: 'Idle and empty', indicator: { shape: 'dot' } }
+    return packStatus('ready', 'Idle and empty')
   }
   if (object.tasking?.currentTaskId && patientsOnBoard === 0) {
     const target = objects.find(candidate => candidate.id === object.tasking?.currentTaskId)
@@ -159,19 +158,19 @@ const ambulanceStatus = (
         : { shape: 'dot', pulse: true },
     }
   }
-  if (patientsOnBoard > 0) return { tone: 'working', label: 'Patient on board', indicator: { shape: 'dot' } }
-  return { tone: 'idle', label: object.operational.status, indicator: { shape: 'dot' } }
+  if (patientsOnBoard > 0) return packStatus('working', 'Patient on board')
+  return packStatus('idle', object.operational.status)
 }
 
 const hospitalStatus = (data: HospitalDomainData): PackObjectStatusPresentation => {
   const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
   const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
-  if (total === null || available === null || total === 0) return { tone: 'idle', label: 'Trauma bed capacity unknown', indicator: { shape: 'dot' } }
+  if (total === null || available === null || total === 0) return packStatus('idle', 'Trauma bed capacity unknown')
   const used = Math.max(0, total - available)
-  if (used === 0) return { tone: 'ready', label: `Trauma beds used ${used}/${total}`, indicator: { shape: 'dot' } }
-  if (used >= total) return { tone: 'error', label: `Trauma beds used ${used}/${total}`, indicator: { shape: 'dot' } }
-  if (used >= total - 1) return { tone: 'working', label: `Trauma beds used ${used}/${total}`, indicator: { shape: 'dot' } }
-  return { tone: 'ready', label: `Trauma beds used ${used}/${total}`, indicator: { shape: 'dot' } }
+  if (used === 0) return packStatus('ready', `Trauma beds used ${used}/${total}`)
+  if (used >= total) return packStatus('error', `Trauma beds used ${used}/${total}`)
+  if (used >= total - 1) return packStatus('working', `Trauma beds used ${used}/${total}`)
+  return packStatus('ready', `Trauma beds used ${used}/${total}`)
 }
 
 const traumaBedsUsedText = (data: HospitalDomainData): string => {
@@ -182,18 +181,18 @@ const traumaBedsUsedText = (data: HospitalDomainData): string => {
 }
 
 const incidentDetails = (object: OperationalObject, data: IncidentDomainData, objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackObjectField> => [
-  field('triage', 'Triage', factText(data.triage)),
-  field('victims', 'Victims', factText(data.victims.count, String)),
-  field('assigned-capacity', 'Assigned capacity', `${assignedAmbulanceCapacityFor(object, objects)} / ${incidentDemand(data)}`),
-  field('injuries', 'Injuries', factText(data.victims.injuries, injuryText)),
-  field('hazards', 'Hazards', factText(data.hazards, listText)),
+  packField('triage', 'Triage', factText(data.triage)),
+  packField('victims', 'Victims', factText(data.victims.count, String)),
+  packField('assigned-capacity', 'Assigned capacity', `${assignedAmbulanceCapacityFor(object, objects)} / ${incidentDemand(data)}`),
+  packField('injuries', 'Injuries', factText(data.victims.injuries, injuryText)),
+  packField('hazards', 'Hazards', factText(data.hazards, listText)),
 ]
 
 const hospitalDetails = (data: HospitalDomainData): ReadonlyArray<PackObjectField> => [
-  field('trauma-beds', 'Trauma beds', traumaBedsUsedText(data)),
-  field('ambulance-bays', 'Ambulance bays', factText(data.emergencyDepartment.ambulanceBaysAvailable, String)),
-  field('patients-received', 'Patients received', factText(data.emergencyDepartment.patientsReceived, String)),
-  field('capabilities', 'Capabilities', listText(data.capabilities)),
+  packField('trauma-beds', 'Trauma beds', traumaBedsUsedText(data)),
+  packField('ambulance-bays', 'Ambulance bays', factText(data.emergencyDepartment.ambulanceBaysAvailable, String)),
+  packField('patients-received', 'Patients received', factText(data.emergencyDepartment.patientsReceived, String)),
+  packField('capabilities', 'Capabilities', listText(data.capabilities)),
 ]
 
 const presentationForAmbulance = (
@@ -206,8 +205,8 @@ const presentationForAmbulance = (
     icon: 'ambulance',
     color: '#22845d',
     summary: `${object.tasking?.currentTaskId ? `Target: ${targetLabel(object, objects)}` : 'Target: none'} · ${object.operational.status}`,
-    status: data ? ambulanceStatus(object, data, objects) : { tone: 'error', label: 'Invalid ambulance domain data', indicator: { shape: 'dot' } },
-    fields: data ? ambulanceDetails(object, data, objects) : [field('error', 'Error', 'Invalid ambulance domain data')],
+    status: data ? ambulanceStatus(object, data, objects) : packStatus('error', 'Invalid ambulance domain data'),
+    fields: data ? ambulanceDetails(object, data, objects) : [packField('error', 'Error', 'Invalid ambulance domain data')],
   }
 }
 
@@ -221,8 +220,8 @@ const presentationForIncident = (
     icon: 'crash',
     color: '#c7352b',
     summary: data ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}` : object.operational.status,
-    status: data ? incidentStatus(object, data, objects) : { tone: 'error', label: 'Invalid incident domain data', indicator: { shape: 'dot' } },
-    fields: data ? incidentDetails(object, data, objects) : [field('error', 'Error', 'Invalid incident domain data')],
+    status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident domain data'),
+    fields: data ? incidentDetails(object, data, objects) : [packField('error', 'Error', 'Invalid incident domain data')],
     muted: object.operational.status === 'resolved',
   }
 }
@@ -236,8 +235,8 @@ const presentationForHospital = (object: OperationalObject): PackObjectPresentat
     summary: data
       ? `trauma beds ${factText(data.emergencyDepartment.traumaBedsAvailable, String)} available · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
       : object.operational.status,
-    status: data ? hospitalStatus(data) : { tone: 'error', label: 'Invalid hospital domain data', indicator: { shape: 'dot' } },
-    fields: data ? hospitalDetails(data) : [field('error', 'Error', 'Invalid hospital domain data')],
+    status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital domain data'),
+    fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital domain data')],
   }
 }
 
@@ -298,8 +297,8 @@ export const ambulancePack: LeitbildPack = {
       icon: 'unknown',
       color: '#667085',
       summary: object.operational.status,
-      status: { tone: 'idle', label: object.operational.status, indicator: { shape: 'dot' } },
-      fields: [field('warning', 'Warning', 'Object is outside the ambulance pack vocabulary')],
+      status: packStatus('idle', object.operational.status),
+      fields: [packField('warning', 'Warning', 'Object is outside the ambulance pack vocabulary')],
     }
   },
   defaultObjectLabel: (typeId, context): string => {

@@ -1,6 +1,7 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
 import type { PackObjectStatusTone } from '../core/packs/protocol.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
+import { statusToneColor } from './status-presentation.ts'
 
 export const mapSourceIds = {
   objects: 'objects',
@@ -55,13 +56,6 @@ interface TrafficFeatureProperties {
 
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
-
-export const statusToneColor = (tone: PackObjectStatusTone): string => {
-  if (tone === 'ready') return '#16834f'
-  if (tone === 'working') return '#c17a13'
-  if (tone === 'error') return '#c7352b'
-  return '#667085'
-}
 
 export const createObjectFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,

@@ -14,8 +14,9 @@
     mapLayerIds,
     mapSourceIds,
     pointOf,
-    statusToneColor,
   } from './map-features.ts'
+  import { registerObjectIconVariants } from './map-icon-registry.ts'
+  import { addOperationalMapSourcesAndLayers } from './map-layer-setup.ts'
   import {
     createDisplayMotionState,
     displayObjectsFor,
@@ -210,179 +211,9 @@
       .setHTML(hoverCardHtml(object))
   }
 
-  const registerMapIcon = async (current: MapLibreMap, iconId: string, iconName: IconName, color: string): Promise<void> => {
-    if (current.hasImage(iconId)) return
-    const image = new Image(40, 40)
-    image.src = iconSvgDataUrl(iconName, { stroke: color, size: 40, strokeWidth: 2.4 })
-    await image.decode()
-    current.addImage(iconId, image, { pixelRatio: 2 })
-  }
-
-  const registerMapIconVariants = async (current: MapLibreMap, iconName: IconName): Promise<void> => {
-    await registerMapIcon(current, `object-${iconName}-ready`, iconName, statusToneColor('ready'))
-    await registerMapIcon(current, `object-${iconName}-working`, iconName, statusToneColor('working'))
-    await registerMapIcon(current, `object-${iconName}-error`, iconName, statusToneColor('error'))
-    await registerMapIcon(current, `object-${iconName}-idle`, iconName, statusToneColor('idle'))
-  }
-
   const objectFromMapEvent = (event: maplibregl.MapLayerMouseEvent): OperationalObject | null => {
     const objectId = String(event.features?.[0]?.properties?.id ?? '')
     return objects.find(candidate => candidate.id === objectId) ?? null
-  }
-
-  const addMapSourcesAndLayers = (current: MapLibreMap): void => {
-    if (current.getSource(mapSourceIds.objects)) {
-      refreshSources()
-      return
-    }
-    current.addSource(mapSourceIds.plannedRoutes, {
-      type: 'geojson',
-      data: createRouteFeatureCollection([...objects], selectedControllerId),
-    })
-    current.addSource(mapSourceIds.trafficLines, {
-      type: 'geojson',
-      data: createTrafficLineFeatureCollection([...objects], presentationFor),
-    })
-    current.addSource(mapSourceIds.trafficAreas, {
-      type: 'geojson',
-      data: createTrafficAreaFeatureCollection([...objects], presentationFor),
-    })
-    current.addLayer({
-      id: mapLayerIds.trafficAreaFill,
-      type: 'fill',
-      source: mapSourceIds.trafficAreas,
-      paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.20,
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.trafficAreaOutline,
-      type: 'line',
-      source: mapSourceIds.trafficAreas,
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 2,
-        'line-opacity': 0.82,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.trafficLineCasing,
-      type: 'line',
-      source: mapSourceIds.trafficLines,
-      paint: {
-        'line-color': trafficCasingColor(),
-        'line-width': 11,
-        'line-opacity': 0.82,
-        'line-blur': 0.25,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.trafficLine,
-      type: 'line',
-      source: mapSourceIds.trafficLines,
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 7,
-        'line-opacity': 0.88,
-        'line-blur': 0.2,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.routeCasing,
-      type: 'line',
-      source: mapSourceIds.plannedRoutes,
-      paint: {
-        'line-color': routeCasingColor(),
-        'line-width': ['case', ['get', 'selected'], 10, 8],
-        'line-opacity': 0.92,
-        'line-blur': 0.15,
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.routeLine,
-      type: 'line',
-      source: mapSourceIds.plannedRoutes,
-      paint: {
-        'line-color': ['case', ['get', 'selected'], '#0b57d0', '#2563eb'],
-        'line-width': ['case', ['get', 'selected'], 6, 4],
-        'line-opacity': ['case', ['get', 'selected'], 1, 0.82],
-      },
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-      },
-    })
-    current.addSource(mapSourceIds.objects, {
-      type: 'geojson',
-      data: createObjectFeatureCollection([...objects], selectedControllerId, hasNewInfo, presentationFor),
-    })
-    current.addLayer({
-      id: mapLayerIds.objectHitArea,
-      type: 'circle',
-      source: mapSourceIds.objects,
-      paint: {
-        'circle-radius': 22,
-        'circle-color': '#ffffff',
-        'circle-opacity': 0,
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.objectHalos,
-      type: 'circle',
-      source: mapSourceIds.objects,
-      filter: ['==', ['get', 'selected'], true],
-      paint: {
-        'circle-radius': 22,
-        'circle-color': '#ffffff',
-        'circle-stroke-color': '#1d66d2',
-        'circle-stroke-width': 3,
-        'circle-opacity': 0.82,
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.objectIcons,
-      type: 'symbol',
-      source: mapSourceIds.objects,
-      layout: {
-        'icon-image': ['get', 'icon'],
-        'icon-size': 1,
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-      },
-      paint: {
-        'icon-opacity': ['case', ['get', 'muted'], 0.44, 1],
-      },
-    })
-    current.addLayer({
-      id: mapLayerIds.objectNewInfo,
-      type: 'circle',
-      source: mapSourceIds.objects,
-      filter: ['==', ['get', 'hasNewInfo'], true],
-      paint: {
-        'circle-radius': 6,
-        'circle-color': '#c7352b',
-        'circle-stroke-color': '#ffffff',
-        'circle-stroke-width': 2,
-        'circle-translate': [12, -12],
-      },
-    })
   }
 
   const addObjectInteractions = (current: MapLibreMap): void => {
@@ -411,11 +242,20 @@
   const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
     try {
       loaded = false
-      await registerMapIconVariants(current, 'ambulance')
-      await registerMapIconVariants(current, 'hospital')
-      await registerMapIconVariants(current, 'crash')
-      await registerMapIconVariants(current, 'traffic')
-      addMapSourcesAndLayers(current)
+      await registerObjectIconVariants(current, 'ambulance')
+      await registerObjectIconVariants(current, 'hospital')
+      await registerObjectIconVariants(current, 'crash')
+      await registerObjectIconVariants(current, 'traffic')
+      addOperationalMapSourcesAndLayers({
+        map: current,
+        objects,
+        selectedControllerId,
+        hasNewInfo,
+        presentationFor,
+        routeCasingColor: routeCasingColor(),
+        trafficCasingColor: trafficCasingColor(),
+        refreshSources,
+      })
       addObjectInteractions(current)
       loaded = true
       lastRouteRevision = routeRevision

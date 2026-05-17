@@ -1,11 +1,59 @@
 import type { OperationalObject } from '../model/index.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation } from './protocol.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackTargetContext } from './protocol.ts'
 
 const packForObject = (
   packs: ReadonlyArray<LeitbildPack>,
   object: OperationalObject,
-): LeitbildPack | null =>
-  packs.find(pack => pack.categories.some(category => category.matches(object))) ?? null
+): LeitbildPack | null => {
+  const matches = packs.filter(pack => pack.categories.some(category => category.matches(object)))
+  if (matches.length > 1) {
+    throw new Error(`ambiguous pack ownership for object ${object.id}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0] ?? null
+}
+
+const assertUniquePackIds = (
+  values: ReadonlyArray<{ readonly id: string }>,
+  kind: string,
+): void => {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value.id)) throw new Error(`duplicate ${kind}: ${value.id}`)
+    seen.add(value.id)
+  }
+}
+
+const packForCreateType = (
+  packs: ReadonlyArray<LeitbildPack>,
+  typeId: string,
+): LeitbildPack => {
+  const matches = packs.filter(pack => pack.createObjectTypes.some(type => type.id === typeId))
+  if (matches.length === 0) throw new Error(`unknown create object type: ${typeId}`)
+  if (matches.length > 1) {
+    throw new Error(`ambiguous create object type ${typeId}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0]!
+}
+
+const packsForTargetCommand = (
+  packs: ReadonlyArray<LeitbildPack>,
+  controller: OperationalObject,
+  target: OperationalObject,
+  context: PackTargetContext,
+): ReadonlyArray<LeitbildPack> =>
+  packs.filter(pack => pack.isController(controller) && pack.isTarget(controller, target, context))
+
+const packForCancelCommand = (
+  packs: ReadonlyArray<LeitbildPack>,
+  controller: OperationalObject,
+): LeitbildPack => {
+  const matches = packs.filter(pack => pack.isController(controller))
+  if (matches.length === 0) throw new Error(`no pack can cancel target for ${controller.id}`)
+  if (matches.length > 1) {
+    throw new Error(`ambiguous cancel target command for ${controller.id}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0]!
+}
 
 export const createCompositePack = (config: {
   readonly id: string
@@ -13,6 +61,8 @@ export const createCompositePack = (config: {
   readonly packs: ReadonlyArray<LeitbildPack>
 }): LeitbildPack => {
   if (config.packs.length === 0) throw new Error('composite pack requires at least one pack')
+  assertUniquePackIds(config.packs.flatMap(pack => pack.categories), 'object category')
+  assertUniquePackIds(config.packs.flatMap(pack => pack.createObjectTypes), 'create object type')
   const primaryPack = config.packs[0]!
   return {
     id: config.id,
@@ -27,28 +77,25 @@ export const createCompositePack = (config: {
       return primaryPack.presentObject(object, context)
     },
     defaultObjectLabel: (typeId, context): string => {
-      const pack = config.packs.find(candidate => candidate.createObjectTypes.some(type => type.id === typeId))
-      if (!pack) throw new Error(`unknown create object type: ${typeId}`)
-      return pack.defaultObjectLabel(typeId, context)
+      return packForCreateType(config.packs, typeId).defaultObjectLabel(typeId, context)
     },
     buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
-      const pack = config.packs.find(candidate => candidate.createObjectTypes.some(type => type.id === typeId))
-      if (!pack) throw new Error(`unknown create object type: ${typeId}`)
-      return pack.buildCreateObjectCommand(typeId, label, geometry, parameters)
+      return packForCreateType(config.packs, typeId).buildCreateObjectCommand(typeId, label, geometry, parameters)
     },
     isController: (object): boolean =>
       config.packs.some(pack => pack.isController(object)),
     isTarget: (controller, candidate, context): boolean =>
       config.packs.some(pack => pack.isController(controller) && pack.isTarget(controller, candidate, context)),
     buildSetTargetCommand: (controller, target, context): PackCommandRequest => {
-      const pack = config.packs.find(candidate => candidate.isController(controller) && candidate.isTarget(controller, target, context))
-      if (!pack) throw new Error(`no pack can target ${target.id} from ${controller.id}`)
-      return pack.buildSetTargetCommand(controller, target, context)
+      const matches = packsForTargetCommand(config.packs, controller, target, context)
+      if (matches.length === 0) throw new Error(`no pack can target ${target.id} from ${controller.id}`)
+      if (matches.length > 1) {
+        throw new Error(`ambiguous target command from ${controller.id} to ${target.id}: ${matches.map(pack => pack.id).join(', ')}`)
+      }
+      return matches[0]!.buildSetTargetCommand(controller, target, context)
     },
     buildCancelTargetCommand: (controller, context): PackCommandRequest => {
-      const pack = config.packs.find(candidate => candidate.isController(controller))
-      if (!pack) throw new Error(`no pack can cancel target for ${controller.id}`)
-      return pack.buildCancelTargetCommand(controller, context)
+      return packForCancelCommand(config.packs, controller).buildCancelTargetCommand(controller, context)
     },
   }
 }

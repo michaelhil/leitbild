@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
+import { createCompositePack } from '../src/core/packs/composite.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { ambulanceDomainDataSchema } from '../src/domains/ambulance/model.ts'
+import { trafficPack } from '../src/domains/traffic/pack.ts'
+import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
@@ -66,8 +69,8 @@ describe('pack architecture', () => {
       operational: { ...ambulance.operational, status: 'en_route' },
     }
     const incidentPresentation = ambulancePack.presentObject(incidentBound, { objects: [incidentBound, incident, hospital] })
-    expect(incidentPresentation.fields.map(field => field.key)).toContain('destination')
-    expect(incidentPresentation.status?.indicator).toEqual({ shape: 'arrow', direction: 'right', pulse: true })
+    expectFieldKeys(incidentPresentation, ['destination'])
+    expectStatusIndicator(incidentPresentation, { shape: 'arrow', direction: 'right', pulse: true })
 
     const data = ambulanceDomainDataSchema.parse(ambulance.domainData)
     const hospitalBound: OperationalObject = {
@@ -83,7 +86,7 @@ describe('pack architecture', () => {
       },
     }
     const hospitalPresentation = ambulancePack.presentObject(hospitalBound, { objects: [hospitalBound, incident, hospital] })
-    expect(hospitalPresentation.status?.indicator).toEqual({ shape: 'arrow', direction: 'left', pulse: true })
+    expectStatusIndicator(hospitalPresentation, { shape: 'arrow', direction: 'left', pulse: true })
 
     const resolvedIncident: OperationalObject = {
       ...incident,
@@ -93,5 +96,28 @@ describe('pack architecture', () => {
     expect(resolvedPresentation.status?.tone).toBe('idle')
     expect(resolvedPresentation.status?.label).toBe('Resolved')
     expect(resolvedPresentation.muted).toBe(true)
+  })
+
+  test('composite packs reject ambiguous pack surfaces', () => {
+    expect(() => createCompositePack({
+      id: 'duplicate-categories',
+      name: 'Duplicate Categories',
+      packs: [ambulancePack, ambulancePack],
+    })).toThrow('duplicate object category')
+
+    const composite = createCompositePack({
+      id: 'clear-composite',
+      name: 'Clear Composite',
+      packs: [ambulancePack, trafficPack],
+    })
+
+    expect(composite.createObjectTypes.map(type => type.id).sort()).toEqual([
+      'ambulance',
+      'hospital',
+      'incident',
+      'traffic_area',
+      'traffic_road_segment',
+    ].sort())
+    expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })
 })
