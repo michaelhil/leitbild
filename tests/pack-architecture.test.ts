@@ -3,7 +3,7 @@ import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type Operatio
 import { createCompositePack } from '../src/core/packs/composite.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
-import { ambulanceDomainDataSchema } from '../src/domains/ambulance/model.ts'
+import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/domains/ambulance/model.ts'
 import { trafficPack } from '../src/domains/traffic/pack.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
@@ -96,6 +96,45 @@ describe('pack architecture', () => {
     expect(resolvedPresentation.status?.tone).toBe('idle')
     expect(resolvedPresentation.status?.label).toBe('Resolved')
     expect(resolvedPresentation.muted).toBe(true)
+  })
+
+  test('ambulance pack presents hospital trauma beds as available capacity', () => {
+    const engine = createAmbulanceSimEngine({
+      controlInstanceId: 'control-instance:hospital-capacity-presentation' as ControlInstanceId,
+      scenario: createOsloAmbulanceScenario(),
+      routing: createDirectRoutingAdapter(),
+    })
+    const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
+    if (!hospital) throw new Error('scenario missing hospital')
+
+    const hospitalWithAvailableBeds = (availableBeds: number): OperationalObject => {
+      const data = hospitalDomainDataSchema.parse(hospital.domainData)
+      return {
+        ...hospital,
+        domainData: {
+          ...data,
+          emergencyDepartment: {
+            ...data.emergencyDepartment,
+            traumaBedsAvailable: confirmedFact(availableBeds, nowIso(), 'scenario', 1),
+          },
+        } satisfies HospitalDomainData,
+      }
+    }
+
+    const openPresentation = ambulancePack.presentObject(hospitalWithAvailableBeds(3), { objects: [] })
+    expect(openPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('3 / 3')
+    expect(openPresentation.status?.tone).toBe('ready')
+    expect(openPresentation.status?.label).toBe('Trauma beds available 3/3')
+
+    const limitedPresentation = ambulancePack.presentObject(hospitalWithAvailableBeds(1), { objects: [] })
+    expect(limitedPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('1 / 3')
+    expect(limitedPresentation.status?.tone).toBe('working')
+    expect(limitedPresentation.status?.label).toBe('Limited trauma beds available (1/3)')
+
+    const fullPresentation = ambulancePack.presentObject(hospitalWithAvailableBeds(0), { objects: [] })
+    expect(fullPresentation.fields.find(field => field.key === 'trauma-beds')?.value).toBe('0 / 3')
+    expect(fullPresentation.status?.tone).toBe('error')
+    expect(fullPresentation.status?.label).toBe('No trauma beds available (0/3)')
   })
 
   test('composite packs reject ambiguous pack surfaces', () => {

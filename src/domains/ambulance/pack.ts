@@ -166,18 +166,17 @@ const hospitalStatus = (data: HospitalDomainData): PackObjectStatusPresentation 
   const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
   const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
   if (total === null || available === null || total === 0) return packStatus('idle', 'Trauma bed capacity unknown')
-  const used = Math.max(0, total - available)
-  if (used === 0) return packStatus('ready', `Trauma beds used ${used}/${total}`)
-  if (used >= total) return packStatus('error', `Trauma beds used ${used}/${total}`)
-  if (used >= total - 1) return packStatus('working', `Trauma beds used ${used}/${total}`)
-  return packStatus('ready', `Trauma beds used ${used}/${total}`)
+  const boundedAvailable = Math.max(0, Math.min(available, total))
+  if (boundedAvailable === 0) return packStatus('error', `No trauma beds available (${boundedAvailable}/${total})`)
+  if (boundedAvailable === 1) return packStatus('working', `Limited trauma beds available (${boundedAvailable}/${total})`)
+  return packStatus('ready', `Trauma beds available ${boundedAvailable}/${total}`)
 }
 
-const traumaBedsUsedText = (data: HospitalDomainData): string => {
+const traumaBedsAvailableText = (data: HospitalDomainData): string => {
   const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
   const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
   if (total === null || available === null) return 'unknown'
-  return `${Math.max(0, total - available)} / ${total}`
+  return `${Math.max(0, Math.min(available, total))} / ${total}`
 }
 
 const incidentDetails = (object: OperationalObject, data: IncidentDomainData, objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackObjectField> => [
@@ -189,7 +188,7 @@ const incidentDetails = (object: OperationalObject, data: IncidentDomainData, ob
 ]
 
 const hospitalDetails = (data: HospitalDomainData): ReadonlyArray<PackObjectField> => [
-  packField('trauma-beds', 'Trauma beds', traumaBedsUsedText(data)),
+  packField('trauma-beds', 'Trauma beds', traumaBedsAvailableText(data)),
   packField('ambulance-bays', 'Ambulance bays', factText(data.emergencyDepartment.ambulanceBaysAvailable, String)),
   packField('patients-received', 'Patients received', factText(data.emergencyDepartment.patientsReceived, String)),
   packField('capabilities', 'Capabilities', listText(data.capabilities)),
@@ -233,7 +232,7 @@ const presentationForHospital = (object: OperationalObject): PackObjectPresentat
     icon: 'hospital',
     color: '#245b9f',
     summary: data
-      ? `trauma beds ${factText(data.emergencyDepartment.traumaBedsAvailable, String)} available · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
+      ? `trauma beds ${traumaBedsAvailableText(data)} available · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
       : object.operational.status,
     status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital domain data'),
     fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital domain data')],

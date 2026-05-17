@@ -40,18 +40,15 @@
     <span class="object-status">
       <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
     </span>
-    <span>
+    <span class="object-row-content">
       <span class="row-title">{object.label}{#if hasNewInfo} <span class="new-info-dot">new</span>{/if}</span>
-      {#each visibleFields as field (field.key)}
-        <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
-      {/each}
     </span>
-    <span class="row-info" aria-label="Show {object.label} details">
-      ?
-      <span class="row-tooltip">
-        <strong>{object.label}</strong>
-        {#each presentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
-      </span>
+  </button>
+  <button class="row-info" type="button" aria-label="Show {object.label} details">
+    ?
+    <span class="row-tooltip">
+      <strong>{object.label}</strong>
+      {#each presentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
     </span>
   </button>
   <IconButton
@@ -62,4 +59,12 @@
     variant="bare"
     onClick={() => deleteObject(object)}
   />
+  {#if selected}
+    <div class="object-row-details">
+      <span class="object-summary">{presentation.summary}</span>
+      {#each visibleFields as field (field.key)}
+        <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
+      {/each}
+    </div>
+  {/if}
 </div>
