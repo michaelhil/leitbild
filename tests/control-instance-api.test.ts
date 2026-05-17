@@ -14,6 +14,7 @@ import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { assetArrivedAtTargetSignalType } from '../src/domains/ambulance/sim/interactions.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/domains/traffic/pack.ts'
+import { createTestScenarioCatalog } from './helpers.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -24,6 +25,7 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-api-test-'))
   return createControlInstanceRegistry({
     dataDir,
+    scenarioCatalog: createTestScenarioCatalog(),
     simulationAdapters: [
       createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficSimulationAdapter(),
@@ -45,6 +47,25 @@ const callRoute = async <T>(
 }
 
 describe('control instance API', () => {
+  test('lists and fetches scenario definitions', async () => {
+    const registry = await createTestRegistry()
+    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string }[] }>(
+      registry,
+      '/api/scenarios',
+    )
+    expect(listed.status).toBe(200)
+    expect(listed.body.defaultScenarioId).toBe('ambulance:oslo-tutorial')
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('ambulance:oslo-tutorial')
+
+    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly initialObjects: readonly unknown[] } }>(
+      registry,
+      '/api/scenarios/ambulance%3Aoslo-tutorial',
+    )
+    expect(fetched.status).toBe(200)
+    expect(fetched.body.scenario.id).toBe('ambulance:oslo-tutorial')
+    expect(fetched.body.scenario.initialObjects).toHaveLength(3)
+  })
+
   test('joins a named control instance and exposes objects', async () => {
     const registry = await createTestRegistry()
     try {
@@ -96,6 +117,37 @@ describe('control instance API', () => {
       })
     } finally {
       await registry.close('api-created' as ControlInstanceId)
+    }
+  })
+
+  test('creates control instances from explicit scenario ids and rejects unknown scenarios', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const created = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly unknown[] } }>(
+        registry,
+        '/api/control-instances',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'api-scenario-created', scenarioId: 'ambulance:oslo-tutorial' }),
+        },
+      )
+      expect(created.status).toBe(201)
+      expect(created.body.snapshot.objects).toHaveLength(3)
+
+      const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
+        registry,
+        '/api/control-instances',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: 'api-unknown-scenario', scenarioId: 'missing:scenario' }),
+        },
+      )
+      expect(rejected.status).toBe(404)
+      expect(rejected.body.error.code).toBe('scenario_not_found')
+    } finally {
+      await registry.close('api-scenario-created' as ControlInstanceId)
     }
   })
 

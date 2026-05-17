@@ -10,10 +10,12 @@ import { assignToIncidentCommandKind } from '../src/domains/ambulance/commands.t
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
+import { createTestScenarioCatalog } from './helpers.ts'
 
 describe('control instance registry', () => {
   const createRegistry = (dataDir: string) => createControlInstanceRegistry({
     dataDir,
+    scenarioCatalog: createTestScenarioCatalog(),
     simulationAdapters: [
       createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficSimulationAdapter(),

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { domainIdSchema, idSchema, type DomainId } from './ids.ts'
+import { idSchema } from './ids.ts'
 import { geoJsonPointSchema, type GeoJsonPoint } from './geo.ts'
 import { objectContextSchema, type ObjectContext } from './context.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
@@ -21,12 +21,13 @@ export interface ScenarioDefinition {
   readonly schemaVersion: 1
   readonly title: string
   readonly description?: string
-  readonly packId: string
-  readonly domain: DomainId
+  readonly contributedByPackId: string
+  readonly requiredPackIds: ReadonlyArray<string>
+  readonly requiredProviderIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
-  readonly simulatorConfig: Record<string, unknown>
+  readonly providerConfigs: Record<string, unknown>
   readonly missionId?: string
 }
 
@@ -46,11 +47,12 @@ export const scenarioDefinitionSchema = z.object({
   schemaVersion: z.literal(1),
   title: z.string().min(1),
   description: z.string().min(1).optional(),
-  packId: idSchema,
-  domain: domainIdSchema,
+  contributedByPackId: idSchema,
+  requiredPackIds: z.array(idSchema).default([]),
+  requiredProviderIds: z.array(idSchema).default([]),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
-  simulatorConfig: z.record(z.unknown()).default({}),
+  providerConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
 })

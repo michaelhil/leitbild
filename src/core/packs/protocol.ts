@@ -1,4 +1,4 @@
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, ObjectId, OperationalObject } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, MissionDefinition, ObjectId, OperationalObject, ScenarioDefinition } from '../model/index.ts'
 
 export interface PackObjectCategory {
   readonly id: string
@@ -84,6 +84,8 @@ export interface LeitbildPack {
   readonly id: string
   readonly name: string
   readonly domain: string
+  readonly scenarios?: ReadonlyArray<ScenarioDefinition>
+  readonly missions?: ReadonlyArray<MissionDefinition>
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>

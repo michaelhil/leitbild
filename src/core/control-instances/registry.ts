@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ControlInstanceId, InteractionHandler } from '../model/index.ts'
+import type { ControlInstanceId, InteractionHandler, ScenarioDefinition } from '../model/index.ts'
 import { controlInstanceIdSchema } from '../model/index.ts'
 import type { SimulationAdapter } from '../../simulation/protocol.ts'
 import { createSimulationHub } from '../../simulation/hub.ts'
+import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
@@ -28,18 +29,22 @@ export interface ControlInstanceRegistryStatus {
 }
 
 export interface ControlInstanceRegistry {
-  readonly create: (config?: { readonly id?: ControlInstanceId }) => Promise<ControlInstanceRuntime>
+  readonly create: (config?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly ensure: (id: ControlInstanceId) => Promise<ControlInstanceRuntime>
   readonly get: (id: ControlInstanceId) => ControlInstanceRuntime | undefined
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
   readonly status: () => Promise<ControlInstanceRegistryStatus>
+  readonly scenarios: () => ReadonlyArray<ScenarioDefinition>
+  readonly scenario: (id: string) => ScenarioDefinition | undefined
+  readonly defaultScenarioId: () => string
   readonly close: (id: ControlInstanceId) => Promise<boolean>
 }
 
 export const createControlInstanceRegistry = (config: {
   readonly dataDir: string
   readonly simulationAdapters: ReadonlyArray<SimulationAdapter>
+  readonly scenarioCatalog: ScenarioCatalog
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
@@ -58,7 +63,7 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
-  const create = async (createConfig?: { readonly id?: ControlInstanceId }): Promise<ControlInstanceRuntime> => {
+  const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
     const id = createConfig?.id ?? `control-instance:${randomUUID()}` as ControlInstanceId
     if (controlInstances.has(id)) throw new Error(`control instance already exists: ${id}`)
     const instanceDir = join(controlInstanceRoot, id)
@@ -74,8 +79,24 @@ export const createControlInstanceRegistry = (config: {
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
+    const scenarioId = restoredSnapshot ? undefined : createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+    const scenario = scenarioId === undefined ? undefined : config.scenarioCatalog.getScenario(scenarioId)
+    const scenarioInitialObjects = scenarioId === undefined ? undefined : config.scenarioCatalog.initialObjectsFor(scenarioId)
+    if (!restoredSnapshot && !scenario) throw new Error(`unknown scenario: ${scenarioId}`)
     const simulation = await createSimulationHub(config.simulationAdapters).connect({
       controlInstanceId: id,
+      ...(!restoredSnapshot && scenario
+        ? {
+            scenario: {
+              scenarioId: scenario.id,
+              requiredProviderIds: scenario.requiredProviderIds,
+              world: scenario.world,
+              initialObjects: scenarioInitialObjects ?? [],
+              providerConfigs: scenario.providerConfigs,
+              providerConfig: {},
+            },
+          }
+        : {}),
       ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
     })
     const runtime = await createControlInstanceRuntime({
@@ -191,6 +212,9 @@ export const createControlInstanceRegistry = (config: {
     list: () => [...controlInstances.values()],
     listKnown,
     status,
+    scenarios: () => config.scenarioCatalog.listScenarios(),
+    scenario: (id: string) => config.scenarioCatalog.getScenario(id),
+    defaultScenarioId: () => config.scenarioCatalog.defaultScenarioId(),
     close,
   }
 }

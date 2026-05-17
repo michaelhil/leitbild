@@ -1,17 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import type { AdapterId, CommandEnvelope, CommandResult, DomainEvent, DomainId, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
 import { createTrafficConditionPayloadSchema, trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficGeometryMode } from '../model.ts'
-import { createOsloTrafficScenario } from '../scenario.ts'
 import { trafficConditionChangedSignalType } from '../interactions.ts'
+import { trafficSimAdapterId, trafficSimDomain, trafficSimProviderId } from './constants.ts'
 
-const providerId = 'traffic-local'
-const adapterId = 'adapter:traffic-local' as AdapterId
-const domain = trafficDomainId as DomainId
 const defaultSpeedFactor = 0.55
 
 const createTrafficConditionObject = (
@@ -31,7 +28,7 @@ const createTrafficConditionObject = (
 ): OperationalObject => ({
   id: config.id,
   kind: 'zone',
-  domain,
+  domain: trafficSimDomain,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -56,7 +53,7 @@ const createTrafficConditionObject = (
     : [],
   provenance: {
     source: config.causedByCommandId ? 'operator' : 'simulator',
-    adapterId,
+    adapterId: trafficSimAdapterId,
     externalId: config.id,
     ...(config.causedByCommandId ? { causedByCommandId: config.causedByCommandId } : {}),
   },
@@ -106,7 +103,7 @@ const emit = (
   for (const handler of handlers) {
     handler({
       type: 'event.emission',
-      providerId,
+      providerId: trafficSimProviderId,
       emittedAt: at,
       events,
     })
@@ -122,7 +119,7 @@ const trafficChangedSignalEvent = (
     id: `signal:${randomUUID()}` as SignalId,
     controlInstanceId: command.controlInstanceId,
     at,
-    source: { kind: 'object', id: object.id, providerId },
+    source: { kind: 'object', id: object.id, providerId: trafficSimProviderId },
     targets: [{ kind: 'broadcast' }],
     type: trafficConditionChangedSignalType,
     severity: 'notice',
@@ -135,7 +132,7 @@ const trafficChangedSignalEvent = (
     at,
     provenance: {
       source: 'simulator',
-      adapterId,
+      adapterId: trafficSimAdapterId,
       externalId: object.id,
       causedByCommandId: command.id,
     },
@@ -145,32 +142,14 @@ const trafficChangedSignalEvent = (
 export const createLocalTrafficSimulationAdapter = (adapterConfig: {
   readonly routing?: RoutingAdapter
 } = {}): SimulationAdapter => ({
-  id: providerId,
+  id: trafficSimProviderId,
   domain: trafficDomainId,
   acceptedCommandKinds: [createTrafficConditionCommandKind],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
-    const at = nowIso()
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
-    if (config.initialObjects) {
-      for (const object of config.initialObjects) objects.set(object.id, restoreTrafficObject(object))
-    } else {
-      for (const condition of createOsloTrafficScenario().conditions) {
-        const object = createTrafficConditionObject({
-          id: condition.id,
-          label: condition.label,
-          geometryMode: condition.geometryMode,
-          geometry: condition.geometry,
-          condition: condition.condition,
-          severity: condition.severity,
-          speedFactor: condition.speedFactor,
-          delaySecondsEstimate: condition.delaySecondsEstimate,
-          reason: condition.reason,
-          at,
-        })
-        objects.set(object.id, object)
-      }
-    }
+    const initialObjects = config.initialObjects ?? config.scenario?.initialObjects ?? []
+    for (const object of initialObjects) objects.set(object.id, restoreTrafficObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
     const handlers = new Set<SimulationEventHandler>()
 

@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, TelemetryState } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 
 export interface SimulationSnapshot {
@@ -58,7 +58,17 @@ export interface SimulationAdapter {
   readonly connect: (config: SimulationConnectionConfig) => Promise<SimulationConnection>
 }
 
+export interface SimulationScenarioRuntimeConfig {
+  readonly scenarioId: string
+  readonly requiredProviderIds: ReadonlyArray<string>
+  readonly world: ScenarioWorldDefinition
+  readonly initialObjects: ReadonlyArray<OperationalObject>
+  readonly providerConfigs: Record<string, unknown>
+  readonly providerConfig: unknown
+}
+
 export interface SimulationConnectionConfig {
   readonly controlInstanceId: ControlInstanceId
+  readonly scenario?: SimulationScenarioRuntimeConfig
   readonly initialObjects?: ReadonlyArray<OperationalObject>
 }

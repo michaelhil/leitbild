@@ -19,6 +19,7 @@ const commandRequestSchema = z.object({
 
 const createControlInstanceRequestSchema = z.object({
   id: controlInstanceIdSchema.optional(),
+  scenarioId: z.string().min(1).optional(),
 })
 
 const signalRequestSchema = z.object({
@@ -86,6 +87,28 @@ const handleControlInstanceApiInner = async (
   url: URL,
   config: ControlInstanceRouteConfig,
 ): Promise<Response | null> => {
+  if (url.pathname === '/api/scenarios' && req.method === 'GET') {
+    return json({
+      scenarios: config.registry.scenarios().map(scenario => ({
+        id: scenario.id,
+        title: scenario.title,
+        description: scenario.description,
+        requiredPackIds: scenario.requiredPackIds,
+        requiredProviderIds: scenario.requiredProviderIds,
+        missionId: scenario.missionId,
+      })),
+      defaultScenarioId: config.registry.defaultScenarioId(),
+    })
+  }
+
+  const scenarioMatch = url.pathname.match(/^\/api\/scenarios\/([^/]+)$/)
+  if (scenarioMatch && req.method === 'GET') {
+    const scenarioId = decodeURIComponent(scenarioMatch[1] ?? '')
+    const scenario = config.registry.scenario(scenarioId)
+    if (!scenario) return apiError(404, 'scenario_not_found', 'scenario not found')
+    return json({ scenario })
+  }
+
   if (url.pathname === '/api/control-instances' && req.method === 'GET') {
     return json({ controlInstances: await config.registry.listKnown() })
   }
@@ -93,7 +116,13 @@ const handleControlInstanceApiInner = async (
   if (url.pathname === '/api/control-instances' && req.method === 'POST') {
     const raw = await readJson(req)
     const parsed = createControlInstanceRequestSchema.parse(raw)
-    const runtime = await config.registry.create(parsed.id === undefined ? {} : { id: parsed.id })
+    if (parsed.scenarioId !== undefined && !config.registry.scenario(parsed.scenarioId)) {
+      return apiError(404, 'scenario_not_found', 'scenario not found')
+    }
+    const runtime = await config.registry.create({
+      ...(parsed.id === undefined ? {} : { id: parsed.id }),
+      ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
+    })
     return json({ id: runtime.id, snapshot: runtime.snapshot() }, { status: 201 })
   }
 

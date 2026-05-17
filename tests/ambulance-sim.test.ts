@@ -8,12 +8,13 @@ import {
   setDestinationCommandKind,
 } from '../src/domains/ambulance/commands.ts'
 import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/domains/ambulance/model.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { createAmbulanceArrivalInteractionHandler } from '../src/domains/ambulance/sim/interactions.ts'
 import type { SimulationEvent } from '../src/simulation/protocol.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { testScenarioRuntimeConfig } from './helpers.ts'
 
 const controlInstanceId = 'control-instance:test' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
@@ -116,7 +117,7 @@ const applyInteractionEvents = async (
 
 describe('local ambulance simulator', () => {
   test('starts with one ambulance, one incident, and one hospital', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
 
     expect(initial.objects.filter(object => object.kind === 'mobile_entity')).toHaveLength(1)
@@ -133,7 +134,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('accepts a dispatch command and updates scenario state', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity' && object.operational.status === 'available')
     const incident = initial.objects.find(object => object.kind === 'incident')
@@ -165,7 +166,7 @@ describe('local ambulance simulator', () => {
   test('evolves incident and hospital facts through simulator events', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
 
@@ -194,11 +195,10 @@ describe('local ambulance simulator', () => {
   })
 
   test('follows shaped route coordinates instead of jumping straight to the destination', async () => {
-    const scenario = createOsloAmbulanceScenario()
     const firstRoutePoint = geoPointFromLonLat(10.7387, 59.9364)
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario,
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: {
         id: 'test-shaped-route',
         route: async () => ({
@@ -207,7 +207,7 @@ describe('local ambulance simulator', () => {
             coordinates: [
               firstRoutePoint.coordinates,
               geoPointFromLonLat(10.7387, 59.9359).coordinates,
-              scenario.incidents[0]?.position.coordinates ?? firstRoutePoint.coordinates,
+              geoPointFromLonLat(10.7750, 59.9120).coordinates,
             ],
           },
           distanceM: meters(1_000),
@@ -238,10 +238,9 @@ describe('local ambulance simulator', () => {
   })
 
   test('starts moving immediately when the route begins at the ambulance position', async () => {
-    const scenario = createOsloAmbulanceScenario()
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario,
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -266,15 +265,14 @@ describe('local ambulance simulator', () => {
   })
 
   test('consumes the full movement budget across dense route geometry', async () => {
-    const scenario = createOsloAmbulanceScenario()
-    const start = scenario.ambulances[0]?.position
+    const start = osloAmbulanceTutorialScenario.initialObjects.find(object => object.kind === 'mobile_entity')?.spatial.position?.point
     if (!start) throw new Error('scenario missing ambulance start')
     const [startLon, startLat] = start.coordinates
     const denseCoordinates = Array.from({ length: 50 }, (_value, index) =>
       geoPointFromLonLat(startLon, startLat + index * 0.00001).coordinates)
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario,
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: {
         id: 'test-dense-route',
         route: async () => ({
@@ -313,10 +311,9 @@ describe('local ambulance simulator', () => {
   })
 
   test('uses the same default motion profile for new and restored motion', async () => {
-    const scenario = createOsloAmbulanceScenario()
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:test-motion-profile' as ControlInstanceId,
-      scenario,
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -337,9 +334,8 @@ describe('local ambulance simulator', () => {
 
     const restoredEngine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:test-restored-motion-profile' as ControlInstanceId,
-      scenario,
       routing: createDirectRoutingAdapter(),
-      initialObjects: engine.snapshot().objects,
+      objects: engine.snapshot().objects,
     })
     restoredEngine.tick(1_000)
     const restoredMoving = restoredEngine.snapshot().objects.find(object => object.id === ambulance.id)
@@ -347,7 +343,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('creates ambulance domain objects from operator commands', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const result = await connection.sendCommand(makeCommand({
       id: 'create-hospital',
       kind: createObjectCommandKind,
@@ -365,7 +361,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('retargets and cancels an ambulance destination', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const incident = initial.objects.find(object => object.kind === 'incident')
@@ -409,7 +405,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('clears destination when an ambulance reaches a hospital', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const hospital = initial.objects.find(object => object.kind === 'facility')
@@ -435,7 +431,7 @@ describe('local ambulance simulator', () => {
   test('loads patients and reduces victims when an empty ambulance reaches an incident', async () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -466,21 +462,20 @@ describe('local ambulance simulator', () => {
   })
 
   test('marks an incident resolved when arriving ambulance capacity covers all victims', async () => {
-    const seed = createAmbulanceSimEngine({
+    const baseObjects = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
-    const initialObjects = seed.map(object => {
+    const initialObjects = baseObjects.map(object => {
       if (object.kind === 'mobile_entity') return withAmbulancePatients(object, 0, 2)
       if (object.kind === 'incident') return withIncidentVictims(object, 1)
       return object
     })
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: initialObjects,
       routing: createDirectRoutingAdapter(),
-      initialObjects,
     })
     const ambulance = engine.snapshot().objects.find(object => object.kind === 'mobile_entity')
     const incident = engine.snapshot().objects.find(object => object.kind === 'incident')
@@ -508,17 +503,16 @@ describe('local ambulance simulator', () => {
   })
 
   test('unloads patients and updates hospital capacity when a loaded ambulance reaches a hospital', async () => {
-    const seed = createAmbulanceSimEngine({
+    const baseObjects = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
-    const initialObjects = seed.map(object => object.kind === 'mobile_entity' ? withAmbulancePatients(object, 1, 1) : object)
+    const initialObjects = baseObjects.map(object => object.kind === 'mobile_entity' ? withAmbulancePatients(object, 1, 1) : object)
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: initialObjects,
       routing: createDirectRoutingAdapter(),
-      initialObjects,
     })
     const ambulance = engine.snapshot().objects.find(object => object.kind === 'mobile_entity')
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
@@ -545,21 +539,20 @@ describe('local ambulance simulator', () => {
   })
 
   test('keeps loaded ambulance waiting when hospital has no receiving capacity', async () => {
-    const seed = createAmbulanceSimEngine({
+    const baseObjects = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     }).snapshot().objects
-    const initialObjects = seed.map(object => {
+    const initialObjects = baseObjects.map(object => {
       if (object.kind === 'mobile_entity') return withAmbulancePatients(object, 1, 1)
       if (object.kind === 'facility') return withHospitalBedsAvailable(object, 0)
       return object
     })
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: initialObjects,
       routing: createDirectRoutingAdapter(),
-      initialObjects,
     })
     const ambulance = engine.snapshot().objects.find(object => object.kind === 'mobile_entity')
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')

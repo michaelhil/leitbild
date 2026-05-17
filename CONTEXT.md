@@ -49,8 +49,12 @@ Structured, perspective-bearing artificial situation awareness attached to an op
 _Avoid_: using context as an untyped junk drawer, or using it for domain operational truth that belongs in `domainData`
 
 **Scenario Definition**:
-Initial setup for a control instance or simulation instance: world settings, initial objects, initial object contexts, and simulator configuration.
+Validated startup definition for a new control instance: world settings, required packs/providers, initial objects, initial object contexts, and provider-specific simulator configuration. Scenarios are the only production startup format for new control instances.
 _Avoid_: Mission when referring only to initial world setup
+
+**Scenario Catalog**:
+Validated registry of Scenario Definitions and Mission Definitions contributed by active packs. Control Instance creation resolves its startup scenario through this catalog.
+_Avoid_: hidden domain seed factories or hardcoded default simulator boot paths
 
 **Mission Definition**:
 Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
@@ -127,6 +131,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A future user account can map to one or more **Actors**.
 - An **Operational Object** can have optional **Object Context**.
 - A **Scenario Definition** can initialize **Operational Objects** and their **Object Context**.
+- Restored **Control Instances** use snapshots/history instead of replaying Scenario Definitions.
 - A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Definition**.
 - **Mission Progress State** belongs to a running **Control Instance**, not to the reusable **Mission Definition**.
 - **Interaction Signals** are scoped to one **Control Instance** and may reference objects, actors, clients, simulation instances, roles, areas, or broadcast targets.

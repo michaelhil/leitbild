@@ -7,14 +7,14 @@ import {
   selectedControllerObjectFor,
 } from '../src/ui/control-surface-selectors.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
-    controlInstanceId: 'control-instance:selector-test' as ControlInstanceId,
-    scenario: createOsloAmbulanceScenario(),
+    controlInstanceId: 'control-instance:control-surface-selectors' as ControlInstanceId,
+    objects: osloAmbulanceTutorialScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

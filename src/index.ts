@@ -1,5 +1,6 @@
 import { createServer } from './core/api/server.ts'
 import { createControlInstanceRegistry } from './core/control-instances/registry.ts'
+import { createScenarioCatalog } from './core/scenarios/catalog.ts'
 import { createLocalAmbulanceSimulationAdapter } from './domains/ambulance/sim/adapter.ts'
 import { ambulancePack } from './domains/ambulance/pack.ts'
 import { createLocalTrafficSimulationAdapter } from './domains/traffic/sim/adapter.ts'
@@ -8,9 +9,11 @@ import { createRoutingAdapterFromEnv } from './routing/config.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const packs = [ambulancePack, trafficPack]
+const scenarioCatalog = createScenarioCatalog(packs)
 
 const registry = createControlInstanceRegistry({
   dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
+  scenarioCatalog,
   simulationAdapters: [
     createLocalAmbulanceSimulationAdapter({ routing }),
     createLocalTrafficSimulationAdapter({ routing }),

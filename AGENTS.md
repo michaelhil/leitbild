@@ -27,6 +27,8 @@
 - Keep files and functions small enough to remain navigable.
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep domain-specific logic in domain modules; keep `core` use-case agnostic.
+- New Control Instances must start from a validated Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, or parallel startup formats.
+- Restored Control Instances must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Control Instance Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
 - Treat the Durable Journal as meaningful accepted history, not as full current state and not as a high-frequency motion trace.
 - Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state.

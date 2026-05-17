@@ -10,17 +10,16 @@ import {
   operationalObjectSchema,
   scenarioDefinitionSchema,
   type ControlInstanceId,
-  type DomainId,
   type ObjectId,
 } from '../src/core/model/index.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const ambulanceObjects = () =>
   createAmbulanceSimEngine({
     controlInstanceId: 'control-instance:context-model-test' as ControlInstanceId,
-    scenario: createOsloAmbulanceScenario(),
+    objects: osloAmbulanceTutorialScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 
@@ -137,8 +136,9 @@ describe('object context, scenario, and mission model', () => {
       id: 'scenario:oslo-context-basic',
       schemaVersion: 1,
       title: 'Oslo context basic',
-      packId: 'ambulance',
-      domain: 'ambulance_dispatch' as DomainId,
+      contributedByPackId: 'ambulance',
+      requiredPackIds: ['ambulance'],
+      requiredProviderIds: ['ambulance-local'],
       world: {
         startsAt: nowIso(),
         mapCenter: geoPointFromLonLat(10.7522, 59.9139),
@@ -149,7 +149,7 @@ describe('object context, scenario, and mission model', () => {
         objectId: object.id,
         context: object.context,
       }],
-      simulatorConfig: { adapter: 'ambulance.local' },
+      providerConfigs: { 'ambulance-local': { adapter: 'ambulance.local' } },
       missionId: 'mission:oslo-response-basic',
     })
 

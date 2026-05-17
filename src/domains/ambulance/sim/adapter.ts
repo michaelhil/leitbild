@@ -1,9 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
-import type { CommandEnvelope, CommandResult, InteractionSignal, SignalId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema } from '../../../core/model/index.ts'
-import { createOsloAmbulanceScenario } from '../scenario.ts'
-import { ambulanceDomainId } from '../model.ts'
+import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
 import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
@@ -30,6 +29,31 @@ const emit = (
   }
 }
 
+const validateAmbulanceProviderObject = (object: OperationalObject): OperationalObject => {
+  if (object.kind === 'mobile_entity') {
+    const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
+    if (!parsed.success) throw new Error(`invalid ambulance object domain data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, domainData: parsed.data }
+  }
+  if (object.kind === 'facility') {
+    const parsed = hospitalDomainDataSchema.safeParse(object.domainData)
+    if (!parsed.success) throw new Error(`invalid hospital object domain data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, domainData: parsed.data }
+  }
+  if (object.kind === 'incident') {
+    const parsed = incidentDomainDataSchema.safeParse(object.domainData)
+    if (!parsed.success) throw new Error(`invalid incident object domain data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, domainData: parsed.data }
+  }
+  throw new Error(`unsupported ambulance provider object kind for ${object.id}: ${object.kind}`)
+}
+
+const initialObjectsFor = (config: SimulationConnectionConfig): ReadonlyArray<OperationalObject> => {
+  const objects = config.initialObjects ?? config.scenario?.initialObjects
+  if (!objects) throw new Error(`ambulance provider requires scenario or restored objects for control instance ${config.controlInstanceId}`)
+  return objects.map(validateAmbulanceProviderObject)
+}
+
 export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
 }): SimulationAdapter => ({
@@ -44,9 +68,8 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: config.controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
       routing: adapterConfig.routing,
-      ...(config.initialObjects ? { initialObjects: config.initialObjects } : {}),
+      objects: initialObjectsFor(config),
     })
     const handlers = new Set<SimulationEventHandler>()
     const interval = setInterval(() => {

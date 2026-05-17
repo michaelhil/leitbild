@@ -8,6 +8,7 @@ import { createControlInstanceRegistry } from '../src/core/control-instances/reg
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { createTestScenarioCatalog } from './helpers.ts'
 
 describe('server health', () => {
   test('reports process, storage, control instance, and realtime details', async () => {
@@ -22,6 +23,7 @@ describe('server health', () => {
     await symlink(releaseDir, join(mapRoot, 'current'))
     const registry = createControlInstanceRegistry({
       dataDir,
+      scenarioCatalog: createTestScenarioCatalog(),
       simulationAdapters: [
         createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficSimulationAdapter(),

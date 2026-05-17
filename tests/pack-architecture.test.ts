@@ -12,7 +12,7 @@ import {
   setDestinationCommandKind,
 } from '../src/domains/ambulance/commands.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 
@@ -28,7 +28,7 @@ describe('pack architecture', () => {
   test('ambulance pack builds domain commands behind the generic pack interface', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:pack-architecture' as ControlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -54,7 +54,7 @@ describe('pack architecture', () => {
   test('ambulance pack exposes structured fields and semantic status indicators', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:pack-presentation' as ControlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -101,7 +101,7 @@ describe('pack architecture', () => {
   test('ambulance pack presents hospital trauma beds as available capacity', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:hospital-capacity-presentation' as ControlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')

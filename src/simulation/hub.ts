@@ -1,6 +1,6 @@
 import type { CommandEnvelope, CommandResult, DomainEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
-import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEmission, SimulationEventHandler, SimulationSnapshot } from './protocol.ts'
+import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEmission, SimulationEventHandler, SimulationScenarioRuntimeConfig, SimulationSnapshot } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
   const seen = new Set<string>()
@@ -20,6 +20,21 @@ const restoredObjectsFor = (
   return objects.filter(object => object.domain === adapter.domain)
 }
 
+const scenarioFor = (
+  adapter: SimulationAdapter,
+  scenario: SimulationConnectionConfig['scenario'],
+): SimulationScenarioRuntimeConfig | undefined => {
+  if (!scenario) return undefined
+  return {
+    scenarioId: scenario.scenarioId,
+    requiredProviderIds: scenario.requiredProviderIds,
+    world: scenario.world,
+    initialObjects: scenario.initialObjects.filter(object => object.domain === adapter.domain),
+    providerConfigs: scenario.providerConfigs,
+    providerConfig: scenario.providerConfigs[adapter.id] ?? {},
+  }
+}
+
 export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>): SimulationAdapter => {
   if (adapters.length === 0) throw new Error('SimulationHub requires at least one simulation adapter')
   const adapterIds = new Set<string>()
@@ -33,12 +48,16 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
     domain: 'simulation-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
     connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+      const missingProviderIds = config.scenario?.requiredProviderIds.filter(providerId => !adapterIds.has(providerId)) ?? []
+      if (missingProviderIds.length > 0) throw new Error(`missing simulation providers: ${missingProviderIds.join(', ')}`)
       const connections = await Promise.all(adapters.map(async adapter => {
         const initialObjects = restoredObjectsFor(adapter, config.initialObjects)
+        const scenario = scenarioFor(adapter, config.scenario)
         return {
           adapter,
           connection: await adapter.connect({
             controlInstanceId: config.controlInstanceId,
+            ...(scenario === undefined ? {} : { scenario }),
             ...(initialObjects === undefined ? {} : { initialObjects }),
           }),
         }

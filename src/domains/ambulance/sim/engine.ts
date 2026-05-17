@@ -14,16 +14,12 @@ import {
   setDestinationPayloadSchema,
 } from '../commands.ts'
 import type { IncidentDomainData } from '../model.ts'
-import type { AmbulanceScenario } from '../scenario.ts'
 import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
 import { assetArrivedAtTargetSignalType } from './interactions.ts'
 import {
   createAddedAmbulanceObject,
   createAddedIncidentObject,
-  createAmbulanceObject,
-  createFacilityObject,
   createHospitalObject,
-  createIncidentObject,
   revealIncidentDetails,
   updateHospitalCapacity,
 } from './object-state.ts'
@@ -239,19 +235,11 @@ const stopAmbulance = (ambulance: OperationalObject, at: IsoTimestamp, status: s
 
 export const createAmbulanceSimEngine = (config: {
   readonly controlInstanceId: ControlInstanceId
-  readonly scenario: AmbulanceScenario
   readonly routing: RoutingAdapter
-  readonly initialObjects?: ReadonlyArray<OperationalObject>
+  readonly objects: ReadonlyArray<OperationalObject>
 }): AmbulanceSimEngine => {
-  const at = nowIso()
   const objectProjection = new Map<ObjectId, OperationalObject>()
-  if (config.initialObjects) {
-    for (const object of config.initialObjects) objectProjection.set(object.id, object)
-  } else {
-    for (const ambulance of config.scenario.ambulances) objectProjection.set(ambulance.id, createAmbulanceObject(ambulance, at))
-    for (const incident of config.scenario.incidents) objectProjection.set(incident.id, createIncidentObject(incident, at))
-    for (const facility of config.scenario.facilities) objectProjection.set(facility.id, createFacilityObject(facility, at))
-  }
+  for (const object of config.objects) objectProjection.set(object.id, object)
   const motion = new Map<ObjectId, AmbulanceMotion>()
   for (const object of objectProjection.values()) {
     const restoredMotion = restoredMotionFor(object, objectProjection)
@@ -262,9 +250,9 @@ export const createAmbulanceSimEngine = (config: {
     objectProjection,
     motion,
     elapsedMs: 0,
-    nextAmbulanceNumber: nextNumberAfter(objectProjection.values(), 'amb:', config.scenario.ambulances.length + 1),
-    nextHospitalNumber: nextNumberAfter(objectProjection.values(), 'facility:hospital-', config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1),
-    nextIncidentNumber: nextNumberAfter(objectProjection.values(), 'incident:', config.scenario.incidents.length + 1),
+    nextAmbulanceNumber: nextNumberAfter(objectProjection.values(), 'amb:', 1),
+    nextHospitalNumber: nextNumberAfter(objectProjection.values(), 'facility:hospital-', 1),
+    nextIncidentNumber: nextNumberAfter(objectProjection.values(), 'incident:', 1),
   }
 
   const snapshot = (): SimulationSnapshot => ({

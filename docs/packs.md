@@ -141,7 +141,7 @@ Pack contribution identifiers must be namespaced.
 Examples:
 
 - command kind: `ambulance.set_destination`
-- scenario: `ambulance/oslo-basic`
+- scenario: `ambulance:oslo-basic`
 - UI contribution: `ambulance.object-inspector`
 - metric: `ambulance.response-time`
 
@@ -199,7 +199,7 @@ Traffic conditions may create route impacts for mobile assets. They should not s
 
 Packs may contribute reusable data and schemas:
 
-- **Scenario Definitions** initialize world settings, operational objects, initial object contexts, and simulator configuration.
+- **Scenario Definitions** initialize world settings, operational objects, initial object contexts, and provider-specific simulator configuration.
 - **Mission Definitions** describe goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 - **Object Context contributions** may seed perspective-bearing awareness or provide pack-specific renderers for agent context views.
 
@@ -208,6 +208,10 @@ Packs must keep boundaries clear:
 - `domainData` is pack-owned domain operational truth.
 - `context` is perspective-bearing awareness.
 - mission progress is runtime state owned by Leitbild, not static pack data.
+- scenarios are the only production startup format for new control instances.
+- restored control instances use snapshots/history, not scenarios.
+- pack helpers may construct full `OperationalObject`s, but packs must not introduce a second seed-object model beside Scenario Definitions.
+- multi-provider scenarios declare required provider ids and provider-specific config; the Simulation Hub distributes the relevant startup objects to each provider.
 
 ## Trust Model
 

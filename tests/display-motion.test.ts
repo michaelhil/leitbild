@@ -7,14 +7,14 @@ import {
   hasActiveDisplayMotion,
   reconcileDisplayMotionState,
 } from '../src/ui/display-motion.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioAmbulance = (): OperationalObject => {
   const object = createAmbulanceSimEngine({
     controlInstanceId: 'control-instance:display-motion-test' as ControlInstanceId,
-    scenario: createOsloAmbulanceScenario(),
+    objects: osloAmbulanceTutorialScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects.find(candidate => candidate.kind === 'mobile_entity')
   if (!object) throw new Error('scenario fixture missing ambulance')

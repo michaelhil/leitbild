@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, DomainId, ObjectId, ControlInstanceId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
-import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
+import { osloAmbulanceTutorialScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
 import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { trafficPack } from '../src/domains/traffic/pack.ts'
@@ -30,7 +30,7 @@ describe('map feature projection', () => {
   test('projects routed ambulances into route GeoJSON without changing coordinate order', async () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -64,7 +64,7 @@ describe('map feature projection', () => {
   test('projects remaining route when route progress is available', async () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
@@ -96,7 +96,7 @@ describe('map feature projection', () => {
   test('projects positioned objects into native MapLibre symbol features', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      scenario: createOsloAmbulanceScenario(),
+      objects: osloAmbulanceTutorialScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
