@@ -115,13 +115,16 @@ const incidentStatus = (
   data: IncidentDomainData,
   objects: ReadonlyArray<OperationalObject>,
 ): PackObjectStatusPresentation => {
+  if (object.operational.status === 'resolved') {
+    return { tone: 'idle', label: 'Resolved', indicator: { shape: 'dot' } }
+  }
   const demand = incidentDemand(data)
   const assignedCapacity = assignedAmbulanceCapacityFor(object, objects)
   if (assignedCapacity === 0) {
     return { tone: 'error', label: `No assigned ambulance capacity for ${demand} victim${demand === 1 ? '' : 's'}`, indicator: { shape: 'dot' } }
   }
-  if (assignedCapacity >= demand) return { tone: 'ready', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot' } }
-  return { tone: 'working', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot' } }
+  if (assignedCapacity >= demand) return { tone: 'ready', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot', pulse: true } }
+  return { tone: 'working', label: `Assigned capacity ${assignedCapacity}/${demand}`, indicator: { shape: 'dot', pulse: true } }
 }
 
 const ambulanceStatus = (
@@ -220,6 +223,7 @@ const presentationForIncident = (
     summary: data ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}` : object.operational.status,
     status: data ? incidentStatus(object, data, objects) : { tone: 'error', label: 'Invalid incident domain data', indicator: { shape: 'dot' } },
     fields: data ? incidentDetails(object, data, objects) : [field('error', 'Error', 'Invalid incident domain data')],
+    muted: object.operational.status === 'resolved',
   }
 }
 

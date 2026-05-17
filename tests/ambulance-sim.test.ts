@@ -465,7 +465,7 @@ describe('local ambulance simulator', () => {
     expect(knownFactValue(incidentData.victims.count)).toBe(1)
   })
 
-  test('removes an incident when arriving ambulance capacity covers all victims', async () => {
+  test('marks an incident resolved when arriving ambulance capacity covers all victims', async () => {
     const seed = createAmbulanceSimEngine({
       controlInstanceId,
       scenario: createOsloAmbulanceScenario(),
@@ -497,7 +497,11 @@ describe('local ambulance simulator', () => {
     const events = engine.tick(300_000)
     expect(events.some(event => event.type === 'interaction.signal')).toBe(true)
     await applyInteractionEvents(engine, events)
-    expect(engine.snapshot().objects.some(object => object.id === incident.id)).toBe(false)
+    const resolvedIncident = engine.snapshot().objects.find(object => object.id === incident.id)
+    if (!resolvedIncident) throw new Error('expected resolved incident to remain visible')
+    const incidentData = incidentDomainDataSchema.parse(resolvedIncident.domainData)
+    expect(resolvedIncident.operational.status).toBe('resolved')
+    expect(knownFactValue(incidentData.victims.count)).toBe(0)
     const arrivedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
     const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance?.domainData)
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(1)

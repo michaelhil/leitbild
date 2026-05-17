@@ -14,6 +14,7 @@
     mapLayerIds,
     mapSourceIds,
     pointOf,
+    statusToneColor,
   } from './map-features.ts'
   import {
     createDisplayMotionState,
@@ -217,6 +218,13 @@
     current.addImage(iconId, image, { pixelRatio: 2 })
   }
 
+  const registerMapIconVariants = async (current: MapLibreMap, iconName: IconName): Promise<void> => {
+    await registerMapIcon(current, `object-${iconName}-ready`, iconName, statusToneColor('ready'))
+    await registerMapIcon(current, `object-${iconName}-working`, iconName, statusToneColor('working'))
+    await registerMapIcon(current, `object-${iconName}-error`, iconName, statusToneColor('error'))
+    await registerMapIcon(current, `object-${iconName}-idle`, iconName, statusToneColor('idle'))
+  }
+
   const objectFromMapEvent = (event: maplibregl.MapLayerMouseEvent): OperationalObject | null => {
     const objectId = String(event.features?.[0]?.properties?.id ?? '')
     return objects.find(candidate => candidate.id === objectId) ?? null
@@ -358,6 +366,9 @@
         'icon-allow-overlap': true,
         'icon-ignore-placement': true,
       },
+      paint: {
+        'icon-opacity': ['case', ['get', 'muted'], 0.44, 1],
+      },
     })
     current.addLayer({
       id: mapLayerIds.objectNewInfo,
@@ -400,10 +411,10 @@
   const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
     try {
       loaded = false
-      await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
-      await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
-      await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
-      await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
+      await registerMapIconVariants(current, 'ambulance')
+      await registerMapIconVariants(current, 'hospital')
+      await registerMapIconVariants(current, 'crash')
+      await registerMapIconVariants(current, 'traffic')
       addMapSourcesAndLayers(current)
       addObjectInteractions(current)
       loaded = true

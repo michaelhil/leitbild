@@ -113,7 +113,9 @@ describe('map feature projection', () => {
 
     expect(objectFeatures.features).toHaveLength(3)
     expect(ambulanceFeature?.geometry).toEqual(ambulance.spatial.position?.point)
-    expect(ambulanceFeature?.properties.icon).toBe('object-ambulance')
+    expect(ambulanceFeature?.properties.icon).toBe('object-ambulance-ready')
+    expect(ambulanceFeature?.properties.color).toBe('#16834f')
+    expect(ambulanceFeature?.properties.muted).toBe(false)
     expect(ambulanceFeature?.properties.selected).toBe(true)
     expect(ambulanceFeature?.properties.hasNewInfo).toBe(true)
   })

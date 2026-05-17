@@ -14,6 +14,7 @@ export interface PackObjectPresentation {
   readonly summary: string
   readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
+  readonly muted?: boolean
 }
 
 export interface PackObjectField {

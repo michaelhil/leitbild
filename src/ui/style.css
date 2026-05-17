@@ -467,6 +467,16 @@ body.rail-resizing {
   border-color: color-mix(in srgb, var(--critical) 42%, var(--border));
 }
 
+.object-row.muted {
+  opacity: 0.58;
+  background: color-mix(in srgb, var(--panel-strong) 70%, var(--panel));
+}
+
+.object-row.muted .row-title,
+.object-row.muted .object-meta {
+  color: var(--muted);
+}
+
 .row-title {
   display: block;
   overflow: hidden;

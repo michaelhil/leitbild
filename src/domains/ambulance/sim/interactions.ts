@@ -160,8 +160,11 @@ const handleIncidentArrival = (
 
   if (nextVictimCount === 0) {
     return {
-      upserts: [nextAmbulance],
-      deletes: [input.target.id],
+      upserts: [
+        nextAmbulance,
+        objectWithDomainData(input.target, nextIncidentData, input.at, input.adapterId, 'resolved'),
+      ],
+      deletes: [],
     }
   }
 
@@ -260,7 +263,8 @@ const effectsForArrivalResult = (
     ...result.upserts.map(object => ({ type: 'object.upsert' as const, object })),
     ...result.deletes.map(objectId => ({ type: 'object.delete' as const, objectId })),
   ]
-  const targetResolved = result.deletes.includes(input.target.id)
+  const updatedTarget = result.upserts.find(object => object.id === input.target.id)
+  const targetResolved = updatedTarget?.operational.status === 'resolved'
   return [
     ...objectEffects,
     {

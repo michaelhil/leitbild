@@ -1,4 +1,5 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
+import type { PackObjectStatusTone } from '../core/packs/protocol.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
 
 export const mapSourceIds = {
@@ -37,6 +38,7 @@ interface ObjectFeatureProperties {
   readonly id: string
   readonly color: string
   readonly icon: string
+  readonly muted: boolean
   readonly selected: boolean
   readonly hasNewInfo: boolean
 }
@@ -54,25 +56,34 @@ interface TrafficFeatureProperties {
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
 
+export const statusToneColor = (tone: PackObjectStatusTone): string => {
+  if (tone === 'ready') return '#16834f'
+  if (tone === 'working') return '#c17a13'
+  if (tone === 'error') return '#c7352b'
+  return '#667085'
+}
+
 export const createObjectFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
   selectedObjectId: string | null,
   hasNewInfo: (object: OperationalObject) => boolean,
-  presentObject: (object: OperationalObject) => { readonly icon: string; readonly color: string },
+  presentObject: (object: OperationalObject) => { readonly icon: string; readonly color: string; readonly muted?: boolean; readonly status?: { readonly tone: PackObjectStatusTone } },
 ): GeoJsonFeatureCollection<GeoJsonPoint, ObjectFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
     .filter(object => pointOf(object))
     .map(object => {
       const presentation = presentObject(object)
+      const statusTone = presentation.status?.tone ?? 'idle'
       return {
         type: 'Feature',
         id: object.id,
         geometry: pointOf(object)!,
         properties: {
           id: object.id,
-          color: presentation.color,
-          icon: `object-${presentation.icon}`,
+          color: statusToneColor(statusTone),
+          icon: `object-${presentation.icon}-${statusTone}`,
+          muted: presentation.muted === true,
           selected: object.id === selectedObjectId,
           hasNewInfo: hasNewInfo(object),
         },

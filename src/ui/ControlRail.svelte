@@ -186,7 +186,12 @@
         {/if}
         {#each row.objects as object (object.id)}
           {@const statusPresentation = objectStatus(object)}
-          <div class:selected={selectedControllerId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row">
+          <div
+            class:selected={selectedControllerId === object.id}
+            class:has-new-info={hasNewInfo(object)}
+            class:muted={presentationFor(object).muted === true}
+            class="object-row"
+          >
             <button class="object-row-main" type="button" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
               <span class="object-status">
                 <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />

@@ -84,5 +84,14 @@ describe('pack architecture', () => {
     }
     const hospitalPresentation = ambulancePack.presentObject(hospitalBound, { objects: [hospitalBound, incident, hospital] })
     expect(hospitalPresentation.status?.indicator).toEqual({ shape: 'arrow', direction: 'left', pulse: true })
+
+    const resolvedIncident: OperationalObject = {
+      ...incident,
+      operational: { ...incident.operational, status: 'resolved' },
+    }
+    const resolvedPresentation = ambulancePack.presentObject(resolvedIncident, { objects: [ambulance, resolvedIncident, hospital] })
+    expect(resolvedPresentation.status?.tone).toBe('idle')
+    expect(resolvedPresentation.status?.label).toBe('Resolved')
+    expect(resolvedPresentation.muted).toBe(true)
   })
 })
