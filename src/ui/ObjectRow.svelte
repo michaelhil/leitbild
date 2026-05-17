@@ -59,9 +59,8 @@
     variant="bare"
     onClick={() => deleteObject(object)}
   />
-  {#if selected}
+  {#if visibleFields.length > 0}
     <div class="object-row-details">
-      <span class="object-summary">{presentation.summary}</span>
       {#each visibleFields as field (field.key)}
         <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
       {/each}

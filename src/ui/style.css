@@ -523,16 +523,6 @@ body.rail-resizing {
   padding: 0 46px 7px 26px;
 }
 
-.object-summary {
-  display: block;
-  min-width: 0;
-  color: var(--muted);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .row-tooltip,
 .marker-hover-card {
   position: absolute;
@@ -576,7 +566,7 @@ body.rail-resizing {
 }
 
 .row-tooltip {
-  right: 0;
+  left: 0;
   top: 24px;
   pointer-events: none;
   text-align: left;
