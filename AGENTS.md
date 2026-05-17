@@ -27,7 +27,8 @@
 - Keep files and functions small enough to remain navigable.
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep domain-specific logic in domain modules; keep `core` use-case agnostic.
-- Treat the Control Instance event log and projected state as canonical Leitbild truth. UI, API, AI agents, replay, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
+- Treat Control Instance Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
+- Treat the Durable Journal as meaningful accepted history, not as full current state and not as a high-frequency motion trace.
 - Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state.
 - Use the Simulation Hub for multiple providers in one Control Instance. Do not merge a new provider domain into an existing domain simulator just to get a short-term demo.
 - Providers must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.

@@ -121,9 +121,9 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - **Interaction Handlers** are registered through core or active packs and run inside the **Control Instance** runtime.
 - **Interaction Effects** become ordered **Domain Events** only after validation and runtime commit.
 - **AI agents** are **Actors** and **Clients** that may issue commands or emit interaction signals, but their outputs are not canonical truth until accepted by handlers and committed as events.
-- The **Control Instance** event log and projected state are the canonical Leitbild truth for UI, API, AI agents, replay, metrics, and interaction handlers.
+- **Projected State** is the canonical current Leitbild truth for UI, API, AI agents, metrics, and interaction handlers.
+- The **Durable Journal** is meaningful accepted history for audit, debugging, replay of decisions, and later research instrumentation.
 - **Traffic Conditions** may create **Route Impacts** for ambulances or future mobile assets, but rerouting remains an explicit command or future policy decision.
-- **Projected State** is the current truth for UI, API, and AI situation reads.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 

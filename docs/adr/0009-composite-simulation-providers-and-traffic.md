@@ -6,7 +6,7 @@ Leitbild will support multiple simulation providers inside one Control Instance 
 
 The Simulation Hub connects provider adapters, merges their initial snapshots, forwards provider emissions into the Control Instance runtime, routes commands to providers that declare support for the command kind, broadcasts committed Domain Events back to every provider, and closes providers together.
 
-The Control Instance event log and projected state remain the canonical Leitbild truth. Providers may keep private state and provider-local projections, but provider-to-provider interaction must flow through committed Domain Events and Interaction Signals.
+Control Instance Projected State remains the canonical current Leitbild truth, with the Durable Journal recording meaningful accepted history. Providers may keep private state and provider-local projections, but provider-to-provider interaction must flow through committed Domain Events and Interaction Signals.
 
 The first second provider is a traffic provider. V1 traffic is modeled as aggregate **Traffic Conditions** such as congestion zones, blocked road segments, slow corridors, and access-restricted areas. Individual traffic vehicles are deferred.
 

@@ -14,7 +14,7 @@ The interaction layer uses:
 
 Objects do not directly call or mutate other objects. Simulation instances, actors, clients, AI agents, and system processes may emit signals. Registered handlers inspect signals and current state, then return effects. The control-instance runtime commits accepted effects as ordered domain events.
 
-The Control Instance event log and projected state are the canonical Leitbild truth for shared operational objects. Simulation providers may keep private mechanics and provider-local projections, but they learn about accepted shared state by observing committed Control Instance events. They are not mutated through a second authoritative object-state path.
+Control Instance Projected State is the canonical current Leitbild truth for shared operational objects. The Durable Journal records meaningful accepted history. Simulation providers may keep private mechanics and provider-local projections, but they learn about accepted shared state by observing committed Control Instance events. They are not mutated through a second authoritative object-state path.
 
 V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred. Route-impact handling may warn and update canonical route-awareness state, but automatic rerouting is deferred until explicit human, AI, or scenario policy control exists.
 
@@ -42,7 +42,7 @@ The chosen model follows useful patterns from event-sourced systems, Redux/Elm-s
 - Packs validate and handle domain-specific signal payloads.
 - AI-generated signals are treated as untrusted input until a registered handler accepts them.
 - Unknown signals may be persisted for audit, but they must not mutate canonical state.
-- Handler-local mutable memory is disallowed; durable memory belongs in object state, object context, mission progress, or the event log.
+- Handler-local mutable memory is disallowed; durable memory belongs in object state, object context, mission progress, or the Durable Journal.
 - Handler-emitted follow-up signals and command requests are deferred until loop guards, causation tracking, and TTL semantics are implemented.
 - V1 effects should stay small: object upsert, object delete, and notification emit.
 - Traffic route-impact handlers must not silently reroute mobile assets; rerouting is a command or future declared policy.
@@ -71,7 +71,7 @@ Rejected because it produces callback spaghetti, unclear ordering, and weak audi
 
 The runtime could apply interaction effects directly back into simulation providers.
 
-Rejected as the long-term model because it implies duplicate canonical object stores. Providers may observe committed events and update private projections, but the Control Instance event log projection remains the shared source of truth.
+Rejected as the long-term model because it implies duplicate canonical object stores. Providers may observe committed events and update private projections, but Control Instance Projected State remains the shared source of truth.
 
 ### Arbitrary scripting engine
 
