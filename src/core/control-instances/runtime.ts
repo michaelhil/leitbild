@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId } from '../model/index.ts'
-import { nowIso } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, Provenance } from '../model/index.ts'
+import { interactionEffectSchema, interactionSignalSchema, nowIso } from '../model/index.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
@@ -20,6 +20,7 @@ export interface ControlInstanceRuntime {
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
+  readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly close: () => Promise<void>
 }
 
@@ -30,6 +31,7 @@ export const createControlInstanceRuntime = async (config: {
   readonly simulation: SimulationConnection
   readonly eventLog: EventLog
   readonly snapshotStore: ControlInstanceSnapshotStore
+  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly restoredSnapshot?: ControlInstanceStateSnapshot
   readonly restoredEvents?: ReadonlyArray<DomainEvent>
 }): Promise<ControlInstanceRuntime> => {
@@ -39,6 +41,8 @@ export const createControlInstanceRuntime = async (config: {
   const restoredEventSeq = events.reduce((max, event) => Math.max(max, event.seq), 0)
   let seq = Math.max(config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
+  const interactionHandlers = [...(config.interactionHandlers ?? [])]
+    .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
 
   const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
     if (domainEvents.length === 0) return
@@ -52,13 +56,20 @@ export const createControlInstanceRuntime = async (config: {
     for (const handler of handlers) handler(notification)
   }
 
-  const publishMany = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
+  const enqueuePublish = async (work: () => Promise<void>): Promise<void> => {
     const previousPublish = publishQueue
-    publishQueue = (async (): Promise<void> => {
+    const currentPublish = (async (): Promise<void> => {
       await previousPublish
-      await publishManyNow(domainEvents)
+      await work()
     })()
-    await publishQueue
+    publishQueue = currentPublish.catch(() => undefined)
+    await currentPublish
+  }
+
+  const publishMany = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
+    await enqueuePublish(async () => {
+      await publishManyNow(domainEvents)
+    })
   }
 
   const publish = async (event: DomainEvent): Promise<void> => {
@@ -80,15 +91,106 @@ export const createControlInstanceRuntime = async (config: {
     if (simEvent.type === 'object.deleted') {
       return { ...nextBase(simEvent), type: 'object.deleted', objectId: simEvent.objectId }
     }
+    if (simEvent.type === 'interaction.signal') {
+      return { ...nextBase(simEvent), type: 'interaction.signal.received', signal: simEvent.signal }
+    }
     return { ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry }
   }
 
+  const domainEventFromInteractionEffect = (
+    effect: InteractionEffect,
+    at: IsoTimestamp,
+    provenance: Provenance,
+  ): DomainEvent => {
+    if (effect.type === 'object.upsert') {
+      return {
+        id: eventId(),
+        controlInstanceId: config.id,
+        seq: ++seq,
+        at,
+        provenance: effect.object.provenance,
+        type: 'object.upserted',
+        object: effect.object,
+      }
+    }
+    if (effect.type === 'object.delete') {
+      return {
+        id: eventId(),
+        controlInstanceId: config.id,
+        seq: ++seq,
+        at,
+        provenance,
+        type: 'object.deleted',
+        objectId: effect.objectId,
+      }
+    }
+    return {
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at,
+      provenance,
+      type: 'notification.emitted',
+      notification: effect.notification,
+    }
+  }
+
+  const commitInteractionEffectsNow = async (
+    effects: ReadonlyArray<InteractionEffect>,
+    at: IsoTimestamp,
+    provenance: Provenance,
+  ): Promise<void> => {
+    if (effects.length === 0) return
+    const parsedEffects = effects.map(effect => interactionEffectSchema.parse(effect) as InteractionEffect)
+    const domainEvents = parsedEffects.map(effect => domainEventFromInteractionEffect(effect, at, provenance))
+    await publishManyNow(domainEvents)
+    await config.simulation.observeCommittedEvents(domainEvents)
+  }
+
+  const handleInteractionSignalNow = async (
+    signal: InteractionSignal,
+    provenance: Provenance,
+  ): Promise<void> => {
+    const parsedSignal = interactionSignalSchema.parse(signal) as InteractionSignal
+    if (parsedSignal.controlInstanceId !== config.id) {
+      throw new Error(`interaction signal control instance mismatch: ${parsedSignal.controlInstanceId}`)
+    }
+    await publishManyNow([{
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at: parsedSignal.at,
+      provenance,
+      type: 'interaction.signal.received',
+      signal: parsedSignal,
+    }])
+    for (const handler of interactionHandlers) {
+      if (!handler.accepts(parsedSignal)) continue
+      const effects = await handler.handle({
+        signal: parsedSignal,
+        snapshot: state.snapshot(),
+        provenance,
+      })
+      await commitInteractionEffectsNow(effects, parsedSignal.at, provenance)
+    }
+  }
+
   const publishSimulationEmission = async (emission: SimulationEmission): Promise<void> => {
-    await publishMany(emission.events.map(domainEventFromSimulationEvent))
+    await enqueuePublish(async () => {
+      for (const event of emission.events) {
+        if (event.type === 'interaction.signal') {
+          await handleInteractionSignalNow(event.signal, event.provenance)
+        } else {
+          await publishManyNow([domainEventFromSimulationEvent(event)])
+        }
+      }
+    })
   }
 
   const unsubscribeSimulation = config.simulation.subscribe((emission) => {
-    void publishSimulationEmission(emission)
+    void publishSimulationEmission(emission).catch(err => {
+      console.error(err)
+    })
   })
 
   if (config.restoredSnapshot) {
@@ -116,6 +218,7 @@ export const createControlInstanceRuntime = async (config: {
       command,
     })
     const result = await config.simulation.sendCommand(command)
+    await publishQueue
     await publish({
       id: eventId(),
       controlInstanceId: config.id,
@@ -142,11 +245,16 @@ export const createControlInstanceRuntime = async (config: {
       }
     },
     issueCommand,
+    publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {
+      await enqueuePublish(async () => {
+        await handleInteractionSignalNow(signal, provenance)
+      })
+    },
     close: async (): Promise<void> => {
-      await publishQueue
       unsubscribeSimulation()
-      handlers.clear()
       await config.simulation.close()
+      await publishQueue
+      handlers.clear()
     },
   }
 }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ControlInstanceId } from '../model/index.ts'
+import type { ControlInstanceId, InteractionHandler } from '../model/index.ts'
 import { controlInstanceIdSchema } from '../model/index.ts'
 import type { SimulationAdapter } from '../../simulation/protocol.ts'
 import { createJsonlEventLog } from './event-log.ts'
@@ -28,6 +28,7 @@ export interface ControlInstanceRegistry {
 export const createControlInstanceRegistry = (config: {
   readonly dataDir: string
   readonly simulationAdapter: SimulationAdapter
+  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
   const controlInstanceRoot = join(config.dataDir, 'control-instances')
@@ -70,6 +71,7 @@ export const createControlInstanceRegistry = (config: {
       simulation,
       eventLog,
       snapshotStore,
+      ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),
       ...(restoredSnapshot ? { restoredSnapshot } : {}),
       ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
     })

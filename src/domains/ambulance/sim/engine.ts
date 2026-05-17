@@ -1,5 +1,6 @@
-import type { AdapterId, CommandEnvelope, CommandResult, DomainId, GeoJsonLineString, GeoJsonPoint, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
-import { advanceAlongRoute, confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters, unknownFact } from '../../../core/model/index.ts'
+import { randomUUID } from 'node:crypto'
+import type { AdapterId, CommandEnvelope, CommandResult, DomainEvent, DomainId, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId, TelemetryState } from '../../../core/model/index.ts'
+import { advanceAlongRoute, confirmedFact, defaultMotionProfile, estimatedFact, geoPointFromLonLat, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters, unknownFact } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
 import {
@@ -14,7 +15,7 @@ import {
 } from '../commands.ts'
 import { ambulanceDomainId, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData, type InjurySummary } from '../model.ts'
 import type { AmbulanceScenario } from '../scenario.ts'
-import { applyAmbulanceArrivalInteraction } from './interactions.ts'
+import { assetArrivedAtTargetSignalType } from './interactions.ts'
 
 interface AmbulanceMotion {
   readonly targetObjectId: ObjectId
@@ -26,7 +27,7 @@ interface AmbulanceMotion {
 
 interface EngineState {
   readonly controlInstanceId: ControlInstanceId
-  readonly objects: Map<ObjectId, OperationalObject>
+  readonly objectProjection: Map<ObjectId, OperationalObject>
   readonly motion: Map<ObjectId, AmbulanceMotion>
   elapsedMs: number
   nextAmbulanceNumber: number
@@ -38,6 +39,7 @@ export interface AmbulanceSimEngine {
   readonly snapshot: () => SimulationSnapshot
   readonly tick: (dtMs: number) => ReadonlyArray<SimulationEvent>
   readonly handleCommand: (command: CommandEnvelope) => Promise<CommandResult>
+  readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => void
 }
 
 const adapterId = 'adapter:ambulance-local' as AdapterId
@@ -361,6 +363,39 @@ const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): SimulationEvent => (
   },
 })
 
+const arrivalSignalEvent = (
+  controlInstanceId: ControlInstanceId,
+  ambulance: OperationalObject,
+  target: OperationalObject,
+  at: IsoTimestamp,
+  motion: AmbulanceMotion,
+): SimulationEvent => {
+  const signal = interactionSignalSchema.parse({
+    id: `signal:${randomUUID()}`,
+    controlInstanceId,
+    at,
+    source: { kind: 'object', id: ambulance.id, providerId: 'ambulance-local' },
+    targets: [{ kind: 'object', id: target.id }],
+    type: assetArrivedAtTargetSignalType,
+    severity: 'notice',
+    payload: {
+      targetObjectId: target.id,
+      motionProfileId: motion.motionProfileId,
+      routeCompleted: true,
+    },
+  }) as InteractionSignal
+  return {
+    type: 'interaction.signal',
+    signal,
+    at,
+    provenance: {
+      source: 'simulator',
+      adapterId,
+      externalId: ambulance.id,
+    },
+  }
+}
+
 const isHospital = (object: OperationalObject): boolean =>
   object.kind === 'facility'
   && typeof object.domainData === 'object'
@@ -588,32 +623,32 @@ export const createAmbulanceSimEngine = (config: {
   readonly initialObjects?: ReadonlyArray<OperationalObject>
 }): AmbulanceSimEngine => {
   const at = nowIso()
-  const objects = new Map<ObjectId, OperationalObject>()
+  const objectProjection = new Map<ObjectId, OperationalObject>()
   if (config.initialObjects) {
-    for (const object of config.initialObjects) objects.set(object.id, object)
+    for (const object of config.initialObjects) objectProjection.set(object.id, object)
   } else {
-    for (const ambulance of config.scenario.ambulances) objects.set(ambulance.id, createAmbulanceObject(ambulance, at))
-    for (const incident of config.scenario.incidents) objects.set(incident.id, createIncidentObject(incident, at))
-    for (const facility of config.scenario.facilities) objects.set(facility.id, createFacilityObject(facility, at))
+    for (const ambulance of config.scenario.ambulances) objectProjection.set(ambulance.id, createAmbulanceObject(ambulance, at))
+    for (const incident of config.scenario.incidents) objectProjection.set(incident.id, createIncidentObject(incident, at))
+    for (const facility of config.scenario.facilities) objectProjection.set(facility.id, createFacilityObject(facility, at))
   }
   const motion = new Map<ObjectId, AmbulanceMotion>()
-  for (const object of objects.values()) {
-    const restoredMotion = restoredMotionFor(object, objects)
+  for (const object of objectProjection.values()) {
+    const restoredMotion = restoredMotionFor(object, objectProjection)
     if (restoredMotion) motion.set(object.id, restoredMotion)
   }
   const state: EngineState = {
     controlInstanceId: config.controlInstanceId,
-    objects,
+    objectProjection,
     motion,
     elapsedMs: 0,
-    nextAmbulanceNumber: nextNumberAfter(objects.values(), 'amb:', config.scenario.ambulances.length + 1),
-    nextHospitalNumber: nextNumberAfter(objects.values(), 'facility:hospital-', config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1),
-    nextIncidentNumber: nextNumberAfter(objects.values(), 'incident:', config.scenario.incidents.length + 1),
+    nextAmbulanceNumber: nextNumberAfter(objectProjection.values(), 'amb:', config.scenario.ambulances.length + 1),
+    nextHospitalNumber: nextNumberAfter(objectProjection.values(), 'facility:hospital-', config.scenario.facilities.filter(facility => facility.facilityType === 'hospital').length + 1),
+    nextIncidentNumber: nextNumberAfter(objectProjection.values(), 'incident:', config.scenario.incidents.length + 1),
   }
 
   const snapshot = (): SimulationSnapshot => ({
     controlInstanceId: state.controlInstanceId,
-    objects: [...state.objects.values()],
+    objects: [...state.objectProjection.values()],
     capturedAt: nowIso(),
   })
 
@@ -622,26 +657,26 @@ export const createAmbulanceSimEngine = (config: {
     const at2 = nowIso()
     state.elapsedMs += dtMs
     if (state.elapsedMs >= 5_000) {
-      for (const object of state.objects.values()) {
+      for (const object of state.objectProjection.values()) {
         if (object.kind !== 'incident') continue
         const updated = revealIncidentDetails(object, at2)
         if (!updated) continue
-        state.objects.set(updated.id, updated)
+        state.objectProjection.set(updated.id, updated)
         events.push(upsertEvent(updated, at2))
       }
     }
     if (state.elapsedMs >= 10_000) {
-      for (const object of state.objects.values()) {
+      for (const object of state.objectProjection.values()) {
         if (!isHospital(object)) continue
         const updated = updateHospitalCapacity(object, at2)
         if (!updated) continue
-        state.objects.set(updated.id, updated)
+        state.objectProjection.set(updated.id, updated)
         events.push(upsertEvent(updated, at2))
       }
     }
     for (const [ambulanceId, motion] of state.motion.entries()) {
-      const ambulance = state.objects.get(ambulanceId)
-      const target = state.objects.get(motion.targetObjectId)
+      const ambulance = state.objectProjection.get(ambulanceId)
+      const target = state.objectProjection.get(motion.targetObjectId)
       if (!ambulance || !target) {
         state.motion.delete(ambulanceId)
         continue
@@ -705,22 +740,11 @@ export const createAmbulanceSimEngine = (config: {
       if (arrived) {
         state.motion.delete(ambulanceId)
         const stopped = stopAmbulance(moving, at2, target.kind === 'incident' ? 'on_scene' : 'available')
-        const interaction = applyAmbulanceArrivalInteraction({
-          ambulance: stopped,
-          target,
-          at: at2,
-          adapterId,
-        })
-        for (const object of interaction.upserts) {
-          state.objects.set(object.id, object)
-          events.push(upsertEvent(object, at2))
-        }
-        for (const objectId of interaction.deletes) {
-          state.objects.delete(objectId)
-          events.push(deleteEvent(objectId, at2))
-        }
+        state.objectProjection.set(stopped.id, stopped)
+        events.push(upsertEvent(stopped, at2))
+        events.push(arrivalSignalEvent(state.controlInstanceId, stopped, target, at2, motion))
       } else {
-        state.objects.set(ambulanceId, moving)
+        state.objectProjection.set(ambulanceId, moving)
         state.motion.set(ambulanceId, { ...motion, segmentIndex })
         events.push(upsertEvent(moving, at2))
       }
@@ -738,18 +762,18 @@ export const createAmbulanceSimEngine = (config: {
         : payload.data.objectType === 'ambulance'
           ? createAddedAmbulanceObject(`amb:${state.nextAmbulanceNumber++}` as ObjectId, payload.data.label, payload.data.point, at3, command.id)
           : createAddedIncidentObject(`incident:${state.nextIncidentNumber++}` as ObjectId, payload.data.label, payload.data.point, at3, command.id)
-      state.objects.set(object.id, object)
+      state.objectProjection.set(object.id, object)
       return { ok: true, commandId: command.id, acceptedAt: at3 }
     }
 
     if (command.kind === cancelDestinationCommandKind) {
       const payload = cancelDestinationPayloadSchema.safeParse(command.payload)
       if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: at3, reason: payload.error.message }
-      const ambulance = state.objects.get(payload.data.ambulanceId)
+      const ambulance = state.objectProjection.get(payload.data.ambulanceId)
       if (!ambulance) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `ambulance not found: ${payload.data.ambulanceId}` }
       if (ambulance.kind !== 'mobile_entity') return { ok: false, commandId: command.id, rejectedAt: at3, reason: `${payload.data.ambulanceId} is not an ambulance` }
       state.motion.delete(payload.data.ambulanceId)
-      state.objects.set(ambulance.id, stopAmbulance(ambulance, at3, 'available', command.id))
+      state.objectProjection.set(ambulance.id, stopAmbulance(ambulance, at3, 'available', command.id))
       return { ok: true, commandId: command.id, acceptedAt: at3 }
     }
 
@@ -765,8 +789,8 @@ export const createAmbulanceSimEngine = (config: {
     }
     const ambulanceId = payload.data.ambulanceId
     const destinationId = 'incidentId' in payload.data ? payload.data.incidentId : payload.data.destinationId
-    const ambulance = state.objects.get(ambulanceId)
-    const incident = state.objects.get(destinationId)
+    const ambulance = state.objectProjection.get(ambulanceId)
+    const incident = state.objectProjection.get(destinationId)
     if (!ambulance) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `ambulance not found: ${payload.data.ambulanceId}` }
     if (ambulance.kind !== 'mobile_entity') return { ok: false, commandId: command.id, rejectedAt: at3, reason: `${ambulanceId} is not an ambulance` }
     if (!incident) return { ok: false, commandId: command.id, rejectedAt: at3, reason: `destination not found: ${destinationId}` }
@@ -814,7 +838,7 @@ export const createAmbulanceSimEngine = (config: {
         updatedAt: at3,
       },
     }
-    state.objects.set(updatedAmbulance.id, updatedAmbulance)
+    state.objectProjection.set(updatedAmbulance.id, updatedAmbulance)
 
     const updatedIncident: OperationalObject = incident.kind === 'incident'
       ? {
@@ -840,7 +864,7 @@ export const createAmbulanceSimEngine = (config: {
           } satisfies IncidentDomainData,
         }
       : incident
-    state.objects.set(updatedIncident.id, updatedIncident)
+    state.objectProjection.set(updatedIncident.id, updatedIncident)
     const motionProfile = motionProfileFor(ambulanceMotionProfiles, defaultAmbulanceMotionProfileId)
     state.motion.set(updatedAmbulance.id, {
       targetObjectId: updatedIncident.id,
@@ -852,5 +876,17 @@ export const createAmbulanceSimEngine = (config: {
     return { ok: true, commandId: command.id, acceptedAt: at3 }
   }
 
-  return { snapshot, tick, handleCommand }
+  const observeCommittedEvents = (events: ReadonlyArray<DomainEvent>): void => {
+    for (const event of events) {
+      if (event.type === 'object.upserted') {
+        state.objectProjection.set(event.object.id, event.object)
+      }
+      if (event.type === 'object.deleted') {
+        state.objectProjection.delete(event.objectId)
+        state.motion.delete(event.objectId)
+      }
+    }
+  }
+
+  return { snapshot, tick, handleCommand, observeCommittedEvents }
 }

@@ -1,4 +1,4 @@
-import type { GeoJsonPoint, ObjectId, OperationalObject } from '../model/index.ts'
+import type { GeoJsonPoint, InteractionHandler, ObjectId, OperationalObject } from '../model/index.ts'
 
 export interface PackObjectCategory {
   readonly id: string
@@ -47,6 +47,7 @@ export interface LeitbildPack {
   readonly domain: string
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
+  readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly presentObject: (
     object: OperationalObject,
     context: PackObjectPresentationContext,

@@ -63,6 +63,9 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
           handlers.delete(handler)
         }
       },
+      observeCommittedEvents: async (events): Promise<void> => {
+        engine.observeCommittedEvents(events)
+      },
       sendCommand,
       close: async (): Promise<void> => {
         clearInterval(interval)

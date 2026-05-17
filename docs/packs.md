@@ -29,6 +29,8 @@ A pack may contain:
 - object icons, map symbols, and style rules
 - object categories, summaries, hover details, and inspectors
 - command/action builders for UI controls
+- interaction signal schemas and interaction handlers
+- operational notification renderers and severity rules
 - dashboard widgets and adaptive UI primitives
 - research metrics, replay analyzers, and export helpers
 - AI-agent prompts, role definitions, and tool descriptions
@@ -111,6 +113,14 @@ Future external packs should include `leitbild.pack.json`.
       "ambulance.cancel_destination"
     ],
     "simulationAdapters": ["ambulance.local"],
+    "interactionSignals": [
+      "asset.arrived_at_target",
+      "facility.capacity_changed"
+    ],
+    "interactionHandlers": [
+      "ambulance.arrival-handler",
+      "ambulance.capacity-handler"
+    ],
     "scenarios": ["oslo-basic"],
     "missions": ["oslo-response-basic"],
     "contextSchemas": ["ambulance.context.v1"],
@@ -148,10 +158,34 @@ Composition rules:
 - Leitbild owns command envelopes and actor identity.
 - Leitbild owns permissions and ownership rules.
 - Leitbild owns object IDs and canonical state.
+- Leitbild owns interaction signal ordering and effect commit.
 - Packs publish events through Leitbild seams.
-- Packs issue changes to other domains only through declared commands/events.
+- Packs issue changes to other domains only through declared commands, interaction signals, and committed events.
+- Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
 
 Multi-pack simulation orchestration is deferred until there are at least two real domain packs.
+
+## Interaction Contributions
+
+Packs may contribute interaction capability for cross-object and cross-simulation behavior.
+
+An **Interaction Signal** is a scoped claim, observation, or interaction attempt. Examples:
+
+- `asset.arrived_at_target`
+- `facility.capacity_changed`
+- `incident.patient_count_updated`
+- `observation.detected`
+- `ai.recommendation.created`
+
+An **Interaction Handler** validates signal payloads it understands, inspects the current control-instance snapshot, and returns constrained effects such as object upserts, object deletes, or operational notifications.
+
+Packs must keep the distinction clear:
+
+- Signals are input claims or observations.
+- Handler effects are proposals.
+- Domain events are accepted canonical history after Leitbild validates, orders, persists, and broadcasts the effects.
+
+Unknown signal payloads may be stored for audit, but must not mutate canonical state unless a registered handler validates and accepts them.
 
 ## Scenario, Mission, and Context Contributions
 

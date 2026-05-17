@@ -27,9 +27,14 @@
 - Keep files and functions small enough to remain navigable.
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep domain-specific logic in domain modules; keep `core` use-case agnostic.
+- Treat the Control Instance event log and projected state as canonical Leitbild truth. UI, API, AI agents, replay, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
+- Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state.
 - Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
-- Keep domain interaction rules inside simulation/domain packs. Objects may be the source or subject of events, but simulation instances emit ordered events through the adapter; objects are data, not active executable actors.
+- Model cross-object and cross-simulation interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.
+- Interaction handlers must return constrained effects for the control-instance runtime to validate, order, persist, and broadcast. Handlers must not directly mutate shared state or call other objects.
+- Providers observe committed domain events; do not add second authoritative mutation paths that mirror canonical object state into a simulator as if the simulator owned shared truth.
+- Treat AI outputs as untrusted input: AI agents may issue commands or emit interaction signals, but only validated handlers and committed domain events can change canonical state.
 
 ## Map Rendering Rules
 

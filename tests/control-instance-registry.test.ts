@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent, InteractionSignal, SignalId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import type { ControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -87,6 +87,26 @@ describe('control instance registry', () => {
     expect(flattened.map(event => event.seq)).toEqual([...flattened.map(event => event.seq)].sort((a, b) => a - b))
     expect(flattened.some(event => event.type === 'object.upserted')).toBe(true)
     expect(flattened.some(event => event.type === 'command.result')).toBe(true)
+    await runtime.close()
+  })
+
+  test('rejects interaction signals for another control instance', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const registry = createRegistry(dataDir)
+    const runtime = await registry.ensure('sandbox' as ControlInstanceId)
+    const beforeCount = runtime.events().length
+    const signal: InteractionSignal = {
+      id: `signal:${crypto.randomUUID()}` as SignalId,
+      controlInstanceId: 'other-control-instance' as ControlInstanceId,
+      at: nowIso(),
+      source: { kind: 'actor', id: 'actor:test-operator' as ActorId },
+      targets: [{ kind: 'broadcast' }],
+      type: 'test.signal',
+      payload: {},
+    }
+
+    await expect(runtime.publishInteractionSignal(signal, { source: 'operator' })).rejects.toThrow('interaction signal control instance mismatch')
+    expect(runtime.events()).toHaveLength(beforeCount)
     await runtime.close()
   })
 

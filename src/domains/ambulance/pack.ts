@@ -16,6 +16,7 @@ import {
   type IncidentDomainData,
   type InjurySummary,
 } from './model.ts'
+import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
@@ -169,6 +170,9 @@ export const ambulancePack: LeitbildPack = {
     { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f' },
     { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d' },
     { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b' },
+  ],
+  interactionHandlers: [
+    createAmbulanceArrivalInteractionHandler(),
   ],
   presentObject: (object, context): PackObjectPresentation => {
     if (parseAmbulanceData(object)) return presentationForAmbulance(object, context.objects)

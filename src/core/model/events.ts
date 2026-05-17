@@ -5,6 +5,7 @@ import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
+import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 
 export interface EventEnvelopeBase {
   readonly id: EventId
@@ -36,6 +37,14 @@ export type DomainEvent =
       readonly type: 'command.result'
       readonly result: CommandResult
     })
+  | (EventEnvelopeBase & {
+      readonly type: 'interaction.signal.received'
+      readonly signal: InteractionSignal
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'notification.emitted'
+      readonly notification: OperationalNotification
+    })
 
 const eventBaseSchema = z.object({
   id: eventIdSchema,
@@ -66,5 +75,13 @@ export const domainEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('command.result'),
     result: commandResultSchema,
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('interaction.signal.received'),
+    signal: interactionSignalSchema,
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('notification.emitted'),
+    notification: operationalNotificationSchema,
   }),
 ])

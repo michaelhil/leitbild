@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, nowIso, objectIdSchema, type CommandEnvelope, type ControlInstanceId } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
 import type { Actor } from '../control-instances/actors.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import { apiError, json, readJson } from './responses.ts'
@@ -19,6 +19,20 @@ const commandRequestSchema = z.object({
 
 const createControlInstanceRequestSchema = z.object({
   id: controlInstanceIdSchema.optional(),
+})
+
+const signalRequestSchema = z.object({
+  actorId: actorIdSchema.default('actor:operator'),
+  clientId: clientIdSchema.optional(),
+  source: interactionEndpointSchema.optional(),
+  type: z.string().min(1),
+  targetObjectIds: z.array(objectIdSchema).optional(),
+  targets: z.array(interactionEndpointSchema).optional(),
+  payload: z.unknown(),
+  severity: z.enum(['info', 'notice', 'warning', 'critical']).optional(),
+  correlationId: z.string().min(1).optional(),
+  causationId: z.string().min(1).optional(),
+  ttlMs: z.number().finite().positive().optional(),
 })
 
 const buildActor = (actorId: Actor['id']): Actor => ({
@@ -41,6 +55,30 @@ const buildCommand = (controlInstanceId: ControlInstanceId, raw: unknown): Comma
     ...(parsed.expectedRevision === undefined ? {} : { expectedRevision: parsed.expectedRevision }),
   }
   return commandEnvelopeSchema.parse(candidate) as CommandEnvelope
+}
+
+const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
+  readonly signal: InteractionSignal
+  readonly actor: Actor
+} => {
+  const parsed = signalRequestSchema.parse(raw)
+  const targets = parsed.targets ?? parsed.targetObjectIds?.map(objectId => ({ kind: 'object' as const, id: objectId })) ?? []
+  const signal = interactionSignalSchema.parse({
+    id: `signal:${crypto.randomUUID()}`,
+    controlInstanceId,
+    at: nowIso(),
+    source: parsed.source ?? (parsed.clientId
+      ? { kind: 'client', id: parsed.clientId }
+      : { kind: 'actor', id: parsed.actorId }),
+    targets,
+    type: parsed.type,
+    payload: parsed.payload,
+    ...(parsed.severity === undefined ? {} : { severity: parsed.severity }),
+    ...(parsed.correlationId === undefined ? {} : { correlationId: parsed.correlationId }),
+    ...(parsed.causationId === undefined ? {} : { causationId: parsed.causationId }),
+    ...(parsed.ttlMs === undefined ? {} : { ttlMs: parsed.ttlMs }),
+  }) as InteractionSignal
+  return { signal, actor: buildActor(parsed.actorId) }
 }
 
 const handleControlInstanceApiInner = async (
@@ -121,6 +159,17 @@ const handleControlInstanceApiInner = async (
     const actor = buildActor(command.actorId)
     const result = await runtime.issueCommand(actor, command)
     return json({ result })
+  }
+
+  const signalMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/signals$/)
+  if (signalMatch && req.method === 'POST') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(signalMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const raw = await readJson(req)
+    const { signal, actor } = buildSignal(controlInstanceId, raw)
+    await runtime.publishInteractionSignal(signal, { source: actor.id.startsWith('actor:ai') ? 'ai' : 'operator' })
+    return json({ signal }, { status: 202 })
   }
 
   return null

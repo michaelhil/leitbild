@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent } from '../src/core/model/index.ts'
 import { confirmedFact, geoPointFromLonLat, meters, nowIso, type KnowledgeFact, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import {
   assignToIncidentCommandKind,
@@ -10,7 +10,9 @@ import {
 import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/domains/ambulance/model.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
-import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
+import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
+import { createAmbulanceArrivalInteractionHandler } from '../src/domains/ambulance/sim/interactions.ts'
+import type { SimulationEvent } from '../src/simulation/protocol.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const controlInstanceId = 'control-instance:test' as ControlInstanceId
@@ -81,6 +83,34 @@ const withHospitalBedsAvailable = (object: OperationalObject, bedsAvailable: num
         patientsReceived: confirmedFact(0, at, 'scenario', 1),
       },
     } satisfies HospitalDomainData,
+  }
+}
+
+const applyInteractionEvents = async (
+  engine: AmbulanceSimEngine,
+  events: ReadonlyArray<SimulationEvent>,
+): Promise<void> => {
+  const handler = createAmbulanceArrivalInteractionHandler()
+  for (const event of events) {
+    if (event.type !== 'interaction.signal' || !handler.accepts(event.signal)) continue
+    const effects = await handler.handle({
+      signal: event.signal,
+      snapshot: { objects: engine.snapshot().objects, seq: 0 },
+      provenance: event.provenance,
+    })
+    const committedEvents: DomainEvent[] = effects.map((effect, index) => {
+      const base = {
+        id: `event:test-${event.signal.id}-${index}` as DomainEvent['id'],
+        controlInstanceId,
+        seq: index + 1,
+        at: event.signal.at,
+        provenance: event.provenance,
+      }
+      if (effect.type === 'object.upsert') return { ...base, type: 'object.upserted' as const, object: effect.object }
+      if (effect.type === 'object.delete') return { ...base, type: 'object.deleted' as const, objectId: effect.objectId }
+      return { ...base, type: 'notification.emitted' as const, notification: effect.notification }
+    })
+    engine.observeCommittedEvents(committedEvents)
   }
 }
 
@@ -421,7 +451,7 @@ describe('local ambulance simulator', () => {
     }))
     expect(result.ok).toBe(true)
 
-    engine.tick(300_000)
+    await applyInteractionEvents(engine, engine.tick(300_000))
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const remainingIncident = arrived.objects.find(object => object.id === incident.id)
@@ -465,7 +495,8 @@ describe('local ambulance simulator', () => {
     expect(result.ok).toBe(true)
 
     const events = engine.tick(300_000)
-    expect(events.some(event => event.type === 'object.deleted' && event.objectId === incident.id)).toBe(true)
+    expect(events.some(event => event.type === 'interaction.signal')).toBe(true)
+    await applyInteractionEvents(engine, events)
     expect(engine.snapshot().objects.some(object => object.id === incident.id)).toBe(false)
     const arrivedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
     const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance?.domainData)
@@ -497,7 +528,7 @@ describe('local ambulance simulator', () => {
     }))
     expect(result.ok).toBe(true)
 
-    engine.tick(1_000)
+    await applyInteractionEvents(engine, engine.tick(1_000))
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const updatedHospital = arrived.objects.find(object => object.id === hospital.id)
@@ -538,7 +569,7 @@ describe('local ambulance simulator', () => {
     }))
     expect(result.ok).toBe(true)
 
-    engine.tick(1_000)
+    await applyInteractionEvents(engine, engine.tick(1_000))
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const updatedHospital = arrived.objects.find(object => object.id === hospital.id)

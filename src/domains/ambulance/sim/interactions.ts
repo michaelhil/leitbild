@@ -1,5 +1,6 @@
-import type { AdapterId, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
-import { confirmedFact, estimatedFact, type KnowledgeFact } from '../../../core/model/index.ts'
+import { z } from 'zod'
+import type { AdapterId, ControlInstanceId, InteractionEffect, InteractionEndpoint, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../../../core/model/index.ts'
+import { confirmedFact, estimatedFact, notificationIdSchema, objectIdSchema, type KnowledgeFact } from '../../../core/model/index.ts'
 import {
   ambulanceDomainDataSchema,
   hospitalDomainDataSchema,
@@ -20,6 +21,12 @@ export interface AmbulanceArrivalInteractionResult {
   readonly upserts: ReadonlyArray<OperationalObject>
   readonly deletes: ReadonlyArray<ObjectId>
 }
+
+export const assetArrivedAtTargetSignalType = 'asset.arrived_at_target'
+
+const arrivedAtTargetPayloadSchema = z.object({
+  targetObjectId: objectIdSchema,
+})
 
 const knownNumber = (fact: KnowledgeFact<number> | undefined): number | null =>
   !fact || fact.state === 'unknown' ? null : fact.value
@@ -240,3 +247,64 @@ export const applyAmbulanceArrivalInteraction = (
 
   return arrivalWithoutTransfer(input.ambulance)
 }
+
+const effectsForArrivalResult = (
+  input: AmbulanceArrivalInteractionInput,
+  result: AmbulanceArrivalInteractionResult,
+  signalId: SignalId,
+  controlInstanceId: ControlInstanceId,
+  source: InteractionEndpoint,
+  targets: ReadonlyArray<InteractionEndpoint>,
+): ReadonlyArray<InteractionEffect> => {
+  const objectEffects: InteractionEffect[] = [
+    ...result.upserts.map(object => ({ type: 'object.upsert' as const, object })),
+    ...result.deletes.map(objectId => ({ type: 'object.delete' as const, objectId })),
+  ]
+  const targetResolved = result.deletes.includes(input.target.id)
+  return [
+    ...objectEffects,
+    {
+      type: 'notification.emit',
+      notification: {
+        id: notificationIdSchema.parse(`notification:${signalId}`),
+        controlInstanceId,
+        at: input.at,
+        title: targetResolved ? 'Incident resolved' : 'Arrival processed',
+        message: targetResolved
+          ? `${input.ambulance.label} resolved ${input.target.label}`
+          : `${input.ambulance.label} arrived at ${input.target.label}`,
+        severity: targetResolved ? 'notice' : 'info',
+        source,
+        targets,
+        signalId,
+      },
+    },
+  ]
+}
+
+export const createAmbulanceArrivalInteractionHandler = (): InteractionHandler => ({
+  id: 'ambulance.arrival-handler',
+  priority: 100,
+  accepts: signal => signal.type === assetArrivedAtTargetSignalType,
+  handle: async ({ signal, snapshot, provenance }): Promise<ReadonlyArray<InteractionEffect>> => {
+    const payload = arrivedAtTargetPayloadSchema.safeParse(signal.payload)
+    if (!payload.success) return []
+    const ambulanceEndpoint = signal.source.kind === 'object' ? signal.source : null
+    if (!ambulanceEndpoint) return []
+    const ambulance = snapshot.objects.find(object => object.id === ambulanceEndpoint.id)
+    const target = snapshot.objects.find(object => object.id === payload.data.targetObjectId)
+    if (!ambulance || !target) return []
+    const result = applyAmbulanceArrivalInteraction({
+      ambulance,
+      target,
+      at: signal.at,
+      adapterId: provenance.adapterId ?? 'adapter:interaction-runtime' as AdapterId,
+    })
+    return effectsForArrivalResult({
+      ambulance,
+      target,
+      at: signal.at,
+      adapterId: provenance.adapterId ?? 'adapter:interaction-runtime' as AdapterId,
+    }, result, signal.id, signal.controlInstanceId, signal.source, signal.targets)
+  },
+})

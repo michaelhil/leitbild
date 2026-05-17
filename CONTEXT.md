@@ -16,6 +16,18 @@ _Avoid_: Sim when referring to a Control Instance
 One running execution of a simulation definition connected to a control instance.
 _Avoid_: Simulation Runtime, Sim Runtime
 
+**Simulation Provider**:
+The adapter-facing role of a simulation instance: it emits observations, object updates, telemetry, and interaction signals into a control instance, and observes committed control-instance events to update private mechanics or provider-local projections.
+_Avoid_: treating a provider as the canonical owner of shared Leitbild object state
+
+**Provider Private State**:
+Simulation-internal state used for specialist mechanics, such as route following, sensor models, traffic queues, timers, or high-resolution internal entities. It is not the shared operational picture.
+_Avoid_: exposing provider private state directly as canonical API/UI/AI state
+
+**Provider Projection**:
+A provider-local read model of committed control-instance state that helps a simulation provider continue its mechanics. It follows canonical events but is not itself canonical.
+_Avoid_: calling this the object store or source of truth
+
 **Client**:
 One connected browser tab, API integration, AI process, or display surface connected to a control instance.
 _Avoid_: Session when referring to a connected browser tab or API connection
@@ -48,11 +60,29 @@ _Avoid_: storing runtime progress inside the reusable Mission Definition
 A bounded, derived, LLM-friendly view assembled from object state, object context, mission/task state, and relevant nearby objects.
 _Avoid_: persisting generated prompt text or full event logs as canonical object state
 
+**Interaction Signal**:
+A scoped claim, observation, or interaction attempt emitted by a simulation instance, actor, AI agent, client, or system process inside a control instance. Signals are inputs to interaction handling; they are not canonical state changes by themselves.
+_Avoid_: treating a signal payload as accepted truth, or letting one object directly mutate another object
+
+**Interaction Handler**:
+A deterministic, registered function contributed by core or an active pack that inspects an interaction signal plus the current control-instance snapshot and returns proposed effects. Handlers do not mutate state directly.
+_Avoid_: callback-style object behavior, hidden side effects, or long-lived handler-local memory
+
+**Interaction Effect**:
+A constrained proposed result of handling a signal, such as upserting an object, deleting an object, or emitting an operational notification. Effects are committed by the control-instance runtime as ordered domain events.
+_Avoid_: arbitrary imperative code paths that bypass event ordering, validation, audit, or replay
+
+**Operational Notification**:
+A durable attention item emitted from interaction handling or system logic for operators, AI agents, replay, and debugging. A notification is not a substitute for canonical object state.
+_Avoid_: UI-only toasts for information that should be visible to AI agents, event history, or replay
+
 ## Relationships
 
 - A **Control Instance** has one or more **Simulation Instances**.
 - A **Simulation Definition** can create many **Simulation Instances**.
 - A **Simulation Instance** belongs to one **Control Instance** unless an explicit bridge is introduced later.
+- A **Simulation Provider** emits candidate updates and signals into a **Control Instance**.
+- A **Simulation Provider** may observe committed **Domain Events** to update **Provider Private State** or a **Provider Projection**.
 - A **Control Instance** can have many **Actors**.
 - A **Control Instance** can have many **Clients**.
 - An **Actor** can have many **Clients**.
@@ -62,6 +92,11 @@ _Avoid_: persisting generated prompt text or full event logs as canonical object
 - A **Scenario Definition** can initialize **Operational Objects** and their **Object Context**.
 - A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Definition**.
 - **Mission Progress State** belongs to a running **Control Instance**, not to the reusable **Mission Definition**.
+- **Interaction Signals** are scoped to one **Control Instance** and may reference objects, actors, clients, simulation instances, roles, areas, or broadcast targets.
+- **Interaction Handlers** are registered through core or active packs and run inside the **Control Instance** runtime.
+- **Interaction Effects** become ordered **Domain Events** only after validation and runtime commit.
+- **AI agents** are **Actors** and **Clients** that may issue commands or emit interaction signals, but their outputs are not canonical truth until accepted by handlers and committed as events.
+- The **Control Instance** event log and projected state are the canonical Leitbild truth for UI, API, AI agents, replay, metrics, and interaction handlers.
 
 ## Example dialogue
 
@@ -83,3 +118,5 @@ _Avoid_: persisting generated prompt text or full event logs as canonical object
 - "instance" can mean too many things in software; resolved: technical contexts must qualify the noun as **Control Instance** or **Simulation Instance**.
 - "participant" sounded too research-specific; resolved: use **Actor** for operational identity inside a Control Instance.
 - "state" can mean canonical truth, domain state, runtime progress, or perspective. Use **domainData** for domain operational truth, **Object Context** for perspective-bearing awareness, and **Mission Progress State** for mission runtime status.
+- "event" can mean input signal, accepted state change, or UI attention. Use **Interaction Signal** for claims/observations/attempts, **Domain Event** for accepted canonical history, and **Operational Notification** for attention items.
+- "sim state" can mean provider-private mechanics or shared Leitbild truth. Use **Provider Private State** or **Provider Projection** for simulation-side state, and **Control Instance projected state** for canonical Leitbild state.

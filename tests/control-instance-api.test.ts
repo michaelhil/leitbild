@@ -9,6 +9,8 @@ import type { ControlInstanceRegistry } from '../src/core/control-instances/regi
 import { createLocalAmbulanceSimulationAdapter } from '../src/domains/ambulance/sim/adapter.ts'
 import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
+import { ambulancePack } from '../src/domains/ambulance/pack.ts'
+import { assetArrivedAtTargetSignalType } from '../src/domains/ambulance/sim/interactions.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -20,6 +22,7 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
   return createControlInstanceRegistry({
     dataDir,
     simulationAdapter: createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
+    interactionHandlers: ambulancePack.interactionHandlers ?? [],
   })
 }
 
@@ -162,6 +165,53 @@ describe('control instance API', () => {
     } finally {
       await registry.close('alpha' as ControlInstanceId)
       await registry.close('beta' as ControlInstanceId)
+    }
+  })
+
+  test('accepts interaction signals through the API and commits notification effects', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string; readonly domainData?: unknown }[] } }>(
+        registry,
+        '/api/control-instances/sandbox',
+        { method: 'POST' },
+      )
+      const ambulance = joined.body.snapshot.objects.find(object => object.kind === 'mobile_entity')
+      const incident = joined.body.snapshot.objects.find(object => object.kind === 'incident')
+      if (!ambulance || !incident) throw new Error('missing API test objects')
+
+      const signal = await callRoute<{ readonly signal: { readonly type: string } }>(
+        registry,
+        '/api/control-instances/sandbox/signals',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            actorId: 'actor:test-api-operator',
+            source: { kind: 'object', id: ambulance.id },
+            type: assetArrivedAtTargetSignalType,
+            targetObjectIds: [incident.id],
+            payload: { targetObjectId: incident.id },
+          }),
+        },
+      )
+      expect(signal.status).toBe(202)
+      expect(signal.body.signal.type).toBe(assetArrivedAtTargetSignalType)
+
+      const events = await callRoute<{ readonly events: readonly { readonly type: string }[] }>(
+        registry,
+        '/api/control-instances/sandbox/events',
+      )
+      expect(events.body.events.some(event => event.type === 'interaction.signal.received')).toBe(true)
+      expect(events.body.events.some(event => event.type === 'notification.emitted')).toBe(true)
+
+      const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly domainData?: unknown }[] }>(
+        registry,
+        '/api/control-instances/sandbox/objects',
+      )
+      expect(objects.body.objects.map(object => object.id).sort()).toEqual(joined.body.snapshot.objects.map(object => object.id).sort())
+    } finally {
+      await registry.close('sandbox' as ControlInstanceId)
     }
   })
 
