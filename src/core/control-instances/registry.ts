@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { readdir } from 'node:fs/promises'
+import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ControlInstanceId, InteractionHandler } from '../model/index.ts'
 import { controlInstanceIdSchema } from '../model/index.ts'
@@ -17,12 +17,23 @@ export interface ControlInstanceSummary {
   readonly objectCount: number | null
 }
 
+export interface ControlInstanceRegistryStatus {
+  readonly dataDir: string
+  readonly storage: {
+    readonly totalBytes: number
+    readonly fileCount: number
+    readonly directoryCount: number
+  }
+  readonly controlInstances: ReadonlyArray<ControlInstanceSummary>
+}
+
 export interface ControlInstanceRegistry {
   readonly create: (config?: { readonly id?: ControlInstanceId }) => Promise<ControlInstanceRuntime>
   readonly ensure: (id: ControlInstanceId) => Promise<ControlInstanceRuntime>
   readonly get: (id: ControlInstanceId) => ControlInstanceRuntime | undefined
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
+  readonly status: () => Promise<ControlInstanceRegistryStatus>
   readonly close: (id: ControlInstanceId) => Promise<boolean>
 }
 
@@ -141,12 +152,45 @@ export const createControlInstanceRegistry = (config: {
     return summaries
   }
 
+  const measureDirectory = async (path: string): Promise<ControlInstanceRegistryStatus['storage']> => {
+    let totalBytes = 0
+    let fileCount = 0
+    let directoryCount = 0
+    const visit = async (entryPath: string): Promise<void> => {
+      let entryStats
+      try {
+        entryStats = await lstat(entryPath)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return
+        throw err
+      }
+      if (entryStats.isDirectory()) {
+        directoryCount += 1
+        for (const entry of await readdir(entryPath)) await visit(join(entryPath, entry))
+        return
+      }
+      if (entryStats.isFile()) {
+        fileCount += 1
+        totalBytes += entryStats.size
+      }
+    }
+    await visit(config.dataDir)
+    return { totalBytes, fileCount, directoryCount }
+  }
+
+  const status = async (): Promise<ControlInstanceRegistryStatus> => ({
+    dataDir: config.dataDir,
+    storage: await measureDirectory(config.dataDir),
+    controlInstances: await listKnown(),
+  })
+
   return {
     create,
     ensure,
     get: (id: ControlInstanceId) => controlInstances.get(id),
     list: () => [...controlInstances.values()],
     listKnown,
+    status,
     close,
   }
 }

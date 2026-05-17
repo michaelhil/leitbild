@@ -16,6 +16,75 @@ interface WSData {
   readonly controlInstanceId: ControlInstanceId
 }
 
+const memoryStatus = (): {
+  readonly rssBytes: number
+  readonly heapTotalBytes: number
+  readonly heapUsedBytes: number
+  readonly externalBytes: number
+  readonly arrayBuffersBytes: number
+} => {
+  const memory = process.memoryUsage()
+  return {
+    rssBytes: memory.rss,
+    heapTotalBytes: memory.heapTotal,
+    heapUsedBytes: memory.heapUsed,
+    externalBytes: memory.external,
+    arrayBuffersBytes: memory.arrayBuffers,
+  }
+}
+
+const emptyRealtimeStatus = (): ReturnType<typeof realtimeStatusFromSockets> => ({
+  websocketClientCount: 0,
+  subscribedControlInstanceCount: 0,
+  controlInstances: [],
+})
+
+const realtimeStatusFromSockets = (
+  socketsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<ServerWebSocket<WSData>>>,
+  subscribedControlInstanceCount: number,
+): {
+  readonly websocketClientCount: number
+  readonly subscribedControlInstanceCount: number
+  readonly controlInstances: ReadonlyArray<{
+    readonly id: ControlInstanceId
+    readonly websocketClientCount: number
+  }>
+} => {
+  const controlInstances = [...socketsByControlInstance.entries()]
+    .map(([id, sockets]) => ({ id, websocketClientCount: sockets.size }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  return {
+    websocketClientCount: controlInstances.reduce((count, item) => count + item.websocketClientCount, 0),
+    subscribedControlInstanceCount,
+    controlInstances,
+  }
+}
+
+export const createHealthDetails = async (config: {
+  readonly registry: ControlInstanceRegistry
+  readonly realtime?: ReturnType<typeof realtimeStatusFromSockets>
+}): Promise<{
+  readonly ok: true
+  readonly generatedAt: string
+  readonly process: {
+    readonly pid: number
+    readonly uptimeSeconds: number
+    readonly memory: ReturnType<typeof memoryStatus>
+  }
+  readonly registry: Awaited<ReturnType<ControlInstanceRegistry['status']>>
+  readonly realtime: ReturnType<typeof realtimeStatusFromSockets>
+}> => ({
+  ok: true,
+  generatedAt: new Date().toISOString(),
+  process: {
+    pid: process.pid,
+    uptimeSeconds: process.uptime(),
+    memory: memoryStatus(),
+  },
+  registry: await config.registry.status(),
+  realtime: config.realtime ?? emptyRealtimeStatus(),
+})
+
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
   const normalizedPath = pathname === '/' || pathname === '/i' || pathname.startsWith('/i/') ? '/index.html' : pathname
   const filePath = normalize(`${uiDistPath}${normalizedPath}`)
@@ -45,6 +114,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     for (const socket of sockets) socket.send(message)
   }
 
+  const realtimeStatus = () => realtimeStatusFromSockets(socketsByControlInstance, unsubscribersByControlInstance.size)
+
   const ensureControlInstanceSubscription = (controlInstanceId: ControlInstanceId): void => {
     if (unsubscribersByControlInstance.has(controlInstanceId)) return
     const runtime = config.registry.get(controlInstanceId)
@@ -58,6 +129,9 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     async fetch(req, serverApi) {
       const url = new URL(req.url)
       if (url.pathname === '/health') return json({ ok: true })
+      if (url.pathname === '/health/details') {
+        return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus() }))
+      }
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, { registry: config.registry })
       if (controlInstanceApiResponse) return controlInstanceApiResponse

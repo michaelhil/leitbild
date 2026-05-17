@@ -107,6 +107,15 @@ const readEventLog = async (path: string): Promise<ReadonlyArray<DomainEvent>> =
   }
 }
 
+const waitFor = async (predicate: () => Promise<boolean>, label: string): Promise<void> => {
+  const deadline = Date.now() + 1_000
+  while (Date.now() < deadline) {
+    if (await predicate()) return
+    await Bun.sleep(10)
+  }
+  throw new Error(`timed out waiting for ${label}`)
+}
+
 describe('control instance persistence policy', () => {
   test('applies volatile object updates to snapshots without retaining them in the durable journal', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
@@ -133,7 +142,10 @@ describe('control instance persistence policy', () => {
       at: nowIso(),
       provenance: movedObject.provenance,
     }])
-    await Bun.sleep(20)
+    await waitFor(
+      async () => runtime.snapshot().objects.find(object => object.id === objectId)?.revision === movedObject.revision,
+      'volatile object update',
+    )
 
     expect(runtime.snapshot().objects.find(object => object.id === objectId)?.spatial.position?.point.coordinates)
       .toEqual(movedObject.spatial.position?.point.coordinates)
@@ -151,7 +163,10 @@ describe('control instance persistence policy', () => {
       at: nowIso(),
       provenance: assignedObject.provenance,
     }])
-    await Bun.sleep(20)
+    await waitFor(
+      async () => (await readEventLog(eventLogPath)).length === 1,
+      'durable object update',
+    )
 
     expect(runtime.events().map(event => event.type)).toEqual(['object.upserted'])
     expect(await readEventLog(eventLogPath)).toHaveLength(1)
