@@ -3,6 +3,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ControlInstanceId, OperationalObject } from '../src/core/model/index.ts'
+import { deleteObjectCommandKind } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -176,6 +177,62 @@ describe('control instance API', () => {
     } finally {
       await registry.close('alpha' as ControlInstanceId)
       await registry.close('beta' as ControlInstanceId)
+    }
+  })
+
+  test('deletes objects through the core command path and clears dangling targets', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/sandbox',
+        { method: 'POST' },
+      )
+      const ambulance = joined.body.snapshot.objects.find(object => object.kind === 'mobile_entity')
+      const incident = joined.body.snapshot.objects.find(object => object.kind === 'incident')
+      if (!ambulance || !incident) throw new Error('missing API test objects')
+
+      await callRoute(registry, '/api/control-instances/sandbox/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actorId: 'actor:test-api-operator',
+          kind: setDestinationCommandKind,
+          targetObjectIds: [ambulance.id, incident.id],
+          payload: {
+            ambulanceId: ambulance.id,
+            destinationId: incident.id,
+          },
+        }),
+      })
+
+      const deleted = await callRoute<{ readonly result: { readonly ok: boolean; readonly reason?: string } }>(
+        registry,
+        '/api/control-instances/sandbox/commands',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            actorId: 'actor:test-api-operator',
+            kind: deleteObjectCommandKind,
+            targetObjectIds: [incident.id],
+            payload: { objectId: incident.id },
+          }),
+        },
+      )
+      expect(deleted.body.result.ok).toBe(true)
+
+      const snapshot = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/sandbox/snapshot',
+      )
+      expect(snapshot.body.snapshot.objects.some(object => object.id === incident.id)).toBe(false)
+      const cleanedAmbulance = snapshot.body.snapshot.objects.find(object => object.id === ambulance.id)
+      expect(cleanedAmbulance?.tasking?.currentTaskId).toBeUndefined()
+      expect(cleanedAmbulance?.spatial.route).toBeUndefined()
+      expect(cleanedAmbulance?.operational.status).toBe('available')
+    } finally {
+      await registry.close('sandbox' as ControlInstanceId)
     }
   })
 

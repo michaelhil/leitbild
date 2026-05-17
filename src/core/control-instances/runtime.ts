@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, Provenance } from '../model/index.ts'
-import { interactionEffectSchema, interactionSignalSchema, nowIso } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../model/index.ts'
+import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso } from '../model/index.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
@@ -145,6 +145,97 @@ export const createControlInstanceRuntime = async (config: {
     }
   }
 
+  const clearDeletedObjectReference = (
+    object: OperationalObject,
+    deletedObjectId: ObjectId,
+    at: IsoTimestamp,
+    command: CommandEnvelope,
+  ): OperationalObject | null => {
+    if (object.tasking?.currentTaskId !== deletedObjectId) return null
+    const { route: _route, ...spatialWithoutRoute } = object.spatial
+    const { intent: _intent, ...operationalWithoutIntent } = object.operational
+    const { tasking: _tasking, ...objectWithoutTasking } = object
+    return {
+      ...objectWithoutTasking,
+      revision: object.revision + 1,
+      spatial: {
+        ...spatialWithoutRoute,
+        ...(object.spatial.position
+          ? {
+              position: {
+                ...object.spatial.position,
+                speedMps: 0,
+                observedAt: at,
+              },
+            }
+          : {}),
+      },
+      operational: {
+        ...operationalWithoutIntent,
+        status: 'available',
+      },
+      provenance: {
+        source: 'operator',
+        causedByCommandId: command.id,
+      },
+      timestamps: {
+        ...object.timestamps,
+        updatedAt: at,
+      },
+    }
+  }
+
+  const coreDeleteEvents = (command: CommandEnvelope, at: IsoTimestamp): ReadonlyArray<DomainEvent> => {
+    const payload = deleteObjectPayloadSchema.parse(command.payload)
+    const snapshot = state.snapshot()
+    const target = snapshot.objects.find(object => object.id === payload.objectId)
+    if (!target) throw new Error(`cannot delete unknown object: ${payload.objectId}`)
+    const cleanupEvents: DomainEvent[] = snapshot.objects.flatMap(object => {
+      const cleaned = clearDeletedObjectReference(object, payload.objectId, at, command)
+      return cleaned
+        ? [{
+            id: eventId(),
+            controlInstanceId: config.id,
+            seq: ++seq,
+            at,
+            provenance: cleaned.provenance,
+            type: 'object.upserted' as const,
+            object: cleaned,
+          }]
+        : []
+    })
+    return [
+      ...cleanupEvents,
+      {
+        id: eventId(),
+        controlInstanceId: config.id,
+        seq: ++seq,
+        at,
+        provenance: { source: 'operator', causedByCommandId: command.id },
+        type: 'object.deleted',
+        objectId: payload.objectId,
+      },
+    ]
+  }
+
+  const handleCoreCommand = async (command: CommandEnvelope): Promise<CommandResult | null> => {
+    if (command.kind !== deleteObjectCommandKind) return null
+    const at = nowIso()
+    try {
+      const events = coreDeleteEvents(command, at)
+      await publishMany(events)
+      await config.simulation.observeCommittedEvents(events)
+      return { ok: true, commandId: command.id, acceptedAt: at }
+    } catch (error) {
+      return {
+        ok: false,
+        commandId: command.id,
+        rejectedAt: at,
+        reason: error instanceof Error ? error.message : String(error),
+      }
+    }
+  }
+
   const commitInteractionEffectsNow = async (
     effects: ReadonlyArray<InteractionEffect>,
     at: IsoTimestamp,
@@ -233,7 +324,7 @@ export const createControlInstanceRuntime = async (config: {
       type: 'command.issued',
       command,
     })
-    const result = await config.simulation.sendCommand(command)
+    const result = await handleCoreCommand(command) ?? await config.simulation.sendCommand(command)
     await publishQueue
     await publish({
       id: eventId(),

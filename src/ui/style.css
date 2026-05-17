@@ -370,10 +370,9 @@ body.rail-resizing {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr) 20px;
+  grid-template-columns: minmax(0, 1fr) 22px;
   align-items: center;
   gap: 8px;
-  text-align: left;
   padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -382,9 +381,59 @@ body.rail-resizing {
   cursor: pointer;
 }
 
+.object-row-main {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .object-status {
+  position: relative;
   display: inline-grid;
   place-items: center;
+}
+
+.object-status.pulse .status-dot {
+  animation: status-pulse 1.3s ease-in-out infinite;
+}
+
+.status-inner-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.status-inner-dot[data-tone="ready"] {
+  background: var(--success);
+}
+
+.status-inner-dot[data-tone="working"] {
+  background: var(--warning);
+}
+
+.status-inner-dot[data-tone="error"] {
+  background: var(--critical);
+}
+
+@keyframes status-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.55);
+    opacity: 0.58;
+  }
 }
 
 .object-row:hover,

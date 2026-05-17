@@ -2,6 +2,14 @@ import { z } from 'zod'
 import { actorIdSchema, clientIdSchema, commandIdSchema, objectIdSchema, controlInstanceIdSchema, type ActorId, type ClientId, type CommandId, type ObjectId, type ControlInstanceId } from './ids.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
+export const deleteObjectCommandKind = 'object.delete'
+
+export const deleteObjectPayloadSchema = z.object({
+  objectId: objectIdSchema,
+})
+
+export type DeleteObjectPayload = z.infer<typeof deleteObjectPayloadSchema>
+
 export interface CommandEnvelope {
   readonly id: CommandId
   readonly controlInstanceId: ControlInstanceId

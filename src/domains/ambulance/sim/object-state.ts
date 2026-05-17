@@ -63,6 +63,7 @@ const makeHospitalDomainData = (at: IsoTimestamp): HospitalDomainData => ({
   type: 'hospital',
   schemaVersion: 1,
   emergencyDepartment: {
+    traumaBedsTotal: confirmedFact(3, at, 'scenario', 1),
     traumaBedsAvailable: confirmedFact(3, at, 'scenario', 1),
     ambulanceBaysAvailable: confirmedFact(2, at, 'scenario', 1),
     patientsReceived: confirmedFact(0, at, 'scenario', 1),

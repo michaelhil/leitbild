@@ -20,6 +20,7 @@
   export let hasNewInfo: (object: OperationalObject) => boolean
   export let markSeen: (object: OperationalObject) => void
   export let selectObject: (object: OperationalObject) => void
+  export let deleteObject: (object: OperationalObject) => Promise<void>
   export let beginPlacement: (type: PackCreateObjectType) => void
   export let cancelPlacement: () => void
   export let toggleTheme: () => void
@@ -48,12 +49,23 @@
   }
 
   const objectStatusTone = (object: OperationalObject): StatusTone => {
+    const presentation = presentationFor(object)
+    if (presentation.status) return presentation.status.tone
     const normalized = object.operational.status.trim().toLowerCase()
     if (normalized.includes('error') || normalized.includes('blocked') || normalized.includes('critical')) return 'error'
     if (normalized.includes('target') || normalized.includes('en_route') || normalized.includes('on_scene') || normalized.includes('limited')) return 'working'
     if (normalized.includes('available') || normalized.includes('open') || normalized.includes('active')) return 'ready'
     return 'idle'
   }
+
+  const objectStatusLabel = (object: OperationalObject): string =>
+    presentationFor(object).status?.label ?? object.operational.status
+
+  const objectStatusPulse = (object: OperationalObject): boolean =>
+    presentationFor(object).status?.pulse === true
+
+  const objectStatusInnerTone = (object: OperationalObject): StatusTone | null =>
+    presentationFor(object).status?.innerTone ?? null
 
   const categoryIcon = (row: CategoryRow): IconName | null => {
     const icon = row.createType?.icon ?? ''
@@ -180,23 +192,38 @@
           <div class="empty-row">{row.category.emptyLabel}</div>
         {/if}
         {#each row.objects as object (object.id)}
-          <button class:selected={selectedControllerId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
-            <span class="object-status"><StatusDot tone={objectStatusTone(object)} label={object.operational.status} /></span>
-            <span>
-              <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-              <span class="object-meta">{presentationFor(object).summary}</span>
-              {#each visibleLinesForObject(row.category.id, object) as line (line)}
-                <span class="object-meta"><strong>{lineKey(line)}:</strong> {lineValue(line)}</span>
-              {/each}
-            </span>
-            <span class="row-info" aria-label="Show {object.label} details">
-              ?
-              <span class="row-tooltip">
-                <strong>{object.label}</strong>
-                {#each detailLines(object) as line}<span>{line}</span>{/each}
+          <div class:selected={selectedControllerId === object.id} class:has-new-info={hasNewInfo(object)} class="object-row">
+            <button class="object-row-main" type="button" on:mouseenter={() => markSeen(object)} on:focus={() => markSeen(object)} on:click={() => selectObject(object)}>
+              <span class="object-status" class:pulse={objectStatusPulse(object)}>
+                <StatusDot tone={objectStatusTone(object)} label={objectStatusLabel(object)} />
+                {#if objectStatusInnerTone(object)}
+                  <span class="status-inner-dot" data-tone={objectStatusInnerTone(object)}></span>
+                {/if}
               </span>
-            </span>
-          </button>
+              <span>
+                <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
+                <span class="object-meta">{presentationFor(object).summary}</span>
+                {#each visibleLinesForObject(row.category.id, object) as line (line)}
+                  <span class="object-meta"><strong>{lineKey(line)}:</strong> {lineValue(line)}</span>
+                {/each}
+              </span>
+              <span class="row-info" aria-label="Show {object.label} details">
+                ?
+                <span class="row-tooltip">
+                  <strong>{object.label}</strong>
+                  {#each detailLines(object) as line}<span>{line}</span>{/each}
+                </span>
+              </span>
+            </button>
+            <IconButton
+              label="Delete {object.label}"
+              title="Delete {object.label}"
+              icon={X}
+              size={13}
+              variant="bare"
+              onClick={() => deleteObject(object)}
+            />
+          </div>
         {/each}
       {/if}
     </section>

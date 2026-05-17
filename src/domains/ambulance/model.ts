@@ -65,6 +65,7 @@ export const hospitalDomainDataSchema = z.object({
   type: z.literal('hospital'),
   schemaVersion: z.literal(1),
   emergencyDepartment: z.object({
+    traumaBedsTotal: knowledgeFactSchema(z.number().int().nonnegative()),
     traumaBedsAvailable: knowledgeFactSchema(z.number().int().nonnegative()),
     ambulanceBaysAvailable: knowledgeFactSchema(z.number().int().nonnegative()),
     patientsReceived: knowledgeFactSchema(z.number().int().nonnegative()).optional(),

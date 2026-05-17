@@ -2,6 +2,7 @@
   import type { Component } from 'svelte'
   import { onDestroy, onMount, tick } from 'svelte'
   import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
+  import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackCreationGeometry, PackObjectPresentation } from '../core/packs/protocol.ts'
   import type { TrafficSeverity } from '../domains/traffic/model.ts'
@@ -243,6 +244,11 @@
     }
     commandStatus = 'Command accepted'
     await syncControlInstanceSnapshot()
+  }
+
+  const deleteObject = async (object: OperationalObject): Promise<void> => {
+    commandStatus = `Deleting ${object.label}`
+    await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
   }
 
   const createObject = async (): Promise<void> => {
@@ -557,6 +563,7 @@
       {hasNewInfo}
       {markSeen}
       {selectObject}
+      {deleteObject}
       {beginPlacement}
       {cancelPlacement}
       {toggleTheme}

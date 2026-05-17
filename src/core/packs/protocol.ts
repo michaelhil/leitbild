@@ -13,6 +13,14 @@ export interface PackObjectPresentation {
   readonly color: string
   readonly summary: string
   readonly detailLines: ReadonlyArray<string>
+  readonly status?: PackObjectStatusPresentation
+}
+
+export interface PackObjectStatusPresentation {
+  readonly tone: 'ready' | 'working' | 'error' | 'idle'
+  readonly label: string
+  readonly pulse?: boolean
+  readonly innerTone?: 'ready' | 'working' | 'error' | 'idle'
 }
 
 export interface PackCreateObjectType {
