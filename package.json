@@ -10,12 +10,19 @@
     "build:ui": "vite build",
     "check": "tsc --noEmit",
     "deploy": "bun run scripts/deploy.ts",
+    "maps:download": "bun run scripts/maps/download-osm.ts",
+    "maps:fonts": "bun run scripts/maps/install-map-fonts.ts",
+    "maps:build": "bun run scripts/maps/build-vector-tiles.ts",
+    "maps:rebuild": "bun run scripts/maps/rebuild-vector-map.ts",
+    "maps:promote": "bun run scripts/maps/promote-vector-tiles.ts",
+    "maps:status": "bun run scripts/maps/map-status.ts",
     "test": "bun test",
     "health": "bun run check && bun test && bun run build:ui"
   },
   "dependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "maplibre-gl": "^5.0.0",
+    "pmtiles": "^4.4.1",
     "svelte": "^5.0.0",
     "vite": "^6.0.0",
     "zod": "^3.25.0"

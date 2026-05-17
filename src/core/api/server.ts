@@ -3,6 +3,7 @@ import type { ServerWebSocket } from 'bun'
 import { controlInstanceIdSchema, type ControlInstanceId } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
+import { createMapArtifactConfigFromEnv, currentPmtilesResponse, mapCapabilitiesResponse, mapStyleResponse, type MapArtifactConfig } from '../../map/artifacts.ts'
 import { handleControlInstanceApi } from './control-instance-routes.ts'
 import { json } from './responses.ts'
 
@@ -10,6 +11,7 @@ interface ServerConfig {
   readonly registry: ControlInstanceRegistry
   readonly port?: number
   readonly uiDistPath?: string
+  readonly mapArtifacts?: MapArtifactConfig
 }
 
 interface WSData {
@@ -104,6 +106,7 @@ const serveStatic = async (pathname: string, uiDistPath: string): Promise<Respon
 export const createServer = (config: ServerConfig): { readonly stop: () => void; readonly port: number } => {
   const port = config.port ?? Number(process.env.PORT ?? 3000)
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
+  const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
   const socketsByControlInstance = new Map<ControlInstanceId, Set<ServerWebSocket<WSData>>>()
   const unsubscribersByControlInstance = new Map<ControlInstanceId, () => void>()
 
@@ -132,6 +135,9 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (url.pathname === '/health/details') {
         return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus() }))
       }
+      if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
+      if (url.pathname === '/map/style.json') return mapStyleResponse()
+      if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, { registry: config.registry })
       if (controlInstanceApiResponse) return controlInstanceApiResponse

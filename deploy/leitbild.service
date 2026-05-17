@@ -8,6 +8,7 @@ Type=simple
 WorkingDirectory=/opt/leitbild/app
 Environment=PORT=4177
 Environment=LEITBILD_DATA_DIR=/opt/leitbild/data
+Environment=LEITBILD_MAP_ROOT=/opt/leitbild/maps
 Environment=LEITBILD_ROUTING_PROVIDER=osrm
 Environment=LEITBILD_OSRM_URL=http://127.0.0.1:5000
 ExecStart=/root/.bun/bin/bun run src/index.ts

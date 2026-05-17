@@ -1,3 +1,15 @@
 leitbild.samsinn.app {
+  handle /map/tiles/current.pmtiles {
+    root * /opt/leitbild/maps/current
+    rewrite * /norway.pmtiles
+    header Content-Type application/vnd.pmtiles
+    file_server
+  }
+
+  handle_path /map/fonts/* {
+    root * /opt/leitbild/maps/fonts
+    file_server
+  }
+
   reverse_proxy 127.0.0.1:4177
 }

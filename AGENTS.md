@@ -40,10 +40,13 @@
 - Traffic conditions should first be aggregate zone/segment objects. Do not add individual traffic vehicles until a feature actually needs per-vehicle behavior and culling/performance rules are in place.
 - Route impacts from traffic must be canonical and visible. Do not silently reroute a mobile asset without an explicit command or declared automation policy.
 - Treat AI outputs as untrusted input: AI agents may issue commands or emit interaction signals, but only validated handlers and committed domain events can change canonical state.
+- Treat the self-hosted vector map artifact as contextual data, not operational truth. Simulation providers and UI surfaces must discover map-context capabilities through `/map/capabilities.json` instead of hard-coding tile assumptions.
+- Do not reintroduce raster OSM base maps or raster fallback paths. Leitbild's base map is vector-only.
 
 ## Map Rendering Rules
 
 - Use MapLibre as Leitbild's base geospatial rendering engine.
+- Use self-hosted PMTiles vector tiles as the only base map source. The base map style must load from `/map/style.json`; the tile source must load from `/map/tiles/current.pmtiles`.
 - Render geospatial truth with native MapLibre sources/layers: entity positions, routes, trails, zones, uncertainty geometry, alert areas, selection halos, and large-fleet views.
 - Do not use MapLibre DOM markers for core object rendering; DOM marker anchoring can drift from the true projected coordinate across zoom levels.
 - Use Lucide-style SVG artwork only as MapLibre-native registered images/symbols, not as free-floating marker DOM.

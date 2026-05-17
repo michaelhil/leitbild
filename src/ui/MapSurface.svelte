@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
+  import { Protocol as PmtilesProtocol } from 'pmtiles'
   import type { GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -50,6 +51,7 @@
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
+  let pmtilesProtocolRegistered = false
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -378,32 +380,20 @@
   }
 
   onMount(() => {
+    const protocol = new PmtilesProtocol({ metadata: true })
+    maplibregl.addProtocol('pmtiles', protocol.tile)
+    pmtilesProtocolRegistered = true
     const current = new maplibregl.Map({
       container: mapElement,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap contributors',
-          },
-        },
-        layers: [{
-          id: 'osm',
-          type: 'raster',
-          source: 'osm',
-          paint: {
-            'raster-contrast': 0.18,
-            'raster-saturation': 0.12,
-          },
-        }],
-      },
+      style: '/map/style.json',
       center: [10.7522, 59.9139],
       zoom: 12,
     })
     map = current
+    current.on('error', (event) => {
+      const error = event.error
+      onMapError(error instanceof Error ? error.message : 'Vector map failed to load')
+    })
     current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
     current.on('click', (event) => {
       if (!placementMode) return
@@ -435,6 +425,10 @@
     stopDisplayAnimation()
     hideMarkerPopup()
     map?.remove()
+    if (pmtilesProtocolRegistered) {
+      maplibregl.removeProtocol('pmtiles')
+      pmtilesProtocolRegistered = false
+    }
     map = null
     loaded = false
   })

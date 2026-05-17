@@ -88,6 +88,18 @@ _Avoid_: modeling every traffic need as individual cars before aggregate traffic
 Canonical route-awareness state describing how another object or condition affects a moving object's planned route, ETA, or movement assumptions.
 _Avoid_: hiding route impact only inside a simulation provider's private state
 
+**Vector Map Artifact**:
+The self-hosted PMTiles archive containing MVT vector tiles used as Leitbild's base map context.
+_Avoid_: Raster Tile, OSM PNG Tile, or treating the map artifact as operational truth
+
+**Map Capability Manifest**:
+The machine-readable contract describing available vector tile layers, fields, geometry, intended use, and schema version.
+_Avoid_: relying on prose docs or hard-coded tile assumptions inside simulation providers
+
+**Map Context Layer**:
+A vector tile layer that provides environmental or infrastructure context such as roads, POIs, water, buildings, land use, or boundaries.
+_Avoid_: Operational Object when the feature is static OSM-derived context
+
 **Projected State**:
 The current canonical operational picture for a control instance, held by the Control Instance runtime and persisted in snapshots for fast reload.
 _Avoid_: treating the durable journal or provider-private projections as the current source for UI/API/AI reads
@@ -124,6 +136,8 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - **Projected State** is the canonical current Leitbild truth for UI, API, AI agents, metrics, and interaction handlers.
 - The **Durable Journal** is meaningful accepted history for audit, debugging, replay of decisions, and later research instrumentation.
 - **Traffic Conditions** may create **Route Impacts** for ambulances or future mobile assets, but rerouting remains an explicit command or future policy decision.
+- A **Vector Map Artifact** provides **Map Context Layers** for orientation and contextual reasoning, but not canonical operational state.
+- The **Map Capability Manifest** is the contract for discovering which **Map Context Layers** and properties exist.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 

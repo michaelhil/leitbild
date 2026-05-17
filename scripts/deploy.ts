@@ -19,7 +19,7 @@ await $`bun run check`
 await $`bun test`
 await $`bun run build:ui`
 
-await ssh('mkdir -p /opt/leitbild/app /opt/leitbild/data /opt/leitbild/osrm-data')
+await ssh('mkdir -p /opt/leitbild/app /opt/leitbild/data /opt/leitbild/osrm-data /opt/leitbild/maps/sources /opt/leitbild/maps/builds /opt/leitbild/maps/releases /opt/leitbild/maps/fonts')
 await $`rsync -az --delete --exclude node_modules --exclude .git --exclude data -e "ssh -p ${port}" ./ ${target}:/opt/leitbild/app/`
 
 await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
