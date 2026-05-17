@@ -506,21 +506,29 @@ body.rail-resizing {
 }
 
 .object-meta {
-  display: block;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   color: var(--muted);
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  margin-top: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.object-meta strong {
+  font-weight: 650;
+}
+
 .object-row-details {
   grid-column: 1 / -1;
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
   min-width: 0;
-  padding: 0 46px 7px 26px;
+  padding: 0 46px 4px 26px;
 }
 
 .row-tooltip,
@@ -528,8 +536,6 @@ body.rail-resizing {
   position: absolute;
   z-index: 30;
   display: none;
-  min-width: 230px;
-  max-width: 310px;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px;
@@ -539,6 +545,11 @@ body.rail-resizing {
   font-size: 12px;
   line-height: 1.35;
   pointer-events: none;
+}
+
+.marker-hover-card {
+  min-width: 230px;
+  max-width: 310px;
 }
 
 .row-info {
@@ -566,8 +577,10 @@ body.rail-resizing {
 }
 
 .row-tooltip {
-  left: 0;
+  right: 0;
   top: 24px;
+  width: min(260px, calc(var(--rail-width, 360px) - 64px));
+  max-width: calc(100vw - 24px);
   pointer-events: none;
   text-align: left;
 }
