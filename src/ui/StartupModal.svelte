@@ -5,6 +5,7 @@
   import { startupHasFailed, startupIsReady, type StartupStep } from './startup.ts'
 
   export let steps: ReadonlyArray<StartupStep>
+  export let tone: StatusTone
   export let retry: () => Promise<void>
   export let close: () => void
   export let autoCloseWhenReady = true
@@ -29,11 +30,6 @@
 
   const failed = (): boolean =>
     startupHasFailed(steps)
-
-  const titleTone = (): StatusTone => {
-    if (failed()) return 'error'
-    return ready() ? 'ready' : 'working'
-  }
 
   const elapsedSeconds = (step: StartupStep): string => {
     if (!step.startedAtMs) return ''
@@ -103,7 +99,7 @@
     closeOnBackdrop={!closeWhenReadyOnly || ready()}
     closeOnEscape={!closeWhenReadyOnly || ready()}
     showClose={false}
-    titleTone={titleTone()}
+    titleTone={tone}
     size="medium"
   >
   <ol class="startup-steps" role="status" aria-live="polite">

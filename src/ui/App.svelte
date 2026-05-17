@@ -29,12 +29,15 @@
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
   import StartupModal from './StartupModal.svelte'
+  import type { StatusTone } from './components/StatusDot.svelte'
   import { getTheme, initialTheme, toggleTheme as toggleThemeMode, type ThemeMode } from './theme.ts'
   import {
     completeStartupStep,
     createStartupSteps,
     failStartupStep,
     resetStartupStepsAfter,
+    startupHasFailed,
+    startupIsReady,
     startupModalShouldShow,
     startStartupStep,
     type StartupStep,
@@ -82,6 +85,7 @@
   let railResizing = false
   let railWidthBeforeResize = defaultRailWidth
   let layoutRevision = 0
+  let systemStatusTone: StatusTone = 'working'
 
   const readStoredRailWidth = (): number => {
     try {
@@ -539,6 +543,7 @@
   $: selectedControllerObject = selectedControllerObjectFor(objects, selectedControllerId, activePack)
   $: categoryRows = categoryRowsFor(objects, activePack)
   $: placementCursor = placementCursorFor(placementMode, activePack)
+  $: systemStatusTone = startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working'
   $: startupModalVisible = startupModalShouldShow({
     routeMode,
     dismissed: startupDismissed,
@@ -552,6 +557,7 @@
   <div class:rail-collapsed={railWidth === 0} class="app-shell" style={`--rail-width: ${railWidth}px`}>
     <ControlRail
       {status}
+      {systemStatusTone}
       {appVersion}
       {theme}
       collapsed={railWidth === 0}
@@ -606,6 +612,7 @@
 {#if startupModalVisible}
   <StartupModal
     steps={startupSteps}
+    tone={systemStatusTone}
     retry={joinControlInstance}
     close={closeStartupModal}
     autoCloseWhenReady={!startupStatusModalOpen}

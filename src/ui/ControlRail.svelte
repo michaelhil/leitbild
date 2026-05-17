@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, onMount } from 'svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { ChevronDown, ChevronRight, Eye, EyeOff, Moon, Plus, Sun, X } from 'lucide-svelte'
@@ -9,6 +10,7 @@
   import type { CategoryRow } from './types.ts'
 
   export let status: string
+  export let systemStatusTone: StatusTone
   export let appVersion: string
   export let theme: ThemeMode
   export let collapsed: boolean
@@ -38,14 +40,6 @@
     if (placementKind === 'route') return `Click start and end points for new ${placementMode.label.toLowerCase()}`
     if (placementKind === 'polygon') return `Click area vertices; press Enter to finish`
     return `Click map to place new ${placementMode.label.toLowerCase()}`
-  }
-
-  const statusTone = (): StatusTone => {
-    const normalized = status.trim().toLowerCase()
-    if (normalized === 'connected' || normalized === 'ready') return 'ready'
-    if (normalized.includes('error') || normalized.includes('disconnect') || normalized.includes('fail')) return 'error'
-    if (normalized.includes('starting') || normalized.includes('creating')) return 'working'
-    return 'idle'
   }
 
   const objectStatusTone = (object: OperationalObject): StatusTone => {
@@ -121,6 +115,22 @@
     if (selected.size === 0) return []
     return detailLines(object).filter(line => selected.has(lineKey(line)))
   }
+
+  const handleOutsideFieldMenuClick = (event: MouseEvent): void => {
+    if (!openFieldCategoryId) return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (target.closest('.field-menu-wrap')) return
+    openFieldCategoryId = null
+  }
+
+  onMount(() => {
+    window.addEventListener('click', handleOutsideFieldMenuClick, { capture: true })
+  })
+
+  onDestroy(() => {
+    window.removeEventListener('click', handleOutsideFieldMenuClick, { capture: true })
+  })
 </script>
 
 <aside class="control-rail" aria-hidden={collapsed} inert={collapsed}>
@@ -145,7 +155,7 @@
               <IconButton
                 label="Choose visible {row.category.label.toLowerCase()} data"
                 title="Choose visible {row.category.label.toLowerCase()} data"
-                icon={openFieldCategoryId === row.category.id ? EyeOff : Eye}
+                icon={Eye}
                 size={14}
                 variant="bare"
                 onClick={() => openFieldCategoryId = openFieldCategoryId === row.category.id ? null : row.category.id}
@@ -202,7 +212,6 @@
               </span>
               <span>
                 <span class="row-title">{object.label}{#if hasNewInfo(object)} <span class="new-info-dot">new</span>{/if}</span>
-                <span class="object-meta">{presentationFor(object).summary}</span>
                 {#each visibleLinesForObject(row.category.id, object) as line (line)}
                   <span class="object-meta"><strong>{lineKey(line)}:</strong> {lineValue(line)}</span>
                 {/each}
@@ -231,7 +240,7 @@
 
   <footer class="system-footer">
     <button class="status-dot-button" type="button" aria-label="Show Leitbild status" title={status} on:click={openStatusModal}>
-      <StatusDot tone={statusTone()} label={status} />
+      <StatusDot tone={systemStatusTone} label={status} />
     </button>
     <span class="brand">Leitbild</span>
     <span class="version">v{appVersion}</span>

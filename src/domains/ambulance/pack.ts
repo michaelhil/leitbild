@@ -158,8 +158,7 @@ const incidentDetails = (object: OperationalObject, data: IncidentDomainData, ob
 ]
 
 const hospitalDetails = (data: HospitalDomainData): ReadonlyArray<string> => [
-  `Trauma beds used: ${traumaBedsUsedText(data)}`,
-  `Trauma beds available: ${factText(data.emergencyDepartment.traumaBedsAvailable, String)}`,
+  `Trauma beds: ${traumaBedsUsedText(data)}`,
   `Ambulance bays: ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`,
   `Patients received: ${factText(data.emergencyDepartment.patientsReceived, String)}`,
   `Capabilities: ${listText(data.capabilities)}`,
