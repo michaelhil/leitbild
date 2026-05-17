@@ -35,7 +35,7 @@ describe('pack architecture', () => {
     const createCommand = ambulancePack.buildCreateObjectCommand(
       'hospital',
       'Hospital 2',
-      geoPointFromLonLat(10.75, 59.92),
+      { kind: 'point', point: geoPointFromLonLat(10.75, 59.92) },
     )
     const setTargetCommand = ambulancePack.buildSetTargetCommand(controller, target, { objects })
     const cancelCommand = ambulancePack.buildCancelTargetCommand(controller, { objects })

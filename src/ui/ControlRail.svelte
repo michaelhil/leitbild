@@ -20,6 +20,14 @@
   export let beginPlacement: (type: PackCreateObjectType) => void
   export let cancelPlacement: () => void
   export let cancelDestination: () => Promise<void>
+
+  const placementText = (): string => {
+    if (!placementMode) return ''
+    const placementKind = placementMode.placementKind ?? 'point'
+    if (placementKind === 'route') return `Click start and end points for new ${placementMode.label.toLowerCase()}`
+    if (placementKind === 'polygon') return `Click area vertices; press Enter to finish`
+    return `Click map to place new ${placementMode.label.toLowerCase()}`
+  }
 </script>
 
 <aside class="control-rail">
@@ -30,7 +38,7 @@
 
   {#if placementMode}
       <div class="placement-banner">
-        Click map to place new {placementMode.label.toLowerCase()}
+        {placementText()}
       <button class="icon-button" on:click|stopPropagation={cancelPlacement}>{@html iconHtml('x', { size: 16 })}</button>
     </div>
   {/if}

@@ -1,11 +1,12 @@
-import type { GeoJsonLineString, ObjectId } from '../../core/model/index.ts'
+import type { GeoJsonLineString, GeoJsonPolygon, ObjectId } from '../../core/model/index.ts'
 import { lat, lon } from '../../core/model/index.ts'
-import type { TrafficCondition, TrafficSeverity } from './model.ts'
+import type { TrafficCondition, TrafficGeometryMode, TrafficSeverity } from './model.ts'
 
 export interface TrafficConditionSeed {
   readonly id: ObjectId
   readonly label: string
-  readonly geometry: GeoJsonLineString
+  readonly geometryMode: TrafficGeometryMode
+  readonly geometry: GeoJsonLineString | GeoJsonPolygon
   readonly condition: TrafficCondition
   readonly severity: TrafficSeverity
   readonly speedFactor: number
@@ -22,6 +23,7 @@ export const createOsloTrafficScenario = (): TrafficScenario => ({
     {
       id: 'traffic:ring2-slowdown' as ObjectId,
       label: 'Ring 2 slowdown',
+      geometryMode: 'road_segment',
       geometry: {
         type: 'LineString',
         coordinates: [

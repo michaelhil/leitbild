@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
-  import type { GeoJsonPoint, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
+  import type { GeoJsonPoint, GeoJsonPolygon, OperationalObject, ControlInstanceId } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackCreationGeometry, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { TrafficSeverity } from '../domains/traffic/model.ts'
   import { ambulancePack } from '../domains/ambulance/pack.ts'
   import { trafficPack } from '../domains/traffic/pack.ts'
   import { isIconName, type IconName } from './icons.ts'
@@ -49,6 +50,7 @@
   let selectedControllerId: string | null = null
   let placementMode: PackCreateObjectType | null = null
   let createDraft: CreateDraft | null = null
+  let placementPoints: GeoJsonPoint[] = []
   let status = 'Starting'
   let commandStatus = ''
   let routeMode: 'picker' | 'control-instance' = 'control-instance'
@@ -161,10 +163,16 @@
     createDraft = null
     placementMode = null
     commandStatus = `Creating ${draft.objectType.label}`
+    const parameters = {
+      severity: draft.trafficSeverity,
+      speedFactor: draft.trafficSpeedFactor,
+      reason: draft.trafficReason,
+    }
     const command = activePack.buildCreateObjectCommand(
       draft.objectType.id,
       draft.label.trim() || defaultName(draft.objectType),
-      draft.point,
+      draft.geometry,
+      parameters,
     )
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
@@ -313,28 +321,92 @@
     if (!isIconName(type.icon)) throw new Error(`pack ${activePack.id} requested unknown create cursor icon: ${type.icon}`)
     placementMode = type
     createDraft = null
-    commandStatus = `Click map to place new ${type.label.toLowerCase()}`
+    placementPoints = []
+    const placementKind = type.placementKind ?? 'point'
+    commandStatus = placementKind === 'route'
+      ? `Click start point for new ${type.label.toLowerCase()}`
+      : placementKind === 'polygon'
+        ? `Click polygon vertices for new ${type.label.toLowerCase()}; press Enter to finish`
+        : `Click map to place new ${type.label.toLowerCase()}`
+  }
+
+  const defaultTrafficSeverity = (): TrafficSeverity => 'high'
+
+  const closePolygon = (points: ReadonlyArray<GeoJsonPoint>): GeoJsonPolygon => {
+    if (points.length < 3) throw new Error('traffic area requires at least three points')
+    const coordinates = points.map(point => point.coordinates)
+    const first = coordinates[0]
+    if (!first) throw new Error('traffic area requires at least one point')
+    const last = coordinates[coordinates.length - 1]
+    const closed = last && last[0] === first[0] && last[1] === first[1]
+      ? coordinates
+      : [...coordinates, first]
+    return { type: 'Polygon', coordinates: [closed] }
+  }
+
+  const defaultTrafficDraftFields = (type: PackCreateObjectType): Pick<CreateDraft, 'trafficSeverity' | 'trafficSpeedFactor' | 'trafficReason'> =>
+    type.id === 'traffic_road_segment' || type.id === 'traffic_area'
+      ? {
+          trafficSeverity: defaultTrafficSeverity(),
+          trafficSpeedFactor: 0.55,
+          trafficReason: 'Operator-created traffic condition',
+        }
+      : {}
+
+  const createDraftFor = (type: PackCreateObjectType, geometry: PackCreationGeometry): void => {
+    createDraft = { objectType: type, geometry, label: defaultName(type), ...defaultTrafficDraftFields(type) }
+    placementMode = null
+    placementPoints = []
   }
 
   const placeObjectDraft = (point: GeoJsonPoint): void => {
     if (!placementMode) return
-    const type = placementMode
-    createDraft = {
-      objectType: type,
-      point,
-      label: defaultName(type),
+    const placementKind = placementMode.placementKind ?? 'point'
+    if (placementKind === 'point') {
+      createDraftFor(placementMode, { kind: 'point', point })
+      return
     }
-    placementMode = null
+    if (placementKind === 'route') {
+      const nextPoints = [...placementPoints, point]
+      placementPoints = nextPoints
+      if (nextPoints.length < 2) {
+        commandStatus = `Click end point for new ${placementMode.label.toLowerCase()}`
+        return
+      }
+      const from = nextPoints[0]
+      const to = nextPoints[1]
+      if (!from || !to) throw new Error('route traffic requires start and end points')
+      createDraftFor(placementMode, { kind: 'route', from, to })
+      return
+    }
+    placementPoints = [...placementPoints, point]
+    commandStatus = placementPoints.length < 3
+      ? `Click ${3 - placementPoints.length} more point${3 - placementPoints.length === 1 ? '' : 's'} for new ${placementMode.label.toLowerCase()}`
+      : `Press Enter to finish ${placementMode.label.toLowerCase()} polygon`
+  }
+
+  const finishPolygonPlacement = (): void => {
+    if (!placementMode || (placementMode.placementKind ?? 'point') !== 'polygon') return
+    if (placementPoints.length < 3) {
+      commandStatus = `Traffic area needs ${3 - placementPoints.length} more point${3 - placementPoints.length === 2 ? 's' : ''}`
+      return
+    }
+    createDraftFor(placementMode, { kind: 'polygon', polygon: closePolygon(placementPoints) })
   }
 
   const cancelPlacement = (): void => {
     placementMode = null
     createDraft = null
+    placementPoints = []
   }
 
   onMount(() => {
     const handleKeydown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') cancelPlacement()
+      if (event.key === 'Enter' && placementMode && (placementMode.placementKind ?? 'point') === 'polygon') {
+        event.preventDefault()
+        finishPolygonPlacement()
+      }
     }
     const handleClick = (event: MouseEvent): void => {
       if (!placementMode) return

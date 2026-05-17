@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ObjectId, ControlInstanceId } from '../src/core/model/index.ts'
-import { nowIso } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, DomainId, ObjectId, ControlInstanceId } from '../src/core/model/index.ts'
+import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/domains/ambulance/commands.ts'
 import { createOsloAmbulanceScenario } from '../src/domains/ambulance/scenario.ts'
 import { createAmbulanceSimEngine } from '../src/domains/ambulance/sim/engine.ts'
@@ -8,7 +8,7 @@ import { ambulancePack } from '../src/domains/ambulance/pack.ts'
 import { trafficPack } from '../src/domains/traffic/pack.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/domains/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createObjectFeatureCollection, createRouteFeatureCollection, createTrafficLineFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
+import { createObjectFeatureCollection, createRouteFeatureCollection, createTrafficAreaFeatureCollection, createTrafficLineFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
 
 const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
@@ -132,9 +132,46 @@ describe('map feature projection', () => {
       expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
       expect(trafficFeatures.features).toHaveLength(1)
       expect(trafficFeatures.features[0]?.id).toBe('traffic:ring2-slowdown')
-      expect(trafficFeatures.features[0]?.properties.color).toBe('#c2410c')
+      expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
     } finally {
       await connection.close()
     }
+  })
+
+  test('projects traffic areas into native MapLibre polygon features', () => {
+    const polygonObject = {
+      id: 'traffic:test-area' as ObjectId,
+      kind: 'zone' as const,
+      domain: 'traffic' as DomainId,
+      label: 'Test area',
+      lifecycle: 'active' as const,
+      revision: 0,
+      spatial: {
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [[
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.92).coordinates,
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+          ]],
+        },
+        frame: { kind: 'wgs84' as const },
+      },
+      operational: { status: 'slowdown', priority: 'high' as const, mode: 'simulated' as const },
+      alerts: [],
+      provenance: { source: 'simulator' as const },
+      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
+    }
+
+    const trafficFeatures = createTrafficAreaFeatureCollection(
+      [polygonObject],
+      () => ({ color: '#dc2626', summary: 'area · high' }),
+    )
+
+    expect(mapSourceIds.trafficAreas).toBe('traffic-area-source')
+    expect(trafficFeatures.features).toHaveLength(1)
+    expect(trafficFeatures.features[0]?.geometry.type).toBe('Polygon')
+    expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
   })
 })

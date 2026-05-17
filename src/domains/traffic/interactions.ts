@@ -7,6 +7,12 @@ const routePlannedPayloadSchema = z.object({
   objectId: z.string().min(1).transform(value => value as ObjectId),
 })
 
+const trafficChangedPayloadSchema = z.object({
+  objectId: z.string().min(1).transform(value => value as ObjectId),
+})
+
+export const trafficConditionChangedSignalType = 'traffic.condition.changed'
+
 const trafficDataOf = (object: OperationalObject): TrafficDomainData | null => {
   const parsed = trafficDomainDataSchema.safeParse(object.domainData)
   return parsed.success ? parsed.data : null
@@ -14,6 +20,21 @@ const trafficDataOf = (object: OperationalObject): TrafficDomainData | null => {
 
 const pointDistanceToLine = (point: GeoJsonPoint, line: GeoJsonLineString): number =>
   Math.min(...line.coordinates.map(coordinate => routeDistanceMeters(point, pointFromPosition(coordinate))))
+
+const pointInPolygon = (point: GeoJsonPoint, polygon: NonNullable<OperationalObject['spatial']['geometry']> & { readonly type: 'Polygon' }): boolean => {
+  const ring = polygon.coordinates[0]
+  if (!ring) return false
+  const [x, y] = point.coordinates
+  let inside = false
+  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index++) {
+    const [xi, yi] = ring[index] ?? [0, 0]
+    const [xj, yj] = ring[previousIndex] ?? [0, 0]
+    const intersects = ((yi > y) !== (yj > y))
+      && (x < (xj - xi) * (y - yi) / ((yj - yi) || Number.EPSILON) + xi)
+    if (intersects) inside = !inside
+  }
+  return inside
+}
 
 const routeIntersectsTraffic = (
   route: GeoJsonLineString,
@@ -25,15 +46,7 @@ const routeIntersectsTraffic = (
     return route.coordinates.some(coordinate => pointDistanceToLine(pointFromPosition(coordinate), geometry) <= 220)
   }
   if (geometry.type === 'Polygon') {
-    const ring = geometry.coordinates[0]
-    if (!ring) return false
-    const lons = ring.map(coordinate => coordinate[0])
-    const lats = ring.map(coordinate => coordinate[1])
-    const minLon = Math.min(...lons)
-    const maxLon = Math.max(...lons)
-    const minLat = Math.min(...lats)
-    const maxLat = Math.max(...lats)
-    return route.coordinates.some(([lon, lat]) => lon >= minLon && lon <= maxLon && lat >= minLat && lat <= maxLat)
+    return route.coordinates.some(coordinate => pointInPolygon(pointFromPosition(coordinate), geometry))
   }
   return false
 }
@@ -138,8 +151,17 @@ const effectsForRoute = (
 export const createTrafficRouteImpactHandler = (): InteractionHandler => ({
   id: 'traffic.route-impact-handler',
   priority: 200,
-  accepts: signal => signal.type === assetRoutePlannedSignalType,
+  accepts: signal => signal.type === assetRoutePlannedSignalType || signal.type === trafficConditionChangedSignalType,
   handle: async ({ signal, snapshot }): Promise<ReadonlyArray<InteractionEffect>> => {
+    if (signal.type === trafficConditionChangedSignalType) {
+      const payload = trafficChangedPayloadSchema.safeParse(signal.payload)
+      if (!payload.success) return []
+      const trafficObject = snapshot.objects.find(candidate => candidate.id === payload.data.objectId)
+      if (!trafficObject || trafficDataOf(trafficObject) === null) return []
+      return snapshot.objects
+        .filter(candidate => candidate.kind === 'mobile_entity' && candidate.spatial.route?.planned)
+        .flatMap(object => effectsForRoute(object, [trafficObject], signal.id, signal.controlInstanceId, signal.at))
+    }
     const payload = routePlannedPayloadSchema.safeParse(signal.payload)
     if (!payload.success) return []
     const object = snapshot.objects.find(candidate => candidate.id === payload.data.objectId)

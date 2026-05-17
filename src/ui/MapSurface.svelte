@@ -8,6 +8,7 @@
   import {
     createObjectFeatureCollection,
     createRouteFeatureCollection,
+    createTrafficAreaFeatureCollection,
     createTrafficLineFeatureCollection,
     mapLayerIds,
     mapSourceIds,
@@ -86,8 +87,10 @@
   const refreshTrafficSource = (): void => {
     const current = map
     if (!current || !loaded) return
-    const source = current.getSource(mapSourceIds.trafficLines) as GeoJSONSource | undefined
-    if (source) source.setData(createTrafficLineFeatureCollection([...objects], presentationFor))
+    const lineSource = current.getSource(mapSourceIds.trafficLines) as GeoJSONSource | undefined
+    const areaSource = current.getSource(mapSourceIds.trafficAreas) as GeoJSONSource | undefined
+    if (lineSource) lineSource.setData(createTrafficLineFeatureCollection([...objects], presentationFor))
+    if (areaSource) areaSource.setData(createTrafficAreaFeatureCollection([...objects], presentationFor))
   }
 
   const refreshSources = (): void => {
@@ -214,15 +217,57 @@
       type: 'geojson',
       data: createTrafficLineFeatureCollection([...objects], presentationFor),
     })
+    current.addSource(mapSourceIds.trafficAreas, {
+      type: 'geojson',
+      data: createTrafficAreaFeatureCollection([...objects], presentationFor),
+    })
+    current.addLayer({
+      id: mapLayerIds.trafficAreaFill,
+      type: 'fill',
+      source: mapSourceIds.trafficAreas,
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': 0.20,
+      },
+    })
+    current.addLayer({
+      id: mapLayerIds.trafficAreaOutline,
+      type: 'line',
+      source: mapSourceIds.trafficAreas,
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': 2,
+        'line-opacity': 0.82,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    })
+    current.addLayer({
+      id: mapLayerIds.trafficLineCasing,
+      type: 'line',
+      source: mapSourceIds.trafficLines,
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': 11,
+        'line-opacity': 0.82,
+        'line-blur': 0.25,
+      },
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+    })
     current.addLayer({
       id: mapLayerIds.trafficLine,
       type: 'line',
       source: mapSourceIds.trafficLines,
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 9,
-        'line-opacity': 0.58,
-        'line-blur': 0.4,
+        'line-width': 7,
+        'line-opacity': 0.88,
+        'line-blur': 0.2,
       },
       layout: {
         'line-cap': 'round',

@@ -1,13 +1,17 @@
-import type { GeoJsonLineString, GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
 
 export const mapSourceIds = {
   objects: 'objects',
   plannedRoutes: 'planned-route-source',
   trafficLines: 'traffic-line-source',
+  trafficAreas: 'traffic-area-source',
 } as const
 
 export const mapLayerIds = {
+  trafficAreaFill: 'traffic-area-fill',
+  trafficAreaOutline: 'traffic-area-outline',
+  trafficLineCasing: 'traffic-line-casing',
   routeCasing: 'planned-route-casing',
   routeLine: 'planned-route-lines',
   trafficLine: 'traffic-lines',
@@ -115,6 +119,28 @@ export const createTrafficLineFeatureCollection = (
         type: 'Feature',
         id: object.id,
         geometry: object.spatial.geometry as GeoJsonLineString,
+        properties: {
+          id: object.id,
+          color: presentation.color,
+          severity: presentation.summary,
+        },
+      }
+    }),
+})
+
+export const createTrafficAreaFeatureCollection = (
+  objects: ReadonlyArray<OperationalObject>,
+  presentObject: (object: OperationalObject) => { readonly color: string; readonly summary: string },
+): GeoJsonFeatureCollection<GeoJsonPolygon, TrafficFeatureProperties> => ({
+  type: 'FeatureCollection',
+  features: objects
+    .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'Polygon')
+    .map(object => {
+      const presentation = presentObject(object)
+      return {
+        type: 'Feature',
+        id: object.id,
+        geometry: object.spatial.geometry as GeoJsonPolygon,
         properties: {
           id: object.id,
           color: presentation.color,

@@ -13,7 +13,7 @@ const registry = createControlInstanceRegistry({
   dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
   simulationAdapters: [
     createLocalAmbulanceSimulationAdapter({ routing }),
-    createLocalTrafficSimulationAdapter(),
+    createLocalTrafficSimulationAdapter({ routing }),
   ],
   interactionHandlers: packs.flatMap(pack => pack.interactionHandlers ?? []),
 })

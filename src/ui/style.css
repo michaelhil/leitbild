@@ -20,7 +20,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -387,11 +388,13 @@ button {
   font-size: 13px;
 }
 
-.modal input {
+.modal input,
+.modal select {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 9px 10px;
   color: var(--text);
+  background: var(--panel);
 }
 
 .modal-actions {

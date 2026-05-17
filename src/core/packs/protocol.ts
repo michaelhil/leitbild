@@ -1,4 +1,4 @@
-import type { GeoJsonPoint, InteractionHandler, ObjectId, OperationalObject } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, ObjectId, OperationalObject } from '../model/index.ts'
 
 export interface PackObjectCategory {
   readonly id: string
@@ -21,6 +21,7 @@ export interface PackCreateObjectType {
   readonly categoryId: string
   readonly icon: string
   readonly color: string
+  readonly placementKind?: 'point' | 'route' | 'polygon'
 }
 
 export interface PackCommandRequest {
@@ -28,6 +29,21 @@ export interface PackCommandRequest {
   readonly targetObjectIds: ReadonlyArray<ObjectId>
   readonly payload: unknown
 }
+
+export type PackCreationGeometry =
+  | {
+      readonly kind: 'point'
+      readonly point: GeoJsonPoint
+    }
+  | {
+      readonly kind: 'route'
+      readonly from: GeoJsonPoint
+      readonly to: GeoJsonPoint
+    }
+  | {
+      readonly kind: 'polygon'
+      readonly polygon: GeoJsonPolygon
+    }
 
 export interface PackObjectPresentationContext {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -59,7 +75,8 @@ export interface LeitbildPack {
   readonly buildCreateObjectCommand: (
     typeId: string,
     label: string,
-    point: GeoJsonPoint,
+    geometry: PackCreationGeometry,
+    parameters?: unknown,
   ) => PackCommandRequest
   readonly isController: (object: OperationalObject) => boolean
   readonly isTarget: (

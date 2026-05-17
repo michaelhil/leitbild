@@ -1,5 +1,5 @@
-import type { GeoJsonPoint, OperationalObject } from '../model/index.ts'
-import type { LeitbildPack, PackCommandRequest, PackObjectPresentation } from './protocol.ts'
+import type { OperationalObject } from '../model/index.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation } from './protocol.ts'
 
 const packForObject = (
   packs: ReadonlyArray<LeitbildPack>,
@@ -31,10 +31,10 @@ export const createCompositePack = (config: {
       if (!pack) throw new Error(`unknown create object type: ${typeId}`)
       return pack.defaultObjectLabel(typeId, context)
     },
-    buildCreateObjectCommand: (typeId: string, label: string, point: GeoJsonPoint): PackCommandRequest => {
+    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
       const pack = config.packs.find(candidate => candidate.createObjectTypes.some(type => type.id === typeId))
       if (!pack) throw new Error(`unknown create object type: ${typeId}`)
-      return pack.buildCreateObjectCommand(typeId, label, point)
+      return pack.buildCreateObjectCommand(typeId, label, geometry, parameters)
     },
     isController: (object): boolean =>
       config.packs.some(pack => pack.isController(object)),

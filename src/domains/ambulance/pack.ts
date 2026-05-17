@@ -1,5 +1,5 @@
-import type { GeoJsonPoint, KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
-import type { LeitbildPack, PackCommandRequest, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
@@ -149,6 +149,11 @@ const assertCreatableType = (typeId: string): CreatableAmbulanceObjectType => {
   throw new Error(`unsupported ambulance pack create type: ${typeId}`)
 }
 
+const assertPointGeometry = (geometry: PackCreationGeometry) => {
+  if (geometry.kind !== 'point') throw new Error(`ambulance object creation requires point geometry, got ${geometry.kind}`)
+  return geometry.point
+}
+
 export const ambulancePack: LeitbildPack = {
   id: 'ambulance',
   name: 'Ambulance Dispatch',
@@ -174,9 +179,9 @@ export const ambulancePack: LeitbildPack = {
     },
   ],
   createObjectTypes: [
-    { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f' },
-    { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d' },
-    { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b' },
+    { id: 'hospital', label: 'Hospital', categoryId: 'hospitals', icon: 'hospital', color: '#245b9f', placementKind: 'point' },
+    { id: 'ambulance', label: 'Ambulance', categoryId: 'ambulances', icon: 'ambulance', color: '#22845d', placementKind: 'point' },
+    { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b', placementKind: 'point' },
   ],
   interactionHandlers: [
     createAmbulanceArrivalInteractionHandler(),
@@ -200,15 +205,18 @@ export const ambulancePack: LeitbildPack = {
     const index = countForCategory(context.objects, definition.categoryId) + 1
     return `${definition.label} ${index}`
   },
-  buildCreateObjectCommand: (typeId, label, point: GeoJsonPoint): PackCommandRequest => ({
-    kind: createObjectCommandKind,
-    targetObjectIds: [],
-    payload: {
-      objectType: assertCreatableType(typeId),
-      label,
-      point,
-    },
-  }),
+  buildCreateObjectCommand: (typeId, label, geometry): PackCommandRequest => {
+    const point = assertPointGeometry(geometry)
+    return {
+      kind: createObjectCommandKind,
+      targetObjectIds: [],
+      payload: {
+        objectType: assertCreatableType(typeId),
+        label,
+        point,
+      },
+    }
+  },
   isController: (object): boolean => parseAmbulanceData(object) !== null,
   isTarget: (_controller, candidate): boolean =>
     parseIncidentData(candidate) !== null || parseHospitalData(candidate) !== null,
