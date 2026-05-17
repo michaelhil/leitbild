@@ -6,6 +6,7 @@ import {
   resetStartupStepsAfter,
   startupHasFailed,
   startupIsReady,
+  startupModalShouldShow,
   startStartupStep,
 } from '../src/ui/startup.ts'
 
@@ -47,5 +48,42 @@ describe('startup progress model', () => {
 
     expect(startupIsReady(failed)).toBe(false)
     expect(startupHasFailed(failed)).toBe(true)
+  })
+
+  test('keeps startup modal visible for the confidence window and respects dismissal', () => {
+    let steps = createStartupSteps(10)
+    for (const step of steps) steps = completeStartupStep(steps, step.id, 20)
+
+    expect(startupModalShouldShow({
+      routeMode: 'control-instance',
+      dismissed: false,
+      minimumElapsed: false,
+      steps,
+    })).toBe(true)
+
+    expect(startupModalShouldShow({
+      routeMode: 'control-instance',
+      dismissed: false,
+      minimumElapsed: true,
+      steps,
+    })).toBe(false)
+
+    expect(startupModalShouldShow({
+      routeMode: 'control-instance',
+      dismissed: true,
+      minimumElapsed: false,
+      steps,
+    })).toBe(false)
+  })
+
+  test('does not show startup modal on the picker route', () => {
+    const steps = createStartupSteps(10)
+
+    expect(startupModalShouldShow({
+      routeMode: 'picker',
+      dismissed: false,
+      minimumElapsed: false,
+      steps,
+    })).toBe(false)
   })
 })

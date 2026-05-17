@@ -32,8 +32,7 @@
     createStartupSteps,
     failStartupStep,
     resetStartupStepsAfter,
-    startupHasFailed,
-    startupIsReady,
+    startupModalShouldShow,
     startStartupStep,
     type StartupStep,
     type StartupStepId,
@@ -66,6 +65,7 @@
   let startupMinimumElapsed = false
   let startupDismissed = false
   let startupMinimumTimer: number | null = null
+  let startupModalVisible = false
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
@@ -109,13 +109,9 @@
     completeStep('objects')
   }
 
-  const showStartupModal = (): boolean =>
-    routeMode === 'control-instance'
-    && !startupDismissed
-    && (startupHasFailed(startupSteps) || !startupIsReady(startupSteps) || !startupMinimumElapsed)
-
   const closeStartupModal = (): void => {
     startupDismissed = true
+    startupModalVisible = false
   }
 
   const resetStartupForJoin = (): void => {
@@ -383,6 +379,12 @@
   $: selectedControllerObject = selectedControllerObjectFor(objects, selectedControllerId, activePack)
   $: categoryRows = categoryRowsFor(objects, activePack)
   $: placementCursor = placementCursorFor(placementMode, activePack)
+  $: startupModalVisible = startupModalShouldShow({
+    routeMode,
+    dismissed: startupDismissed,
+    minimumElapsed: startupMinimumElapsed,
+    steps: startupSteps,
+  })
 </script>
 
 {#if routeMode === 'picker'}
@@ -427,7 +429,7 @@
   </div>
 {/if}
 
-{#if showStartupModal()}
+{#if startupModalVisible}
   <StartupModal steps={startupSteps} retry={joinControlInstance} close={closeStartupModal} />
 {/if}
 
