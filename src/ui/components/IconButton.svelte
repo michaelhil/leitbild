@@ -7,11 +7,12 @@
   export let disabled = false
   export let title = label
   export let size = 16
+  export let variant: 'default' | 'bare' | 'ghost' = 'default'
   export let onClick: () => void | Promise<void>
 </script>
 
 <button
-  class="icon-button"
+  class="icon-button {variant}"
   type="button"
   aria-label={label}
   aria-pressed={pressed}

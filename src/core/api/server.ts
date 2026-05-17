@@ -151,7 +151,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus(), mapArtifacts }))
       }
       if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
-      if (url.pathname === '/map/style.json') return mapStyleResponse()
+      if (url.pathname === '/map/style.json') return mapStyleResponse(url.searchParams.get('theme'))
       if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, { registry: config.registry })

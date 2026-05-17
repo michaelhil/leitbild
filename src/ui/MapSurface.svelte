@@ -22,11 +22,13 @@
     reconcileDisplayMotionState,
     type DisplayMotionState,
   } from './display-motion.ts'
+  import type { ThemeMode } from './theme.ts'
 
   export let objects: ReadonlyArray<OperationalObject>
   export let selectedControllerId: string | null
   export let placementMode: PackCreateObjectType | null
   export let placementCursor: { readonly icon: IconName; readonly color: string } | null
+  export let theme: ThemeMode
   export let routeRevision: number
   export let layoutRevision = 0
   export let hasNewInfo: (object: OperationalObject) => boolean
@@ -53,6 +55,9 @@
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
   let pmtilesProtocolRegistered = false
+  let objectInteractionsAdded = false
+  let mapReadyNotified = false
+  let appliedTheme: ThemeMode | null = null
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -60,6 +65,15 @@
     mapLayerIds.objectHalos,
     mapLayerIds.objectNewInfo,
   ]
+
+  const styleUrlFor = (mode: ThemeMode): string =>
+    `/map/style.json?theme=${encodeURIComponent(mode)}`
+
+  const routeCasingColor = (): string =>
+    theme === 'dark' ? '#0b111b' : '#ffffff'
+
+  const trafficCasingColor = (): string =>
+    theme === 'dark' ? '#111827' : '#ffffff'
 
   const escapeHtml = (value: string): string =>
     value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
@@ -212,6 +226,10 @@
   }
 
   const addMapSourcesAndLayers = (current: MapLibreMap): void => {
+    if (current.getSource(mapSourceIds.objects)) {
+      refreshSources()
+      return
+    }
     current.addSource(mapSourceIds.plannedRoutes, {
       type: 'geojson',
       data: createRouteFeatureCollection([...objects], selectedControllerId),
@@ -252,7 +270,7 @@
       type: 'line',
       source: mapSourceIds.trafficLines,
       paint: {
-        'line-color': '#ffffff',
+        'line-color': trafficCasingColor(),
         'line-width': 11,
         'line-opacity': 0.82,
         'line-blur': 0.25,
@@ -282,7 +300,7 @@
       type: 'line',
       source: mapSourceIds.plannedRoutes,
       paint: {
-        'line-color': '#ffffff',
+        'line-color': routeCasingColor(),
         'line-width': ['case', ['get', 'selected'], 10, 8],
         'line-opacity': 0.92,
         'line-blur': 0.15,
@@ -360,6 +378,7 @@
   }
 
   const addObjectInteractions = (current: MapLibreMap): void => {
+    if (objectInteractionsAdded) return
     for (const layerId of interactiveObjectLayerIds) {
       current.on('click', layerId, (event) => {
         const object = objectFromMapEvent(event)
@@ -378,6 +397,29 @@
         hideMarkerPopup()
       })
     }
+    objectInteractionsAdded = true
+  }
+
+  const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
+    try {
+      loaded = false
+      await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
+      await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
+      await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
+      await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
+      addMapSourcesAndLayers(current)
+      addObjectInteractions(current)
+      loaded = true
+      lastRouteRevision = routeRevision
+      lastSelectedControllerId = selectedControllerId
+      refreshSources()
+      if (!mapReadyNotified) {
+        mapReadyNotified = true
+        onMapReady()
+      }
+    } catch (err) {
+      onMapError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   onMount(() => {
@@ -386,10 +428,11 @@
     pmtilesProtocolRegistered = true
     const current = new maplibregl.Map({
       container: mapElement,
-      style: '/map/style.json',
+      style: styleUrlFor(theme),
       center: [10.7522, 59.9139],
       zoom: 12,
     })
+    appliedTheme = theme
     map = current
     current.on('error', (event) => {
       const error = event.error
@@ -400,24 +443,11 @@
       if (!placementMode) return
       onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
     })
+    current.on('style.load', () => {
+      void setupOperationalMapStyle(current)
+    })
     current.on('load', () => {
-      void (async () => {
-        try {
-          await registerMapIcon(current, 'object-ambulance', 'ambulance', '#22845d')
-          await registerMapIcon(current, 'object-hospital', 'hospital', '#245b9f')
-          await registerMapIcon(current, 'object-crash', 'crash', '#c7352b')
-          await registerMapIcon(current, 'object-traffic', 'traffic', '#c2410c')
-          addMapSourcesAndLayers(current)
-          addObjectInteractions(current)
-          loaded = true
-          lastRouteRevision = routeRevision
-          lastSelectedControllerId = selectedControllerId
-          refreshSources()
-          onMapReady()
-        } catch (err) {
-          onMapError(err instanceof Error ? err.message : String(err))
-        }
-      })()
+      if (!loaded) void setupOperationalMapStyle(current)
     })
   })
 
@@ -432,6 +462,8 @@
     }
     map = null
     loaded = false
+    objectInteractionsAdded = false
+    mapReadyNotified = false
   })
 
   $: {
@@ -465,6 +497,16 @@
   $: {
     layoutRevision
     map?.resize()
+  }
+
+  $: {
+    const current = map
+    if (current && appliedTheme !== null && theme !== appliedTheme) {
+      appliedTheme = theme
+      loaded = false
+      hideMarkerPopup()
+      current.setStyle(styleUrlFor(theme))
+    }
   }
 </script>
 

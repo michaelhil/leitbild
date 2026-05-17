@@ -185,6 +185,7 @@ body.rail-resizing {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-top: 12px;
   border-right: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel) 96%, transparent);
   box-shadow: 8px 0 24px rgba(16, 24, 40, 0.12);
@@ -225,6 +226,21 @@ body.rail-resizing {
   margin-bottom: 6px;
 }
 
+.category-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.category-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+
 .category-header h2 {
   margin: 0;
   font-size: 13px;
@@ -234,7 +250,7 @@ body.rail-resizing {
 }
 
 .category-header h2 span {
-  margin-left: 4px;
+  margin-left: 3px;
   color: var(--text);
   font-weight: 760;
 }
@@ -261,9 +277,29 @@ body.rail-resizing {
   cursor: pointer;
 }
 
+.icon-button.bare {
+  width: 22px;
+  height: 22px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.icon-button.ghost {
+  width: 26px;
+  height: 26px;
+  border-color: transparent;
+  background: transparent;
+}
+
 .icon-button[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
   color: var(--accent);
+}
+
+.icon-button.bare[aria-pressed="true"],
+.icon-button.ghost[aria-pressed="true"] {
+  border-color: transparent;
 }
 
 .icon-button:hover {
@@ -271,11 +307,17 @@ body.rail-resizing {
   color: var(--accent);
 }
 
+.icon-button.bare:hover,
+.icon-button.ghost:hover {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .object-row {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   text-align: left;
@@ -285,6 +327,11 @@ body.rail-resizing {
   background: var(--panel);
   margin-bottom: 6px;
   cursor: pointer;
+}
+
+.object-status {
+  display: inline-grid;
+  place-items: center;
 }
 
 .object-row:hover,
@@ -373,13 +420,6 @@ body.rail-resizing {
   display: block;
 }
 
-.rail-footer {
-  margin-top: auto;
-  padding: 12px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
-}
-
 .system-footer {
   position: sticky;
   bottom: 0;
@@ -393,6 +433,7 @@ body.rail-resizing {
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+  margin-top: auto;
 }
 
 .system-footer .icon-button {
@@ -400,6 +441,8 @@ body.rail-resizing {
   width: 24px;
   height: 24px;
   color: var(--muted);
+  border-color: transparent;
+  background: transparent;
 }
 
 .version {
@@ -429,14 +472,6 @@ body.rail-resizing {
 
 .status-dot.idle {
   background: var(--muted);
-}
-
-.selected-card {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
-  background: var(--panel-strong);
-  margin-bottom: 8px;
 }
 
 .command-button {

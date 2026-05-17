@@ -29,6 +29,15 @@ describe('vector map artifacts', () => {
     expect(style.glyphs).toBe('/map/fonts/{fontstack}/{range}.pbf')
   })
 
+  test('style supports light and dark vector themes without changing sources', () => {
+    const lightStyle = createLeitbildMapStyle('light')
+    const darkStyle = createLeitbildMapStyle('dark')
+
+    expect(darkStyle.sources).toEqual(lightStyle.sources)
+    expect(darkStyle.name).toContain('dark')
+    expect(JSON.stringify(darkStyle.layers)).toContain('#0e1521')
+  })
+
   test('PMTiles serving supports byte ranges and fails visibly when missing', async () => {
     const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
     const currentDir = join(rootDir, 'current')

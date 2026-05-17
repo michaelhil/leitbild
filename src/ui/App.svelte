@@ -80,6 +80,7 @@
   let railWidth = defaultRailWidth
   let lastOpenRailWidth = defaultRailWidth
   let railResizing = false
+  let railWidthBeforeResize = defaultRailWidth
   let layoutRevision = 0
 
   const readStoredRailWidth = (): number => {
@@ -121,6 +122,11 @@
     document.body.classList.remove('rail-resizing')
     window.removeEventListener('pointermove', handleRailPointerMove)
     window.removeEventListener('pointerup', stopRailResize)
+    if (railWidth === 0) {
+      lastOpenRailWidth = railWidthBeforeResize
+    } else {
+      lastOpenRailWidth = railWidth
+    }
     storeRailWidth(railWidth)
   }
 
@@ -135,6 +141,7 @@
       setRailWidth(lastOpenRailWidth || defaultRailWidth, true)
       return
     }
+    railWidthBeforeResize = railWidth
     railResizing = true
     document.body.classList.add('rail-resizing')
     window.addEventListener('pointermove', handleRailPointerMove)
@@ -147,11 +154,6 @@
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
-
-  const iconForPresentation = (presentation: PackObjectPresentation): IconName => {
-    if (!isIconName(presentation.icon)) throw new Error(`pack ${activePack.id} requested unknown icon: ${presentation.icon}`)
-    return presentation.icon
-  }
 
   const hasNewInfo = (object: OperationalObject): boolean =>
     (seenRevisions.get(object.id) ?? object.revision) < object.revision
@@ -268,14 +270,6 @@
     if (!activePack.isTarget(controller, destination, { objects })) return
     commandStatus = `Sending ${controller.label} to ${destination.label}`
     const command = activePack.buildSetTargetCommand(controller, destination, { objects })
-    await sendCommand(command.kind, command.payload, command.targetObjectIds)
-  }
-
-  const cancelDestination = async (): Promise<void> => {
-    const controller = selectedControllerObject
-    if (!controller) return
-    commandStatus = `Stopping ${controller.label}`
-    const command = activePack.buildCancelTargetCommand(controller, { objects })
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
@@ -558,13 +552,9 @@
       {appVersion}
       {theme}
       collapsed={railWidth === 0}
-      {commandStatus}
       {categoryRows}
       {placementMode}
       {selectedControllerId}
-      {selectedControllerObject}
-      {objects}
-      {iconForPresentation}
       {presentationFor}
       {detailLines}
       {hasNewInfo}
@@ -572,7 +562,6 @@
       {selectObject}
       {beginPlacement}
       {cancelPlacement}
-      {cancelDestination}
       {toggleTheme}
     />
     <button
@@ -591,6 +580,7 @@
           {selectedControllerId}
           {placementMode}
           {placementCursor}
+          {theme}
           {routeRevision}
           {layoutRevision}
           {hasNewInfo}

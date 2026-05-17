@@ -1,7 +1,7 @@
 import { lstat, readlink, stat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 import { createMapCapabilityManifest } from './capabilities.ts'
-import { createLeitbildMapStyle } from './style.ts'
+import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
 export interface MapArtifactConfig {
   readonly rootDir: string
@@ -50,8 +50,12 @@ const glyphProbePath = (config: MapArtifactConfig): string =>
 export const mapCapabilitiesResponse = (): Response =>
   Response.json(createMapCapabilityManifest())
 
-export const mapStyleResponse = (): Response =>
-  Response.json(createLeitbildMapStyle())
+export const mapStyleResponse = (theme: string | null = null): Response => {
+  if (theme !== null && theme !== 'light' && theme !== 'dark') {
+    return Response.json({ ok: false, error: 'invalid map theme' }, { status: 400 })
+  }
+  return Response.json(createLeitbildMapStyle((theme ?? 'light') as MapTheme))
+}
 
 const fileStatus = async (path: string): Promise<MapArtifactFileStatus> => {
   try {

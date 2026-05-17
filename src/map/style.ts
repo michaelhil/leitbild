@@ -8,13 +8,83 @@ export interface MapLibreStyle {
   readonly layers: ReadonlyArray<Record<string, unknown>>
 }
 
+export type MapTheme = 'light' | 'dark'
+
 const sourceId = 'leitbild-osm'
 
-export const createLeitbildMapStyle = (): MapLibreStyle => {
+const mapThemePalette = (theme: MapTheme) => {
+  if (theme === 'dark') {
+    return {
+      background: '#0e1521',
+      landuseFallback: '#151e2b',
+      landuseHospital: '#172844',
+      landuseIndustrial: '#252331',
+      landuseResidential: '#182232',
+      landuseCommercial: '#222331',
+      landusePark: '#173123',
+      landcoverFallback: '#17251f',
+      landcoverWood: '#173821',
+      landcoverGrass: '#1d3c26',
+      landcoverWetland: '#16363a',
+      landcoverRock: '#2b2b30',
+      landcoverSand: '#3b3424',
+      water: '#12394d',
+      waterway: '#1f5c72',
+      building: '#263140',
+      roadCasing: '#0b111b',
+      motorway: '#a35f4c',
+      trunk: '#a7744a',
+      primary: '#a48a4e',
+      secondary: '#857b52',
+      tertiary: '#676c55',
+      minor: '#394457',
+      rail: '#637086',
+      boundary: '#566579',
+      emergencyText: '#8ab9ff',
+      labelText: '#c2ccda',
+      roadText: '#b0bbc9',
+      textHalo: '#0e1521',
+    }
+  }
+  return {
+    background: '#eef2f3',
+    landuseFallback: '#edf0e8',
+    landuseHospital: '#e7eef9',
+    landuseIndustrial: '#ece4dd',
+    landuseResidential: '#f3f0eb',
+    landuseCommercial: '#f1e9df',
+    landusePark: '#dbead5',
+    landcoverFallback: '#e2ead8',
+    landcoverWood: '#c8dfbd',
+    landcoverGrass: '#d6e9c8',
+    landcoverWetland: '#c7dfd7',
+    landcoverRock: '#dedbd3',
+    landcoverSand: '#eadfbf',
+    water: '#a9d8e8',
+    waterway: '#9bcfdf',
+    building: '#d7d2ca',
+    roadCasing: '#ffffff',
+    motorway: '#e89a74',
+    trunk: '#e9ae74',
+    primary: '#e8c579',
+    secondary: '#e4d78e',
+    tertiary: '#e6e0a9',
+    minor: '#f5f2e9',
+    rail: '#8b8f98',
+    boundary: '#9aa6b2',
+    emergencyText: '#245b9f',
+    labelText: '#4c5564',
+    roadText: '#596272',
+    textHalo: '#ffffff',
+  }
+}
+
+export const createLeitbildMapStyle = (theme: MapTheme = 'light'): MapLibreStyle => {
   const manifest = createMapCapabilityManifest()
+  const palette = mapThemePalette(theme)
   return {
     version: 8,
-    name: 'Leitbild Vector Base',
+    name: `Leitbild Vector Base ${theme}`,
     glyphs: manifest.artifact.glyphsUrl,
     sources: {
       [sourceId]: {
@@ -27,7 +97,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
       {
         id: 'background',
         type: 'background',
-        paint: { 'background-color': '#eef2f3' },
+        paint: { 'background-color': palette.background },
       },
       {
         id: 'landuse',
@@ -38,12 +108,12 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'fill-color': [
             'match',
             ['get', 'class'],
-            'hospital', '#e7eef9',
-            'industrial', '#ece4dd',
-            'residential', '#f3f0eb',
-            'commercial', '#f1e9df',
-            'park', '#dbead5',
-            '#edf0e8',
+            'hospital', palette.landuseHospital,
+            'industrial', palette.landuseIndustrial,
+            'residential', palette.landuseResidential,
+            'commercial', palette.landuseCommercial,
+            'park', palette.landusePark,
+            palette.landuseFallback,
           ],
           'fill-opacity': 0.68,
         },
@@ -57,12 +127,12 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'fill-color': [
             'match',
             ['get', 'class'],
-            'wood', '#c8dfbd',
-            'grass', '#d6e9c8',
-            'wetland', '#c7dfd7',
-            'rock', '#dedbd3',
-            'sand', '#eadfbf',
-            '#e2ead8',
+            'wood', palette.landcoverWood,
+            'grass', palette.landcoverGrass,
+            'wetland', palette.landcoverWetland,
+            'rock', palette.landcoverRock,
+            'sand', palette.landcoverSand,
+            palette.landcoverFallback,
           ],
           'fill-opacity': 0.74,
         },
@@ -72,7 +142,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         type: 'fill',
         source: sourceId,
         'source-layer': 'water',
-        paint: { 'fill-color': '#a9d8e8' },
+        paint: { 'fill-color': palette.water },
       },
       {
         id: 'waterway',
@@ -80,7 +150,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         source: sourceId,
         'source-layer': 'waterway',
         paint: {
-          'line-color': '#9bcfdf',
+          'line-color': palette.waterway,
           'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.6, 14, 1.6],
         },
       },
@@ -91,7 +161,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         'source-layer': 'building',
         minzoom: 13,
         paint: {
-          'fill-color': '#d7d2ca',
+          'fill-color': palette.building,
           'fill-opacity': ['interpolate', ['linear'], ['zoom'], 13, 0.45, 16, 0.72],
         },
       },
@@ -102,7 +172,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         'source-layer': 'transportation',
         filter: ['in', ['get', 'class'], ['literal', ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service']]],
         paint: {
-          'line-color': '#ffffff',
+          'line-color': palette.roadCasing,
           'line-width': [
             'interpolate',
             ['linear'],
@@ -125,12 +195,12 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'line-color': [
             'match',
             ['get', 'class'],
-            'motorway', '#e89a74',
-            'trunk', '#e9ae74',
-            'primary', '#e8c579',
-            'secondary', '#e4d78e',
-            'tertiary', '#e6e0a9',
-            '#f5f2e9',
+            'motorway', palette.motorway,
+            'trunk', palette.trunk,
+            'primary', palette.primary,
+            'secondary', palette.secondary,
+            'tertiary', palette.tertiary,
+            palette.minor,
           ],
           'line-width': [
             'interpolate',
@@ -150,7 +220,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         'source-layer': 'transportation',
         filter: ['==', ['get', 'class'], 'rail'],
         paint: {
-          'line-color': '#8b8f98',
+          'line-color': palette.rail,
           'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.6, 15, 1.6],
           'line-dasharray': [1, 1.6],
         },
@@ -161,7 +231,7 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
         source: sourceId,
         'source-layer': 'boundary',
         paint: {
-          'line-color': '#9aa6b2',
+          'line-color': palette.boundary,
           'line-width': 0.8,
           'line-dasharray': [2, 2],
           'line-opacity': 0.52,
@@ -182,8 +252,8 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'text-offset': [0, 0.7],
         },
         paint: {
-          'text-color': '#245b9f',
-          'text-halo-color': '#ffffff',
+          'text-color': palette.emergencyText,
+          'text-halo-color': palette.textHalo,
           'text-halo-width': 1.4,
         },
       },
@@ -200,8 +270,8 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 17, 12],
         },
         paint: {
-          'text-color': '#596272',
-          'text-halo-color': '#ffffff',
+          'text-color': palette.roadText,
+          'text-halo-color': palette.textHalo,
           'text-halo-width': 1.3,
         },
       },
@@ -217,8 +287,8 @@ export const createLeitbildMapStyle = (): MapLibreStyle => {
           'text-size': ['interpolate', ['linear'], ['zoom'], 8, 11, 13, 15],
         },
         paint: {
-          'text-color': '#4c5564',
-          'text-halo-color': '#ffffff',
+          'text-color': palette.labelText,
+          'text-halo-color': palette.textHalo,
           'text-halo-width': 1.5,
         },
       },
