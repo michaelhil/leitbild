@@ -30,6 +30,7 @@ export const createScenarioCatalog = (config: {
   readonly packs: ReadonlyArray<LeitbildPack>
   readonly scenarios: ReadonlyArray<ScenarioDefinition>
   readonly missions?: ReadonlyArray<MissionDefinition>
+  readonly defaultScenarioId?: string
 }): ScenarioCatalog => {
   const scenarios = new Map<string, ScenarioDefinition>()
   const missions = new Map<string, MissionDefinition>()
@@ -102,6 +103,9 @@ export const createScenarioCatalog = (config: {
       throw new Error(`scenario ${scenario.id} references unknown mission ${scenario.missionId}`)
     }
   }
+  const defaultScenarioId = config.defaultScenarioId ?? config.scenarios[0]?.id
+  if (!defaultScenarioId) throw new Error('scenario catalog has no scenarios')
+  if (!scenarios.has(defaultScenarioId)) throw new Error(`default scenario is not registered: ${defaultScenarioId}`)
 
   const sortedScenarios = (): ReadonlyArray<ScenarioDefinition> =>
     [...scenarios.values()].sort((left, right) => left.id.localeCompare(right.id))
@@ -149,11 +153,7 @@ export const createScenarioCatalog = (config: {
         providerConfigs: Object.fromEntries(providers.map(provider => [provider.providerId, provider.providerConfig])),
       }
     },
-    defaultScenarioId: (): string => {
-      const first = sortedScenarios()[0]
-      if (!first) throw new Error('scenario catalog has no scenarios')
-      return first.id
-    },
+    defaultScenarioId: (): string => defaultScenarioId,
     listMissions: sortedMissions,
     getMission: (id: string): MissionDefinition | undefined => missions.get(id),
   }

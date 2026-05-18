@@ -70,9 +70,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.trafficLines,
     paint: {
       'line-color': config.trafficCasingColor,
-      'line-width': 11,
-      'line-opacity': 0.82,
-      'line-blur': 0.25,
+      'line-width': 7,
+      'line-opacity': 0.64,
+      'line-blur': 0.35,
     },
     layout: {
       'line-cap': 'round',
@@ -85,9 +85,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.trafficLines,
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 7,
-      'line-opacity': 0.88,
-      'line-blur': 0.2,
+      'line-width': 4,
+      'line-opacity': 0.76,
+      'line-blur': 0.15,
     },
     layout: {
       'line-cap': 'round',
@@ -100,9 +100,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.plannedRoutes,
     paint: {
       'line-color': config.routeCasingColor,
-      'line-width': ['case', ['get', 'selected'], 10, 8],
-      'line-opacity': 0.92,
-      'line-blur': 0.15,
+      'line-width': ['case', ['get', 'selected'], 7, 5],
+      'line-opacity': 0.72,
+      'line-blur': 0.35,
     },
     layout: {
       'line-cap': 'round',
@@ -114,9 +114,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     type: 'line',
     source: mapSourceIds.plannedRoutes,
     paint: {
-      'line-color': ['case', ['get', 'selected'], '#0b57d0', '#2563eb'],
-      'line-width': ['case', ['get', 'selected'], 6, 4],
-      'line-opacity': ['case', ['get', 'selected'], 1, 0.82],
+      'line-color': ['case', ['get', 'selected'], '#1d66d2', '#3977d6'],
+      'line-width': ['case', ['get', 'selected'], 3.5, 2.5],
+      'line-opacity': ['case', ['get', 'selected'], 0.92, 0.72],
     },
     layout: {
       'line-cap': 'round',
@@ -126,6 +126,22 @@ export const addOperationalMapSourcesAndLayers = (config: {
   current.addSource(mapSourceIds.objects, {
     type: 'geojson',
     data: asMutableGeoJson(createObjectFeatureCollection([...config.objects], config.selectedControllerId, config.highlightedObjectIds, config.hasNewInfo, config.presentationFor) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.placementPreview, {
+    type: 'geojson',
+    data: asMutableGeoJson({ type: 'FeatureCollection', features: [] } as GeoJSON),
+  })
+  current.addLayer({
+    id: mapLayerIds.placementPreview,
+    type: 'circle',
+    source: mapSourceIds.placementPreview,
+    paint: {
+      'circle-radius': 7,
+      'circle-color': '#1d66d2',
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 3,
+      'circle-opacity': 0.92,
+    },
   })
   current.addLayer({
     id: mapLayerIds.objectHitArea,

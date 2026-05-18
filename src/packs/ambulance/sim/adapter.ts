@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
-import type { CommandEnvelope, CommandResult, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema } from '../../../core/model/index.ts'
 import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
@@ -56,6 +56,65 @@ const initialObjectsFor = (config: SimulationConnectionConfig): ReadonlyArray<Op
     .map(validateAmbulanceProviderObject)
 }
 
+const pointForTarget = (object: OperationalObject): GeoJsonPoint => {
+  const point = object.spatial.position?.point
+  if (point) return point
+  if (object.spatial.geometry?.type === 'Point') return object.spatial.geometry
+  throw new Error(`cannot restore ambulance motion: target ${object.id} has no point geometry`)
+}
+
+const shouldRestoreRoute = (object: OperationalObject): boolean =>
+  object.kind === 'mobile_entity'
+  && (
+    object.operational.status === 'assigned'
+    || object.operational.status === 'en_route'
+    || object.operational.status === 'transporting'
+  )
+  && object.tasking?.currentTaskId !== undefined
+  && object.spatial.position?.point !== undefined
+  && object.spatial.route?.planned === undefined
+
+const restoreMissingRuntimeRoutes = async (
+  objects: ReadonlyArray<OperationalObject>,
+  routing: RoutingAdapter,
+): Promise<ReadonlyArray<OperationalObject>> => {
+  const objectMap = new Map(objects.map(object => [object.id, object]))
+  const restored: OperationalObject[] = []
+  for (const object of objects) {
+    if (!shouldRestoreRoute(object)) {
+      restored.push(object)
+      continue
+    }
+    const targetId = object.tasking?.currentTaskId
+    const from = object.spatial.position?.point
+    if (!targetId || !from) {
+      restored.push(object)
+      continue
+    }
+    const target = objectMap.get(targetId)
+    if (!target) {
+      restored.push(object)
+      continue
+    }
+    const route = await routing.route({
+      from,
+      to: pointForTarget(target),
+    })
+    restored.push({
+      ...object,
+      spatial: {
+        ...object.spatial,
+        route: {
+          planned: route.geometry,
+          etaSeconds: route.durationSeconds,
+          source: 'simulator',
+        },
+      },
+    })
+  }
+  return restored
+}
+
 export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
 }): SimulationAdapter => ({
@@ -68,10 +127,11 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
     setDestinationCommandKind,
   ],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+    const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
     const engine = createAmbulanceSimEngine({
       controlInstanceId: config.controlInstanceId,
       routing: adapterConfig.routing,
-      objects: initialObjectsFor(config),
+      objects,
     })
     const handlers = new Set<SimulationEventHandler>()
     const interval = setInterval(() => {

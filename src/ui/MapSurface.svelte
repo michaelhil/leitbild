@@ -31,6 +31,7 @@
     readonly selectedControllerId: string | null
     readonly placementMode: PackCreateObjectType | null
     readonly placementCursor: { readonly icon: IconName; readonly color: string } | null
+    readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
     readonly mapConfig: SurfaceMapRegionConfig
     readonly routeRevision: number
@@ -50,6 +51,7 @@
     selectedControllerId,
     placementMode,
     placementCursor,
+    placementPoints,
     theme,
     mapConfig,
     routeRevision,
@@ -97,6 +99,7 @@
       mapLayerIds.objectHitArea,
       mapLayerIds.objectIcons,
       mapLayerIds.objectNewInfo,
+      mapLayerIds.placementPreview,
     ]
     if (layer === 'routes') return [
       mapLayerIds.routeCasing,
@@ -168,10 +171,27 @@
     if (areaSource) areaSource.setData(createTrafficAreaFeatureCollection([...objects], presentationFor))
   }
 
+  const refreshPlacementPreviewSource = (): void => {
+    const current = map
+    if (!current || !loaded) return
+    const source = current.getSource(mapSourceIds.placementPreview) as GeoJSONSource | undefined
+    if (!source) return
+    source.setData({
+      type: 'FeatureCollection',
+      features: placementPoints.map((point, index) => ({
+        type: 'Feature',
+        id: `placement:${index}`,
+        geometry: point,
+        properties: {},
+      })),
+    })
+  }
+
   const refreshSources = (): void => {
     refreshObjectSource()
     refreshTrafficSource()
     refreshRouteSource()
+    refreshPlacementPreviewSource()
   }
 
   const scheduleSourceRefresh = (dirty: { readonly objects?: boolean; readonly routes?: boolean; readonly traffic?: boolean }): void => {
@@ -187,6 +207,7 @@
       refreshMarkerPopup(displayObjects)
       if (trafficSourceDirty) refreshTrafficSource()
       if (routeSourceDirty) refreshRouteSource()
+      refreshPlacementPreviewSource()
       objectSourceDirty = false
       trafficSourceDirty = false
       routeSourceDirty = false
@@ -382,6 +403,7 @@
     highlightedObjectIds
     routeRevision
     renderRevision
+    placementPoints
     const nowMs = performance.now()
     displayMotionState = reconcileDisplayMotionState({
       previousState: displayMotionState,
@@ -394,6 +416,7 @@
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
     scheduleSourceRefresh({ objects: true, routes: routesChanged, traffic: true })
+    refreshPlacementPreviewSource()
     refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()

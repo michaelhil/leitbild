@@ -1,7 +1,7 @@
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 import { createScenarioCatalog, type ScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
@@ -12,7 +12,8 @@ export const testPacks = [ambulancePack, trafficPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,
-  scenarios: [osloAmbulanceScenario],
+  scenarios,
+  defaultScenarioId: osloAmbulanceScenario.id,
 })
 
 export const createTestSimulationAdapters = (): ReadonlyArray<SimulationAdapter> => [

@@ -53,12 +53,12 @@ describe('map feature projection', () => {
     if (!updatedAmbulance?.spatial.route?.planned) throw new Error('dispatch did not produce a planned route')
 
     const routeFeatures = createRouteFeatureCollection(updatedObjects, ambulance.id)
+    const selectedRoute = routeFeatures.features.find(feature => feature.id === ambulance.id)
     expect(mapSourceIds.plannedRoutes).toBe('planned-route-source')
-    expect(routeFeatures.features).toHaveLength(1)
-    expect(routeFeatures.features[0]?.id).toBe(ambulance.id)
-    expect(routeFeatures.features[0]?.properties.selected).toBe(true)
-    expect(routeFeatures.features[0]?.geometry).toEqual(updatedAmbulance.spatial.route.planned)
-    expect(routeFeatures.features[0]?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.route.planned.coordinates[0])
+    expect(selectedRoute).toBeDefined()
+    expect(selectedRoute?.properties.selected).toBe(true)
+    expect(selectedRoute?.geometry).toEqual(updatedAmbulance.spatial.route.planned)
+    expect(selectedRoute?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.route.planned.coordinates[0])
   })
 
   test('projects remaining route when route progress is available', async () => {

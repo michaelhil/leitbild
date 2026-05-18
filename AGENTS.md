@@ -32,11 +32,12 @@
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
 - Surface Definitions may configure only safe built-in primitives. Do not allow scenario JSON, AI output, or pack code to inject arbitrary Svelte components, HTML, scripts, or hidden fallback viewports.
 - Built-in scenarios should be authored as compact declarative JSON Scenario Configs when practical, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
+- Scenario Config expansion must stay deterministic and ordered. Do not parallelize object/action expansion when later specs may reference earlier created objects.
 - Scenario scripts must stay declarative and must emit ordered domain events through the Control Instance runtime. Do not add browser-only scenario/tutorial state, simulator-private scenario timers, or arbitrary scenario code execution.
 - Restored Control Instances must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Control Instance Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
 - Treat the Durable Journal as meaningful accepted history, not as full current state and not as a high-frequency motion trace.
-- Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state.
+- Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state. Providers must rehydrate private runtime mechanics from canonical objects on connect; do not make the UI infer or drive simulator motion.
 - Use the Simulation Hub for multiple providers in one Control Instance. Do not merge a new provider domain into an existing domain simulator just to get a short-term demo.
 - Providers must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
 - Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.

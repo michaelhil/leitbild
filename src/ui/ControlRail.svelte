@@ -18,13 +18,11 @@
   } from './surface.ts'
   import SystemFooter from './SystemFooter.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
-  import type { ThemeMode } from './theme.ts'
 
   interface Props {
     readonly status: string
     readonly systemStatusTone: StatusTone
     readonly appVersion: string
-    readonly theme: ThemeMode
     readonly footerVisible: boolean
     readonly collapsed: boolean
     readonly categoryRows: ReadonlyArray<CategoryRow>
@@ -38,16 +36,14 @@
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
-    readonly toggleTheme: () => void
-    readonly resetScenario: () => Promise<void>
     readonly openStatusModal: () => void
+    readonly openSettings: () => void
   }
 
   let {
     status,
     systemStatusTone,
     appVersion,
-    theme,
     footerVisible,
     collapsed,
     categoryRows,
@@ -61,9 +57,8 @@
     deleteObject,
     beginPlacement,
     cancelPlacement,
-    toggleTheme,
-    resetScenario,
     openStatusModal,
+    openSettings,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -167,10 +162,8 @@
       {status}
       {systemStatusTone}
       {appVersion}
-      {theme}
-      {toggleTheme}
-      {resetScenario}
       {openStatusModal}
+      {openSettings}
     />
   {/if}
 </aside>

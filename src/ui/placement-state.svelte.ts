@@ -7,6 +7,7 @@ import type { CreateDraft } from './types.ts'
 export interface PlacementState {
   readonly mode: PackCreateObjectType | null
   readonly draft: CreateDraft | null
+  readonly points: ReadonlyArray<GeoJsonPoint>
   readonly begin: (type: PackCreateObjectType) => void
   readonly placePoint: (point: GeoJsonPoint) => void
   readonly finishPolygon: () => void
@@ -128,6 +129,9 @@ export const createPlacementState = (config: {
     },
     get draft() {
       return draft
+    },
+    get points() {
+      return points
     },
     begin,
     placePoint,

@@ -10,10 +10,12 @@ import {
   type OperationalObject,
   type ScenarioDefinition,
   type ScenarioScriptAction,
+  type ScenarioScriptStep,
   type SurfaceDefinition,
   type SurfaceRegionDefinition,
 } from '../model/index.ts'
 import type { LeitbildPack, PackScenarioObjectSpec, PackScenarioOperationSpec } from '../packs/protocol.ts'
+import type { RoutingAdapter } from '../../routing/protocol.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -175,30 +177,33 @@ const packFor = (packs: ReadonlyMap<string, LeitbildPack>, packId: string): Leit
   return pack
 }
 
-const expandObject = (
+const expandObject = async (
   spec: PackScenarioObjectSpec,
   context: {
     readonly at: IsoTimestamp
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
+    readonly routing: RoutingAdapter
   },
-): OperationalObject => {
+): Promise<OperationalObject> => {
   const pack = packFor(context.packs, spec.pack)
-  return pack.scenario!.expandObject(spec, {
+  return await pack.scenario!.expandObject(spec, {
     at: context.at,
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
+    routing: context.routing,
   })
 }
 
-const expandScriptAction = (
+const expandScriptAction = async (
   action: ScenarioScriptActionConfig,
   context: {
     readonly at: IsoTimestamp
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
+    readonly routing: RoutingAdapter
   },
-): ScenarioScriptAction => {
+): Promise<ScenarioScriptAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
     return action
   }
@@ -217,7 +222,7 @@ const expandScriptAction = (
     return action
   }
   if (action.type === 'create_object') {
-    const object = expandObject(action.object, context)
+    const object = await expandObject(action.object, context)
     if (context.objectMap.has(object.id)) throw new Error(`scenario script creates duplicate object id: ${object.id}`)
     context.objectMap.set(object.id, object)
     return { type: 'upsert_object', object }
@@ -225,11 +230,12 @@ const expandScriptAction = (
   const object = context.objectMap.get(action.objectId)
   if (!object) throw new Error(`scenario script operation references unknown object: ${action.objectId}`)
   const pack = packFor(context.packs, action.operation.pack)
-  const updated = pack.scenario!.applyOperation(action.operation as PackScenarioOperationSpec, {
+  const updated = await pack.scenario!.applyOperation(action.operation as PackScenarioOperationSpec, {
     at: context.at,
     object,
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
+    routing: context.routing,
   })
   context.objectMap.set(updated.id, updated)
   return { type: 'upsert_object', object: updated }
@@ -263,38 +269,49 @@ const expandSurface = (surface: z.infer<typeof surfaceConfigSchema>): SurfaceDef
   regions: surface.regions.map(expandSurfaceRegion),
 })
 
-export const scenarioDefinitionFromConfig = (
+export const scenarioDefinitionFromConfig = async (
   rawConfig: unknown,
   packs: ReadonlyArray<LeitbildPack>,
-): ScenarioDefinition => {
+  options: { readonly routing: RoutingAdapter },
+): Promise<ScenarioDefinition> => {
   const config = scenarioConfigSchema.parse(rawConfig)
   const packsById = new Map(packs.map(pack => [pack.id, pack]))
   const startsAt = config.world.startsAt as IsoTimestamp
   const objectMap = new Map<ObjectId, OperationalObject>()
-  const initialObjects = config.objects.map(objectConfig => {
-    const object = expandObject(objectConfig as PackScenarioObjectSpec, {
+  const initialObjects: OperationalObject[] = []
+  for (const objectConfig of config.objects) {
+    const object = await expandObject(objectConfig as PackScenarioObjectSpec, {
       at: startsAt,
       packs: packsById,
       objectMap,
+      routing: options.routing,
     })
     if (objectMap.has(object.id)) throw new Error(`scenario ${config.id} has duplicate object id: ${object.id}`)
     objectMap.set(object.id, object)
-    return object
-  })
-  const script = config.script
-    ? {
-        steps: config.script.steps.map(step => ({
-          id: step.id,
-          at: step.at,
-          ...(step.title === undefined ? {} : { title: step.title }),
-          actions: step.actions.map(action => expandScriptAction(action, {
-            at: scenarioTime(startsAt, step.at.seconds),
-            packs: packsById,
-            objectMap,
-          })),
-        })),
+    initialObjects.push(object)
+  }
+  let script: ScenarioDefinition['script'] | undefined
+  if (config.script) {
+    const steps: ScenarioScriptStep[] = []
+    for (const step of config.script.steps) {
+      const actions: ScenarioScriptAction[] = []
+      for (const action of step.actions) {
+        actions.push(await expandScriptAction(action, {
+          at: scenarioTime(startsAt, step.at.seconds),
+          packs: packsById,
+          objectMap,
+          routing: options.routing,
+        }))
       }
-    : undefined
+      steps.push({
+        id: step.id,
+        at: step.at,
+        ...(step.title === undefined ? {} : { title: step.title }),
+        actions,
+      })
+    }
+    script = { steps }
+  }
 
   return scenarioDefinitionSchema.parse({
     id: config.id,

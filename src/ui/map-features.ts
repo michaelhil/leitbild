@@ -8,6 +8,7 @@ export const mapSourceIds = {
   plannedRoutes: 'planned-route-source',
   trafficLines: 'traffic-line-source',
   trafficAreas: 'traffic-area-source',
+  placementPreview: 'placement-preview-source',
 } as const
 
 export const mapLayerIds = {
@@ -21,6 +22,7 @@ export const mapLayerIds = {
   objectHalos: 'object-halos',
   objectIcons: 'object-icons',
   objectNewInfo: 'object-new-info',
+  placementPreview: 'placement-preview',
 } as const
 
 interface GeoJsonFeature<G, P> {

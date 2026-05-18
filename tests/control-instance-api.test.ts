@@ -57,9 +57,11 @@ describe('control instance API', () => {
     expect(listed.status).toBe(200)
     expect(listed.body.defaultScenarioId).toBe('oslo-ambulance')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance')
-    expect(listed.body.scenarios[0]?.title).toBe('Oslo ambulance tutorial')
-    expect(listed.body.scenarios[0]?.packs).toBeUndefined()
-    expect(listed.body.scenarios[0]?.requiredProviderIds).toBeUndefined()
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden')
+    const oslo = listed.body.scenarios.find(scenario => scenario.id === 'oslo-ambulance')
+    expect(oslo?.title).toBe('Oslo ambulance tutorial')
+    expect(oslo?.packs).toBeUndefined()
+    expect(oslo?.requiredProviderIds).toBeUndefined()
 
     const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly unknown[] } }>(
       registry,

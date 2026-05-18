@@ -3,6 +3,7 @@ import type {
   CommandResponse,
   ControlInstanceListResponse,
   ControlInstanceResponse,
+  ScenarioListResponse,
   ScenarioResponse,
 } from './types.ts'
 
@@ -28,6 +29,11 @@ export const listControlInstances = async (): Promise<ControlInstanceListRespons
 export const fetchScenario = async (scenarioId: string): Promise<ScenarioResponse> => {
   const response = await fetch(`/api/scenarios/${encodeURIComponent(scenarioId)}`, { cache: 'no-store' })
   return await readJsonResponse<ScenarioResponse>(response, 'scenario fetch failed')
+}
+
+export const listScenarios = async (): Promise<ScenarioListResponse> => {
+  const response = await fetch('/api/scenarios', { cache: 'no-store' })
+  return await readJsonResponse<ScenarioListResponse>(response, 'scenario list failed')
 }
 
 const requestBody = (body: object): BodyInit | undefined => {

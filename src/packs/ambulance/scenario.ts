@@ -90,10 +90,17 @@ const pointForAmbulance = (
   return point
 }
 
+const pointForAmbulanceTarget = (object: OperationalObject): GeoJsonPoint => {
+  const point = object.spatial.position?.point
+  if (!point) throw new Error(`ambulance scenario target ${object.id} has no position`)
+  return point
+}
+
 const withAmbulanceState = (
   object: OperationalObject,
   spec: z.infer<typeof ambulanceSpecSchema>,
   at: IsoTimestamp,
+  route: OperationalObject['spatial']['route'],
 ): OperationalObject => {
   if (spec.patientsOnBoard === undefined && spec.targetId === undefined && spec.status === undefined) return object
   const data = object.domainData as AmbulanceDomainData
@@ -104,6 +111,10 @@ const withAmbulanceState = (
       ...object.operational,
       status: spec.status ?? object.operational.status,
       ...(spec.targetId === undefined ? {} : { intent: 'transport_patient' }),
+    },
+    spatial: {
+      ...object.spatial,
+      ...(route === undefined ? {} : { route }),
     },
     ...(spec.targetId === undefined
       ? {}
@@ -187,7 +198,7 @@ const withVictimCount = (
 }
 
 export const ambulanceScenarioSupport: PackScenarioSupport = {
-  expandObject: (rawSpec, context): OperationalObject => {
+  expandObject: async (rawSpec, context): Promise<OperationalObject> => {
     if (rawSpec.type === 'hospital') {
       const spec = hospitalSpecSchema.parse(rawSpec)
       return createScenarioHospitalObject({
@@ -201,13 +212,26 @@ export const ambulanceScenarioSupport: PackScenarioSupport = {
     }
     if (rawSpec.type === 'ambulance') {
       const spec = ambulanceSpecSchema.parse(rawSpec)
+      const point = pointForAmbulance(spec, context.objectById)
+      const target = spec.targetId === undefined ? undefined : context.objectById(spec.targetId)
+      if (spec.targetId !== undefined && !target) throw new Error(`ambulance scenario object ${spec.id} references unknown target: ${spec.targetId}`)
+      const route = target === undefined
+        ? undefined
+        : await context.routing.route({
+            from: point,
+            to: pointForAmbulanceTarget(target),
+          })
       return withAmbulanceState(createScenarioAmbulanceObject({
         id: spec.id,
         label: spec.label,
-        point: pointForAmbulance(spec, context.objectById),
+        point,
         equipment: spec.equipment,
         at: context.at,
-      }), spec, context.at)
+      }), spec, context.at, route === undefined ? undefined : {
+        planned: route.geometry,
+        etaSeconds: route.durationSeconds,
+        source: 'simulator',
+      })
     }
     if (rawSpec.type === 'incident') {
       const spec = incidentSpecSchema.parse(rawSpec)

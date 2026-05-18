@@ -143,6 +143,43 @@ body.rail-resizing {
   place-items: center;
 }
 
+.settings-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-strong);
+}
+
+.settings-row div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-row span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.settings-row select {
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 10px;
+}
+
 .instance-page {
   min-height: 100vh;
   display: grid;

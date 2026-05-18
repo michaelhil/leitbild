@@ -1,4 +1,5 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject } from '../model/index.ts'
+import type { RoutingAdapter } from '../../routing/protocol.ts'
 
 export interface PackObjectCategory {
   readonly id: string
@@ -104,6 +105,7 @@ export interface PackScenarioExpansionContext {
   readonly at: IsoTimestamp
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
+  readonly routing: RoutingAdapter
 }
 
 export interface PackScenarioOperationContext extends PackScenarioExpansionContext {
@@ -114,11 +116,11 @@ export interface PackScenarioSupport {
   readonly expandObject: (
     spec: PackScenarioObjectSpec,
     context: PackScenarioExpansionContext,
-  ) => OperationalObject
+  ) => OperationalObject | Promise<OperationalObject>
   readonly applyOperation: (
     operation: PackScenarioOperationSpec,
     context: PackScenarioOperationContext,
-  ) => OperationalObject
+  ) => OperationalObject | Promise<OperationalObject>
 }
 
 export interface LeitbildPack {

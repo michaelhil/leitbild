@@ -133,6 +133,42 @@ describe('local ambulance simulator', () => {
     await connection.close()
   })
 
+  test('restores missing runtime routes for active ambulances before starting motion', async () => {
+    const runtime = testScenarioRuntimeConfig()
+    const activeAmbulance = runtime.initialObjects.find(object =>
+      object.kind === 'mobile_entity' && object.tasking?.currentTaskId !== undefined)
+    if (!activeAmbulance?.spatial.position) throw new Error('scenario missing active ambulance')
+    const objectsWithoutRoute = runtime.initialObjects.map(object => {
+      if (object.id !== activeAmbulance.id) return object
+      const { route: _route, ...spatialWithoutRoute } = object.spatial
+      return {
+        ...object,
+        spatial: spatialWithoutRoute,
+      }
+    })
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({
+      controlInstanceId,
+      scenario: {
+        ...runtime,
+        initialObjects: objectsWithoutRoute,
+      },
+    })
+    try {
+      const restored = await connection.getSnapshot()
+      const restoredAmbulance = restored.objects.find(object => object.id === activeAmbulance.id)
+      expect(restoredAmbulance?.spatial.route?.planned?.coordinates.length).toBe(2)
+
+      const startLon = activeAmbulance.spatial.position.point.coordinates[0]
+      await Bun.sleep(1_100)
+      const moved = await connection.getSnapshot()
+      const movedAmbulance = moved.objects.find(object => object.id === activeAmbulance.id)
+      expect(movedAmbulance?.spatial.position?.point.coordinates[0]).not.toBe(startLon)
+      expect(movedAmbulance?.spatial.position?.speedMps).toBeGreaterThan(0)
+    } finally {
+      await connection.close()
+    }
+  })
+
   test('accepts a dispatch command and updates scenario state', async () => {
     const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()

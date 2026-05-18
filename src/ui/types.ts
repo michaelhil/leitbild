@@ -28,6 +28,18 @@ export interface ScenarioResponse {
   readonly scenario: ScenarioDefinition
 }
 
+export interface ScenarioListItem {
+  readonly id: string
+  readonly title: string
+  readonly description?: string
+  readonly missionId?: string
+}
+
+export interface ScenarioListResponse {
+  readonly scenarios: ReadonlyArray<ScenarioListItem>
+  readonly defaultScenarioId: string
+}
+
 export interface CommandResponse {
   readonly result: {
     readonly ok: boolean

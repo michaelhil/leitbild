@@ -102,12 +102,8 @@
       "id": "traffic:ring2-slowdown",
       "label": "Ring 2 slowdown",
       "geometryMode": "road_segment",
-      "path": [
-        [10.7352, 59.9348],
-        [10.7494, 59.9306],
-        [10.7616, 59.9270],
-        [10.7742, 59.9235]
-      ],
+      "from": [10.7019, 59.9294],
+      "to": [10.7854, 59.9253],
       "condition": "slowdown",
       "severity": "high",
       "speedFactor": 0.45,

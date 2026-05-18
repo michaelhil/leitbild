@@ -1,0 +1,141 @@
+{
+  "id": "halden",
+  "schemaVersion": 1,
+  "title": "Halden ambulance response",
+  "description": "A compact Halden scenario for checking scenario switching, routed traffic, hospital capacity, and dispatch basics.",
+  "packs": ["ambulance", "traffic"],
+  "providerOverrides": {},
+  "world": {
+    "startsAt": "2026-01-01T10:00:00.000Z",
+    "mapCenter": [11.3870, 59.1248],
+    "environment": {
+      "city": "Halden",
+      "mode": "scenario-check"
+    }
+  },
+  "objects": [
+    {
+      "pack": "ambulance",
+      "type": "hospital",
+      "id": "facility:halden-hospital",
+      "label": "Halden Emergency Clinic",
+      "position": [11.3747, 59.1222],
+      "traumaBeds": { "total": 4, "available": 3 }
+    },
+    {
+      "pack": "ambulance",
+      "type": "hospital",
+      "id": "facility:kalnes",
+      "label": "Østfold Hospital Kalnes",
+      "position": [11.0328, 59.3197],
+      "traumaBeds": { "total": 6, "available": 5 }
+    },
+    {
+      "pack": "ambulance",
+      "type": "ambulance",
+      "id": "amb:halden-1",
+      "label": "Halden Ambulance 1",
+      "atObject": "facility:halden-hospital",
+      "equipment": ["defibrillator", "ventilator"]
+    },
+    {
+      "pack": "ambulance",
+      "type": "ambulance",
+      "id": "amb:halden-2",
+      "label": "Halden Ambulance 2",
+      "position": [11.3893, 59.1212],
+      "equipment": ["defibrillator"]
+    },
+    {
+      "pack": "ambulance",
+      "type": "incident",
+      "id": "incident:halden-harbor",
+      "label": "Harbor fall injury",
+      "position": [11.3832, 59.1168],
+      "triage": "yellow",
+      "victims": { "state": "estimated", "count": 1 }
+    },
+    {
+      "pack": "ambulance",
+      "type": "incident",
+      "id": "incident:halden-bridge",
+      "label": "Bridge road collision",
+      "position": [11.3923, 59.1265],
+      "triage": "red",
+      "victims": { "state": "confirmed", "count": 2 }
+    },
+    {
+      "pack": "traffic",
+      "type": "traffic_condition",
+      "id": "traffic:halden-center-slowdown",
+      "label": "Halden center slowdown",
+      "geometryMode": "road_segment",
+      "from": [11.3705, 59.1223],
+      "to": [11.3984, 59.1289],
+      "condition": "slowdown",
+      "severity": "moderate",
+      "speedFactor": 0.65,
+      "reason": "Downtown queueing near the bridge"
+    }
+  ],
+  "initialContexts": [],
+  "providerConfigs": {
+    "ambulance": {},
+    "traffic": {}
+  },
+  "surface": {
+    "schemaVersion": 1,
+    "regions": [
+      {
+        "id": "main-map",
+        "primitive": "map",
+        "visible": true,
+        "config": {
+          "center": [11.3870, 59.1248],
+          "zoom": 13,
+          "layers": ["objects", "routes", "traffic", "highlights"]
+        }
+      },
+      {
+        "id": "left-rail",
+        "primitive": "objectRail",
+        "visible": true,
+        "config": {
+          "width": 360,
+          "sections": [
+            { "categoryId": "hospitals", "visible": true, "collapsed": false, "visibleFields": ["trauma-beds"] },
+            { "categoryId": "ambulances", "visible": true, "collapsed": false, "visibleFields": [] },
+            { "categoryId": "incidents", "visible": true, "collapsed": false, "visibleFields": ["victims"] },
+            { "categoryId": "traffic", "visible": true, "collapsed": false, "visibleFields": ["severity", "reason"] }
+          ]
+        }
+      },
+      { "id": "system-footer", "primitive": "systemFooter", "visible": true, "config": {} },
+      { "id": "guidance-overlay", "primitive": "guidanceOverlay", "visible": true, "config": {} }
+    ]
+  },
+  "script": {
+    "steps": [
+      {
+        "id": "scenario-started",
+        "at": { "kind": "after_scenario_start", "seconds": 0 },
+        "actions": [
+          {
+            "type": "show_guidance",
+            "guidance": {
+              "id": "halden-welcome",
+              "title": "Halden scenario",
+              "message": "This scenario proves that Leitbild can assemble a different city surface from the scenario definition. Dispatch an ambulance to the bridge collision or inspect the routed downtown traffic condition.",
+              "objectIds": ["amb:halden-1", "incident:halden-bridge", "traffic:halden-center-slowdown"],
+              "dismissible": true
+            }
+          },
+          {
+            "type": "highlight_objects",
+            "objectIds": ["amb:halden-1", "incident:halden-bridge", "traffic:halden-center-slowdown"]
+          }
+        ]
+      }
+    ]
+  }
+}

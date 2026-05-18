@@ -107,11 +107,17 @@ Scenarios should be shareable as JSON and validated before use. Scenarios are to
 
 Built-in scenarios use a compact Scenario Config as the authoring format. The config names active packs and describes pack-specific objects and operations with small JSON objects such as `pack: "ambulance", type: "incident"` or `pack: "traffic", type: "traffic_condition"`. Each pack owns the codec that expands those compact specs into validated `OperationalObject`s and applies pack-specific scenario operations. This keeps scenario files easy to inspect, edit, and generate while keeping domain object construction out of the scenario authoring layer.
 
+Scenario Config expansion is deterministic and ordered. Initial objects are expanded in file order, and script actions are expanded in file order, because later objects/actions may legally reference objects created earlier. Do not parallelize scenario expansion across actions unless the spec gains an explicit dependency model.
+
+Traffic condition configs may describe road-segment congestion by two route intent points (`from` and `to`) instead of a literal line. The traffic pack expands that intent through the active routing adapter into the same full geometry used by operator-created traffic. Literal geometry remains useful for areas and deliberately authored shapes, but route intent is preferred when the condition is meant to follow roads.
+
 The expanded `ScenarioDefinition` remains the runtime contract. The Control Instance runtime does not execute JSON directly; it receives a validated definition with full operational objects and declarative script actions.
 
 New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Domain-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
 Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
+
+Simulation providers are responsible for rehydrating provider-private runtime mechanics from canonical objects when they connect. For example, the ambulance provider rebuilds active motion from an ambulance's tasking, position, target object, and route. If an active restored ambulance has tasking but no persisted route, the provider derives the missing route through the same routing adapter used for commands and scenario expansion before starting motion. This does not create a second source of truth: Leitbild's projected object state remains canonical, while the provider rebuilds private runtime state from it.
 
 ## Scenario Surface Definition V1
 

@@ -161,7 +161,11 @@ const nextNumberAfter = (objects: Iterable<OperationalObject>, prefix: string, f
 
 const restoredMotionFor = (ambulance: OperationalObject, objects: ReadonlyMap<ObjectId, OperationalObject>): AmbulanceMotion | null => {
   if (!isAmbulance(ambulance)) return null
-  if (ambulance.operational.status !== 'assigned' && ambulance.operational.status !== 'en_route') return null
+  if (
+    ambulance.operational.status !== 'assigned'
+    && ambulance.operational.status !== 'en_route'
+    && ambulance.operational.status !== 'transporting'
+  ) return null
   const targetObjectId = ambulance.tasking?.currentTaskId
   const route = ambulance.spatial.route?.planned
   if (!targetObjectId || !route || route.coordinates.length === 0) return null

@@ -1,27 +1,22 @@
 <script lang="ts">
-  import { Moon, RotateCcw, Sun } from 'lucide-svelte'
+  import { Settings } from 'lucide-svelte'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
-  import type { ThemeMode } from './theme.ts'
 
   interface Props {
     readonly status: string
     readonly systemStatusTone: StatusTone
     readonly appVersion: string
-    readonly theme: ThemeMode
-    readonly toggleTheme: () => void
-    readonly resetScenario: () => Promise<void>
     readonly openStatusModal: () => void
+    readonly openSettings: () => void
   }
 
   let {
     status,
     systemStatusTone,
     appVersion,
-    theme,
-    toggleTheme,
-    resetScenario,
     openStatusModal,
+    openSettings,
   }: Props = $props()
 </script>
 
@@ -32,18 +27,10 @@
   <span class="brand">Leitbild</span>
   <span class="version">v{appVersion}</span>
   <IconButton
-    label="Reset scenario"
-    title="Reset scenario"
-    icon={RotateCcw}
+    label="Open settings"
+    title="Open settings"
+    icon={Settings}
     variant="bare"
-    onClick={() => { void resetScenario() }}
-  />
-  <IconButton
-    label="Toggle light and dark mode"
-    title="Toggle light and dark mode"
-    icon={theme === 'dark' ? Sun : Moon}
-    pressed={theme === 'dark'}
-    variant="bare"
-    onClick={toggleTheme}
+    onClick={openSettings}
   />
 </footer>

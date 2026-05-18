@@ -24,6 +24,8 @@ const trafficConditionSpecSchema = z.object({
   label: z.string().min(1),
   geometryMode: z.enum(['road_segment', 'area']),
   path: z.array(lonLatSchema).min(2).optional(),
+  from: lonLatSchema.optional(),
+  to: lonLatSchema.optional(),
   polygon: z.array(lonLatSchema).min(4).optional(),
   condition: z.enum(['free_flow', 'congestion', 'closure', 'slowdown', 'access_restricted']).default('slowdown'),
   severity: trafficSeveritySchema,
@@ -95,9 +97,19 @@ const trafficConditionObject = (config: {
   } satisfies TrafficDomainData,
 })
 
-const geometryFor = (spec: z.infer<typeof trafficConditionSpecSchema>): GeoJsonLineString | GeoJsonPolygon => {
+const geometryFor = async (
+  spec: z.infer<typeof trafficConditionSpecSchema>,
+  context: Parameters<PackScenarioSupport['expandObject']>[1],
+): Promise<GeoJsonLineString | GeoJsonPolygon> => {
   if (spec.geometryMode === 'road_segment') {
-    if (!spec.path) throw new Error(`traffic condition ${spec.id} requires path for road_segment geometry`)
+    if (spec.from && spec.to) {
+      const route = await context.routing.route({
+        from: geoPointFromLonLat(spec.from[0], spec.from[1]),
+        to: geoPointFromLonLat(spec.to[0], spec.to[1]),
+      })
+      return route.geometry
+    }
+    if (!spec.path) throw new Error(`traffic condition ${spec.id} requires from/to or path for road_segment geometry`)
     return lineStringFromPath(spec.path)
   }
   if (!spec.polygon) throw new Error(`traffic condition ${spec.id} requires polygon for area geometry`)
@@ -105,9 +117,9 @@ const geometryFor = (spec: z.infer<typeof trafficConditionSpecSchema>): GeoJsonL
 }
 
 export const trafficScenarioSupport: PackScenarioSupport = {
-  expandObject: (rawSpec, context): OperationalObject => {
+  expandObject: async (rawSpec, context): Promise<OperationalObject> => {
     const spec = trafficConditionSpecSchema.parse(rawSpec)
-    const object = trafficConditionObject({ spec, geometry: geometryFor(spec), at: context.at })
+    const object = trafficConditionObject({ spec, geometry: await geometryFor(spec, context), at: context.at })
     const parsed = trafficDomainDataSchema.safeParse(object.domainData)
     if (!parsed.success) throw new Error(`invalid scenario traffic object ${object.id}: ${parsed.error.message}`)
     return { ...object, domainData: parsed.data }

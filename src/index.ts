@@ -6,10 +6,11 @@ import { ambulancePack } from './packs/ambulance/pack.ts'
 import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
 import { trafficPack } from './packs/traffic/pack.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { scenarios } from './scenarios/index.ts'
+import { createBuiltinScenarios } from './scenarios/index.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const packs = [ambulancePack, trafficPack]
+const scenarios = await createBuiltinScenarios(routing)
 const scenarioCatalog = createScenarioCatalog({ packs, scenarios })
 
 const registry = createControlInstanceRegistry({

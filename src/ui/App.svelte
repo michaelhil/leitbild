@@ -11,6 +11,7 @@
     createControlInstance,
     fetchScenario,
     joinControlInstance as joinControlInstanceClient,
+    listScenarios as listScenariosClient,
     listControlInstances,
     resetControlInstance,
     sendControlInstanceCommand,
@@ -32,6 +33,7 @@
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
   import ScenarioGuidance from './ScenarioGuidance.svelte'
+  import SettingsModal from './SettingsModal.svelte'
   import StartupModal from './StartupModal.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
   import {
@@ -53,7 +55,7 @@
     type StartupStep,
     type StartupStepId,
   } from './startup.ts'
-  import type { CategoryRow, ControlInstanceSummary, CreateDraft } from './types.ts'
+  import type { CategoryRow, ControlInstanceSummary, CreateDraft, ScenarioListItem } from './types.ts'
 
   const activePack: LeitbildPack = createCompositePack({
     id: 'leitbild-control',
@@ -78,8 +80,10 @@
   let snapshotReady = $state(false)
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
+  let settingsModalOpen = $state(false)
   let MapSurface = $state<Component | null>(null)
   let theme = $state<ThemeMode>('light')
+  let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
     packId: activePack.id,
@@ -89,6 +93,7 @@
     },
   })
   const placementMode = $derived(placement.mode)
+  const placementPoints = $derived(placement.points)
   const createDraft = $derived(placement.draft)
   const selectedControllerObject = $derived(selectedControllerObjectFor(objects, selectedControllerId, activePack))
   const allCategoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsFor(objects, activePack))
@@ -177,6 +182,14 @@
     startupStatusModalOpen = true
   }
 
+  const openSettings = (): void => {
+    settingsModalOpen = true
+  }
+
+  const closeSettings = (): void => {
+    settingsModalOpen = false
+  }
+
   const resetStartupForJoin = (): void => {
     startupDismissed = false
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
@@ -190,6 +203,20 @@
   const scenarioIdFromUrl = (): string | undefined => {
     const value = new URLSearchParams(location.search).get('scenario')?.trim()
     return value ? value : undefined
+  }
+
+  const scenarioIdForReset = (): string | undefined =>
+    scenarioIdFromUrl() ?? scenarioState?.scenarioId
+
+  const setScenarioQueryParam = (scenarioId: string): void => {
+    const url = new URL(location.href)
+    url.searchParams.set('scenario', scenarioId)
+    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
+  const loadScenarioOptions = async (): Promise<void> => {
+    const body = await listScenariosClient()
+    scenarioOptions = body.scenarios
   }
 
   const createInstance = async (): Promise<void> => {
@@ -387,7 +414,7 @@
     startStep('control-instance')
     let activeStartupStep: StartupStepId = 'control-instance'
     try {
-      const body = await resetControlInstance(controlInstanceId, { scenarioId: scenarioIdFromUrl() })
+      const body = await resetControlInstance(controlInstanceId, { scenarioId: scenarioIdForReset() })
       completeStep('control-instance')
       activeStartupStep = 'snapshot'
       startStep('snapshot')
@@ -411,6 +438,12 @@
       failStep(activeStartupStep, err)
       commandStatus = err instanceof Error ? err.message : 'Scenario reset failed'
     }
+  }
+
+  const selectScenario = async (scenarioId: string): Promise<void> => {
+    if (!controlInstanceId) return
+    setScenarioQueryParam(scenarioId)
+    await resetScenario()
   }
 
   const handleMapReady = (): void => {
@@ -452,6 +485,7 @@
     routeMode = nextRouteMode
     completeStep('route')
     completeStep('interface')
+    void loadScenarioOptions()
     if (nextRouteMode === 'picker') {
       void loadInstances()
       return () => {
@@ -488,7 +522,6 @@
           {status}
           {systemStatusTone}
           {appVersion}
-          {theme}
           {footerVisible}
           collapsed={railLayout.collapsed}
           {categoryRows}
@@ -502,9 +535,8 @@
           {deleteObject}
           beginPlacement={placement.begin}
           cancelPlacement={placement.cancel}
-          {toggleTheme}
-          {resetScenario}
           {openStatusModal}
+          {openSettings}
         />
         <button
           class="rail-resize-handle"
@@ -523,6 +555,7 @@
             {selectedControllerId}
             {placementMode}
             {placementCursor}
+            {placementPoints}
             {theme}
             mapConfig={mapConfig}
             {routeRevision}
@@ -570,4 +603,16 @@
 
 {#if createDraft}
   <CreateObjectModal {createDraft} {createObject} cancelCreate={placement.cancel} />
+{/if}
+
+{#if settingsModalOpen}
+  <SettingsModal
+    {theme}
+    scenarios={scenarioOptions}
+    selectedScenarioId={scenarioState?.scenarioId ?? scenarioIdFromUrl() ?? ''}
+    close={closeSettings}
+    {toggleTheme}
+    {resetScenario}
+    {selectScenario}
+  />
 {/if}
