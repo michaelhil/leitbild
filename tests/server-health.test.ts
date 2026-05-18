@@ -14,6 +14,7 @@ import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface CapturedRealtimeClient {
   readonly events: DomainEvent[]
+  readonly readyMessages: string[]
 }
 
 const operatorActor: Actor = {
@@ -116,20 +117,25 @@ describe('server health', () => {
         createLocalTrafficSimulationAdapter(),
       ],
     })
-    const client: CapturedRealtimeClient = { events: [] }
+    const client: CapturedRealtimeClient = { events: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
       send: (targetClient, notification) => {
         targetClient.events.push(...notification.events)
+      },
+      sendReady: (targetClient, message) => {
+        targetClient.readyMessages.push(message.scenarioId ?? '')
       },
     })
     try {
       await registry.ensure(controlInstanceId)
       realtime.addClient(controlInstanceId, client)
       expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+      expect(client.readyMessages).toContain('oslo-ambulance')
 
       await registry.reset(controlInstanceId, { scenarioId: 'halden' })
       realtime.reconcile()
+      expect(client.readyMessages).toContain('halden')
 
       const runtime = registry.get(controlInstanceId)
       if (!runtime) throw new Error('expected control instance runtime after reset')

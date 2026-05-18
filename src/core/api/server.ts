@@ -1,6 +1,6 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
-import { controlInstanceIdSchema, type ControlInstanceId } from '../model/index.ts'
+import { controlInstanceIdSchema, type ControlInstanceId, type SimulationClockState } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
 import {
@@ -37,6 +37,14 @@ export interface RealtimeStatus {
     readonly id: ControlInstanceId
     readonly websocketClientCount: number
   }>
+}
+
+export interface RealtimeReadyMessage {
+  readonly type: 'realtime.ready'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly clock?: SimulationClockState
 }
 
 export interface ControlInstanceRealtimeManager<Client> {
@@ -87,6 +95,7 @@ const realtimeStatusFromClients = <Client>(
 export const createControlInstanceRealtimeManager = <Client>(config: {
   readonly registry: ControlInstanceRegistry
   readonly send: (client: Client, notification: ControlInstanceEventNotification) => void
+  readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
 }): ControlInstanceRealtimeManager<Client> => {
   const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
   const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
@@ -95,6 +104,30 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     const clients = clientsByControlInstance.get(controlInstanceId)
     if (!clients) return
     for (const client of clients) config.send(client, notification)
+  }
+
+  const readyMessageForRuntime = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): RealtimeReadyMessage => {
+    const snapshot = runtime.snapshot()
+    return {
+      type: 'realtime.ready',
+      controlInstanceId,
+      ...(snapshot.scenario?.scenarioId === undefined ? {} : { scenarioId: snapshot.scenario.scenarioId }),
+      snapshotSeq: snapshot.seq,
+      ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
+    }
+  }
+
+  const sendReadyToControlInstance = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): void => {
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    if (!clients) return
+    const message = readyMessageForRuntime(controlInstanceId, runtime)
+    for (const client of clients) config.sendReady(client, message)
   }
 
   const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): void => {
@@ -115,6 +148,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     existing?.unsubscribe()
     const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, event))
     subscriptionsByControlInstance.set(controlInstanceId, { runtime, unsubscribe })
+    sendReadyToControlInstance(controlInstanceId, runtime)
   }
 
   return {
@@ -198,6 +232,9 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     send: (socket, notification) => {
       const message = JSON.stringify({ type: 'events', events: notification.events })
       socket.send(message)
+    },
+    sendReady: (socket, message) => {
+      socket.send(JSON.stringify(message))
     },
   })
 

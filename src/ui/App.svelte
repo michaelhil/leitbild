@@ -20,7 +20,7 @@
   } from './control-instance-client.ts'
   import {
     applyControlInstanceEventBatchMessage,
-    parseControlInstanceEventBatchMessage,
+    parseControlInstanceWebSocketMessage,
   } from './control-instance-events.ts'
   import {
     categoryRowsFor,
@@ -76,6 +76,9 @@
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let seenRevisions = $state(new Map<string, number>())
   let controlInstanceSocket = $state<WebSocket | null>(null)
+  let controlInstanceSocketId = $state<ControlInstanceId | null>(null)
+  let expectedRealtimeScenarioId = $state<string | null>(null)
+  let realtimeAttached = $state(false)
   let routeRevision = $state(0)
   let startupSteps = $state<ReadonlyArray<StartupStep>>(createStartupSteps())
   let mapReady = $state(false)
@@ -157,10 +160,16 @@
     status = message
   }
 
+  const completeReadyWhenReady = (): void => {
+    if (!snapshotReady || !realtimeAttached || (mapVisible && !mapReady)) return
+    completeStep('ready')
+  }
+
   const completeObjectsWhenReady = async (): Promise<void> => {
     if (!snapshotReady || (mapVisible && !mapReady)) return
     await tick()
     completeStep('objects')
+    completeReadyWhenReady()
   }
 
   const loadSurfaceForScenario = async (scenarioId: string): Promise<void> => {
@@ -303,35 +312,65 @@
     }
   }
 
+  const socketCanCarryControlInstance = (id: ControlInstanceId): boolean =>
+    controlInstanceSocket !== null
+    && controlInstanceSocketId === id
+    && (controlInstanceSocket.readyState === WebSocket.OPEN || controlInstanceSocket.readyState === WebSocket.CONNECTING)
+
   const connectWebSocket = (id: ControlInstanceId): void => {
+    startStep('realtime')
+    if (socketCanCarryControlInstance(id)) {
+      status = controlInstanceSocket?.readyState === WebSocket.OPEN ? 'Realtime channel open' : 'Connecting'
+      completeReadyWhenReady()
+      return
+    }
+    realtimeAttached = false
     controlInstanceSocket?.close()
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const socket = new WebSocket(`${protocol}//${location.host}/ws?controlInstance=${encodeURIComponent(id)}`)
     controlInstanceSocket = socket
-    startStep('realtime')
+    controlInstanceSocketId = id
     socket.onopen = () => {
-      status = 'Connected'
-      completeStep('realtime')
-      completeStep('ready')
+      if (controlInstanceSocket !== socket) return
+      status = 'Realtime channel open'
     }
     socket.onclose = () => {
       if (controlInstanceSocket !== socket) return
       controlInstanceSocket = null
+      controlInstanceSocketId = null
+      realtimeAttached = false
       status = 'Disconnected'
     }
     socket.onerror = () => {
+      if (controlInstanceSocket !== socket) return
       status = 'WebSocket error'
       failStep('realtime', 'WebSocket error')
     }
     socket.onmessage = (message) => {
       let parsed
       try {
-        parsed = parseControlInstanceEventBatchMessage(message.data as string)
+        parsed = parseControlInstanceWebSocketMessage(message.data as string)
       } catch (err) {
         status = err instanceof Error ? err.message : 'Invalid WebSocket message'
         return
       }
       if (!parsed) return
+      if (parsed.type === 'realtime.ready') {
+        if (parsed.controlInstanceId !== id) {
+          failStep('realtime', `Realtime attached to ${parsed.controlInstanceId}, expected ${id}`)
+          return
+        }
+        if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) {
+          failStep('realtime', `Realtime attached to scenario ${parsed.scenarioId ?? 'none'}, expected ${expectedRealtimeScenarioId}`)
+          return
+        }
+        realtimeAttached = true
+        if (parsed.clock) clock = parsed.clock
+        status = 'Connected'
+        completeStep('realtime')
+        completeReadyWhenReady()
+        return
+      }
       const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
       if (applied.objectUpdate) {
         objects = [...applied.objectUpdate.objects]
@@ -373,6 +412,8 @@
   const joinControlInstance = async (): Promise<void> => {
     controlInstanceSocket?.close()
     controlInstanceSocket = null
+    controlInstanceSocketId = null
+    realtimeAttached = false
     resetStartupForJoin()
     snapshotReady = false
     mapReady = false
@@ -382,7 +423,9 @@
     let activeStartupStep: StartupStepId = 'control-instance'
     try {
       const id = controlInstanceIdFromPath()
-      const body = await joinControlInstanceClient(id, { scenarioId: scenarioIdFromUrl() })
+      const requestedScenarioId = scenarioIdFromUrl()
+      expectedRealtimeScenarioId = requestedScenarioId ?? null
+      const body = await joinControlInstanceClient(id, { scenarioId: requestedScenarioId })
       completeStep('control-instance')
       activeStartupStep = 'snapshot'
       startStep('snapshot')
@@ -391,6 +434,7 @@
       scenarioState = body.snapshot.scenario
       clock = body.snapshot.clock
       if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
+      expectedRealtimeScenarioId = scenarioState.scenarioId
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
@@ -410,8 +454,7 @@
 
   const resetScenario = async (): Promise<void> => {
     if (!controlInstanceId) return
-    controlInstanceSocket?.close()
-    controlInstanceSocket = null
+    realtimeAttached = false
     resetStartupForJoin()
     snapshotReady = false
     mapReady = false
@@ -421,7 +464,10 @@
     startStep('control-instance')
     let activeStartupStep: StartupStepId = 'control-instance'
     try {
-      const body = await resetControlInstance(controlInstanceId, { scenarioId: scenarioIdForReset() })
+      const requestedScenarioId = scenarioIdForReset()
+      expectedRealtimeScenarioId = requestedScenarioId ?? null
+      startStep('realtime')
+      const body = await resetControlInstance(controlInstanceId, { scenarioId: requestedScenarioId })
       completeStep('control-instance')
       activeStartupStep = 'snapshot'
       startStep('snapshot')
@@ -429,6 +475,7 @@
       scenarioState = body.snapshot.scenario
       clock = body.snapshot.clock
       if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
+      expectedRealtimeScenarioId = scenarioState.scenarioId
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true

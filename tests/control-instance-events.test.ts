@@ -5,6 +5,7 @@ import {
   applyControlInstanceEventBatchMessage,
   commandStatusForResult,
   parseControlInstanceEventBatchMessage,
+  parseControlInstanceWebSocketMessage,
   removeOperationalObject,
   upsertOperationalObject,
 } from '../src/ui/control-instance-events.ts'
@@ -34,6 +35,26 @@ describe('control instance event helpers', () => {
     expect(parseControlInstanceEventBatchMessage(JSON.stringify({ type: 'snapshot' }))).toBeNull()
   })
 
+  test('parses realtime ready messages separately from event batches', () => {
+    const parsed = parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'realtime.ready',
+      controlInstanceId: 'sandbox',
+      scenarioId: 'halden',
+      snapshotSeq: 12,
+    }))
+
+    expect(parsed?.type).toBe('realtime.ready')
+    if (parsed?.type !== 'realtime.ready') throw new Error('expected realtime ready message')
+    expect(String(parsed.controlInstanceId)).toBe('sandbox')
+    expect(parsed.scenarioId).toBe('halden')
+    expect(parsed.snapshotSeq).toBe(12)
+    expect(parseControlInstanceEventBatchMessage(JSON.stringify({
+      type: 'realtime.ready',
+      controlInstanceId: 'sandbox',
+      snapshotSeq: 12,
+    }))).toBeNull()
+  })
+
   test('fails visibly for malformed WebSocket protocol payloads', () => {
     expect(() => parseControlInstanceEventBatchMessage('{')).toThrow('invalid WebSocket JSON')
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
@@ -43,6 +64,11 @@ describe('control instance event helpers', () => {
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
       type: 'events',
     }))).toThrow('missing events array')
+    expect(() => parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'realtime.ready',
+      scenarioId: 'halden',
+      snapshotSeq: 12,
+    }))).toThrow('missing control instance id')
   })
 
   test('upserts objects without duplicating object ids', () => {

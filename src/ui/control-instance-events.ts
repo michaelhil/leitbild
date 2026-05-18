@@ -1,4 +1,4 @@
-import type { IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+import type { ControlInstanceId, IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
@@ -20,6 +20,16 @@ export interface ControlInstanceEventBatchMessage {
   readonly type: 'events'
   readonly events: ReadonlyArray<ControlInstanceEventPayload>
 }
+
+export interface RealtimeReadyMessage {
+  readonly type: 'realtime.ready'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly clock?: SimulationClockState
+}
+
+export type ControlInstanceWebSocketMessage = ControlInstanceEventBatchMessage | RealtimeReadyMessage
 
 interface ObjectApplicationResult {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -78,20 +88,37 @@ const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
   }
 }
 
-export const parseControlInstanceEventBatchMessage = (raw: string): ControlInstanceEventBatchMessage | null => {
+export const parseControlInstanceWebSocketMessage = (raw: string): ControlInstanceWebSocketMessage | null => {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw) as unknown
   } catch (err) {
     throw new Error(`invalid WebSocket JSON: ${err instanceof Error ? err.message : String(err)}`)
   }
-  if (!isRecord(parsed) || parsed.type !== 'events') return null
+  if (!isRecord(parsed)) return null
+  if (parsed.type === 'realtime.ready') {
+    if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid realtime ready message: missing control instance id')
+    if (typeof parsed.snapshotSeq !== 'number') throw new Error('invalid realtime ready message: missing snapshot sequence')
+    return {
+      type: 'realtime.ready',
+      controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+      ...(typeof parsed.scenarioId === 'string' ? { scenarioId: parsed.scenarioId } : {}),
+      snapshotSeq: parsed.snapshotSeq,
+      ...(isRecord(parsed.clock) ? { clock: parsed.clock as unknown as SimulationClockState } : {}),
+    }
+  }
+  if (parsed.type !== 'events') return null
   if (!Array.isArray(parsed.events)) throw new Error('invalid WebSocket events message: missing events array')
 
   return {
     type: 'events',
     events: parsed.events.map(parseEventPayload),
   }
+}
+
+export const parseControlInstanceEventBatchMessage = (raw: string): ControlInstanceEventBatchMessage | null => {
+  const message = parseControlInstanceWebSocketMessage(raw)
+  return message?.type === 'events' ? message : null
 }
 
 const applyScenarioEvents = (
