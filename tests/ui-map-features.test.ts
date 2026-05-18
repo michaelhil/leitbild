@@ -107,10 +107,14 @@ describe('map feature projection', () => {
       objects,
       ambulance.id,
       ['incident:gronland-unattended'],
-      object => object.id === ambulance.id,
+      object => {
+        const presentation = ambulancePack.presentObject(object, { objects })
+        return presentation.noteworthyUpdates === true && object.id === 'incident:gronland-unattended'
+      },
       object => ambulancePack.presentObject(object, { objects }),
     )
     const ambulanceFeature = objectFeatures.features.find(feature => feature.id === ambulance.id)
+    const incidentFeature = objectFeatures.features.find(feature => feature.id === 'incident:gronland-unattended')
 
     expect(objectFeatures.features).toHaveLength(9)
     expect(ambulanceFeature?.geometry).toEqual(ambulance.spatial.position?.point)
@@ -119,7 +123,8 @@ describe('map feature projection', () => {
     expect(ambulanceFeature?.properties.muted).toBe(false)
     expect(ambulanceFeature?.properties.selected).toBe(true)
     expect(ambulanceFeature?.properties.highlighted).toBe(false)
-    expect(ambulanceFeature?.properties.hasNewInfo).toBe(true)
+    expect(ambulanceFeature?.properties.hasNewInfo).toBe(false)
+    expect(incidentFeature?.properties.hasNewInfo).toBe(true)
   })
 
   test('projects traffic conditions into native MapLibre line features', () => {

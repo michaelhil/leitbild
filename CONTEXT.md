@@ -154,6 +154,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Simulation Provider** may observe committed **Domain Events** to update **Provider Private State** or a **Provider Projection**.
 - A **Control Instance** can have many **Actors**.
 - A **Control Instance** can have many **Clients**.
+- A **Scenario Run** is a URL-addressable run of one **Scenario Definition** inside a **Control Instance**, for example `/i/halden/sandbox`; its internal Control Instance id is `halden:sandbox`.
 - An **Actor** can have many **Clients**.
 - A **Client** presents one primary **Surface** at a time.
 - A future user account can map to one or more **Actors**.
@@ -177,7 +178,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 
 ## Example dialogue
 
-> **Dev:** "When I reload `/i/sandbox`, should I create a new Control Instance?"
+> **Dev:** "When I reload `/i/halden/sandbox`, should I create a new Control Instance?"
 > **Domain expert:** "No — reloading should rejoin the existing Control Instance."
 >
 > **Dev:** "Can the server run several ambulance sims at the same time?"

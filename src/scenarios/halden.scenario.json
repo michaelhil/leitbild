@@ -48,6 +48,17 @@
     },
     {
       "pack": "ambulance",
+      "type": "ambulance",
+      "id": "amb:halden-3",
+      "label": "Halden Ambulance 3",
+      "position": [11.3796, 59.1178],
+      "equipment": ["stretcher", "oxygen"],
+      "patientsOnBoard": 1,
+      "targetId": "facility:halden-hospital",
+      "status": "transporting"
+    },
+    {
+      "pack": "ambulance",
       "type": "incident",
       "id": "incident:halden-harbor",
       "label": "Harbor fall injury",
@@ -133,6 +144,122 @@
           {
             "type": "highlight_objects",
             "objectIds": ["amb:halden-1", "incident:halden-bridge", "traffic:halden-center-slowdown"]
+          }
+        ]
+      },
+      {
+        "id": "harbor-victim-clarified",
+        "at": { "kind": "after_scenario_start", "seconds": 45 },
+        "actions": [
+          {
+            "type": "update_object",
+            "objectId": "incident:halden-harbor",
+            "operation": {
+              "pack": "ambulance",
+              "type": "set_incident_victims",
+              "victims": { "state": "confirmed", "count": 2 }
+            }
+          },
+          {
+            "type": "show_guidance",
+            "guidance": {
+              "id": "halden-harbor-update",
+              "title": "Harbor incident updated",
+              "message": "Harbor responders now report two confirmed victims. Check whether the currently assigned resources are still enough.",
+              "objectIds": ["incident:halden-harbor"],
+              "dismissible": true
+            }
+          },
+          {
+            "type": "highlight_objects",
+            "objectIds": ["incident:halden-harbor"]
+          }
+        ]
+      },
+      {
+        "id": "south-queue-started",
+        "at": { "kind": "after_scenario_start", "seconds": 90 },
+        "actions": [
+          {
+            "type": "create_object",
+            "object": {
+              "pack": "traffic",
+              "type": "traffic_condition",
+              "id": "traffic:halden-south-queue",
+              "label": "South bridge queue",
+              "geometryMode": "road_segment",
+              "from": [11.3773, 59.1157],
+              "to": [11.3914, 59.1204],
+              "condition": "congestion",
+              "severity": "high",
+              "speedFactor": 0.42,
+              "reason": "Queue forming after southbound bridge approach"
+            }
+          },
+          {
+            "type": "highlight_objects",
+            "objectIds": ["traffic:halden-south-queue"]
+          }
+        ]
+      },
+      {
+        "id": "fortress-incident-created",
+        "at": { "kind": "after_scenario_start", "seconds": 120 },
+        "actions": [
+          {
+            "type": "create_object",
+            "object": {
+              "pack": "ambulance",
+              "type": "incident",
+              "id": "incident:halden-fortress",
+              "label": "Fortress stair fall",
+              "position": [11.3992, 59.1194],
+              "triage": "yellow",
+              "victims": { "state": "unknown" }
+            }
+          },
+          {
+            "type": "show_guidance",
+            "guidance": {
+              "id": "halden-new-incident",
+              "title": "New incident",
+              "message": "A new fall injury has been reported near the fortress. Victim count is initially unknown; keep monitoring for an update.",
+              "objectIds": ["incident:halden-fortress"],
+              "dismissible": true
+            }
+          },
+          {
+            "type": "highlight_objects",
+            "objectIds": ["incident:halden-fortress"]
+          }
+        ]
+      },
+      {
+        "id": "fortress-victims-clarified",
+        "at": { "kind": "after_scenario_start", "seconds": 165 },
+        "actions": [
+          {
+            "type": "update_object",
+            "objectId": "incident:halden-fortress",
+            "operation": {
+              "pack": "ambulance",
+              "type": "set_incident_victims",
+              "victims": { "state": "estimated", "count": 2 }
+            }
+          }
+        ]
+      },
+      {
+        "id": "center-slowdown-cleared",
+        "at": { "kind": "after_scenario_start", "seconds": 240 },
+        "actions": [
+          {
+            "type": "delete_object",
+            "objectId": "traffic:halden-center-slowdown"
+          },
+          {
+            "type": "clear_highlights",
+            "objectIds": ["traffic:halden-center-slowdown", "traffic:halden-south-queue", "incident:halden-harbor", "incident:halden-fortress"]
           }
         ]
       }

@@ -26,5 +26,5 @@ The compact config layer exists because full `OperationalObject` JSON is too ver
 - Overdue script steps may fire when a restored runtime starts.
 - Domain-specific mechanics still live in packs and interaction handlers.
 - Scenario scripts can create or update objects across active packs, but object schemas must remain valid at the pack boundary.
-- Scenario configs can demonstrate multi-pack scenarios by activating several packs, for example ambulance plus traffic, while keeping scenario URLs simple such as `?scenario=oslo-ambulance`.
+- Scenario configs can demonstrate multi-pack scenarios by activating several packs, for example ambulance plus traffic, while keeping scenario URLs explicit and scenario-first, such as `/i/oslo-ambulance/sandbox`.
 - Future trigger-based mission logic should build on the same event-commit discipline rather than bypass it.

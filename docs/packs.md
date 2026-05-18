@@ -29,7 +29,7 @@ A pack may contain:
 - simulation adapters or local simulation engines, including providers that compose with other active providers through the Simulation Hub
 - provider metadata, including the pack's default simulation provider
 - object icons, map symbols, and style rules
-- object categories, summaries, hover details, and inspectors
+- object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -210,6 +210,7 @@ Packs must keep boundaries clear:
 - scenarios are top-level compositions that list active packs; they are not owned by one pack.
 - provider ids are internal runtime wiring. Scenario APIs should expose `packs`, not low-level provider ids, unless a debug/runtime-detail endpoint explicitly asks for them.
 - restored control instances use snapshots/history, not scenarios.
+- object presentation decides whether revision changes are noteworthy for operator attention. Frequent motion updates should not become rail `new` badges; packs should enable noteworthy updates only for object types where a changed field is operationally meaningful.
 - pack helpers may construct full `OperationalObject`s, but packs must not introduce a second production seed-object model beside Scenario Definitions.
 - compact scenario files may name pack object specs, but the expanded Scenario Definition is still the runtime contract.
 - multi-pack scenarios may override a pack's default provider and may provide provider config keyed by pack id. The Scenario Catalog resolves those pack-level choices into provider ids before the Simulation Hub starts providers.

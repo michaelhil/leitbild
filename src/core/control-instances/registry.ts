@@ -1,8 +1,12 @@
-import { randomUUID } from 'node:crypto'
 import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ControlInstanceId, InteractionHandler, ScenarioDefinition } from '../model/index.ts'
-import { controlInstanceIdSchema } from '../model/index.ts'
+import {
+  controlInstanceIdSchema,
+  createGeneratedScenarioRunId,
+  createScenarioRunControlInstanceId,
+  parseScenarioRunControlInstanceId,
+} from '../model/index.ts'
 import type { SimulationAdapter } from '../../simulation/protocol.ts'
 import { createSimulationHub } from '../../simulation/hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
@@ -66,24 +70,13 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
-  const controlInstanceIdForScenarioRun = (scenarioId: string, runId: string): ControlInstanceId =>
-    controlInstanceIdSchema.parse(`${scenarioId}:${runId}`)
-
-  const scenarioRunFromId = (
-    id: ControlInstanceId,
-    scenarioId: string | undefined,
-  ): { readonly scenarioId: string | null; readonly runId: string | null } => {
-    if (!scenarioId) return { scenarioId: null, runId: null }
-    const prefix = `${scenarioId}:`
-    if (!id.startsWith(prefix)) return { scenarioId, runId: null }
-    const runId = id.slice(prefix.length)
-    return runId ? { scenarioId, runId } : { scenarioId, runId: null }
-  }
-
   const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
     const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
     if (!config.scenarioCatalog.runtimeFor(requestedScenarioId)) throw new Error(`unknown scenario: ${requestedScenarioId}`)
-    const id = createConfig?.id ?? controlInstanceIdForScenarioRun(requestedScenarioId, `run-${randomUUID()}`)
+    const id = createConfig?.id ?? createScenarioRunControlInstanceId({
+      scenarioId: requestedScenarioId,
+      runId: createGeneratedScenarioRunId(),
+    })
     if (controlInstances.has(id)) throw new Error(`control instance already exists: ${id}`)
     const instanceDir = join(controlInstanceRoot, id)
     const eventLog = createJsonlEventLog(join(instanceDir, 'events.jsonl'))
@@ -202,7 +195,7 @@ export const createControlInstanceRegistry = (config: {
     const loaded = controlInstances.get(id)
     if (loaded) {
       const snapshot = loaded.snapshot()
-      const scenarioRun = scenarioRunFromId(id, snapshot.scenario?.scenarioId)
+      const scenarioRun = parseScenarioRunControlInstanceId(id, snapshot.scenario?.scenarioId)
       return {
         id,
         ...scenarioRun,
@@ -216,7 +209,7 @@ export const createControlInstanceRegistry = (config: {
       path: join(controlInstanceRoot, id, 'snapshot.json'),
     })
     const snapshot = await snapshotStore.load()
-    const scenarioRun = scenarioRunFromId(id, snapshot?.scenario?.scenarioId)
+    const scenarioRun = parseScenarioRunControlInstanceId(id, snapshot?.scenario?.scenarioId)
     return {
       id,
       ...scenarioRun,

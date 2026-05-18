@@ -134,8 +134,11 @@
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects })
 
-  const hasNewInfo = (object: OperationalObject): boolean =>
-    (seenRevisions.get(object.id) ?? object.revision) < object.revision
+  const hasNewInfo = (object: OperationalObject): boolean => {
+    const presentation = presentationFor(object)
+    if (presentation.noteworthyUpdates !== true) return false
+    return (seenRevisions.get(object.id) ?? object.revision) < object.revision
+  }
 
   const markSeen = (object: OperationalObject): void => {
     if ((seenRevisions.get(object.id) ?? -1) >= object.revision) return

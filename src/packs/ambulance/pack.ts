@@ -224,6 +224,7 @@ const presentationForIncident = (
     status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident domain data'),
     fields: data ? incidentDetails(object, data, objects) : [packField('error', 'Error', 'Invalid incident domain data')],
     muted: object.operational.status === 'resolved',
+    noteworthyUpdates: true,
   }
 }
 
@@ -238,6 +239,7 @@ const presentationForHospital = (object: OperationalObject): PackObjectPresentat
       : object.operational.status,
     status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital domain data'),
     fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital domain data')],
+    noteworthyUpdates: true,
   }
 }
 

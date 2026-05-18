@@ -28,6 +28,17 @@
     selectObject,
     deleteObject,
   }: Props = $props()
+
+  const newInfoSummary = $derived(
+    presentation.fields.length === 0
+      ? presentation.summary
+      : presentation.fields.map(field => `${field.label}: ${field.value}`).join(' · '),
+  )
+
+  const acknowledgeNewInfo = (): void => {
+    if (!hasNewInfo) return
+    markSeen(object)
+  }
 </script>
 
 <div
@@ -37,8 +48,6 @@
   class="object-row"
   role="button"
   tabindex="0"
-  onmouseenter={() => markSeen(object)}
-  onfocus={() => markSeen(object)}
   onclick={() => selectObject(object)}
   onkeydown={(event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -51,7 +60,28 @@
       <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
     </span>
     <span class="object-row-content">
-      <span class="row-title">{object.label}{#if hasNewInfo} <span class="new-info-dot">new</span>{/if}</span>
+      <span class="row-title">
+        <span class="row-title-text">{object.label}</span>
+        {#if hasNewInfo}
+          <button
+            class="new-info-dot"
+            type="button"
+            aria-label="Acknowledge new information for {object.label}"
+            onclick={(event) => {
+              event.stopPropagation()
+              acknowledgeNewInfo()
+            }}
+            onmouseleave={acknowledgeNewInfo}
+            onblur={acknowledgeNewInfo}
+          >
+            new
+            <span class="new-info-tooltip">
+              <strong>New information</strong>
+              <span>{newInfoSummary}</span>
+            </span>
+          </button>
+        {/if}
+      </span>
     </span>
   </div>
   <button class="row-info" type="button" aria-label="Show {object.label} details" onclick={(event) => event.stopPropagation()}>

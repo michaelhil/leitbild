@@ -16,6 +16,7 @@ export interface PackObjectPresentation {
   readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
+  readonly noteworthyUpdates?: boolean
 }
 
 export interface PackObjectField {

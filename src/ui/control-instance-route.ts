@@ -1,4 +1,8 @@
-import { controlInstanceIdSchema, type ControlInstanceId } from '../core/model/index.ts'
+import {
+  createGeneratedScenarioRunId,
+  createScenarioRunControlInstanceId,
+  type ControlInstanceId,
+} from '../core/model/index.ts'
 
 export interface ScenarioRunRoute {
   readonly mode: 'control-instance'
@@ -14,7 +18,7 @@ export type ControlSurfaceRoute =
   | ScenarioRunRoute
 
 export const controlInstanceIdForScenarioRun = (scenarioId: string, runId: string): ControlInstanceId =>
-  controlInstanceIdSchema.parse(`${scenarioId}:${runId}`)
+  createScenarioRunControlInstanceId({ scenarioId, runId })
 
 export const pathForNewScenarioRun = (scenarioId: string): string =>
   `/i/${encodeURIComponent(scenarioId)}`
@@ -23,7 +27,7 @@ export const pathForScenarioRun = (scenarioId: string, runId: string): string =>
   `/i/${encodeURIComponent(scenarioId)}/${encodeURIComponent(runId)}`
 
 export const createGeneratedRunId = (): string =>
-  `run-${crypto.randomUUID()}`
+  createGeneratedScenarioRunId()
 
 export const parseControlSurfaceRoute = (pathname: string): ControlSurfaceRoute => {
   if (pathname === '/' || pathname === '/i' || pathname === '/i/') return { mode: 'picker' }

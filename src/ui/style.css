@@ -581,7 +581,16 @@ body.rail-resizing {
 }
 
 .row-title {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  gap: 4px;
+  overflow: visible;
+  vertical-align: middle;
+}
+
+.row-title-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -590,8 +599,10 @@ body.rail-resizing {
 }
 
 .new-info-dot {
-  display: inline-block;
+  position: relative;
+  display: inline-grid;
   vertical-align: middle;
+  border: 0;
   border-radius: 999px;
   padding: 1px 5px;
   background: color-mix(in srgb, var(--critical) 12%, var(--panel));
@@ -599,6 +610,47 @@ body.rail-resizing {
   font-size: 10px;
   font-weight: 760;
   text-transform: uppercase;
+  cursor: help;
+}
+
+.new-info-tooltip {
+  position: absolute;
+  z-index: 36;
+  left: 0;
+  top: calc(100% + 6px);
+  display: none;
+  width: min(250px, calc(var(--rail-width, 360px) - 58px));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px rgb(16 24 40 / 22%);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: left;
+  text-transform: none;
+  pointer-events: none;
+}
+
+.new-info-tooltip strong,
+.new-info-tooltip span {
+  display: block;
+}
+
+.new-info-tooltip strong {
+  margin-bottom: 3px;
+  font-size: 11px;
+}
+
+.new-info-tooltip span {
+  color: var(--muted);
+  font-weight: 520;
+}
+
+.new-info-dot:hover .new-info-tooltip,
+.new-info-dot:focus-visible .new-info-tooltip {
+  display: block;
 }
 
 .object-meta {
