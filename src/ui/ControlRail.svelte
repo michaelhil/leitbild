@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { OperationalObject } from '../core/model/index.ts'
+  import type { OperationalObject, SimulationClockState } from '../core/model/index.ts'
   import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { X } from 'lucide-svelte'
@@ -23,6 +23,7 @@
     readonly status: string
     readonly systemStatusTone: StatusTone
     readonly appVersion: string
+    readonly clock?: SimulationClockState
     readonly footerVisible: boolean
     readonly collapsed: boolean
     readonly categoryRows: ReadonlyArray<CategoryRow>
@@ -38,12 +39,14 @@
     readonly cancelPlacement: () => void
     readonly openStatusModal: () => void
     readonly openSettings: () => void
+    readonly toggleClockPaused: () => Promise<void>
   }
 
   let {
     status,
     systemStatusTone,
     appVersion,
+    clock,
     footerVisible,
     collapsed,
     categoryRows,
@@ -59,6 +62,7 @@
     cancelPlacement,
     openStatusModal,
     openSettings,
+    toggleClockPaused,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -162,8 +166,10 @@
       {status}
       {systemStatusTone}
       {appVersion}
+      {clock}
       {openStatusModal}
       {openSettings}
+      {toggleClockPaused}
     />
   {/if}
 </aside>

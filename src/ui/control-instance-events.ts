@@ -1,4 +1,4 @@
-import type { IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState } from '../core/model/index.ts'
+import type { IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
@@ -13,6 +13,7 @@ export interface ControlInstanceEventPayload {
     readonly ok: boolean
     readonly reason?: string
   }
+  readonly clock?: SimulationClockState
 }
 
 export interface ControlInstanceEventBatchMessage {
@@ -46,6 +47,7 @@ export interface ControlInstanceEventApplication {
   readonly objectUpdate?: ObjectSelectionUpdate
   readonly scenarioUpdate?: ScenarioInstanceState
   readonly commandStatusUpdate?: CommandStatusUpdate
+  readonly clockUpdate?: SimulationClockState
   readonly routesChanged: boolean
 }
 
@@ -72,6 +74,7 @@ const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
     ...(typeof value.guidanceId === 'string' ? { guidanceId: value.guidanceId } : {}),
     ...(Array.isArray(value.objectIds) ? { objectIds: value.objectIds.filter((objectId): objectId is ObjectId => typeof objectId === 'string') } : {}),
     ...(isCommandResult(value.result) ? { result: value.result } : {}),
+    ...(isRecord(value.clock) ? { clock: value.clock as unknown as SimulationClockState } : {}),
   }
 }
 
@@ -216,6 +219,7 @@ export const applyControlInstanceEventBatchMessage = (
   const objectResult = applyObjectEvents(state, message.events)
   const scenarioUpdate = applyScenarioEvents(state.scenarioState, message.events)
   const commandResultEvent = [...message.events].reverse().find(event => event.type === 'command.result' && event.result)
+  const clockEvent = [...message.events].reverse().find(event => event.type === 'clock.updated' && event.clock)
 
   return {
     routesChanged: objectResult.routesChanged,
@@ -235,5 +239,6 @@ export const applyControlInstanceEventBatchMessage = (
           },
         }
       : {}),
+    ...(clockEvent?.clock ? { clockUpdate: clockEvent.clock } : {}),
   }
 }

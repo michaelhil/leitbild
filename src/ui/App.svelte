@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
-  import type { OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState } from '../core/model/index.ts'
+  import type { OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -15,6 +15,7 @@
     listControlInstances,
     resetControlInstance,
     sendControlInstanceCommand,
+    setControlInstanceClock,
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from './control-instance-client.ts'
   import {
@@ -66,6 +67,7 @@
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
+  let clock = $state<SimulationClockState | undefined>(undefined)
   let scenarioDefinition = $state<ScenarioDefinition | null>(null)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
@@ -233,6 +235,7 @@
     const body = await syncControlInstanceSnapshotClient(controlInstanceId)
     objects = [...body.snapshot.objects]
     scenarioState = body.snapshot.scenario
+    clock = body.snapshot.clock
   }
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
@@ -340,6 +343,9 @@
       if (applied.scenarioUpdate) {
         scenarioState = applied.scenarioUpdate
       }
+      if (applied.clockUpdate) {
+        clock = applied.clockUpdate
+      }
       if (applied.routesChanged) {
         routeRevision += 1
       }
@@ -383,6 +389,7 @@
       controlInstanceId = body.id
       objects = [...body.snapshot.objects]
       scenarioState = body.snapshot.scenario
+      clock = body.snapshot.clock
       if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
@@ -420,6 +427,7 @@
       startStep('snapshot')
       objects = [...body.snapshot.objects]
       scenarioState = body.snapshot.scenario
+      clock = body.snapshot.clock
       if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
@@ -444,6 +452,12 @@
     if (!controlInstanceId) return
     setScenarioQueryParam(scenarioId)
     await resetScenario()
+  }
+
+  const toggleClockPaused = async (): Promise<void> => {
+    if (!controlInstanceId || !clock) return
+    const body = await setControlInstanceClock(controlInstanceId, { paused: !clock.paused })
+    clock = body.clock
   }
 
   const handleMapReady = (): void => {
@@ -522,6 +536,7 @@
           {status}
           {systemStatusTone}
           {appVersion}
+          {clock}
           {footerVisible}
           collapsed={railLayout.collapsed}
           {categoryRows}
@@ -537,6 +552,7 @@
           cancelPlacement={placement.cancel}
           {openStatusModal}
           {openSettings}
+          {toggleClockPaused}
         />
         <button
           class="rail-resize-handle"

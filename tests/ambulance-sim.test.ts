@@ -199,6 +199,27 @@ describe('local ambulance simulator', () => {
     await connection.close()
   })
 
+  test('ignores committed object upserts owned by other simulation domains', async () => {
+    const runtime = testScenarioRuntimeConfig()
+    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: runtime })
+    const trafficObject = runtime.initialObjects.find(object => object.domain === 'traffic')
+    if (!trafficObject) throw new Error('scenario missing traffic object')
+
+    await connection.observeCommittedEvents([{
+      id: 'event:test-traffic-upsert' as DomainEvent['id'],
+      controlInstanceId,
+      seq: 1,
+      at: nowIso(),
+      provenance: { source: 'simulator' },
+      type: 'object.upserted',
+      object: trafficObject,
+    }])
+
+    const snapshot = await connection.getSnapshot()
+    expect(snapshot.objects.some(object => object.domain === 'traffic')).toBe(false)
+    await connection.close()
+  })
+
   test('evolves incident and hospital facts through simulator events', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,

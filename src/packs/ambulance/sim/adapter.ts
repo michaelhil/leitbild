@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
 import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
-import { assetRoutePlannedSignalType, interactionSignalSchema } from '../../../core/model/index.ts'
+import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
 import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
 import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
@@ -134,8 +134,15 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
       objects,
     })
     const handlers = new Set<SimulationEventHandler>()
+    let clock = {
+      currentTime: nowIso(),
+      updatedAt: nowIso(),
+      paused: false,
+      speed: 1,
+    }
     const interval = setInterval(() => {
-      const events = engine.tick(1000)
+      if (clock.paused) return
+      const events = engine.tick(Math.round(1000 * clock.speed))
       emit(handlers, events)
     }, 1000)
 
@@ -189,7 +196,13 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
         }
       },
       observeCommittedEvents: async (events): Promise<void> => {
-        engine.observeCommittedEvents(events)
+        engine.observeCommittedEvents(events.filter(event =>
+          event.type === 'object.deleted'
+          || (event.type === 'object.upserted' && event.object.domain === ambulanceDomainId)
+        ))
+      },
+      setClock: async (nextClock): Promise<void> => {
+        clock = nextClock
       },
       sendCommand,
       close: async (): Promise<void> => {

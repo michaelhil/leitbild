@@ -73,7 +73,7 @@ describe('pack architecture', () => {
     }
     const incidentPresentation = ambulancePack.presentObject(incidentBound, { objects: [incidentBound, incident, hospital] })
     expectFieldKeys(incidentPresentation, ['destination'])
-    expectStatusIndicator(incidentPresentation, { shape: 'arrow', direction: 'right', pulse: true })
+    expectStatusIndicator(incidentPresentation, { shape: 'arrow', direction: 'left', pulse: true })
 
     const data = ambulanceDomainDataSchema.parse(ambulance.domainData)
     const hospitalBound: OperationalObject = {
@@ -89,7 +89,7 @@ describe('pack architecture', () => {
       },
     }
     const hospitalPresentation = ambulancePack.presentObject(hospitalBound, { objects: [hospitalBound, incident, hospital] })
-    expectStatusIndicator(hospitalPresentation, { shape: 'arrow', direction: 'left', pulse: true })
+    expectStatusIndicator(hospitalPresentation, { shape: 'arrow', direction: 'right', pulse: true })
 
     const resolvedIncident: OperationalObject = {
       ...incident,

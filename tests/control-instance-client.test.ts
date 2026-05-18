@@ -6,6 +6,7 @@ import {
   listControlInstances,
   resetControlInstance,
   sendControlInstanceCommand,
+  setControlInstanceClock,
   syncControlInstanceSnapshot,
 } from '../src/ui/control-instance-client.ts'
 
@@ -68,6 +69,28 @@ describe('control instance client', () => {
       targetObjectIds: ['object:1'],
       payload: { value: 1 },
     })
+  })
+
+  test('sends clock updates through the Control Instance clock endpoint', async () => {
+    let recordedBody = ''
+    installFetch((input, init) => {
+      expect(String(input)).toBe('/api/control-instances/control-instance%3Atest/clock')
+      expect(init?.method).toBe('POST')
+      recordedBody = String(init?.body ?? '')
+      return new Response(JSON.stringify({
+        clock: {
+          currentTime: '2026-01-01T10:00:00.000Z',
+          updatedAt: '2026-01-01T10:00:00.000Z',
+          paused: true,
+          speed: 1,
+        },
+      }), { status: 200 })
+    })
+
+    const response = await setControlInstanceClock('control-instance:test' as ControlInstanceId, { paused: true })
+
+    expect(response.clock.paused).toBe(true)
+    expect(JSON.parse(recordedBody)).toEqual({ paused: true })
   })
 
   test('passes scenario ids when creating or joining a control instance', async () => {

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, simulationClockUpdateSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
 import type { Actor } from '../control-instances/actors.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import { apiError, json, readJson } from './responses.ts'
@@ -195,6 +195,22 @@ const handleControlInstanceApiInner = async (
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
     const events = runtime.events(afterSeq === undefined ? {} : { afterSeq })
     return json({ events, nextSeq: events.at(-1)?.seq ?? afterSeq ?? 0 })
+  }
+
+  const clockMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/clock$/)
+  if (clockMatch && req.method === 'POST') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(clockMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const raw = await readJson(req)
+    const parsed = simulationClockUpdateSchema.parse(raw)
+    const update = {
+      ...(parsed.paused === undefined ? {} : { paused: parsed.paused }),
+      ...(parsed.speed === undefined ? {} : { speed: parsed.speed }),
+      ...(parsed.currentTime === undefined ? {} : { currentTime: parsed.currentTime }),
+    }
+    const clock = await runtime.setClock(update)
+    return json({ clock })
   }
 
   const commandMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/commands$/)

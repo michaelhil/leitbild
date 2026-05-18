@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId, OperationalObject } from '../src/core/model/index.ts'
+import type { ControlInstanceId, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
 import { deleteObjectCommandKind } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -313,6 +313,76 @@ describe('control instance API', () => {
       expect(updatedAmbulance?.spatial.route?.planned).toBeDefined()
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('updates the control instance clock and pauses provider motion', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const joined = await callRoute<{ readonly snapshot: { readonly clock?: SimulationClockState; readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/clock-sandbox',
+        { method: 'POST' },
+      )
+      expect(joined.body.snapshot.clock?.paused).toBe(false)
+      const ambulance = joined.body.snapshot.objects.find(object => object.kind === 'mobile_entity' && object.operational.status === 'available')
+      const incident = joined.body.snapshot.objects.find(object => object.kind === 'incident')
+      if (!ambulance || !incident) throw new Error('missing clock API test objects')
+
+      await callRoute(registry, '/api/control-instances/clock-sandbox/commands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kind: setDestinationCommandKind,
+          targetObjectIds: [ambulance.id, incident.id],
+          payload: {
+            ambulanceId: ambulance.id,
+            destinationId: incident.id,
+          },
+        }),
+      })
+
+      const paused = await callRoute<{ readonly clock: SimulationClockState }>(
+        registry,
+        '/api/control-instances/clock-sandbox/clock',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paused: true }),
+        },
+      )
+      expect(paused.body.clock.paused).toBe(true)
+
+      const pauseStart = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/clock-sandbox/snapshot',
+      )
+      const pausedStartPoint = pauseStart.body.snapshot.objects.find(object => object.id === ambulance.id)?.spatial.position?.point.coordinates.join(',')
+      await Bun.sleep(1_100)
+      const pauseEnd = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/clock-sandbox/snapshot',
+      )
+      expect(pauseEnd.body.snapshot.objects.find(object => object.id === ambulance.id)?.spatial.position?.point.coordinates.join(',')).toBe(pausedStartPoint)
+
+      const resumed = await callRoute<{ readonly clock: SimulationClockState }>(
+        registry,
+        '/api/control-instances/clock-sandbox/clock',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paused: false }),
+        },
+      )
+      expect(resumed.body.clock.paused).toBe(false)
+      await Bun.sleep(1_100)
+      const moved = await callRoute<{ readonly snapshot: { readonly objects: readonly OperationalObject[] } }>(
+        registry,
+        '/api/control-instances/clock-sandbox/snapshot',
+      )
+      expect(moved.body.snapshot.objects.find(object => object.id === ambulance.id)?.spatial.position?.point.coordinates.join(',')).not.toBe(pausedStartPoint)
+    } finally {
+      await registry.close('clock-sandbox' as ControlInstanceId)
     }
   })
 

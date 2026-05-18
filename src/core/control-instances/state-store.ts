@@ -1,16 +1,18 @@
 import { z } from 'zod'
-import { operationalObjectSchema, scenarioInstanceStateSchema, type DomainEvent, type ObjectId, type OperationalObject, type ScenarioInstanceState } from '../model/index.ts'
+import { operationalObjectSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type DomainEvent, type ObjectId, type OperationalObject, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
 
 export interface ControlInstanceStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly seq: number
   readonly scenario?: ScenarioInstanceState
+  readonly clock?: SimulationClockState
 }
 
 export const controlInstanceStateSnapshotSchema = z.object({
   objects: z.array(operationalObjectSchema),
   seq: z.number().int().nonnegative(),
   scenario: scenarioInstanceStateSchema.optional(),
+  clock: simulationClockStateSchema.optional(),
 })
 
 export interface ControlInstanceStateStore {
@@ -24,6 +26,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
   const objects = new Map<ObjectId, OperationalObject>()
   let seq = 0
   let scenario: ScenarioInstanceState | undefined
+  let clock: SimulationClockState | undefined
 
   const updateScenario = (update: (current: ScenarioInstanceState) => ScenarioInstanceState): void => {
     if (!scenario) throw new Error('scenario event received before scenario state was initialized')
@@ -49,6 +52,10 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
         ...current,
         telemetry: event.telemetry,
       })
+      return
+    }
+    if (event.type === 'clock.updated') {
+      clock = event.clock
       return
     }
     if (event.type === 'scenario.step.started') {
@@ -98,6 +105,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
     for (const object of snapshot.objects) objects.set(object.id, object)
     seq = snapshot.seq
     scenario = snapshot.scenario
+    clock = snapshot.clock
   }
 
   return {
@@ -107,6 +115,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
       objects: [...objects.values()],
       seq,
       ...(scenario === undefined ? {} : { scenario }),
+      ...(clock === undefined ? {} : { clock }),
     }),
     getObject: (id: ObjectId) => objects.get(id),
   }

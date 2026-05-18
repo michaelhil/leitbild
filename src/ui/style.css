@@ -677,12 +677,29 @@ body.rail-resizing {
 }
 
 .system-footer .icon-button {
-  margin-left: auto;
   width: 24px;
   height: 24px;
   color: var(--muted);
   border-color: transparent;
   background: transparent;
+}
+
+.system-footer > .icon-button:last-child {
+  margin-left: auto;
+}
+
+.sim-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sim-clock .icon-button {
+  width: 22px;
+  height: 22px;
 }
 
 .version {

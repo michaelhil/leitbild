@@ -145,7 +145,7 @@ const ambulanceStatus = (
       tone: 'working',
       label: incidentBound ? 'En route to incident empty' : hospitalBound ? 'En route to hospital empty' : 'En route empty',
       indicator: incidentBound || hospitalBound
-        ? { shape: 'arrow', direction: incidentBound ? 'right' : 'left', pulse: true }
+        ? { shape: 'arrow', direction: incidentBound ? 'left' : 'right', pulse: true }
         : { shape: 'dot', innerTone: 'ready', pulse: true },
     }
   }
@@ -156,7 +156,7 @@ const ambulanceStatus = (
       tone: 'working',
       label: hospitalBound ? 'En route to hospital with patient on board' : 'En route with patient on board',
       indicator: hospitalBound
-        ? { shape: 'arrow', direction: 'left', pulse: true }
+        ? { shape: 'arrow', direction: 'right', pulse: true }
         : { shape: 'dot', pulse: true },
     }
   }

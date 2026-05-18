@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep } from '../model/index.ts'
-import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
+import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
@@ -19,6 +19,7 @@ export type ControlInstanceEventHandler = (event: ControlInstanceEventNotificati
 export interface ControlInstanceRuntime {
   readonly id: ControlInstanceId
   readonly snapshot: () => ControlInstanceStateSnapshot
+  readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
@@ -38,6 +39,7 @@ export const createControlInstanceRuntime = async (config: {
   readonly restoredEvents?: ReadonlyArray<DomainEvent>
   readonly scenario?: {
     readonly id: string
+    readonly startsAt?: IsoTimestamp
     readonly script?: ScenarioScript
   }
 }): Promise<ControlInstanceRuntime> => {
@@ -54,6 +56,28 @@ export const createControlInstanceRuntime = async (config: {
     await Promise.allSettled([publish])
   }
 
+  const deriveClock = (clock: SimulationClockState): SimulationClockState => {
+    if (clock.paused) return clock
+    const updatedAtMs = Date.parse(clock.updatedAt)
+    const currentTimeMs = Date.parse(clock.currentTime)
+    const nowMs = Date.now()
+    if (!Number.isFinite(updatedAtMs) || !Number.isFinite(currentTimeMs)) return clock
+    return {
+      ...clock,
+      currentTime: new Date(currentTimeMs + Math.max(0, nowMs - updatedAtMs) * clock.speed).toISOString() as IsoTimestamp,
+      updatedAt: nowIso(),
+    }
+  }
+
+  const snapshotWithCurrentClock = (): ControlInstanceStateSnapshot => {
+    const snapshot = state.snapshot()
+    if (!snapshot.clock) return snapshot
+    return {
+      ...snapshot,
+      clock: deriveClock(snapshot.clock),
+    }
+  }
+
   const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
     if (domainEvents.length === 0) return
     const eventsToPersist: DomainEvent[] = []
@@ -66,7 +90,7 @@ export const createControlInstanceRuntime = async (config: {
       }
     }
     await config.eventLog.appendMany(eventsToPersist)
-    await config.snapshotStore.save(state.snapshot())
+    await config.snapshotStore.save(snapshotWithCurrentClock())
     const notification: ControlInstanceEventNotification = { type: 'event.notification', events: domainEvents }
     for (const handler of handlers) handler(notification)
   }
@@ -366,17 +390,33 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   if (config.restoredSnapshot) {
-    state.hydrate(config.restoredSnapshot)
+    state.hydrate({
+      ...config.restoredSnapshot,
+      clock: config.restoredSnapshot.clock ?? {
+        currentTime: config.scenario?.startsAt ?? nowIso(),
+        updatedAt: nowIso(),
+        paused: false,
+        speed: 1,
+      },
+    })
   } else {
     const snapshot = await config.simulation.getSnapshot()
     const scenarioState = initialScenarioState()
     state.hydrate({
       objects: snapshot.objects,
       seq,
+      clock: {
+        currentTime: config.scenario?.startsAt ?? nowIso(),
+        updatedAt: nowIso(),
+        paused: false,
+        speed: 1,
+      },
       ...(scenarioState === undefined ? {} : { scenario: scenarioState }),
     })
-    await config.snapshotStore.save(state.snapshot())
+    await config.snapshotStore.save(snapshotWithCurrentClock())
   }
+  const hydratedClock = state.snapshot().clock
+  if (hydratedClock) await config.simulation.setClock(hydratedClock)
 
   let scenarioRunner: ScenarioScriptRunner | null = null
   if (config.scenario?.script && state.snapshot().scenario?.script) {
@@ -436,9 +476,35 @@ export const createControlInstanceRuntime = async (config: {
     return result
   }
 
+  const setClock = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {
+    const parsedUpdate = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
+    const currentClock = state.snapshot().clock
+    if (!currentClock) throw new Error('control instance clock is not initialized')
+    const current = deriveClock(currentClock)
+    const at = nowIso()
+    const nextClock: SimulationClockState = {
+      currentTime: parsedUpdate.currentTime ?? current.currentTime,
+      updatedAt: at,
+      paused: parsedUpdate.paused ?? current.paused,
+      speed: parsedUpdate.speed ?? current.speed,
+    }
+    await publish({
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at,
+      provenance: { source: 'operator' },
+      type: 'clock.updated',
+      clock: nextClock,
+    })
+    await config.simulation.setClock(nextClock)
+    return nextClock
+  }
+
   return {
     id: config.id,
-    snapshot: () => state.snapshot(),
+    snapshot: () => snapshotWithCurrentClock(),
+    setClock,
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<DomainEvent> => {
       const afterSeq = eventsConfig?.afterSeq ?? -1
       return durableEvents.filter(event => event.seq > afterSeq)

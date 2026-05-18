@@ -78,6 +78,7 @@ const createControlledSimulation = (initialObject: OperationalObject): {
         reason: 'test connection does not accept commands',
       }),
       observeCommittedEvents: async () => {},
+      setClock: async () => {},
       close: async () => {
         handlers.clear()
       },

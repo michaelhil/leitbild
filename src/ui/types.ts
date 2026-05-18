@@ -1,4 +1,4 @@
-import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState } from '../core/model/index.ts'
+import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
 import type { TrafficSeverity } from '../packs/traffic/model.ts'
 
@@ -6,6 +6,7 @@ export interface ControlInstanceSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly seq: number
   readonly scenario?: ScenarioInstanceState
+  readonly clock?: SimulationClockState
 }
 
 export interface ControlInstanceResponse {
@@ -45,6 +46,10 @@ export interface CommandResponse {
     readonly ok: boolean
     readonly reason?: string
   }
+}
+
+export interface ClockResponse {
+  readonly clock: SimulationClockState
 }
 
 export interface CreateDraft {

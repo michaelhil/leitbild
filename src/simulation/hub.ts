@@ -106,6 +106,9 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
         observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
           await Promise.all(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
         },
+        setClock: async (clock): Promise<void> => {
+          await Promise.all(connections.map(({ connection }) => connection.setClock(clock)))
+        },
         close: async (): Promise<void> => {
           for (const unsubscribe of unsubscribes) unsubscribe()
           handlers.clear()

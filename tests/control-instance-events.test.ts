@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId, GeoJsonLineString, ObjectId } from '../src/core/model/index.ts'
+import type { ControlInstanceId, GeoJsonLineString, IsoTimestamp, ObjectId, SimulationClockState } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import {
   applyControlInstanceEventBatchMessage,
@@ -101,6 +101,25 @@ describe('control instance event helpers', () => {
     expect(rejected.commandStatusUpdate?.commandStatus).toBe('Command rejected: blocked')
     expect(rejected.routesChanged).toBe(false)
     expect(commandStatusForResult({ ok: true })).toBe('Command accepted')
+  })
+
+  test('applies clock update events separately from object updates', () => {
+    const objects = scenarioObjects()
+    const clock: SimulationClockState = {
+      currentTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
+      updatedAt: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
+      paused: true,
+      speed: 1,
+    }
+
+    const applied = applyControlInstanceEventBatchMessage(
+      { objects, selectedControllerId: null },
+      { type: 'events', events: [{ type: 'clock.updated', clock }] },
+    )
+
+    expect(applied.clockUpdate).toEqual(clock)
+    expect(applied.objectUpdate).toBeUndefined()
+    expect(applied.routesChanged).toBe(false)
   })
 
   test('applies multiple object updates in one pass while preserving existing order', () => {

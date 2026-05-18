@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent, InteractionSignal, SignalId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent, InteractionSignal, ObjectId, SignalId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import type { ControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -37,6 +37,27 @@ describe('control instance registry', () => {
       payload: {
         ambulanceId: ambulance.id,
         incidentId: incident.id,
+      },
+      issuedAt: nowIso(),
+    }
+    const result = await runtime.issueCommand({ id: command.actorId, label: 'Test Operator', role: 'operator' }, command)
+    expect(result.ok).toBe(true)
+  }
+
+  const issueDispatchToIncident = async (
+    runtime: ControlInstanceRuntime,
+    ambulanceId: string,
+    incidentId: string,
+  ): Promise<void> => {
+    const command: CommandEnvelope = {
+      id: `command:test-${crypto.randomUUID()}` as CommandId,
+      controlInstanceId: runtime.id,
+      actorId: 'actor:test-operator' as ActorId,
+      kind: assignToIncidentCommandKind,
+      targetObjectIds: [ambulanceId as ObjectId, incidentId as ObjectId],
+      payload: {
+        ambulanceId,
+        incidentId,
       },
       issuedAt: nowIso(),
     }
@@ -125,6 +146,68 @@ describe('control instance registry', () => {
 
     expect(secondJoin).toBe(firstJoin)
     expect(registry.list()).toHaveLength(1)
+    expect(await registry.close('sandbox' as ControlInstanceId)).toBe(true)
+  })
+
+  test('resets a loaded control instance when a different scenario is explicitly requested', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const registry = createRegistry(dataDir)
+    const firstJoin = await registry.ensure('sandbox' as ControlInstanceId, { scenarioId: 'oslo-ambulance' })
+    expect(firstJoin.snapshot().scenario?.scenarioId).toBe('oslo-ambulance')
+
+    const switched = await registry.ensure('sandbox' as ControlInstanceId, { scenarioId: 'halden' })
+
+    expect(switched).not.toBe(firstJoin)
+    expect(switched.snapshot().scenario?.scenarioId).toBe('halden')
+    expect(switched.snapshot().objects.map(object => object.id)).toContain('facility:halden-hospital' as ObjectId)
+    expect(switched.snapshot().objects.map(object => object.id)).not.toContain('facility:ous' as ObjectId)
+    expect(registry.list()).toHaveLength(1)
+    expect(await registry.close('sandbox' as ControlInstanceId)).toBe(true)
+  })
+
+  test('resets a persisted control instance when a different scenario is explicitly requested', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+    const firstRegistry = createRegistry(dataDir)
+    const firstRuntime = await firstRegistry.ensure(controlInstanceId, { scenarioId: 'oslo-ambulance' })
+    expect(firstRuntime.snapshot().scenario?.scenarioId).toBe('oslo-ambulance')
+    expect(await firstRegistry.close(controlInstanceId)).toBe(true)
+
+    const secondRegistry = createRegistry(dataDir)
+    const switched = await secondRegistry.ensure(controlInstanceId, { scenarioId: 'halden' })
+
+    expect(switched.snapshot().scenario?.scenarioId).toBe('halden')
+    expect(switched.snapshot().objects.map(object => object.id)).toContain('facility:halden-hospital' as ObjectId)
+    expect(switched.snapshot().objects.map(object => object.id)).not.toContain('facility:ous' as ObjectId)
+    expect(await secondRegistry.close(controlInstanceId)).toBe(true)
+  })
+
+  test('keeps multiple Halden ambulances moving after an explicit scenario switch', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const registry = createRegistry(dataDir)
+    await registry.ensure('sandbox' as ControlInstanceId, { scenarioId: 'oslo-ambulance' })
+    const runtime = await registry.ensure('sandbox' as ControlInstanceId, { scenarioId: 'halden' })
+
+    await issueDispatchToIncident(runtime, 'amb:halden-1', 'incident:halden-bridge')
+    await issueDispatchToIncident(runtime, 'amb:halden-2', 'incident:halden-harbor')
+
+    const assigned = runtime.snapshot().objects
+    const firstAssigned = assigned.find(object => object.id === 'amb:halden-1')
+    const secondAssigned = assigned.find(object => object.id === 'amb:halden-2')
+    const firstStart = firstAssigned?.spatial.position?.point.coordinates.join(',')
+    const secondStart = secondAssigned?.spatial.position?.point.coordinates.join(',')
+    expect(firstAssigned?.spatial.route?.planned?.coordinates.length).toBeGreaterThanOrEqual(2)
+    expect(secondAssigned?.spatial.route?.planned?.coordinates.length).toBeGreaterThanOrEqual(2)
+
+    await Bun.sleep(1_100)
+
+    const moved = runtime.snapshot().objects
+    const firstMoved = moved.find(object => object.id === 'amb:halden-1')
+    const secondMoved = moved.find(object => object.id === 'amb:halden-2')
+    expect(firstMoved?.spatial.position?.point.coordinates.join(',')).not.toBe(firstStart)
+    expect(secondMoved?.spatial.position?.point.coordinates.join(',')).not.toBe(secondStart)
+    expect(firstMoved?.spatial.position?.speedMps).toBeGreaterThan(0)
+    expect(secondMoved?.spatial.position?.speedMps).toBeGreaterThan(0)
     expect(await registry.close('sandbox' as ControlInstanceId)).toBe(true)
   })
 

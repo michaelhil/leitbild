@@ -73,9 +73,19 @@ export const createControlInstanceRegistry = (config: {
       controlInstanceId: id,
       path: join(instanceDir, 'snapshot.json'),
     })
-    const restoredSnapshot = await snapshotStore.load()
-    const restoredEvents = await eventLog.readAll()
-    validateRestoredEvents(id, restoredEvents)
+    let restoredSnapshot = await snapshotStore.load()
+    let restoredEvents: ReadonlyArray<DomainEvent> = []
+    if (
+      restoredSnapshot
+      && createConfig?.scenarioId !== undefined
+      && restoredSnapshot.scenario?.scenarioId !== createConfig.scenarioId
+    ) {
+      await rm(instanceDir, { recursive: true, force: true })
+      restoredSnapshot = null
+    } else {
+      restoredEvents = await eventLog.readAll()
+      validateRestoredEvents(id, restoredEvents)
+    }
     const maxEventSeq = restoredEvents.at(-1)?.seq ?? 0
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
@@ -114,6 +124,7 @@ export const createControlInstanceRegistry = (config: {
         : {
             scenario: {
               id: scenarioRuntime.scenarioId,
+              ...(scenarioRuntime.scenario.world.startsAt === undefined ? {} : { startsAt: scenarioRuntime.scenario.world.startsAt }),
               ...(scenarioRuntime.scenario.script === undefined ? {} : { script: scenarioRuntime.scenario.script }),
             },
           }),
@@ -124,7 +135,12 @@ export const createControlInstanceRegistry = (config: {
 
   const ensure = async (id: ControlInstanceId, ensureConfig?: { readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
     const existing = controlInstances.get(id)
-    if (existing) return existing
+    if (existing) {
+      if (ensureConfig?.scenarioId !== undefined && existing.snapshot().scenario?.scenarioId !== ensureConfig.scenarioId) {
+        return await reset(id, { scenarioId: ensureConfig.scenarioId })
+      }
+      return existing
+    }
     return create({
       id,
       ...(ensureConfig?.scenarioId === undefined ? {} : { scenarioId: ensureConfig.scenarioId }),

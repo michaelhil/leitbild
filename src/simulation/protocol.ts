@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, TelemetryState } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 
 export interface SimulationSnapshot {
@@ -48,6 +48,7 @@ export interface SimulationConnection {
   readonly subscribe: (handler: SimulationEventHandler) => () => void
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
   readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => Promise<void>
+  readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly close: () => Promise<void>
 }
 

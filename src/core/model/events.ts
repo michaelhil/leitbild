@@ -3,7 +3,7 @@ import { commandEnvelopeSchema, commandResultSchema, type CommandEnvelope, type 
 import { eventIdSchema, objectIdSchema, controlInstanceIdSchema, type EventId, type ObjectId, type ControlInstanceId } from './ids.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
-import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
+import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type SimulationClockState } from './time.ts'
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 import { scenarioGuidanceSchema, type ScenarioGuidance } from './scenario.ts'
@@ -45,6 +45,10 @@ export type DomainEvent =
   | (EventEnvelopeBase & {
       readonly type: 'notification.emitted'
       readonly notification: OperationalNotification
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'clock.updated'
+      readonly clock: SimulationClockState
     })
   | (EventEnvelopeBase & {
       readonly type: 'scenario.step.started'
@@ -104,6 +108,10 @@ export const domainEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('notification.emitted'),
     notification: operationalNotificationSchema,
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('clock.updated'),
+    clock: simulationClockStateSchema,
   }),
   eventBaseSchema.extend({
     type: z.literal('scenario.step.started'),

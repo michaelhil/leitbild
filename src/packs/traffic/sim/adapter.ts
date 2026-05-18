@@ -218,6 +218,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
           if (event.type === 'object.deleted') objects.delete(event.objectId)
         }
       },
+      setClock: async (): Promise<void> => {},
       close: async (): Promise<void> => {
         handlers.clear()
       },

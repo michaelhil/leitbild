@@ -1,5 +1,6 @@
 import type { ControlInstanceId } from '../core/model/index.ts'
 import type {
+  ClockResponse,
   CommandResponse,
   ControlInstanceListResponse,
   ControlInstanceResponse,
@@ -91,4 +92,16 @@ export const sendControlInstanceCommand = async (
     body: JSON.stringify(command),
   })
   return await readJsonResponse<CommandResponse>(response, 'command failed')
+}
+
+export const setControlInstanceClock = async (
+  controlInstanceId: ControlInstanceId,
+  update: { readonly paused?: boolean; readonly speed?: number; readonly currentTime?: string },
+): Promise<ClockResponse> => {
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/clock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  })
+  return await readJsonResponse<ClockResponse>(response, 'clock update failed')
 }
