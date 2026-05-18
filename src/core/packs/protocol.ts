@@ -1,4 +1,4 @@
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, ObjectId, OperationalObject } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject } from '../model/index.ts'
 
 export interface PackObjectCategory {
   readonly id: string
@@ -86,12 +86,48 @@ export interface PackSimulationProvider {
   readonly kind: 'local' | 'remote' | 'replay'
 }
 
+export interface PackScenarioObjectSpec {
+  readonly pack: string
+  readonly type: string
+  readonly id: string
+  readonly label: string
+  readonly [key: string]: unknown
+}
+
+export interface PackScenarioOperationSpec {
+  readonly pack: string
+  readonly type: string
+  readonly [key: string]: unknown
+}
+
+export interface PackScenarioExpansionContext {
+  readonly at: IsoTimestamp
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly objectById: (id: ObjectId) => OperationalObject | undefined
+}
+
+export interface PackScenarioOperationContext extends PackScenarioExpansionContext {
+  readonly object: OperationalObject
+}
+
+export interface PackScenarioSupport {
+  readonly expandObject: (
+    spec: PackScenarioObjectSpec,
+    context: PackScenarioExpansionContext,
+  ) => OperationalObject
+  readonly applyOperation: (
+    operation: PackScenarioOperationSpec,
+    context: PackScenarioOperationContext,
+  ) => OperationalObject
+}
+
 export interface LeitbildPack {
   readonly id: string
   readonly name: string
   readonly domain: string
   readonly simulationProviders?: ReadonlyArray<PackSimulationProvider>
   readonly defaultSimulationProviderId?: string
+  readonly scenario?: PackScenarioSupport
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>

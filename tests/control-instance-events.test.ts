@@ -8,14 +8,14 @@ import {
   removeOperationalObject,
   upsertOperationalObject,
 } from '../src/ui/control-instance-events.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const scenarioObjects = () =>
   createAmbulanceSimEngine({
     controlInstanceId: 'control-instance:event-helper-test' as ControlInstanceId,
-    objects: osloAmbulanceTutorialScenario.initialObjects,
+    objects: osloAmbulanceScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

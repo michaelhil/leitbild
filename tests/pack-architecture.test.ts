@@ -15,7 +15,7 @@ import {
 } from '../src/packs/ambulance/commands.ts'
 import { ambulanceSimProviderId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 
@@ -31,7 +31,7 @@ describe('pack architecture', () => {
   test('ambulance pack builds domain commands behind the generic pack interface', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:pack-architecture' as ControlInstanceId,
-      objects: osloAmbulanceTutorialScenario.initialObjects,
+      objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -57,7 +57,7 @@ describe('pack architecture', () => {
   test('ambulance pack exposes structured fields and semantic status indicators', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:pack-presentation' as ControlInstanceId,
-      objects: osloAmbulanceTutorialScenario.initialObjects,
+      objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const objects = engine.snapshot().objects
@@ -104,7 +104,7 @@ describe('pack architecture', () => {
   test('ambulance pack presents hospital trauma beds as available capacity', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:hospital-capacity-presentation' as ControlInstanceId,
-      objects: osloAmbulanceTutorialScenario.initialObjects,
+      objects: osloAmbulanceScenario.initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
@@ -167,9 +167,9 @@ describe('pack architecture', () => {
   test('scenario catalog resolves scenario packs to internal simulation providers', () => {
     const catalog = createScenarioCatalog({
       packs: [ambulancePack, trafficPack],
-      scenarios: [osloAmbulanceTutorialScenario],
+      scenarios: [osloAmbulanceScenario],
     })
-    const runtime = catalog.runtimeFor('oslo-ambulance-tutorial')
+    const runtime = catalog.runtimeFor('oslo-ambulance')
 
     expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic'])
     expect(runtime?.providers.map(provider => provider.providerId).sort()).toEqual([
@@ -186,7 +186,7 @@ describe('pack architecture', () => {
     expect(() => createScenarioCatalog({
       packs: [ambulancePack, trafficPack],
       scenarios: [{
-        ...osloAmbulanceTutorialScenario,
+        ...osloAmbulanceScenario,
         id: 'bad-provider-override',
         providerOverrides: {
           ambulance: trafficSimProviderId,

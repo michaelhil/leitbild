@@ -11,7 +11,7 @@ import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/si
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 describe('control instance registry', () => {
   const createRegistry = (dataDir: string) => createControlInstanceRegistry({
@@ -143,7 +143,7 @@ describe('control instance registry', () => {
       id: controlInstanceId,
       loaded: false,
       snapshotSeq,
-      objectCount: osloAmbulanceTutorialScenario.initialObjects.length,
+      objectCount: osloAmbulanceScenario.initialObjects.length,
     })
   })
 
@@ -152,14 +152,14 @@ describe('control instance registry', () => {
     const controlInstanceId = 'sandbox' as ControlInstanceId
     const firstRegistry = createRegistry(dataDir)
     const firstRuntime = await firstRegistry.ensure(controlInstanceId)
-    expect(firstRuntime.snapshot().objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+    expect(firstRuntime.snapshot().objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
     expect(await firstRegistry.close(controlInstanceId)).toBe(true)
 
     const secondRegistry = createRegistry(dataDir)
     const restoredRuntime = await secondRegistry.ensure(controlInstanceId)
     const restoredObjects = restoredRuntime.snapshot().objects
 
-    expect(restoredObjects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+    expect(restoredObjects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
     expect(await secondRegistry.close(controlInstanceId)).toBe(true)
   })
 

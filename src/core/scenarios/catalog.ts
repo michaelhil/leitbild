@@ -49,6 +49,7 @@ export const createScenarioCatalog = (config: {
   const validateScenario = (scenario: ScenarioDefinition): void => {
     if (scenario.packs.length === 0) throw new Error(`scenario ${scenario.id} must declare at least one pack`)
     const objectIds = new Set<string>(scenario.initialObjects.map(object => object.id))
+    if (objectIds.size !== scenario.initialObjects.length) throw new Error(`scenario ${scenario.id} has duplicate initial object ids`)
     const unknownContextObjectIds = scenario.initialContexts
       .map(initialContext => initialContext.objectId)
       .filter(objectId => !objectIds.has(objectId))

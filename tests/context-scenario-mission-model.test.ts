@@ -12,14 +12,14 @@ import {
   type ControlInstanceId,
   type ObjectId,
 } from '../src/core/model/index.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const ambulanceObjects = () =>
   createAmbulanceSimEngine({
     controlInstanceId: 'control-instance:context-model-test' as ControlInstanceId,
-    objects: osloAmbulanceTutorialScenario.initialObjects,
+    objects: osloAmbulanceScenario.initialObjects,
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 

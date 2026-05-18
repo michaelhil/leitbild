@@ -77,14 +77,14 @@ describe('control instance client', () => {
       return new Response(JSON.stringify({ id: 'control-instance:test', snapshot: { objects: [], seq: 0 } }), { status: 200 })
     })
 
-    await createControlInstance({ scenarioId: 'oslo-ambulance-tutorial' })
-    await joinControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance-tutorial' })
-    await resetControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance-tutorial' })
+    await createControlInstance({ scenarioId: 'oslo-ambulance' })
+    await joinControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance' })
+    await resetControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance' })
 
     expect(bodies.map(body => JSON.parse(body))).toEqual([
-      { scenarioId: 'oslo-ambulance-tutorial' },
-      { scenarioId: 'oslo-ambulance-tutorial' },
-      { scenarioId: 'oslo-ambulance-tutorial' },
+      { scenarioId: 'oslo-ambulance' },
+      { scenarioId: 'oslo-ambulance' },
+      { scenarioId: 'oslo-ambulance' },
     ])
   })
 

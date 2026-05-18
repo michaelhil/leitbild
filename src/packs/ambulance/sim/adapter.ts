@@ -51,7 +51,9 @@ const validateAmbulanceProviderObject = (object: OperationalObject): Operational
 const initialObjectsFor = (config: SimulationConnectionConfig): ReadonlyArray<OperationalObject> => {
   const objects = config.initialObjects ?? config.scenario?.initialObjects
   if (!objects) throw new Error(`ambulance provider requires scenario or restored objects for control instance ${config.controlInstanceId}`)
-  return objects.map(validateAmbulanceProviderObject)
+  return objects
+    .filter(object => object.domain === ambulanceDomainId)
+    .map(validateAmbulanceProviderObject)
 }
 
 export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {

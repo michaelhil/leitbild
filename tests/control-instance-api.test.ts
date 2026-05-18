@@ -15,7 +15,7 @@ import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/inter
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -55,20 +55,20 @@ describe('control instance API', () => {
       '/api/scenarios',
     )
     expect(listed.status).toBe(200)
-    expect(listed.body.defaultScenarioId).toBe('oslo-ambulance-tutorial')
-    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance-tutorial')
+    expect(listed.body.defaultScenarioId).toBe('oslo-ambulance')
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance')
     expect(listed.body.scenarios[0]?.title).toBe('Oslo ambulance tutorial')
     expect(listed.body.scenarios[0]?.packs).toBeUndefined()
     expect(listed.body.scenarios[0]?.requiredProviderIds).toBeUndefined()
 
     const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly unknown[] } }>(
       registry,
-      '/api/scenarios/oslo-ambulance-tutorial',
+      '/api/scenarios/oslo-ambulance',
     )
     expect(fetched.status).toBe(200)
-    expect(fetched.body.scenario.id).toBe('oslo-ambulance-tutorial')
+    expect(fetched.body.scenario.id).toBe('oslo-ambulance')
     expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic'])
-    expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+    expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
   })
 
   test('joins a named control instance and exposes objects', async () => {
@@ -81,7 +81,7 @@ describe('control instance API', () => {
       )
       expect(joined.status).toBe(200)
       expect(joined.body.id).toBe('sandbox' as ControlInstanceId)
-      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly kind: string }[] }>(
         registry,
@@ -98,6 +98,7 @@ describe('control instance API', () => {
         'mobile_entity',
         'mobile_entity',
         'mobile_entity',
+        'zone',
       ])
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
@@ -113,11 +114,11 @@ describe('control instance API', () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scenarioId: 'oslo-ambulance-tutorial' }),
+          body: JSON.stringify({ scenarioId: 'oslo-ambulance' }),
         },
       )
       expect(joined.status).toBe(200)
-      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
@@ -167,12 +168,12 @@ describe('control instance API', () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scenarioId: 'oslo-ambulance-tutorial' }),
+          body: JSON.stringify({ scenarioId: 'oslo-ambulance' }),
         },
       )
       expect(reset.status).toBe(200)
       expect(reset.body.snapshot.seq).toBeGreaterThanOrEqual(0)
-      expect(reset.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+      expect(reset.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
     } finally {
       await registry.close('reset-sandbox' as ControlInstanceId)
     }
@@ -207,7 +208,7 @@ describe('control instance API', () => {
       )
       expect(created.status).toBe(201)
       expect(created.body.id).toBe('api-created' as ControlInstanceId)
-      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly loaded: boolean; readonly objectCount: number | null; readonly snapshotSeq: number | null }[] }>(
         registry,
@@ -216,7 +217,7 @@ describe('control instance API', () => {
       expect(listed.body.controlInstances).toContainEqual({
         id: 'api-created',
         loaded: true,
-        objectCount: osloAmbulanceTutorialScenario.initialObjects.length,
+        objectCount: osloAmbulanceScenario.initialObjects.length,
         snapshotSeq: created.body.snapshot.seq,
       })
     } finally {
@@ -233,11 +234,11 @@ describe('control instance API', () => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: 'api-scenario-created', scenarioId: 'oslo-ambulance-tutorial' }),
+          body: JSON.stringify({ id: 'api-scenario-created', scenarioId: 'oslo-ambulance' }),
         },
       )
       expect(created.status).toBe(201)
-      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
+      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,

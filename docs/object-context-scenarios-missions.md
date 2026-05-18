@@ -104,6 +104,10 @@ A scenario initializes the world. It may include:
 
 Scenarios should be shareable as JSON and validated before use. Scenarios are top-level compositions, not owned by a single pack. Packs are capabilities; scenarios are recipes that choose which capabilities are active.
 
+Built-in scenarios use a compact Scenario Config as the authoring format. The config names active packs and describes pack-specific objects and operations with small JSON objects such as `pack: "ambulance", type: "incident"` or `pack: "traffic", type: "traffic_condition"`. Each pack owns the codec that expands those compact specs into validated `OperationalObject`s and applies pack-specific scenario operations. This keeps scenario files easy to inspect, edit, and generate while keeping domain object construction out of the scenario authoring layer.
+
+The expanded `ScenarioDefinition` remains the runtime contract. The Control Instance runtime does not execute JSON directly; it receives a validated definition with full operational objects and declarative script actions.
+
 New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Domain-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
 Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
@@ -124,6 +128,8 @@ Each step has an id, optional title, and one or more actions. Supported V1 actio
 - `clear_highlights`: clear all highlights or a named subset.
 - `upsert_object`: commit a full operational object into projected state.
 - `delete_object`: delete an operational object.
+
+Compact Scenario Config may author `create_object` and `update_object` actions. These are expansion-time conveniences only: `create_object` becomes `upsert_object`, and `update_object` becomes `upsert_object` after the owning pack applies a declared operation such as `ambulance/set_incident_victims`. The runtime action vocabulary stays small.
 
 Scenario script actions are committed as ordinary ordered Domain Events by the Control Instance runtime. This is deliberate:
 

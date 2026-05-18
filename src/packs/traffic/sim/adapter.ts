@@ -148,7 +148,8 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
-    const initialObjects = config.initialObjects ?? config.scenario?.initialObjects ?? []
+    const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
+      .filter(object => object.domain === trafficDomainId)
     for (const object of initialObjects) objects.set(object.id, restoreTrafficObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
     const handlers = new Set<SimulationEventHandler>()

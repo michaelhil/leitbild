@@ -9,7 +9,7 @@ import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/si
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
-import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 describe('server health', () => {
   test('reports process, storage, control instance, and realtime details', async () => {
@@ -41,7 +41,7 @@ describe('server health', () => {
       expect(details.registry.controlInstances).toContainEqual({
         id: runtime.id,
         loaded: true,
-        objectCount: osloAmbulanceTutorialScenario.initialObjects.length,
+        objectCount: osloAmbulanceScenario.initialObjects.length,
         snapshotSeq: runtime.snapshot().seq,
       })
       expect(details.realtime.websocketClientCount).toBe(0)

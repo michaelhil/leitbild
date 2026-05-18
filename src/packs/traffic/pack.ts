@@ -5,6 +5,7 @@ import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
 import { trafficSimProviderId } from './sim/constants.ts'
+import { trafficScenarioSupport } from './scenario.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
@@ -96,6 +97,7 @@ export const trafficPack: LeitbildPack = {
     { id: trafficSimProviderId, label: 'Local traffic simulator', kind: 'local' },
   ],
   defaultSimulationProviderId: trafficSimProviderId,
+  scenario: trafficScenarioSupport,
   categories: [
     {
       id: 'traffic',

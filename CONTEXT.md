@@ -52,6 +52,14 @@ _Avoid_: using context as an untyped junk drawer, or using it for domain operati
 Validated startup definition for a new control instance: world settings, active packs, optional provider overrides/configuration, initial objects, and initial object contexts. Scenarios are top-level compositions, not pack-owned files, and are the only production startup format for new control instances.
 _Avoid_: Mission when referring only to initial world setup
 
+**Scenario Config**:
+Compact JSON authoring format for built-in scenarios. It names active packs and pack-specific object/operation specs; pack scenario codecs expand it into a validated Scenario Definition before runtime.
+_Avoid_: treating config specs as runtime truth or putting arbitrary executable code in scenario files
+
+**Pack Scenario Codec**:
+Pack-owned expansion surface that converts compact scenario object specs and scenario operations into validated operational objects. It is the correct place for pack-specific scenario defaults and `domainData` construction.
+_Avoid_: scenario files hand-building full domain objects with reusable helper code
+
 **Scenario Catalog**:
 Validated registry of Scenario Definitions and Mission Definitions. Control Instance creation resolves its startup scenario through this catalog, then resolves each scenario pack to that pack's default or overridden simulation provider.
 _Avoid_: hidden domain seed factories or hardcoded default simulator boot paths

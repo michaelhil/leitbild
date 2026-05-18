@@ -200,6 +200,7 @@ Packs may contribute reusable data and schemas used by scenarios:
 
 - **Object Context contributions** may seed perspective-bearing awareness or provide pack-specific renderers for agent context views.
 - **Provider metadata** declares which runtime providers a pack offers and which one is the default for ordinary scenarios.
+- **Scenario support codecs** may expand compact scenario object specs and operations into full validated `OperationalObject`s. These codecs belong to packs because packs own their `domainData`, object defaults, and domain vocabulary.
 
 Packs must keep boundaries clear:
 
@@ -209,7 +210,8 @@ Packs must keep boundaries clear:
 - scenarios are top-level compositions that list active packs; they are not owned by one pack.
 - provider ids are internal runtime wiring. Scenario APIs should expose `packs`, not low-level provider ids, unless a debug/runtime-detail endpoint explicitly asks for them.
 - restored control instances use snapshots/history, not scenarios.
-- pack helpers may construct full `OperationalObject`s, but packs must not introduce a second seed-object model beside Scenario Definitions.
+- pack helpers may construct full `OperationalObject`s, but packs must not introduce a second production seed-object model beside Scenario Definitions.
+- compact scenario files may name pack object specs, but the expanded Scenario Definition is still the runtime contract.
 - multi-pack scenarios may override a pack's default provider and may provide provider config keyed by pack id. The Scenario Catalog resolves those pack-level choices into provider ids before the Simulation Hub starts providers.
 
 ## Trust Model

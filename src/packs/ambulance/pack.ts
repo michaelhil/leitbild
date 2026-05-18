@@ -19,6 +19,7 @@ import {
 } from './model.ts'
 import { ambulanceSimProviderId } from './sim/constants.ts'
 import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
+import { ambulanceScenarioSupport } from './scenario.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
@@ -264,6 +265,7 @@ export const ambulancePack: LeitbildPack = {
     { id: ambulanceSimProviderId, label: 'Local ambulance simulator', kind: 'local' },
   ],
   defaultSimulationProviderId: ambulanceSimProviderId,
+  scenario: ambulanceScenarioSupport,
   categories: [
     {
       id: 'hospitals',
