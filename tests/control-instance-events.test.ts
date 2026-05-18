@@ -3,6 +3,7 @@ import type { ControlInstanceId, GeoJsonLineString, IsoTimestamp, ObjectId, Simu
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import {
   applyControlInstanceEventBatchMessage,
+  type ControlInstanceEventBatchMessage,
   commandStatusForResult,
   parseControlInstanceEventBatchMessage,
   parseControlInstanceWebSocketMessage,
@@ -20,6 +21,17 @@ const scenarioObjects = () =>
     routing: createDirectRoutingAdapter(),
   }).snapshot().objects
 
+const eventBatch = (
+  events: ControlInstanceEventBatchMessage['events'],
+  config: { readonly scenarioId?: string; readonly snapshotSeq?: number } = {},
+): ControlInstanceEventBatchMessage => ({
+  type: 'events',
+  controlInstanceId: 'control-instance:event-helper-test' as ControlInstanceId,
+  ...(config.scenarioId === undefined ? {} : { scenarioId: config.scenarioId }),
+  snapshotSeq: config.snapshotSeq ?? 1,
+  events,
+})
+
 describe('control instance event helpers', () => {
   test('parses valid event-array messages and ignores unrelated messages', () => {
     const object = scenarioObjects()[0]
@@ -27,11 +39,15 @@ describe('control instance event helpers', () => {
 
     const parsed = parseControlInstanceEventBatchMessage(JSON.stringify({
       type: 'events',
+      controlInstanceId: 'control-instance:event-helper-test',
+      scenarioId: 'oslo-ambulance',
+      snapshotSeq: 1,
       events: [{ type: 'object.upserted', object }],
     }))
 
     expect(parsed?.events[0]?.type).toBe('object.upserted')
     expect(parsed?.events[0]?.object?.id).toBe(object.id)
+    expect(parsed?.scenarioId).toBe('oslo-ambulance')
     expect(parseControlInstanceEventBatchMessage(JSON.stringify({ type: 'snapshot' }))).toBeNull()
   })
 
@@ -60,9 +76,17 @@ describe('control instance event helpers', () => {
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
       type: 'events',
       events: [{}],
+    }))).toThrow('missing control instance id')
+    expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
+      type: 'events',
+      controlInstanceId: 'sandbox',
+      snapshotSeq: 1,
+      events: [{}],
     }))).toThrow('missing event type')
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
       type: 'events',
+      controlInstanceId: 'sandbox',
+      snapshotSeq: 1,
     }))).toThrow('missing events array')
     expect(() => parseControlInstanceWebSocketMessage(JSON.stringify({
       type: 'realtime.ready',
@@ -115,14 +139,14 @@ describe('control instance event helpers', () => {
 
     const deleted = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: object.id },
-      { type: 'events', events: [{ type: 'object.deleted', objectId: object.id as ObjectId }] },
+      eventBatch([{ type: 'object.deleted', objectId: object.id as ObjectId }]),
     )
     expect(deleted.objectUpdate?.selectedControllerId).toBeNull()
     expect(deleted.routesChanged).toBe(false)
 
     const rejected = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: object.id },
-      { type: 'events', events: [{ type: 'command.result', result: { ok: false, reason: 'blocked' } }] },
+      eventBatch([{ type: 'command.result', result: { ok: false, reason: 'blocked' } }]),
     )
     expect(rejected.commandStatusUpdate?.commandStatus).toBe('Command rejected: blocked')
     expect(rejected.routesChanged).toBe(false)
@@ -140,7 +164,7 @@ describe('control instance event helpers', () => {
 
     const applied = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: null },
-      { type: 'events', events: [{ type: 'clock.updated', clock }] },
+      eventBatch([{ type: 'clock.updated', clock }]),
     )
 
     expect(applied.clockUpdate).toEqual(clock)
@@ -160,14 +184,11 @@ describe('control instance event helpers', () => {
     const newObject = { ...first, id: 'object:new' as ObjectId, label: 'New object' }
     const applied = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: first.id },
-      {
-        type: 'events',
-        events: [
+      eventBatch([
           { type: 'object.upserted', object: updatedSecond },
           { type: 'object.upserted', object: newObject },
           { type: 'object.upserted', object: updatedAgain },
-        ],
-      },
+        ]),
     )
 
     expect(applied.objectUpdate?.objects.map(candidate => candidate.id)).toEqual([...objects.map(candidate => candidate.id), newObject.id])
@@ -181,10 +202,7 @@ describe('control instance event helpers', () => {
 
     const positionOnly = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: object.id },
-      {
-        type: 'events',
-        events: [{ type: 'object.upserted', object: { ...object, revision: object.revision + 1 } }],
-      },
+      eventBatch([{ type: 'object.upserted', object: { ...object, revision: object.revision + 1 } }]),
     )
     expect(positionOnly.routesChanged).toBe(false)
 
@@ -208,10 +226,7 @@ describe('control instance event helpers', () => {
     }
     const routeUpdate = applyControlInstanceEventBatchMessage(
       { objects, selectedControllerId: object.id },
-      {
-        type: 'events',
-        events: [{ type: 'object.upserted', object: routed }],
-      },
+      eventBatch([{ type: 'object.upserted', object: routed }]),
     )
     expect(routeUpdate.routesChanged).toBe(true)
   })

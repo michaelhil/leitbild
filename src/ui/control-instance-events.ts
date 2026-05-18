@@ -18,6 +18,9 @@ export interface ControlInstanceEventPayload {
 
 export interface ControlInstanceEventBatchMessage {
   readonly type: 'events'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
   readonly events: ReadonlyArray<ControlInstanceEventPayload>
 }
 
@@ -108,10 +111,15 @@ export const parseControlInstanceWebSocketMessage = (raw: string): ControlInstan
     }
   }
   if (parsed.type !== 'events') return null
+  if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid WebSocket events message: missing control instance id')
+  if (typeof parsed.snapshotSeq !== 'number') throw new Error('invalid WebSocket events message: missing snapshot sequence')
   if (!Array.isArray(parsed.events)) throw new Error('invalid WebSocket events message: missing events array')
 
   return {
     type: 'events',
+    controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+    ...(typeof parsed.scenarioId === 'string' ? { scenarioId: parsed.scenarioId } : {}),
+    snapshotSeq: parsed.snapshotSeq,
     events: parsed.events.map(parseEventPayload),
   }
 }

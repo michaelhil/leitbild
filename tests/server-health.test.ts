@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type DomainEvent, type ObjectId } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/control-instances/actors.ts'
-import { createControlInstanceRealtimeManager, createHealthDetails } from '../src/core/api/server.ts'
+import { createControlInstanceRealtimeManager, createHealthDetails, type RealtimeEventBatchMessage } from '../src/core/api/server.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
@@ -14,6 +14,7 @@ import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface CapturedRealtimeClient {
   readonly events: DomainEvent[]
+  readonly eventMessages: RealtimeEventBatchMessage[]
   readonly readyMessages: string[]
 }
 
@@ -117,11 +118,12 @@ describe('server health', () => {
         createLocalTrafficSimulationAdapter(),
       ],
     })
-    const client: CapturedRealtimeClient = { events: [], readyMessages: [] }
+    const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
-      send: (targetClient, notification) => {
-        targetClient.events.push(...notification.events)
+      send: (targetClient, message) => {
+        targetClient.eventMessages.push(message)
+        targetClient.events.push(...message.events)
       },
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
@@ -146,6 +148,7 @@ describe('server health', () => {
       expect(result.ok).toBe(true)
 
       await waitForMovingObjectEvent(client, 'amb:halden-1')
+      expect(client.eventMessages.every(message => message.scenarioId === 'halden')).toBe(true)
       realtime.removeClient(controlInstanceId, client)
       expect(realtime.status().subscribedControlInstanceCount).toBe(0)
       expect(registry.get(controlInstanceId)).toBe(runtime)

@@ -47,6 +47,14 @@ export interface RealtimeReadyMessage {
   readonly clock?: SimulationClockState
 }
 
+export interface RealtimeEventBatchMessage {
+  readonly type: 'events'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly events: ControlInstanceEventNotification['events']
+}
+
 export interface ControlInstanceRealtimeManager<Client> {
   readonly addClient: (controlInstanceId: ControlInstanceId, client: Client) => void
   readonly removeClient: (controlInstanceId: ControlInstanceId, client: Client) => void
@@ -94,16 +102,39 @@ const realtimeStatusFromClients = <Client>(
 
 export const createControlInstanceRealtimeManager = <Client>(config: {
   readonly registry: ControlInstanceRegistry
-  readonly send: (client: Client, notification: ControlInstanceEventNotification) => void
+  readonly send: (client: Client, message: RealtimeEventBatchMessage) => void
   readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
 }): ControlInstanceRealtimeManager<Client> => {
   const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
   const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
 
-  const broadcastToControlInstance = (controlInstanceId: ControlInstanceId, notification: ControlInstanceEventNotification): void => {
+  const messageContextForRuntime = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): Omit<RealtimeReadyMessage, 'type' | 'clock'> => {
+    const snapshot = runtime.snapshot()
+    return {
+      controlInstanceId,
+      ...(snapshot.scenario?.scenarioId === undefined ? {} : { scenarioId: snapshot.scenario.scenarioId }),
+      snapshotSeq: snapshot.seq,
+    }
+  }
+
+  const broadcastToControlInstance = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    notification: ControlInstanceEventNotification,
+  ): void => {
+    const subscription = subscriptionsByControlInstance.get(controlInstanceId)
+    if (subscription?.runtime !== runtime) return
     const clients = clientsByControlInstance.get(controlInstanceId)
     if (!clients) return
-    for (const client of clients) config.send(client, notification)
+    const message: RealtimeEventBatchMessage = {
+      type: 'events',
+      ...messageContextForRuntime(controlInstanceId, runtime),
+      events: notification.events,
+    }
+    for (const client of clients) config.send(client, message)
   }
 
   const readyMessageForRuntime = (
@@ -113,9 +144,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     const snapshot = runtime.snapshot()
     return {
       type: 'realtime.ready',
-      controlInstanceId,
-      ...(snapshot.scenario?.scenarioId === undefined ? {} : { scenarioId: snapshot.scenario.scenarioId }),
-      snapshotSeq: snapshot.seq,
+      ...messageContextForRuntime(controlInstanceId, runtime),
       ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
     }
   }
@@ -146,7 +175,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     }
     if (existing?.runtime === runtime) return
     existing?.unsubscribe()
-    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, event))
+    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, runtime, event))
     subscriptionsByControlInstance.set(controlInstanceId, { runtime, unsubscribe })
     sendReadyToControlInstance(controlInstanceId, runtime)
   }
@@ -229,9 +258,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
   const realtime = createControlInstanceRealtimeManager<ServerWebSocket<WSData>>({
     registry: config.registry,
-    send: (socket, notification) => {
-      const message = JSON.stringify({ type: 'events', events: notification.events })
-      socket.send(message)
+    send: (socket, message) => {
+      socket.send(JSON.stringify(message))
     },
     sendReady: (socket, message) => {
       socket.send(JSON.stringify(message))

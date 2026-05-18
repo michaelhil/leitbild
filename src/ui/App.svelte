@@ -18,6 +18,7 @@
     setControlInstanceClock,
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from './control-instance-client.ts'
+  import { parseControlSurfaceRoute, pathForScenarioRun } from './control-instance-route.ts'
   import {
     applyControlInstanceEventBatchMessage,
     parseControlInstanceWebSocketMessage,
@@ -73,6 +74,7 @@
   let status = $state('Starting')
   let commandStatus = $state('')
   let routeMode = $state<'picker' | 'control-instance'>('control-instance')
+  let workspaceId = $state('sandbox')
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let seenRevisions = $state(new Map<string, number>())
   let controlInstanceSocket = $state<WebSocket | null>(null)
@@ -211,19 +213,10 @@
     location.href = `/i/${encodeURIComponent(id)}`
   }
 
-  const scenarioIdFromUrl = (): string | undefined => {
-    const value = new URLSearchParams(location.search).get('scenario')?.trim()
-    return value ? value : undefined
-  }
+  const activeRoute = () => parseControlSurfaceRoute(location.pathname)
 
   const scenarioIdForReset = (): string | undefined =>
-    scenarioIdFromUrl() ?? scenarioState?.scenarioId
-
-  const setScenarioQueryParam = (scenarioId: string): void => {
-    const url = new URL(location.href)
-    url.searchParams.set('scenario', scenarioId)
-    history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`)
-  }
+    scenarioState?.scenarioId
 
   const loadScenarioOptions = async (): Promise<void> => {
     const body = await listScenariosClient()
@@ -232,7 +225,8 @@
 
   const createInstance = async (): Promise<void> => {
     status = 'Creating Control Instance'
-    const body = await createControlInstance({ scenarioId: scenarioIdFromUrl() })
+    const route = activeRoute()
+    const body = await createControlInstance(route.mode === 'control-instance' ? { scenarioId: route.scenarioId } : {})
     openInstance(body.id)
   }
 
@@ -249,6 +243,10 @@
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
     if (!controlInstanceId) return
+    if (!realtimeAttached) {
+      commandStatus = 'Wait for realtime attachment before sending commands'
+      return
+    }
     let body
     try {
       body = await sendControlInstanceCommand(controlInstanceId, { kind, targetObjectIds, payload })
@@ -371,6 +369,9 @@
         completeReadyWhenReady()
         return
       }
+      if (parsed.controlInstanceId !== id) return
+      if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
+      if (!realtimeAttached) return
       const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
       if (applied.objectUpdate) {
         objects = [...applied.objectUpdate.objects]
@@ -392,21 +393,15 @@
   }
 
   const controlInstanceIdFromPath = (): ControlInstanceId => {
-    if (location.pathname === '/') {
-      history.replaceState(null, '', '/i/sandbox')
-      return 'sandbox' as ControlInstanceId
-    }
-    const match = location.pathname.match(/^\/i\/([^/]+)$/)
-    if (!match) {
-      history.replaceState(null, '', '/i/sandbox')
-      return 'sandbox' as ControlInstanceId
-    }
-    return decodeURIComponent(match[1] ?? 'sandbox') as ControlInstanceId
+    const route = activeRoute()
+    if (route.mode !== 'control-instance') throw new Error('control instance route expected')
+    if (location.pathname !== route.canonicalPath) history.replaceState(null, '', route.canonicalPath)
+    workspaceId = route.workspaceId
+    return route.controlInstanceId
   }
 
   const routeModeFromPath = (): 'picker' | 'control-instance' => {
-    if (location.pathname === '/i') return 'picker'
-    return 'control-instance'
+    return activeRoute().mode
   }
 
   const joinControlInstance = async (): Promise<void> => {
@@ -423,9 +418,10 @@
     let activeStartupStep: StartupStepId = 'control-instance'
     try {
       const id = controlInstanceIdFromPath()
-      const requestedScenarioId = scenarioIdFromUrl()
-      expectedRealtimeScenarioId = requestedScenarioId ?? null
-      const body = await joinControlInstanceClient(id, { scenarioId: requestedScenarioId })
+      const route = activeRoute()
+      if (route.mode !== 'control-instance') throw new Error('control instance route expected')
+      expectedRealtimeScenarioId = route.scenarioId
+      const body = await joinControlInstanceClient(id, { scenarioId: route.scenarioId })
       completeStep('control-instance')
       activeStartupStep = 'snapshot'
       startStep('snapshot')
@@ -496,9 +492,7 @@
   }
 
   const selectScenario = async (scenarioId: string): Promise<void> => {
-    if (!controlInstanceId) return
-    setScenarioQueryParam(scenarioId)
-    await resetScenario()
+    location.href = pathForScenarioRun(workspaceId, scenarioId)
   }
 
   const toggleClockPaused = async (): Promise<void> => {
@@ -542,7 +536,18 @@
     }
     window.addEventListener('keydown', handleKeydown)
     window.addEventListener('click', handleClick, { capture: true })
-    const nextRouteMode = routeModeFromPath()
+    let nextRouteMode: 'picker' | 'control-instance'
+    try {
+      nextRouteMode = routeModeFromPath()
+    } catch (err) {
+      routeMode = 'control-instance'
+      failStep('route', err)
+      return () => {
+        window.removeEventListener('keydown', handleKeydown)
+        window.removeEventListener('click', handleClick, { capture: true })
+        railLayout.stopResize()
+      }
+    }
     routeMode = nextRouteMode
     completeStep('route')
     completeStep('interface')
@@ -672,7 +677,7 @@
   <SettingsModal
     {theme}
     scenarios={scenarioOptions}
-    selectedScenarioId={scenarioState?.scenarioId ?? scenarioIdFromUrl() ?? ''}
+    selectedScenarioId={scenarioState?.scenarioId ?? ''}
     close={closeSettings}
     {toggleTheme}
     {resetScenario}
