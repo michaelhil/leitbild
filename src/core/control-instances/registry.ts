@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, readdir } from 'node:fs/promises'
+import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ControlInstanceId, InteractionHandler, ScenarioDefinition } from '../model/index.ts'
 import { controlInstanceIdSchema } from '../model/index.ts'
@@ -31,6 +31,7 @@ export interface ControlInstanceRegistryStatus {
 export interface ControlInstanceRegistry {
   readonly create: (config?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly ensure: (id: ControlInstanceId, config?: { readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
+  readonly reset: (id: ControlInstanceId, config?: { readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly get: (id: ControlInstanceId) => ControlInstanceRuntime | undefined
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
@@ -128,6 +129,15 @@ export const createControlInstanceRegistry = (config: {
     return true
   }
 
+  const reset = async (id: ControlInstanceId, resetConfig?: { readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
+    await close(id)
+    await rm(join(controlInstanceRoot, id), { recursive: true, force: true })
+    return create({
+      id,
+      ...(resetConfig?.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
+    })
+  }
+
   const listPersistedIds = async (): Promise<ReadonlyArray<ControlInstanceId>> => {
     let entries: ReadonlyArray<{ readonly isDirectory: () => boolean; readonly name: string }>
     try {
@@ -210,6 +220,7 @@ export const createControlInstanceRegistry = (config: {
   return {
     create,
     ensure,
+    reset,
     get: (id: ControlInstanceId) => controlInstances.get(id),
     list: () => [...controlInstances.values()],
     listKnown,

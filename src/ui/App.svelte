@@ -11,6 +11,7 @@
     createControlInstance,
     joinControlInstance as joinControlInstanceClient,
     listControlInstances,
+    resetControlInstance,
     sendControlInstanceCommand,
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from './control-instance-client.ts'
@@ -332,6 +333,38 @@
     }
   }
 
+  const resetScenario = async (): Promise<void> => {
+    if (!controlInstanceId) return
+    controlInstanceSocket?.close()
+    controlInstanceSocket = null
+    resetStartupForJoin()
+    snapshotReady = false
+    status = 'Resetting'
+    commandStatus = 'Resetting scenario'
+    startStep('control-instance')
+    let activeStartupStep: StartupStepId = 'control-instance'
+    try {
+      const body = await resetControlInstance(controlInstanceId, { scenarioId: scenarioIdFromUrl() })
+      completeStep('control-instance')
+      activeStartupStep = 'snapshot'
+      startStep('snapshot')
+      objects = [...body.snapshot.objects]
+      selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
+      seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
+      snapshotReady = true
+      completeStep('snapshot')
+      activeStartupStep = 'objects'
+      startStep('objects')
+      await completeObjectsWhenReady()
+      activeStartupStep = 'realtime'
+      connectWebSocket(body.id)
+      commandStatus = 'Scenario reset'
+    } catch (err) {
+      failStep(activeStartupStep, err)
+      commandStatus = err instanceof Error ? err.message : 'Scenario reset failed'
+    }
+  }
+
   const handleMapReady = (): void => {
     mapReady = true
     completeStep('map')
@@ -412,6 +445,7 @@
       beginPlacement={placement.begin}
       cancelPlacement={placement.cancel}
       {toggleTheme}
+      {resetScenario}
       {openStatusModal}
     />
     <button

@@ -153,6 +153,20 @@ const handleControlInstanceApiInner = async (
     return json({ id: runtime.id, snapshot: runtime.snapshot() })
   }
 
+  const resetMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/reset$/)
+  if (resetMatch && req.method === 'POST') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(resetMatch[1] ?? ''))
+    const raw = await readJson(req)
+    const parsed = createControlInstanceRequestSchema.omit({ id: true }).parse(raw)
+    if (parsed.scenarioId !== undefined && !config.registry.scenario(parsed.scenarioId)) {
+      return apiError(404, 'scenario_not_found', 'scenario not found')
+    }
+    const runtime = await config.registry.reset(controlInstanceId, {
+      ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
+    })
+    return json({ id: runtime.id, snapshot: runtime.snapshot() })
+  }
+
   const objectsMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/objects$/)
   if (objectsMatch && req.method === 'GET') {
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(objectsMatch[1] ?? ''))

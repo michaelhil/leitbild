@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { Moon, Sun, X } from 'lucide-svelte'
+  import { Moon, RotateCcw, Sun, X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
   import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
@@ -30,6 +30,7 @@
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
     readonly toggleTheme: () => void
+    readonly resetScenario: () => Promise<void>
     readonly openStatusModal: () => void
   }
 
@@ -50,6 +51,7 @@
     beginPlacement,
     cancelPlacement,
     toggleTheme,
+    resetScenario,
     openStatusModal,
   }: Props = $props()
 
@@ -145,6 +147,13 @@
     </button>
     <span class="brand">Leitbild</span>
     <span class="version">v{appVersion}</span>
+    <IconButton
+      label="Reset scenario"
+      title="Reset scenario"
+      icon={RotateCcw}
+      variant="bare"
+      onClick={() => { void resetScenario() }}
+    />
     <IconButton
       label="Toggle light and dark mode"
       title="Toggle light and dark mode"

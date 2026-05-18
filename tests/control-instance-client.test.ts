@@ -4,6 +4,7 @@ import {
   createControlInstance,
   joinControlInstance,
   listControlInstances,
+  resetControlInstance,
   sendControlInstanceCommand,
   syncControlInstanceSnapshot,
 } from '../src/ui/control-instance-client.ts'
@@ -78,8 +79,10 @@ describe('control instance client', () => {
 
     await createControlInstance({ scenarioId: 'oslo-ambulance-tutorial' })
     await joinControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance-tutorial' })
+    await resetControlInstance('control-instance:test' as ControlInstanceId, { scenarioId: 'oslo-ambulance-tutorial' })
 
     expect(bodies.map(body => JSON.parse(body))).toEqual([
+      { scenarioId: 'oslo-ambulance-tutorial' },
       { scenarioId: 'oslo-ambulance-tutorial' },
       { scenarioId: 'oslo-ambulance-tutorial' },
     ])

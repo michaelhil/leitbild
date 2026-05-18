@@ -124,6 +124,64 @@ describe('control instance API', () => {
     }
   })
 
+  test('resets a control instance from a scenario and clears previous object changes', async () => {
+    const registry = await createTestRegistry()
+    try {
+      const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string }[] } }>(
+        registry,
+        '/api/control-instances/reset-sandbox',
+        { method: 'POST' },
+      )
+      const hospital = joined.body.snapshot.objects.find(object => object.kind === 'facility')
+      if (!hospital) throw new Error('missing reset test hospital')
+
+      const deleted = await callRoute<{ readonly result: { readonly ok: boolean } }>(
+        registry,
+        '/api/control-instances/reset-sandbox/commands',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            kind: deleteObjectCommandKind,
+            targetObjectIds: [hospital.id],
+            payload: { objectId: hospital.id },
+          }),
+        },
+      )
+      expect(deleted.body.result.ok).toBe(true)
+
+      const reset = await callRoute<{ readonly snapshot: { readonly objects: readonly unknown[]; readonly seq: number } }>(
+        registry,
+        '/api/control-instances/reset-sandbox/reset',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'oslo-ambulance-tutorial' }),
+        },
+      )
+      expect(reset.status).toBe(200)
+      expect(reset.body.snapshot.seq).toBe(0)
+      expect(reset.body.snapshot.objects).toHaveLength(3)
+    } finally {
+      await registry.close('reset-sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('rejects reset with an unknown scenario id', async () => {
+    const registry = await createTestRegistry()
+    const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
+      registry,
+      '/api/control-instances/reset-unknown-scenario/reset',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenarioId: 'missing-scenario' }),
+      },
+    )
+    expect(rejected.status).toBe(404)
+    expect(rejected.body.error.code).toBe('scenario_not_found')
+  })
+
   test('creates and lists known control instances', async () => {
     const registry = await createTestRegistry()
     try {

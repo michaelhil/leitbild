@@ -57,6 +57,18 @@ export const syncControlInstanceSnapshot = async (
   return await readJsonResponse<ControlInstanceResponse>(response, 'snapshot sync failed')
 }
 
+export const resetControlInstance = async (
+  controlInstanceId: ControlInstanceId,
+  config: { readonly scenarioId?: string } = {},
+): Promise<ControlInstanceResponse> => {
+  const body = requestBody(config)
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/reset`, {
+    method: 'POST',
+    ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body }),
+  })
+  return await readJsonResponse<ControlInstanceResponse>(response, 'control instance reset failed')
+}
+
 export const sendControlInstanceCommand = async (
   controlInstanceId: ControlInstanceId,
   command: ControlInstanceCommandRequest,
