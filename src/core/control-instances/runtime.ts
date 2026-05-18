@@ -78,6 +78,14 @@ export const createControlInstanceRuntime = async (config: {
     }
   }
 
+  const currentClockMs = (): number => {
+    const clock = snapshotWithCurrentClock().clock
+    if (!clock) return Date.now()
+    const currentTimeMs = Date.parse(clock.currentTime)
+    if (!Number.isFinite(currentTimeMs)) throw new Error(`invalid control instance clock time: ${clock.currentTime}`)
+    return currentTimeMs
+  }
+
   const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
     if (domainEvents.length === 0) return
     const eventsToPersist: DomainEvent[] = []
@@ -382,7 +390,7 @@ export const createControlInstanceRuntime = async (config: {
         ? {}
         : {
             script: {
-              startedAt: nowIso(),
+              startedAt: config.scenario.startsAt ?? nowIso(),
               firedStepIds: [],
             },
           }),
@@ -419,31 +427,48 @@ export const createControlInstanceRuntime = async (config: {
   if (hydratedClock) await config.simulation.setClock(hydratedClock)
 
   let scenarioRunner: ScenarioScriptRunner | null = null
-  if (config.scenario?.script && state.snapshot().scenario?.script) {
+
+  const runDueScenarioSteps = async (): Promise<void> => {
+    if (!config.scenario?.script || !state.snapshot().scenario?.script) return
     const dueSteps = dueScenarioScriptSteps({
       script: config.scenario.script,
       state: state.snapshot().scenario!,
-      nowMs: Date.now(),
+      nowMs: currentClockMs(),
     })
     for (const step of dueSteps) {
       const events = domainEventsForScenarioStep(step, nowIso())
       await publishMany(events)
       await config.simulation.observeCommittedEvents(events)
     }
+  }
+
+  const startScenarioRunner = (): void => {
+    scenarioRunner?.close()
+    scenarioRunner = null
+    const clock = state.snapshot().clock
+    if (clock?.paused) return
     const runnerScenarioState = state.snapshot().scenario
-    if (runnerScenarioState?.script) {
-      scenarioRunner = createScenarioScriptRunner({
-        script: config.scenario.script,
-        state: runnerScenarioState,
-        nowMs: () => Date.now(),
-        onStepDue: async (step): Promise<void> => {
-          const events = domainEventsForScenarioStep(step, nowIso())
-          await publishMany(events)
-          await config.simulation.observeCommittedEvents(events)
-        },
-      })
-    }
+    if (!config.scenario?.script || !runnerScenarioState?.script) return
+    scenarioRunner = createScenarioScriptRunner({
+      script: config.scenario.script,
+      state: runnerScenarioState,
+      nowMs: currentClockMs,
+      delayMs: (dueAtMs, nowMs): number => {
+        const speed = state.snapshot().clock?.speed ?? 1
+        return Math.max(0, (dueAtMs - nowMs) / speed)
+      },
+      onStepDue: async (step): Promise<void> => {
+        const events = domainEventsForScenarioStep(step, nowIso())
+        await publishMany(events)
+        await config.simulation.observeCommittedEvents(events)
+      },
+    })
     scenarioRunner?.start()
+  }
+
+  if (config.scenario?.script && state.snapshot().scenario?.script) {
+    await runDueScenarioSteps()
+    startScenarioRunner()
   }
 
   const issueCommand = async (actor: Actor, command: CommandEnvelope): Promise<CommandResult> => {
@@ -498,6 +523,15 @@ export const createControlInstanceRuntime = async (config: {
       clock: nextClock,
     })
     await config.simulation.setClock(nextClock)
+    if (config.scenario?.script) {
+      if (nextClock.paused) {
+        scenarioRunner?.close()
+        scenarioRunner = null
+      } else {
+        await runDueScenarioSteps()
+        startScenarioRunner()
+      }
+    }
     return nextClock
   }
 

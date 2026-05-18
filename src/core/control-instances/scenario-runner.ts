@@ -39,6 +39,7 @@ export const createScenarioScriptRunner = (config: {
   readonly script: ScenarioScript
   readonly state: ScenarioInstanceState
   readonly nowMs: () => number
+  readonly delayMs?: (dueAtMs: number, nowMs: number) => number
   readonly onStepDue: (step: ScenarioScriptStep) => Promise<void>
 }): ScenarioScriptRunner => {
   const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
@@ -66,7 +67,11 @@ export const createScenarioScriptRunner = (config: {
     const firedStepIds = new Set(scriptState.firedStepIds)
     for (const step of config.script.steps) {
       if (firedStepIds.has(step.id)) continue
-      const delayMs = Math.max(0, stepDueAtMs(step, scenarioStartedAtMs) - config.nowMs())
+      const nowMs = config.nowMs()
+      const dueAtMs = stepDueAtMs(step, scenarioStartedAtMs)
+      const delayMs = config.delayMs
+        ? config.delayMs(dueAtMs, nowMs)
+        : Math.max(0, dueAtMs - nowMs)
       const timeoutId = setTimeout(() => {
         timeoutIds.delete(timeoutId)
         void runStep(step)
