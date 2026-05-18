@@ -25,6 +25,28 @@ interface WSData {
   readonly controlInstanceId: ControlInstanceId
 }
 
+interface RealtimeSubscription {
+  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>
+  readonly unsubscribe: () => void
+}
+
+export interface RealtimeStatus {
+  readonly websocketClientCount: number
+  readonly subscribedControlInstanceCount: number
+  readonly controlInstances: ReadonlyArray<{
+    readonly id: ControlInstanceId
+    readonly websocketClientCount: number
+  }>
+}
+
+export interface ControlInstanceRealtimeManager<Client> {
+  readonly addClient: (controlInstanceId: ControlInstanceId, client: Client) => void
+  readonly removeClient: (controlInstanceId: ControlInstanceId, client: Client) => void
+  readonly reconcile: () => void
+  readonly status: () => RealtimeStatus
+  readonly stop: () => void
+}
+
 const memoryStatus = (): {
   readonly rssBytes: number
   readonly heapTotalBytes: number
@@ -42,25 +64,18 @@ const memoryStatus = (): {
   }
 }
 
-const emptyRealtimeStatus = (): ReturnType<typeof realtimeStatusFromSockets> => ({
+const emptyRealtimeStatus = (): RealtimeStatus => ({
   websocketClientCount: 0,
   subscribedControlInstanceCount: 0,
   controlInstances: [],
 })
 
-const realtimeStatusFromSockets = (
-  socketsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<ServerWebSocket<WSData>>>,
+const realtimeStatusFromClients = <Client>(
+  clientsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<Client>>,
   subscribedControlInstanceCount: number,
-): {
-  readonly websocketClientCount: number
-  readonly subscribedControlInstanceCount: number
-  readonly controlInstances: ReadonlyArray<{
-    readonly id: ControlInstanceId
-    readonly websocketClientCount: number
-  }>
-} => {
-  const controlInstances = [...socketsByControlInstance.entries()]
-    .map(([id, sockets]) => ({ id, websocketClientCount: sockets.size }))
+): RealtimeStatus => {
+  const controlInstances = [...clientsByControlInstance.entries()]
+    .map(([id, clients]) => ({ id, websocketClientCount: clients.size }))
     .sort((left, right) => left.id.localeCompare(right.id))
   return {
     websocketClientCount: controlInstances.reduce((count, item) => count + item.websocketClientCount, 0),
@@ -69,9 +84,70 @@ const realtimeStatusFromSockets = (
   }
 }
 
+export const createControlInstanceRealtimeManager = <Client>(config: {
+  readonly registry: ControlInstanceRegistry
+  readonly send: (client: Client, notification: ControlInstanceEventNotification) => void
+}): ControlInstanceRealtimeManager<Client> => {
+  const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
+  const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
+
+  const broadcastToControlInstance = (controlInstanceId: ControlInstanceId, notification: ControlInstanceEventNotification): void => {
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    if (!clients) return
+    for (const client of clients) config.send(client, notification)
+  }
+
+  const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): void => {
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    const existing = subscriptionsByControlInstance.get(controlInstanceId)
+    if (!clients || clients.size === 0) {
+      existing?.unsubscribe()
+      subscriptionsByControlInstance.delete(controlInstanceId)
+      return
+    }
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) {
+      existing?.unsubscribe()
+      subscriptionsByControlInstance.delete(controlInstanceId)
+      return
+    }
+    if (existing?.runtime === runtime) return
+    existing?.unsubscribe()
+    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, event))
+    subscriptionsByControlInstance.set(controlInstanceId, { runtime, unsubscribe })
+  }
+
+  return {
+    addClient: (controlInstanceId, client): void => {
+      const clients = clientsByControlInstance.get(controlInstanceId) ?? new Set<Client>()
+      clients.add(client)
+      clientsByControlInstance.set(controlInstanceId, clients)
+      reconcileControlInstanceSubscription(controlInstanceId)
+    },
+    removeClient: (controlInstanceId, client): void => {
+      const clients = clientsByControlInstance.get(controlInstanceId)
+      if (!clients) return
+      clients.delete(client)
+      if (clients.size === 0) clientsByControlInstance.delete(controlInstanceId)
+      reconcileControlInstanceSubscription(controlInstanceId)
+    },
+    reconcile: (): void => {
+      for (const controlInstanceId of clientsByControlInstance.keys()) {
+        reconcileControlInstanceSubscription(controlInstanceId)
+      }
+    },
+    status: () => realtimeStatusFromClients(clientsByControlInstance, subscriptionsByControlInstance.size),
+    stop: (): void => {
+      for (const { unsubscribe } of subscriptionsByControlInstance.values()) unsubscribe()
+      subscriptionsByControlInstance.clear()
+      clientsByControlInstance.clear()
+    },
+  }
+}
+
 export const createHealthDetails = async (config: {
   readonly registry: ControlInstanceRegistry
-  readonly realtime?: ReturnType<typeof realtimeStatusFromSockets>
+  readonly realtime?: RealtimeStatus
   readonly mapArtifacts: MapArtifactConfig
 }): Promise<{
   readonly ok: true
@@ -82,7 +158,7 @@ export const createHealthDetails = async (config: {
     readonly memory: ReturnType<typeof memoryStatus>
   }
   readonly registry: Awaited<ReturnType<ControlInstanceRegistry['status']>>
-  readonly realtime: ReturnType<typeof realtimeStatusFromSockets>
+  readonly realtime: RealtimeStatus
   readonly mapArtifacts: Awaited<ReturnType<typeof createMapArtifactStatus>>
 }> => ({
   ok: true,
@@ -117,25 +193,13 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const port = config.port ?? Number(process.env.PORT ?? 3000)
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
-  const socketsByControlInstance = new Map<ControlInstanceId, Set<ServerWebSocket<WSData>>>()
-  const unsubscribersByControlInstance = new Map<ControlInstanceId, () => void>()
-
-  const broadcastToControlInstance = (controlInstanceId: ControlInstanceId, notification: ControlInstanceEventNotification): void => {
-    const sockets = socketsByControlInstance.get(controlInstanceId)
-    if (!sockets) return
-    const message = JSON.stringify({ type: 'events', events: notification.events })
-    for (const socket of sockets) socket.send(message)
-  }
-
-  const realtimeStatus = () => realtimeStatusFromSockets(socketsByControlInstance, unsubscribersByControlInstance.size)
-
-  const ensureControlInstanceSubscription = (controlInstanceId: ControlInstanceId): void => {
-    if (unsubscribersByControlInstance.has(controlInstanceId)) return
-    const runtime = config.registry.get(controlInstanceId)
-    if (!runtime) throw new Error(`cannot subscribe unknown control instance: ${controlInstanceId}`)
-    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, event))
-    unsubscribersByControlInstance.set(controlInstanceId, unsubscribe)
-  }
+  const realtime = createControlInstanceRealtimeManager<ServerWebSocket<WSData>>({
+    registry: config.registry,
+    send: (socket, notification) => {
+      const message = JSON.stringify({ type: 'events', events: notification.events })
+      socket.send(message)
+    },
+  })
 
   const server = Bun.serve<WSData>({
     port,
@@ -148,21 +212,23 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         })
       }
       if (url.pathname === '/health/details') {
-        return json(await createHealthDetails({ registry: config.registry, realtime: realtimeStatus(), mapArtifacts }))
+        return json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts }))
       }
       if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
       if (url.pathname === '/map/style.json') return mapStyleResponse(url.searchParams.get('theme'))
       if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, { registry: config.registry })
-      if (controlInstanceApiResponse) return controlInstanceApiResponse
+      if (controlInstanceApiResponse) {
+        realtime.reconcile()
+        return controlInstanceApiResponse
+      }
 
       if (url.pathname === '/ws') {
         const rawControlInstanceId = url.searchParams.get('controlInstance')
         if (!rawControlInstanceId) return new Response('Missing controlInstance', { status: 400 })
         const controlInstanceId = controlInstanceIdSchema.parse(rawControlInstanceId)
         if (!config.registry.get(controlInstanceId)) return new Response('Control instance not found', { status: 404 })
-        ensureControlInstanceSubscription(controlInstanceId)
         const upgraded = serverApi.upgrade(req, { data: { controlInstanceId } })
         return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 400 })
       }
@@ -173,15 +239,10 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     },
     websocket: {
       open(socket) {
-        const sockets = socketsByControlInstance.get(socket.data.controlInstanceId) ?? new Set<ServerWebSocket<WSData>>()
-        sockets.add(socket)
-        socketsByControlInstance.set(socket.data.controlInstanceId, sockets)
+        realtime.addClient(socket.data.controlInstanceId, socket)
       },
       close(socket) {
-        const sockets = socketsByControlInstance.get(socket.data.controlInstanceId)
-        if (!sockets) return
-        sockets.delete(socket)
-        if (sockets.size === 0) socketsByControlInstance.delete(socket.data.controlInstanceId)
+        realtime.removeClient(socket.data.controlInstanceId, socket)
       },
       message() {
         // Browser-to-server commands use REST for validation, status codes, and auditability.
@@ -192,7 +253,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   return {
     port,
     stop: () => {
-      for (const unsubscribe of unsubscribersByControlInstance.values()) unsubscribe()
+      realtime.stop()
       server.stop()
     },
   }

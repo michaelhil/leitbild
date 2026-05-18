@@ -2,14 +2,64 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId } from '../src/core/model/index.ts'
-import { createHealthDetails } from '../src/core/api/server.ts'
+import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type DomainEvent, type ObjectId } from '../src/core/model/index.ts'
+import type { Actor } from '../src/core/control-instances/actors.ts'
+import { createControlInstanceRealtimeManager, createHealthDetails } from '../src/core/api/server.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+
+interface CapturedRealtimeClient {
+  readonly events: DomainEvent[]
+}
+
+const operatorActor: Actor = {
+  id: actorIdSchema.parse('actor:operator'),
+  label: 'Test operator',
+  role: 'operator',
+}
+
+const waitForMovingObjectEvent = async (
+  client: CapturedRealtimeClient,
+  objectId: string,
+): Promise<void> => {
+  await new Promise<void>((resolve, reject): void => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`timed out waiting for moving object event: ${objectId}`))
+    }, 3_000)
+
+    const poll = (): void => {
+      const moving = client.events.some(event =>
+        event.type === 'object.upserted'
+        && event.object?.id === objectId
+        && (event.object.spatial?.position?.speedMps ?? 0) > 0)
+      if (!moving) {
+        setTimeout(poll, 25)
+        return
+      }
+      clearTimeout(timeout)
+      resolve()
+    }
+    poll()
+  })
+}
+
+const dispatchAmbulanceCommand = (controlInstanceId: ControlInstanceId, ambulanceId: ObjectId, targetId: ObjectId): CommandEnvelope =>
+  commandEnvelopeSchema.parse({
+    id: `command:${crypto.randomUUID()}`,
+    controlInstanceId,
+    actorId: operatorActor.id,
+    kind: 'ambulance.set_destination',
+    targetObjectIds: [ambulanceId, targetId],
+    payload: {
+      ambulanceId,
+      destinationId: targetId,
+    },
+    issuedAt: nowIso(),
+  }) as CommandEnvelope
 
 describe('server health', () => {
   test('reports process, storage, control instance, and realtime details', async () => {
@@ -52,6 +102,50 @@ describe('server health', () => {
       expect(details.mapArtifacts.glyphProbe.available).toBe(true)
     } finally {
       await registry.close(runtime.id)
+    }
+  })
+
+  test('resubscribes realtime clients after a control instance reset recreates the runtime', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-realtime-test-'))
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+    const registry = createControlInstanceRegistry({
+      dataDir,
+      scenarioCatalog: createTestScenarioCatalog(),
+      simulationAdapters: [
+        createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficSimulationAdapter(),
+      ],
+    })
+    const client: CapturedRealtimeClient = { events: [] }
+    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+      registry,
+      send: (targetClient, notification) => {
+        targetClient.events.push(...notification.events)
+      },
+    })
+    try {
+      await registry.ensure(controlInstanceId)
+      realtime.addClient(controlInstanceId, client)
+      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+
+      await registry.reset(controlInstanceId, { scenarioId: 'halden' })
+      realtime.reconcile()
+
+      const runtime = registry.get(controlInstanceId)
+      if (!runtime) throw new Error('expected control instance runtime after reset')
+      const result = await runtime.issueCommand(
+        operatorActor,
+        dispatchAmbulanceCommand(controlInstanceId, 'amb:halden-1' as ObjectId, 'incident:halden-bridge' as ObjectId),
+      )
+      expect(result.ok).toBe(true)
+
+      await waitForMovingObjectEvent(client, 'amb:halden-1')
+      realtime.removeClient(controlInstanceId, client)
+      expect(realtime.status().subscribedControlInstanceCount).toBe(0)
+      expect(registry.get(controlInstanceId)).toBe(runtime)
+    } finally {
+      realtime.stop()
+      await registry.close(controlInstanceId)
     }
   })
 })
