@@ -106,17 +106,19 @@ describe('map feature projection', () => {
     const objectFeatures = createObjectFeatureCollection(
       objects,
       ambulance.id,
+      ['incident:gronland-unattended'],
       object => object.id === ambulance.id,
       object => ambulancePack.presentObject(object, { objects }),
     )
     const ambulanceFeature = objectFeatures.features.find(feature => feature.id === ambulance.id)
 
-    expect(objectFeatures.features).toHaveLength(3)
+    expect(objectFeatures.features).toHaveLength(9)
     expect(ambulanceFeature?.geometry).toEqual(ambulance.spatial.position?.point)
     expect(ambulanceFeature?.properties.icon).toBe('object-ambulance-ready')
     expect(ambulanceFeature?.properties.color).toBe('#16834f')
     expect(ambulanceFeature?.properties.muted).toBe(false)
     expect(ambulanceFeature?.properties.selected).toBe(true)
+    expect(ambulanceFeature?.properties.highlighted).toBe(false)
     expect(ambulanceFeature?.properties.hasNewInfo).toBe(true)
   })
 

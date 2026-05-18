@@ -108,6 +108,34 @@ New control instances start from a validated Scenario Definition. Restored contr
 
 Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
 
+## Scenario Script V1
+
+A Scenario Definition may include an optional `script`. The script is a small declarative timeline, not an arbitrary code engine.
+
+V1 supports steps scheduled relative to control-instance scenario start:
+
+- `at: { kind: "after_scenario_start", seconds: number }`
+
+Each step has an id, optional title, and one or more actions. Supported V1 actions:
+
+- `show_guidance`: set canonical scenario guidance with title, message, related object ids, and dismissible flag.
+- `hide_guidance`: clear current guidance, optionally only if the current guidance id matches.
+- `highlight_objects`: set the current highlighted object ids.
+- `clear_highlights`: clear all highlights or a named subset.
+- `upsert_object`: commit a full operational object into projected state.
+- `delete_object`: delete an operational object.
+
+Scenario script actions are committed as ordinary ordered Domain Events by the Control Instance runtime. This is deliberate:
+
+- clients receive script changes over the same live feed as simulator and operator changes
+- snapshots contain current guidance/highlights and evolved object state
+- simulation providers observe committed object changes through the same provider projection mechanism
+- event ordering stays under Control Instance ownership
+
+Scenario scripts should be used for startup/tutorial flow, timed incidents, delayed fact revelation, and scenario-authored world changes. They should not contain general business logic, loops, arbitrary expressions, or domain rules. Domain mechanics such as ambulance patient loading or hospital admission remain in packs and interaction handlers.
+
+Script progress is runtime state, not reusable scenario definition data. A Control Instance snapshot stores the scenario id, current guidance, highlighted object ids, and fired script step ids. This lets restored runtimes avoid refiring completed steps and fire overdue steps after restart.
+
 ## Mission Definition V1
 
 A mission describes what should happen operationally. It may include:

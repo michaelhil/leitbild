@@ -23,9 +23,9 @@ describe('control surface selectors', () => {
     const rows = categoryRowsFor(scenarioObjects(), ambulancePack)
 
     expect(rows.map(row => [row.category.id, row.objects.length, row.createType?.id])).toEqual([
-      ['hospitals', 1, 'hospital'],
-      ['ambulances', 1, 'ambulance'],
-      ['incidents', 1, 'incident'],
+      ['hospitals', 3, 'hospital'],
+      ['ambulances', 3, 'ambulance'],
+      ['incidents', 3, 'incident'],
     ])
   })
 
@@ -50,6 +50,8 @@ describe('control surface selectors', () => {
     expect(ambulanceRow?.objects.map(object => object.label)).toEqual([
       'Ambulance A-1',
       'Ambulance A-12',
+      'Ambulance A-21',
+      'Ambulance A-34',
       'Ambulance B-2',
     ])
   })

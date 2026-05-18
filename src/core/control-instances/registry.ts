@@ -80,9 +80,11 @@ export const createControlInstanceRegistry = (config: {
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
-    const scenarioId = restoredSnapshot ? undefined : createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+    const scenarioId = restoredSnapshot
+      ? restoredSnapshot.scenario?.scenarioId
+      : createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
     const scenarioRuntime = scenarioId === undefined ? undefined : config.scenarioCatalog.runtimeFor(scenarioId)
-    if (!restoredSnapshot && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
+    if (scenarioId !== undefined && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
     const simulation = await createSimulationHub(config.simulationAdapters).connect({
       controlInstanceId: id,
       ...(!restoredSnapshot && scenarioRuntime
@@ -107,6 +109,14 @@ export const createControlInstanceRegistry = (config: {
       ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),
       ...(restoredSnapshot ? { restoredSnapshot } : {}),
       ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
+      ...(scenarioRuntime === undefined
+        ? {}
+        : {
+            scenario: {
+              id: scenarioRuntime.scenarioId,
+              ...(scenarioRuntime.scenario.script === undefined ? {} : { script: scenarioRuntime.scenario.script }),
+            },
+          }),
     })
     controlInstances.set(id, runtime)
     return runtime

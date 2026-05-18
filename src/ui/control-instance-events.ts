@@ -1,9 +1,14 @@
-import type { ObjectId, OperationalObject } from '../core/model/index.ts'
+import type { IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState } from '../core/model/index.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
+  readonly at?: IsoTimestamp
   readonly object?: OperationalObject
   readonly objectId?: ObjectId
+  readonly stepId?: string
+  readonly guidance?: ScenarioGuidance
+  readonly guidanceId?: string
+  readonly objectIds?: ReadonlyArray<ObjectId>
   readonly result?: {
     readonly ok: boolean
     readonly reason?: string
@@ -25,6 +30,7 @@ interface ObjectApplicationResult {
 export interface ObjectSelectionState {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null
+  readonly scenarioState?: ScenarioInstanceState
 }
 
 export interface ObjectSelectionUpdate {
@@ -38,6 +44,7 @@ export interface CommandStatusUpdate {
 
 export interface ControlInstanceEventApplication {
   readonly objectUpdate?: ObjectSelectionUpdate
+  readonly scenarioUpdate?: ScenarioInstanceState
   readonly commandStatusUpdate?: CommandStatusUpdate
   readonly routesChanged: boolean
 }
@@ -57,8 +64,13 @@ const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
   if (typeof value.type !== 'string') throw new Error('invalid WebSocket event: missing event type')
   return {
     type: value.type,
+    ...(typeof value.at === 'string' ? { at: value.at as IsoTimestamp } : {}),
     ...(isRecord(value.object) ? { object: value.object as unknown as OperationalObject } : {}),
     ...(typeof value.objectId === 'string' ? { objectId: value.objectId as ObjectId } : {}),
+    ...(typeof value.stepId === 'string' ? { stepId: value.stepId } : {}),
+    ...(isRecord(value.guidance) ? { guidance: value.guidance as unknown as ScenarioGuidance } : {}),
+    ...(typeof value.guidanceId === 'string' ? { guidanceId: value.guidanceId } : {}),
+    ...(Array.isArray(value.objectIds) ? { objectIds: value.objectIds.filter((objectId): objectId is ObjectId => typeof objectId === 'string') } : {}),
     ...(isCommandResult(value.result) ? { result: value.result } : {}),
   }
 }
@@ -77,6 +89,48 @@ export const parseControlInstanceEventBatchMessage = (raw: string): ControlInsta
     type: 'events',
     events: parsed.events.map(parseEventPayload),
   }
+}
+
+const applyScenarioEvents = (
+  scenarioState: ScenarioInstanceState | undefined,
+  events: ReadonlyArray<ControlInstanceEventPayload>,
+): ScenarioInstanceState | undefined => {
+  let nextState = scenarioState
+  for (const event of events) {
+    const current = nextState
+    if (!current) continue
+    if (event.type === 'scenario.step.started' && event.stepId) {
+      if (!current.script) continue
+      nextState = {
+        ...current,
+        script: {
+          startedAt: current.script.startedAt,
+          firedStepIds: [...new Set([...current.script.firedStepIds, event.stepId])],
+        },
+      }
+    }
+    if (event.type === 'scenario.guidance.shown' && event.guidance) {
+      nextState = { ...current, guidance: event.guidance }
+    }
+    if (event.type === 'scenario.guidance.hidden') {
+      if (event.guidanceId === undefined || current.guidance?.id === event.guidanceId) {
+        const { guidance: _guidance, ...withoutGuidance } = current
+        nextState = withoutGuidance
+      }
+    }
+    if (event.type === 'scenario.objects.highlighted' && event.objectIds) {
+      nextState = { ...current, highlightedObjectIds: [...event.objectIds] }
+    }
+    if (event.type === 'scenario.highlights.cleared') {
+      nextState = {
+        ...current,
+        highlightedObjectIds: event.objectIds === undefined
+          ? []
+          : current.highlightedObjectIds.filter(objectId => !event.objectIds?.includes(objectId)),
+      }
+    }
+  }
+  return nextState === scenarioState ? undefined : nextState
 }
 
 export const upsertOperationalObject = (
@@ -160,6 +214,7 @@ export const applyControlInstanceEventBatchMessage = (
   message: ControlInstanceEventBatchMessage,
 ): ControlInstanceEventApplication => {
   const objectResult = applyObjectEvents(state, message.events)
+  const scenarioUpdate = applyScenarioEvents(state.scenarioState, message.events)
   const commandResultEvent = [...message.events].reverse().find(event => event.type === 'command.result' && event.result)
 
   return {
@@ -172,6 +227,7 @@ export const applyControlInstanceEventBatchMessage = (
           },
         }
       : {}),
+    ...(scenarioUpdate === undefined ? {} : { scenarioUpdate }),
     ...(commandResultEvent?.result
       ? {
           commandStatusUpdate: {

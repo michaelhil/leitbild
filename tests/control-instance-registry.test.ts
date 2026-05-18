@@ -11,6 +11,7 @@ import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/si
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 
 describe('control instance registry', () => {
   const createRegistry = (dataDir: string) => createControlInstanceRegistry({
@@ -131,7 +132,8 @@ describe('control instance registry', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const controlInstanceId = 'sandbox' as ControlInstanceId
     const firstRegistry = createRegistry(dataDir)
-    await firstRegistry.ensure(controlInstanceId)
+    const firstRuntime = await firstRegistry.ensure(controlInstanceId)
+    const snapshotSeq = firstRuntime.snapshot().seq
     expect(await firstRegistry.close(controlInstanceId)).toBe(true)
 
     const secondRegistry = createRegistry(dataDir)
@@ -140,8 +142,8 @@ describe('control instance registry', () => {
     expect(known).toContainEqual({
       id: controlInstanceId,
       loaded: false,
-      snapshotSeq: 0,
-      objectCount: 3,
+      snapshotSeq,
+      objectCount: osloAmbulanceTutorialScenario.initialObjects.length,
     })
   })
 
@@ -150,14 +152,14 @@ describe('control instance registry', () => {
     const controlInstanceId = 'sandbox' as ControlInstanceId
     const firstRegistry = createRegistry(dataDir)
     const firstRuntime = await firstRegistry.ensure(controlInstanceId)
-    expect(firstRuntime.snapshot().objects).toHaveLength(3)
+    expect(firstRuntime.snapshot().objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
     expect(await firstRegistry.close(controlInstanceId)).toBe(true)
 
     const secondRegistry = createRegistry(dataDir)
     const restoredRuntime = await secondRegistry.ensure(controlInstanceId)
     const restoredObjects = restoredRuntime.snapshot().objects
 
-    expect(restoredObjects).toHaveLength(3)
+    expect(restoredObjects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
     expect(await secondRegistry.close(controlInstanceId)).toBe(true)
   })
 

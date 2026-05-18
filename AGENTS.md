@@ -29,6 +29,7 @@
 - Keep pack-specific logic in `src/packs/*`; keep `core` use-case agnostic.
 - New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
 - Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
+- Scenario scripts must stay declarative and must emit ordered domain events through the Control Instance runtime. Do not add browser-only scenario/tutorial state, simulator-private scenario timers, or arbitrary scenario code execution.
 - Restored Control Instances must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Control Instance Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
 - Treat the Durable Journal as meaningful accepted history, not as full current state and not as a high-frequency motion trace.

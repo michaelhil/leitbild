@@ -17,6 +17,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
   readonly map: MapLibreMap
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null
+  readonly highlightedObjectIds: ReadonlyArray<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
   readonly routeCasingColor: string
@@ -124,7 +125,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
   })
   current.addSource(mapSourceIds.objects, {
     type: 'geojson',
-    data: asMutableGeoJson(createObjectFeatureCollection([...config.objects], config.selectedControllerId, config.hasNewInfo, config.presentationFor) as unknown as GeoJSON),
+    data: asMutableGeoJson(createObjectFeatureCollection([...config.objects], config.selectedControllerId, config.highlightedObjectIds, config.hasNewInfo, config.presentationFor) as unknown as GeoJSON),
   })
   current.addLayer({
     id: mapLayerIds.objectHitArea,
@@ -140,11 +141,11 @@ export const addOperationalMapSourcesAndLayers = (config: {
     id: mapLayerIds.objectHalos,
     type: 'circle',
     source: mapSourceIds.objects,
-    filter: ['==', ['get', 'selected'], true],
+    filter: ['any', ['==', ['get', 'selected'], true], ['==', ['get', 'highlighted'], true]],
     paint: {
       'circle-radius': 22,
       'circle-color': '#ffffff',
-      'circle-stroke-color': '#1d66d2',
+      'circle-stroke-color': ['case', ['get', 'selected'], '#1d66d2', '#c17a13'],
       'circle-stroke-width': 3,
       'circle-opacity': 0.82,
     },

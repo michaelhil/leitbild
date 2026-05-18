@@ -699,6 +699,60 @@ body.rail-resizing {
   min-width: 0;
 }
 
+.scenario-guidance {
+  position: fixed;
+  z-index: 22;
+  top: 18px;
+  left: calc(var(--rail-width, 360px) + 18px);
+  width: min(460px, calc(100vw - var(--rail-width, 360px) - 36px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 8px;
+  padding: 12px 12px 12px 14px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 18px 42px rgba(16, 24, 40, 0.22);
+}
+
+.rail-collapsed .scenario-guidance {
+  left: 18px;
+  width: min(460px, calc(100vw - 36px));
+}
+
+.scenario-guidance strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.scenario-guidance p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.scenario-guidance button {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.scenario-guidance button:hover,
+.scenario-guidance button:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  outline: none;
+}
+
 .map {
   position: absolute;
   inset: 0;

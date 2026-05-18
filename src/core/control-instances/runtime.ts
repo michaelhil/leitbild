@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep } from '../model/index.ts'
 import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso } from '../model/index.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
@@ -7,6 +7,7 @@ import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } fr
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
 import { persistenceDispositionFor } from './persistence-policy.ts'
+import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScriptRunner } from './scenario-runner.ts'
 
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
@@ -35,6 +36,10 @@ export const createControlInstanceRuntime = async (config: {
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly restoredSnapshot?: ControlInstanceStateSnapshot
   readonly restoredEvents?: ReadonlyArray<DomainEvent>
+  readonly scenario?: {
+    readonly id: string
+    readonly script?: ScenarioScript
+  }
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
   const handlers = new Set<ControlInstanceEventHandler>()
@@ -85,6 +90,53 @@ export const createControlInstanceRuntime = async (config: {
   const publish = async (event: DomainEvent): Promise<void> => {
     await publishMany([event])
   }
+
+  const nextScenarioBase = (at: IsoTimestamp): Omit<DomainEvent, 'type'> => ({
+    id: eventId(),
+    controlInstanceId: config.id,
+    seq: ++seq,
+    at,
+    provenance: { source: 'system' },
+  })
+
+  const domainEventFromScenarioAction = (
+    action: ScenarioScriptAction,
+    at: IsoTimestamp,
+  ): DomainEvent => {
+    if (action.type === 'show_guidance') {
+      return { ...nextScenarioBase(at), type: 'scenario.guidance.shown', guidance: action.guidance }
+    }
+    if (action.type === 'hide_guidance') {
+      return {
+        ...nextScenarioBase(at),
+        type: 'scenario.guidance.hidden',
+        ...(action.guidanceId === undefined ? {} : { guidanceId: action.guidanceId }),
+      }
+    }
+    if (action.type === 'highlight_objects') {
+      return { ...nextScenarioBase(at), type: 'scenario.objects.highlighted', objectIds: action.objectIds }
+    }
+    if (action.type === 'clear_highlights') {
+      return {
+        ...nextScenarioBase(at),
+        type: 'scenario.highlights.cleared',
+        ...(action.objectIds === undefined ? {} : { objectIds: action.objectIds }),
+      }
+    }
+    if (action.type === 'upsert_object') {
+      return { ...nextScenarioBase(at), type: 'object.upserted', object: action.object }
+    }
+    return { ...nextScenarioBase(at), type: 'object.deleted', objectId: action.objectId }
+  }
+
+  const domainEventsForScenarioStep = (step: ScenarioScriptStep, at: IsoTimestamp): ReadonlyArray<DomainEvent> => [
+    {
+      ...nextScenarioBase(at),
+      type: 'scenario.step.started',
+      stepId: step.id,
+    },
+    ...step.actions.map(action => domainEventFromScenarioAction(action, at)),
+  ]
 
   const nextBase = (simEvent: SimulationEvent): Omit<DomainEvent, 'type'> => ({
     id: eventId(),
@@ -297,12 +349,61 @@ export const createControlInstanceRuntime = async (config: {
     void publishSimulationEmissionSafely(emission)
   })
 
+  const initialScenarioState = (): ScenarioInstanceState | undefined => {
+    if (!config.scenario) return undefined
+    return {
+      scenarioId: config.scenario.id,
+      highlightedObjectIds: [],
+      ...(config.scenario.script === undefined
+        ? {}
+        : {
+            script: {
+              startedAt: nowIso(),
+              firedStepIds: [],
+            },
+          }),
+    }
+  }
+
   if (config.restoredSnapshot) {
     state.hydrate(config.restoredSnapshot)
   } else {
     const snapshot = await config.simulation.getSnapshot()
-    state.hydrate({ objects: snapshot.objects, seq })
+    const scenarioState = initialScenarioState()
+    state.hydrate({
+      objects: snapshot.objects,
+      seq,
+      ...(scenarioState === undefined ? {} : { scenario: scenarioState }),
+    })
     await config.snapshotStore.save(state.snapshot())
+  }
+
+  let scenarioRunner: ScenarioScriptRunner | null = null
+  if (config.scenario?.script && state.snapshot().scenario?.script) {
+    const dueSteps = dueScenarioScriptSteps({
+      script: config.scenario.script,
+      state: state.snapshot().scenario!,
+      nowMs: Date.now(),
+    })
+    for (const step of dueSteps) {
+      const events = domainEventsForScenarioStep(step, nowIso())
+      await publishMany(events)
+      await config.simulation.observeCommittedEvents(events)
+    }
+    const runnerScenarioState = state.snapshot().scenario
+    if (runnerScenarioState?.script) {
+      scenarioRunner = createScenarioScriptRunner({
+        script: config.scenario.script,
+        state: runnerScenarioState,
+        nowMs: () => Date.now(),
+        onStepDue: async (step): Promise<void> => {
+          const events = domainEventsForScenarioStep(step, nowIso())
+          await publishMany(events)
+          await config.simulation.observeCommittedEvents(events)
+        },
+      })
+    }
+    scenarioRunner?.start()
   }
 
   const issueCommand = async (actor: Actor, command: CommandEnvelope): Promise<CommandResult> => {
@@ -355,6 +456,7 @@ export const createControlInstanceRuntime = async (config: {
       })
     },
     close: async (): Promise<void> => {
+      scenarioRunner?.close()
       unsubscribeSimulation()
       await config.simulation.close()
       await publishQueue

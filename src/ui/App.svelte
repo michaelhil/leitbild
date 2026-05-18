@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
-  import type { OperationalObject, ControlInstanceId } from '../core/model/index.ts'
+  import type { OperationalObject, ControlInstanceId, ScenarioInstanceState } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -30,6 +30,7 @@
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
   import InstancePicker from './InstancePicker.svelte'
+  import ScenarioGuidance from './ScenarioGuidance.svelte'
   import StartupModal from './StartupModal.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
   import { getTheme, initialTheme, toggleTheme as toggleThemeMode, type ThemeMode } from './theme.ts'
@@ -55,6 +56,7 @@
   const appVersion = __LEITBILD_VERSION__
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
+  let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
   let commandStatus = $state('')
@@ -175,6 +177,7 @@
     if (!controlInstanceId) return
     const body = await syncControlInstanceSnapshotClient(controlInstanceId)
     objects = [...body.snapshot.objects]
+    scenarioState = body.snapshot.scenario
   }
 
   const sendCommand = async (kind: string, payload: unknown, targetObjectIds: readonly string[] = []): Promise<void> => {
@@ -271,13 +274,16 @@
         return
       }
       if (!parsed) return
-      const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId }, parsed)
+      const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
       if (applied.objectUpdate) {
         objects = [...applied.objectUpdate.objects]
         selectedControllerId = applied.objectUpdate.selectedControllerId
       }
       if (applied.commandStatusUpdate) {
         commandStatus = applied.commandStatusUpdate.commandStatus
+      }
+      if (applied.scenarioUpdate) {
+        scenarioState = applied.scenarioUpdate
       }
       if (applied.routesChanged) {
         routeRevision += 1
@@ -319,6 +325,7 @@
       startStep('snapshot')
       controlInstanceId = body.id
       objects = [...body.snapshot.objects]
+      scenarioState = body.snapshot.scenario
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
@@ -349,6 +356,7 @@
       activeStartupStep = 'snapshot'
       startStep('snapshot')
       objects = [...body.snapshot.objects]
+      scenarioState = body.snapshot.scenario
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
@@ -467,6 +475,7 @@
           {theme}
           {routeRevision}
           layoutRevision={railLayout.layoutRevision}
+          highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
           {hasNewInfo}
           {presentationFor}
           onObjectSelected={selectObject}
@@ -479,6 +488,17 @@
         <div class="map-loading">Starting map...</div>
       {/if}
     </main>
+
+    {#if scenarioState?.guidance}
+      <ScenarioGuidance
+        guidance={scenarioState.guidance}
+        close={() => {
+          if (!scenarioState) return
+          const { guidance: _guidance, ...withoutGuidance } = scenarioState
+          scenarioState = withoutGuidance
+        }}
+      />
+    {/if}
   </div>
 {/if}
 

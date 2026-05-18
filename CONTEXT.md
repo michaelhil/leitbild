@@ -56,6 +56,14 @@ _Avoid_: Mission when referring only to initial world setup
 Validated registry of Scenario Definitions and Mission Definitions. Control Instance creation resolves its startup scenario through this catalog, then resolves each scenario pack to that pack's default or overridden simulation provider.
 _Avoid_: hidden domain seed factories or hardcoded default simulator boot paths
 
+**Scenario Script**:
+A small declarative, time-based action list attached to a Scenario Definition. It can show guidance, highlight objects, upsert/delete objects, and evolve scenario facts by emitting ordered Domain Events into the Control Instance runtime.
+_Avoid_: arbitrary script execution, browser-only tutorial state, or hidden simulator seed timers
+
+**Scenario Guidance**:
+Canonical scenario-owned UI instruction state for onboarding, tutorial prompts, and scripted scenario briefings. It is stored in Control Instance projected state so all clients and reloads see the same current guidance.
+_Avoid_: local-only popovers for scenario-critical information
+
 **Mission Definition**:
 Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
 _Avoid_: Scenario when referring to objective/task progression
@@ -131,6 +139,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A future user account can map to one or more **Actors**.
 - An **Operational Object** can have optional **Object Context**.
 - A **Scenario Definition** can initialize **Operational Objects** and their **Object Context**.
+- A **Scenario Definition** can include a **Scenario Script** for timed object updates, highlights, and **Scenario Guidance**.
 - Restored **Control Instances** use snapshots/history instead of replaying Scenario Definitions.
 - A **Mission Definition** can reference objects, roles, stages, objectives, and tasks initialized by a **Scenario Definition**.
 - **Mission Progress State** belongs to a running **Control Instance**, not to the reusable **Mission Definition**.

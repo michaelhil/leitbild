@@ -34,6 +34,7 @@
     readonly theme: ThemeMode
     readonly routeRevision: number
     readonly layoutRevision?: number
+    readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
     readonly onObjectSelected: (object: OperationalObject) => void
@@ -51,6 +52,7 @@
     theme,
     routeRevision,
     layoutRevision = 0,
+    highlightedObjectIds = [],
     hasNewInfo,
     presentationFor,
     onObjectSelected,
@@ -104,7 +106,7 @@
     const current = map
     if (!current || !loaded) return
     const source = current.getSource(mapSourceIds.objects) as GeoJSONSource | undefined
-    if (source) source.setData(createObjectFeatureCollection([...sourceObjects], selectedControllerId, hasNewInfo, presentationFor))
+    if (source) source.setData(createObjectFeatureCollection([...sourceObjects], selectedControllerId, highlightedObjectIds, hasNewInfo, presentationFor))
   }
 
   const objectById = (
@@ -270,6 +272,7 @@
         map: current,
         objects,
         selectedControllerId,
+        highlightedObjectIds,
         hasNewInfo,
         presentationFor,
         routeCasingColor: routeCasingColor(),
@@ -341,6 +344,7 @@
   $effect(() => {
     objects
     selectedControllerId
+    highlightedObjectIds
     routeRevision
     renderRevision
     const nowMs = performance.now()

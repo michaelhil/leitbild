@@ -15,6 +15,7 @@ import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/inter
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
+import { osloAmbulanceTutorialScenario } from '../src/scenarios/index.ts'
 
 interface ApiResponse<T> {
   readonly status: number
@@ -67,7 +68,7 @@ describe('control instance API', () => {
     expect(fetched.status).toBe(200)
     expect(fetched.body.scenario.id).toBe('oslo-ambulance-tutorial')
     expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic'])
-    expect(fetched.body.scenario.initialObjects).toHaveLength(3)
+    expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
   })
 
   test('joins a named control instance and exposes objects', async () => {
@@ -80,14 +81,24 @@ describe('control instance API', () => {
       )
       expect(joined.status).toBe(200)
       expect(joined.body.id).toBe('sandbox' as ControlInstanceId)
-      expect(joined.body.snapshot.objects).toHaveLength(3)
+      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
 
       const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly kind: string }[] }>(
         registry,
         '/api/control-instances/sandbox/objects',
       )
       expect(objects.status).toBe(200)
-      expect(objects.body.objects.map(object => object.kind).sort()).toEqual(['facility', 'incident', 'mobile_entity'])
+      expect(objects.body.objects.map(object => object.kind).sort()).toEqual([
+        'facility',
+        'facility',
+        'facility',
+        'incident',
+        'incident',
+        'incident',
+        'mobile_entity',
+        'mobile_entity',
+        'mobile_entity',
+      ])
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }
@@ -106,7 +117,7 @@ describe('control instance API', () => {
         },
       )
       expect(joined.status).toBe(200)
-      expect(joined.body.snapshot.objects).toHaveLength(3)
+      expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
 
       const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,
@@ -160,8 +171,8 @@ describe('control instance API', () => {
         },
       )
       expect(reset.status).toBe(200)
-      expect(reset.body.snapshot.seq).toBe(0)
-      expect(reset.body.snapshot.objects).toHaveLength(3)
+      expect(reset.body.snapshot.seq).toBeGreaterThanOrEqual(0)
+      expect(reset.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
     } finally {
       await registry.close('reset-sandbox' as ControlInstanceId)
     }
@@ -185,7 +196,7 @@ describe('control instance API', () => {
   test('creates and lists known control instances', async () => {
     const registry = await createTestRegistry()
     try {
-      const created = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly unknown[] } }>(
+      const created = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly unknown[]; readonly seq: number } }>(
         registry,
         '/api/control-instances',
         {
@@ -196,7 +207,7 @@ describe('control instance API', () => {
       )
       expect(created.status).toBe(201)
       expect(created.body.id).toBe('api-created' as ControlInstanceId)
-      expect(created.body.snapshot.objects).toHaveLength(3)
+      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
 
       const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly loaded: boolean; readonly objectCount: number | null; readonly snapshotSeq: number | null }[] }>(
         registry,
@@ -205,8 +216,8 @@ describe('control instance API', () => {
       expect(listed.body.controlInstances).toContainEqual({
         id: 'api-created',
         loaded: true,
-        objectCount: 3,
-        snapshotSeq: 0,
+        objectCount: osloAmbulanceTutorialScenario.initialObjects.length,
+        snapshotSeq: created.body.snapshot.seq,
       })
     } finally {
       await registry.close('api-created' as ControlInstanceId)
@@ -226,7 +237,7 @@ describe('control instance API', () => {
         },
       )
       expect(created.status).toBe(201)
-      expect(created.body.snapshot.objects).toHaveLength(3)
+      expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceTutorialScenario.initialObjects.length)
 
       const rejected = await callRoute<{ readonly error: { readonly code: string } }>(
         registry,

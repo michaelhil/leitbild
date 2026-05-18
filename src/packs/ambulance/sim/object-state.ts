@@ -45,25 +45,40 @@ const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimest
   },
 })
 
-const makeIncidentDomainData = (triage: 'green' | 'yellow' | 'red', at: IsoTimestamp, assignedAmbulanceId?: ObjectId): IncidentDomainData => ({
+const makeIncidentDomainData = (
+  triage: 'green' | 'yellow' | 'red',
+  at: IsoTimestamp,
+  config?: {
+    readonly victimCount?: number | 'unknown'
+    readonly assignedAmbulanceId?: ObjectId
+  },
+): IncidentDomainData => ({
   type: 'incident',
   schemaVersion: 1,
   triage: confirmedFact(triage, at, 'scenario', 1),
   victims: {
-    count: unknownFact(at, 'scenario'),
+    count: config?.victimCount === undefined || config.victimCount === 'unknown'
+      ? unknownFact(at, 'scenario')
+      : confirmedFact(config.victimCount, at, 'scenario', 1),
     injuries: unknownFact(at, 'scenario'),
     entrapment: unknownFact(at, 'scenario'),
   },
   hazards: unknownFact(at, 'scenario'),
-  ...(assignedAmbulanceId ? { assignedAmbulanceId } : {}),
+  ...(config?.assignedAmbulanceId ? { assignedAmbulanceId: config.assignedAmbulanceId } : {}),
 })
 
-const makeHospitalDomainData = (at: IsoTimestamp): HospitalDomainData => ({
+const makeHospitalDomainData = (
+  at: IsoTimestamp,
+  config?: {
+    readonly traumaBedsTotal?: number
+    readonly traumaBedsAvailable?: number
+  },
+): HospitalDomainData => ({
   type: 'hospital',
   schemaVersion: 1,
   emergencyDepartment: {
-    traumaBedsTotal: confirmedFact(3, at, 'scenario', 1),
-    traumaBedsAvailable: confirmedFact(3, at, 'scenario', 1),
+    traumaBedsTotal: confirmedFact(config?.traumaBedsTotal ?? 3, at, 'scenario', 1),
+    traumaBedsAvailable: confirmedFact(config?.traumaBedsAvailable ?? config?.traumaBedsTotal ?? 3, at, 'scenario', 1),
     ambulanceBaysAvailable: confirmedFact(2, at, 'scenario', 1),
     patientsReceived: confirmedFact(0, at, 'scenario', 1),
     diversionStatus: confirmedFact('open', at, 'scenario', 1),
@@ -203,6 +218,8 @@ export const createScenarioIncidentObject = (config: {
   readonly label: string
   readonly point: GeoJsonPoint
   readonly triage: 'green' | 'yellow' | 'red'
+  readonly victimCount?: number | 'unknown'
+  readonly assignedAmbulanceId?: ObjectId
   readonly at: IsoTimestamp
 }): OperationalObject => ({
   id: config.id,
@@ -246,7 +263,10 @@ export const createScenarioIncidentObject = (config: {
     updatedAt: config.at,
   },
   domainData: {
-    ...makeIncidentDomainData(config.triage, config.at),
+    ...makeIncidentDomainData(config.triage, config.at, {
+      ...(config.victimCount === undefined ? {} : { victimCount: config.victimCount }),
+      ...(config.assignedAmbulanceId === undefined ? {} : { assignedAmbulanceId: config.assignedAmbulanceId }),
+    }),
   } satisfies IncidentDomainData,
 })
 
@@ -254,6 +274,8 @@ export const createScenarioHospitalObject = (config: {
   readonly id: ObjectId
   readonly label: string
   readonly point: GeoJsonPoint
+  readonly traumaBedsTotal?: number
+  readonly traumaBedsAvailable?: number
   readonly at: IsoTimestamp
 }): OperationalObject => ({
   id: config.id,
@@ -286,7 +308,10 @@ export const createScenarioHospitalObject = (config: {
     updatedAt: config.at,
   },
   domainData: {
-    ...makeHospitalDomainData(config.at),
+    ...makeHospitalDomainData(config.at, {
+      ...(config.traumaBedsTotal === undefined ? {} : { traumaBedsTotal: config.traumaBedsTotal }),
+      ...(config.traumaBedsAvailable === undefined ? {} : { traumaBedsAvailable: config.traumaBedsAvailable }),
+    }),
   } satisfies HospitalDomainData,
 })
 

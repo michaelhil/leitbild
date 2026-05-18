@@ -116,19 +116,19 @@ const applyInteractionEvents = async (
 }
 
 describe('local ambulance simulator', () => {
-  test('starts with one ambulance, one incident, and one hospital', async () => {
+  test('starts with the tutorial ambulance, incident, and hospital set', async () => {
     const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
 
-    expect(initial.objects.filter(object => object.kind === 'mobile_entity')).toHaveLength(1)
-    expect(initial.objects.filter(object => object.kind === 'incident')).toHaveLength(1)
-    expect(initial.objects.filter(object => object.kind === 'facility')).toHaveLength(1)
+    expect(initial.objects.filter(object => object.kind === 'mobile_entity')).toHaveLength(3)
+    expect(initial.objects.filter(object => object.kind === 'incident')).toHaveLength(3)
+    expect(initial.objects.filter(object => object.kind === 'facility')).toHaveLength(3)
 
-    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
-    const hospital = initial.objects.find(object => object.kind === 'facility')
+    const ambulance = initial.objects.find(object => object.id === 'amb:a12')
+    const hospital = initial.objects.find(object => object.id === 'facility:ous')
     expect(ambulance?.spatial.position?.point.coordinates).toEqual(hospital?.spatial.position?.point.coordinates)
     expect(ambulanceDomainDataSchema.parse(ambulance?.domainData).capabilities).toContain('advanced_life_support')
-    expect(incidentDomainDataSchema.parse(initial.objects.find(object => object.kind === 'incident')?.domainData).victims.count.state).toBe('unknown')
+    expect(incidentDomainDataSchema.parse(initial.objects.find(object => object.id === 'incident:torshov-partial')?.domainData).victims.count.state).toBe('unknown')
     expect(hospitalDomainDataSchema.parse(hospital?.domainData).emergencyDepartment.diversionStatus.state).toBe('confirmed')
     await connection.close()
   })
@@ -137,7 +137,7 @@ describe('local ambulance simulator', () => {
     const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity' && object.operational.status === 'available')
-    const incident = initial.objects.find(object => object.kind === 'incident')
+    const incident = initial.objects.find(object => object.id === 'incident:gronland-unattended')
     if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
 
     const command = makeCommand({
@@ -170,13 +170,13 @@ describe('local ambulance simulator', () => {
       routing: createDirectRoutingAdapter(),
     })
 
-    const initialIncident = engine.snapshot().objects.find(object => object.kind === 'incident')
+    const initialIncident = engine.snapshot().objects.find(object => object.id === 'incident:torshov-partial')
     if (!initialIncident) throw new Error('scenario missing incident')
     expect(incidentDomainDataSchema.parse(initialIncident.domainData).victims.count.state).toBe('unknown')
 
     const incidentEvents = engine.tick(5_000)
     expect(incidentEvents.some(event => event.type === 'object.upserted' && event.object.kind === 'incident')).toBe(true)
-    const revealedIncident = engine.snapshot().objects.find(object => object.kind === 'incident')
+    const revealedIncident = engine.snapshot().objects.find(object => object.id === initialIncident.id)
     if (!revealedIncident) throw new Error('scenario missing updated incident')
     const incidentData = incidentDomainDataSchema.parse(revealedIncident.domainData)
     expect(incidentData.victims.count.state).toBe('estimated')
@@ -217,8 +217,8 @@ describe('local ambulance simulator', () => {
       },
     })
     const initial = engine.snapshot()
-    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
-    const incident = initial.objects.find(object => object.kind === 'incident')
+    const ambulance = initial.objects.find(object => object.id === 'amb:a12')
+    const incident = initial.objects.find(object => object.id === 'incident:gronland-unattended')
     if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
 
     const result = await engine.handleCommand(makeCommand({
@@ -429,14 +429,33 @@ describe('local ambulance simulator', () => {
   })
 
   test('loads patients and reduces victims when an empty ambulance reaches an incident', async () => {
+    const baseObjects = osloAmbulanceTutorialScenario.initialObjects
+    const baseAmbulance = baseObjects.find(object => object.id === 'amb:a12')
+    const baseIncident = baseObjects.find(object => object.id === 'incident:gronland-unattended')
+    if (!baseAmbulance || !baseIncident || !baseAmbulance.spatial.position || !baseIncident.spatial.position) {
+      throw new Error('scenario missing ambulance or incident')
+    }
+    const initialObjects = baseObjects.map(object => {
+      if (object.id !== baseIncident.id) return object
+      return withIncidentVictims({
+        ...object,
+        spatial: {
+          ...object.spatial,
+          position: {
+            ...object.spatial.position!,
+            point: baseAmbulance.spatial.position!.point,
+          },
+        },
+      }, 2)
+    })
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
-      objects: osloAmbulanceTutorialScenario.initialObjects,
+      objects: initialObjects,
       routing: createDirectRoutingAdapter(),
     })
     const initial = engine.snapshot()
-    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
-    const incident = initial.objects.find(object => object.kind === 'incident')
+    const ambulance = initial.objects.find(object => object.id === baseAmbulance.id)
+    const incident = initial.objects.find(object => object.id === baseIncident.id)
     if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
 
     const result = await engine.handleCommand(makeCommand({
@@ -447,7 +466,7 @@ describe('local ambulance simulator', () => {
     }))
     expect(result.ok).toBe(true)
 
-    await applyInteractionEvents(engine, engine.tick(300_000))
+    await applyInteractionEvents(engine, engine.tick(600_000))
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const remainingIncident = arrived.objects.find(object => object.id === incident.id)
@@ -457,7 +476,7 @@ describe('local ambulance simulator', () => {
     const incidentData = incidentDomainDataSchema.parse(remainingIncident.domainData)
     expect(ambulanceData.transport?.patientsOnBoard.state).toBe('confirmed')
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(1)
-    expect(incidentData.victims.count.state).toBe('estimated')
+    expect(incidentData.victims.count.state).toBe('confirmed')
     expect(knownFactValue(incidentData.victims.count)).toBe(1)
   })
 
@@ -534,7 +553,7 @@ describe('local ambulance simulator', () => {
     const hospitalData = hospitalDomainDataSchema.parse(updatedHospital?.domainData)
     expect(arrivedAmbulance?.operational.status).toBe('available')
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(0)
-    expect(knownFactValue(hospitalData.emergencyDepartment.traumaBedsAvailable)).toBe(2)
+    expect(knownFactValue(hospitalData.emergencyDepartment.traumaBedsAvailable)).toBe(1)
     expect(knownFactValue(hospitalData.emergencyDepartment.patientsReceived)).toBe(1)
   })
 

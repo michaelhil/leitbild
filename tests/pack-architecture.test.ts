@@ -118,6 +118,7 @@ describe('pack architecture', () => {
           ...data,
           emergencyDepartment: {
             ...data.emergencyDepartment,
+            traumaBedsTotal: confirmedFact(3, nowIso(), 'scenario', 1),
             traumaBedsAvailable: confirmedFact(availableBeds, nowIso(), 'scenario', 1),
           },
         } satisfies HospitalDomainData,

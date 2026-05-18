@@ -41,6 +41,7 @@ interface ObjectFeatureProperties {
   readonly icon: string
   readonly muted: boolean
   readonly selected: boolean
+  readonly highlighted: boolean
   readonly hasNewInfo: boolean
 }
 
@@ -60,6 +61,7 @@ export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
 export const createObjectFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
   selectedObjectId: string | null,
+  highlightedObjectIds: ReadonlyArray<string>,
   hasNewInfo: (object: OperationalObject) => boolean,
   presentObject: (object: OperationalObject) => { readonly icon: string; readonly color: string; readonly muted?: boolean; readonly status?: { readonly tone: PackObjectStatusTone } },
 ): GeoJsonFeatureCollection<GeoJsonPoint, ObjectFeatureProperties> => ({
@@ -79,6 +81,7 @@ export const createObjectFeatureCollection = (
           icon: `object-${presentation.icon}-${statusTone}`,
           muted: presentation.muted === true,
           selected: object.id === selectedObjectId,
+          highlighted: highlightedObjectIds.includes(object.id),
           hasNewInfo: hasNewInfo(object),
         },
       }
