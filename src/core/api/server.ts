@@ -30,6 +30,11 @@ interface RealtimeSubscription {
   readonly unsubscribe: () => void
 }
 
+interface SubscriptionReconciliation {
+  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>> | null
+  readonly changed: boolean
+}
+
 export interface RealtimeStatus {
   readonly websocketClientCount: number
   readonly subscribedControlInstanceCount: number
@@ -159,25 +164,33 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     for (const client of clients) config.sendReady(client, message)
   }
 
-  const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): void => {
+  const sendReadyToClient = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    client: Client,
+  ): void => {
+    config.sendReady(client, readyMessageForRuntime(controlInstanceId, runtime))
+  }
+
+  const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): SubscriptionReconciliation => {
     const clients = clientsByControlInstance.get(controlInstanceId)
     const existing = subscriptionsByControlInstance.get(controlInstanceId)
     if (!clients || clients.size === 0) {
       existing?.unsubscribe()
       subscriptionsByControlInstance.delete(controlInstanceId)
-      return
+      return { runtime: null, changed: existing !== undefined }
     }
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) {
       existing?.unsubscribe()
       subscriptionsByControlInstance.delete(controlInstanceId)
-      return
+      return { runtime: null, changed: existing !== undefined }
     }
-    if (existing?.runtime === runtime) return
+    if (existing?.runtime === runtime) return { runtime, changed: false }
     existing?.unsubscribe()
     const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, runtime, event))
     subscriptionsByControlInstance.set(controlInstanceId, { runtime, unsubscribe })
-    sendReadyToControlInstance(controlInstanceId, runtime)
+    return { runtime, changed: true }
   }
 
   return {
@@ -185,7 +198,8 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
       const clients = clientsByControlInstance.get(controlInstanceId) ?? new Set<Client>()
       clients.add(client)
       clientsByControlInstance.set(controlInstanceId, clients)
-      reconcileControlInstanceSubscription(controlInstanceId)
+      const { runtime } = reconcileControlInstanceSubscription(controlInstanceId)
+      if (runtime) sendReadyToClient(controlInstanceId, runtime, client)
     },
     removeClient: (controlInstanceId, client): void => {
       const clients = clientsByControlInstance.get(controlInstanceId)
@@ -196,7 +210,8 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     },
     reconcile: (): void => {
       for (const controlInstanceId of clientsByControlInstance.keys()) {
-        reconcileControlInstanceSubscription(controlInstanceId)
+        const { runtime, changed } = reconcileControlInstanceSubscription(controlInstanceId)
+        if (runtime && changed) sendReadyToControlInstance(controlInstanceId, runtime)
       }
     },
     status: () => realtimeStatusFromClients(clientsByControlInstance, subscriptionsByControlInstance.size),

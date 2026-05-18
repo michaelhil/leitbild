@@ -159,4 +159,49 @@ describe('server health', () => {
       await registry.close(controlInstanceId)
     }
   })
+
+  test('sends realtime ready to every client that joins an already-subscribed control instance', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-second-client-test-'))
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+    const registry = createControlInstanceRegistry({
+      dataDir,
+      scenarioCatalog: createTestScenarioCatalog(),
+      simulationAdapters: [
+        createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficSimulationAdapter(),
+      ],
+    })
+    const firstClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
+    const secondClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
+    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+      registry,
+      send: (targetClient, message) => {
+        targetClient.eventMessages.push(message)
+        targetClient.events.push(...message.events)
+      },
+      sendReady: (targetClient, message) => {
+        targetClient.readyMessages.push(message.scenarioId ?? '')
+      },
+    })
+    try {
+      await registry.ensure(controlInstanceId)
+      realtime.addClient(controlInstanceId, firstClient)
+      expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
+      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+
+      realtime.addClient(controlInstanceId, secondClient)
+      expect(secondClient.readyMessages).toEqual(['oslo-ambulance'])
+      expect(firstClient.readyMessages).toEqual(['oslo-ambulance'])
+      expect(realtime.status().websocketClientCount).toBe(2)
+      expect(realtime.status().subscribedControlInstanceCount).toBe(1)
+
+      await registry.reset(controlInstanceId, { scenarioId: 'halden' })
+      realtime.reconcile()
+      expect(firstClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
+      expect(secondClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
+    } finally {
+      realtime.stop()
+      await registry.close(controlInstanceId)
+    }
+  })
 })
