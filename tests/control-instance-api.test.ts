@@ -212,18 +212,50 @@ describe('control instance API', () => {
       expect(created.body.id).toBe('api-created' as ControlInstanceId)
       expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
-      const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly loaded: boolean; readonly objectCount: number | null; readonly snapshotSeq: number | null }[] }>(
+      const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly scenarioId: string | null; readonly runId: string | null; readonly loaded: boolean; readonly objectCount: number | null; readonly snapshotSeq: number | null; readonly websocketClientCount: number }[] }>(
         registry,
         '/api/control-instances',
       )
       expect(listed.body.controlInstances).toContainEqual({
         id: 'api-created',
+        scenarioId: 'oslo-ambulance',
+        runId: null,
         loaded: true,
         objectCount: osloAmbulanceScenario.initialObjects.length,
         snapshotSeq: created.body.snapshot.seq,
+        websocketClientCount: 0,
       })
     } finally {
       await registry.close('api-created' as ControlInstanceId)
+    }
+  })
+
+  test('lists scenario-first run metadata for routable control instances', async () => {
+    const registry = await createTestRegistry()
+    try {
+      await callRoute(
+        registry,
+        '/api/control-instances/halden%3Asandbox',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'halden' }),
+        },
+      )
+
+      const listed = await callRoute<{ readonly controlInstances: readonly { readonly id: string; readonly scenarioId: string | null; readonly runId: string | null; readonly websocketClientCount: number }[] }>(
+        registry,
+        '/api/control-instances',
+      )
+
+      expect(listed.body.controlInstances).toContainEqual(expect.objectContaining({
+        id: 'halden:sandbox',
+        scenarioId: 'halden',
+        runId: 'sandbox',
+        websocketClientCount: 0,
+      }))
+    } finally {
+      await registry.close('halden:sandbox' as ControlInstanceId)
     }
   })
 

@@ -16,9 +16,12 @@ export interface ControlInstanceResponse {
 
 export interface ControlInstanceSummary {
   readonly id: ControlInstanceId
+  readonly scenarioId: string | null
+  readonly runId: string | null
   readonly loaded: boolean
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
+  readonly websocketClientCount: number
 }
 
 export interface ControlInstanceListResponse {

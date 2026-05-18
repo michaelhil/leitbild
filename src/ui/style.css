@@ -212,8 +212,47 @@ body.rail-resizing {
 
 .instance-list {
   display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.scenario-picker-group {
+  display: grid;
   gap: 8px;
   padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-strong);
+}
+
+.scenario-picker-group > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.scenario-picker-group > header span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.scenario-run-list {
+  display: grid;
+  gap: 6px;
+}
+
+.command-button.compact {
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.empty-row.compact {
+  padding: 9px 10px;
+  border-radius: 5px;
 }
 
 .instance-row {

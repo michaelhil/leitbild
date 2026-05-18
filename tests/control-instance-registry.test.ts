@@ -224,6 +224,8 @@ describe('control instance registry', () => {
 
     expect(known).toContainEqual({
       id: controlInstanceId,
+      scenarioId: 'oslo-ambulance',
+      runId: null,
       loaded: false,
       snapshotSeq,
       objectCount: osloAmbulanceScenario.initialObjects.length,

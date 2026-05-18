@@ -283,7 +283,10 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (url.pathname === '/map/style.json') return mapStyleResponse(url.searchParams.get('theme'))
       if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
 
-      const controlInstanceApiResponse = await handleControlInstanceApi(req, url, { registry: config.registry })
+      const controlInstanceApiResponse = await handleControlInstanceApi(req, url, {
+        registry: config.registry,
+        websocketClients: realtime.status().controlInstances,
+      })
       if (controlInstanceApiResponse) {
         realtime.reconcile()
         return controlInstanceApiResponse

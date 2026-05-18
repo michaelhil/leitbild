@@ -92,6 +92,8 @@ describe('server health', () => {
       expect(details.registry.storage.totalBytes).toBeGreaterThan(0)
       expect(details.registry.controlInstances).toContainEqual({
         id: runtime.id,
+        scenarioId: 'oslo-ambulance',
+        runId: null,
         loaded: true,
         objectCount: osloAmbulanceScenario.initialObjects.length,
         snapshotSeq: runtime.snapshot().seq,

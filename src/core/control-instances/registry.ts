@@ -13,6 +13,8 @@ import type { DomainEvent } from '../model/index.ts'
 
 export interface ControlInstanceSummary {
   readonly id: ControlInstanceId
+  readonly scenarioId: string | null
+  readonly runId: string | null
   readonly loaded: boolean
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
@@ -64,8 +66,24 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
+  const controlInstanceIdForScenarioRun = (scenarioId: string, runId: string): ControlInstanceId =>
+    controlInstanceIdSchema.parse(`${scenarioId}:${runId}`)
+
+  const scenarioRunFromId = (
+    id: ControlInstanceId,
+    scenarioId: string | undefined,
+  ): { readonly scenarioId: string | null; readonly runId: string | null } => {
+    if (!scenarioId) return { scenarioId: null, runId: null }
+    const prefix = `${scenarioId}:`
+    if (!id.startsWith(prefix)) return { scenarioId, runId: null }
+    const runId = id.slice(prefix.length)
+    return runId ? { scenarioId, runId } : { scenarioId, runId: null }
+  }
+
   const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
-    const id = createConfig?.id ?? `control-instance:${randomUUID()}` as ControlInstanceId
+    const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+    if (!config.scenarioCatalog.runtimeFor(requestedScenarioId)) throw new Error(`unknown scenario: ${requestedScenarioId}`)
+    const id = createConfig?.id ?? controlInstanceIdForScenarioRun(requestedScenarioId, `run-${randomUUID()}`)
     if (controlInstances.has(id)) throw new Error(`control instance already exists: ${id}`)
     const instanceDir = join(controlInstanceRoot, id)
     const eventLog = createJsonlEventLog(join(instanceDir, 'events.jsonl'))
@@ -92,7 +110,7 @@ export const createControlInstanceRegistry = (config: {
     }
     const scenarioId = restoredSnapshot
       ? restoredSnapshot.scenario?.scenarioId
-      : createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+      : requestedScenarioId
     const scenarioRuntime = scenarioId === undefined ? undefined : config.scenarioCatalog.runtimeFor(scenarioId)
     if (scenarioId !== undefined && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
     const simulation = await createSimulationHub(config.simulationAdapters).connect({
@@ -184,8 +202,10 @@ export const createControlInstanceRegistry = (config: {
     const loaded = controlInstances.get(id)
     if (loaded) {
       const snapshot = loaded.snapshot()
+      const scenarioRun = scenarioRunFromId(id, snapshot.scenario?.scenarioId)
       return {
         id,
+        ...scenarioRun,
         loaded: true,
         snapshotSeq: snapshot.seq,
         objectCount: snapshot.objects.length,
@@ -196,8 +216,10 @@ export const createControlInstanceRegistry = (config: {
       path: join(controlInstanceRoot, id, 'snapshot.json'),
     })
     const snapshot = await snapshotStore.load()
+    const scenarioRun = scenarioRunFromId(id, snapshot?.scenario?.scenarioId)
     return {
       id,
+      ...scenarioRun,
       loaded: false,
       snapshotSeq: snapshot?.seq ?? null,
       objectCount: snapshot?.objects.length ?? null,

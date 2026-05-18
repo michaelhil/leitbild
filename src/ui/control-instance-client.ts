@@ -42,7 +42,9 @@ const requestBody = (body: object): BodyInit | undefined => {
   return text === '{}' ? undefined : text
 }
 
-export const createControlInstance = async (config: { readonly scenarioId?: string } = {}): Promise<ControlInstanceResponse> => {
+export const createControlInstance = async (
+  config: { readonly id?: ControlInstanceId; readonly scenarioId?: string } = {},
+): Promise<ControlInstanceResponse> => {
   const body = requestBody(config)
   const response = await fetch('/api/control-instances', {
     method: 'POST',

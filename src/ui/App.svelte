@@ -18,7 +18,13 @@
     setControlInstanceClock,
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from './control-instance-client.ts'
-  import { parseControlSurfaceRoute, pathForScenarioRun } from './control-instance-route.ts'
+  import {
+    controlInstanceIdForScenarioRun,
+    createGeneratedRunId,
+    parseControlSurfaceRoute,
+    pathForNewScenarioRun,
+    pathForScenarioRun,
+  } from './control-instance-route.ts'
   import {
     applyControlInstanceEventBatchMessage,
     parseControlInstanceWebSocketMessage,
@@ -74,7 +80,6 @@
   let status = $state('Starting')
   let commandStatus = $state('')
   let routeMode = $state<'picker' | 'control-instance'>('control-instance')
-  let workspaceId = $state('sandbox')
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let seenRevisions = $state(new Map<string, number>())
   let controlInstanceSocket = $state<WebSocket | null>(null)
@@ -209,8 +214,8 @@
     if (mapReady) completeStep('map')
   }
 
-  const openInstance = (id: string): void => {
-    location.href = `/i/${encodeURIComponent(id)}`
+  const openScenarioRun = (scenarioId: string, runId: string): void => {
+    location.href = pathForScenarioRun(scenarioId, runId)
   }
 
   const activeRoute = () => parseControlSurfaceRoute(location.pathname)
@@ -223,11 +228,24 @@
     scenarioOptions = body.scenarios
   }
 
-  const createInstance = async (): Promise<void> => {
+  const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
     status = 'Creating Control Instance'
-    const route = activeRoute()
-    const body = await createControlInstance(route.mode === 'control-instance' ? { scenarioId: route.scenarioId } : {})
-    openInstance(body.id)
+    startStep('control-instance')
+    try {
+      const runId = createGeneratedRunId()
+      const id = controlInstanceIdForScenarioRun(scenarioId, runId)
+      const body = await createControlInstance({ id, scenarioId })
+      if (body.id !== id) throw new Error(`created control instance ${body.id}, expected ${id}`)
+      const nextPath = pathForScenarioRun(scenarioId, runId)
+      if (navigation === 'replace') {
+        location.replace(nextPath)
+        return
+      }
+      location.href = nextPath
+    } catch (err) {
+      failStep('control-instance', err)
+      status = err instanceof Error ? err.message : 'control instance create failed'
+    }
   }
 
   const defaultName = (type: PackCreateObjectType): string =>
@@ -396,12 +414,11 @@
     const route = activeRoute()
     if (route.mode !== 'control-instance') throw new Error('control instance route expected')
     if (location.pathname !== route.canonicalPath) history.replaceState(null, '', route.canonicalPath)
-    workspaceId = route.workspaceId
     return route.controlInstanceId
   }
 
   const routeModeFromPath = (): 'picker' | 'control-instance' => {
-    return activeRoute().mode
+    return activeRoute().mode === 'picker' ? 'picker' : 'control-instance'
   }
 
   const joinControlInstance = async (): Promise<void> => {
@@ -492,7 +509,7 @@
   }
 
   const selectScenario = async (scenarioId: string): Promise<void> => {
-    location.href = pathForScenarioRun(workspaceId, scenarioId)
+    location.href = pathForNewScenarioRun(scenarioId)
   }
 
   const toggleClockPaused = async (): Promise<void> => {
@@ -552,8 +569,17 @@
     completeStep('route')
     completeStep('interface')
     void loadScenarioOptions()
+    const route = activeRoute()
     if (nextRouteMode === 'picker') {
       void loadInstances()
+      return () => {
+        window.removeEventListener('keydown', handleKeydown)
+        window.removeEventListener('click', handleClick, { capture: true })
+        railLayout.stopResize()
+      }
+    }
+    if (route.mode === 'new-run') {
+      void createScenarioRun(route.scenarioId, 'replace')
       return () => {
         window.removeEventListener('keydown', handleKeydown)
         window.removeEventListener('click', handleClick, { capture: true })
@@ -572,7 +598,13 @@
 </script>
 
 {#if routeMode === 'picker'}
-  <InstancePicker {instances} {status} {createInstance} {openInstance} />
+  <InstancePicker
+    scenarios={scenarioOptions}
+    {instances}
+    {status}
+    {createScenarioRun}
+    {openScenarioRun}
+  />
 {:else}
   {#if !surface}
     <div class="boot-shell"></div>

@@ -1,31 +1,37 @@
 import { describe, expect, test } from 'bun:test'
 import {
   controlInstanceIdForScenarioRun,
-  defaultScenarioRunPath,
+  pathForNewScenarioRun,
   parseControlSurfaceRoute,
   pathForScenarioRun,
 } from '../src/ui/control-instance-route.ts'
 
 describe('control instance route model', () => {
   test('uses scenario-specific run URLs and internal control instance ids', () => {
-    expect(pathForScenarioRun('sandbox', 'halden')).toBe('/i/sandbox/halden')
-    expect(String(controlInstanceIdForScenarioRun('sandbox', 'halden'))).toBe('sandbox:halden')
+    expect(pathForScenarioRun('halden', 'sandbox')).toBe('/i/halden/sandbox')
+    expect(String(controlInstanceIdForScenarioRun('halden', 'sandbox'))).toBe('halden:sandbox')
 
-    const route = parseControlSurfaceRoute('/i/sandbox/halden')
+    const route = parseControlSurfaceRoute('/i/halden/sandbox')
     expect(route.mode).toBe('control-instance')
     if (route.mode !== 'control-instance') throw new Error('expected control instance route')
-    expect(route.workspaceId).toBe('sandbox')
     expect(route.scenarioId).toBe('halden')
-    expect(String(route.controlInstanceId)).toBe('sandbox:halden')
-    expect(route.canonicalPath).toBe('/i/sandbox/halden')
+    expect(route.runId).toBe('sandbox')
+    expect(String(route.controlInstanceId)).toBe('halden:sandbox')
+    expect(route.canonicalPath).toBe('/i/halden/sandbox')
   })
 
-  test('keeps the picker route distinct from scenario runs', () => {
+  test('keeps the picker route distinct from scenario run creation', () => {
+    expect(parseControlSurfaceRoute('/')).toEqual({ mode: 'picker' })
     expect(parseControlSurfaceRoute('/i')).toEqual({ mode: 'picker' })
-    expect(defaultScenarioRunPath()).toBe('/i/sandbox/oslo-ambulance')
+    expect(parseControlSurfaceRoute('/i/halden')).toEqual({
+      mode: 'new-run',
+      scenarioId: 'halden',
+      canonicalPath: '/i/halden',
+    })
+    expect(pathForNewScenarioRun('halden')).toBe('/i/halden')
   })
 
-  test('rejects ambiguous one-segment instance URLs instead of silently guessing a scenario', () => {
-    expect(() => parseControlSurfaceRoute('/i/sandbox')).toThrow('workspace and scenario')
+  test('rejects invalid route shapes instead of silently guessing a scenario or run', () => {
+    expect(() => parseControlSurfaceRoute('/i/halden/sandbox/extra')).toThrow('scenario and run')
   })
 })

@@ -6,6 +6,10 @@ import { apiError, json, readJson } from './responses.ts'
 
 export interface ControlInstanceRouteConfig {
   readonly registry: ControlInstanceRegistry
+  readonly websocketClients?: ReadonlyArray<{
+    readonly id: ControlInstanceId
+    readonly websocketClientCount: number
+  }>
 }
 
 const commandRequestSchema = z.object({
@@ -108,7 +112,15 @@ const handleControlInstanceApiInner = async (
   }
 
   if (url.pathname === '/api/control-instances' && req.method === 'GET') {
-    return json({ controlInstances: await config.registry.listKnown() })
+    const websocketClientCountById = new Map(
+      (config.websocketClients ?? []).map(item => [item.id, item.websocketClientCount]),
+    )
+    return json({
+      controlInstances: (await config.registry.listKnown()).map(summary => ({
+        ...summary,
+        websocketClientCount: websocketClientCountById.get(summary.id) ?? 0,
+      })),
+    })
   }
 
   if (url.pathname === '/api/control-instances' && req.method === 'POST') {
