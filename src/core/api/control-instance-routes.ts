@@ -144,6 +144,17 @@ const handleControlInstanceApiInner = async (
     return json({ id: runtime.id, snapshot: runtime.snapshot() })
   }
 
+  if (controlInstanceMatch && req.method === 'DELETE') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(controlInstanceMatch[1] ?? ''))
+    const websocketClientCount = config.websocketClients?.find(item => item.id === controlInstanceId)?.websocketClientCount ?? 0
+    if (websocketClientCount > 0) {
+      return apiError(409, 'control_instance_has_users', 'control instance has connected users')
+    }
+    const deleted = await config.registry.delete(controlInstanceId)
+    if (!deleted) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    return json({ id: controlInstanceId, deleted: true })
+  }
+
   if (controlInstanceMatch && req.method === 'POST') {
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(controlInstanceMatch[1] ?? ''))
     const raw = await readJson(req)

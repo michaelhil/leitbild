@@ -38,6 +38,7 @@ export interface ControlInstanceRegistry {
   readonly create: (config?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly ensure: (id: ControlInstanceId, config?: { readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
   readonly reset: (id: ControlInstanceId, config?: { readonly scenarioId?: string }) => Promise<ControlInstanceRuntime>
+  readonly delete: (id: ControlInstanceId) => Promise<boolean>
   readonly get: (id: ControlInstanceId) => ControlInstanceRuntime | undefined
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
@@ -175,6 +176,20 @@ export const createControlInstanceRegistry = (config: {
     })
   }
 
+  const deleteControlInstance = async (id: ControlInstanceId): Promise<boolean> => {
+    const wasLoaded = await close(id)
+    const instanceDir = join(controlInstanceRoot, id)
+    let existedOnDisk = true
+    try {
+      await lstat(instanceDir)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      existedOnDisk = false
+    }
+    if (existedOnDisk) await rm(instanceDir, { recursive: true, force: true })
+    return wasLoaded || existedOnDisk
+  }
+
   const listPersistedIds = async (): Promise<ReadonlyArray<ControlInstanceId>> => {
     let entries: ReadonlyArray<{ readonly isDirectory: () => boolean; readonly name: string }>
     try {
@@ -262,6 +277,7 @@ export const createControlInstanceRegistry = (config: {
     create,
     ensure,
     reset,
+    delete: deleteControlInstance,
     get: (id: ControlInstanceId) => controlInstances.get(id),
     list: () => [...controlInstances.values()],
     listKnown,

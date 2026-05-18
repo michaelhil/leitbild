@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent, InteractionSignal, ObjectId, SignalId } from '../src/core/model/index.ts'
@@ -230,6 +230,20 @@ describe('control instance registry', () => {
       snapshotSeq,
       objectCount: osloAmbulanceScenario.initialObjects.length,
     })
+  })
+
+  test('deletes loaded and persisted control instance state', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+    const registry = createRegistry(dataDir)
+    await registry.ensure(controlInstanceId)
+    const instanceDir = join(dataDir, 'control-instances', controlInstanceId)
+
+    expect(await registry.delete(controlInstanceId)).toBe(true)
+    await expect(access(instanceDir)).rejects.toThrow()
+    expect(registry.get(controlInstanceId)).toBeUndefined()
+    expect(await registry.listKnown()).toEqual([])
+    expect(await registry.delete(controlInstanceId)).toBe(false)
   })
 
   test('restores provider snapshots by domain without duplicating objects across providers', async () => {

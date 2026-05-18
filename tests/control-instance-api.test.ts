@@ -39,9 +39,13 @@ const callRoute = async <T>(
   registry: ControlInstanceRegistry,
   path: string,
   init?: RequestInit,
+  websocketClients?: ReadonlyArray<{ readonly id: ControlInstanceId; readonly websocketClientCount: number }>,
 ): Promise<ApiResponse<T>> => {
   const request = new Request(`http://leitbild.test${path}`, init)
-  const response = await handleControlInstanceApi(request, new URL(request.url), { registry })
+  const response = await handleControlInstanceApi(request, new URL(request.url), {
+    registry,
+    ...(websocketClients === undefined ? {} : { websocketClients }),
+  })
   if (!response) throw new Error(`route did not handle ${init?.method ?? 'GET'} ${path}`)
   const body = await response.json() as T
   return { status: response.status, body }
@@ -256,6 +260,44 @@ describe('control instance API', () => {
       }))
     } finally {
       await registry.close('halden:sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('deletes runs only when no websocket users are connected', async () => {
+    const registry = await createTestRegistry()
+    const controlInstanceId = 'halden:sandbox' as ControlInstanceId
+    try {
+      await callRoute(
+        registry,
+        '/api/control-instances/halden%3Asandbox',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'halden' }),
+        },
+      )
+
+      const blocked = await callRoute<{ readonly error: { readonly code: string } }>(
+        registry,
+        '/api/control-instances/halden%3Asandbox',
+        { method: 'DELETE' },
+        [{ id: controlInstanceId, websocketClientCount: 1 }],
+      )
+      expect(blocked.status).toBe(409)
+      expect(blocked.body.error.code).toBe('control_instance_has_users')
+      expect(registry.get(controlInstanceId)).toBeDefined()
+
+      const deleted = await callRoute<{ readonly id: ControlInstanceId; readonly deleted: true }>(
+        registry,
+        '/api/control-instances/halden%3Asandbox',
+        { method: 'DELETE' },
+      )
+      expect(deleted.status).toBe(200)
+      expect(deleted.body).toEqual({ id: controlInstanceId, deleted: true })
+      expect(registry.get(controlInstanceId)).toBeUndefined()
+      expect(await registry.listKnown()).not.toContainEqual(expect.objectContaining({ id: controlInstanceId }))
+    } finally {
+      await registry.close(controlInstanceId)
     }
   })
 

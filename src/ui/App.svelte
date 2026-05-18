@@ -9,6 +9,7 @@
   import { trafficPack } from '../packs/traffic/pack.ts'
   import {
     createControlInstance,
+    deleteControlInstance,
     fetchScenario,
     joinControlInstance as joinControlInstanceClient,
     listScenarios as listScenariosClient,
@@ -248,6 +249,22 @@
     } catch (err) {
       failStep('control-instance', err)
       status = err instanceof Error ? err.message : 'control instance create failed'
+    }
+  }
+
+  const deleteScenarioRun = async (controlInstance: ControlInstanceSummary): Promise<void> => {
+    if (controlInstance.websocketClientCount > 0) {
+      status = `Cannot delete ${controlInstance.runId ?? controlInstance.id}: users are connected`
+      return
+    }
+    const confirmed = window.confirm(`Delete run ${controlInstance.runId ?? controlInstance.id}? This stops the run and removes its persisted state.`)
+    if (!confirmed) return
+    status = 'Deleting run'
+    try {
+      await deleteControlInstance(controlInstance.id)
+      await loadInstances()
+    } catch (err) {
+      status = err instanceof Error ? err.message : 'control instance delete failed'
     }
   }
 
@@ -607,6 +624,7 @@
     {status}
     {createScenarioRun}
     {openScenarioRun}
+    {deleteScenarioRun}
   />
 {:else}
   {#if !surface}

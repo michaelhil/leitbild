@@ -184,16 +184,20 @@ body.rail-resizing {
   min-height: 100vh;
   display: grid;
   place-items: start center;
-  padding: 40px 20px;
+  padding: 44px 20px;
   box-sizing: border-box;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 11%, transparent), transparent 34rem),
+    linear-gradient(135deg, color-mix(in srgb, var(--bg) 86%, white), var(--bg));
 }
 
 .instance-panel {
-  width: min(760px, 100%);
+  width: min(1120px, 100%);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 0 18px 48px rgba(16, 24, 40, 0.12);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 98%, transparent);
+  box-shadow: 0 22px 64px rgba(16, 24, 40, 0.16);
+  overflow: hidden;
 }
 
 .instance-panel header {
@@ -205,6 +209,46 @@ body.rail-resizing {
   border-bottom: 1px solid var(--border);
 }
 
+.instance-panel .instance-hero {
+  padding: 28px 30px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--panel-strong) 74%, transparent));
+}
+
+.instance-hero-copy {
+  max-width: 860px;
+  display: grid;
+  gap: 8px;
+}
+
+.instance-hero h1 {
+  margin: 0;
+  max-width: 780px;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.instance-hero p {
+  margin: 0;
+  max-width: 820px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.38;
+}
+
+.instance-status {
+  width: fit-content;
+  margin-top: 4px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .instance-panel .command-button {
   width: auto;
   margin-top: 0;
@@ -212,16 +256,16 @@ body.rail-resizing {
 
 .instance-list {
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: 14px;
+  padding: 16px;
 }
 
 .scenario-picker-group {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--panel-strong);
 }
 
@@ -240,14 +284,27 @@ body.rail-resizing {
   min-width: 0;
 }
 
+.scenario-picker-group > header strong {
+  font-size: 20px;
+}
+
 .scenario-run-list {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .command-button.compact {
-  padding: 7px 10px;
-  font-size: 13px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.scenario-new-run {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 112px;
+  white-space: nowrap;
 }
 
 .empty-row.compact {
@@ -256,23 +313,103 @@ body.rail-resizing {
 }
 
 .instance-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   width: 100%;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
+  color: var(--text);
+}
+
+.instance-row:focus-within,
+.instance-row:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.instance-open-target {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text);
   cursor: pointer;
   text-align: left;
 }
 
-.instance-row:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+.instance-open-target strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.instance-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instance-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.instance-action:hover,
+.instance-action:focus-visible {
+  border-color: var(--border);
+  background: var(--panel-strong);
+}
+
+.instance-action.delete {
+  color: var(--critical);
+}
+
+.instance-action.delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+@media (max-width: 760px) {
+  .instance-page {
+    padding: 12px;
+  }
+
+  .instance-panel .instance-hero {
+    padding: 22px;
+  }
+
+  .scenario-picker-group > header,
+  .instance-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .scenario-picker-group > header {
+    display: grid;
+  }
+
+  .scenario-new-run {
+    width: fit-content;
+  }
+
+  .instance-row-actions {
+    justify-content: flex-start;
+  }
 }
 
 .control-rail {

@@ -84,6 +84,15 @@ export const resetControlInstance = async (
   return await readJsonResponse<ControlInstanceResponse>(response, 'control instance reset failed')
 }
 
+export const deleteControlInstance = async (
+  controlInstanceId: ControlInstanceId,
+): Promise<{ readonly id: ControlInstanceId; readonly deleted: true }> => {
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}`, {
+    method: 'DELETE',
+  })
+  return await readJsonResponse<{ readonly id: ControlInstanceId; readonly deleted: true }>(response, 'control instance delete failed')
+}
+
 export const sendControlInstanceCommand = async (
   controlInstanceId: ControlInstanceId,
   command: ControlInstanceCommandRequest,

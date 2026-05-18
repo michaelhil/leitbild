@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 import {
   createControlInstance,
+  deleteControlInstance,
   joinControlInstance,
   listControlInstances,
   resetControlInstance,
@@ -24,13 +25,16 @@ afterEach(() => {
 })
 
 describe('control instance client', () => {
-  test('uses the Control Instance API paths for list, create, join, and snapshot', async () => {
+  test('uses the Control Instance API paths for list, create, join, snapshot, and delete', async () => {
     const calls: string[] = []
     installFetch((input, init) => {
       const path = String(input)
       calls.push(`${init?.method ?? 'GET'} ${path}`)
       if (path === '/api/control-instances') {
         return new Response(JSON.stringify({ controlInstances: [] }), { status: 200 })
+      }
+      if (init?.method === 'DELETE') {
+        return new Response(JSON.stringify({ id: 'control-instance:test', deleted: true }), { status: 200 })
       }
       return new Response(JSON.stringify({ id: 'control-instance:test', snapshot: { objects: [], seq: 0 } }), { status: 200 })
     })
@@ -39,12 +43,14 @@ describe('control instance client', () => {
     await createControlInstance()
     await joinControlInstance('control-instance:test' as ControlInstanceId)
     await syncControlInstanceSnapshot('control-instance:test' as ControlInstanceId)
+    await deleteControlInstance('control-instance:test' as ControlInstanceId)
 
     expect(calls).toEqual([
       'GET /api/control-instances',
       'POST /api/control-instances',
       'POST /api/control-instances/control-instance%3Atest',
       'GET /api/control-instances/control-instance%3Atest/snapshot',
+      'DELETE /api/control-instances/control-instance%3Atest',
     ])
   })
 
