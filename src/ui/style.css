@@ -599,7 +599,6 @@ body.rail-resizing {
 }
 
 .new-info-dot {
-  position: relative;
   display: inline-grid;
   vertical-align: middle;
   border: 0;
@@ -614,12 +613,8 @@ body.rail-resizing {
 }
 
 .new-info-tooltip {
-  position: absolute;
-  z-index: 36;
-  left: 0;
-  top: calc(100% + 6px);
-  display: none;
-  width: min(250px, calc(var(--rail-width, 360px) - 58px));
+  position: fixed;
+  z-index: 80;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px;
@@ -646,11 +641,6 @@ body.rail-resizing {
 .new-info-tooltip span {
   color: var(--muted);
   font-weight: 520;
-}
-
-.new-info-dot:hover .new-info-tooltip,
-.new-info-dot:focus-visible .new-info-tooltip {
-  display: block;
 }
 
 .object-meta {
