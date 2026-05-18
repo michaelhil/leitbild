@@ -35,16 +35,26 @@
   class:has-new-info={hasNewInfo}
   class:muted={presentation.muted === true}
   class="object-row"
+  role="button"
+  tabindex="0"
+  onmouseenter={() => markSeen(object)}
+  onfocus={() => markSeen(object)}
+  onclick={() => selectObject(object)}
+  onkeydown={(event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    selectObject(object)
+  }}
 >
-  <button class="object-row-main" type="button" onmouseenter={() => markSeen(object)} onfocus={() => markSeen(object)} onclick={() => selectObject(object)}>
+  <div class="object-row-main">
     <span class="object-status">
       <StatusIndicator tone={statusPresentation.tone} label={statusPresentation.label} indicator={statusPresentation.indicator} />
     </span>
     <span class="object-row-content">
       <span class="row-title">{object.label}{#if hasNewInfo} <span class="new-info-dot">new</span>{/if}</span>
     </span>
-  </button>
-  <button class="row-info" type="button" aria-label="Show {object.label} details">
+  </div>
+  <button class="row-info" type="button" aria-label="Show {object.label} details" onclick={(event) => event.stopPropagation()}>
     ?
     <span class="row-tooltip">
       <strong>{object.label}</strong>
