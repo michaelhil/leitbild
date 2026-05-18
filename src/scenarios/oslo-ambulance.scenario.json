@@ -216,6 +216,7 @@
             "guidance": {
               "id": "partial-clarified",
               "title": "New incident information",
+              "tone": "update",
               "message": "Radio update: the Torshov bicycle crash has one remaining patient after the first ambulance departed with another patient.",
               "objectIds": ["incident:torshov-partial"],
               "dismissible": true
@@ -257,6 +258,7 @@
             "guidance": {
               "id": "marienlyst-traffic-created",
               "title": "Traffic provider update",
+              "tone": "update",
               "message": "A traffic area has been added by the traffic pack. Watch for route impacts when ambulances cross affected areas.",
               "objectIds": ["traffic:marienlyst-event"],
               "dismissible": true
@@ -318,6 +320,7 @@
             "guidance": {
               "id": "majorstuen-clarified",
               "title": "Victim count updated",
+              "tone": "update",
               "message": "Bystander report now estimates two patients at Majorstuen. Watch how the incident status changes as resources are assigned.",
               "objectIds": ["incident:majorstuen-tram"],
               "dismissible": true
@@ -338,6 +341,7 @@
             "guidance": {
               "id": "ring2-traffic-cleared",
               "title": "Traffic cleared",
+              "tone": "update",
               "message": "The original Ring 2 slowdown has cleared. Traffic conditions can disappear while incidents continue.",
               "objectIds": ["traffic:marienlyst-event"],
               "dismissible": true
@@ -399,6 +403,7 @@
             "guidance": {
               "id": "gronland-revised",
               "title": "Assessment revised",
+              "tone": "update",
               "message": "Police update: the Grønland victim estimate is revised from three to two, and the temporary Marienlyst traffic condition has cleared.",
               "objectIds": ["incident:gronland-unattended"],
               "dismissible": true

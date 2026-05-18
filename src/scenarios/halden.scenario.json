@@ -165,6 +165,7 @@
             "guidance": {
               "id": "halden-harbor-update",
               "title": "Harbor incident updated",
+              "tone": "update",
               "message": "Harbor responders now report two confirmed victims. Check whether the currently assigned resources are still enough.",
               "objectIds": ["incident:halden-harbor"],
               "dismissible": true

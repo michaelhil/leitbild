@@ -40,6 +40,7 @@ const scenarioGuidanceConfigSchema = z.object({
   message: z.string().min(1),
   objectIds: z.array(objectIdSchema).default([]),
   dismissible: z.boolean().default(true),
+  tone: z.enum(['default', 'update']).default('default'),
 })
 
 const scenarioScriptActionConfigSchema = z.discriminatedUnion('type', [

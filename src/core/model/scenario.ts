@@ -73,6 +73,7 @@ export interface ScenarioGuidance {
   readonly message: string
   readonly objectIds: ReadonlyArray<ObjectId>
   readonly dismissible: boolean
+  readonly tone?: 'default' | 'update'
 }
 
 export interface ScenarioScriptProgressState {
@@ -235,6 +236,7 @@ export const scenarioGuidanceSchema = z.object({
   message: z.string().min(1),
   objectIds: z.array(objectIdSchema).default([]),
   dismissible: z.boolean().default(true),
+  tone: z.enum(['default', 'update']).default('default'),
 })
 
 export const scenarioScriptProgressStateSchema = z.object({

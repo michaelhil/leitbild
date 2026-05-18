@@ -11,7 +11,7 @@
 
 <aside class="scenario-guidance" aria-live="polite">
   <div>
-    <strong>{guidance.title}</strong>
+    <strong class:update-title={guidance.tone === 'update'}>{guidance.title}</strong>
     <p>{guidance.message}</p>
   </div>
   {#if guidance.dismissible}

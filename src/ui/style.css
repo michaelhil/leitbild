@@ -882,6 +882,10 @@ body.rail-resizing {
   margin-bottom: 4px;
 }
 
+.scenario-guidance strong.update-title {
+  color: var(--critical);
+}
+
 .scenario-guidance p {
   margin: 0;
   color: var(--muted);
