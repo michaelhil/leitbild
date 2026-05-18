@@ -119,6 +119,67 @@
     "ambulance": {},
     "traffic": {}
   },
+  "surface": {
+    "schemaVersion": 1,
+    "regions": [
+      {
+        "id": "main-map",
+        "primitive": "map",
+        "visible": true,
+        "config": {
+          "center": [10.7522, 59.9139],
+          "zoom": 12,
+          "layers": ["objects", "routes", "traffic", "highlights"]
+        }
+      },
+      {
+        "id": "left-rail",
+        "primitive": "objectRail",
+        "visible": true,
+        "config": {
+          "width": 360,
+          "sections": [
+            {
+              "categoryId": "hospitals",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["trauma-beds"]
+            },
+            {
+              "categoryId": "ambulances",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": []
+            },
+            {
+              "categoryId": "incidents",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["victims"]
+            },
+            {
+              "categoryId": "traffic",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["severity", "reason"]
+            }
+          ]
+        }
+      },
+      {
+        "id": "system-footer",
+        "primitive": "systemFooter",
+        "visible": true,
+        "config": {}
+      },
+      {
+        "id": "guidance-overlay",
+        "primitive": "guidanceOverlay",
+        "visible": true,
+        "config": {}
+      }
+    ]
+  },
   "script": {
     "steps": [
       {

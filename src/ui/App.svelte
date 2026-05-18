@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
-  import type { OperationalObject, ControlInstanceId, ScenarioInstanceState } from '../core/model/index.ts'
+  import type { OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
   import { createCompositePack } from '../core/packs/composite.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -9,6 +9,7 @@
   import { trafficPack } from '../packs/traffic/pack.ts'
   import {
     createControlInstance,
+    fetchScenario,
     joinControlInstance as joinControlInstanceClient,
     listControlInstances,
     resetControlInstance,
@@ -33,6 +34,12 @@
   import ScenarioGuidance from './ScenarioGuidance.svelte'
   import StartupModal from './StartupModal.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
+  import {
+    categoryRowsForSurface,
+    surfaceHasPrimitive,
+    surfaceMapConfig,
+    surfaceObjectRailConfig,
+  } from './surface.ts'
   import { getTheme, initialTheme, toggleTheme as toggleThemeMode, type ThemeMode } from './theme.ts'
   import {
     completeStartupStep,
@@ -57,6 +64,7 @@
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
+  let scenarioDefinition = $state<ScenarioDefinition | null>(null)
   let selectedControllerId = $state<string | null>(null)
   let status = $state('Starting')
   let commandStatus = $state('')
@@ -83,7 +91,15 @@
   const placementMode = $derived(placement.mode)
   const createDraft = $derived(placement.draft)
   const selectedControllerObject = $derived(selectedControllerObjectFor(objects, selectedControllerId, activePack))
-  const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsFor(objects, activePack))
+  const allCategoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsFor(objects, activePack))
+  const surface = $derived(scenarioDefinition?.surface ?? null)
+  const railConfig = $derived(surfaceObjectRailConfig(surface))
+  const mapConfig = $derived(surfaceMapConfig(surface))
+  const mapVisible = $derived(mapConfig !== null)
+  const railVisible = $derived(railConfig !== null)
+  const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
+  const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
+  const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
   const placementCursor = $derived(placementCursorFor(placementMode, activePack))
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
@@ -135,9 +151,21 @@
   }
 
   const completeObjectsWhenReady = async (): Promise<void> => {
-    if (!mapReady || !snapshotReady) return
+    if (!snapshotReady || (mapVisible && !mapReady)) return
     await tick()
     completeStep('objects')
+  }
+
+  const loadSurfaceForScenario = async (scenarioId: string): Promise<void> => {
+    const body = await fetchScenario(scenarioId)
+    scenarioDefinition = body.scenario
+    if (surfaceHasPrimitive(body.scenario.surface, 'map')) {
+      await loadMapSurface()
+      return
+    }
+    MapSurface = null
+    mapReady = false
+    completeStep('map')
   }
 
   const closeStartupModal = (): void => {
@@ -314,6 +342,8 @@
     controlInstanceSocket = null
     resetStartupForJoin()
     snapshotReady = false
+    mapReady = false
+    scenarioDefinition = null
     status = 'Starting'
     startStep('control-instance')
     let activeStartupStep: StartupStepId = 'control-instance'
@@ -326,10 +356,14 @@
       controlInstanceId = body.id
       objects = [...body.snapshot.objects]
       scenarioState = body.snapshot.scenario
+      if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
       completeStep('snapshot')
+      activeStartupStep = 'map'
+      startStep('map')
+      await loadSurfaceForScenario(scenarioState.scenarioId)
       activeStartupStep = 'objects'
       startStep('objects')
       await completeObjectsWhenReady()
@@ -346,6 +380,8 @@
     controlInstanceSocket = null
     resetStartupForJoin()
     snapshotReady = false
+    mapReady = false
+    scenarioDefinition = null
     status = 'Resetting'
     commandStatus = 'Resetting scenario'
     startStep('control-instance')
@@ -357,10 +393,14 @@
       startStep('snapshot')
       objects = [...body.snapshot.objects]
       scenarioState = body.snapshot.scenario
+      if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
       completeStep('snapshot')
+      activeStartupStep = 'map'
+      startStep('map')
+      await loadSurfaceForScenario(scenarioState.scenarioId)
       activeStartupStep = 'objects'
       startStep('objects')
       await completeObjectsWhenReady()
@@ -420,7 +460,6 @@
         railLayout.stopResize()
       }
     }
-    void loadMapSurface()
     void joinControlInstance()
     return () => {
       window.removeEventListener('keydown', handleKeydown)
@@ -435,61 +474,76 @@
 {#if routeMode === 'picker'}
   <InstancePicker {instances} {status} {createInstance} {openInstance} />
 {:else}
-  <div class:rail-collapsed={railLayout.collapsed} class="app-shell" style={`--rail-width: ${railLayout.width}px`}>
-    <ControlRail
-      {status}
-      {systemStatusTone}
-      {appVersion}
-      {theme}
-      collapsed={railLayout.collapsed}
-      {categoryRows}
-      {placementMode}
-      {selectedControllerId}
-      {presentationFor}
-      {hasNewInfo}
-      {markSeen}
-      {selectObject}
-      {deleteObject}
-      beginPlacement={placement.begin}
-      cancelPlacement={placement.cancel}
-      {toggleTheme}
-      {resetScenario}
-      {openStatusModal}
-    />
-    <button
-      class="rail-resize-handle"
-      class:collapsed={railLayout.collapsed}
-      type="button"
-      aria-label={railLayout.collapsed ? 'Show control rail' : 'Resize control rail'}
-      title={railLayout.collapsed ? 'Show control rail' : 'Drag to resize control rail'}
-      onpointerdown={railLayout.startResize}
-    ></button>
-
-    <main class="map-region">
-      {#if MapSurface}
-        <MapSurface
-          {objects}
-          {selectedControllerId}
-          {placementMode}
-          {placementCursor}
+  {#if !surface}
+    <div class="boot-shell"></div>
+  {:else}
+    <div
+      class:rail-collapsed={railLayout.collapsed}
+      class:no-rail={!railVisible}
+      class="app-shell"
+      style={`--rail-width: ${railVisible ? railLayout.width : 0}px`}
+    >
+      {#if railConfig}
+        <ControlRail
+          {status}
+          {systemStatusTone}
+          {appVersion}
           {theme}
-          {routeRevision}
-          layoutRevision={railLayout.layoutRevision}
-          highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
-          {hasNewInfo}
+          {footerVisible}
+          collapsed={railLayout.collapsed}
+          {categoryRows}
+          {railConfig}
+          {placementMode}
+          {selectedControllerId}
           {presentationFor}
-          onObjectSelected={selectObject}
-          onPlacementPoint={placement.placePoint}
-          onObjectSeen={markSeen}
-          onMapReady={handleMapReady}
-          onMapError={handleMapError}
+          {hasNewInfo}
+          {markSeen}
+          {selectObject}
+          {deleteObject}
+          beginPlacement={placement.begin}
+          cancelPlacement={placement.cancel}
+          {toggleTheme}
+          {resetScenario}
+          {openStatusModal}
         />
-      {:else}
-        <div class="map-loading">Starting map...</div>
+        <button
+          class="rail-resize-handle"
+          class:collapsed={railLayout.collapsed}
+          type="button"
+          aria-label={railLayout.collapsed ? 'Show control rail' : 'Resize control rail'}
+          title={railLayout.collapsed ? 'Show control rail' : 'Drag to resize control rail'}
+          onpointerdown={railLayout.startResize}
+        ></button>
       {/if}
-    </main>
 
-    {#if scenarioState?.guidance}
+      <main class="surface-main" class:map-region={mapVisible}>
+        {#if mapVisible && MapSurface}
+          <MapSurface
+            {objects}
+            {selectedControllerId}
+            {placementMode}
+            {placementCursor}
+            {theme}
+            mapConfig={mapConfig}
+            {routeRevision}
+            layoutRevision={railLayout.layoutRevision}
+            highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
+            {hasNewInfo}
+            {presentationFor}
+            onObjectSelected={selectObject}
+            onPlacementPoint={placement.placePoint}
+            onObjectSeen={markSeen}
+            onMapReady={handleMapReady}
+            onMapError={handleMapError}
+          />
+        {:else if mapVisible}
+          <div class="map-loading">Starting map...</div>
+        {:else}
+          <div class="surface-empty"></div>
+        {/if}
+      </main>
+
+      {#if guidanceOverlayVisible && scenarioState?.guidance}
       <ScenarioGuidance
         guidance={scenarioState.guidance}
         close={() => {
@@ -498,8 +552,9 @@
           scenarioState = withoutGuidance
         }}
       />
-    {/if}
-  </div>
+      {/if}
+    </div>
+  {/if}
 {/if}
 
 {#if startupModalVisible}

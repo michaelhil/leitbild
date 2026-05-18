@@ -1,7 +1,7 @@
 <script lang="ts">
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import { Protocol as PmtilesProtocol } from 'pmtiles'
-  import type { GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
+  import type { GeoJsonPoint, OperationalObject, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { iconSvgDataUrl, type IconName } from './icons.ts'
@@ -32,6 +32,7 @@
     readonly placementMode: PackCreateObjectType | null
     readonly placementCursor: { readonly icon: IconName; readonly color: string } | null
     readonly theme: ThemeMode
+    readonly mapConfig: SurfaceMapRegionConfig
     readonly routeRevision: number
     readonly layoutRevision?: number
     readonly highlightedObjectIds?: ReadonlyArray<string>
@@ -50,6 +51,7 @@
     placementMode,
     placementCursor,
     theme,
+    mapConfig,
     routeRevision,
     layoutRevision = 0,
     highlightedObjectIds = [],
@@ -89,6 +91,38 @@
     mapLayerIds.objectHalos,
     mapLayerIds.objectNewInfo,
   ]
+
+  const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
+    if (layer === 'objects') return [
+      mapLayerIds.objectHitArea,
+      mapLayerIds.objectIcons,
+      mapLayerIds.objectNewInfo,
+    ]
+    if (layer === 'routes') return [
+      mapLayerIds.routeCasing,
+      mapLayerIds.routeLine,
+    ]
+    if (layer === 'traffic') return [
+      mapLayerIds.trafficAreaFill,
+      mapLayerIds.trafficAreaOutline,
+      mapLayerIds.trafficLineCasing,
+      mapLayerIds.trafficLine,
+    ]
+    return [mapLayerIds.objectHalos]
+  }
+
+  const applyConfiguredLayerVisibility = (): void => {
+    const current = map
+    if (!current || !loaded) return
+    const enabledLayers = new Set<SurfaceMapLayer>(mapConfig.layers)
+    const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'highlights']
+    for (const surfaceLayer of surfaceLayers) {
+      const visibility = enabledLayers.has(surfaceLayer) ? 'visible' : 'none'
+      for (const layerId of layerIdsForSurfaceLayer(surfaceLayer)) {
+        if (current.getLayer(layerId)) current.setLayoutProperty(layerId, 'visibility', visibility)
+      }
+    }
+  }
 
   const styleUrlFor = (mode: ThemeMode): string =>
     `/map/style.json?theme=${encodeURIComponent(mode)}`
@@ -283,6 +317,7 @@
       loaded = true
       lastRouteRevision = routeRevision
       lastSelectedControllerId = selectedControllerId
+      applyConfiguredLayerVisibility()
       refreshSources()
       if (!mapReadyNotified) {
         mapReadyNotified = true
@@ -303,8 +338,8 @@
     const current = new maplibregl.Map({
       container: mapElement,
       style: styleUrlFor(theme),
-      center: [10.7522, 59.9139],
-      zoom: 12,
+      center: mapConfig.center.coordinates,
+      zoom: mapConfig.zoom,
     })
     appliedTheme = theme
     map = current
@@ -373,6 +408,16 @@
   $effect(() => {
     layoutRevision
     map?.resize()
+  })
+
+  $effect(() => {
+    const current = map
+    if (!current) return
+    current.jumpTo({
+      center: mapConfig.center.coordinates,
+      zoom: mapConfig.zoom,
+    })
+    applyConfiguredLayerVisibility()
   })
 
   $effect(() => {

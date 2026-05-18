@@ -150,6 +150,19 @@ describe('object context, scenario, and mission model', () => {
       }],
       providerConfigs: { ambulance: { adapter: 'ambulance.local' } },
       missionId: 'mission:oslo-response-basic',
+      surface: {
+        schemaVersion: 1,
+        regions: [{
+          id: 'main-map',
+          primitive: 'map',
+          visible: true,
+          config: {
+            center: geoPointFromLonLat(10.7522, 59.9139),
+            zoom: 12,
+            layers: ['objects'],
+          },
+        }],
+      },
     })
 
     expect(parsed.initialObjects).toHaveLength(1)

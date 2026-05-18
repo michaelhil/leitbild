@@ -1,4 +1,4 @@
-import type { ControlInstanceId, OperationalObject, ScenarioInstanceState } from '../core/model/index.ts'
+import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
 import type { TrafficSeverity } from '../packs/traffic/model.ts'
 
@@ -22,6 +22,10 @@ export interface ControlInstanceSummary {
 
 export interface ControlInstanceListResponse {
   readonly controlInstances: ReadonlyArray<ControlInstanceSummary>
+}
+
+export interface ScenarioResponse {
+  readonly scenario: ScenarioDefinition
 }
 
 export interface CommandResponse {

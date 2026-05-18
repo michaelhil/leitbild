@@ -101,6 +101,7 @@ A scenario initializes the world. It may include:
 - initial object contexts
 - provider-specific simulator configuration keyed by pack id
 - optional mission id/reference
+- surface definition for initial client UI assembly
 
 Scenarios should be shareable as JSON and validated before use. Scenarios are top-level compositions, not owned by a single pack. Packs are capabilities; scenarios are recipes that choose which capabilities are active.
 
@@ -111,6 +112,31 @@ The expanded `ScenarioDefinition` remains the runtime contract. The Control Inst
 New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Domain-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
 Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
+
+## Scenario Surface Definition V1
+
+A Scenario Definition owns the initial client surface. The client must not render a hardcoded operational map, rail, or footer before a scenario surface has been loaded and validated.
+
+The v1 surface model is deliberately narrow:
+
+- `schemaVersion`: currently `1`.
+- `regions`: configured instances of safe built-in primitives.
+- `map`: MapLibre surface with explicit center, zoom, and enabled operational layer groups.
+- `objectRail`: category rail with explicit category order, collapsed state, width, and visible field keys.
+- `systemFooter`: status/version/theme/reset footer.
+- `guidanceOverlay`: scenario-owned instructional overlay.
+
+Surface Definitions are data contracts, not code. They may select from reviewed primitives and pass validated configuration into them. They may not import Svelte components, execute scripts, create arbitrary HTML, or silently rely on browser defaults.
+
+Important v1 rules:
+
+- A map region must provide its own center and zoom. Hidden default map viewports are not allowed.
+- Object rail sections must reference categories contributed by active packs.
+- Duplicate region ids and duplicate primitive regions are rejected.
+- A scenario may omit the map or rail entirely if its surface does not need them.
+- Rich adaptive/generated UI remains a future layer above this primitive registry and must treat generated specs as untrusted input.
+
+This gives Leitbild a blank-slate boot path: open the control instance, load the scenario definition, validate the surface, then assemble only the declared primitives. Startup errors should be surfaced honestly in the boot modal.
 
 ## Scenario Script V1
 

@@ -1,25 +1,34 @@
 <script lang="ts">
   import type { OperationalObject } from '../core/model/index.ts'
+  import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { Moon, RotateCcw, Sun, X } from 'lucide-svelte'
+  import { X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
-  import StatusDot, { type StatusTone } from './components/StatusDot.svelte'
-  import type { ThemeMode } from './theme.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { CategoryRow } from './types.ts'
   import {
     buildPresentedCategoryRows,
     type FieldVisibilityState,
   } from './control-rail-presenter.ts'
+  import {
+    collapsedCategoryIdsForSurface,
+    surfaceConfigKey,
+    visibleFieldsForSurface,
+  } from './surface.ts'
+  import SystemFooter from './SystemFooter.svelte'
+  import type { StatusTone } from './components/StatusDot.svelte'
+  import type { ThemeMode } from './theme.ts'
 
   interface Props {
     readonly status: string
     readonly systemStatusTone: StatusTone
     readonly appVersion: string
     readonly theme: ThemeMode
+    readonly footerVisible: boolean
     readonly collapsed: boolean
     readonly categoryRows: ReadonlyArray<CategoryRow>
+    readonly railConfig: SurfaceObjectRailRegionConfig
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -39,8 +48,10 @@
     systemStatusTone,
     appVersion,
     theme,
+    footerVisible,
     collapsed,
     categoryRows,
+    railConfig,
     placementMode,
     selectedControllerId,
     presentationFor,
@@ -58,6 +69,7 @@
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
   let openFieldCategoryId = $state<string | null>(null)
   let visibleFieldsByCategory = $state<FieldVisibilityState>({})
+  let appliedSurfaceConfigKey = $state('')
 
   const placementText = (): string => {
     if (!placementMode) return ''
@@ -103,6 +115,15 @@
     }
   })
 
+  $effect(() => {
+    const nextKey = surfaceConfigKey(railConfig)
+    if (appliedSurfaceConfigKey === nextKey) return
+    collapsedCategoryIds = collapsedCategoryIdsForSurface(railConfig)
+    visibleFieldsByCategory = visibleFieldsForSurface(railConfig)
+    openFieldCategoryId = null
+    appliedSurfaceConfigKey = nextKey
+  })
+
   const presentedCategoryRows = $derived(buildPresentedCategoryRows({
     categoryRows,
     collapsedCategoryIds,
@@ -141,26 +162,15 @@
     />
   {/each}
 
-  <footer class="system-footer">
-    <button class="status-dot-button" type="button" aria-label="Show Leitbild status" title={status} onclick={openStatusModal}>
-      <StatusDot tone={systemStatusTone} label={status} />
-    </button>
-    <span class="brand">Leitbild</span>
-    <span class="version">v{appVersion}</span>
-    <IconButton
-      label="Reset scenario"
-      title="Reset scenario"
-      icon={RotateCcw}
-      variant="bare"
-      onClick={() => { void resetScenario() }}
+  {#if footerVisible}
+    <SystemFooter
+      {status}
+      {systemStatusTone}
+      {appVersion}
+      {theme}
+      {toggleTheme}
+      {resetScenario}
+      {openStatusModal}
     />
-    <IconButton
-      label="Toggle light and dark mode"
-      title="Toggle light and dark mode"
-      icon={theme === 'dark' ? Sun : Moon}
-      pressed={theme === 'dark'}
-      variant="bare"
-      onClick={toggleTheme}
-    />
-  </footer>
+  {/if}
 </aside>

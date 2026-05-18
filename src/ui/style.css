@@ -54,6 +54,10 @@ button {
   transition: grid-template-columns 120ms ease;
 }
 
+.app-shell.no-rail {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .app-shell.rail-collapsed .control-rail {
   border-right-color: transparent;
   box-shadow: none;
@@ -121,6 +125,22 @@ body.rail-resizing {
   place-items: center;
   color: var(--muted);
   background: var(--bg);
+}
+
+.boot-shell,
+.surface-empty {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.surface-main {
+  min-width: 0;
+  min-height: 100vh;
+}
+
+.surface-empty {
+  display: grid;
+  place-items: center;
 }
 
 .instance-page {

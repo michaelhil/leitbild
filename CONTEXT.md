@@ -44,6 +44,18 @@ _Avoid_: Participant, User when referring to operational identity inside a contr
 A functional UI mode presented by a client.
 _Avoid_: View when referring to a domain-level UI mode
 
+**Surface Definition**:
+Scenario-owned UI assembly contract that declares which safe UI primitives a client should render, such as map, object rail, footer, and guidance overlay. It is validated data, not executable UI code.
+_Avoid_: hardcoded background UI, browser-only layout defaults, or generated component code as scenario truth
+
+**Surface Primitive**:
+A built-in, reviewed UI capability that a Surface Definition may instantiate with configuration. V1 primitives are `map`, `objectRail`, `systemFooter`, and `guidanceOverlay`.
+_Avoid_: Plugin when referring to a built-in UI primitive
+
+**Surface Region**:
+One configured instance of a Surface Primitive inside a Surface Definition. V1 permits at most one visible region per primitive.
+_Avoid_: Pane or Widget when referring to scenario-level assembly configuration
+
 **Object Context**:
 Structured, perspective-bearing artificial situation awareness attached to an operational object. It records facts, activity, references, and summaries from an asset, operator, system, or AI perspective.
 _Avoid_: using context as an untyped junk drawer, or using it for domain operational truth that belongs in `domainData`

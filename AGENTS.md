@@ -29,6 +29,8 @@
 - Keep pack-specific logic in `src/packs/*`; keep `core` use-case agnostic.
 - New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
 - Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
+- Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
+- Surface Definitions may configure only safe built-in primitives. Do not allow scenario JSON, AI output, or pack code to inject arbitrary Svelte components, HTML, scripts, or hidden fallback viewports.
 - Built-in scenarios should be authored as compact declarative JSON Scenario Configs when practical, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
 - Scenario scripts must stay declarative and must emit ordered domain events through the Control Instance runtime. Do not add browser-only scenario/tutorial state, simulator-private scenario timers, or arbitrary scenario code execution.
 - Restored Control Instances must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.

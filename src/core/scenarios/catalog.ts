@@ -72,6 +72,22 @@ export const createScenarioCatalog = (config: {
     for (const packId of Object.keys(scenario.providerConfigs)) {
       if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has provider config for inactive pack: ${packId}`)
     }
+    const activeCategoryIds = new Set(
+      scenario.packs.flatMap(packId => packs.get(packId)?.categories.map(category => category.id) ?? []),
+    )
+    for (const region of scenario.surface.regions) {
+      if (region.primitive !== 'objectRail') continue
+      const sectionCategoryIds = new Set<string>()
+      for (const section of region.config.sections) {
+        if (sectionCategoryIds.has(section.categoryId)) {
+          throw new Error(`scenario ${scenario.id} surface rail has duplicate category section: ${section.categoryId}`)
+        }
+        sectionCategoryIds.add(section.categoryId)
+        if (!activeCategoryIds.has(section.categoryId)) {
+          throw new Error(`scenario ${scenario.id} surface rail references inactive category: ${section.categoryId}`)
+        }
+      }
+    }
   }
 
   for (const scenarioCandidate of config.scenarios) {

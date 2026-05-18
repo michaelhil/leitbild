@@ -11,6 +11,57 @@ export interface ScenarioWorldDefinition {
   readonly environment: Record<string, unknown>
 }
 
+export type SurfaceMapLayer = 'objects' | 'routes' | 'traffic' | 'highlights'
+
+export interface SurfaceMapRegionConfig {
+  readonly center: GeoJsonPoint
+  readonly zoom: number
+  readonly layers: ReadonlyArray<SurfaceMapLayer>
+}
+
+export interface SurfaceObjectRailSectionConfig {
+  readonly categoryId: string
+  readonly visible: boolean
+  readonly collapsed: boolean
+  readonly visibleFields: ReadonlyArray<string>
+}
+
+export interface SurfaceObjectRailRegionConfig {
+  readonly width?: number
+  readonly sections: ReadonlyArray<SurfaceObjectRailSectionConfig>
+}
+
+export type SurfaceRegionDefinition =
+  | {
+      readonly id: string
+      readonly primitive: 'map'
+      readonly visible: boolean
+      readonly config: SurfaceMapRegionConfig
+    }
+  | {
+      readonly id: string
+      readonly primitive: 'objectRail'
+      readonly visible: boolean
+      readonly config: SurfaceObjectRailRegionConfig
+    }
+  | {
+      readonly id: string
+      readonly primitive: 'systemFooter'
+      readonly visible: boolean
+      readonly config: Record<string, never>
+    }
+  | {
+      readonly id: string
+      readonly primitive: 'guidanceOverlay'
+      readonly visible: boolean
+      readonly config: Record<string, never>
+    }
+
+export interface SurfaceDefinition {
+  readonly schemaVersion: 1
+  readonly regions: ReadonlyArray<SurfaceRegionDefinition>
+}
+
 export interface ScenarioInitialObjectContext {
   readonly objectId: string
   readonly context: ObjectContext
@@ -90,6 +141,7 @@ export interface ScenarioDefinition {
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
   readonly providerConfigs: Record<string, unknown>
   readonly missionId?: string
+  readonly surface: SurfaceDefinition
   readonly script?: ScenarioScript
 }
 
@@ -97,6 +149,79 @@ export const scenarioWorldDefinitionSchema = z.object({
   startsAt: isoTimestampSchema.optional(),
   mapCenter: geoJsonPointSchema.optional(),
   environment: z.record(z.unknown()).default({}),
+})
+
+export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'highlights'])
+
+export const surfaceMapRegionConfigSchema = z.object({
+  center: geoJsonPointSchema,
+  zoom: z.number().finite().min(0).max(24),
+  layers: z.array(surfaceMapLayerSchema).default(['objects', 'routes', 'traffic', 'highlights']),
+})
+
+export const surfaceObjectRailSectionConfigSchema = z.object({
+  categoryId: idSchema,
+  visible: z.boolean().default(true),
+  collapsed: z.boolean().default(false),
+  visibleFields: z.array(idSchema).default([]),
+})
+
+export const surfaceObjectRailRegionConfigSchema = z.object({
+  width: z.number().finite().min(0).max(900).optional(),
+  sections: z.array(surfaceObjectRailSectionConfigSchema).default([]),
+})
+
+export const surfaceRegionDefinitionSchema = z.discriminatedUnion('primitive', [
+  z.object({
+    id: idSchema,
+    primitive: z.literal('map'),
+    visible: z.boolean().default(true),
+    config: surfaceMapRegionConfigSchema,
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('objectRail'),
+    visible: z.boolean().default(true),
+    config: surfaceObjectRailRegionConfigSchema,
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('systemFooter'),
+    visible: z.boolean().default(true),
+    config: z.record(z.never()).default({}),
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('guidanceOverlay'),
+    visible: z.boolean().default(true),
+    config: z.record(z.never()).default({}),
+  }),
+])
+
+export const surfaceDefinitionSchema = z.object({
+  schemaVersion: z.literal(1),
+  regions: z.array(surfaceRegionDefinitionSchema).default([]),
+}).superRefine((surface, ctx) => {
+  const regionIds = new Set<string>()
+  const primitives = new Set<string>()
+  for (const [index, region] of surface.regions.entries()) {
+    if (regionIds.has(region.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate surface region id: ${region.id}`,
+        path: ['regions', index, 'id'],
+      })
+    }
+    regionIds.add(region.id)
+    if (primitives.has(region.primitive)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `duplicate surface primitive: ${region.primitive}`,
+        path: ['regions', index, 'primitive'],
+      })
+    }
+    primitives.add(region.primitive)
+  }
 })
 
 export const scenarioInitialObjectContextSchema = z.object({
@@ -191,5 +316,6 @@ export const scenarioDefinitionSchema = z.object({
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
   providerConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
+  surface: surfaceDefinitionSchema,
   script: scenarioScriptSchema.optional(),
 })

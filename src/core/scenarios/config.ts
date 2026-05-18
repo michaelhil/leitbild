@@ -10,6 +10,8 @@ import {
   type OperationalObject,
   type ScenarioDefinition,
   type ScenarioScriptAction,
+  type SurfaceDefinition,
+  type SurfaceRegionDefinition,
 } from '../model/index.ts'
 import type { LeitbildPack, PackScenarioObjectSpec, PackScenarioOperationSpec } from '../packs/protocol.ts'
 
@@ -84,6 +86,56 @@ const scenarioScriptConfigSchema = z.object({
   steps: z.array(scenarioScriptStepConfigSchema).default([]),
 })
 
+const surfaceMapRegionConfigSchema = z.object({
+  center: lonLatSchema,
+  zoom: z.number().finite().min(0).max(24),
+  layers: z.array(z.enum(['objects', 'routes', 'traffic', 'highlights'])).default(['objects', 'routes', 'traffic', 'highlights']),
+})
+
+const surfaceObjectRailSectionConfigSchema = z.object({
+  categoryId: idSchema,
+  visible: z.boolean().default(true),
+  collapsed: z.boolean().default(false),
+  visibleFields: z.array(idSchema).default([]),
+})
+
+const surfaceObjectRailRegionConfigSchema = z.object({
+  width: z.number().finite().min(0).max(900).optional(),
+  sections: z.array(surfaceObjectRailSectionConfigSchema).default([]),
+})
+
+const surfaceRegionConfigSchema = z.discriminatedUnion('primitive', [
+  z.object({
+    id: idSchema,
+    primitive: z.literal('map'),
+    visible: z.boolean().default(true),
+    config: surfaceMapRegionConfigSchema,
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('objectRail'),
+    visible: z.boolean().default(true),
+    config: surfaceObjectRailRegionConfigSchema,
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('systemFooter'),
+    visible: z.boolean().default(true),
+    config: z.record(z.never()).default({}),
+  }),
+  z.object({
+    id: idSchema,
+    primitive: z.literal('guidanceOverlay'),
+    visible: z.boolean().default(true),
+    config: z.record(z.never()).default({}),
+  }),
+])
+
+const surfaceConfigSchema = z.object({
+  schemaVersion: z.literal(1),
+  regions: z.array(surfaceRegionConfigSchema).default([]),
+})
+
 export const scenarioConfigSchema = z.object({
   id: idSchema,
   schemaVersion: z.literal(1),
@@ -103,6 +155,7 @@ export const scenarioConfigSchema = z.object({
   })).default([]),
   providerConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
+  surface: surfaceConfigSchema,
   script: scenarioScriptConfigSchema.optional(),
 })
 
@@ -182,6 +235,34 @@ const expandScriptAction = (
   return { type: 'upsert_object', object: updated }
 }
 
+const expandSurfaceRegion = (region: z.infer<typeof surfaceRegionConfigSchema>): SurfaceRegionDefinition => {
+  if (region.primitive === 'map') {
+    return {
+      ...region,
+      config: {
+        center: pointFromLonLat(region.config.center),
+        zoom: region.config.zoom,
+        layers: region.config.layers,
+      },
+    }
+  }
+  if (region.primitive === 'objectRail') {
+    return {
+      ...region,
+      config: {
+        ...(region.config.width === undefined ? {} : { width: region.config.width }),
+        sections: region.config.sections,
+      },
+    }
+  }
+  return region
+}
+
+const expandSurface = (surface: z.infer<typeof surfaceConfigSchema>): SurfaceDefinition => ({
+  schemaVersion: surface.schemaVersion,
+  regions: surface.regions.map(expandSurfaceRegion),
+})
+
 export const scenarioDefinitionFromConfig = (
   rawConfig: unknown,
   packs: ReadonlyArray<LeitbildPack>,
@@ -231,6 +312,7 @@ export const scenarioDefinitionFromConfig = (
     initialContexts: config.initialContexts,
     providerConfigs: config.providerConfigs,
     ...(config.missionId === undefined ? {} : { missionId: config.missionId }),
+    surface: expandSurface(config.surface),
     ...(script === undefined ? {} : { script }),
   }) as ScenarioDefinition
 }
