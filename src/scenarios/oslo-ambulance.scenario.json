@@ -187,7 +187,7 @@
             "guidance": {
               "id": "welcome",
               "title": "Dispatch overview",
-              "message": "Oslo is already active: one incident is resolved, one is partly handled, one red incident is unattended, and Ring 2 is slow. Select an available ambulance, then click a valid incident or hospital target.",
+              "message": "Oslo is already active: one incident is resolved, one is partly handled, one red incident is unattended, and Ring 2 is slow. To dispatch, select an available ambulance in the rail or on the map, then click an incident or hospital target. A left-pointing arrow means outbound to an incident; a right-pointing arrow means inbound to a hospital. Dispatch enough ambulance capacity to cover the victims. Use the eye icons in the rail to show details such as victims, beds, traffic severity, and route information.",
               "objectIds": ["amb:a12", "incident:gronland-unattended", "traffic:ring2-slowdown"],
               "dismissible": true
             }

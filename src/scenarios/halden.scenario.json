@@ -136,7 +136,7 @@
             "guidance": {
               "id": "halden-welcome",
               "title": "Halden scenario",
-              "message": "This scenario proves that Leitbild can assemble a different city surface from the scenario definition. Dispatch an ambulance to the bridge collision or inspect the routed downtown traffic condition.",
+              "message": "This scenario proves that Leitbild can assemble a different city surface from the scenario definition. To dispatch, select an ambulance in the rail or on the map, then click an incident or hospital target. A left-pointing arrow means outbound to an incident; a right-pointing arrow means inbound to a hospital. Dispatch enough ambulance capacity to cover the victims. Use the eye icons in the rail to show details such as victims, beds, traffic severity, and route information.",
               "objectIds": ["amb:halden-1", "incident:halden-bridge", "traffic:halden-center-slowdown"],
               "dismissible": true
             }
