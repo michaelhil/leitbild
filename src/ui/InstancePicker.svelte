@@ -24,8 +24,7 @@
   <section class="instance-panel">
     <header class="instance-hero">
       <div class="instance-hero-copy">
-        <div class="brand">Meet Leitbild</div>
-        <h1>An AI-friendly multi-simulation system for command and control research.</h1>
+        <h1><strong>Meet Leitbild,</strong> an AI-friendly multi-simulation system for command and control research.</h1>
         <p>
           Choose a scenario below, open an existing run, or start a new run. Runs keep moving on the server
           until they are paused, reset, or deleted, so colleagues can join the same operational picture later.

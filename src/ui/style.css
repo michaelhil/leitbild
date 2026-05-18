@@ -218,15 +218,20 @@ body.rail-resizing {
 .instance-hero-copy {
   max-width: 860px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .instance-hero h1 {
   margin: 0;
-  max-width: 780px;
-  font-size: clamp(28px, 4vw, 46px);
-  line-height: 1.02;
+  max-width: 860px;
+  font-size: clamp(24px, 2.4vw, 34px);
+  line-height: 1.16;
   letter-spacing: 0;
+  font-weight: 560;
+}
+
+.instance-hero h1 strong {
+  font-weight: 800;
 }
 
 .instance-hero p {
@@ -318,6 +323,7 @@ body.rail-resizing {
   align-items: center;
   gap: 14px;
   width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -502,11 +508,8 @@ body.rail-resizing {
 }
 
 .field-menu {
-  position: absolute;
-  z-index: 32;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 190px;
+  position: fixed;
+  z-index: 90;
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px;

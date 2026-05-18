@@ -19,7 +19,7 @@
       "type": "hospital",
       "id": "facility:halden-hospital",
       "label": "Halden Emergency Clinic",
-      "position": [11.3747, 59.1222],
+      "position": [11.3761113, 59.1294303],
       "traumaBeds": { "total": 4, "available": 3 }
     },
     {
