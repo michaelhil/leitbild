@@ -36,6 +36,7 @@
     selectedControllerObjectFor,
   } from './control-surface-selectors.ts'
   import { createPlacementState } from './placement-state.svelte.ts'
+  import { pathForRecentScenarioRun, rememberRecentScenarioRun } from './recent-scenario-runs.ts'
   import { createRailLayoutState } from './rail-layout-state.svelte.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import ControlRail from './ControlRail.svelte'
@@ -468,6 +469,11 @@
       clock = body.snapshot.clock
       if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
       expectedRealtimeScenarioId = scenarioState.scenarioId
+      try {
+        rememberRecentScenarioRun(route.scenarioId, route.runId)
+      } catch (err) {
+        commandStatus = err instanceof Error ? err.message : 'Unable to remember scenario run'
+      }
       selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
       seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
       snapshotReady = true
@@ -529,7 +535,14 @@
   }
 
   const selectScenario = async (scenarioId: string): Promise<void> => {
-    location.href = pathForNewScenarioRun(scenarioId)
+    let rememberedPath: string | null
+    try {
+      rememberedPath = pathForRecentScenarioRun(scenarioId)
+    } catch (err) {
+      commandStatus = err instanceof Error ? err.message : 'Unable to read recent scenario runs'
+      return
+    }
+    location.href = rememberedPath ?? pathForNewScenarioRun(scenarioId)
   }
 
   const toggleClockPaused = async (): Promise<void> => {
