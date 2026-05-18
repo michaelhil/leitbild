@@ -1,13 +1,10 @@
 import { $ } from 'bun'
 
-const host = process.env.HETZNER_HOST
+const defaultHetznerHost = '178.104.229.113'
+const host = process.env.HETZNER_HOST ?? defaultHetznerHost
 const user = process.env.HETZNER_USER ?? 'root'
 const port = process.env.HETZNER_PORT ?? '22'
 const remoteBun = process.env.HETZNER_BUN ?? '/root/.bun/bin/bun'
-
-if (!host) {
-  throw new Error('HETZNER_HOST is required')
-}
 
 const target = `${user}@${host}`
 const ssh = async (command: string): Promise<void> => {

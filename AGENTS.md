@@ -81,6 +81,7 @@
 - `bun test` runs tests.
 - `bun run check` should run type checking once configured.
 - `bun run health` should run project health checks once configured.
+- `bun run deploy` deploys to the Hetzner sandbox. It defaults to `root@178.104.229.113` and accepts `HETZNER_HOST`, `HETZNER_USER`, `HETZNER_PORT`, and `HETZNER_BUN` overrides.
 
 ## Delivery Rule
 
