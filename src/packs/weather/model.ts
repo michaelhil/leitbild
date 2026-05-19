@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { geoJsonPolygonSchema } from '../../core/model/index.ts'
+import { geoJsonPointSchema, geoJsonPolygonSchema } from '../../core/model/index.ts'
 
 export const weatherDomainId = 'weather' as const
 
@@ -86,7 +86,7 @@ export type WeatherEvolution = z.infer<typeof weatherEvolutionSchema>
 export const weatherDomainDataSchema = z.object({
   type: z.literal('weather_condition'),
   schemaVersion: z.literal(1),
-  conditionKind: z.enum(['baseline', 'weather_zone', 'surface_condition']),
+  conditionKind: z.enum(['baseline', 'weather_zone', 'surface_condition', 'point_observation']),
   severity: weatherSeveritySchema,
   atmosphere: weatherAtmosphereSchema,
   surface: weatherSurfaceSchema,
@@ -107,12 +107,21 @@ export const createWeatherAreaPayloadSchema = z.object({
 })
 export type CreateWeatherAreaPayload = z.infer<typeof createWeatherAreaPayloadSchema>
 
+export const createWeatherProbePayloadSchema = z.object({
+  objectType: z.literal('weather_probe'),
+  label: z.string().min(1).max(80),
+  point: geoJsonPointSchema,
+})
+export type CreateWeatherProbePayload = z.infer<typeof createWeatherProbePayloadSchema>
+
 export const createWeatherConditionPayloadSchema = z.discriminatedUnion('objectType', [
   createWeatherAreaPayloadSchema,
+  createWeatherProbePayloadSchema,
 ])
 export type CreateWeatherConditionPayload = z.infer<typeof createWeatherConditionPayloadSchema>
 
 export interface WeatherSample {
+  readonly severity: WeatherSeverity
   readonly atmosphere: WeatherAtmosphere
   readonly surface: WeatherSurface
   readonly quality: WeatherQuality

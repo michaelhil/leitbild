@@ -4,6 +4,7 @@ import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObject
 import { createWeatherAreaCommandKind } from './commands.ts'
 import {
   createWeatherAreaPayloadSchema,
+  createWeatherProbePayloadSchema,
   weatherDomainDataSchema,
   weatherDomainId,
   type WeatherDomainData,
@@ -64,15 +65,24 @@ const buildWeatherCreatePayload = (
   geometry: PackCreationGeometry,
   parameters: unknown,
 ): unknown => {
-  if (typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
-  if (geometry.kind !== 'polygon') throw new Error(`weather area creation requires polygon geometry, got ${geometry.kind}`)
-  const parsed = createWeatherAreaPayloadSchema.parse({
-    objectType: 'weather_area',
-    label,
-    polygon: geometry.polygon,
-    ...(typeof parameters === 'object' && parameters !== null ? parameters : {}),
-  })
-  return parsed
+  if (typeId === 'weather_probe') {
+    if (geometry.kind !== 'point') throw new Error(`weather probe creation requires point geometry, got ${geometry.kind}`)
+    return createWeatherProbePayloadSchema.parse({
+      objectType: 'weather_probe',
+      label,
+      point: geometry.point,
+    })
+  }
+  if (typeId === 'weather_area') {
+    if (geometry.kind !== 'polygon') throw new Error(`weather area creation requires polygon geometry, got ${geometry.kind}`)
+    return createWeatherAreaPayloadSchema.parse({
+      objectType: 'weather_area',
+      label,
+      polygon: geometry.polygon,
+      ...(typeof parameters === 'object' && parameters !== null ? parameters : {}),
+    })
+  }
+  throw new Error(`unsupported weather create type: ${typeId}`)
 }
 
 export const weatherPack: LeitbildPack = {
@@ -93,7 +103,7 @@ export const weatherPack: LeitbildPack = {
     },
   ],
   createObjectTypes: [
-    { id: 'weather_area', label: 'Weather area', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'polygon' },
+    { id: 'weather_probe', label: 'Weather probe', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
   ],
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
@@ -109,9 +119,9 @@ export const weatherPack: LeitbildPack = {
     }
   },
   defaultObjectLabel: (typeId, context): string => {
-    if (typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
+    if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)
     const count = context.objects.filter(object => parseWeatherData(object) !== null).length + 1
-    return `Weather area ${count}`
+    return typeId === 'weather_probe' ? `Weather probe ${count}` : `Weather area ${count}`
   },
   buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => ({
     kind: createWeatherAreaCommandKind,

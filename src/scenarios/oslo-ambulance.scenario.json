@@ -191,16 +191,16 @@
               "visibleFields": ["victims"]
             },
             {
-              "categoryId": "traffic",
-              "visible": true,
-              "collapsed": false,
-              "visibleFields": ["severity", "reason"]
-            },
-            {
               "categoryId": "weather",
               "visible": true,
               "collapsed": false,
               "visibleFields": ["air-temperature", "precipitation", "surface"]
+            },
+            {
+              "categoryId": "traffic",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["severity", "reason"]
             }
           ]
         }

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
-import { defaultAtmosphere, defaultSurface, evolveWeatherData } from '../src/packs/weather/conditions.ts'
+import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
 import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -86,6 +86,9 @@ describe('weather pack', () => {
     expect(presentation.categoryId).toBe('weather')
     expect(presentation.noteworthyUpdates).toBe(false)
     expect(presentation.fields.map(field => field.key)).toContain('surface')
+    const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
+    expect(sample.sourceObjectIds).toContain(weatherObject.id)
+    expect(sample.atmosphere.precipitation.type).toBe('rain')
   })
 
   test('local provider accepts real weather area commands', async () => {
@@ -116,5 +119,26 @@ describe('weather pack', () => {
     expect(result.ok).toBe(true)
     expect(snapshot.objects).toHaveLength(1)
     expect(snapshot.objects[0]?.domain).toBe('weather' as DomainId)
+  })
+
+  test('local provider creates weather probes as point observations sampled from active zones', async () => {
+    const adapter = createLocalWeatherSimulationAdapter()
+    const zone = osloAmbulanceScenario.initialObjects.find(object => object.domain === 'weather')
+    if (!zone) throw new Error('Oslo scenario missing weather condition')
+    const connection = await adapter.connect({ controlInstanceId, initialObjects: [zone] })
+    const result = await connection.sendCommand(command({
+      objectType: 'weather_probe',
+      label: 'Oslo probe',
+      point: geoPointFromLonLat(10.7522, 59.9139),
+    }))
+    const snapshot = await connection.getSnapshot()
+    await connection.close()
+
+    const probe = snapshot.objects.find(object => object.label === 'Oslo probe')
+    const parsed = weatherDomainDataSchema.parse(probe?.domainData)
+    expect(result.ok).toBe(true)
+    expect(probe?.spatial.position?.point.coordinates).toEqual(geoPointFromLonLat(10.7522, 59.9139).coordinates)
+    expect(parsed.conditionKind).toBe('point_observation')
+    expect(parsed.atmosphere.precipitation.type).toBe('rain')
   })
 })

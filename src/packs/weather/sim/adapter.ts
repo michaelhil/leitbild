@@ -2,13 +2,14 @@ import type {
   CommandEnvelope,
   CommandResult,
   DomainEvent,
+  GeoJsonPoint,
   GeoJsonPolygon,
   IsoTimestamp,
   ObjectId,
   OperationalObject,
   SimulationClockState,
 } from '../../../core/model/index.ts'
-import { nowIso } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
 import type {
   SimulationAdapter,
   SimulationConnection,
@@ -17,8 +18,8 @@ import type {
   SimulationEventHandler,
 } from '../../../simulation/protocol.ts'
 import { createWeatherAreaCommandKind } from '../commands.ts'
-import { evolveWeatherData } from '../conditions.ts'
-import { createWeatherConditionPayloadSchema, weatherDomainDataSchema, weatherDomainId, type WeatherDomainData } from '../model.ts'
+import { evolveWeatherData, weatherSampleAtPoint } from '../conditions.ts'
+import { createWeatherConditionPayloadSchema, weatherDomainDataSchema, weatherDomainId, type CreateWeatherAreaPayload, type WeatherDomainData, type WeatherSample } from '../model.ts'
 import { createWeatherDomainData } from '../scenario.ts'
 import { weatherSimAdapterId, weatherSimDomain, weatherSimProviderId } from './constants.ts'
 
@@ -63,10 +64,45 @@ type WeatherPriority = NonNullable<OperationalObject['operational']['priority']>
 const severityPriority = (severity: WeatherDomainData['severity']): WeatherPriority =>
   severity === 'hazard' ? 'high' : severity === 'adverse' ? 'normal' : 'low'
 
+const centroidOfPolygon = (polygon: GeoJsonPolygon | undefined): GeoJsonPoint | undefined => {
+  if (!polygon) return undefined
+  const ring = polygon.coordinates[0]
+  if (!ring || ring.length === 0) throw new Error('weather polygon requires at least one coordinate')
+  const coordinates = ring.slice(0, -1)
+  const points = coordinates.length > 0 ? coordinates : ring
+  const totals = points.reduce((acc, coordinate) => ({
+    lon: acc.lon + coordinate[0],
+    lat: acc.lat + coordinate[1],
+  }), { lon: 0, lat: 0 })
+  return {
+    ...geoPointFromLonLat(totals.lon / points.length, totals.lat / points.length),
+  }
+}
+
+const spatialFor = (config: {
+  readonly geometry?: GeoJsonPolygon
+  readonly point?: GeoJsonPoint
+  readonly at: IsoTimestamp
+}): OperationalObject['spatial'] => {
+  const point = config.point ?? centroidOfPolygon(config.geometry)
+  return {
+    ...(point ? {
+      position: {
+        point,
+        observedAt: config.at,
+        staleAfterMs: 600000,
+      },
+    } : {}),
+    ...(config.geometry ? { geometry: config.geometry } : {}),
+    frame: { kind: 'wgs84' },
+  }
+}
+
 const createWeatherConditionObject = (config: {
   readonly id: ObjectId
   readonly label: string
-  readonly geometry: GeoJsonPolygon
+  readonly geometry?: GeoJsonPolygon
+  readonly point?: GeoJsonPoint
   readonly data: WeatherDomainData
   readonly at: IsoTimestamp
   readonly causedByCommandId?: CommandEnvelope['id']
@@ -77,10 +113,7 @@ const createWeatherConditionObject = (config: {
   label: config.label,
   lifecycle: 'active',
   revision: 0,
-  spatial: {
-    geometry: config.geometry,
-    frame: { kind: 'wgs84' },
-  },
+  spatial: spatialFor(config),
   operational: {
     status: config.data.severity,
     priority: severityPriority(config.data.severity),
@@ -109,6 +142,57 @@ const createWeatherConditionObject = (config: {
   domainData: config.data,
 })
 
+const weatherProbeDataFromSample = (config: {
+  readonly sample: WeatherSample
+  readonly at: IsoTimestamp
+  readonly summary: string
+}): WeatherDomainData => weatherDomainDataSchema.parse({
+  type: 'weather_condition',
+  schemaVersion: 1,
+  conditionKind: 'point_observation',
+  severity: config.sample.severity,
+  atmosphere: config.sample.atmosphere,
+  surface: config.sample.surface,
+  quality: {
+    ...config.sample.quality,
+    provenance: config.sample.sourceObjectIds.length > 0 ? 'inferred' : config.sample.quality.provenance,
+    validAt: config.at,
+  },
+  summary: config.summary,
+})
+
+const resampleWeatherProbe = (
+  object: OperationalObject,
+  objects: ReadonlyArray<OperationalObject>,
+  at: IsoTimestamp,
+): OperationalObject | null => {
+  const previous = weatherDomainDataSchema.parse(object.domainData)
+  if (previous.conditionKind !== 'point_observation') return null
+  const point = object.spatial.position?.point
+  if (!point) throw new Error(`weather probe ${object.id} is missing a point`)
+  const sample = weatherSampleAtPoint(objects, point, at)
+  const next = weatherProbeDataFromSample({
+    sample,
+    at,
+    summary: previous.summary,
+  })
+  if (!dataChangedMeaningfully(previous, next)) return null
+  return {
+    ...object,
+    revision: object.revision + 1,
+    operational: {
+      ...object.operational,
+      status: next.severity,
+      priority: severityPriority(next.severity),
+    },
+    timestamps: {
+      ...object.timestamps,
+      updatedAt: at,
+    },
+    domainData: next,
+  }
+}
+
 const dataChangedMeaningfully = (previous: WeatherDomainData, next: WeatherDomainData): boolean => (
   previous.severity !== next.severity ||
   previous.atmosphere.precipitation.type !== next.atmosphere.precipitation.type ||
@@ -120,6 +204,26 @@ const dataChangedMeaningfully = (previous: WeatherDomainData, next: WeatherDomai
   Math.abs(previous.surface.ice - next.surface.ice) >= minimumSurfaceDelta ||
   Math.abs(previous.surface.frost - next.surface.frost) >= minimumSurfaceDelta
 )
+
+const createOperatorWeatherAreaData = (
+  payload: CreateWeatherAreaPayload,
+  at: IsoTimestamp,
+): WeatherDomainData => {
+  const data = createWeatherDomainData({
+    at,
+    summary: payload.summary,
+    severity: payload.severity,
+    ...(payload.atmosphere ? { atmosphere: payload.atmosphere } : {}),
+    ...(payload.surface ? { surface: payload.surface } : {}),
+  })
+  return {
+    ...data,
+    quality: {
+      ...data.quality,
+      provenance: 'intervention',
+    },
+  }
+}
 
 export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
   id: weatherSimProviderId,
@@ -146,6 +250,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
       const events: SimulationEvent[] = []
       for (const object of objects.values()) {
         const previous = weatherDomainDataSchema.parse(object.domainData)
+        if (previous.conditionKind === 'point_observation') continue
         const next = evolveWeatherData(previous, at, elapsedSeconds)
         if (!dataChangedMeaningfully(previous, next)) continue
         const updated: OperationalObject = {
@@ -162,6 +267,18 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
           },
           domainData: next,
         }
+        objects.set(updated.id, updated)
+        events.push({
+          type: 'object.upserted',
+          object: updated,
+          at,
+          provenance: updated.provenance,
+        })
+      }
+      const weatherObjectsAfterZoneEvolution = [...objects.values()]
+      for (const object of weatherObjectsAfterZoneEvolution) {
+        const updated = resampleWeatherProbe(object, weatherObjectsAfterZoneEvolution, at)
+        if (!updated) continue
         objects.set(updated.id, updated)
         events.push({
           type: 'object.upserted',
@@ -199,21 +316,27 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
         }
         const payload = createWeatherConditionPayloadSchema.safeParse(command.payload)
         if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
-        const data = createWeatherDomainData({
-          at: acceptedAt,
-          summary: payload.data.summary,
-          severity: payload.data.severity,
-          ...(payload.data.atmosphere ? { atmosphere: payload.data.atmosphere } : {}),
-          ...(payload.data.surface ? { surface: payload.data.surface } : {}),
-        })
-        const object = createWeatherConditionObject({
-          id: `weather:condition-${nextConditionNumber++}` as ObjectId,
-          label: payload.data.label,
-          geometry: payload.data.polygon,
-          data: { ...data, quality: { ...data.quality, provenance: 'intervention' } },
-          at: acceptedAt,
-          causedByCommandId: command.id,
-        })
+        const object = payload.data.objectType === 'weather_probe'
+          ? createWeatherConditionObject({
+              id: `weather:condition-${nextConditionNumber++}` as ObjectId,
+              label: payload.data.label,
+              point: payload.data.point,
+              data: weatherProbeDataFromSample({
+                sample: weatherSampleAtPoint([...objects.values()], payload.data.point, acceptedAt),
+                at: acceptedAt,
+                summary: 'Weather probe sample',
+              }),
+              at: acceptedAt,
+              causedByCommandId: command.id,
+            })
+          : createWeatherConditionObject({
+              id: `weather:condition-${nextConditionNumber++}` as ObjectId,
+              label: payload.data.label,
+              geometry: payload.data.polygon,
+              data: createOperatorWeatherAreaData(payload.data, acceptedAt),
+              at: acceptedAt,
+              causedByCommandId: command.id,
+            })
         objects.set(object.id, object)
         emit(handlers, [{
           type: 'object.upserted',

@@ -162,7 +162,7 @@ describe('pack architecture', () => {
       'incident',
       'traffic_area',
       'traffic_road_segment',
-      'weather_area',
+      'weather_probe',
     ].sort())
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })

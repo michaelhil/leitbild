@@ -21,8 +21,8 @@ describe('scenario surface model', () => {
       'hospitals',
       'ambulances',
       'incidents',
-      'traffic',
       'weather',
+      'traffic',
     ])
   })
 
@@ -56,8 +56,8 @@ describe('scenario surface model', () => {
       'hospitals',
       'ambulances',
       'incidents',
-      'traffic',
       'weather',
+      'traffic',
     ])
   })
 
@@ -93,6 +93,6 @@ describe('scenario surface model', () => {
     expect(() => createScenarioCatalog({
       packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [scenario],
-    })).toThrow('surface rail references inactive category: traffic')
+    })).toThrow('surface rail references inactive category: weather')
   })
 })

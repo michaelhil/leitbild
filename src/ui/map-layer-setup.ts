@@ -57,7 +57,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.weatherAreas,
     paint: {
       'fill-color': ['get', 'color'],
-      'fill-opacity': 0.16,
+      'fill-opacity': 0.22,
     },
   })
   current.addLayer({
@@ -66,8 +66,8 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.weatherAreas,
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 1.4,
-      'line-opacity': 0.64,
+      'line-width': 2,
+      'line-opacity': 0.78,
       'line-dasharray': [2, 2],
     },
     layout: {

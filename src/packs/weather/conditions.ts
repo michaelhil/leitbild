@@ -1,5 +1,5 @@
-import type { IsoTimestamp } from '../../core/model/index.ts'
-import type { WeatherAtmosphere, WeatherDomainData, WeatherEvolution, WeatherSample, WeatherSurface } from './model.ts'
+import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
+import { weatherDomainDataSchema, type WeatherAtmosphere, type WeatherDomainData, type WeatherEvolution, type WeatherSample, type WeatherSurface } from './model.ts'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
@@ -197,9 +197,79 @@ export const weatherSampleFromObjects = (objects: ReadonlyArray<{ readonly id: s
     return candidateScore > currentScore ? candidate : current
   }, first)
   return {
+    severity: mostSevere.data.severity,
     atmosphere: mostSevere.data.atmosphere,
     surface: mostSevere.data.surface,
     quality: mostSevere.data.quality,
     sourceObjectIds: weatherObjects.map(entry => entry.id),
+  }
+}
+
+const pointInRing = (
+  point: GeoJsonPoint,
+  ring: ReadonlyArray<readonly [number, number]>,
+): boolean => {
+  const [x, y] = point.coordinates
+  let inside = false
+  for (let currentIndex = 0, previousIndex = ring.length - 1; currentIndex < ring.length; previousIndex = currentIndex++) {
+    const current = ring[currentIndex]
+    const previous = ring[previousIndex]
+    if (!current || !previous) continue
+    const [xi, yi] = current
+    const [xj, yj] = previous
+    const intersects = ((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const pointInPolygon = (point: GeoJsonPoint, polygon: GeoJsonPolygon): boolean => {
+  const outerRing = polygon.coordinates[0]
+  if (!outerRing || !pointInRing(point, outerRing)) return false
+  const holes = polygon.coordinates.slice(1)
+  return !holes.some(ring => pointInRing(point, ring))
+}
+
+const conditionScore = (data: WeatherDomainData): number => {
+  const severityScore = data.severity === 'hazard'
+    ? 4
+    : data.severity === 'adverse'
+      ? 3
+      : data.severity === 'notice'
+        ? 2
+        : 1
+  return severityScore + data.surface.ice + data.surface.snow + data.surface.wetness + (data.atmosphere.precipitation.intensityMmPerHour / 10)
+}
+
+export const weatherSampleAtPoint = (
+  objects: ReadonlyArray<OperationalObject>,
+  point: GeoJsonPoint,
+  at: IsoTimestamp,
+): WeatherSample => {
+  const candidates = objects.flatMap(object => {
+    if (object.spatial.geometry?.type !== 'Polygon') return []
+    const parsed = weatherDomainDataSchema.safeParse(object.domainData)
+    if (!parsed.success || parsed.data.conditionKind === 'point_observation') return []
+    if (!pointInPolygon(point, object.spatial.geometry)) return []
+    return [{ id: object.id, data: parsed.data }]
+  })
+  if (candidates.length === 0) {
+    return {
+      severity: 'normal',
+      atmosphere: defaultAtmosphere(at),
+      surface: defaultSurface(),
+      quality: { provenance: 'inferred', confidence: 0.45, validAt: at },
+      sourceObjectIds: [],
+    }
+  }
+  const selected = candidates.reduce((current, candidate) =>
+    conditionScore(candidate.data) > conditionScore(current.data) ? candidate : current
+  )
+  return {
+    severity: selected.data.severity,
+    atmosphere: selected.data.atmosphere,
+    surface: selected.data.surface,
+    quality: selected.data.quality,
+    sourceObjectIds: candidates.map(candidate => candidate.id),
   }
 }
