@@ -2,9 +2,9 @@
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
   import { createLeitbildControlPack } from '../app-assembly.ts'
-  import type { OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+  import type { GeoJsonPolygon, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
   import {
     createControlInstance,
     deleteControlInstance,
@@ -142,6 +142,13 @@
 
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects, currentTime: clock?.currentTime })
+
+  const mapAreaFeaturesFor = (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number }): ReadonlyArray<PackMapAreaFeature> =>
+    activePack.mapAreaFeatures?.({
+      objects,
+      currentTime: clock?.currentTime,
+      map: context,
+    }) ?? []
 
   const hasNewInfo = (object: OperationalObject): boolean => {
     const presentation = presentationFor(object)
@@ -694,11 +701,13 @@
             {placementPoints}
             {theme}
             mapConfig={effectiveMapConfig}
+            currentTime={clock?.currentTime}
             {routeRevision}
             layoutRevision={railLayout.layoutRevision}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
             {hasNewInfo}
             {presentationFor}
+            {mapAreaFeaturesFor}
             onObjectSelected={selectObject}
             onPlacementPoint={placement.placePoint}
             onObjectSeen={markSeen}

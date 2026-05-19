@@ -97,19 +97,9 @@ describe('control instance API', () => {
         '/api/control-instances/sandbox/objects',
       )
       expect(objects.status).toBe(200)
-      expect(objects.body.objects.map(object => object.kind).sort()).toEqual([
-        'facility',
-        'facility',
-        'facility',
-        'incident',
-        'incident',
-        'incident',
-        'mobile_entity',
-        'mobile_entity',
-        'mobile_entity',
-        'zone',
-        'zone',
-      ])
+      expect(objects.body.objects.map(object => object.kind).sort()).toEqual(
+        osloAmbulanceScenario.initialObjects.map(object => object.kind).sort(),
+      )
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }

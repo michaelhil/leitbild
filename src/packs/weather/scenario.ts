@@ -2,26 +2,26 @@ import { z } from 'zod'
 import {
   geoPointFromLonLat,
   objectIdSchema,
-  type GeoJsonPolygon,
   type IsoTimestamp,
   type OperationalObject,
 } from '../../core/model/index.ts'
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
-  defaultAtmosphere,
-  defaultSurface,
   evolveWeatherData,
 } from './conditions.ts'
+import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import {
   weatherAtmosphereSchema,
   weatherDomainDataSchema,
-  weatherEvolutionSchema,
   weatherSeveritySchema,
   weatherAtmospherePatchSchema,
   weatherSurfacePatchSchema,
   weatherSurfaceSchema,
+  weatherFalloffCurveSchema,
+  weatherInfluenceSchema,
   type WeatherAtmospherePatch,
   type WeatherDomainData,
+  type WeatherInfluence,
   type WeatherSurfacePatch,
 } from './model.ts'
 import { weatherSimAdapterId, weatherSimDomain } from './sim/constants.ts'
@@ -31,72 +31,31 @@ const lonLatSchema = z.tuple([
   z.number().finite().min(-90).max(90),
 ])
 
+const weatherKeyframeSpecSchema = z.object({
+  atSeconds: z.number().finite().nonnegative(),
+  center: lonLatSchema,
+  semiMajorAxisM: z.number().finite().positive(),
+  semiMinorAxisM: z.number().finite().positive(),
+  rotationDeg: z.number().finite(),
+  falloffCurve: weatherFalloffCurveSchema.optional(),
+  atmosphere: weatherAtmospherePatchSchema.default({}),
+  surface: weatherSurfacePatchSchema.default({}),
+})
+
 const weatherConditionSpecSchema = z.object({
   pack: z.literal('weather'),
   type: z.literal('weather_condition'),
   id: objectIdSchema,
   label: z.string().min(1),
-  polygon: z.array(lonLatSchema).min(4).optional(),
-  center: lonLatSchema.optional(),
-  radiusM: z.number().finite().positive().optional(),
-  cellSizeM: z.number().finite().positive().default(1200),
+  cellSizeM: z.number().finite().positive().default(750),
+  priority: z.number().int().default(0),
   summary: z.string().min(1),
   severity: weatherSeveritySchema.default('normal'),
   atmosphere: weatherAtmospherePatchSchema.default({}),
   surface: weatherSurfacePatchSchema.default({}),
-  evolution: weatherEvolutionSchema.optional(),
-}).superRefine((spec, ctx) => {
-  const hasPolygon = spec.polygon !== undefined
-  const hasRadial = spec.center !== undefined || spec.radiusM !== undefined
-  if (hasPolygon === hasRadial) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'weather condition requires either polygon or center/radiusM',
-      path: ['polygon'],
-    })
-  }
-  if (hasRadial && (spec.center === undefined || spec.radiusM === undefined)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'radial weather condition requires both center and radiusM',
-      path: ['center'],
-    })
-  }
+  falloffCurve: weatherFalloffCurveSchema.default([{ x: 0, y: 1 }, { x: 1, y: 0 }]),
+  keyframes: z.array(weatherKeyframeSpecSchema).min(1),
 })
-
-const polygonFromPath = (path: ReadonlyArray<readonly [number, number]>): GeoJsonPolygon => ({
-  type: 'Polygon',
-  coordinates: [path.map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates)],
-})
-
-const radialPolygon = (
-  center: readonly [number, number],
-  radiusM: number,
-): GeoJsonPolygon => {
-  const pointCount = 48
-  const [centerLon, centerLat] = center
-  const metersPerDegreeLatitude = 111_320
-  const metersPerDegreeLongitude = Math.max(1, metersPerDegreeLatitude * Math.cos(centerLat * Math.PI / 180))
-  const coordinates = Array.from({ length: pointCount }, (_, index) => {
-    const angle = (2 * Math.PI * index) / pointCount
-    return geoPointFromLonLat(
-      centerLon + (radiusM * Math.cos(angle)) / metersPerDegreeLongitude,
-      centerLat + (radiusM * Math.sin(angle)) / metersPerDegreeLatitude,
-    ).coordinates
-  })
-  const first = coordinates[0]
-  if (!first) throw new Error('weather radial polygon generation produced no coordinates')
-  return {
-    type: 'Polygon',
-    coordinates: [[...coordinates, first]],
-  }
-}
-
-const geometryForSpec = (spec: z.infer<typeof weatherConditionSpecSchema>): GeoJsonPolygon => {
-  if (spec.polygon) return polygonFromPath(spec.polygon)
-  if (!spec.center || spec.radiusM === undefined) throw new Error(`weather condition ${spec.id} is missing radial geometry`)
-  return radialPolygon(spec.center, spec.radiusM)
-}
 
 export const createWeatherDomainData = (config: {
   readonly at: IsoTimestamp
@@ -104,7 +63,7 @@ export const createWeatherDomainData = (config: {
   readonly severity: z.infer<typeof weatherSeveritySchema>
   readonly atmosphere?: WeatherAtmospherePatch
   readonly surface?: WeatherSurfacePatch
-  readonly evolution?: z.infer<typeof weatherEvolutionSchema>
+  readonly influence: WeatherInfluence
   readonly render?: { readonly cellSizeM: number }
 }): WeatherDomainData => {
   const atmosphere = weatherAtmosphereSchema.parse({
@@ -124,7 +83,7 @@ export const createWeatherDomainData = (config: {
   return weatherDomainDataSchema.parse(evolveWeatherData({
     type: 'weather_condition',
     schemaVersion: 1,
-    conditionKind: 'weather_zone',
+    conditionKind: 'weather_influence',
     severity: config.severity,
     atmosphere,
     surface,
@@ -133,24 +92,74 @@ export const createWeatherDomainData = (config: {
       confidence: 1,
       validAt: config.at,
     },
-    ...(config.evolution ? { evolution: config.evolution } : {}),
+    influence: config.influence,
     ...(config.render ? { render: config.render } : {}),
     summary: config.summary,
   }, config.at, 0))
 }
 
+const weatherStateForSpec = (config: {
+  readonly at: IsoTimestamp
+  readonly baseAtmosphere: WeatherAtmospherePatch
+  readonly baseSurface: WeatherSurfacePatch
+  readonly atmosphere: WeatherAtmospherePatch
+  readonly surface: WeatherSurfacePatch
+}) => ({
+  atmosphere: weatherAtmosphereSchema.parse({
+    ...defaultAtmosphere(config.at),
+    ...config.baseAtmosphere,
+    ...config.atmosphere,
+    precipitation: {
+      ...defaultAtmosphere(config.at).precipitation,
+      ...config.baseAtmosphere.precipitation,
+      ...config.atmosphere.precipitation,
+    },
+    labels: config.atmosphere.labels ?? config.baseAtmosphere.labels ?? defaultAtmosphere(config.at).labels,
+  }),
+  surface: weatherSurfaceSchema.parse({
+    ...defaultSurface(),
+    ...config.baseSurface,
+    ...config.surface,
+    labels: config.surface.labels ?? config.baseSurface.labels ?? defaultSurface().labels,
+  }),
+})
+
+const influenceForSpec = (
+  spec: z.infer<typeof weatherConditionSpecSchema>,
+  at: IsoTimestamp,
+): WeatherInfluence => weatherInfluenceSchema.parse({
+  priority: spec.priority,
+  keyframes: spec.keyframes.map(keyframe => ({
+    atSeconds: keyframe.atSeconds,
+    center: geoPointFromLonLat(keyframe.center[0], keyframe.center[1]),
+    semiMajorAxisM: keyframe.semiMajorAxisM,
+    semiMinorAxisM: keyframe.semiMinorAxisM,
+    rotationDeg: keyframe.rotationDeg,
+    state: weatherStateForSpec({
+      at,
+      baseAtmosphere: spec.atmosphere,
+      baseSurface: spec.surface,
+      atmosphere: keyframe.atmosphere,
+      surface: keyframe.surface,
+    }),
+    falloffCurve: keyframe.falloffCurve ?? spec.falloffCurve,
+  })),
+})
+
 const weatherConditionObject = (config: {
   readonly spec: z.infer<typeof weatherConditionSpecSchema>
-  readonly geometry: GeoJsonPolygon
   readonly at: IsoTimestamp
 }): OperationalObject => {
+  const influence = influenceForSpec(config.spec, config.at)
+  const firstFrame = influence.keyframes[0]
+  if (!firstFrame) throw new Error(`weather condition ${config.spec.id} has no keyframes`)
   const data = createWeatherDomainData({
     at: config.at,
     summary: config.spec.summary,
     severity: config.spec.severity,
     ...(Object.keys(config.spec.atmosphere).length > 0 ? { atmosphere: config.spec.atmosphere } : {}),
     ...(Object.keys(config.spec.surface).length > 0 ? { surface: config.spec.surface } : {}),
-    ...(config.spec.evolution ? { evolution: config.spec.evolution } : {}),
+    influence,
     render: { cellSizeM: config.spec.cellSizeM },
   })
   return {
@@ -161,7 +170,11 @@ const weatherConditionObject = (config: {
     lifecycle: 'active',
     revision: 0,
     spatial: {
-      geometry: config.geometry,
+      position: {
+        point: firstFrame.center,
+        observedAt: config.at,
+        staleAfterMs: 600000,
+      },
       frame: { kind: 'wgs84' },
     },
     operational: {
@@ -195,7 +208,7 @@ const weatherConditionObject = (config: {
 export const weatherScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec, context): OperationalObject => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
-    return weatherConditionObject({ spec, geometry: geometryForSpec(spec), at: context.at })
+    return weatherConditionObject({ spec, at: context.at })
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`weather scenario operation is not supported yet: ${rawOperation.type}`)

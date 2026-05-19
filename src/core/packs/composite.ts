@@ -1,5 +1,5 @@
 import type { OperationalObject } from '../model/index.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackTargetContext } from './protocol.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackMapAreaFeature, PackObjectPresentation, PackTargetContext } from './protocol.ts'
 
 const packForObject = (
   packs: ReadonlyArray<LeitbildPack>,
@@ -87,6 +87,8 @@ export const createCompositePack = (config: {
         ],
       }
     },
+    mapAreaFeatures: (context): ReadonlyArray<PackMapAreaFeature> =>
+      config.packs.flatMap(pack => pack.mapAreaFeatures?.(context) ?? []),
     defaultObjectLabel: (typeId, context): string => {
       return packForCreateType(config.packs, typeId).defaultObjectLabel(typeId, context)
     },

@@ -80,9 +80,8 @@
       "type": "weather_condition",
       "id": "weather:halden-coastal-showers",
       "label": "Cool coastal showers",
-      "center": [11.3870, 59.1250],
-      "radiusM": 3200,
       "cellSizeM": 650,
+      "priority": 5,
       "summary": "Cool humid weather with intermittent light rain over central Halden",
       "severity": "notice",
       "atmosphere": {
@@ -105,7 +104,36 @@
         "frictionEstimate": 0.92,
         "frictionClass": "wet",
         "labels": ["wet"]
-      }
+      },
+      "keyframes": [
+        {
+          "atSeconds": 0,
+          "center": [11.3820, 59.1244],
+          "semiMajorAxisM": 3600,
+          "semiMinorAxisM": 1350,
+          "rotationDeg": 102,
+          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.7, "y": 0.8 }, { "x": 1, "y": 0 }]
+        },
+        {
+          "atSeconds": 360,
+          "center": [11.4060, 59.1285],
+          "semiMajorAxisM": 4300,
+          "semiMinorAxisM": 1600,
+          "rotationDeg": 116,
+          "atmosphere": {
+            "precipitation": { "type": "rain", "intensityMmPerHour": 0.9 },
+            "visibilityM": 7600
+          },
+          "surface": {
+            "wetness": 0.38,
+            "standingWater": 0.07,
+            "frictionEstimate": 0.88,
+            "frictionClass": "wet",
+            "labels": ["wet"]
+          },
+          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.7, "y": 0.8 }, { "x": 1, "y": 0 }]
+        }
+      ]
     },
     {
       "pack": "traffic",

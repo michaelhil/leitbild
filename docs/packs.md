@@ -31,7 +31,7 @@ A pack may contain:
 - object icons, map symbols, and style rules
 - object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
 - object-attached contextual fields contributed to other packs' objects, such as weather-at-location or communications state
-- generated map-area geometries for pack-owned objects when a pack wants a rendered shape that differs from the canonical object geometry, such as weather hex cells derived from a weather polygon
+- pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather hex cells sampled from active weather influence objects
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -172,11 +172,12 @@ Generic UI modules must not import pack-specific domain models, simulators, geom
 
 Pack-specific presentation belongs behind `LeitbildPack`:
 
-- `presentObject` owns the category, icon, color, summary, object fields, status indicator, noteworthy-update policy, and optional map-area geometry derived for that object.
+- `presentObject` owns the category, icon, color, summary, object fields, status indicator, and noteworthy-update policy for one object.
 - `contextualFields` lets a pack add derived fields to other packs' objects without teaching the generic rail or map about that pack. For example, a weather pack may add a `Weather` field to an ambulance by sampling active weather objects at the ambulance position.
+- `mapAreaFeatures` lets a pack project pack-owned spatial truth into generic rendered areas. The pack owns the computation. The generic map receives only feature id, category id, polygon geometry, color, opacity, and summary.
 - `createObjectTypes.parameters` lets packs declare creation controls for the generic create modal. Traffic can request severity, speed factor, and reason without hardcoding traffic fields into the modal.
 
-The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, weather areas, symbols, and overlays. That vocabulary should not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
+The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, generic pack areas, symbols, and overlays. That vocabulary must not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
 
 Application assembly code may import built-in packs to create the active pack set. Shared UI components, map feature builders, and generic state modules should not.
 

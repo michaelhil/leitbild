@@ -1,5 +1,5 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
-import type { PackObjectStatusTone, PackObjectPresentation } from '../core/packs/protocol.ts'
+import type { PackMapAreaFeature, PackObjectStatusTone, PackObjectPresentation } from '../core/packs/protocol.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
 import { statusToneColor } from './status-presentation.ts'
 
@@ -61,9 +61,10 @@ interface ZoneFeatureProperties {
   readonly id: string
   readonly color: string
   readonly summary: string
+  readonly opacity?: number
 }
 
-type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary' | 'mapAreaGeometries'>
+type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary'>
 
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
@@ -191,24 +192,20 @@ export const createWeatherLineFeatureCollection = (
 })
 
 export const createWeatherAreaFeatureCollection = (
-  objects: ReadonlyArray<OperationalObject>,
-  presentObject: (object: OperationalObject) => ZonePresentation,
+  packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
-  features: objects
-    .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'Polygon' && presentObject(object).categoryId === 'weather')
-    .flatMap(object => {
-      const presentation = presentObject(object)
-      const geometries = presentation.mapAreaGeometries ?? [object.spatial.geometry as GeoJsonPolygon]
-      return geometries.map((geometry, index) => ({
-        type: 'Feature',
-        id: `${object.id}:area:${index}`,
-        geometry,
-        properties: {
-          id: object.id,
-          color: presentation.color,
-          summary: presentation.summary,
-        },
-      }))
-    }),
+  features: packAreaFeatures
+    .filter(feature => feature.categoryId === 'weather')
+    .map(feature => ({
+      type: 'Feature',
+      id: feature.id,
+      geometry: feature.geometry,
+      properties: {
+        id: feature.id,
+        color: feature.color,
+        summary: feature.summary,
+        ...(feature.opacity === undefined ? {} : { opacity: feature.opacity }),
+      },
+    })),
 })

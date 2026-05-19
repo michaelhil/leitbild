@@ -4,7 +4,7 @@ import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherSampleAtPoint } from './conditions.ts'
-import { weatherHexCellPolygons } from './hex-field.ts'
+import { weatherCellsForViewport } from './field.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
@@ -65,6 +65,20 @@ const weatherColor = (severity: WeatherSeverity | undefined, data: WeatherDomain
   return '#16834f'
 }
 
+const weatherCellColor = (severity: WeatherSeverity): string => {
+  if (severity === 'hazard') return '#dc2626'
+  if (severity === 'adverse') return '#d97706'
+  if (severity === 'notice') return '#2563eb'
+  return '#16834f'
+}
+
+const weatherCellOpacity = (severity: WeatherSeverity): number => {
+  if (severity === 'hazard') return 0.22
+  if (severity === 'adverse') return 0.18
+  if (severity === 'notice') return 0.13
+  return 0.06
+}
+
 const statusToneFor = (severity: WeatherSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
   if (severity === 'hazard') return 'error'
   if (severity === 'adverse' || severity === 'notice') return 'working'
@@ -95,11 +109,11 @@ const buildWeatherCreatePayload = (
     })
   }
   if (typeId === 'weather_area') {
-    if (geometry.kind !== 'polygon') throw new Error(`weather area creation requires polygon geometry, got ${geometry.kind}`)
+    if (geometry.kind !== 'point') throw new Error(`weather area creation requires point geometry, got ${geometry.kind}`)
     return createWeatherAreaPayloadSchema.parse({
       objectType: 'weather_area',
       label,
-      polygon: geometry.polygon,
+      center: geometry.point,
       ...(typeof parameters === 'object' && parameters !== null ? parameters : {}),
     })
   }
@@ -129,9 +143,6 @@ export const weatherPack: LeitbildPack = {
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const tone = statusToneFor(data?.severity)
-    const mapAreaGeometries = data && object.spatial.geometry?.type === 'Polygon'
-      ? weatherHexCellPolygons(object.spatial.geometry, data.render?.cellSizeM ?? 1200)
-      : undefined
     return {
       categoryId: 'weather',
       icon: 'weather',
@@ -139,9 +150,25 @@ export const weatherPack: LeitbildPack = {
       summary: data ? `${data.summary} · ${data.severity}` : object.operational.status,
       status: packStatus(tone, data ? `${data.severity} weather` : 'Invalid weather data'),
       fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather domain data')],
-      ...(mapAreaGeometries ? { mapAreaGeometries } : {}),
       noteworthyUpdates: false,
     }
+  },
+  mapAreaFeatures: (context) => {
+    if (!context.map) return []
+    const at = context.currentTime ?? nowIso()
+    return weatherCellsForViewport({
+      objects: context.objects,
+      viewport: context.map.viewport,
+      zoom: context.map.zoom,
+      at,
+    }).map(cell => ({
+      id: `weather:${cell.id}`,
+      categoryId: 'weather',
+      geometry: cell.polygon,
+      color: weatherCellColor(cell.sample.severity),
+      opacity: weatherCellOpacity(cell.sample.severity),
+      summary: `${cell.sample.severity} weather`,
+    }))
   },
   contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
     const point = samplePointFor(object)

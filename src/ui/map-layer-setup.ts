@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { GeoJSON } from 'geojson'
 import type { OperationalObject } from '../core/model/index.ts'
-import type { PackObjectPresentation } from '../core/packs/protocol.ts'
+import type { PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
 import {
   createObjectFeatureCollection,
   createRouteFeatureCollection,
@@ -22,6 +22,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
   readonly highlightedObjectIds: ReadonlyArray<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+  readonly packMapAreaFeatures: ReadonlyArray<PackMapAreaFeature>
   readonly routeCasingColor: string
   readonly trafficCasingColor: string
   readonly refreshSources: () => void
@@ -41,7 +42,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
   })
   current.addSource(mapSourceIds.weatherAreas, {
     type: 'geojson',
-    data: asMutableGeoJson(createWeatherAreaFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
+    data: asMutableGeoJson(createWeatherAreaFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
   })
   current.addSource(mapSourceIds.trafficLines, {
     type: 'geojson',
@@ -57,7 +58,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.weatherAreas,
     paint: {
       'fill-color': ['get', 'color'],
-      'fill-opacity': 0.22,
+      'fill-opacity': ['coalesce', ['get', 'opacity'], 0.12],
     },
   })
   current.addLayer({
@@ -66,9 +67,8 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.weatherAreas,
     paint: {
       'line-color': ['get', 'color'],
-      'line-width': 2,
-      'line-opacity': 0.78,
-      'line-dasharray': [2, 2],
+      'line-width': 0.6,
+      'line-opacity': 0.16,
     },
     layout: {
       'line-cap': 'round',

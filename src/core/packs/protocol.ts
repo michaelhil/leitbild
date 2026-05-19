@@ -14,7 +14,6 @@ export interface PackObjectPresentation {
   readonly color: string
   readonly summary: string
   readonly fields: ReadonlyArray<PackObjectField>
-  readonly mapAreaGeometries?: ReadonlyArray<GeoJsonPolygon>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
   readonly noteworthyUpdates?: boolean
@@ -102,6 +101,21 @@ export type PackCreationGeometry =
 export interface PackObjectPresentationContext {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly currentTime?: IsoTimestamp
+  readonly map?: PackMapRenderContext
+}
+
+export interface PackMapRenderContext {
+  readonly viewport: GeoJsonPolygon
+  readonly zoom: number
+}
+
+export interface PackMapAreaFeature {
+  readonly id: string
+  readonly categoryId: string
+  readonly geometry: GeoJsonPolygon
+  readonly color: string
+  readonly summary: string
+  readonly opacity?: number
 }
 
 export interface PackObjectCreationContext {
@@ -172,6 +186,9 @@ export interface LeitbildPack {
     object: OperationalObject,
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackObjectField>
+  readonly mapAreaFeatures?: (
+    context: PackObjectPresentationContext,
+  ) => ReadonlyArray<PackMapAreaFeature>
   readonly defaultObjectLabel: (
     typeId: string,
     context: PackObjectCreationContext,

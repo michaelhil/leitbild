@@ -1,9 +1,9 @@
 <script lang="ts">
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import { Protocol as PmtilesProtocol } from 'pmtiles'
-  import type { GeoJsonPoint, OperationalObject, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
+  import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
-  import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { iconSvgDataUrl, type IconName } from './icons.ts'
   import {
     createObjectFeatureCollection,
@@ -36,11 +36,13 @@
     readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
     readonly mapConfig: SurfaceMapRegionConfig
+    readonly currentTime?: IsoTimestamp
     readonly routeRevision: number
     readonly layoutRevision?: number
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number }) => ReadonlyArray<PackMapAreaFeature>
     readonly onObjectSelected: (object: OperationalObject) => void
     readonly onPlacementPoint: (point: GeoJsonPoint) => void
     readonly onObjectSeen: (object: OperationalObject) => void
@@ -56,11 +58,13 @@
     placementPoints,
     theme,
     mapConfig,
+    currentTime,
     routeRevision,
     layoutRevision = 0,
     highlightedObjectIds = [],
     hasNewInfo,
     presentationFor,
+    mapAreaFeaturesFor,
     onObjectSelected,
     onPlacementPoint,
     onObjectSeen,
@@ -145,6 +149,33 @@
   const trafficCasingColor = (): string =>
     theme === 'dark' ? '#111827' : '#ffffff'
 
+  const currentViewport = (): GeoJsonPolygon | null => {
+    const current = map
+    if (!current) return null
+    const bounds = current.getBounds()
+    const west = bounds.getWest()
+    const east = bounds.getEast()
+    const south = bounds.getSouth()
+    const north = bounds.getNorth()
+    return {
+      type: 'Polygon',
+      coordinates: [[
+        geoPointFromLonLat(west, south).coordinates,
+        geoPointFromLonLat(east, south).coordinates,
+        geoPointFromLonLat(east, north).coordinates,
+        geoPointFromLonLat(west, north).coordinates,
+        geoPointFromLonLat(west, south).coordinates,
+      ]],
+    }
+  }
+
+  const currentPackMapAreaFeatures = (): ReadonlyArray<PackMapAreaFeature> => {
+    const current = map
+    const viewport = currentViewport()
+    if (!current || !viewport) return []
+    return mapAreaFeaturesFor({ viewport, zoom: current.getZoom() })
+  }
+
   const escapeHtml = (value: string): string =>
     value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
@@ -186,7 +217,7 @@
     const lineSource = current.getSource(mapSourceIds.weatherLines) as GeoJSONSource | undefined
     const areaSource = current.getSource(mapSourceIds.weatherAreas) as GeoJSONSource | undefined
     if (lineSource) lineSource.setData(createWeatherLineFeatureCollection([...objects], presentationFor))
-    if (areaSource) areaSource.setData(createWeatherAreaFeatureCollection([...objects], presentationFor))
+    if (areaSource) areaSource.setData(createWeatherAreaFeatureCollection(currentPackMapAreaFeatures()))
   }
 
   const refreshPlacementPreviewSource = (): void => {
@@ -353,6 +384,7 @@
         highlightedObjectIds,
         hasNewInfo,
         presentationFor,
+        packMapAreaFeatures: currentPackMapAreaFeatures(),
         routeCasingColor: routeCasingColor(),
         trafficCasingColor: trafficCasingColor(),
         refreshSources,
@@ -396,6 +428,9 @@
       if (!placementMode) return
       onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
     })
+    current.on('moveend', () => {
+      scheduleSourceRefresh({ weather: true })
+    })
     current.on('style.load', () => {
       void setupOperationalMapStyle(current)
     })
@@ -425,6 +460,7 @@
     selectedControllerId
     highlightedObjectIds
     routeRevision
+    currentTime
     renderRevision
     placementPoints
     const nowMs = performance.now()

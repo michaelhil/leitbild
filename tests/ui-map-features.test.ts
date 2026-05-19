@@ -123,7 +123,7 @@ describe('map feature projection', () => {
     const ambulanceFeature = objectFeatures.features.find(feature => feature.id === ambulance.id)
     const incidentFeature = objectFeatures.features.find(feature => feature.id === 'incident:gronland-unattended')
 
-    expect(objectFeatures.features).toHaveLength(9)
+    expect(objectFeatures.features).toHaveLength(objects.filter(object => object.spatial.position?.point).length)
     expect(ambulanceFeature?.geometry).toEqual(ambulance.spatial.position?.point)
     expect(ambulanceFeature?.properties.icon).toBe('object-ambulance-ready')
     expect(ambulanceFeature?.properties.color).toBe('#16834f')
@@ -234,17 +234,31 @@ describe('map feature projection', () => {
       categoryId: 'weather',
       color: '#2563eb',
       summary: 'notice weather',
-      mapAreaGeometries: [
-        weatherObject.spatial.geometry,
-        weatherObject.spatial.geometry,
-      ],
     })
+    const weatherAreaFeatures = [
+      {
+        id: 'weather:test-area:cell:1',
+        categoryId: 'weather',
+        geometry: weatherObject.spatial.geometry,
+        color: '#2563eb',
+        summary: 'notice weather',
+        opacity: 0.12,
+      },
+      {
+        id: 'weather:test-area:cell:2',
+        categoryId: 'weather',
+        geometry: weatherObject.spatial.geometry,
+        color: '#2563eb',
+        summary: 'notice weather',
+        opacity: 0.12,
+      },
+    ]
     const trafficFeatures = createTrafficAreaFeatureCollection([weatherObject], weatherPresentation)
-    const weatherFeatures = createWeatherAreaFeatureCollection([weatherObject], weatherPresentation)
+    const weatherFeatures = createWeatherAreaFeatureCollection(weatherAreaFeatures)
 
     expect(mapSourceIds.weatherAreas).toBe('weather-area-source')
     expect(trafficFeatures.features).toHaveLength(0)
     expect(weatherFeatures.features.length).toBeGreaterThan(1)
-    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:area:')
+    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:cell:')
   })
 })

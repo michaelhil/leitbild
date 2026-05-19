@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { geoJsonPointSchema, geoJsonPolygonSchema } from '../../core/model/index.ts'
+import { geoJsonPointSchema } from '../../core/model/index.ts'
 
 export const weatherDomainId = 'weather' as const
 
@@ -88,14 +88,60 @@ export const weatherRenderSchema = z.object({
 })
 export type WeatherRender = z.infer<typeof weatherRenderSchema>
 
+export const weatherStateSchema = z.object({
+  atmosphere: weatherAtmosphereSchema,
+  surface: weatherSurfaceSchema,
+})
+export type WeatherState = z.infer<typeof weatherStateSchema>
+
+export const weatherFalloffPointSchema = z.object({
+  x: normalizedSchema,
+  y: normalizedSchema,
+})
+export type WeatherFalloffPoint = z.infer<typeof weatherFalloffPointSchema>
+
+export const weatherFalloffCurveSchema = z.array(weatherFalloffPointSchema).min(2)
+  .superRefine((points, ctx) => {
+    let previousX = Number.NEGATIVE_INFINITY
+    for (const [index, point] of points.entries()) {
+      if (point.x < previousX) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'falloff curve x values must be sorted ascending',
+          path: [index, 'x'],
+        })
+      }
+      previousX = point.x
+    }
+  })
+export type WeatherFalloffCurve = z.infer<typeof weatherFalloffCurveSchema>
+
+export const weatherInfluenceKeyframeSchema = z.object({
+  atSeconds: z.number().finite().nonnegative(),
+  center: geoJsonPointSchema,
+  semiMajorAxisM: z.number().finite().positive(),
+  semiMinorAxisM: z.number().finite().positive(),
+  rotationDeg: z.number().finite(),
+  state: weatherStateSchema,
+  falloffCurve: weatherFalloffCurveSchema,
+})
+export type WeatherInfluenceKeyframe = z.infer<typeof weatherInfluenceKeyframeSchema>
+
+export const weatherInfluenceSchema = z.object({
+  priority: z.number().int().default(0),
+  keyframes: z.array(weatherInfluenceKeyframeSchema).min(1),
+})
+export type WeatherInfluence = z.infer<typeof weatherInfluenceSchema>
+
 export const weatherDomainDataSchema = z.object({
   type: z.literal('weather_condition'),
   schemaVersion: z.literal(1),
-  conditionKind: z.enum(['baseline', 'weather_zone', 'surface_condition', 'point_observation']),
+  conditionKind: z.enum(['weather_influence', 'point_observation']),
   severity: weatherSeveritySchema,
   atmosphere: weatherAtmosphereSchema,
   surface: weatherSurfaceSchema,
   quality: weatherQualitySchema,
+  influence: weatherInfluenceSchema.optional(),
   evolution: weatherEvolutionSchema.optional(),
   render: weatherRenderSchema.optional(),
   summary: z.string().min(1),
@@ -105,11 +151,25 @@ export type WeatherDomainData = z.infer<typeof weatherDomainDataSchema>
 export const createWeatherAreaPayloadSchema = z.object({
   objectType: z.literal('weather_area'),
   label: z.string().min(1).max(80),
-  polygon: geoJsonPolygonSchema,
   summary: z.string().min(1).max(180).default('Operator-created weather area'),
   severity: weatherSeveritySchema.default('notice'),
   atmosphere: weatherAtmospherePatchSchema.optional(),
   surface: weatherSurfacePatchSchema.optional(),
+  center: geoJsonPointSchema.optional(),
+  semiMajorAxisM: z.number().finite().positive().optional(),
+  semiMinorAxisM: z.number().finite().positive().optional(),
+  rotationDeg: z.number().finite().default(0),
+  falloffCurve: weatherFalloffCurveSchema.default([{ x: 0, y: 1 }, { x: 1, y: 0 }]),
+}).superRefine((payload, ctx) => {
+  if (!payload.center) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires center', path: ['center'] })
+  }
+  if (payload.semiMajorAxisM === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires semiMajorAxisM', path: ['semiMajorAxisM'] })
+  }
+  if (payload.semiMinorAxisM === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'weather area requires semiMinorAxisM', path: ['semiMinorAxisM'] })
+  }
 })
 export type CreateWeatherAreaPayload = z.infer<typeof createWeatherAreaPayloadSchema>
 
@@ -120,7 +180,7 @@ export const createWeatherProbePayloadSchema = z.object({
 })
 export type CreateWeatherProbePayload = z.infer<typeof createWeatherProbePayloadSchema>
 
-export const createWeatherConditionPayloadSchema = z.discriminatedUnion('objectType', [
+export const createWeatherConditionPayloadSchema = z.union([
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
 ])
