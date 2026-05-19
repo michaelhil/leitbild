@@ -97,6 +97,7 @@
   let mapInitialized = false
   let appliedCameraKey: string | null = null
   let mapGestureActive = false
+  let viewportActivationFrame: number | null = null
 
   interface CameraInteractionHandler {
     readonly enable: () => void
@@ -133,6 +134,32 @@
     if (disabled.length > 0) {
       throw new Error(`Map camera interactions disabled: ${disabled.join(', ')}`)
     }
+  }
+
+  const cancelViewportActivation = (): void => {
+    if (viewportActivationFrame === null) return
+    cancelAnimationFrame(viewportActivationFrame)
+    viewportActivationFrame = null
+  }
+
+  const activateMapViewport = (current: MapLibreMap): void => {
+    // MapLibre controls call camera methods that clear stale handler state; do the same once our Svelte layout has settled.
+    assertCameraInteractionContract(current)
+    current.stop()
+    current.resize({ source: 'leitbild-map-viewport-activation' })
+  }
+
+  const scheduleViewportActivation = (): void => {
+    const current = map
+    if (!current) return
+    cancelViewportActivation()
+    viewportActivationFrame = requestAnimationFrame(() => {
+      viewportActivationFrame = requestAnimationFrame(() => {
+        viewportActivationFrame = null
+        if (map !== current) return
+        activateMapViewport(current)
+      })
+    })
   }
 
   const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
@@ -466,6 +493,7 @@
       applyConfiguredLayerVisibility()
       refreshSources()
       startPackAreaRefresh()
+      scheduleViewportActivation()
       if (!mapReadyNotified) {
         mapReadyNotified = true
         onMapReady()
@@ -500,6 +528,7 @@
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
+    scheduleViewportActivation()
     current.on('error', (event) => {
       const error = event.error
       onMapError(error instanceof Error ? error.message : 'Vector map failed to load')
@@ -524,6 +553,7 @@
     })
 
     return () => {
+      cancelViewportActivation()
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
       stopPackAreaRefresh()
@@ -589,7 +619,10 @@
 
   $effect(() => {
     layoutRevision
-    map?.resize()
+    const current = map
+    if (!current) return
+    current.resize({ source: 'leitbild-layout-resize' })
+    scheduleViewportActivation()
   })
 
   $effect(() => {
