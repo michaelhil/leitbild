@@ -98,12 +98,42 @@
   let appliedCameraKey: string | null = null
   let mapGestureActive = false
 
+  interface CameraInteractionHandler {
+    readonly enable: () => void
+    readonly isEnabled: () => boolean
+  }
+
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
     mapLayerIds.objectIcons,
     mapLayerIds.objectHalos,
     mapLayerIds.objectNewInfo,
   ]
+
+  const cameraInteractionHandlers = (current: MapLibreMap): ReadonlyArray<{
+    readonly name: string
+    readonly handler: CameraInteractionHandler
+  }> => [
+    { name: 'dragPan', handler: current.dragPan },
+    { name: 'scrollZoom', handler: current.scrollZoom },
+    { name: 'boxZoom', handler: current.boxZoom },
+    { name: 'doubleClickZoom', handler: current.doubleClickZoom },
+    { name: 'touchZoomRotate', handler: current.touchZoomRotate },
+    { name: 'keyboard', handler: current.keyboard },
+  ]
+
+  const assertCameraInteractionContract = (current: MapLibreMap): void => {
+    if (current.cooperativeGestures.isEnabled()) current.cooperativeGestures.disable()
+    for (const { handler } of cameraInteractionHandlers(current)) {
+      if (!handler.isEnabled()) handler.enable()
+    }
+    const disabled = cameraInteractionHandlers(current)
+      .filter(({ handler }) => !handler.isEnabled())
+      .map(({ name }) => name)
+    if (disabled.length > 0) {
+      throw new Error(`Map camera interactions disabled: ${disabled.join(', ')}`)
+    }
+  }
 
   const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
     if (layer === 'objects') return [
@@ -411,6 +441,7 @@
   const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
     try {
       loaded = false
+      assertCameraInteractionContract(current)
       await registerObjectIconVariants(current, 'ambulance')
       await registerObjectIconVariants(current, 'hospital')
       await registerObjectIconVariants(current, 'crash')
@@ -456,7 +487,16 @@
       style: styleUrlFor(theme),
       center: mapConfig.center.coordinates,
       zoom: mapConfig.zoom,
+      interactive: true,
+      dragPan: true,
+      scrollZoom: true,
+      boxZoom: true,
+      doubleClickZoom: true,
+      touchZoomRotate: true,
+      keyboard: true,
+      cooperativeGestures: false,
     })
+    assertCameraInteractionContract(current)
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
