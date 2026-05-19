@@ -230,13 +230,21 @@ describe('map feature projection', () => {
       provenance: { source: 'simulator' as const },
       timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
     }
-    const weatherPresentation = () => ({ categoryId: 'weather', color: '#2563eb', summary: 'notice weather' })
+    const weatherPresentation = () => ({
+      categoryId: 'weather',
+      color: '#2563eb',
+      summary: 'notice weather',
+      mapAreaGeometries: [
+        weatherObject.spatial.geometry,
+        weatherObject.spatial.geometry,
+      ],
+    })
     const trafficFeatures = createTrafficAreaFeatureCollection([weatherObject], weatherPresentation)
     const weatherFeatures = createWeatherAreaFeatureCollection([weatherObject], weatherPresentation)
 
     expect(mapSourceIds.weatherAreas).toBe('weather-area-source')
     expect(trafficFeatures.features).toHaveLength(0)
     expect(weatherFeatures.features.length).toBeGreaterThan(1)
-    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:hex:')
+    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:area:')
   })
 })

@@ -27,6 +27,7 @@
 - Keep files and functions small enough to remain navigable.
 - Add abstractions only when they protect a real boundary or remove real complexity.
 - Keep pack-specific logic in `src/packs/*`; keep `core` use-case agnostic.
+- Generic UI modules must consume pack presentation and creation protocols instead of importing pack-specific models, simulators, geometry helpers, or condition calculators.
 - New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
 - Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.

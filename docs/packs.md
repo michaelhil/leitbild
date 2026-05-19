@@ -30,6 +30,8 @@ A pack may contain:
 - provider metadata, including the pack's default simulation provider
 - object icons, map symbols, and style rules
 - object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
+- object-attached contextual fields contributed to other packs' objects, such as weather-at-location or communications state
+- generated map-area geometries for pack-owned objects when a pack wants a rendered shape that differs from the canonical object geometry, such as weather hex cells derived from a weather polygon
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -163,6 +165,20 @@ Composition rules:
 - Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
 
 Multi-pack simulation orchestration uses the Simulation Hub once more than one provider is active in a Control Instance.
+
+## Generic UI Boundary
+
+Generic UI modules must not import pack-specific domain models, simulators, geometry helpers, or condition calculators. They consume the pack protocol.
+
+Pack-specific presentation belongs behind `LeitbildPack`:
+
+- `presentObject` owns the category, icon, color, summary, object fields, status indicator, noteworthy-update policy, and optional map-area geometry derived for that object.
+- `contextualFields` lets a pack add derived fields to other packs' objects without teaching the generic rail or map about that pack. For example, a weather pack may add a `Weather` field to an ambulance by sampling active weather objects at the ambulance position.
+- `createObjectTypes.parameters` lets packs declare creation controls for the generic create modal. Traffic can request severity, speed factor, and reason without hardcoding traffic fields into the modal.
+
+The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, weather areas, symbols, and overlays. That vocabulary should not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
+
+Application assembly code may import built-in packs to create the active pack set. Shared UI components, map feature builders, and generic state modules should not.
 
 ## Interaction Contributions
 

@@ -1,16 +1,10 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
-  import type { GeoJsonPoint, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
-  import { deleteObjectCommandKind, nowIso } from '../core/model/index.ts'
-  import { createCompositePack } from '../core/packs/composite.ts'
-  import { packField } from '../core/packs/presentation.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectField, PackObjectPresentation } from '../core/packs/protocol.ts'
-  import { ambulancePack } from '../packs/ambulance/pack.ts'
-  import { trafficPack } from '../packs/traffic/pack.ts'
-  import { weatherSampleAtPoint } from '../packs/weather/conditions.ts'
-  import { weatherDomainId } from '../packs/weather/model.ts'
-  import { weatherPack } from '../packs/weather/pack.ts'
+  import { createLeitbildControlPack } from '../app-assembly.ts'
+  import type { OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+  import { deleteObjectCommandKind } from '../core/model/index.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import {
     createControlInstance,
     deleteControlInstance,
@@ -71,11 +65,7 @@
   } from './startup.ts'
   import type { CategoryRow, ControlInstanceSummary, CreateDraft, ScenarioListItem } from './types.ts'
 
-  const activePack: LeitbildPack = createCompositePack({
-    id: 'leitbild-control',
-    name: 'Leitbild Control',
-    packs: [ambulancePack, trafficPack, weatherPack],
-  })
+  const activePack: LeitbildPack = createLeitbildControlPack()
   const appVersion = __LEITBILD_VERSION__
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -150,43 +140,8 @@
     weatherLayerVisible = !weatherLayerVisible
   }
 
-  const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
-    if (object.domain === weatherDomainId) return null
-    return object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
-  }
-
-  const oneDecimal = (value: number): string =>
-    `${Math.round(value * 10) / 10}`
-
-  const percent = (value: number | undefined): string =>
-    value === undefined ? 'unknown' : `${Math.round(value * 100)}%`
-
-  const weatherFieldFor = (object: OperationalObject): PackObjectField | null => {
-    const point = samplePointFor(object)
-    if (!point) return null
-    const sample = weatherSampleAtPoint(objects, point, clock?.currentTime ?? nowIso())
-    const precipitation = sample.atmosphere.precipitation
-    const value = [
-      `${oneDecimal(sample.atmosphere.airTemperatureC)} °C air`,
-      `${oneDecimal(sample.surface.groundTemperatureC)} °C road`,
-      precipitation.type === 'none'
-        ? 'no precipitation'
-        : `${precipitation.type.replaceAll('_', ' ')} ${oneDecimal(precipitation.intensityMmPerHour)} mm/h`,
-      sample.surface.frictionClass,
-      `wet ${percent(sample.surface.wetness)}`,
-    ].join(' · ')
-    return packField('weather', 'Weather', value)
-  }
-
-  const presentationFor = (object: OperationalObject): PackObjectPresentation => {
-    const presentation = activePack.presentObject(object, { objects })
-    const weatherField = weatherFieldFor(object)
-    if (!weatherField) return presentation
-    return {
-      ...presentation,
-      fields: [...presentation.fields, weatherField],
-    }
-  }
+  const presentationFor = (object: OperationalObject): PackObjectPresentation =>
+    activePack.presentObject(object, { objects, currentTime: clock?.currentTime })
 
   const hasNewInfo = (object: OperationalObject): boolean => {
     const presentation = presentationFor(object)
@@ -361,16 +316,11 @@
   const createObject = async (draft: CreateDraft): Promise<void> => {
     placement.clearDraft()
     commandStatus = `Creating ${draft.objectType.label}`
-    const parameters = {
-      severity: draft.trafficSeverity,
-      speedFactor: draft.trafficSpeedFactor,
-      reason: draft.trafficReason,
-    }
     const command = activePack.buildCreateObjectCommand(
       draft.objectType.id,
       draft.label.trim() || defaultName(draft.objectType),
       draft.geometry,
-      parameters,
+      draft.parameters,
     )
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }

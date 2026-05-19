@@ -1,7 +1,10 @@
-import type { OperationalObject } from '../../core/model/index.ts'
+import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
+import { nowIso } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
+import { weatherSampleAtPoint } from './conditions.ts'
+import { weatherHexCellPolygons } from './hex-field.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
@@ -39,6 +42,19 @@ const weatherFields = (data: WeatherDomainData): ReadonlyArray<PackObjectField> 
   packField('friction', 'Friction', data.surface.frictionClass),
 ]
 
+const weatherValue = (data: Pick<WeatherDomainData, 'atmosphere' | 'surface'>): string => {
+  const precipitation = data.atmosphere.precipitation
+  return [
+    `${oneDecimal(data.atmosphere.airTemperatureC)} °C air`,
+    `${oneDecimal(data.surface.groundTemperatureC)} °C road`,
+    precipitation.type === 'none'
+      ? 'no precipitation'
+      : `${precipitation.type.replaceAll('_', ' ')} ${oneDecimal(precipitation.intensityMmPerHour)} mm/h`,
+    data.surface.frictionClass,
+    `wet ${percent(data.surface.wetness)}`,
+  ].join(' · ')
+}
+
 const weatherColor = (severity: WeatherSeverity | undefined, data: WeatherDomainData | null): string => {
   if (severity === 'hazard') return '#dc2626'
   if (severity === 'adverse') return '#d97706'
@@ -53,6 +69,11 @@ const statusToneFor = (severity: WeatherSeverity | undefined): 'ready' | 'workin
   if (severity === 'hazard') return 'error'
   if (severity === 'adverse' || severity === 'notice') return 'working'
   return 'ready'
+}
+
+const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
+  if (object.domain === weatherDomainId) return null
+  return object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
 }
 
 const unsupportedCommand = (): PackCommandRequest => {
@@ -108,6 +129,9 @@ export const weatherPack: LeitbildPack = {
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const tone = statusToneFor(data?.severity)
+    const mapAreaGeometries = data && object.spatial.geometry?.type === 'Polygon'
+      ? weatherHexCellPolygons(object.spatial.geometry, data.render?.cellSizeM ?? 1200)
+      : undefined
     return {
       categoryId: 'weather',
       icon: 'weather',
@@ -115,8 +139,15 @@ export const weatherPack: LeitbildPack = {
       summary: data ? `${data.summary} · ${data.severity}` : object.operational.status,
       status: packStatus(tone, data ? `${data.severity} weather` : 'Invalid weather data'),
       fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather domain data')],
+      ...(mapAreaGeometries ? { mapAreaGeometries } : {}),
       noteworthyUpdates: false,
     }
+  },
+  contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
+    const point = samplePointFor(object)
+    if (!point) return []
+    const sample = weatherSampleAtPoint(context.objects, point, context.currentTime ?? nowIso())
+    return [packField('weather', 'Weather', weatherValue(sample))]
   },
   defaultObjectLabel: (typeId, context): string => {
     if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)

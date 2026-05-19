@@ -1,8 +1,6 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
-import type { PackObjectStatusTone } from '../core/packs/protocol.ts'
+import type { PackObjectStatusTone, PackObjectPresentation } from '../core/packs/protocol.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
-import { weatherHexCellPolygons } from '../packs/weather/hex-field.ts'
-import { weatherDomainDataSchema } from '../packs/weather/model.ts'
 import { statusToneColor } from './status-presentation.ts'
 
 export const mapSourceIds = {
@@ -65,6 +63,8 @@ interface ZoneFeatureProperties {
   readonly summary: string
 }
 
+type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary' | 'mapAreaGeometries'>
+
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
 
@@ -126,7 +126,7 @@ export const createRouteFeatureCollection = (
 
 export const createTrafficLineFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
-  presentObject: (object: OperationalObject) => { readonly categoryId: string; readonly color: string; readonly summary: string },
+  presentObject: (object: OperationalObject) => ZonePresentation,
 ): GeoJsonFeatureCollection<GeoJsonLineString, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
@@ -148,7 +148,7 @@ export const createTrafficLineFeatureCollection = (
 
 export const createTrafficAreaFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
-  presentObject: (object: OperationalObject) => { readonly categoryId: string; readonly color: string; readonly summary: string },
+  presentObject: (object: OperationalObject) => ZonePresentation,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
@@ -170,7 +170,7 @@ export const createTrafficAreaFeatureCollection = (
 
 export const createWeatherLineFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
-  presentObject: (object: OperationalObject) => { readonly categoryId: string; readonly color: string; readonly summary: string },
+  presentObject: (object: OperationalObject) => ZonePresentation,
 ): GeoJsonFeatureCollection<GeoJsonLineString, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
@@ -192,18 +192,17 @@ export const createWeatherLineFeatureCollection = (
 
 export const createWeatherAreaFeatureCollection = (
   objects: ReadonlyArray<OperationalObject>,
-  presentObject: (object: OperationalObject) => { readonly categoryId: string; readonly color: string; readonly summary: string },
+  presentObject: (object: OperationalObject) => ZonePresentation,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
     .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'Polygon' && presentObject(object).categoryId === 'weather')
     .flatMap(object => {
       const presentation = presentObject(object)
-      const parsed = weatherDomainDataSchema.safeParse(object.domainData)
-      const cellSizeM = parsed.success ? parsed.data.render?.cellSizeM ?? 1200 : 1200
-      return weatherHexCellPolygons(object.spatial.geometry as GeoJsonPolygon, cellSizeM).map((geometry, index) => ({
+      const geometries = presentation.mapAreaGeometries ?? [object.spatial.geometry as GeoJsonPolygon]
+      return geometries.map((geometry, index) => ({
         type: 'Feature',
-        id: `${object.id}:hex:${index}`,
+        id: `${object.id}:area:${index}`,
         geometry,
         properties: {
           id: object.id,

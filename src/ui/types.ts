@@ -1,6 +1,5 @@
 import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
-import type { TrafficSeverity } from '../packs/traffic/model.ts'
 
 export interface ControlInstanceSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -55,13 +54,13 @@ export interface ClockResponse {
   readonly clock: SimulationClockState
 }
 
+export type CreateParameterValue = string | number | boolean
+
 export interface CreateDraft {
   readonly objectType: PackCreateObjectType
   readonly geometry: PackCreationGeometry
   label: string
-  trafficSeverity?: TrafficSeverity
-  trafficSpeedFactor?: number
-  trafficReason?: string
+  parameters: Record<string, CreateParameterValue>
 }
 
 export interface CategoryRow {

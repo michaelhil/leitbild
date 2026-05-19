@@ -1,6 +1,6 @@
 import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
 import { trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
@@ -37,6 +37,36 @@ interface TrafficCreationParameters {
   readonly speedFactor?: number
   readonly reason?: string
 }
+
+const trafficCreateParameters: ReadonlyArray<PackCreateObjectParameter> = [
+  {
+    key: 'severity',
+    label: 'Severity',
+    kind: 'select',
+    defaultValue: 'high',
+    options: [
+      { value: 'low', label: 'Low' },
+      { value: 'moderate', label: 'Moderate' },
+      { value: 'high', label: 'High' },
+      { value: 'blocked', label: 'Blocked' },
+    ],
+  },
+  {
+    key: 'speedFactor',
+    label: 'Speed factor',
+    kind: 'number',
+    defaultValue: 0.55,
+    min: 0.05,
+    max: 1,
+    step: 0.05,
+  },
+  {
+    key: 'reason',
+    label: 'Reason',
+    kind: 'text',
+    defaultValue: 'Operator-created traffic condition',
+  },
+]
 
 const unsupportedCommand = (): PackCommandRequest => {
   throw new Error('traffic pack does not support object creation or target commands yet')
@@ -107,8 +137,8 @@ export const trafficPack: LeitbildPack = {
     },
   ],
   createObjectTypes: [
-    { id: 'traffic_road_segment', label: 'Road traffic', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'route' },
-    { id: 'traffic_area', label: 'Traffic area', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'polygon' },
+    { id: 'traffic_road_segment', label: 'Road traffic', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'route', parameters: trafficCreateParameters },
+    { id: 'traffic_area', label: 'Traffic area', categoryId: 'traffic', icon: 'traffic', color: '#c2410c', placementKind: 'polygon', parameters: trafficCreateParameters },
   ],
   interactionHandlers: [
     createTrafficRouteImpactHandler(),

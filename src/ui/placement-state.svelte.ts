@@ -1,8 +1,7 @@
 import type { GeoJsonPoint, GeoJsonPolygon } from '../core/model/index.ts'
 import type { PackCreateObjectType, PackCreationGeometry } from '../core/packs/protocol.ts'
-import type { TrafficSeverity } from '../packs/traffic/model.ts'
 import { isIconName } from './icons.ts'
-import type { CreateDraft } from './types.ts'
+import type { CreateDraft, CreateParameterValue } from './types.ts'
 
 export interface PlacementState {
   readonly mode: PackCreateObjectType | null
@@ -25,24 +24,14 @@ export const createPlacementState = (config: {
   let draft = $state<CreateDraft | null>(null)
   let points = $state<GeoJsonPoint[]>([])
 
-  const defaultTrafficSeverity = (): TrafficSeverity => 'high'
-
-  const defaultTrafficDraftFields = (
-    type: PackCreateObjectType,
-  ): Pick<CreateDraft, 'trafficSeverity' | 'trafficSpeedFactor' | 'trafficReason'> =>
-    type.id === 'traffic_road_segment' || type.id === 'traffic_area'
-      ? {
-          trafficSeverity: defaultTrafficSeverity(),
-          trafficSpeedFactor: 0.55,
-          trafficReason: 'Operator-created traffic condition',
-        }
-      : {}
+  const defaultParameterValues = (type: PackCreateObjectType): Record<string, CreateParameterValue> =>
+    Object.fromEntries((type.parameters ?? []).map(parameter => [parameter.key, parameter.defaultValue]))
 
   const closePolygon = (polygonPoints: ReadonlyArray<GeoJsonPoint>): GeoJsonPolygon => {
-    if (polygonPoints.length < 3) throw new Error('traffic area requires at least three points')
+    if (polygonPoints.length < 3) throw new Error('polygon placement requires at least three points')
     const coordinates = polygonPoints.map(point => point.coordinates)
     const first = coordinates[0]
-    if (!first) throw new Error('traffic area requires at least one point')
+    if (!first) throw new Error('polygon placement requires at least one point')
     const last = coordinates[coordinates.length - 1]
     const closed = last && last[0] === first[0] && last[1] === first[1]
       ? coordinates
@@ -55,7 +44,7 @@ export const createPlacementState = (config: {
       objectType: type,
       geometry,
       label: config.defaultName(type),
-      ...defaultTrafficDraftFields(type),
+      parameters: defaultParameterValues(type),
     }
     mode = null
     points = []
@@ -90,7 +79,7 @@ export const createPlacementState = (config: {
       }
       const from = nextPoints[0]
       const to = nextPoints[1]
-      if (!from || !to) throw new Error('route traffic requires start and end points')
+      if (!from || !to) throw new Error('route placement requires start and end points')
       createDraftFor(mode, { kind: 'route', from, to })
       return
     }
@@ -103,7 +92,7 @@ export const createPlacementState = (config: {
   const finishPolygon = (): void => {
     if (!mode || (mode.placementKind ?? 'point') !== 'polygon') return
     if (points.length < 3) {
-      config.setCommandStatus(`Traffic area needs ${3 - points.length} more point${3 - points.length === 2 ? 's' : ''}`)
+      config.setCommandStatus(`${mode.label} needs ${3 - points.length} more point${3 - points.length === 2 ? 's' : ''}`)
       return
     }
     createDraftFor(mode, { kind: 'polygon', polygon: closePolygon(points) })

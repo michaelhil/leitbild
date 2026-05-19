@@ -1,6 +1,7 @@
 <script lang="ts">
   import ModalShell from './components/ModalShell.svelte'
-  import type { CreateDraft } from './types.ts'
+  import type { PackCreateObjectParameter } from '../core/packs/protocol.ts'
+  import type { CreateDraft, CreateParameterValue } from './types.ts'
 
   interface Props {
     readonly createDraft: CreateDraft
@@ -10,28 +11,27 @@
 
   let { createDraft, createObject, cancelCreate }: Props = $props()
   let label = $state('')
-  let trafficSeverity = $state<CreateDraft['trafficSeverity']>(undefined)
-  let trafficSpeedFactor = $state<CreateDraft['trafficSpeedFactor']>(undefined)
-  let trafficReason = $state<CreateDraft['trafficReason']>(undefined)
+  let parameters = $state<Record<string, CreateParameterValue>>({})
 
-  const isTrafficDraft = $derived(
-    createDraft.objectType.id === 'traffic_road_segment' || createDraft.objectType.id === 'traffic_area'
-  )
+  const parameterDefinitions = $derived(createDraft.objectType.parameters ?? [])
 
   $effect(() => {
     label = createDraft.label
-    trafficSeverity = createDraft.trafficSeverity
-    trafficSpeedFactor = createDraft.trafficSpeedFactor
-    trafficReason = createDraft.trafficReason
+    parameters = { ...createDraft.parameters }
   })
+
+  const setParameter = (key: string, value: CreateParameterValue): void => {
+    parameters = { ...parameters, [key]: value }
+  }
+
+  const parameterValue = (parameter: PackCreateObjectParameter): CreateParameterValue =>
+    parameters[parameter.key] ?? parameter.defaultValue
 
   const submitDraft = async (): Promise<void> => {
     await createObject({
       ...createDraft,
       label,
-      trafficSeverity,
-      trafficSpeedFactor,
-      trafficReason,
+      parameters,
     })
   }
 </script>
@@ -42,25 +42,35 @@
       Name
       <input bind:value={label} />
     </label>
-    {#if isTrafficDraft}
+    {#each parameterDefinitions as parameter (parameter.key)}
       <label>
-        Severity
-        <select bind:value={trafficSeverity}>
-          <option value="low">Low</option>
-          <option value="moderate">Moderate</option>
-          <option value="high">High</option>
-          <option value="blocked">Blocked</option>
-        </select>
+        {parameter.label}
+        {#if parameter.kind === 'select'}
+          <select
+            value={String(parameterValue(parameter))}
+            onchange={(event) => setParameter(parameter.key, event.currentTarget.value)}
+          >
+            {#each parameter.options as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        {:else if parameter.kind === 'number'}
+          <input
+            type="number"
+            min={parameter.min}
+            max={parameter.max}
+            step={parameter.step}
+            value={Number(parameterValue(parameter))}
+            oninput={(event) => setParameter(parameter.key, Number(event.currentTarget.value))}
+          />
+        {:else}
+          <input
+            value={String(parameterValue(parameter))}
+            oninput={(event) => setParameter(parameter.key, event.currentTarget.value)}
+          />
+        {/if}
       </label>
-      <label>
-        Speed factor
-        <input type="number" min="0.05" max="1" step="0.05" bind:value={trafficSpeedFactor} />
-      </label>
-      <label>
-        Reason
-        <input bind:value={trafficReason} />
-      </label>
-    {/if}
+    {/each}
   </form>
   {#snippet footer()}
     <div class="modal-actions">

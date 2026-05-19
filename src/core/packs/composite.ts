@@ -73,8 +73,19 @@ export const createCompositePack = (config: {
     interactionHandlers: config.packs.flatMap(pack => pack.interactionHandlers ?? []),
     presentObject: (object, context): PackObjectPresentation => {
       const pack = packForObject(config.packs, object)
-      if (pack) return pack.presentObject(object, context)
-      return primaryPack.presentObject(object, context)
+      const presentation = pack ? pack.presentObject(object, context) : primaryPack.presentObject(object, context)
+      const contextualFields = config.packs.flatMap(candidate =>
+        candidate.contextualFields?.(object, context) ?? []
+      )
+      if (contextualFields.length === 0) return presentation
+      const existingKeys = new Set(presentation.fields.map(field => field.key))
+      return {
+        ...presentation,
+        fields: [
+          ...presentation.fields,
+          ...contextualFields.filter(field => !existingKeys.has(field.key)),
+        ],
+      }
     },
     defaultObjectLabel: (typeId, context): string => {
       return packForCreateType(config.packs, typeId).defaultObjectLabel(typeId, context)

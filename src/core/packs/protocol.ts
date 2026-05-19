@@ -14,6 +14,7 @@ export interface PackObjectPresentation {
   readonly color: string
   readonly summary: string
   readonly fields: ReadonlyArray<PackObjectField>
+  readonly mapAreaGeometries?: ReadonlyArray<GeoJsonPolygon>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
   readonly noteworthyUpdates?: boolean
@@ -47,7 +48,35 @@ export interface PackCreateObjectType {
   readonly icon: string
   readonly color: string
   readonly placementKind?: 'point' | 'route' | 'polygon'
+  readonly parameters?: ReadonlyArray<PackCreateObjectParameter>
 }
+
+export type PackCreateObjectParameter =
+  | {
+      readonly key: string
+      readonly label: string
+      readonly kind: 'text'
+      readonly defaultValue: string
+    }
+  | {
+      readonly key: string
+      readonly label: string
+      readonly kind: 'number'
+      readonly defaultValue: number
+      readonly min?: number
+      readonly max?: number
+      readonly step?: number
+    }
+  | {
+      readonly key: string
+      readonly label: string
+      readonly kind: 'select'
+      readonly defaultValue: string
+      readonly options: ReadonlyArray<{
+        readonly value: string
+        readonly label: string
+      }>
+    }
 
 export interface PackCommandRequest {
   readonly kind: string
@@ -72,6 +101,7 @@ export type PackCreationGeometry =
 
 export interface PackObjectPresentationContext {
   readonly objects: ReadonlyArray<OperationalObject>
+  readonly currentTime?: IsoTimestamp
 }
 
 export interface PackObjectCreationContext {
@@ -138,6 +168,10 @@ export interface LeitbildPack {
     object: OperationalObject,
     context: PackObjectPresentationContext,
   ) => PackObjectPresentation
+  readonly contextualFields?: (
+    object: OperationalObject,
+    context: PackObjectPresentationContext,
+  ) => ReadonlyArray<PackObjectField>
   readonly defaultObjectLabel: (
     typeId: string,
     context: PackObjectCreationContext,
