@@ -1057,6 +1057,50 @@ body.rail-resizing {
   inset: 0;
 }
 
+.map-input-debug {
+  position: fixed;
+  right: 12px;
+  bottom: 72px;
+  z-index: 120;
+  width: min(720px, calc(100vw - var(--rail-width, 360px) - 36px));
+  max-height: 38vh;
+  display: grid;
+  gap: 5px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 16px 40px rgba(16, 24, 40, 0.22);
+  color: var(--text);
+  font: 11px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.map-input-debug strong {
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.map-input-debug span {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.map-input-debug ol {
+  min-height: 0;
+  margin: 0;
+  padding-left: 16px;
+  overflow: hidden;
+  color: var(--muted);
+}
+
+.rail-collapsed .map-input-debug,
+.no-rail .map-input-debug {
+  width: min(720px, calc(100vw - 24px));
+}
+
 .object-popup .maplibregl-popup-content {
   min-width: 230px;
   max-width: 310px;

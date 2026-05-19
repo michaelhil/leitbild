@@ -122,6 +122,7 @@
   const railVisible = $derived(railConfig !== null)
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
+  const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
   const placementCursor = $derived(placementCursorFor(placementMode, activePack))
   const systemStatusTone = $derived<StatusTone>(
@@ -708,6 +709,7 @@
             {clock}
             {routeRevision}
             layoutRevision={railLayout.layoutRevision}
+            {debugMapInput}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
             {hasNewInfo}
             {presentationFor}

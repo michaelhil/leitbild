@@ -40,6 +40,7 @@
     readonly clock?: SimulationClockState
     readonly routeRevision: number
     readonly layoutRevision?: number
+    readonly debugMapInput?: boolean
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -62,6 +63,7 @@
     clock,
     routeRevision,
     layoutRevision = 0,
+    debugMapInput = false,
     highlightedObjectIds = [],
     hasNewInfo,
     presentationFor,
@@ -98,10 +100,133 @@
   let appliedCameraKey: string | null = null
   let mapGestureActive = false
   let viewportActivationFrame: number | null = null
+  let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
+  let mapInputDebugSummary = $state('Waiting for map input')
+  let stopMapInputDebug: (() => void) | null = null
 
   interface CameraInteractionHandler {
     readonly enable: () => void
     readonly isEnabled: () => boolean
+  }
+
+  type InputDebugEvent = Event & {
+    readonly clientX?: number
+    readonly clientY?: number
+    readonly deltaX?: number
+    readonly deltaY?: number
+    readonly deltaMode?: number
+    readonly ctrlKey?: boolean
+    readonly metaKey?: boolean
+    readonly shiftKey?: boolean
+    readonly altKey?: boolean
+    readonly pointerType?: string
+    readonly button?: number
+    readonly buttons?: number
+    readonly scale?: number
+    readonly rotation?: number
+  }
+
+  const targetDescription = (target: EventTarget | Element | null): string => {
+    if (!(target instanceof Element)) return target === window ? 'window' : target === document ? 'document' : 'unknown'
+    const id = target.id ? `#${target.id}` : ''
+    const classes = target.classList.length > 0 ? `.${[...target.classList].slice(0, 4).join('.')}` : ''
+    return `${target.tagName.toLowerCase()}${id}${classes}`
+  }
+
+  const topElementDescription = (event: InputDebugEvent): string => {
+    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return 'n/a'
+    return targetDescription(document.elementFromPoint(event.clientX!, event.clientY!))
+  }
+
+  const cameraInteractionDebug = (current: MapLibreMap | null): string => {
+    if (!current) return 'handlers=no-map'
+    return cameraInteractionHandlers(current)
+      .map(({ name, handler }) => `${name}:${handler.isEnabled() ? 'on' : 'off'}`)
+      .join(' ')
+  }
+
+  const cameraStateDebug = (current: MapLibreMap | null): string => {
+    if (!current) return 'camera=no-map'
+    const center = current.getCenter()
+    return `z=${current.getZoom().toFixed(2)} c=${center.lng.toFixed(5)},${center.lat.toFixed(5)} moving=${current.isMoving()}`
+  }
+
+  const eventModifierDebug = (event: InputDebugEvent): string => {
+    const modifiers = [
+      event.ctrlKey ? 'ctrl' : '',
+      event.metaKey ? 'meta' : '',
+      event.shiftKey ? 'shift' : '',
+      event.altKey ? 'alt' : '',
+    ].filter(Boolean)
+    return modifiers.length > 0 ? modifiers.join('+') : 'no-mod'
+  }
+
+  const eventDetailDebug = (event: InputDebugEvent): string => {
+    const details = [
+      event.pointerType ? `pointer=${event.pointerType}` : '',
+      typeof event.button === 'number' ? `button=${event.button}` : '',
+      typeof event.buttons === 'number' ? `buttons=${event.buttons}` : '',
+      typeof event.deltaY === 'number' ? `d=${Math.round(event.deltaX ?? 0)},${Math.round(event.deltaY)} mode=${event.deltaMode ?? 'n/a'}` : '',
+      typeof event.scale === 'number' ? `scale=${event.scale.toFixed(3)}` : '',
+      typeof event.rotation === 'number' ? `rotation=${event.rotation.toFixed(1)}` : '',
+    ].filter(Boolean)
+    return details.length > 0 ? details.join(' ') : 'no-detail'
+  }
+
+  const recordMapInputDebug = (label: string, event?: Event): void => {
+    if (!debugMapInput) return
+    const inputEvent = event as InputDebugEvent | undefined
+    const entry = [
+      `${performance.now().toFixed(0)}ms`,
+      label,
+      inputEvent ? `type=${inputEvent.type}` : 'type=note',
+      inputEvent ? `target=${targetDescription(inputEvent.target)}` : '',
+      inputEvent ? `top=${topElementDescription(inputEvent)}` : '',
+      inputEvent ? `default=${inputEvent.defaultPrevented}` : '',
+      inputEvent ? eventModifierDebug(inputEvent) : '',
+      inputEvent ? eventDetailDebug(inputEvent) : '',
+      cameraInteractionDebug(map),
+      cameraStateDebug(map),
+    ].filter(Boolean).join(' | ')
+    mapInputDebugSummary = entry
+    mapInputDebugEntries = [...mapInputDebugEntries.slice(-17), entry]
+  }
+
+  const addDebugListener = (
+    cleanups: Array<() => void>,
+    target: EventTarget,
+    targetName: string,
+    eventType: string,
+  ): void => {
+    const listener = (event: Event): void => recordMapInputDebug(`${targetName}:${eventType}`, event)
+    target.addEventListener(eventType, listener, { capture: true, passive: true })
+    cleanups.push(() => target.removeEventListener(eventType, listener, { capture: true }))
+  }
+
+  const installMapInputDebug = (current: MapLibreMap): void => {
+    if (!debugMapInput) return
+    stopMapInputDebug?.()
+    const cleanups: Array<() => void> = []
+    const canvas = current.getCanvas()
+    const container = current.getContainer()
+    const canvasContainer = current.getCanvasContainer()
+    for (const eventType of ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'touchstart', 'touchmove', 'touchend', 'gesturestart', 'gesturechange', 'gestureend']) {
+      addDebugListener(cleanups, window, 'window', eventType)
+      addDebugListener(cleanups, document, 'document', eventType)
+      addDebugListener(cleanups, container, 'container', eventType)
+      addDebugListener(cleanups, canvasContainer, 'canvas-container', eventType)
+      addDebugListener(cleanups, canvas, 'canvas', eventType)
+    }
+    for (const eventType of ['dragstart', 'drag', 'dragend', 'zoomstart', 'zoom', 'zoomend', 'movestart', 'move', 'moveend']) {
+      const listener = (event: unknown): void => recordMapInputDebug(`maplibre:${eventType}`, event instanceof Event ? event : undefined)
+      current.on(eventType, listener)
+      cleanups.push(() => current.off(eventType, listener))
+    }
+    stopMapInputDebug = () => {
+      for (const cleanup of cleanups) cleanup()
+      stopMapInputDebug = null
+    }
+    recordMapInputDebug('debug:installed')
   }
 
   const interactiveObjectLayerIds = [
@@ -144,6 +269,7 @@
 
   const activateMapViewport = (current: MapLibreMap): void => {
     // MapLibre controls call camera methods that clear stale handler state; do the same once our Svelte layout has settled.
+    recordMapInputDebug('activation:viewport')
     assertCameraInteractionContract(current)
     current.stop()
     current.resize({ source: 'leitbild-map-viewport-activation' })
@@ -525,6 +651,7 @@
       cooperativeGestures: false,
     })
     assertCameraInteractionContract(current)
+    installMapInputDebug(current)
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
@@ -553,6 +680,7 @@
     })
 
     return () => {
+      stopMapInputDebug?.()
       cancelViewportActivation()
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
@@ -621,6 +749,7 @@
     layoutRevision
     const current = map
     if (!current) return
+    recordMapInputDebug('effect:layout-resize')
     current.resize({ source: 'leitbild-layout-resize' })
     scheduleViewportActivation()
   })
@@ -628,6 +757,7 @@
   $effect(() => {
     const current = map
     if (!current) return
+    recordMapInputDebug('effect:scenario-camera')
     applyScenarioCameraDefault()
   })
 
@@ -650,3 +780,14 @@
 </script>
 
 <div class="map" bind:this={mapElement}></div>
+{#if debugMapInput}
+  <aside class="map-input-debug" aria-live="polite">
+    <strong>Map Input Trace</strong>
+    <span>{mapInputDebugSummary}</span>
+    <ol>
+      {#each mapInputDebugEntries as entry}
+        <li>{entry}</li>
+      {/each}
+    </ol>
+  </aside>
+{/if}
