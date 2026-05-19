@@ -181,8 +181,8 @@ describe('map feature projection', () => {
           type: 'Polygon' as const,
           coordinates: [[
             geoPointFromLonLat(10.70, 59.90).coordinates,
-            geoPointFromLonLat(10.72, 59.90).coordinates,
-            geoPointFromLonLat(10.72, 59.92).coordinates,
+            geoPointFromLonLat(10.82, 59.90).coordinates,
+            geoPointFromLonLat(10.82, 59.98).coordinates,
             geoPointFromLonLat(10.70, 59.90).coordinates,
           ]],
         },
@@ -218,8 +218,8 @@ describe('map feature projection', () => {
           type: 'Polygon' as const,
           coordinates: [[
             geoPointFromLonLat(10.70, 59.90).coordinates,
-            geoPointFromLonLat(10.72, 59.90).coordinates,
-            geoPointFromLonLat(10.72, 59.92).coordinates,
+            geoPointFromLonLat(10.82, 59.90).coordinates,
+            geoPointFromLonLat(10.82, 59.98).coordinates,
             geoPointFromLonLat(10.70, 59.90).coordinates,
           ]],
         },
@@ -236,6 +236,7 @@ describe('map feature projection', () => {
 
     expect(mapSourceIds.weatherAreas).toBe('weather-area-source')
     expect(trafficFeatures.features).toHaveLength(0)
-    expect(weatherFeatures.features).toHaveLength(1)
+    expect(weatherFeatures.features.length).toBeGreaterThan(1)
+    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:hex:')
   })
 })

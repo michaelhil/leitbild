@@ -1,6 +1,8 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
 import type { PackObjectStatusTone } from '../core/packs/protocol.ts'
 import { remainingRouteGeometry } from '../core/model/index.ts'
+import { weatherHexCellPolygons } from '../packs/weather/hex-field.ts'
+import { weatherDomainDataSchema } from '../packs/weather/model.ts'
 import { statusToneColor } from './status-presentation.ts'
 
 export const mapSourceIds = {
@@ -195,17 +197,19 @@ export const createWeatherAreaFeatureCollection = (
   type: 'FeatureCollection',
   features: objects
     .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'Polygon' && presentObject(object).categoryId === 'weather')
-    .map(object => {
+    .flatMap(object => {
       const presentation = presentObject(object)
-      return {
+      const parsed = weatherDomainDataSchema.safeParse(object.domainData)
+      const cellSizeM = parsed.success ? parsed.data.render?.cellSizeM ?? 1200 : 1200
+      return weatherHexCellPolygons(object.spatial.geometry as GeoJsonPolygon, cellSizeM).map((geometry, index) => ({
         type: 'Feature',
-        id: object.id,
-        geometry: object.spatial.geometry as GeoJsonPolygon,
+        id: `${object.id}:hex:${index}`,
+        geometry,
         properties: {
           id: object.id,
           color: presentation.color,
           summary: presentation.summary,
         },
-      }
+      }))
     }),
 })

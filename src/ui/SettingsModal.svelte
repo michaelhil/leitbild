@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Moon, RotateCcw, Sun } from 'lucide-svelte'
+  import { Eye, EyeOff, Moon, RotateCcw, Sun } from 'lucide-svelte'
   import type { ThemeMode } from './theme.ts'
   import type { ScenarioListItem } from './types.ts'
   import IconButton from './components/IconButton.svelte'
@@ -7,20 +7,26 @@
 
   interface Props {
     readonly theme: ThemeMode
+    readonly weatherLayerAvailable: boolean
+    readonly weatherLayerVisible: boolean
     readonly scenarios: ReadonlyArray<ScenarioListItem>
     readonly selectedScenarioId: string
     readonly close: () => void
     readonly toggleTheme: () => void
+    readonly toggleWeatherLayer: () => void
     readonly resetScenario: () => Promise<void>
     readonly selectScenario: (scenarioId: string) => Promise<void>
   }
 
   let {
     theme,
+    weatherLayerAvailable,
+    weatherLayerVisible,
     scenarios,
     selectedScenarioId,
     close,
     toggleTheme,
+    toggleWeatherLayer,
     resetScenario,
     selectScenario,
   }: Props = $props()
@@ -48,6 +54,23 @@
         onClick={toggleTheme}
       />
     </section>
+
+    {#if weatherLayerAvailable}
+      <section class="settings-row">
+        <div>
+          <strong>Weather overlay</strong>
+          <span>Show or hide the weather field layer on the map.</span>
+        </div>
+        <IconButton
+          label={weatherLayerVisible ? 'Hide weather overlay' : 'Show weather overlay'}
+          title={weatherLayerVisible ? 'Hide weather overlay' : 'Show weather overlay'}
+          icon={weatherLayerVisible ? Eye : EyeOff}
+          pressed={weatherLayerVisible}
+          variant="ghost"
+          onClick={toggleWeatherLayer}
+        />
+      </section>
+    {/if}
 
     <section class="settings-row">
       <div>

@@ -83,6 +83,11 @@ export const weatherEvolutionSchema = z.object({
 })
 export type WeatherEvolution = z.infer<typeof weatherEvolutionSchema>
 
+export const weatherRenderSchema = z.object({
+  cellSizeM: z.number().finite().positive(),
+})
+export type WeatherRender = z.infer<typeof weatherRenderSchema>
+
 export const weatherDomainDataSchema = z.object({
   type: z.literal('weather_condition'),
   schemaVersion: z.literal(1),
@@ -92,6 +97,7 @@ export const weatherDomainDataSchema = z.object({
   surface: weatherSurfaceSchema,
   quality: weatherQualitySchema,
   evolution: weatherEvolutionSchema.optional(),
+  render: weatherRenderSchema.optional(),
   summary: z.string().min(1),
 })
 export type WeatherDomainData = z.infer<typeof weatherDomainDataSchema>

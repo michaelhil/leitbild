@@ -101,6 +101,7 @@
   let settingsModalOpen = $state(false)
   let MapSurface = $state<Component | null>(null)
   let theme = $state<ThemeMode>('light')
+  let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -118,6 +119,14 @@
   const surface = $derived(scenarioDefinition?.surface ?? null)
   const railConfig = $derived(surfaceObjectRailConfig(surface))
   const mapConfig = $derived(surfaceMapConfig(surface))
+  const effectiveMapConfig = $derived(mapConfig === null
+    ? null
+    : {
+        ...mapConfig,
+        layers: weatherLayerVisible
+          ? mapConfig.layers
+          : mapConfig.layers.filter(layer => layer !== 'weather'),
+      })
   const mapVisible = $derived(mapConfig !== null)
   const railVisible = $derived(railConfig !== null)
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
@@ -135,6 +144,10 @@
 
   const toggleTheme = (): void => {
     theme = toggleThemeMode()
+  }
+
+  const toggleWeatherLayer = (): void => {
+    weatherLayerVisible = !weatherLayerVisible
   }
 
   const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
@@ -730,7 +743,7 @@
             {placementCursor}
             {placementPoints}
             {theme}
-            mapConfig={mapConfig}
+            mapConfig={effectiveMapConfig}
             {routeRevision}
             layoutRevision={railLayout.layoutRevision}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
@@ -781,10 +794,13 @@
 {#if settingsModalOpen}
   <SettingsModal
     {theme}
+    weatherLayerAvailable={mapConfig?.layers.includes('weather') ?? false}
+    {weatherLayerVisible}
     scenarios={scenarioOptions}
     selectedScenarioId={scenarioState?.scenarioId ?? ''}
     close={closeSettings}
     {toggleTheme}
+    {toggleWeatherLayer}
     {resetScenario}
     {selectScenario}
   />

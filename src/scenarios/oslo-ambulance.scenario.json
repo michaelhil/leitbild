@@ -101,13 +101,9 @@
       "type": "weather_condition",
       "id": "weather:oslo-showery-overcast",
       "label": "Showery overcast",
-      "polygon": [
-        [10.6750, 59.8950],
-        [10.8350, 59.8950],
-        [10.8350, 59.9550],
-        [10.6750, 59.9550],
-        [10.6750, 59.8950]
-      ],
+      "center": [10.7522, 59.9250],
+      "radiusM": 6500,
+      "cellSizeM": 900,
       "summary": "Mild overcast weather with light showers across central Oslo",
       "severity": "notice",
       "atmosphere": {

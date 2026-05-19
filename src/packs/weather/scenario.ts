@@ -36,18 +36,67 @@ const weatherConditionSpecSchema = z.object({
   type: z.literal('weather_condition'),
   id: objectIdSchema,
   label: z.string().min(1),
-  polygon: z.array(lonLatSchema).min(4),
+  polygon: z.array(lonLatSchema).min(4).optional(),
+  center: lonLatSchema.optional(),
+  radiusM: z.number().finite().positive().optional(),
+  cellSizeM: z.number().finite().positive().default(1200),
   summary: z.string().min(1),
   severity: weatherSeveritySchema.default('normal'),
   atmosphere: weatherAtmospherePatchSchema.default({}),
   surface: weatherSurfacePatchSchema.default({}),
   evolution: weatherEvolutionSchema.optional(),
+}).superRefine((spec, ctx) => {
+  const hasPolygon = spec.polygon !== undefined
+  const hasRadial = spec.center !== undefined || spec.radiusM !== undefined
+  if (hasPolygon === hasRadial) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'weather condition requires either polygon or center/radiusM',
+      path: ['polygon'],
+    })
+  }
+  if (hasRadial && (spec.center === undefined || spec.radiusM === undefined)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'radial weather condition requires both center and radiusM',
+      path: ['center'],
+    })
+  }
 })
 
 const polygonFromPath = (path: ReadonlyArray<readonly [number, number]>): GeoJsonPolygon => ({
   type: 'Polygon',
   coordinates: [path.map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates)],
 })
+
+const radialPolygon = (
+  center: readonly [number, number],
+  radiusM: number,
+): GeoJsonPolygon => {
+  const pointCount = 48
+  const [centerLon, centerLat] = center
+  const metersPerDegreeLatitude = 111_320
+  const metersPerDegreeLongitude = Math.max(1, metersPerDegreeLatitude * Math.cos(centerLat * Math.PI / 180))
+  const coordinates = Array.from({ length: pointCount }, (_, index) => {
+    const angle = (2 * Math.PI * index) / pointCount
+    return geoPointFromLonLat(
+      centerLon + (radiusM * Math.cos(angle)) / metersPerDegreeLongitude,
+      centerLat + (radiusM * Math.sin(angle)) / metersPerDegreeLatitude,
+    ).coordinates
+  })
+  const first = coordinates[0]
+  if (!first) throw new Error('weather radial polygon generation produced no coordinates')
+  return {
+    type: 'Polygon',
+    coordinates: [[...coordinates, first]],
+  }
+}
+
+const geometryForSpec = (spec: z.infer<typeof weatherConditionSpecSchema>): GeoJsonPolygon => {
+  if (spec.polygon) return polygonFromPath(spec.polygon)
+  if (!spec.center || spec.radiusM === undefined) throw new Error(`weather condition ${spec.id} is missing radial geometry`)
+  return radialPolygon(spec.center, spec.radiusM)
+}
 
 export const createWeatherDomainData = (config: {
   readonly at: IsoTimestamp
@@ -56,6 +105,7 @@ export const createWeatherDomainData = (config: {
   readonly atmosphere?: WeatherAtmospherePatch
   readonly surface?: WeatherSurfacePatch
   readonly evolution?: z.infer<typeof weatherEvolutionSchema>
+  readonly render?: { readonly cellSizeM: number }
 }): WeatherDomainData => {
   const atmosphere = weatherAtmosphereSchema.parse({
     ...defaultAtmosphere(config.at),
@@ -84,6 +134,7 @@ export const createWeatherDomainData = (config: {
       validAt: config.at,
     },
     ...(config.evolution ? { evolution: config.evolution } : {}),
+    ...(config.render ? { render: config.render } : {}),
     summary: config.summary,
   }, config.at, 0))
 }
@@ -100,6 +151,7 @@ const weatherConditionObject = (config: {
     ...(Object.keys(config.spec.atmosphere).length > 0 ? { atmosphere: config.spec.atmosphere } : {}),
     ...(Object.keys(config.spec.surface).length > 0 ? { surface: config.spec.surface } : {}),
     ...(config.spec.evolution ? { evolution: config.spec.evolution } : {}),
+    render: { cellSizeM: config.spec.cellSizeM },
   })
   return {
     id: config.spec.id,
@@ -143,7 +195,7 @@ const weatherConditionObject = (config: {
 export const weatherScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec, context): OperationalObject => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
-    return weatherConditionObject({ spec, geometry: polygonFromPath(spec.polygon), at: context.at })
+    return weatherConditionObject({ spec, geometry: geometryForSpec(spec), at: context.at })
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`weather scenario operation is not supported yet: ${rawOperation.type}`)

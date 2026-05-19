@@ -80,13 +80,9 @@
       "type": "weather_condition",
       "id": "weather:halden-coastal-showers",
       "label": "Cool coastal showers",
-      "polygon": [
-        [11.3480, 59.1120],
-        [11.4200, 59.1120],
-        [11.4200, 59.1430],
-        [11.3480, 59.1430],
-        [11.3480, 59.1120]
-      ],
+      "center": [11.3870, 59.1250],
+      "radiusM": 3200,
+      "cellSizeM": 650,
       "summary": "Cool humid weather with intermittent light rain over central Halden",
       "severity": "notice",
       "atmosphere": {

@@ -81,11 +81,14 @@ describe('weather pack', () => {
     if (!weatherObject) throw new Error('Oslo scenario missing weather condition')
 
     const presentation = weatherPack.presentObject(weatherObject, { objects: osloAmbulanceScenario.initialObjects })
+    const parsedWeather = weatherDomainDataSchema.parse(weatherObject.domainData)
 
     expect(osloAmbulanceScenario.packs).toContain('weather')
     expect(presentation.categoryId).toBe('weather')
     expect(presentation.noteworthyUpdates).toBe(false)
     expect(presentation.fields.map(field => field.key)).toContain('surface')
+    expect(parsedWeather.render?.cellSizeM).toBe(900)
+    expect(weatherObject.spatial.geometry?.type).toBe('Polygon')
     const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
     expect(sample.sourceObjectIds).toContain(weatherObject.id)
     expect(sample.atmosphere.precipitation.type).toBe('rain')
