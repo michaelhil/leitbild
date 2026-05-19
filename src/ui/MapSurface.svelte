@@ -98,8 +98,7 @@
   let appliedTheme: ThemeMode | null = null
   let mapInitialized = false
   let appliedCameraKey: string | null = null
-  let mapGestureActive = false
-  let viewportActivationFrame: number | null = null
+  let mapCameraGestureActive = false
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let stopMapInputDebug: (() => void) | null = null
@@ -261,33 +260,6 @@
     }
   }
 
-  const cancelViewportActivation = (): void => {
-    if (viewportActivationFrame === null) return
-    cancelAnimationFrame(viewportActivationFrame)
-    viewportActivationFrame = null
-  }
-
-  const activateMapViewport = (current: MapLibreMap): void => {
-    // MapLibre controls call camera methods that clear stale handler state; do the same once our Svelte layout has settled.
-    recordMapInputDebug('activation:viewport')
-    assertCameraInteractionContract(current)
-    current.stop()
-    current.resize({ source: 'leitbild-map-viewport-activation' })
-  }
-
-  const scheduleViewportActivation = (): void => {
-    const current = map
-    if (!current) return
-    cancelViewportActivation()
-    viewportActivationFrame = requestAnimationFrame(() => {
-      viewportActivationFrame = requestAnimationFrame(() => {
-        viewportActivationFrame = null
-        if (map !== current) return
-        activateMapViewport(current)
-      })
-    })
-  }
-
   const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
     if (layer === 'objects') return [
       mapLayerIds.objectHitArea,
@@ -347,6 +319,7 @@
     const cameraKey = cameraKeyFor(mapConfig)
     if (cameraKey === appliedCameraKey) return
     appliedCameraKey = cameraKey
+    recordMapInputDebug('camera:apply-scenario-default')
     current.jumpTo({
       center: mapConfig.center.coordinates,
       zoom: mapConfig.zoom,
@@ -490,7 +463,7 @@
     if (packAreaRefreshInterval !== null) return
     packAreaRefreshInterval = setInterval(() => {
       if (!loaded || !mapConfig.layers.includes('weather')) return
-      if (mapGestureActive) return
+      if (mapCameraGestureActive) return
       scheduleSourceRefresh({ weather: true })
     }, 2_000)
   }
@@ -619,7 +592,6 @@
       applyConfiguredLayerVisibility()
       refreshSources()
       startPackAreaRefresh()
-      scheduleViewportActivation()
       if (!mapReadyNotified) {
         mapReadyNotified = true
         onMapReady()
@@ -655,7 +627,6 @@
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
-    scheduleViewportActivation()
     current.on('error', (event) => {
       const error = event.error
       onMapError(error instanceof Error ? error.message : 'Vector map failed to load')
@@ -666,10 +637,10 @@
       onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
     })
     current.on('movestart', () => {
-      mapGestureActive = true
+      mapCameraGestureActive = true
     })
     current.on('moveend', () => {
-      mapGestureActive = false
+      mapCameraGestureActive = false
       scheduleSourceRefresh({ weather: true })
     })
     current.on('style.load', () => {
@@ -681,7 +652,6 @@
 
     return () => {
       stopMapInputDebug?.()
-      cancelViewportActivation()
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
       stopPackAreaRefresh()
@@ -697,7 +667,7 @@
       mapReadyNotified = false
       mapInitialized = false
       appliedCameraKey = null
-      mapGestureActive = false
+      mapCameraGestureActive = false
     }
   })
 
@@ -726,7 +696,7 @@
 
   $effect(() => {
     clock
-    if (!mapConfig.layers.includes('weather') || mapGestureActive) return
+    if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
     scheduleSourceRefresh({ weather: true })
   })
 
@@ -751,13 +721,11 @@
     if (!current) return
     recordMapInputDebug('effect:layout-resize')
     current.resize({ source: 'leitbild-layout-resize' })
-    scheduleViewportActivation()
   })
 
   $effect(() => {
     const current = map
     if (!current) return
-    recordMapInputDebug('effect:scenario-camera')
     applyScenarioCameraDefault()
   })
 
