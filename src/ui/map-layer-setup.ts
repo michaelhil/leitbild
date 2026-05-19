@@ -56,6 +56,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     id: mapLayerIds.weatherAreaFill,
     type: 'fill',
     source: mapSourceIds.weatherAreas,
+    layout: {
+      'fill-sort-key': ['coalesce', ['get', 'sortKey'], 0],
+    },
     paint: {
       'fill-color': ['get', 'color'],
       'fill-opacity': ['coalesce', ['get', 'opacity'], 0.12],
@@ -66,9 +69,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     type: 'line',
     source: mapSourceIds.weatherAreas,
     paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 0.6,
-      'line-opacity': 0.16,
+      'line-color': ['coalesce', ['get', 'lineColor'], ['get', 'color']],
+      'line-width': ['coalesce', ['get', 'lineWidth'], 0.6],
+      'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.16],
     },
     layout: {
       'line-cap': 'round',

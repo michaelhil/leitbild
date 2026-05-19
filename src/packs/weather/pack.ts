@@ -4,7 +4,7 @@ import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherSampleAtPoint } from './conditions.ts'
-import { weatherCellsForViewport } from './field.ts'
+import { weatherCellsForViewport, weatherInfluenceShapesForViewport } from './field.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
@@ -73,11 +73,23 @@ const weatherCellColor = (severity: WeatherSeverity): string => {
 }
 
 const weatherCellOpacity = (severity: WeatherSeverity): number => {
-  if (severity === 'hazard') return 0.22
-  if (severity === 'adverse') return 0.18
-  if (severity === 'notice') return 0.13
-  return 0.06
+  if (severity === 'hazard') return 0.16
+  if (severity === 'adverse') return 0.12
+  if (severity === 'notice') return 0.08
+  return 0.035
 }
+
+const influenceShapeColor = (severity: WeatherSeverity): string =>
+  severity === 'hazard'
+    ? '#dc2626'
+    : severity === 'adverse'
+      ? '#0ea5e9'
+      : severity === 'notice'
+        ? '#38bdf8'
+        : '#22c55e'
+
+const influenceShapeOpacity = (weight: number, normalizedRadius: number): number =>
+  Math.max(0.018, Math.min(0.085, 0.018 + weight * 0.055 + (1 - normalizedRadius) * 0.012))
 
 const statusToneFor = (severity: WeatherSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
   if (severity === 'hazard') return 'error'
@@ -137,9 +149,7 @@ export const weatherPack: LeitbildPack = {
       matches: (object: OperationalObject): boolean => parseWeatherData(object) !== null,
     },
   ],
-  createObjectTypes: [
-    { id: 'weather_probe', label: 'Weather probe', categoryId: 'weather', icon: 'weather', color: '#2563eb', placementKind: 'point' },
-  ],
+  createObjectTypes: [],
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const tone = statusToneFor(data?.severity)
@@ -156,7 +166,7 @@ export const weatherPack: LeitbildPack = {
   mapAreaFeatures: (context) => {
     if (!context.map) return []
     const at = context.currentTime ?? nowIso()
-    return weatherCellsForViewport({
+    const cells = weatherCellsForViewport({
       objects: context.objects,
       viewport: context.map.viewport,
       zoom: context.map.zoom,
@@ -167,8 +177,30 @@ export const weatherPack: LeitbildPack = {
       geometry: cell.polygon,
       color: weatherCellColor(cell.sample.severity),
       opacity: weatherCellOpacity(cell.sample.severity),
+      lineColor: weatherCellColor(cell.sample.severity),
+      lineOpacity: cell.sample.severity === 'normal' ? 0.045 : 0.11,
+      lineWidth: 0.45,
+      sortKey: 0,
       summary: `${cell.sample.severity} weather`,
     }))
+    const influenceShapes = weatherInfluenceShapesForViewport({
+      objects: context.objects,
+      viewport: context.map.viewport,
+      zoom: context.map.zoom,
+      at,
+    }).map(shape => ({
+      id: `weather:${shape.id}`,
+      categoryId: 'weather',
+      geometry: shape.polygon,
+      color: influenceShapeColor(shape.severity),
+      opacity: influenceShapeOpacity(shape.weight, shape.normalizedRadius),
+      lineColor: influenceShapeColor(shape.severity),
+      lineOpacity: shape.normalizedRadius >= 1 ? 0.35 : 0.06,
+      lineWidth: shape.normalizedRadius >= 1 ? 1.4 : 0.4,
+      sortKey: 10 + Math.round((1 - shape.normalizedRadius) * 10),
+      summary: shape.summary,
+    }))
+    return [...cells, ...influenceShapes]
   },
   contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
     const point = samplePointFor(object)

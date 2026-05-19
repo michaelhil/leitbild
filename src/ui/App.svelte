@@ -36,6 +36,7 @@
   import { createPlacementState } from './placement-state.svelte.ts'
   import { pathForRecentScenarioRun, rememberRecentScenarioRun } from './recent-scenario-runs.ts'
   import { createRailLayoutState } from './rail-layout-state.svelte.ts'
+  import { simulationTimeAt } from './simulation-clock.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import ControlRail from './ControlRail.svelte'
   import CreateObjectModal from './CreateObjectModal.svelte'
@@ -140,14 +141,17 @@
     weatherLayerVisible = !weatherLayerVisible
   }
 
-  const presentationFor = (object: OperationalObject): PackObjectPresentation =>
-    activePack.presentObject(object, { objects, currentTime: clock?.currentTime })
+  const currentPackTime = (): IsoTimestamp | undefined =>
+    simulationTimeAt(clock)
 
-  const mapAreaFeaturesFor = (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number }): ReadonlyArray<PackMapAreaFeature> =>
+  const presentationFor = (object: OperationalObject): PackObjectPresentation =>
+    activePack.presentObject(object, { objects, currentTime: currentPackTime() })
+
+  const mapAreaFeaturesFor = (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }): ReadonlyArray<PackMapAreaFeature> =>
     activePack.mapAreaFeatures?.({
       objects,
-      currentTime: clock?.currentTime,
-      map: context,
+      currentTime: context.currentTime ?? currentPackTime(),
+      map: { viewport: context.viewport, zoom: context.zoom },
     }) ?? []
 
   const hasNewInfo = (object: OperationalObject): boolean => {
@@ -701,7 +705,7 @@
             {placementPoints}
             {theme}
             mapConfig={effectiveMapConfig}
-            currentTime={clock?.currentTime}
+            {clock}
             {routeRevision}
             layoutRevision={railLayout.layoutRevision}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}

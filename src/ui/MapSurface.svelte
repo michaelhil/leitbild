@@ -1,7 +1,7 @@
 <script lang="ts">
   import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl'
   import { Protocol as PmtilesProtocol } from 'pmtiles'
-  import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
+  import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { iconSvgDataUrl, type IconName } from './icons.ts'
@@ -18,6 +18,7 @@
   } from './map-features.ts'
   import { registerObjectIconVariants } from './map-icon-registry.ts'
   import { addOperationalMapSourcesAndLayers } from './map-layer-setup.ts'
+  import { simulationTimeAt } from './simulation-clock.ts'
   import {
     createDisplayMotionState,
     displayObjectsFor,
@@ -36,13 +37,13 @@
     readonly placementPoints: ReadonlyArray<GeoJsonPoint>
     readonly theme: ThemeMode
     readonly mapConfig: SurfaceMapRegionConfig
-    readonly currentTime?: IsoTimestamp
+    readonly clock?: SimulationClockState
     readonly routeRevision: number
     readonly layoutRevision?: number
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
-    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number }) => ReadonlyArray<PackMapAreaFeature>
+    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }) => ReadonlyArray<PackMapAreaFeature>
     readonly onObjectSelected: (object: OperationalObject) => void
     readonly onPlacementPoint: (point: GeoJsonPoint) => void
     readonly onObjectSeen: (object: OperationalObject) => void
@@ -58,7 +59,7 @@
     placementPoints,
     theme,
     mapConfig,
-    currentTime,
+    clock,
     routeRevision,
     layoutRevision = 0,
     highlightedObjectIds = [],
@@ -88,6 +89,7 @@
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
+  let packAreaRefreshInterval: ReturnType<typeof setInterval> | null = null
   let pmtilesProtocolRegistered = false
   let objectInteractionsAdded = false
   let mapReadyNotified = false
@@ -169,11 +171,14 @@
     }
   }
 
+  const currentDisplayTime = (): IsoTimestamp | undefined =>
+    simulationTimeAt(clock)
+
   const currentPackMapAreaFeatures = (): ReadonlyArray<PackMapAreaFeature> => {
     const current = map
     const viewport = currentViewport()
     if (!current || !viewport) return []
-    return mapAreaFeaturesFor({ viewport, zoom: current.getZoom() })
+    return mapAreaFeaturesFor({ viewport, zoom: current.getZoom(), currentTime: currentDisplayTime() })
   }
 
   const escapeHtml = (value: string): string =>
@@ -271,6 +276,20 @@
     if (displayFrame === null) return
     cancelAnimationFrame(displayFrame)
     displayFrame = null
+  }
+
+  const stopPackAreaRefresh = (): void => {
+    if (packAreaRefreshInterval === null) return
+    clearInterval(packAreaRefreshInterval)
+    packAreaRefreshInterval = null
+  }
+
+  const startPackAreaRefresh = (): void => {
+    if (packAreaRefreshInterval !== null) return
+    packAreaRefreshInterval = setInterval(() => {
+      if (!loaded || !mapConfig.layers.includes('weather')) return
+      scheduleSourceRefresh({ weather: true })
+    }, 1000)
   }
 
   const scheduleDisplayAnimation = (): void => {
@@ -395,6 +414,7 @@
       lastSelectedControllerId = selectedControllerId
       applyConfiguredLayerVisibility()
       refreshSources()
+      startPackAreaRefresh()
       if (!mapReadyNotified) {
         mapReadyNotified = true
         onMapReady()
@@ -441,6 +461,7 @@
     return () => {
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
+      stopPackAreaRefresh()
       hideMarkerPopup()
       map?.remove()
       if (pmtilesProtocolRegistered) {
@@ -460,7 +481,7 @@
     selectedControllerId
     highlightedObjectIds
     routeRevision
-    currentTime
+    clock
     renderRevision
     placementPoints
     const nowMs = performance.now()

@@ -38,6 +38,16 @@ export interface WeatherSolvedCell {
   readonly sample: WeatherSample
 }
 
+export interface WeatherInfluenceShape {
+  readonly id: string
+  readonly objectId: string
+  readonly polygon: GeoJsonPolygon
+  readonly weight: number
+  readonly normalizedRadius: number
+  readonly summary: string
+  readonly severity: WeatherSeverity
+}
+
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
 
@@ -122,14 +132,45 @@ const hexPolygonAt = (
   return { type: 'Polygon', coordinates: [[...coordinates, first]] }
 }
 
+const ellipsePolygonAt = (
+  frame: WeatherInfluenceKeyframe,
+  normalizedRadius: number,
+  referenceLatitude: number,
+): GeoJsonPolygon => {
+  const center = toLocalPoint(frame.center, referenceLatitude)
+  const radius = clamp01(normalizedRadius)
+  const angle = frame.rotationDeg * Math.PI / 180
+  const pointCount = 72
+  const coordinates = Array.from({ length: pointCount }, (_, index) => {
+    const theta = (Math.PI * 2 * index) / pointCount
+    const localX = Math.cos(theta) * frame.semiMajorAxisM * radius
+    const localY = Math.sin(theta) * frame.semiMinorAxisM * radius
+    const rotatedX = localX * Math.cos(angle) - localY * Math.sin(angle)
+    const rotatedY = localX * Math.sin(angle) + localY * Math.cos(angle)
+    return fromLocalPoint({
+      x: center.x + rotatedX,
+      y: center.y + rotatedY,
+    }, referenceLatitude).coordinates
+  })
+  const first = coordinates[0]
+  if (!first) throw new Error('weather influence polygon generation produced no coordinates')
+  return { type: 'Polygon', coordinates: [[...coordinates, first]] }
+}
+
+const localPointsForPolygon = (
+  polygon: GeoJsonPolygon,
+  referenceLatitude: number,
+): ReadonlyArray<LocalPoint> =>
+  polygon.coordinates.flatMap(ring => ring.map(coordinate => toLocalPoint({
+    type: 'Point',
+    coordinates: coordinate,
+  }, referenceLatitude)))
+
 const localBounds = (
   polygon: GeoJsonPolygon,
   referenceLatitude: number,
 ): { readonly minX: number; readonly minY: number; readonly maxX: number; readonly maxY: number } => {
-  const points = polygon.coordinates.flatMap(ring => ring.map(coordinate => toLocalPoint({
-    type: 'Point',
-    coordinates: coordinate,
-  }, referenceLatitude)))
+  const points = localPointsForPolygon(polygon, referenceLatitude)
   if (points.length === 0) throw new Error('weather viewport polygon has no coordinates')
   return points.reduce((bounds, point) => ({
     minX: Math.min(bounds.minX, point.x),
@@ -144,14 +185,40 @@ const localBounds = (
   })
 }
 
-const visibleCellsFor = (viewport: GeoJsonPolygon, config: WeatherFieldConfig): ReadonlyArray<AxialCell> => {
+const axialBoundsForPolygon = (
+  polygon: GeoJsonPolygon,
+  config: WeatherFieldConfig,
+): { readonly minQ: number; readonly minR: number; readonly maxQ: number; readonly maxR: number } => {
+  const points = localPointsForPolygon(polygon, config.referenceLatitude)
+  if (points.length === 0) throw new Error('weather viewport polygon has no coordinates')
   const radiusM = config.cellSizeM / 2
-  const bounds = localBounds(viewport, config.referenceLatitude)
-  const minCell = pointToCell({ x: bounds.minX - radiusM * 2, y: bounds.minY - radiusM * 2 }, radiusM)
-  const maxCell = pointToCell({ x: bounds.maxX + radiusM * 2, y: bounds.maxY + radiusM * 2 }, radiusM)
+  const bounds = localBounds(polygon, config.referenceLatitude)
+  const paddedPoints = [
+    ...points,
+    { x: bounds.minX - radiusM * 2, y: bounds.minY - radiusM * 2 },
+    { x: bounds.maxX + radiusM * 2, y: bounds.minY - radiusM * 2 },
+    { x: bounds.maxX + radiusM * 2, y: bounds.maxY + radiusM * 2 },
+    { x: bounds.minX - radiusM * 2, y: bounds.maxY + radiusM * 2 },
+  ]
+  const cells = paddedPoints.map(point => pointToCell(point, radiusM))
+  return cells.reduce((bounds, cell) => ({
+    minQ: Math.min(bounds.minQ, cell.q),
+    minR: Math.min(bounds.minR, cell.r),
+    maxQ: Math.max(bounds.maxQ, cell.q),
+    maxR: Math.max(bounds.maxR, cell.r),
+  }), {
+    minQ: Number.POSITIVE_INFINITY,
+    minR: Number.POSITIVE_INFINITY,
+    maxQ: Number.NEGATIVE_INFINITY,
+    maxR: Number.NEGATIVE_INFINITY,
+  })
+}
+
+const visibleCellsFor = (viewport: GeoJsonPolygon, config: WeatherFieldConfig): ReadonlyArray<AxialCell> => {
+  const bounds = axialBoundsForPolygon(viewport, config)
   const cells: AxialCell[] = []
-  for (let q = minCell.q - 2; q <= maxCell.q + 2; q += 1) {
-    for (let r = minCell.r - 2; r <= maxCell.r + 2; r += 1) {
+  for (let q = bounds.minQ - 2; q <= bounds.maxQ + 2; q += 1) {
+    for (let r = bounds.minR - 2; r <= bounds.maxR + 2; r += 1) {
       cells.push({ q, r })
     }
   }
@@ -441,6 +508,38 @@ export const weatherCellsForViewport = (config: {
       polygon: hexPolygonAt(center, radiusM, fieldConfig.referenceLatitude),
       sample,
     }
+  })
+}
+
+export const weatherInfluenceShapesForViewport = (config: {
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly viewport: GeoJsonPolygon
+  readonly at: IsoTimestamp
+  readonly zoom: number
+  readonly gradientSamples?: number
+}): ReadonlyArray<WeatherInfluenceShape> => {
+  const fieldConfig = weatherFieldConfigFor({
+    objects: config.objects,
+    viewport: config.viewport,
+    zoom: config.zoom,
+  })
+  const sampleCount = Math.max(2, Math.min(8, Math.round(config.gradientSamples ?? 4)))
+  return sortedInfluenceObjects(config.objects).flatMap(({ object, data }) => {
+    const frame = activeFrameAt(data, config.at)
+    if (!frame) return []
+    return Array.from({ length: sampleCount }, (_, index) => {
+      const normalizedRadius = (index + 1) / sampleCount
+      const weight = evaluateCurve(frame.falloffCurve, normalizedRadius)
+      return {
+        id: `${object.id}:influence:${index + 1}`,
+        objectId: object.id,
+        polygon: ellipsePolygonAt(frame, normalizedRadius, fieldConfig.referenceLatitude),
+        weight,
+        normalizedRadius,
+        summary: data.summary,
+        severity: data.severity,
+      }
+    })
   })
 }
 

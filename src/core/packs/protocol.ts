@@ -116,6 +116,10 @@ export interface PackMapAreaFeature {
   readonly color: string
   readonly summary: string
   readonly opacity?: number
+  readonly lineColor?: string
+  readonly lineOpacity?: number
+  readonly lineWidth?: number
+  readonly sortKey?: number
 }
 
 export interface PackObjectCreationContext {

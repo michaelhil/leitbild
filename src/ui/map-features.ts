@@ -62,6 +62,10 @@ interface ZoneFeatureProperties {
   readonly color: string
   readonly summary: string
   readonly opacity?: number
+  readonly lineColor?: string
+  readonly lineOpacity?: number
+  readonly lineWidth?: number
+  readonly sortKey?: number
 }
 
 type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary'>
@@ -206,6 +210,10 @@ export const createWeatherAreaFeatureCollection = (
         color: feature.color,
         summary: feature.summary,
         ...(feature.opacity === undefined ? {} : { opacity: feature.opacity }),
+        ...(feature.lineColor === undefined ? {} : { lineColor: feature.lineColor }),
+        ...(feature.lineOpacity === undefined ? {} : { lineOpacity: feature.lineOpacity }),
+        ...(feature.lineWidth === undefined ? {} : { lineWidth: feature.lineWidth }),
+        ...(feature.sortKey === undefined ? {} : { sortKey: feature.sortKey }),
       },
     })),
 })

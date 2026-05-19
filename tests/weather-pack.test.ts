@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, GeoJsonPolygon, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
 import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
@@ -21,6 +21,44 @@ const command = (payload: unknown): CommandEnvelope => ({
   payload,
   issuedAt: nowIso(),
 })
+
+const osloViewport: GeoJsonPolygon = {
+  type: 'Polygon',
+  coordinates: [[
+    geoPointFromLonLat(10.62, 59.88).coordinates,
+    geoPointFromLonLat(10.88, 59.88).coordinates,
+    geoPointFromLonLat(10.88, 59.98).coordinates,
+    geoPointFromLonLat(10.62, 59.98).coordinates,
+    geoPointFromLonLat(10.62, 59.88).coordinates,
+  ]],
+}
+
+const polygonBounds = (polygons: ReadonlyArray<{ readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }>) => {
+  const coordinates = polygons.flatMap(polygon => polygon.coordinates.flatMap(ring => ring))
+  if (coordinates.length === 0) throw new Error('expected polygon coordinates')
+  return coordinates.reduce((bounds, coordinate) => ({
+    west: Math.min(bounds.west, coordinate[0]),
+    south: Math.min(bounds.south, coordinate[1]),
+    east: Math.max(bounds.east, coordinate[0]),
+    north: Math.max(bounds.north, coordinate[1]),
+  }), {
+    west: Number.POSITIVE_INFINITY,
+    south: Number.POSITIVE_INFINITY,
+    east: Number.NEGATIVE_INFINITY,
+    north: Number.NEGATIVE_INFINITY,
+  })
+}
+
+const polygonCentroid = (polygon: { readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }) => {
+  const ring = polygon.coordinates[0]
+  if (!ring || ring.length === 0) throw new Error('expected polygon ring')
+  const unique = ring.slice(0, -1)
+  const sum = unique.reduce((acc, coordinate) => ({
+    lon: acc.lon + coordinate[0],
+    lat: acc.lat + coordinate[1],
+  }), { lon: 0, lat: 0 })
+  return { lon: sum.lon / unique.length, lat: sum.lat / unique.length }
+}
 
 describe('weather pack', () => {
   test('validates generic atmosphere and surface condition data', () => {
@@ -139,6 +177,47 @@ describe('weather pack', () => {
     const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
     expect(sample.sourceObjectIds.length).toBeGreaterThan(0)
     expect(['none', 'rain']).toContain(sample.atmosphere.precipitation.type)
+  })
+
+  test('pack-owned hex field covers the requested viewport', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const features = weatherPack.mapAreaFeatures?.({
+      objects: osloAmbulanceScenario.initialObjects,
+      currentTime: start,
+      map: { viewport: osloViewport, zoom: 12 },
+    }) ?? []
+    const hexes = features.filter(feature => feature.id.startsWith('weather:hex:'))
+    const bounds = polygonBounds(hexes.map(feature => feature.geometry))
+
+    expect(hexes.length).toBeGreaterThan(0)
+    expect(bounds.west).toBeLessThanOrEqual(10.62)
+    expect(bounds.east).toBeGreaterThanOrEqual(10.88)
+    expect(bounds.south).toBeLessThanOrEqual(59.88)
+    expect(bounds.north).toBeGreaterThanOrEqual(59.98)
+  })
+
+  test('moving weather influence shapes follow simulation time', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const later = new Date(Date.parse(start) + 120_000).toISOString() as IsoTimestamp
+    const startFeatures = weatherPack.mapAreaFeatures?.({
+      objects: osloAmbulanceScenario.initialObjects,
+      currentTime: start,
+      map: { viewport: osloViewport, zoom: 12 },
+    }) ?? []
+    const laterFeatures = weatherPack.mapAreaFeatures?.({
+      objects: osloAmbulanceScenario.initialObjects,
+      currentTime: later,
+      map: { viewport: osloViewport, zoom: 12 },
+    }) ?? []
+    const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band:influence:4')
+    const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band:influence:4')
+    if (!startOuter || !laterOuter) throw new Error('expected moving weather influence features')
+    const startCenter = polygonCentroid(startOuter.geometry)
+    const laterCenter = polygonCentroid(laterOuter.geometry)
+
+    expect(laterCenter.lon).toBeGreaterThan(startCenter.lon + 0.1)
   })
 
   test('local provider accepts real weather area commands', async () => {
