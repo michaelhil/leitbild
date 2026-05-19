@@ -39,7 +39,6 @@
     readonly mapConfig: SurfaceMapRegionConfig
     readonly clock?: SimulationClockState
     readonly routeRevision: number
-    readonly layoutRevision?: number
     readonly debugMapInput?: boolean
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
@@ -62,7 +61,6 @@
     mapConfig,
     clock,
     routeRevision,
-    layoutRevision = 0,
     debugMapInput = false,
     highlightedObjectIds = [],
     hasNewInfo,
@@ -99,6 +97,8 @@
   let mapInitialized = false
   let appliedCameraKey: string | null = null
   let mapCameraGestureActive = false
+  let stopMapContainerResize: (() => void) | null = null
+  let observedMapContainerSize: { readonly width: number; readonly height: number } | null = null
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let stopMapInputDebug: (() => void) | null = null
@@ -147,7 +147,15 @@
   const cameraStateDebug = (current: MapLibreMap | null): string => {
     if (!current) return 'camera=no-map'
     const center = current.getCenter()
-    return `z=${current.getZoom().toFixed(2)} c=${center.lng.toFixed(5)},${center.lat.toFixed(5)} moving=${current.isMoving()}`
+    const canvas = current.getCanvas()
+    const container = current.getContainer()
+    return [
+      `z=${current.getZoom().toFixed(2)}`,
+      `c=${center.lng.toFixed(5)},${center.lat.toFixed(5)}`,
+      `moving=${current.isMoving()}`,
+      `canvas=${canvas.width}x${canvas.height}`,
+      `container=${Math.round(container.clientWidth)}x${Math.round(container.clientHeight)}`,
+    ].join(' ')
   }
 
   const eventModifierDebug = (event: InputDebugEvent): string => {
@@ -226,6 +234,46 @@
       stopMapInputDebug = null
     }
     recordMapInputDebug('debug:installed')
+  }
+
+  const applyObservedMapContainerSize = (
+    current: MapLibreMap,
+    width: number,
+    height: number,
+    source: string,
+  ): void => {
+    const roundedWidth = Math.round(width)
+    const roundedHeight = Math.round(height)
+    if (roundedWidth <= 0 || roundedHeight <= 0) return
+    if (
+      observedMapContainerSize?.width === roundedWidth
+      && observedMapContainerSize.height === roundedHeight
+    ) return
+    observedMapContainerSize = { width: roundedWidth, height: roundedHeight }
+    recordMapInputDebug(`container-resize:${source}:${roundedWidth}x${roundedHeight}`)
+    current.resize({ source: `leitbild-container-${source}` })
+  }
+
+  const installMapContainerResizeObserver = (current: MapLibreMap, element: HTMLElement): void => {
+    stopMapContainerResize?.()
+    observedMapContainerSize = null
+    const initialBounds = element.getBoundingClientRect()
+    applyObservedMapContainerSize(current, initialBounds.width, initialBounds.height, 'initial')
+    if (typeof ResizeObserver === 'undefined') {
+      stopMapContainerResize = null
+      return
+    }
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      applyObservedMapContainerSize(current, entry.contentRect.width, entry.contentRect.height, 'observer')
+    })
+    observer.observe(element)
+    stopMapContainerResize = () => {
+      observer.disconnect()
+      stopMapContainerResize = null
+      observedMapContainerSize = null
+    }
   }
 
   const interactiveObjectLayerIds = [
@@ -566,6 +614,7 @@
 
   const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
     try {
+      recordMapInputDebug('style:setup-start')
       loaded = false
       assertCameraInteractionContract(current)
       await registerObjectIconVariants(current, 'ambulance')
@@ -594,6 +643,7 @@
       startPackAreaRefresh()
       if (!mapReadyNotified) {
         mapReadyNotified = true
+        recordMapInputDebug('style:map-ready')
         onMapReady()
       }
     } catch (err) {
@@ -627,6 +677,7 @@
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
+    installMapContainerResizeObserver(current, mapElement)
     current.on('error', (event) => {
       const error = event.error
       onMapError(error instanceof Error ? error.message : 'Vector map failed to load')
@@ -652,6 +703,7 @@
 
     return () => {
       stopMapInputDebug?.()
+      stopMapContainerResize?.()
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
       stopPackAreaRefresh()
@@ -668,6 +720,7 @@
       mapInitialized = false
       appliedCameraKey = null
       mapCameraGestureActive = false
+      observedMapContainerSize = null
     }
   })
 
@@ -713,14 +766,6 @@
   $effect(() => {
     placementCursor
     refreshCanvasCursor()
-  })
-
-  $effect(() => {
-    layoutRevision
-    const current = map
-    if (!current) return
-    recordMapInputDebug('effect:layout-resize')
-    current.resize({ source: 'leitbild-layout-resize' })
   })
 
   $effect(() => {

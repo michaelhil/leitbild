@@ -9,7 +9,6 @@ import {
 export interface RailLayoutState {
   readonly width: number
   readonly collapsed: boolean
-  readonly layoutRevision: number
   readonly initialize: () => void
   readonly startResize: (event: PointerEvent) => void
   readonly stopResize: () => void
@@ -20,12 +19,10 @@ export const createRailLayoutState = (): RailLayoutState => {
   let lastOpenWidth = $state(defaultRailWidth)
   let resizing = $state(false)
   let widthBeforeResize = $state(defaultRailWidth)
-  let layoutRevision = $state(0)
 
   const setWidth = (nextWidth: number, persist = false): void => {
     width = nextWidth
     if (nextWidth >= minRailWidth) lastOpenWidth = nextWidth
-    layoutRevision += 1
     if (persist) storeRailWidth(nextWidth)
   }
 
@@ -68,9 +65,6 @@ export const createRailLayoutState = (): RailLayoutState => {
     },
     get collapsed() {
       return width === 0
-    },
-    get layoutRevision() {
-      return layoutRevision
     },
     initialize,
     startResize,

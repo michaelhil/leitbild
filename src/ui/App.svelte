@@ -708,7 +708,6 @@
             mapConfig={effectiveMapConfig}
             {clock}
             {routeRevision}
-            layoutRevision={railLayout.layoutRevision}
             {debugMapInput}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
             {hasNewInfo}
