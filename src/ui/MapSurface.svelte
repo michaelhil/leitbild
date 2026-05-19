@@ -499,6 +499,7 @@
       mapReadyNotified = false
       mapInitialized = false
       appliedCameraKey = null
+      mapGestureActive = false
     }
   })
 
@@ -507,9 +508,6 @@
     selectedControllerId
     highlightedObjectIds
     routeRevision
-    clock
-    renderRevision
-    placementPoints
     const nowMs = performance.now()
     displayMotionState = reconcileDisplayMotionState({
       previousState: displayMotionState,
@@ -522,11 +520,26 @@
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
     scheduleSourceRefresh({ objects: true, routes: routesChanged, traffic: true, weather: true })
-    refreshPlacementPreviewSource()
     refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
+  })
+
+  $effect(() => {
+    clock
+    if (!mapConfig.layers.includes('weather') || mapGestureActive) return
+    scheduleSourceRefresh({ weather: true })
+  })
+
+  $effect(() => {
+    renderRevision
+    scheduleSourceRefresh({ objects: true })
+  })
+
+  $effect(() => {
+    placementPoints
+    refreshPlacementPreviewSource()
   })
 
   $effect(() => {
