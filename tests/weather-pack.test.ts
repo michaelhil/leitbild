@@ -200,7 +200,7 @@ describe('weather pack', () => {
   test('moving weather influence shapes follow simulation time', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
-    const later = new Date(Date.parse(start) + 120_000).toISOString() as IsoTimestamp
+    const later = new Date(Date.parse(start) + 420_000).toISOString() as IsoTimestamp
     const startFeatures = weatherPack.mapAreaFeatures?.({
       objects: osloAmbulanceScenario.initialObjects,
       currentTime: start,

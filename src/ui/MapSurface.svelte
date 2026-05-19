@@ -95,6 +95,7 @@
   let mapReadyNotified = false
   let appliedTheme: ThemeMode | null = null
   let mapInitialized = false
+  let appliedCameraKey: string | null = null
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -150,6 +151,23 @@
 
   const trafficCasingColor = (): string =>
     theme === 'dark' ? '#111827' : '#ffffff'
+
+  const cameraKeyFor = (config: SurfaceMapRegionConfig): string => {
+    const [lon, lat] = config.center.coordinates
+    return `${lon}:${lat}:${config.zoom}`
+  }
+
+  const applyScenarioCameraDefault = (): void => {
+    const current = map
+    if (!current) return
+    const cameraKey = cameraKeyFor(mapConfig)
+    if (cameraKey === appliedCameraKey) return
+    appliedCameraKey = cameraKey
+    current.jumpTo({
+      center: mapConfig.center.coordinates,
+      zoom: mapConfig.zoom,
+    })
+  }
 
   const currentViewport = (): GeoJsonPolygon | null => {
     const current = map
@@ -438,6 +456,7 @@
       zoom: mapConfig.zoom,
     })
     appliedTheme = theme
+    appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
     current.on('error', (event) => {
       const error = event.error
@@ -473,6 +492,7 @@
       objectInteractionsAdded = false
       mapReadyNotified = false
       mapInitialized = false
+      appliedCameraKey = null
     }
   })
 
@@ -516,10 +536,13 @@
   $effect(() => {
     const current = map
     if (!current) return
-    current.jumpTo({
-      center: mapConfig.center.coordinates,
-      zoom: mapConfig.zoom,
-    })
+    applyScenarioCameraDefault()
+  })
+
+  $effect(() => {
+    const current = map
+    if (!current) return
+    mapConfig.layers
     applyConfiguredLayerVisibility()
   })
 
