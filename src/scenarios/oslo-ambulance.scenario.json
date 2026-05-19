@@ -102,6 +102,7 @@
       "id": "weather:oslo-damp-background",
       "label": "Damp Oslo background",
       "cellSizeM": 750,
+      "showField": false,
       "priority": 0,
       "summary": "Mild damp overcast background conditions across central Oslo",
       "severity": "notice",

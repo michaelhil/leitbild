@@ -3,6 +3,7 @@ import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, 
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
 import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
+import { renderedWeatherCellsForViewport, weatherCellsForViewport } from '../src/packs/weather/field.ts'
 import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -182,19 +183,50 @@ describe('weather pack', () => {
   test('pack-owned hex field covers the requested viewport', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
-    const features = weatherPack.mapAreaFeatures?.({
+    const hexes = weatherCellsForViewport({
       objects: osloAmbulanceScenario.initialObjects,
-      currentTime: start,
-      map: { viewport: osloViewport, zoom: 12 },
-    }) ?? []
-    const hexes = features.filter(feature => feature.id.startsWith('weather:hex:'))
-    const bounds = polygonBounds(hexes.map(feature => feature.geometry))
+      viewport: osloViewport,
+      zoom: 12,
+      at: start,
+    })
+    const bounds = polygonBounds(hexes.map(cell => cell.polygon))
 
     expect(hexes.length).toBeGreaterThan(0)
     expect(bounds.west).toBeLessThanOrEqual(10.62)
     expect(bounds.east).toBeGreaterThanOrEqual(10.88)
     expect(bounds.south).toBeLessThanOrEqual(59.88)
     expect(bounds.north).toBeGreaterThanOrEqual(59.98)
+  })
+
+  test('rendered weather field limits map overlay cells without weakening truth sampling', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const wideViewport: GeoJsonPolygon = {
+      type: 'Polygon',
+      coordinates: [[
+        geoPointFromLonLat(10.35, 59.72).coordinates,
+        geoPointFromLonLat(11.10, 59.72).coordinates,
+        geoPointFromLonLat(11.10, 60.10).coordinates,
+        geoPointFromLonLat(10.35, 60.10).coordinates,
+        geoPointFromLonLat(10.35, 59.72).coordinates,
+      ]],
+    }
+    const truthCells = weatherCellsForViewport({
+      objects: osloAmbulanceScenario.initialObjects,
+      viewport: wideViewport,
+      zoom: 12,
+      at: start,
+    })
+    const renderedCells = renderedWeatherCellsForViewport({
+      objects: osloAmbulanceScenario.initialObjects,
+      viewport: wideViewport,
+      zoom: 12,
+      at: start,
+    })
+
+    expect(truthCells.length).toBeGreaterThan(1_000)
+    expect(renderedCells.length).toBeGreaterThan(0)
+    expect(renderedCells.length).toBeLessThan(truthCells.length / 10)
   })
 
   test('moving weather influence shapes follow simulation time', () => {

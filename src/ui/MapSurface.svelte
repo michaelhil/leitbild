@@ -96,6 +96,7 @@
   let appliedTheme: ThemeMode | null = null
   let mapInitialized = false
   let appliedCameraKey: string | null = null
+  let mapGestureActive = false
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -306,8 +307,9 @@
     if (packAreaRefreshInterval !== null) return
     packAreaRefreshInterval = setInterval(() => {
       if (!loaded || !mapConfig.layers.includes('weather')) return
+      if (mapGestureActive) return
       scheduleSourceRefresh({ weather: true })
-    }, 1000)
+    }, 2_000)
   }
 
   const scheduleDisplayAnimation = (): void => {
@@ -467,7 +469,11 @@
       if (!placementMode) return
       onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
     })
+    current.on('movestart', () => {
+      mapGestureActive = true
+    })
     current.on('moveend', () => {
+      mapGestureActive = false
       scheduleSourceRefresh({ weather: true })
     })
     current.on('style.load', () => {

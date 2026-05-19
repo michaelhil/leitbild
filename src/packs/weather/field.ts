@@ -326,6 +326,11 @@ const sortedInfluenceObjects = (
     return [{ object, data: parsed.data }]
   }).sort((a, b) => (a.data.influence!.priority - b.data.influence!.priority) || a.object.id.localeCompare(b.object.id))
 
+const sortedFieldRenderInfluenceObjects = (
+  objects: ReadonlyArray<OperationalObject>,
+): ReadonlyArray<{ readonly object: OperationalObject; readonly data: WeatherDomainData }> =>
+  sortedInfluenceObjects(objects).filter(entry => entry.data.render?.showField !== false)
+
 const activeFrameAt = (
   data: WeatherDomainData,
   at: IsoTimestamp,
@@ -499,6 +504,52 @@ export const weatherCellsForViewport = (config: {
   })
   const radiusM = fieldConfig.cellSizeM / 2
   return visibleCellsFor(config.viewport, fieldConfig).map(cell => {
+    const center = cellCenter(cell, radiusM)
+    const point = fromLocalPoint(center, fieldConfig.referenceLatitude)
+    const sample = solveStateAtLocalPoint(config.objects, center, fieldConfig, config.at)
+    return {
+      id: cellId(cell, fieldConfig.cellSizeM),
+      center: point,
+      polygon: hexPolygonAt(center, radiusM, fieldConfig.referenceLatitude),
+      sample,
+    }
+  })
+}
+
+export const renderedWeatherCellsForViewport = (config: {
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly viewport: GeoJsonPolygon
+  readonly at: IsoTimestamp
+  readonly zoom: number
+}): ReadonlyArray<WeatherSolvedCell> => {
+  const fieldConfig = weatherFieldConfigFor({
+    objects: config.objects,
+    viewport: config.viewport,
+    zoom: config.zoom,
+  })
+  const radiusM = fieldConfig.cellSizeM / 2
+  const viewportBounds = axialBoundsForPolygon(config.viewport, fieldConfig)
+  const cellsById = new Map<string, AxialCell>()
+
+  for (const entry of sortedFieldRenderInfluenceObjects(config.objects)) {
+    const frame = activeFrameAt(entry.data, config.at)
+    if (!frame) continue
+    const influenceBounds = axialBoundsForPolygon(ellipsePolygonAt(frame, 1, fieldConfig.referenceLatitude), fieldConfig)
+    const minQ = Math.max(viewportBounds.minQ, influenceBounds.minQ) - 1
+    const maxQ = Math.min(viewportBounds.maxQ, influenceBounds.maxQ) + 1
+    const minR = Math.max(viewportBounds.minR, influenceBounds.minR) - 1
+    const maxR = Math.min(viewportBounds.maxR, influenceBounds.maxR) + 1
+    for (let q = minQ; q <= maxQ; q += 1) {
+      for (let r = minR; r <= maxR; r += 1) {
+        const cell = { q, r }
+        const center = cellCenter(cell, radiusM)
+        if (influenceWeightFor(center, frame, fieldConfig.referenceLatitude) <= 0) continue
+        cellsById.set(cellId(cell, fieldConfig.cellSizeM), cell)
+      }
+    }
+  }
+
+  return [...cellsById.values()].map(cell => {
     const center = cellCenter(cell, radiusM)
     const point = fromLocalPoint(center, fieldConfig.referenceLatitude)
     const sample = solveStateAtLocalPoint(config.objects, center, fieldConfig, config.at)

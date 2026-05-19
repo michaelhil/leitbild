@@ -85,6 +85,7 @@ export type WeatherEvolution = z.infer<typeof weatherEvolutionSchema>
 
 export const weatherRenderSchema = z.object({
   cellSizeM: z.number().finite().positive(),
+  showField: z.boolean().default(true),
 })
 export type WeatherRender = z.infer<typeof weatherRenderSchema>
 

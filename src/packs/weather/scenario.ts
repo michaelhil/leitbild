@@ -48,6 +48,7 @@ const weatherConditionSpecSchema = z.object({
   id: objectIdSchema,
   label: z.string().min(1),
   cellSizeM: z.number().finite().positive().default(750),
+  showField: z.boolean().default(true),
   priority: z.number().int().default(0),
   summary: z.string().min(1),
   severity: weatherSeveritySchema.default('normal'),
@@ -64,7 +65,7 @@ export const createWeatherDomainData = (config: {
   readonly atmosphere?: WeatherAtmospherePatch
   readonly surface?: WeatherSurfacePatch
   readonly influence: WeatherInfluence
-  readonly render?: { readonly cellSizeM: number }
+  readonly render?: { readonly cellSizeM: number; readonly showField: boolean }
 }): WeatherDomainData => {
   const atmosphere = weatherAtmosphereSchema.parse({
     ...defaultAtmosphere(config.at),
@@ -160,7 +161,7 @@ const weatherConditionObject = (config: {
     ...(Object.keys(config.spec.atmosphere).length > 0 ? { atmosphere: config.spec.atmosphere } : {}),
     ...(Object.keys(config.spec.surface).length > 0 ? { surface: config.spec.surface } : {}),
     influence,
-    render: { cellSizeM: config.spec.cellSizeM },
+    render: { cellSizeM: config.spec.cellSizeM, showField: config.spec.showField },
   })
   return {
     id: config.spec.id,

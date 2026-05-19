@@ -81,6 +81,7 @@
       "id": "weather:halden-coastal-showers",
       "label": "Cool coastal showers",
       "cellSizeM": 650,
+      "showField": true,
       "priority": 5,
       "summary": "Cool humid weather with intermittent light rain over central Halden",
       "severity": "notice",

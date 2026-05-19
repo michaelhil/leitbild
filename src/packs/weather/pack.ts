@@ -4,7 +4,7 @@ import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherSampleAtPoint } from './conditions.ts'
-import { weatherCellsForViewport, weatherInfluenceShapesForViewport } from './field.ts'
+import { renderedWeatherCellsForViewport, weatherInfluenceShapesForViewport } from './field.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
@@ -166,7 +166,7 @@ export const weatherPack: LeitbildPack = {
   mapAreaFeatures: (context) => {
     if (!context.map) return []
     const at = context.currentTime ?? nowIso()
-    const cells = weatherCellsForViewport({
+    const cells = renderedWeatherCellsForViewport({
       objects: context.objects,
       viewport: context.map.viewport,
       zoom: context.map.zoom,
