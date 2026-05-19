@@ -14,6 +14,8 @@ import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
+import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
@@ -30,8 +32,9 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
     simulationAdapters: [
       createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficSimulationAdapter(),
+      createLocalWeatherSimulationAdapter(),
     ],
-    interactionHandlers: [ambulancePack, trafficPack].flatMap(pack => pack.interactionHandlers ?? []),
+    interactionHandlers: [ambulancePack, trafficPack, weatherPack].flatMap(pack => pack.interactionHandlers ?? []),
   })
 }
 
@@ -73,7 +76,7 @@ describe('control instance API', () => {
     )
     expect(fetched.status).toBe(200)
     expect(fetched.body.scenario.id).toBe('oslo-ambulance')
-    expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic'])
+    expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
   })
 
@@ -104,6 +107,7 @@ describe('control instance API', () => {
         'mobile_entity',
         'mobile_entity',
         'mobile_entity',
+        'zone',
         'zone',
       ])
     } finally {

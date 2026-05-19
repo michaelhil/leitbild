@@ -1,0 +1,120 @@
+import { describe, expect, test } from 'bun:test'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, IsoTimestamp } from '../src/core/model/index.ts'
+import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
+import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
+import { defaultAtmosphere, defaultSurface, evolveWeatherData } from '../src/packs/weather/conditions.ts'
+import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
+import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { weatherSimProviderId } from '../src/packs/weather/sim/constants.ts'
+import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+
+const controlInstanceId = 'control-instance:weather-pack' as ControlInstanceId
+const actorId = 'actor:test-operator' as ActorId
+
+const command = (payload: unknown): CommandEnvelope => ({
+  id: `command:${crypto.randomUUID()}` as CommandId,
+  controlInstanceId,
+  actorId,
+  kind: createWeatherAreaCommandKind,
+  targetObjectIds: [],
+  payload,
+  issuedAt: nowIso(),
+})
+
+describe('weather pack', () => {
+  test('validates generic atmosphere and surface condition data', () => {
+    const at = nowIso()
+    const parsed = weatherDomainDataSchema.parse({
+      type: 'weather_condition',
+      schemaVersion: 1,
+      conditionKind: 'weather_zone',
+      severity: 'notice',
+      atmosphere: {
+        ...defaultAtmosphere(at),
+        precipitation: { type: 'rain', intensityMmPerHour: 0.8 },
+      },
+      surface: {
+        ...defaultSurface(),
+        wetness: 0.4,
+        frictionClass: 'wet',
+        labels: ['wet'],
+      },
+      quality: { provenance: 'scenario', confidence: 1, validAt: at },
+      summary: 'Light rain over the operating area',
+    })
+
+    expect(parsed.atmosphere.humidity).toBe(0.65)
+    expect(parsed.surface.wetness).toBe(0.4)
+  })
+
+  test('evolves precipitation into surface conditions without making routing decisions', () => {
+    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
+    const base = weatherDomainDataSchema.parse({
+      type: 'weather_condition',
+      schemaVersion: 1,
+      conditionKind: 'weather_zone',
+      severity: 'notice',
+      atmosphere: {
+        ...defaultAtmosphere(at),
+        airTemperatureC: -1,
+        precipitation: { type: 'freezing_rain', intensityMmPerHour: 1.4 },
+      },
+      surface: {
+        ...defaultSurface(),
+        groundTemperatureC: -1,
+        wetness: 0.35,
+      },
+      quality: { provenance: 'scenario', confidence: 1, validAt: at },
+      summary: 'Freezing rain test',
+    })
+
+    const evolved = evolveWeatherData(base, '2026-01-01T10:10:00.000Z' as IsoTimestamp, 600)
+
+    expect(evolved.surface.ice).toBeGreaterThan(base.surface.ice)
+    expect(evolved.surface.frictionClass).not.toBe('normal')
+    expect(evolved.type).toBe('weather_condition')
+  })
+
+  test('built-in scenarios include the weather pack as a sampleable condition provider', () => {
+    const weatherObject = osloAmbulanceScenario.initialObjects.find(object => object.domain === 'weather')
+    if (!weatherObject) throw new Error('Oslo scenario missing weather condition')
+
+    const presentation = weatherPack.presentObject(weatherObject, { objects: osloAmbulanceScenario.initialObjects })
+
+    expect(osloAmbulanceScenario.packs).toContain('weather')
+    expect(presentation.categoryId).toBe('weather')
+    expect(presentation.noteworthyUpdates).toBe(false)
+    expect(presentation.fields.map(field => field.key)).toContain('surface')
+  })
+
+  test('local provider accepts real weather area commands', async () => {
+    const adapter = createLocalWeatherSimulationAdapter()
+    const connection = await adapter.connect({ controlInstanceId, initialObjects: [] })
+    const result = await connection.sendCommand(command({
+      objectType: 'weather_area',
+      label: 'Operator rain area',
+      polygon: {
+        type: 'Polygon',
+        coordinates: [[
+          geoPointFromLonLat(10.70, 59.90).coordinates,
+          geoPointFromLonLat(10.72, 59.90).coordinates,
+          geoPointFromLonLat(10.72, 59.92).coordinates,
+          geoPointFromLonLat(10.70, 59.90).coordinates,
+        ]],
+      },
+      summary: 'Operator-created rain area',
+      severity: 'notice',
+      atmosphere: {
+        precipitation: { type: 'rain', intensityMmPerHour: 1 },
+      },
+    }))
+    const snapshot = await connection.getSnapshot()
+    await connection.close()
+
+    expect(adapter.id).toBe(weatherSimProviderId)
+    expect(result.ok).toBe(true)
+    expect(snapshot.objects).toHaveLength(1)
+    expect(snapshot.objects[0]?.domain).toBe('weather' as DomainId)
+  })
+})

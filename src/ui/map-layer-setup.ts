@@ -7,6 +7,8 @@ import {
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
+  createWeatherAreaFeatureCollection,
+  createWeatherLineFeatureCollection,
   mapLayerIds,
   mapSourceIds,
 } from './map-features.ts'
@@ -33,6 +35,14 @@ export const addOperationalMapSourcesAndLayers = (config: {
     type: 'geojson',
     data: asMutableGeoJson(createRouteFeatureCollection([...config.objects], config.selectedControllerId) as unknown as GeoJSON),
   })
+  current.addSource(mapSourceIds.weatherLines, {
+    type: 'geojson',
+    data: asMutableGeoJson(createWeatherLineFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.weatherAreas, {
+    type: 'geojson',
+    data: asMutableGeoJson(createWeatherAreaFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
+  })
   current.addSource(mapSourceIds.trafficLines, {
     type: 'geojson',
     data: asMutableGeoJson(createTrafficLineFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
@@ -40,6 +50,60 @@ export const addOperationalMapSourcesAndLayers = (config: {
   current.addSource(mapSourceIds.trafficAreas, {
     type: 'geojson',
     data: asMutableGeoJson(createTrafficAreaFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherAreaFill,
+    type: 'fill',
+    source: mapSourceIds.weatherAreas,
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': 0.16,
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherAreaOutline,
+    type: 'line',
+    source: mapSourceIds.weatherAreas,
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 1.4,
+      'line-opacity': 0.64,
+      'line-dasharray': [2, 2],
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherLineCasing,
+    type: 'line',
+    source: mapSourceIds.weatherLines,
+    paint: {
+      'line-color': config.trafficCasingColor,
+      'line-width': 5,
+      'line-opacity': 0.36,
+      'line-blur': 0.4,
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherLine,
+    type: 'line',
+    source: mapSourceIds.weatherLines,
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': 2.5,
+      'line-opacity': 0.62,
+      'line-blur': 0.1,
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
   })
   current.addLayer({
     id: mapLayerIds.trafficAreaFill,

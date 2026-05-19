@@ -9,6 +9,7 @@ import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage } 
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
@@ -81,6 +82,7 @@ describe('server health', () => {
       simulationAdapters: [
         createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficSimulationAdapter(),
+        createLocalWeatherSimulationAdapter(),
       ],
     })
     const runtime = await registry.ensure('sandbox' as ControlInstanceId)
@@ -119,6 +121,7 @@ describe('server health', () => {
       simulationAdapters: [
         createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficSimulationAdapter(),
+        createLocalWeatherSimulationAdapter(),
       ],
     })
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
@@ -170,6 +173,7 @@ describe('server health', () => {
       simulationAdapters: [
         createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficSimulationAdapter(),
+        createLocalWeatherSimulationAdapter(),
       ],
     })
     const firstClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }

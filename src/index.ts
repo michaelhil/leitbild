@@ -5,11 +5,13 @@ import { createLocalAmbulanceSimulationAdapter } from './packs/ambulance/sim/ada
 import { ambulancePack } from './packs/ambulance/pack.ts'
 import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
 import { trafficPack } from './packs/traffic/pack.ts'
+import { createLocalWeatherSimulationAdapter } from './packs/weather/sim/adapter.ts'
+import { weatherPack } from './packs/weather/pack.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { createBuiltinScenarios } from './scenarios/index.ts'
 
 const routing = createRoutingAdapterFromEnv()
-const packs = [ambulancePack, trafficPack]
+const packs = [ambulancePack, trafficPack, weatherPack]
 const scenarios = await createBuiltinScenarios(routing)
 const scenarioCatalog = createScenarioCatalog({ packs, scenarios })
 
@@ -19,6 +21,7 @@ const registry = createControlInstanceRegistry({
   simulationAdapters: [
     createLocalAmbulanceSimulationAdapter({ routing }),
     createLocalTrafficSimulationAdapter({ routing }),
+    createLocalWeatherSimulationAdapter(),
   ],
   interactionHandlers: packs.flatMap(pack => pack.interactionHandlers ?? []),
 })

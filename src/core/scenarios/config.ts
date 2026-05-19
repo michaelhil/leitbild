@@ -92,7 +92,7 @@ const scenarioScriptConfigSchema = z.object({
 const surfaceMapRegionConfigSchema = z.object({
   center: lonLatSchema,
   zoom: z.number().finite().min(0).max(24),
-  layers: z.array(z.enum(['objects', 'routes', 'traffic', 'highlights'])).default(['objects', 'routes', 'traffic', 'highlights']),
+  layers: z.array(z.enum(['objects', 'routes', 'traffic', 'weather', 'highlights'])).default(['objects', 'routes', 'traffic', 'weather', 'highlights']),
 })
 
 const surfaceObjectRailSectionConfigSchema = z.object({

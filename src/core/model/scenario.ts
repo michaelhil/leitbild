@@ -11,7 +11,7 @@ export interface ScenarioWorldDefinition {
   readonly environment: Record<string, unknown>
 }
 
-export type SurfaceMapLayer = 'objects' | 'routes' | 'traffic' | 'highlights'
+export type SurfaceMapLayer = 'objects' | 'routes' | 'traffic' | 'weather' | 'highlights'
 
 export interface SurfaceMapRegionConfig {
   readonly center: GeoJsonPoint
@@ -152,12 +152,12 @@ export const scenarioWorldDefinitionSchema = z.object({
   environment: z.record(z.unknown()).default({}),
 })
 
-export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'highlights'])
+export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'weather', 'highlights'])
 
 export const surfaceMapRegionConfigSchema = z.object({
   center: geoJsonPointSchema,
   zoom: z.number().finite().min(0).max(24),
-  layers: z.array(surfaceMapLayerSchema).default(['objects', 'routes', 'traffic', 'highlights']),
+  layers: z.array(surfaceMapLayerSchema).default(['objects', 'routes', 'traffic', 'weather', 'highlights']),
 })
 
 export const surfaceObjectRailSectionConfigSchema = z.object({

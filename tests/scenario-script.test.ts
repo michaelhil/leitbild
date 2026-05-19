@@ -8,7 +8,7 @@ describe('scenario script model', () => {
   test('validates timed scenario steps and declarative actions', () => {
     const parsed = scenarioDefinitionSchema.parse(osloAmbulanceScenario)
 
-    expect(parsed.packs).toEqual(['ambulance', 'traffic'])
+    expect(parsed.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(parsed.initialObjects.some(object => object.id === 'traffic:ring2-slowdown')).toBe(true)
     expect(parsed.script?.steps.map(step => step.id)).toContain('majorstuen-created')
     expect(parsed.script?.steps.some(step =>

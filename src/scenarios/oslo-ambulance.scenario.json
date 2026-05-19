@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "title": "Oslo ambulance tutorial",
   "description": "A timed Oslo ambulance dispatch scenario with existing transports, unresolved incidents, traffic conditions, and tutorial guidance.",
-  "packs": ["ambulance", "traffic"],
+  "packs": ["ambulance", "traffic", "weather"],
   "providerOverrides": {},
   "world": {
     "startsAt": "2026-01-01T09:00:00.000Z",
@@ -97,6 +97,42 @@
       "victims": { "state": "confirmed", "count": 3 }
     },
     {
+      "pack": "weather",
+      "type": "weather_condition",
+      "id": "weather:oslo-showery-overcast",
+      "label": "Showery overcast",
+      "polygon": [
+        [10.6750, 59.8950],
+        [10.8350, 59.8950],
+        [10.8350, 59.9550],
+        [10.6750, 59.9550],
+        [10.6750, 59.8950]
+      ],
+      "summary": "Mild overcast weather with light showers across central Oslo",
+      "severity": "notice",
+      "atmosphere": {
+        "airTemperatureC": 6,
+        "humidity": 0.78,
+        "windSpeedMps": 4,
+        "windDirectionDeg": 225,
+        "visibilityM": 11000,
+        "cloudCover": 0.76,
+        "precipitation": { "type": "rain", "intensityMmPerHour": 0.35 },
+        "labels": ["showers", "cloudy"]
+      },
+      "surface": {
+        "groundTemperatureC": 5.8,
+        "wetness": 0.18,
+        "standingWater": 0.02,
+        "snow": 0,
+        "ice": 0,
+        "frost": 0,
+        "frictionEstimate": 0.95,
+        "frictionClass": "normal",
+        "labels": ["damp"]
+      }
+    },
+    {
       "pack": "traffic",
       "type": "traffic_condition",
       "id": "traffic:ring2-slowdown",
@@ -113,7 +149,8 @@
   "initialContexts": [],
   "providerConfigs": {
     "ambulance": {},
-    "traffic": {}
+    "traffic": {},
+    "weather": {}
   },
   "surface": {
     "schemaVersion": 1,
@@ -125,7 +162,7 @@
         "config": {
           "center": [10.7522, 59.9139],
           "zoom": 12,
-          "layers": ["objects", "routes", "traffic", "highlights"]
+          "layers": ["objects", "routes", "weather", "traffic", "highlights"]
         }
       },
       {
@@ -158,6 +195,12 @@
               "visible": true,
               "collapsed": false,
               "visibleFields": ["severity", "reason"]
+            },
+            {
+              "categoryId": "weather",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["air-temperature", "precipitation", "surface"]
             }
           ]
         }

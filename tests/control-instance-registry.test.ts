@@ -10,6 +10,7 @@ import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
@@ -20,6 +21,7 @@ describe('control instance registry', () => {
     simulationAdapters: [
       createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficSimulationAdapter(),
+      createLocalWeatherSimulationAdapter(),
     ],
   })
 

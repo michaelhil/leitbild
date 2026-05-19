@@ -7,7 +7,14 @@ import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createObjectFeatureCollection, createRouteFeatureCollection, createTrafficAreaFeatureCollection, createTrafficLineFeatureCollection, mapSourceIds } from '../src/ui/map-features.ts'
+import {
+  createObjectFeatureCollection,
+  createRouteFeatureCollection,
+  createTrafficAreaFeatureCollection,
+  createTrafficLineFeatureCollection,
+  createWeatherAreaFeatureCollection,
+  mapSourceIds,
+} from '../src/ui/map-features.ts'
 
 const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
@@ -152,7 +159,7 @@ describe('map feature projection', () => {
     }
     const trafficFeatures = createTrafficLineFeatureCollection(
       [lineObject],
-      () => ({ color: '#dc2626', summary: 'road segment · high' }),
+      () => ({ categoryId: 'traffic', color: '#dc2626', summary: 'road segment · high' }),
     )
 
     expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
@@ -189,12 +196,46 @@ describe('map feature projection', () => {
 
     const trafficFeatures = createTrafficAreaFeatureCollection(
       [polygonObject],
-      () => ({ color: '#dc2626', summary: 'area · high' }),
+      () => ({ categoryId: 'traffic', color: '#dc2626', summary: 'area · high' }),
     )
 
     expect(mapSourceIds.trafficAreas).toBe('traffic-area-source')
     expect(trafficFeatures.features).toHaveLength(1)
     expect(trafficFeatures.features[0]?.geometry.type).toBe('Polygon')
     expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
+  })
+
+  test('keeps traffic and weather zone layers separate', () => {
+    const weatherObject = {
+      id: 'weather:test-area' as ObjectId,
+      kind: 'zone' as const,
+      domain: 'weather' as DomainId,
+      label: 'Test weather area',
+      lifecycle: 'active' as const,
+      revision: 0,
+      spatial: {
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [[
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.92).coordinates,
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+          ]],
+        },
+        frame: { kind: 'wgs84' as const },
+      },
+      operational: { status: 'notice', priority: 'normal' as const, mode: 'simulated' as const },
+      alerts: [],
+      provenance: { source: 'simulator' as const },
+      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
+    }
+    const weatherPresentation = () => ({ categoryId: 'weather', color: '#2563eb', summary: 'notice weather' })
+    const trafficFeatures = createTrafficAreaFeatureCollection([weatherObject], weatherPresentation)
+    const weatherFeatures = createWeatherAreaFeatureCollection([weatherObject], weatherPresentation)
+
+    expect(mapSourceIds.weatherAreas).toBe('weather-area-source')
+    expect(trafficFeatures.features).toHaveLength(0)
+    expect(weatherFeatures.features).toHaveLength(1)
   })
 })

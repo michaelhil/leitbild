@@ -7,6 +7,8 @@ import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/packs/ambulance/model.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { trafficSimProviderId } from '../src/packs/traffic/sim/constants.ts'
+import { weatherPack } from '../src/packs/weather/pack.ts'
+import { weatherSimProviderId } from '../src/packs/weather/sim/constants.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
@@ -151,7 +153,7 @@ describe('pack architecture', () => {
     const composite = createCompositePack({
       id: 'clear-composite',
       name: 'Clear Composite',
-      packs: [ambulancePack, trafficPack],
+      packs: [ambulancePack, trafficPack, weatherPack],
     })
 
     expect(composite.createObjectTypes.map(type => type.id).sort()).toEqual([
@@ -160,31 +162,34 @@ describe('pack architecture', () => {
       'incident',
       'traffic_area',
       'traffic_road_segment',
+      'weather_area',
     ].sort())
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })
 
   test('scenario catalog resolves scenario packs to internal simulation providers', () => {
     const catalog = createScenarioCatalog({
-      packs: [ambulancePack, trafficPack],
+      packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [osloAmbulanceScenario],
     })
     const runtime = catalog.runtimeFor('oslo-ambulance')
 
-    expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic'])
+    expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(runtime?.providers.map(provider => provider.providerId).sort()).toEqual([
       ambulanceSimProviderId,
       trafficSimProviderId,
+      weatherSimProviderId,
     ].sort())
     expect(runtime?.providerConfigs).toEqual({
       [ambulanceSimProviderId]: {},
       [trafficSimProviderId]: {},
+      [weatherSimProviderId]: {},
     })
   })
 
   test('scenario catalog rejects provider overrides outside the owning pack', () => {
     expect(() => createScenarioCatalog({
-      packs: [ambulancePack, trafficPack],
+      packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [{
         ...osloAmbulanceScenario,
         id: 'bad-provider-override',

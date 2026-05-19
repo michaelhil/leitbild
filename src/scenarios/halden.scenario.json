@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "title": "Halden ambulance response",
   "description": "A compact Halden scenario for checking scenario switching, routed traffic, hospital capacity, and dispatch basics.",
-  "packs": ["ambulance", "traffic"],
+  "packs": ["ambulance", "traffic", "weather"],
   "providerOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
@@ -76,6 +76,42 @@
       "victims": { "state": "confirmed", "count": 2 }
     },
     {
+      "pack": "weather",
+      "type": "weather_condition",
+      "id": "weather:halden-coastal-showers",
+      "label": "Cool coastal showers",
+      "polygon": [
+        [11.3480, 59.1120],
+        [11.4200, 59.1120],
+        [11.4200, 59.1430],
+        [11.3480, 59.1430],
+        [11.3480, 59.1120]
+      ],
+      "summary": "Cool humid weather with intermittent light rain over central Halden",
+      "severity": "notice",
+      "atmosphere": {
+        "airTemperatureC": 5,
+        "humidity": 0.86,
+        "windSpeedMps": 5.2,
+        "windDirectionDeg": 210,
+        "visibilityM": 9000,
+        "cloudCover": 0.82,
+        "precipitation": { "type": "rain", "intensityMmPerHour": 0.6 },
+        "labels": ["showers", "cloudy"]
+      },
+      "surface": {
+        "groundTemperatureC": 4.5,
+        "wetness": 0.28,
+        "standingWater": 0.05,
+        "snow": 0,
+        "ice": 0,
+        "frost": 0,
+        "frictionEstimate": 0.92,
+        "frictionClass": "wet",
+        "labels": ["wet"]
+      }
+    },
+    {
       "pack": "traffic",
       "type": "traffic_condition",
       "id": "traffic:halden-center-slowdown",
@@ -92,7 +128,8 @@
   "initialContexts": [],
   "providerConfigs": {
     "ambulance": {},
-    "traffic": {}
+    "traffic": {},
+    "weather": {}
   },
   "surface": {
     "schemaVersion": 1,
@@ -104,7 +141,7 @@
         "config": {
           "center": [11.3870, 59.1248],
           "zoom": 13,
-          "layers": ["objects", "routes", "traffic", "highlights"]
+          "layers": ["objects", "routes", "weather", "traffic", "highlights"]
         }
       },
       {
@@ -117,6 +154,7 @@
             { "categoryId": "hospitals", "visible": true, "collapsed": false, "visibleFields": ["trauma-beds"] },
             { "categoryId": "ambulances", "visible": true, "collapsed": false, "visibleFields": [] },
             { "categoryId": "incidents", "visible": true, "collapsed": false, "visibleFields": ["victims"] },
+            { "categoryId": "weather", "visible": true, "collapsed": false, "visibleFields": ["air-temperature", "precipitation", "surface"] },
             { "categoryId": "traffic", "visible": true, "collapsed": false, "visibleFields": ["severity", "reason"] }
           ]
         }

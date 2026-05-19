@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { scenarioDefinitionFromConfig } from '../core/scenarios/config.ts'
 import { ambulancePack } from '../packs/ambulance/pack.ts'
 import { trafficPack } from '../packs/traffic/pack.ts'
+import { weatherPack } from '../packs/weather/pack.ts'
 import { createDirectRoutingAdapter } from '../routing/direct-adapter.ts'
 import type { RoutingAdapter } from '../routing/protocol.ts'
 
@@ -13,7 +14,7 @@ const scenarioDir = dirname(fileURLToPath(import.meta.url))
 const readScenarioConfig = (fileName: string): unknown =>
   JSON.parse(readFileSync(join(scenarioDir, fileName), 'utf8')) as unknown
 
-const packs = [ambulancePack, trafficPack]
+const packs = [ambulancePack, trafficPack, weatherPack]
 
 export const createBuiltinScenarios = async (
   routing: RoutingAdapter,

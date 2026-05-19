@@ -10,6 +10,8 @@
     createRouteFeatureCollection,
     createTrafficAreaFeatureCollection,
     createTrafficLineFeatureCollection,
+    createWeatherAreaFeatureCollection,
+    createWeatherLineFeatureCollection,
     mapLayerIds,
     mapSourceIds,
     pointOf,
@@ -76,6 +78,7 @@
   let objectSourceDirty = false
   let routeSourceDirty = false
   let trafficSourceDirty = false
+  let weatherSourceDirty = false
   let lastRouteRevision = -1
   let lastSelectedControllerId: string | null = null
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
@@ -111,6 +114,12 @@
       mapLayerIds.trafficLineCasing,
       mapLayerIds.trafficLine,
     ]
+    if (layer === 'weather') return [
+      mapLayerIds.weatherAreaFill,
+      mapLayerIds.weatherAreaOutline,
+      mapLayerIds.weatherLineCasing,
+      mapLayerIds.weatherLine,
+    ]
     return [mapLayerIds.objectHalos]
   }
 
@@ -118,7 +127,7 @@
     const current = map
     if (!current || !loaded) return
     const enabledLayers = new Set<SurfaceMapLayer>(mapConfig.layers)
-    const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'highlights']
+    const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'weather', 'highlights']
     for (const surfaceLayer of surfaceLayers) {
       const visibility = enabledLayers.has(surfaceLayer) ? 'visible' : 'none'
       for (const layerId of layerIdsForSurfaceLayer(surfaceLayer)) {
@@ -171,6 +180,15 @@
     if (areaSource) areaSource.setData(createTrafficAreaFeatureCollection([...objects], presentationFor))
   }
 
+  const refreshWeatherSource = (): void => {
+    const current = map
+    if (!current || !loaded) return
+    const lineSource = current.getSource(mapSourceIds.weatherLines) as GeoJSONSource | undefined
+    const areaSource = current.getSource(mapSourceIds.weatherAreas) as GeoJSONSource | undefined
+    if (lineSource) lineSource.setData(createWeatherLineFeatureCollection([...objects], presentationFor))
+    if (areaSource) areaSource.setData(createWeatherAreaFeatureCollection([...objects], presentationFor))
+  }
+
   const refreshPlacementPreviewSource = (): void => {
     const current = map
     if (!current || !loaded) return
@@ -189,15 +207,17 @@
 
   const refreshSources = (): void => {
     refreshObjectSource()
+    refreshWeatherSource()
     refreshTrafficSource()
     refreshRouteSource()
     refreshPlacementPreviewSource()
   }
 
-  const scheduleSourceRefresh = (dirty: { readonly objects?: boolean; readonly routes?: boolean; readonly traffic?: boolean }): void => {
+  const scheduleSourceRefresh = (dirty: { readonly objects?: boolean; readonly routes?: boolean; readonly traffic?: boolean; readonly weather?: boolean }): void => {
     objectSourceDirty = objectSourceDirty || dirty.objects === true
     routeSourceDirty = routeSourceDirty || dirty.routes === true
     trafficSourceDirty = trafficSourceDirty || dirty.traffic === true
+    weatherSourceDirty = weatherSourceDirty || dirty.weather === true
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = null
@@ -205,10 +225,12 @@
       const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
       if (objectSourceDirty) refreshObjectSource(displayObjects)
       refreshMarkerPopup(displayObjects)
+      if (weatherSourceDirty) refreshWeatherSource()
       if (trafficSourceDirty) refreshTrafficSource()
       if (routeSourceDirty) refreshRouteSource()
       refreshPlacementPreviewSource()
       objectSourceDirty = false
+      weatherSourceDirty = false
       trafficSourceDirty = false
       routeSourceDirty = false
     })
@@ -323,6 +345,7 @@
       await registerObjectIconVariants(current, 'hospital')
       await registerObjectIconVariants(current, 'crash')
       await registerObjectIconVariants(current, 'traffic')
+      await registerObjectIconVariants(current, 'weather')
       addOperationalMapSourcesAndLayers({
         map: current,
         objects,
@@ -415,7 +438,7 @@
     const routesChanged = routeRevision !== lastRouteRevision || selectedControllerId !== lastSelectedControllerId
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
-    scheduleSourceRefresh({ objects: true, routes: routesChanged, traffic: true })
+    scheduleSourceRefresh({ objects: true, routes: routesChanged, traffic: true, weather: true })
     refreshPlacementPreviewSource()
     refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
