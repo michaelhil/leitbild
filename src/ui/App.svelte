@@ -84,6 +84,8 @@
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
+  let mapInteractionRevision = $state(0)
+  let previousSurfaceInteractionBlocked = $state(false)
   let startupSteps = $state<ReadonlyArray<StartupStep>>(createStartupSteps())
   let mapReady = $state(false)
   let snapshotReady = $state(false)
@@ -132,6 +134,7 @@
     dismissed: startupDismissed,
     steps: startupSteps,
   }) || startupStatusModalOpen)
+  const surfaceInteractionBlocked = $derived(startupModalVisible || createDraft !== null || settingsModalOpen)
 
   const toggleTheme = (): void => {
     theme = toggleThemeMode()
@@ -575,6 +578,14 @@
     failStep('map', message)
   }
 
+  $effect(() => {
+    const blocked = surfaceInteractionBlocked
+    if (previousSurfaceInteractionBlocked && !blocked && mapVisible) {
+      mapInteractionRevision += 1
+    }
+    previousSurfaceInteractionBlocked = blocked
+  })
+
   runOnMount(() => {
     const nextTheme = initialTheme()
     theme = nextTheme
@@ -708,6 +719,7 @@
             {clock}
             {routeRevision}
             layoutRevision={railLayout.layoutRevision}
+            interactionRevision={mapInteractionRevision}
             highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
             {hasNewInfo}
             {presentationFor}

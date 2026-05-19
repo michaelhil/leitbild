@@ -40,6 +40,7 @@
     readonly clock?: SimulationClockState
     readonly routeRevision: number
     readonly layoutRevision?: number
+    readonly interactionRevision?: number
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
@@ -62,6 +63,7 @@
     clock,
     routeRevision,
     layoutRevision = 0,
+    interactionRevision = 0,
     highlightedObjectIds = [],
     hasNewInfo,
     presentationFor,
@@ -96,8 +98,7 @@
   let appliedTheme: ThemeMode | null = null
   let mapInitialized = false
   let appliedCameraKey: string | null = null
-  let mapGestureActive = false
-  let viewportActivationFrame: number | null = null
+  let mapCameraGestureActive = false
 
   interface CameraInteractionHandler {
     readonly enable: () => void
@@ -134,32 +135,6 @@
     if (disabled.length > 0) {
       throw new Error(`Map camera interactions disabled: ${disabled.join(', ')}`)
     }
-  }
-
-  const cancelViewportActivation = (): void => {
-    if (viewportActivationFrame === null) return
-    cancelAnimationFrame(viewportActivationFrame)
-    viewportActivationFrame = null
-  }
-
-  const activateMapViewport = (current: MapLibreMap): void => {
-    // MapLibre controls call camera methods that clear stale handler state; do the same once our Svelte layout has settled.
-    assertCameraInteractionContract(current)
-    current.stop()
-    current.resize({ source: 'leitbild-map-viewport-activation' })
-  }
-
-  const scheduleViewportActivation = (): void => {
-    const current = map
-    if (!current) return
-    cancelViewportActivation()
-    viewportActivationFrame = requestAnimationFrame(() => {
-      viewportActivationFrame = requestAnimationFrame(() => {
-        viewportActivationFrame = null
-        if (map !== current) return
-        activateMapViewport(current)
-      })
-    })
   }
 
   const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
@@ -364,7 +339,7 @@
     if (packAreaRefreshInterval !== null) return
     packAreaRefreshInterval = setInterval(() => {
       if (!loaded || !mapConfig.layers.includes('weather')) return
-      if (mapGestureActive) return
+      if (mapCameraGestureActive) return
       scheduleSourceRefresh({ weather: true })
     }, 2_000)
   }
@@ -493,7 +468,6 @@
       applyConfiguredLayerVisibility()
       refreshSources()
       startPackAreaRefresh()
-      scheduleViewportActivation()
       if (!mapReadyNotified) {
         mapReadyNotified = true
         onMapReady()
@@ -528,7 +502,6 @@
     appliedTheme = theme
     appliedCameraKey = cameraKeyFor(mapConfig)
     map = current
-    scheduleViewportActivation()
     current.on('error', (event) => {
       const error = event.error
       onMapError(error instanceof Error ? error.message : 'Vector map failed to load')
@@ -539,10 +512,10 @@
       onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))
     })
     current.on('movestart', () => {
-      mapGestureActive = true
+      mapCameraGestureActive = true
     })
     current.on('moveend', () => {
-      mapGestureActive = false
+      mapCameraGestureActive = false
       scheduleSourceRefresh({ weather: true })
     })
     current.on('style.load', () => {
@@ -553,7 +526,6 @@
     })
 
     return () => {
-      cancelViewportActivation()
       if (refreshFrame !== null) cancelAnimationFrame(refreshFrame)
       stopDisplayAnimation()
       stopPackAreaRefresh()
@@ -569,7 +541,7 @@
       mapReadyNotified = false
       mapInitialized = false
       appliedCameraKey = null
-      mapGestureActive = false
+      mapCameraGestureActive = false
     }
   })
 
@@ -598,7 +570,7 @@
 
   $effect(() => {
     clock
-    if (!mapConfig.layers.includes('weather') || mapGestureActive) return
+    if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
     scheduleSourceRefresh({ weather: true })
   })
 
@@ -622,7 +594,15 @@
     const current = map
     if (!current) return
     current.resize({ source: 'leitbild-layout-resize' })
-    scheduleViewportActivation()
+  })
+
+  $effect(() => {
+    interactionRevision
+    const current = map
+    if (!current) return
+    assertCameraInteractionContract(current)
+    current.stop()
+    current.resize({ source: 'leitbild-map-interaction-ready' })
   })
 
   $effect(() => {
