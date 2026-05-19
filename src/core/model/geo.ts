@@ -41,9 +41,21 @@ export const geoJsonLineStringSchema = z.object({
 export const geoJsonPolygonSchema = z.object({
   type: z.literal('Polygon'),
   coordinates: z.array(z.array(geoJsonPosition2DSchema).min(4)).min(1),
+}).superRefine((polygon, ctx) => {
+  for (const [ringIndex, ring] of polygon.coordinates.entries()) {
+    const first = ring[0]
+    const last = ring[ring.length - 1]
+    if (!first || !last || first[0] !== last[0] || first[1] !== last[1]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'GeoJSON polygon rings must repeat the first coordinate as the final coordinate',
+        path: ['coordinates', ringIndex],
+      })
+    }
+  }
 })
 
-export const geoJsonGeometrySchema = z.discriminatedUnion('type', [
+export const geoJsonGeometrySchema = z.union([
   geoJsonPointSchema,
   geoJsonLineStringSchema,
   geoJsonPolygonSchema,

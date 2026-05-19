@@ -38,9 +38,16 @@ const lineStringFromPath = (path: ReadonlyArray<readonly [number, number]>): Geo
   coordinates: path.map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates),
 })
 
+const closePolygonPath = (path: ReadonlyArray<readonly [number, number]>): ReadonlyArray<readonly [number, number]> => {
+  const first = path[0]
+  const last = path[path.length - 1]
+  if (!first || !last) throw new Error('traffic polygon path must contain coordinates')
+  return first[0] === last[0] && first[1] === last[1] ? path : [...path, first]
+}
+
 const polygonFromPath = (path: ReadonlyArray<readonly [number, number]>): GeoJsonPolygon => ({
   type: 'Polygon',
-  coordinates: [path.map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates)],
+  coordinates: [closePolygonPath(path).map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates)],
 })
 
 const trafficConditionObject = (config: {

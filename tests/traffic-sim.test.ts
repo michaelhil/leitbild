@@ -5,6 +5,7 @@ import { createTrafficConditionCommandKind } from '../src/packs/traffic/commands
 import { trafficDomainDataSchema } from '../src/packs/traffic/model.ts'
 import { trafficConditionChangedSignalType } from '../src/packs/traffic/interactions.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { trafficScenarioSupport } from '../src/packs/traffic/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
 const controlInstanceId = 'control-instance:traffic-sim-test' as ControlInstanceId
@@ -108,5 +109,32 @@ describe('local traffic simulator', () => {
     } finally {
       await connection.close()
     }
+  })
+
+  test('scenario traffic area specs are closed into valid GeoJSON polygons', async () => {
+    const object = await trafficScenarioSupport.expandObject({
+      pack: 'traffic',
+      type: 'traffic_condition',
+      id: 'traffic:test-open-polygon',
+      label: 'Open polygon config',
+      geometryMode: 'area',
+      polygon: [
+        [10.70, 59.90],
+        [10.72, 59.90],
+        [10.72, 59.92],
+        [10.70, 59.92],
+      ],
+      condition: 'slowdown',
+      severity: 'moderate',
+      reason: 'Scenario author omitted ring closure',
+    }, {
+      at: nowIso(),
+      objects: [],
+      objectById: () => undefined,
+      routing: createDirectRoutingAdapter(),
+    })
+    const ring = object.spatial.geometry?.type === 'Polygon' ? object.spatial.geometry.coordinates[0] : undefined
+
+    expect(ring?.at(-1)).toEqual(ring?.[0])
   })
 })

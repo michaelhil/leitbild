@@ -56,13 +56,13 @@ export const createTrafficAreaPayloadSchema = z.object({
 })
 export type CreateTrafficAreaPayload = z.infer<typeof createTrafficAreaPayloadSchema>
 
-export const createTrafficConditionPayloadSchema = z.discriminatedUnion('objectType', [
+export const createTrafficConditionPayloadSchema = z.union([
   createTrafficRoadSegmentPayloadSchema,
   createTrafficAreaPayloadSchema,
 ])
 export type CreateTrafficConditionPayload = z.infer<typeof createTrafficConditionPayloadSchema>
 
-export const trafficGeometrySchema = z.discriminatedUnion('type', [
+export const trafficGeometrySchema = z.union([
   geoJsonLineStringSchema,
   geoJsonPolygonSchema,
 ])
