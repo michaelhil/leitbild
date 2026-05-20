@@ -48,10 +48,11 @@ This migration is complete for the current `src/ui` component set as of the rune
 ## Structural Patterns
 
 - `App.svelte` coordinates Control Instance state, route selection, startup lifecycle, and lazy loading, but delegates deeper UI workflows to focused rune state modules.
-- `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, resize pointer listeners, and layout invalidation.
+- `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, and resize pointer listeners. It does not own map invalidation.
 - `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
 - `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
-- `MapSurface.svelte` is an imperative MapLibre adapter. Svelte effects synchronize input boundaries such as object updates, theme changes, layout resize, and placement cursor changes, but MapLibre owns its internal map lifecycle.
+- `MapSurface.svelte` is an imperative MapLibre adapter. Svelte effects synchronize input boundaries such as object updates, theme changes, configured layer visibility, and placement cursor changes, but MapLibre owns its internal map lifecycle.
+- MapLibre resize must be driven by the observed rendered size of the map container, not by rail state, modal state, startup state, arbitrary revision counters, or delayed activation frames. A `ResizeObserver` at the map boundary is the project pattern for keeping MapLibre's internal transform in sync with browser layout.
 - `runOnMount` is the project vocabulary for one-time setup and cleanup of browser event listeners, intervals, WebSocket startup orchestration, and MapLibre construction. It wraps setup in `untrack` so these lifecycle effects do not accidentally subscribe to the state they initialize.
 
 ## Effect Policy
@@ -72,6 +73,7 @@ Examples:
 - Register and unregister browser event listeners.
 - Start and clear an interval.
 - Create and destroy the MapLibre map instance.
+- Observe the MapLibre container and call `map.resize()` only when the rendered container dimensions actually change.
 - Start the app's initial route/control-instance boot sequence.
 
 Do not call command, startup, socket, or map-construction functions from a raw `$effect` unless the rerun behavior is intentional and documented near the effect. Hidden rune reads through helper functions are still dependencies.
@@ -98,3 +100,4 @@ Costs:
 - Do not add global UI stores for state that is local to one surface.
 - Do not duplicate canonical Control Instance object state in Svelte modules.
 - Do not create compatibility layers for both old and new Svelte patterns. Migrate the touched slice cleanly.
+- Do not add `requestAnimationFrame` or timeout-based "map activation" heuristics to paper over MapLibre lifecycle bugs. Find the concrete lifecycle boundary instead.
