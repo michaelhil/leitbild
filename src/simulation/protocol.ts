@@ -1,5 +1,6 @@
 import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
 export interface SimulationSnapshot {
   readonly controlInstanceId: ControlInstanceId
@@ -47,6 +48,7 @@ export interface SimulationConnection {
   readonly getSnapshot: () => Promise<SimulationSnapshot>
   readonly subscribe: (handler: SimulationEventHandler) => () => void
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
+  readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly close: () => Promise<void>
@@ -54,6 +56,7 @@ export interface SimulationConnection {
 
 export interface SimulationAdapter {
   readonly id: string
+  readonly packId: string
   readonly domain: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
   readonly connect: (config: SimulationConnectionConfig) => Promise<SimulationConnection>

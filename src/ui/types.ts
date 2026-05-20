@@ -1,5 +1,5 @@
 import type { ControlInstanceId, OperationalObject, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
-import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory } from '../core/packs/protocol.ts'
+import type { PackCreateObjectType, PackCreationGeometry, PackObjectCategory, PackQueryResponse } from '../core/packs/protocol.ts'
 
 export interface ControlInstanceSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -52,6 +52,10 @@ export interface CommandResponse {
 
 export interface ClockResponse {
   readonly clock: SimulationClockState
+}
+
+export interface PackQueryApiResponse {
+  readonly response: PackQueryResponse
 }
 
 export type CreateParameterValue = string | number | boolean

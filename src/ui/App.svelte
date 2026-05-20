@@ -12,6 +12,7 @@
     joinControlInstance as joinControlInstanceClient,
     listScenarios as listScenariosClient,
     listControlInstances,
+    queryControlInstancePack,
     resetControlInstance,
     sendControlInstanceCommand,
     setControlInstanceClock,
@@ -148,12 +149,31 @@
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects, currentTime: currentPackTime() })
 
-  const mapAreaFeaturesFor = (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }): ReadonlyArray<PackMapAreaFeature> =>
-    activePack.mapAreaFeatures?.({
+  const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaFeature> => {
+    if (typeof result !== 'object' || result === null || !('features' in result)) {
+      throw new Error('pack map feature query returned no features field')
+    }
+    const features = (result as { readonly features?: unknown }).features
+    if (!Array.isArray(features)) throw new Error('pack map feature query features field is not an array')
+    return features as ReadonlyArray<PackMapAreaFeature>
+  }
+
+  const mapAreaFeaturesFor = async (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }): Promise<ReadonlyArray<PackMapAreaFeature>> => {
+    const presentationContext = {
       objects,
       currentTime: context.currentTime ?? currentPackTime(),
       map: { viewport: context.viewport, zoom: context.zoom },
-    }) ?? []
+    }
+    const syncFeatures = activePack.mapAreaFeatures?.(presentationContext) ?? []
+    if (!controlInstanceId) return syncFeatures
+    const queryFeatures: PackMapAreaFeature[] = []
+    for (const request of activePack.mapAreaFeatureQueries?.(presentationContext) ?? []) {
+      const body = await queryControlInstancePack(controlInstanceId, request)
+      if (!body.response.ok) throw new Error(body.response.reason)
+      queryFeatures.push(...mapFeaturesFromQueryResult(body.response.result))
+    }
+    return [...syncFeatures, ...queryFeatures]
+  }
 
   const hasNewInfo = (object: OperationalObject): boolean => {
     const presentation = presentationFor(object)

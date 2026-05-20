@@ -3,7 +3,7 @@ import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ControlInstanceId, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
-import { deleteObjectCommandKind } from '../src/core/model/index.ts'
+import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -102,6 +102,74 @@ describe('control instance API', () => {
       )
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('routes generic pack queries to active simulation providers', async () => {
+    const registry = await createTestRegistry()
+    try {
+      await callRoute(
+        registry,
+        '/api/control-instances/query-sandbox',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenarioId: 'oslo-ambulance' }),
+        },
+      )
+
+      const weather = await callRoute<{ readonly response: { readonly ok: boolean; readonly result?: { readonly state?: unknown } } }>(
+        registry,
+        '/api/control-instances/query-sandbox/queries',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            packId: 'weather',
+            kind: 'weather.sampleAtPoint',
+            payload: { point: geoPointFromLonLat(10.7522, 59.9139) },
+          }),
+        },
+      )
+      expect(weather.status).toBe(200)
+      expect(weather.body.response.ok).toBe(true)
+      expect(weather.body.response.result?.state).toBeTruthy()
+
+      const ambulance = await callRoute<{ readonly response: { readonly ok: boolean; readonly result?: { readonly ambulances?: readonly unknown[] } } }>(
+        registry,
+        '/api/control-instances/query-sandbox/queries',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            packId: 'ambulance',
+            kind: 'ambulance.dispatchState',
+            payload: {},
+          }),
+        },
+      )
+      expect(ambulance.status).toBe(200)
+      expect(ambulance.body.response.ok).toBe(true)
+      expect(ambulance.body.response.result?.ambulances?.length).toBeGreaterThan(0)
+
+      const traffic = await callRoute<{ readonly response: { readonly ok: boolean; readonly result?: { readonly conditions?: readonly unknown[] } } }>(
+        registry,
+        '/api/control-instances/query-sandbox/queries',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            packId: 'traffic',
+            kind: 'traffic.conditions',
+            payload: {},
+          }),
+        },
+      )
+      expect(traffic.status).toBe(200)
+      expect(traffic.body.response.ok).toBe(true)
+      expect(traffic.body.response.result?.conditions?.length).toBeGreaterThan(0)
+    } finally {
+      await registry.close('query-sandbox' as ControlInstanceId)
     }
   })
 

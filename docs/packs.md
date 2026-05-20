@@ -32,6 +32,7 @@ A pack may contain:
 - object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
 - object-attached contextual fields contributed to other packs' objects, such as weather-at-location or communications state
 - pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather H3 cells and influence shapes projected from the weather pack's sparse field model
+- pack queries for read-only provider-owned computations, such as weather-at-point, H3 map features, traffic conditions intersecting a route, or ambulance dispatch state
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -174,8 +175,10 @@ Pack-specific presentation belongs behind `LeitbildPack`:
 
 - `presentObject` owns the category, icon, color, summary, object fields, status indicator, and noteworthy-update policy for one object.
 - `contextualFields` lets a pack add derived fields to other packs' objects without teaching the generic rail or map about that pack. For example, a weather pack may add a `Weather` field to an ambulance by sampling active weather objects at the ambulance position.
-- `mapAreaFeatures` lets a pack project pack-owned spatial truth into generic rendered areas. The pack owns the computation. The generic map receives only feature id, category id, polygon geometry, color, opacity, and summary.
+- `mapAreaFeatures` lets a pack synchronously project object-derived spatial features into generic rendered areas when the current object snapshot is sufficient.
+- `mapAreaFeatureQueries` lets a pack request provider-backed spatial features when rendering depends on provider-owned private state. Weather uses this for H3 map features because the weather sparse field lives inside the weather provider, not in generic UI state.
 - `createObjectTypes.parameters` lets packs declare creation controls for the generic create modal. Traffic can request severity, speed factor, and reason without hardcoding traffic fields into the modal.
+- `PackQueryRequest` is the generic read-only API shape for provider-owned computations. Core validates the envelope and routes it through the Simulation Hub; the active provider validates the payload and returns a typed result or an explicit failure.
 
 The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, generic pack areas, symbols, and overlays. That vocabulary must not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
 
@@ -189,10 +192,72 @@ The boundary remains pack-owned:
 
 - the pack computes its own field state
 - the pack decides which field cells are materialized, active, decaying, or default
-- the pack projects only the needed visual features through `mapAreaFeatures`; weather currently projects base grid outlines, affected H3 cells, and weather influence shapes
+- the pack projects only the needed visual features through a provider-backed pack query; weather currently answers `weather.mapFeatures` with base grid outlines, affected H3 cells, and weather influence shapes
 - the generic UI renders those features through MapLibre sources and layers without knowing the pack's internal data structures
 
 This prevents the map from becoming weather-specific while still letting several future packs reuse the same spatial index vocabulary. H3 cell ids are allowed to cross pack boundaries as spatial references; weather state, fire state, radiation state, and exposure state must remain separate pack-owned data unless an explicit interaction or query contract is introduced.
+
+## Pack Query Surface
+
+The generic Control Instance API exposes one read-only query route:
+
+```text
+POST /api/control-instances/:id/queries
+```
+
+The request envelope is:
+
+```json
+{
+  "packId": "weather",
+  "kind": "weather.sampleAtPoint",
+  "payload": {}
+}
+```
+
+The response envelope is either:
+
+```json
+{
+  "response": {
+    "ok": true,
+    "packId": "weather",
+    "kind": "weather.sampleAtPoint",
+    "result": {},
+    "generatedAt": "2026-05-20T12:00:00.000Z"
+  }
+}
+```
+
+or an explicit failure:
+
+```json
+{
+  "response": {
+    "ok": false,
+    "packId": "weather",
+    "kind": "weather.sampleAtPoint",
+    "reason": "weather pack does not support query kind: weather.foo",
+    "generatedAt": "2026-05-20T12:00:00.000Z"
+  }
+}
+```
+
+Queries must be read-only. They must not issue commands, mutate provider state, publish events, or perform hidden retries. Query kinds are registered by convention inside each pack/provider and must validate payloads at the provider boundary.
+
+Current built-in query kinds:
+
+- `weather.sampleAtPoint`
+- `weather.sampleAlongRoute`
+- `weather.summarizeArea`
+- `weather.mapFeatures`
+- `weather.fieldStats`
+- `ambulance.objects`
+- `ambulance.object`
+- `ambulance.dispatchState`
+- `traffic.conditions`
+- `traffic.condition`
+- `traffic.conditionsForRoute`
 
 ## Interaction Contributions
 

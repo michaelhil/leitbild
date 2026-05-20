@@ -1,18 +1,16 @@
 import type { GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { nowIso } from '../../core/model/index.ts'
-import { hexCellBoundary, hexCellCenter, hexCellsForPolygon, hexResolution, type HexCellId } from '../../core/spatial/index.ts'
+import { hexCellBoundary, hexCellResolution, hexCellsForPolygon, hexParentCell, hexResolution, type HexCellId } from '../../core/spatial/index.ts'
 import type { PackMapAreaFeature } from '../../core/packs/protocol.ts'
 import {
   activeWeatherInfluencesAt,
   weatherInfluenceEllipsePolygon,
-  weatherInfluenceWeightForPoint,
 } from './influence.ts'
-import { weatherPresentationSeverityForState, weatherSampleAtPoint } from './conditions.ts'
+import { weatherPresentationSeverityForState } from './conditions.ts'
 import { weatherDomainDataSchema } from './model.ts'
+import type { WeatherCellState, WeatherSparseField } from './cell-field.ts'
 
 const maxBaseGridCells = 4_000
-const maxAffectedCells = 8_000
-
 type WeatherPresentationSeverity = ReturnType<typeof weatherPresentationSeverityForState>
 
 const visualResolutionForZoom = (zoom: number): number => {
@@ -47,6 +45,13 @@ const weatherCellOpacity = (severity: WeatherPresentationSeverity): number => {
   if (severity === 'adverse') return 0.12
   if (severity === 'notice') return 0.08
   return 0.035
+}
+
+const severityScore = (severity: WeatherPresentationSeverity): number => {
+  if (severity === 'hazard') return 3
+  if (severity === 'adverse') return 2
+  if (severity === 'notice') return 1
+  return 0
 }
 
 const influenceShapeColor = (severity: WeatherPresentationSeverity): string =>
@@ -84,44 +89,80 @@ const baseGridFeatures = (config: {
   }))
 }
 
-const affectedCellFeatures = (config: {
-  readonly objects: ReadonlyArray<OperationalObject>
+const viewportBounds = (viewport: GeoJsonPolygon): {
+  readonly west: number
+  readonly south: number
+  readonly east: number
+  readonly north: number
+} => {
+  const coordinates = viewport.coordinates.flatMap(ring => ring)
+  if (coordinates.length === 0) throw new Error('weather map projection requires non-empty viewport coordinates')
+  return coordinates.reduce((bounds, coordinate) => ({
+    west: Math.min(bounds.west, coordinate[0]),
+    south: Math.min(bounds.south, coordinate[1]),
+    east: Math.max(bounds.east, coordinate[0]),
+    north: Math.max(bounds.north, coordinate[1]),
+  }), {
+    west: Number.POSITIVE_INFINITY,
+    south: Number.POSITIVE_INFINITY,
+    east: Number.NEGATIVE_INFINITY,
+    north: Number.NEGATIVE_INFINITY,
+  })
+}
+
+const cellInBounds = (
+  cell: WeatherCellState,
+  bounds: ReturnType<typeof viewportBounds>,
+): boolean => {
+  const [lon, lat] = cell.center.coordinates
+  return lon >= bounds.west && lon <= bounds.east && lat >= bounds.south && lat <= bounds.north
+}
+
+const affectedCellFeaturesFromField = (config: {
+  readonly field: WeatherSparseField
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
-  readonly at: IsoTimestamp
 }): ReadonlyArray<PackMapAreaFeature> => {
-  const resolution = visualResolutionForZoom(config.zoom)
-  const cellsById = new Map<string, { readonly cellId: HexCellId; readonly summary: string }>()
-  for (const influence of activeWeatherInfluencesAt(config.objects, config.at)) {
-    const parsed = weatherDomainDataSchema.safeParse(config.objects.find(object => object.id === influence.objectId)?.domainData)
-    if (parsed.success && parsed.data.render?.showAffectedCells === false) continue
-    const coverage = boundedCellsForPolygon({
-      polygon: weatherInfluenceEllipsePolygon(influence.frame),
-      preferredResolution: resolution,
-      maxCells: maxAffectedCells,
-    })
-    for (const cellId of coverage.cells) {
-      const center = hexCellCenter(cellId)
-      if (weatherInfluenceWeightForPoint(center, influence.frame) <= 0) continue
-      cellsById.set(`${coverage.resolution}:${cellId}`, { cellId, summary: influence.label })
+  const bounds = viewportBounds(config.viewport)
+  const visualResolution = hexResolution(Math.min(visualResolutionForZoom(config.zoom), config.field.grid.truthResolution))
+  const cellsById = new Map<HexCellId, {
+    readonly severity: WeatherPresentationSeverity
+    readonly activeInfluenceIds: ReadonlyArray<string>
+    readonly changedCellCount: number
+  }>()
+  for (const cell of config.field.cells.values()) {
+    if (!cellInBounds(cell, bounds)) continue
+    const cellResolution = hexCellResolution(cell.id)
+    const visualCell = cellResolution > visualResolution ? hexParentCell(cell.id, visualResolution) : cell.id
+    const severity = weatherPresentationSeverityForState(cell.state)
+    const previous = cellsById.get(visualCell)
+    if (!previous || severityScore(severity) > severityScore(previous.severity)) {
+      cellsById.set(visualCell, {
+        severity,
+        activeInfluenceIds: cell.activeInfluenceIds,
+        changedCellCount: (previous?.changedCellCount ?? 0) + 1,
+      })
+    } else {
+      cellsById.set(visualCell, {
+        ...previous,
+        changedCellCount: previous.changedCellCount + 1,
+      })
     }
   }
-  return [...cellsById.values()].map(({ cellId, summary }) => {
-    const sample = weatherSampleAtPoint(config.objects, hexCellCenter(cellId), config.at)
-    const severity = weatherPresentationSeverityForState(sample.state)
-    return {
-      id: `weather-cell:${cellId}`,
-      categoryId: 'weather',
-      geometry: hexCellBoundary(cellId),
-      color: weatherCellColor(severity),
-      opacity: weatherCellOpacity(severity),
-      lineColor: weatherCellColor(severity),
-      lineOpacity: severity === 'normal' ? 0.045 : 0.11,
-      lineWidth: 0.45,
-      sortKey: 0,
-      summary,
-    }
-  })
+  return [...cellsById.entries()].map(([cellId, cell]) => ({
+    id: `weather-cell:${cellId}`,
+    categoryId: 'weather',
+    geometry: hexCellBoundary(cellId),
+    color: weatherCellColor(cell.severity),
+    opacity: weatherCellOpacity(cell.severity),
+    lineColor: weatherCellColor(cell.severity),
+    lineOpacity: cell.severity === 'normal' ? 0.04 : 0.09,
+    lineWidth: 0.42,
+    sortKey: 0,
+    summary: cell.activeInfluenceIds.length > 0
+      ? `weather affected by ${cell.activeInfluenceIds.join(', ')}`
+      : `weather changed cells: ${cell.changedCellCount}`,
+  }))
 }
 
 const influenceShapeFeatures = (config: {
@@ -146,7 +187,8 @@ const influenceShapeFeatures = (config: {
     }]
   })
 
-export const projectWeatherForMap = (config: {
+export const projectWeatherFieldForMap = (config: {
+  readonly field: WeatherSparseField
   readonly objects: ReadonlyArray<OperationalObject>
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
@@ -155,7 +197,7 @@ export const projectWeatherForMap = (config: {
   const at = config.at ?? nowIso()
   return [
     ...baseGridFeatures({ viewport: config.viewport, zoom: config.zoom }),
-    ...affectedCellFeatures({ objects: config.objects, viewport: config.viewport, zoom: config.zoom, at }),
+    ...affectedCellFeaturesFromField({ field: config.field, viewport: config.viewport, zoom: config.zoom }),
     ...influenceShapeFeatures({ objects: config.objects, at }),
   ]
 }

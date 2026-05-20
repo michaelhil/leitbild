@@ -16,14 +16,15 @@ import type {
   SimulationEvent,
   SimulationEventHandler,
 } from '../../../simulation/protocol.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
   createWeatherSparseField,
   updateWeatherSparseField,
+  weatherSampleAtPointFromSparseField,
   weatherGridForObjects,
   type WeatherSparseField,
 } from '../cell-field.ts'
 import { createWeatherAreaCommandKind } from '../commands.ts'
-import { weatherSampleAtPoint } from '../conditions.ts'
 import { defaultAtmosphere, defaultSurface } from '../defaults.ts'
 import { weatherDataAtTime, weatherObjectCurrentCenter } from '../influence.ts'
 import {
@@ -39,6 +40,7 @@ import {
   type WeatherState,
 } from '../model.ts'
 import { createWeatherDomainData } from '../scenario.ts'
+import { answerWeatherQuery } from '../query.ts'
 import { weatherSimAdapterId, weatherSimDomain, weatherSimProviderId } from './constants.ts'
 
 const updateIntervalMs = 5_000
@@ -149,14 +151,14 @@ const weatherProbeDataFromSample = (config: {
 
 const resampleWeatherProbe = (
   object: OperationalObject,
-  objects: ReadonlyArray<OperationalObject>,
+  field: WeatherSparseField,
   at: IsoTimestamp,
 ): OperationalObject | null => {
   const previous = weatherDomainDataSchema.parse(object.domainData)
   if (previous.conditionKind !== 'point_observation') return null
   const point = object.spatial.position?.point
   if (!point) throw new Error(`weather probe ${object.id} is missing a point`)
-  const sample = weatherSampleAtPoint(objects, point, at)
+  const sample = weatherSampleAtPointFromSparseField({ field, point, at })
   const next = weatherProbeDataFromSample({
     sample,
     at,
@@ -245,6 +247,7 @@ const createOperatorWeatherAreaData = (
 
 export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
   id: weatherSimProviderId,
+  packId: 'weather',
   domain: weatherDomainId,
   acceptedCommandKinds: [createWeatherAreaCommandKind],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
@@ -254,7 +257,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
     for (const object of initialObjects) objects.set(object.id, restoreWeatherObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
     const handlers = new Set<SimulationEventHandler>()
-    const startedAt = nowIso()
+    const startedAt = config.scenario?.world.startsAt ?? nowIso()
     let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
     let lastTickWallMs = Date.now()
     let sparseField: WeatherSparseField = createWeatherSparseField(weatherGridForObjects({
@@ -262,6 +265,12 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
       objects: [...objects.values()],
       fallbackPoint: objects.values().next().value?.spatial.position?.point ?? geoPointFromLonLat(0, 0),
     }))
+    sparseField = updateWeatherSparseField({
+      field: sparseField,
+      objects: [...objects.values()],
+      at: clock.currentTime,
+      elapsedSeconds: 0,
+    }).field
 
     const advance = (): void => {
       const nowWallMs = Date.now()
@@ -304,7 +313,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
         elapsedSeconds,
       }).field
       for (const object of weatherObjectsAfterZoneEvolution) {
-        const updated = resampleWeatherProbe(object, weatherObjectsAfterZoneEvolution, at)
+        const updated = resampleWeatherProbe(object, sparseField, at)
         if (!updated) continue
         objects.set(updated.id, updated)
         events.push({
@@ -349,7 +358,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
               label: payload.data.label,
               point: payload.data.point,
               data: weatherProbeDataFromSample({
-                sample: weatherSampleAtPoint([...objects.values()], payload.data.point, acceptedAt),
+                sample: weatherSampleAtPointFromSparseField({ field: sparseField, point: payload.data.point, at: acceptedAt }),
                 at: acceptedAt,
                 summary: 'Weather probe sample',
               }),
@@ -363,8 +372,14 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
               data: createOperatorWeatherAreaData(payload.data, acceptedAt),
               at: acceptedAt,
               causedByCommandId: command.id,
-            })
+        })
         objects.set(object.id, object)
+        sparseField = updateWeatherSparseField({
+          field: sparseField,
+          objects: [...objects.values()],
+          at: acceptedAt,
+          elapsedSeconds: 0,
+        }).field
         emit(handlers, [{
           type: 'object.upserted',
           object,
@@ -373,15 +388,42 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
         }], acceptedAt)
         return { ok: true, commandId: command.id, acceptedAt }
       },
+      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+        answerWeatherQuery({
+          request,
+          field: sparseField,
+          objects: [...objects.values()],
+          at: clock.currentTime,
+        }),
       observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+        let changed = false
         for (const event of events) {
-          if (event.type === 'object.upserted' && event.object.domain === weatherDomainId) objects.set(event.object.id, restoreWeatherObject(event.object))
-          if (event.type === 'object.deleted') objects.delete(event.objectId)
+          if (event.type === 'object.upserted' && event.object.domain === weatherDomainId) {
+            objects.set(event.object.id, restoreWeatherObject(event.object))
+            changed = true
+          }
+          if (event.type === 'object.deleted') {
+            changed = objects.delete(event.objectId) || changed
+          }
+        }
+        if (changed) {
+          sparseField = updateWeatherSparseField({
+            field: sparseField,
+            objects: [...objects.values()],
+            at: clock.currentTime,
+            elapsedSeconds: 0,
+          }).field
         }
       },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
         lastTickWallMs = Date.now()
+        sparseField = updateWeatherSparseField({
+          field: sparseField,
+          objects: [...objects.values()],
+          at: clock.currentTime,
+          elapsedSeconds: 0,
+        }).field
       },
       close: async (): Promise<void> => {
         clearInterval(interval)

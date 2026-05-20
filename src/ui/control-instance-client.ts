@@ -4,9 +4,11 @@ import type {
   CommandResponse,
   ControlInstanceListResponse,
   ControlInstanceResponse,
+  PackQueryApiResponse,
   ScenarioListResponse,
   ScenarioResponse,
 } from './types.ts'
+import type { PackQueryRequest } from '../core/packs/protocol.ts'
 
 export interface ControlInstanceCommandRequest {
   readonly kind: string
@@ -115,4 +117,16 @@ export const setControlInstanceClock = async (
     body: JSON.stringify(update),
   })
   return await readJsonResponse<ClockResponse>(response, 'clock update failed')
+}
+
+export const queryControlInstancePack = async (
+  controlInstanceId: ControlInstanceId,
+  request: PackQueryRequest,
+): Promise<PackQueryApiResponse> => {
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/queries`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  return await readJsonResponse<PackQueryApiResponse>(response, 'pack query failed')
 }

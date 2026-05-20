@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
 import { createTrafficConditionPayloadSchema, trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficGeometryMode } from '../model.ts'
 import { trafficConditionChangedSignalType } from '../interactions.ts'
+import { answerTrafficQuery } from '../query.ts'
 import { trafficSimAdapterId, trafficSimDomain, trafficSimProviderId } from './constants.ts'
 
 const defaultSpeedFactor = 0.55
@@ -143,6 +145,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
   readonly routing?: RoutingAdapter
 } = {}): SimulationAdapter => ({
   id: trafficSimProviderId,
+  packId: 'traffic',
   domain: trafficDomainId,
   acceptedCommandKinds: [createTrafficConditionCommandKind],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
@@ -212,6 +215,12 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
         ], acceptedAt)
         return { ok: true, commandId: command.id, acceptedAt }
       },
+      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+        answerTrafficQuery({
+          request,
+          objects: [...objects.values()],
+          at: nowIso(),
+        }),
       observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.upserted' && event.object.domain === trafficDomainId) objects.set(event.object.id, event.object)

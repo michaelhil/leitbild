@@ -122,6 +122,28 @@ export interface PackMapAreaFeature {
   readonly sortKey?: number
 }
 
+export interface PackQueryRequest {
+  readonly packId: string
+  readonly kind: string
+  readonly payload: unknown
+}
+
+export type PackQueryResponse =
+  | {
+      readonly ok: true
+      readonly packId: string
+      readonly kind: string
+      readonly result: unknown
+      readonly generatedAt: IsoTimestamp
+    }
+  | {
+      readonly ok: false
+      readonly packId: string
+      readonly kind: string
+      readonly reason: string
+      readonly generatedAt: IsoTimestamp
+    }
+
 export interface PackObjectCreationContext {
   readonly objects: ReadonlyArray<OperationalObject>
 }
@@ -194,6 +216,9 @@ export interface LeitbildPack {
   readonly mapAreaFeatures?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackMapAreaFeature>
+  readonly mapAreaFeatureQueries?: (
+    context: PackObjectPresentationContext,
+  ) => ReadonlyArray<PackQueryRequest>
   readonly defaultObjectLabel: (
     typeId: string,
     context: PackObjectCreationContext,

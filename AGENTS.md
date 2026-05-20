@@ -29,7 +29,7 @@
 - Keep pack-specific logic in `src/packs/*`; keep `core` use-case agnostic.
 - Generic UI modules must consume pack presentation and creation protocols instead of importing pack-specific models, simulators, geometry helpers, or condition calculators.
 - Shared spatial indexing belongs in `src/core/spatial/*`. The `h3-js` dependency may only be imported by the core spatial wrapper; packs and UI must consume Leitbild spatial interfaces instead of depending on H3 directly.
-- Weather field computation belongs inside the weather pack. UI may request projected map features through the pack protocol, but must not import weather models, weather cell math, or weather condition calculators.
+- Weather field computation belongs inside the weather pack. UI may request provider-projected map features through the pack query protocol, but must not import weather models, weather cell math, or weather condition calculators.
 - New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
 - Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
@@ -43,6 +43,8 @@
 - Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state. Providers must rehydrate private runtime mechanics from canonical objects on connect; do not make the UI infer or drive simulator motion.
 - Use the Simulation Hub for multiple providers in one Control Instance. Do not merge a new provider domain into an existing domain simulator just to get a short-term demo.
 - Providers must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
+- Provider-owned read models must be exposed through the generic pack query surface. Do not add domain-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
+- Pack queries must be read-only. They must not issue commands, mutate provider state, emit events, or commit canonical changes.
 - Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
 - Model cross-object and cross-simulation interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.

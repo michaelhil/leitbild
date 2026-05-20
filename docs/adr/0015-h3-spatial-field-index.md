@@ -20,17 +20,17 @@ Rules:
 - packs use core spatial functions such as `hexCellAtPoint`, `hexCellsForPolygon`, `hexCellBoundary`, and `hexParentCell`
 - UI does not import H3 or pack field internals
 - weather field computation remains inside the weather pack
-- MapLibre receives projected pack map features, split into base grid, affected cells, and influence shapes
+- MapLibre receives provider-projected pack map features, split into base grid, affected cells, and influence shapes
 
 The weather pack now uses an H3 sparse field for ground truth computation. Default global conditions are implicit. Materialized cells are those currently affected by weather influence objects, those still evolving after a prior influence, or stable non-default cells that should remain queryable.
 
-The UI receives weather as projected map features, not as a weather field store. Weather map projection is split into:
+The UI receives weather as projected map features, not as a weather field store. The generic UI asks the active pack for map feature query requests, then calls the generic Control Instance pack query API. The weather provider answers `weather.mapFeatures` from its sparse H3 field. Weather map projection is split into:
 
 - base H3 grid outlines for the current viewport and zoom
 - affected H3 cells derived from active weather influence objects
 - weather influence shapes derived from keyframed ovals
 
-Those feature families are rendered with generic MapLibre sources and layers. The generic map must not import weather sparse-field code or H3 directly.
+Those feature families are rendered with generic MapLibre sources and layers. The generic map must not import weather sparse-field code, weather condition calculators, or H3 directly.
 
 ## Consequences
 

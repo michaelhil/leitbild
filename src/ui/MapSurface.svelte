@@ -39,7 +39,7 @@
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
-    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }) => ReadonlyArray<PackMapAreaFeature>
+    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }) => Promise<ReadonlyArray<PackMapAreaFeature>>
     readonly onObjectSelected: (object: OperationalObject) => void
     readonly onPlacementPoint: (point: GeoJsonPoint) => void
     readonly onObjectSeen: (object: OperationalObject) => void
@@ -81,6 +81,8 @@
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
   let packAreaRefreshInterval: ReturnType<typeof setInterval> | null = null
+  let packAreaFeatureRequestSerial = 0
+  let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
   let objectInteractionsAdded = false
   let mapReadyNotified = false
   let appliedTheme: ThemeMode | null = null
@@ -200,11 +202,22 @@
   const currentDisplayTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
-  const currentPackMapAreaFeatures = (): ReadonlyArray<PackMapAreaFeature> => {
+  const refreshPackMapAreaFeatures = async (): Promise<void> => {
     const current = map
     const viewport = currentViewport()
-    if (!current || !viewport) return []
-    return mapAreaFeaturesFor({ viewport, zoom: current.getZoom(), currentTime: currentDisplayTime() })
+    if (!current || !viewport) {
+      cachedPackMapAreaFeatures = []
+      return
+    }
+    const serial = ++packAreaFeatureRequestSerial
+    try {
+      const features = await mapAreaFeaturesFor({ viewport, zoom: current.getZoom(), currentTime: currentDisplayTime() })
+      if (serial !== packAreaFeatureRequestSerial) return
+      cachedPackMapAreaFeatures = features
+      sourceController.schedule({ weather: true })
+    } catch (err) {
+      onMapError(err instanceof Error ? err.message : String(err))
+    }
   }
 
   const escapeHtml = (value: string): string =>
@@ -220,7 +233,7 @@
     getPlacementPoints: () => placementPoints,
     hasNewInfo: (object) => hasNewInfo(object),
     presentationFor: (object) => presentationFor(object),
-    getPackMapAreaFeatures: currentPackMapAreaFeatures,
+    getPackMapAreaFeatures: () => cachedPackMapAreaFeatures,
     updateMarkerPopup: (sourceObjects) => {
       refreshMarkerPopup(sourceObjects)
     },
@@ -256,7 +269,7 @@
     packAreaRefreshInterval = setInterval(() => {
       if (!loaded || !mapConfig.layers.includes('weather')) return
       if (mapCameraGestureActive) return
-      sourceController.schedule({ weather: true })
+      void refreshPackMapAreaFeatures()
     }, 2_000)
   }
 
@@ -373,7 +386,7 @@
         highlightedObjectIds,
         hasNewInfo,
         presentationFor,
-        packMapAreaFeatures: currentPackMapAreaFeatures(),
+        packMapAreaFeatures: cachedPackMapAreaFeatures,
         routeCasingColor: routeCasingColor(),
         trafficCasingColor: trafficCasingColor(),
         refreshSources,
@@ -384,6 +397,7 @@
       lastSelectedControllerId = selectedControllerId
       applyConfiguredLayerVisibility()
       refreshSources()
+      void refreshPackMapAreaFeatures()
       startPackAreaRefresh()
       if (!mapReadyNotified) {
         mapReadyNotified = true
@@ -413,7 +427,7 @@
       },
       onMoveEnd: () => {
         mapCameraGestureActive = false
-        sourceController.schedule({ weather: true })
+        void refreshPackMapAreaFeatures()
       },
       onStyleLoad: (styleMap) => {
         void setupOperationalMapStyle(styleMap)
@@ -473,7 +487,7 @@
   $effect(() => {
     clock
     if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
-    sourceController.schedule({ weather: true })
+    void refreshPackMapAreaFeatures()
   })
 
   $effect(() => {

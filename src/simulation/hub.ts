@@ -1,5 +1,6 @@
 import type { CommandEnvelope, CommandResult, DomainEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEmission, SimulationEventHandler, SimulationScenarioRuntimeConfig, SimulationSnapshot } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
@@ -45,6 +46,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
 
   return {
     id: 'simulation-hub',
+    packId: 'simulation-hub',
     domain: 'simulation-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
     connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
@@ -94,6 +96,20 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
         return target.connection.sendCommand(command)
       }
 
+      const query = async (request: PackQueryRequest): Promise<PackQueryResponse> => {
+        const target = connections.find(({ adapter }) => adapter.packId === request.packId)
+        if (!target) {
+          return {
+            ok: false,
+            packId: request.packId,
+            kind: request.kind,
+            reason: `no simulation provider is active for pack: ${request.packId}`,
+            generatedAt: nowIso(),
+          }
+        }
+        return await target.connection.query(request)
+      }
+
       return {
         getSnapshot,
         subscribe: (handler: SimulationEventHandler): (() => void) => {
@@ -103,6 +119,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
           }
         },
         sendCommand,
+        query,
         observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
           await Promise.all(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
         },

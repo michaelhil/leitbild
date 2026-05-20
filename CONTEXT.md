@@ -21,7 +21,7 @@ The adapter-facing role of a simulation instance: it emits observations, object 
 _Avoid_: treating a provider as the canonical owner of shared Leitbild object state
 
 **Simulation Hub**:
-A control-instance-local coordinator that connects multiple simulation providers, merges their provider snapshots, routes commands to providers that accept them, forwards provider emissions, and broadcasts committed domain events back to providers.
+A control-instance-local coordinator that connects multiple simulation providers, merges their provider snapshots, routes commands to providers that accept them, routes pack queries to the active provider for that pack, forwards provider emissions, and broadcasts committed domain events back to providers.
 _Avoid_: putting multi-provider orchestration inside one domain provider
 
 **Provider Private State**:
@@ -31,6 +31,10 @@ _Avoid_: exposing provider private state directly as canonical API/UI/AI state
 **Provider Projection**:
 A provider-local read model of committed control-instance state that helps a simulation provider continue its mechanics. It follows canonical events but is not itself canonical.
 _Avoid_: calling this the object store or source of truth
+
+**Pack Query**:
+A read-only, pack-scoped request routed through the Control Instance API and Simulation Hub to the active provider for that pack. Pack queries expose provider-owned computations such as weather-at-point, weather map features, traffic conditions for a route, or ambulance dispatch state without teaching core or generic UI modules those domains.
+_Avoid_: hardcoded weather/traffic/ambulance API routes, arbitrary RPC, or mutating state through query handlers
 
 **Client**:
 One connected browser tab, API integration, AI process, or display surface connected to a control instance.
@@ -133,7 +137,7 @@ A generic, globally stable cell index used by packs that need field-like spatial
 _Avoid_: pack-specific grid implementations in UI modules, direct H3 imports outside the wrapper, or treating visual cells as operational objects
 
 **Weather Sparse Field**:
-The weather pack's materialized subset of the global H3 spatial field. It stores H3 cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth. Map rendering receives projected features for base grid outlines, affected cells, and influence shapes; it does not own weather computation.
+The weather pack's materialized subset of the global H3 spatial field. It stores H3 cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth. Map rendering receives provider-projected features for base grid outlines, affected cells, and influence shapes through a pack query; it does not own weather computation.
 _Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
 **Map Context Layer**:
@@ -160,6 +164,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Simulation Hub** may connect several **Simulation Providers** to one **Control Instance**.
 - A **Simulation Provider** emits candidate updates and signals into a **Control Instance**.
 - A **Simulation Provider** may observe committed **Domain Events** to update **Provider Private State** or a **Provider Projection**.
+- A **Pack Query** is routed to the active **Simulation Provider** for that pack and must be read-only.
 - A **Control Instance** can have many **Actors**.
 - A **Control Instance** can have many **Clients**.
 - A **Scenario Run** is a URL-addressable run of one **Scenario Definition** inside a **Control Instance**, for example `/i/halden/sandbox`; its internal Control Instance id is `halden:sandbox`.
@@ -182,7 +187,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Vector Map Artifact** provides **Map Context Layers** for orientation and contextual reasoning, but not canonical operational state.
 - The **Map Capability Manifest** is the contract for discovering which **Map Context Layers** and properties exist.
 - A **Spatial Field Index** can be reused by multiple packs, but each pack owns its own field semantics and computation.
-- A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features, not the field store itself.
+- A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features through `weather.mapFeatures`, not the field store itself.
 - H3 is a shared indexing vocabulary, not shared domain truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.

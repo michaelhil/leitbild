@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, simulationClockUpdateSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
 import type { Actor } from '../control-instances/actors.ts'
+import type { PackQueryRequest } from '../packs/protocol.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import { apiError, json, readJson } from './responses.ts'
 
@@ -38,6 +39,12 @@ const signalRequestSchema = z.object({
   correlationId: z.string().min(1).optional(),
   causationId: z.string().min(1).optional(),
   ttlMs: z.number().finite().positive().optional(),
+})
+
+const packQueryRequestSchema = z.object({
+  packId: z.string().min(1),
+  kind: z.string().min(1),
+  payload: z.unknown(),
 })
 
 const buildActor = (actorId: Actor['id']): Actor => ({
@@ -84,6 +91,15 @@ const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
     ...(parsed.ttlMs === undefined ? {} : { ttlMs: parsed.ttlMs }),
   }) as InteractionSignal
   return { signal, actor: buildActor(parsed.actorId) }
+}
+
+const buildPackQuery = (raw: unknown): PackQueryRequest => {
+  const parsed = packQueryRequestSchema.parse(raw)
+  return {
+    packId: parsed.packId,
+    kind: parsed.kind,
+    payload: parsed.payload,
+  }
 }
 
 const handleControlInstanceApiInner = async (
@@ -218,6 +234,17 @@ const handleControlInstanceApiInner = async (
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
     const events = runtime.events(afterSeq === undefined ? {} : { afterSeq })
     return json({ events, nextSeq: events.at(-1)?.seq ?? afterSeq ?? 0 })
+  }
+
+  const queryMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/queries$/)
+  if (queryMatch && req.method === 'POST') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(queryMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const raw = await readJson(req)
+    const query = buildPackQuery(raw)
+    const response = await runtime.queryPack(query)
+    return json({ response }, { status: response.ok ? 200 : 400 })
   }
 
   const clockMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/clock$/)

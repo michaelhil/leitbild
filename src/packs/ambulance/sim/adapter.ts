@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
 import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
 import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
@@ -12,6 +13,7 @@ import {
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../commands.ts'
+import { answerAmbulanceQuery } from '../query.ts'
 
 const emit = (
   handlers: ReadonlySet<SimulationEventHandler>,
@@ -119,6 +121,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
 }): SimulationAdapter => ({
   id: ambulanceSimProviderId,
+  packId: 'ambulance',
   domain: ambulanceDomainId,
   acceptedCommandKinds: [
     assignToIncidentCommandKind,
@@ -195,6 +198,12 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
           handlers.delete(handler)
         }
       },
+      query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+        answerAmbulanceQuery({
+          request,
+          objects: engine.snapshot().objects,
+          at: nowIso(),
+        }),
       observeCommittedEvents: async (events): Promise<void> => {
         engine.observeCommittedEvents(events.filter(event =>
           event.type === 'object.deleted'

@@ -77,6 +77,13 @@ const createControlledSimulation = (initialObject: OperationalObject): {
         rejectedAt: nowIso(),
         reason: 'test connection does not accept commands',
       }),
+      query: async request => ({
+        ok: false,
+        packId: request.packId,
+        kind: request.kind,
+        reason: 'test connection does not accept queries',
+        generatedAt: nowIso(),
+      }),
       observeCommittedEvents: async () => {},
       setClock: async () => {},
       close: async () => {

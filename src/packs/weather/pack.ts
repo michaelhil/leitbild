@@ -12,7 +12,6 @@ import {
   type WeatherDomainData,
   type WeatherState,
 } from './model.ts'
-import { projectWeatherForMap } from './projection.ts'
 import { weatherScenarioSupport } from './scenario.ts'
 import { weatherSimProviderId } from './sim/constants.ts'
 
@@ -149,15 +148,17 @@ export const weatherPack: LeitbildPack = {
       noteworthyUpdates: false,
     }
   },
-  mapAreaFeatures: (context) => {
-    if (!context.map) return []
-    return projectWeatherForMap({
-      objects: context.objects,
-      viewport: context.map.viewport,
-      zoom: context.map.zoom,
-      at: context.currentTime ?? nowIso(),
-    })
-  },
+  mapAreaFeatureQueries: (context) => context.map
+    ? [{
+        packId: 'weather',
+        kind: 'weather.mapFeatures',
+        payload: {
+          viewport: context.map.viewport,
+          zoom: context.map.zoom,
+          layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
+        },
+      }]
+    : [],
   contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
     const point = samplePointFor(object)
     if (!point) return []

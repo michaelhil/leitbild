@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../packs/protocol.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
@@ -23,6 +24,7 @@ export interface ControlInstanceRuntime {
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
+  readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly close: () => Promise<void>
 }
@@ -535,6 +537,9 @@ export const createControlInstanceRuntime = async (config: {
     return nextClock
   }
 
+  const queryPack = async (request: PackQueryRequest): Promise<PackQueryResponse> =>
+    await config.simulation.query(request)
+
   return {
     id: config.id,
     snapshot: () => snapshotWithCurrentClock(),
@@ -550,6 +555,7 @@ export const createControlInstanceRuntime = async (config: {
       }
     },
     issueCommand,
+    queryPack,
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {
       await enqueuePublish(async () => {
         await handleInteractionSignalNow(signal, provenance)

@@ -17,6 +17,7 @@ import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { weatherSimProviderId } from '../src/packs/weather/sim/constants.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
 
 const controlInstanceId = 'control-instance:weather-pack' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId
@@ -72,6 +73,37 @@ const polygonCentroid = (polygon: { readonly coordinates: ReadonlyArray<Readonly
     lat: acc.lat + coordinate[1],
   }), { lon: 0, lat: 0 })
   return { lon: sum.lon / unique.length, lat: sum.lat / unique.length }
+}
+
+const weatherMapFeatures = async (config: {
+  readonly viewport: GeoJsonPolygon
+  readonly zoom: number
+}): Promise<ReadonlyArray<PackMapAreaFeature>> => {
+  const adapter = createLocalWeatherSimulationAdapter()
+  const connection = await adapter.connect({ controlInstanceId, scenario: {
+    scenarioId: osloAmbulanceScenario.id,
+    providerIds: [weatherSimProviderId],
+    world: osloAmbulanceScenario.world,
+    initialObjects: osloAmbulanceScenario.initialObjects,
+    providerConfigs: {},
+    providerConfig: {},
+  } })
+  try {
+    const response = await connection.query({
+      packId: 'weather',
+      kind: 'weather.mapFeatures',
+      payload: {
+        viewport: config.viewport,
+        zoom: config.zoom,
+        layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
+      },
+    })
+    if (!response.ok) throw new Error(response.reason)
+    const result = response.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }
+    return result.features
+  } finally {
+    await connection.close()
+  }
 }
 
 describe('weather pack', () => {
@@ -189,14 +221,8 @@ describe('weather pack', () => {
     expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
   })
 
-  test('map projection exposes H3 base grid cells for the requested viewport', () => {
-    const start = osloAmbulanceScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
-    const features = weatherPack.mapAreaFeatures?.({
-      objects: osloAmbulanceScenario.initialObjects,
-      currentTime: start,
-      map: { viewport: osloViewport, zoom: 12 },
-    }) ?? []
+  test('provider-backed map query exposes H3 base grid cells for the requested viewport', async () => {
+    const features = await weatherMapFeatures({ viewport: osloViewport, zoom: 12 })
     const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
     const bounds = polygonBounds(baseGrid.map(feature => feature.geometry))
 
@@ -207,9 +233,7 @@ describe('weather pack', () => {
     expect(bounds.north).toBeGreaterThanOrEqual(59.98)
   })
 
-  test('map projection separates base grid, affected cells, and influence shapes', () => {
-    const start = osloAmbulanceScenario.world.startsAt
-    if (!start) throw new Error('expected Oslo scenario start time')
+  test('provider-backed map query separates base grid, affected cells, and influence shapes', async () => {
     const wideViewport: GeoJsonPolygon = {
       type: 'Polygon',
       coordinates: [[
@@ -220,11 +244,7 @@ describe('weather pack', () => {
         geoPointFromLonLat(10.35, 59.72).coordinates,
       ]],
     }
-    const features = weatherPack.mapAreaFeatures?.({
-      objects: osloAmbulanceScenario.initialObjects,
-      currentTime: start,
-      map: { viewport: wideViewport, zoom: 12 },
-    }) ?? []
+    const features = await weatherMapFeatures({ viewport: wideViewport, zoom: 12 })
     const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
     const affectedCells = features.filter(feature => feature.id.startsWith('weather-cell:'))
     const influenceShapes = features.filter(feature => feature.id.startsWith('weather:'))
@@ -236,20 +256,36 @@ describe('weather pack', () => {
     expect(affectedCells.length).toBeLessThanOrEqual(8_000)
   })
 
-  test('moving weather influence shapes follow simulation time', () => {
+  test('moving weather influence shapes follow simulation time', async () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const later = new Date(Date.parse(start) + 420_000).toISOString() as IsoTimestamp
-    const startFeatures = weatherPack.mapAreaFeatures?.({
-      objects: osloAmbulanceScenario.initialObjects,
-      currentTime: start,
-      map: { viewport: osloViewport, zoom: 12 },
-    }) ?? []
-    const laterFeatures = weatherPack.mapAreaFeatures?.({
-      objects: osloAmbulanceScenario.initialObjects,
-      currentTime: later,
-      map: { viewport: osloViewport, zoom: 12 },
-    }) ?? []
+    const adapter = createLocalWeatherSimulationAdapter()
+    const connection = await adapter.connect({ controlInstanceId, scenario: {
+      scenarioId: osloAmbulanceScenario.id,
+      providerIds: [weatherSimProviderId],
+      world: osloAmbulanceScenario.world,
+      initialObjects: osloAmbulanceScenario.initialObjects,
+      providerConfigs: {},
+      providerConfig: {},
+    } })
+    await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })
+    const startResponse = await connection.query({
+      packId: 'weather',
+      kind: 'weather.mapFeatures',
+      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
+    })
+    await connection.setClock({ currentTime: later, updatedAt: nowIso(), paused: true, speed: 1 })
+    const laterResponse = await connection.query({
+      packId: 'weather',
+      kind: 'weather.mapFeatures',
+      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
+    })
+    await connection.close()
+    if (!startResponse.ok) throw new Error(startResponse.reason)
+    if (!laterResponse.ok) throw new Error(laterResponse.reason)
+    const startFeatures = (startResponse.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
+    const laterFeatures = (laterResponse.result as { readonly features: ReadonlyArray<PackMapAreaFeature> }).features
     const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
     const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
     if (!startOuter || !laterOuter) throw new Error('expected moving weather influence features')
