@@ -3,8 +3,7 @@ import { nowIso } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
-import { weatherSampleAtPoint } from './conditions.ts'
-import { renderedWeatherCellsForViewport, weatherInfluenceShapesForViewport, weatherPresentationSeverityForState, type WeatherPresentationSeverity } from './field.ts'
+import { weatherPresentationSeverityForState, weatherSampleAtPoint, type WeatherPresentationSeverity } from './conditions.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
@@ -13,6 +12,7 @@ import {
   type WeatherDomainData,
   type WeatherState,
 } from './model.ts'
+import { projectWeatherForMap } from './projection.ts'
 import { weatherScenarioSupport } from './scenario.ts'
 import { weatherSimProviderId } from './sim/constants.ts'
 
@@ -75,32 +75,6 @@ const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: W
   }
   return '#16834f'
 }
-
-const weatherCellColor = (severity: WeatherPresentationSeverity): string => {
-  if (severity === 'hazard') return '#dc2626'
-  if (severity === 'adverse') return '#d97706'
-  if (severity === 'notice') return '#2563eb'
-  return '#16834f'
-}
-
-const weatherCellOpacity = (severity: WeatherPresentationSeverity): number => {
-  if (severity === 'hazard') return 0.16
-  if (severity === 'adverse') return 0.12
-  if (severity === 'notice') return 0.08
-  return 0.035
-}
-
-const influenceShapeColor = (severity: WeatherPresentationSeverity): string =>
-  severity === 'hazard'
-    ? '#dc2626'
-    : severity === 'adverse'
-      ? '#0ea5e9'
-      : severity === 'notice'
-        ? '#38bdf8'
-        : '#22c55e'
-
-const influenceShapeOpacity = (weight: number, normalizedRadius: number): number =>
-  Math.max(0.018, Math.min(0.085, 0.018 + weight * 0.055 + (1 - normalizedRadius) * 0.012))
 
 const statusToneFor = (severity: WeatherPresentationSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
   if (severity === 'hazard') return 'error'
@@ -177,45 +151,12 @@ export const weatherPack: LeitbildPack = {
   },
   mapAreaFeatures: (context) => {
     if (!context.map) return []
-    const at = context.currentTime ?? nowIso()
-    const cells = renderedWeatherCellsForViewport({
+    return projectWeatherForMap({
       objects: context.objects,
       viewport: context.map.viewport,
       zoom: context.map.zoom,
-      at,
-    }).map(cell => ({
-      severity: weatherPresentationSeverityForState(cell.sample.state),
-      cell,
-    })).map(({ cell, severity }) => ({
-      id: `weather:${cell.id}`,
-      categoryId: 'weather',
-      geometry: cell.polygon,
-      color: weatherCellColor(severity),
-      opacity: weatherCellOpacity(severity),
-      lineColor: weatherCellColor(severity),
-      lineOpacity: severity === 'normal' ? 0.045 : 0.11,
-      lineWidth: 0.45,
-      sortKey: 0,
-      summary: `${severity} weather`,
-    }))
-    const influenceShapes = weatherInfluenceShapesForViewport({
-      objects: context.objects,
-      viewport: context.map.viewport,
-      zoom: context.map.zoom,
-      at,
-    }).map(shape => ({
-      id: `weather:${shape.id}`,
-      categoryId: 'weather',
-      geometry: shape.polygon,
-      color: influenceShapeColor(shape.severity),
-      opacity: influenceShapeOpacity(shape.weight, shape.normalizedRadius),
-      lineColor: influenceShapeColor(shape.severity),
-      lineOpacity: shape.normalizedRadius >= 1 ? 0.35 : 0.06,
-      lineWidth: shape.normalizedRadius >= 1 ? 1.4 : 0.4,
-      sortKey: 10 + Math.round((1 - shape.normalizedRadius) * 10),
-      summary: shape.summary,
-    }))
-    return [...cells, ...influenceShapes]
+      at: context.currentTime ?? nowIso(),
+    })
   },
   contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
     const point = samplePointFor(object)

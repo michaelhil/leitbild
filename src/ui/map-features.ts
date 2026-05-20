@@ -7,15 +7,20 @@ export const mapSourceIds = {
   objects: 'objects',
   plannedRoutes: 'planned-route-source',
   weatherLines: 'weather-line-source',
-  weatherAreas: 'weather-area-source',
+  weatherBaseGrid: 'weather-base-grid-source',
+  weatherCells: 'weather-cell-source',
+  weatherInfluences: 'weather-influence-source',
   trafficLines: 'traffic-line-source',
   trafficAreas: 'traffic-area-source',
   placementPreview: 'placement-preview-source',
 } as const
 
 export const mapLayerIds = {
-  weatherAreaFill: 'weather-area-fill',
-  weatherAreaOutline: 'weather-area-outline',
+  weatherBaseGridOutline: 'weather-base-grid-outline',
+  weatherCellFill: 'weather-cell-fill',
+  weatherCellOutline: 'weather-cell-outline',
+  weatherInfluenceFill: 'weather-influence-fill',
+  weatherInfluenceOutline: 'weather-influence-outline',
   weatherLineCasing: 'weather-line-casing',
   weatherLine: 'weather-lines',
   trafficAreaFill: 'traffic-area-fill',
@@ -195,12 +200,14 @@ export const createWeatherLineFeatureCollection = (
     }),
 })
 
-export const createWeatherAreaFeatureCollection = (
+const weatherAreaFeatureCollection = (
   packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
+  include: (feature: PackMapAreaFeature) => boolean,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: packAreaFeatures
     .filter(feature => feature.categoryId === 'weather')
+    .filter(include)
     .map(feature => ({
       type: 'Feature',
       id: feature.id,
@@ -217,3 +224,18 @@ export const createWeatherAreaFeatureCollection = (
       },
     })),
 })
+
+export const createWeatherBaseGridFeatureCollection = (
+  packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
+): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> =>
+  weatherAreaFeatureCollection(packAreaFeatures, feature => feature.id.startsWith('weather-grid:'))
+
+export const createWeatherCellFeatureCollection = (
+  packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
+): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> =>
+  weatherAreaFeatureCollection(packAreaFeatures, feature => feature.id.startsWith('weather-cell:'))
+
+export const createWeatherInfluenceFeatureCollection = (
+  packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
+): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> =>
+  weatherAreaFeatureCollection(packAreaFeatures, feature => feature.id.startsWith('weather:'))

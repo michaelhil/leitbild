@@ -101,8 +101,8 @@
       "type": "weather_condition",
       "id": "weather:oslo-damp-background",
       "label": "Damp Oslo background",
-      "cellSizeM": 750,
-      "showField": false,
+      "truthResolution": 8,
+      "showAffectedCells": false,
       "priority": 0,
       "summary": "Mild damp overcast background conditions across central Oslo",
       "atmosphere": {
@@ -138,7 +138,7 @@
       "type": "weather_condition",
       "id": "weather:oslo-moving-rain-band",
       "label": "Moving rain band",
-      "cellSizeM": 750,
+      "truthResolution": 8,
       "priority": 10,
       "summary": "A narrow rain band moves east across Oslo and briefly lowers road friction",
       "extensions": {

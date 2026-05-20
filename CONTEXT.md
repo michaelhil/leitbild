@@ -128,6 +128,14 @@ _Avoid_: Raster Tile, OSM PNG Tile, or treating the map artifact as operational 
 The machine-readable contract describing available vector tile layers, fields, geometry, intended use, and schema version.
 _Avoid_: relying on prose docs or hard-coded tile assumptions inside simulation providers
 
+**Spatial Field Index**:
+A generic, globally stable cell index used by packs that need field-like spatial state, such as weather, wildfire, radiation, or population exposure. V1 wraps H3 in `src/core/spatial/*`; pack code uses the wrapper and never imports H3 directly.
+_Avoid_: pack-specific grid implementations in UI modules, direct H3 imports outside the wrapper, or treating visual cells as operational objects
+
+**Weather Sparse Field**:
+The weather pack's materialized subset of the global spatial field. It stores cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth.
+_Avoid_: computing weather only for the viewport, or making weather cells canonical Leitbild operational objects
+
 **Map Context Layer**:
 A vector tile layer that provides environmental or infrastructure context such as roads, POIs, water, buildings, land use, or boundaries.
 _Avoid_: Operational Object when the feature is static OSM-derived context
@@ -173,6 +181,8 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - **Traffic Conditions** may create **Route Impacts** for ambulances or future mobile assets, but rerouting remains an explicit command or future policy decision.
 - A **Vector Map Artifact** provides **Map Context Layers** for orientation and contextual reasoning, but not canonical operational state.
 - The **Map Capability Manifest** is the contract for discovering which **Map Context Layers** and properties exist.
+- A **Spatial Field Index** can be reused by multiple packs, but each pack owns its own field semantics and computation.
+- A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features, not the field store itself.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 

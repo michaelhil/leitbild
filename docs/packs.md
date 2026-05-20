@@ -31,7 +31,7 @@ A pack may contain:
 - object icons, map symbols, and style rules
 - object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
 - object-attached contextual fields contributed to other packs' objects, such as weather-at-location or communications state
-- pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather hex cells sampled from active weather influence objects
+- pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather H3 cells and influence shapes projected from the weather pack's sparse field model
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -180,6 +180,19 @@ Pack-specific presentation belongs behind `LeitbildPack`:
 The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, generic pack areas, symbols, and overlays. That vocabulary must not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
 
 Application assembly code may import built-in packs to create the active pack set. Shared UI components, map feature builders, and generic state modules should not.
+
+## Spatial Field Contributions
+
+Packs that need spatial fields, such as weather or a future wildfire pack, should use the shared spatial-index wrapper in `src/core/spatial/*` rather than importing geospatial indexing libraries directly. V1 uses H3 behind that wrapper because it gives globally stable hierarchical cells, viewport coverage, parent/child aggregation, and deterministic ids that work across users and reloads.
+
+The boundary remains pack-owned:
+
+- the pack computes its own field state
+- the pack decides which field cells are materialized, active, decaying, or default
+- the pack projects only the needed visual features through `mapAreaFeatures`
+- the generic UI renders those features through MapLibre sources and layers without knowing the pack's internal data structures
+
+This prevents the map from becoming weather-specific while still letting several future packs reuse the same spatial index vocabulary.
 
 ## Interaction Contributions
 

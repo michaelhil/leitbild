@@ -1,7 +1,7 @@
 import type { GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { type WeatherAtmosphere, type WeatherDomainData, type WeatherSample, type WeatherSurface } from './model.ts'
+import { type WeatherAtmosphere, type WeatherDomainData, type WeatherSample, type WeatherState, type WeatherSurface } from './model.ts'
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
-import { weatherSampleAtPointFromField } from './field.ts'
+import { activeWeatherInfluencesAt, mixWeatherState, weatherInfluenceWeightForPoint } from './influence.ts'
 
 export { defaultAtmosphere, defaultSurface } from './defaults.ts'
 
@@ -172,4 +172,37 @@ export const weatherSampleAtPoint = (
   objects: ReadonlyArray<OperationalObject>,
   point: GeoJsonPoint,
   at: IsoTimestamp,
-): WeatherSample => weatherSampleAtPointFromField(objects, point, at)
+): WeatherSample => {
+  let state: WeatherState = {
+    atmosphere: defaultAtmosphere(at),
+    surface: defaultSurface(),
+    extensions: {},
+  }
+  const activeInfluenceIds: string[] = []
+  for (const influence of activeWeatherInfluencesAt(objects, at)) {
+    const weight = weatherInfluenceWeightForPoint(point, influence.frame)
+    if (weight <= 0) continue
+    state = mixWeatherState(state, influence.frame.state, weight)
+    activeInfluenceIds.push(influence.objectId)
+  }
+  return {
+    state,
+    quality: {
+      provenance: activeInfluenceIds.length > 0 ? 'inferred' : 'scenario',
+      confidence: activeInfluenceIds.length > 0 ? 0.85 : 0.6,
+      validAt: at,
+    },
+    activeInfluenceIds,
+  }
+}
+
+export type WeatherPresentationSeverity = 'normal' | 'notice' | 'adverse' | 'hazard'
+
+export const weatherPresentationSeverityForState = (state: WeatherState): WeatherPresentationSeverity =>
+  state.surface.ice > 0.55 || state.atmosphere.visibilityM < 800
+    ? 'hazard'
+    : state.surface.snow > 0.45 || state.surface.ice > 0.25 || state.atmosphere.visibilityM < 2000
+      ? 'adverse'
+      : state.atmosphere.precipitation.type !== 'none' || state.surface.wetness > 0.2 || state.surface.standingWater > 0.15
+        ? 'notice'
+        : 'normal'

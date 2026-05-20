@@ -49,8 +49,10 @@ const weatherConditionSpecSchema = z.object({
   type: z.literal('weather_condition'),
   id: objectIdSchema,
   label: z.string().min(1),
-  cellSizeM: z.number().finite().positive().default(750),
-  showField: z.boolean().default(true),
+  truthResolution: z.number().int().min(0).max(15).default(8),
+  showAffectedCells: z.boolean().default(true),
+  showInfluenceShape: z.boolean().default(true),
+  showIcon: z.boolean().default(true),
   priority: z.number().int().default(0),
   summary: z.string().min(1),
   atmosphere: weatherAtmospherePatchSchema.default({}),
@@ -95,7 +97,12 @@ export const createWeatherDomainData = (config: {
   readonly summary: string
   readonly state: WeatherState
   readonly influence: WeatherInfluence
-  readonly render?: { readonly cellSizeM: number; readonly showField: boolean }
+  readonly render?: {
+    readonly truthResolution: number
+    readonly showAffectedCells: boolean
+    readonly showInfluenceShape: boolean
+    readonly showIcon: boolean
+  }
 }): WeatherDomainData => {
   return weatherDomainDataSchema.parse({
     type: 'weather_condition',
@@ -184,7 +191,12 @@ const weatherConditionObject = (config: {
     summary: config.spec.summary,
     state: firstFrame.state,
     influence,
-    render: { cellSizeM: config.spec.cellSizeM, showField: config.spec.showField },
+    render: {
+      truthResolution: config.spec.truthResolution,
+      showAffectedCells: config.spec.showAffectedCells,
+      showInfluenceShape: config.spec.showInfluenceShape,
+      showIcon: config.spec.showIcon,
+    },
   })
   return {
     id: config.spec.id,

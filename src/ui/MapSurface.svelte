@@ -126,8 +126,11 @@
       mapLayerIds.trafficLine,
     ]
     if (layer === 'weather') return [
-      mapLayerIds.weatherAreaFill,
-      mapLayerIds.weatherAreaOutline,
+      mapLayerIds.weatherBaseGridOutline,
+      mapLayerIds.weatherCellFill,
+      mapLayerIds.weatherCellOutline,
+      mapLayerIds.weatherInfluenceFill,
+      mapLayerIds.weatherInfluenceOutline,
       mapLayerIds.weatherLineCasing,
       mapLayerIds.weatherLine,
     ]

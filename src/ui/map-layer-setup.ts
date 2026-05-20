@@ -7,7 +7,9 @@ import {
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
-  createWeatherAreaFeatureCollection,
+  createWeatherBaseGridFeatureCollection,
+  createWeatherCellFeatureCollection,
+  createWeatherInfluenceFeatureCollection,
   createWeatherLineFeatureCollection,
   mapLayerIds,
   mapSourceIds,
@@ -40,9 +42,17 @@ export const addOperationalMapSourcesAndLayers = (config: {
     type: 'geojson',
     data: asMutableGeoJson(createWeatherLineFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
   })
-  current.addSource(mapSourceIds.weatherAreas, {
+  current.addSource(mapSourceIds.weatherBaseGrid, {
     type: 'geojson',
-    data: asMutableGeoJson(createWeatherAreaFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
+    data: asMutableGeoJson(createWeatherBaseGridFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.weatherCells, {
+    type: 'geojson',
+    data: asMutableGeoJson(createWeatherCellFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.weatherInfluences, {
+    type: 'geojson',
+    data: asMutableGeoJson(createWeatherInfluenceFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
   })
   current.addSource(mapSourceIds.trafficLines, {
     type: 'geojson',
@@ -53,9 +63,23 @@ export const addOperationalMapSourcesAndLayers = (config: {
     data: asMutableGeoJson(createTrafficAreaFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
   })
   current.addLayer({
-    id: mapLayerIds.weatherAreaFill,
+    id: mapLayerIds.weatherBaseGridOutline,
+    type: 'line',
+    source: mapSourceIds.weatherBaseGrid,
+    paint: {
+      'line-color': ['coalesce', ['get', 'lineColor'], ['get', 'color']],
+      'line-width': ['coalesce', ['get', 'lineWidth'], 0.35],
+      'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.12],
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherCellFill,
     type: 'fill',
-    source: mapSourceIds.weatherAreas,
+    source: mapSourceIds.weatherCells,
     layout: {
       'fill-sort-key': ['coalesce', ['get', 'sortKey'], 0],
     },
@@ -65,9 +89,35 @@ export const addOperationalMapSourcesAndLayers = (config: {
     },
   })
   current.addLayer({
-    id: mapLayerIds.weatherAreaOutline,
+    id: mapLayerIds.weatherCellOutline,
     type: 'line',
-    source: mapSourceIds.weatherAreas,
+    source: mapSourceIds.weatherCells,
+    paint: {
+      'line-color': ['coalesce', ['get', 'lineColor'], ['get', 'color']],
+      'line-width': ['coalesce', ['get', 'lineWidth'], 0.45],
+      'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.10],
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherInfluenceFill,
+    type: 'fill',
+    source: mapSourceIds.weatherInfluences,
+    layout: {
+      'fill-sort-key': ['coalesce', ['get', 'sortKey'], 0],
+    },
+    paint: {
+      'fill-color': ['get', 'color'],
+      'fill-opacity': ['coalesce', ['get', 'opacity'], 0.10],
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherInfluenceOutline,
+    type: 'line',
+    source: mapSourceIds.weatherInfluences,
     paint: {
       'line-color': ['coalesce', ['get', 'lineColor'], ['get', 'color']],
       'line-width': ['coalesce', ['get', 'lineWidth'], 0.6],

@@ -12,7 +12,9 @@ import {
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
-  createWeatherAreaFeatureCollection,
+  createWeatherBaseGridFeatureCollection,
+  createWeatherCellFeatureCollection,
+  createWeatherInfluenceFeatureCollection,
   mapSourceIds,
 } from '../src/ui/map-features.ts'
 
@@ -237,7 +239,7 @@ describe('map feature projection', () => {
     })
     const weatherAreaFeatures = [
       {
-        id: 'weather:test-area:cell:1',
+        id: 'weather-grid:8:cell-1',
         categoryId: 'weather',
         geometry: weatherObject.spatial.geometry,
         color: '#2563eb',
@@ -245,7 +247,15 @@ describe('map feature projection', () => {
         opacity: 0.12,
       },
       {
-        id: 'weather:test-area:cell:2',
+        id: 'weather-cell:cell-2',
+        categoryId: 'weather',
+        geometry: weatherObject.spatial.geometry,
+        color: '#2563eb',
+        summary: 'notice weather',
+        opacity: 0.12,
+      },
+      {
+        id: 'weather:test-area',
         categoryId: 'weather',
         geometry: weatherObject.spatial.geometry,
         color: '#2563eb',
@@ -254,11 +264,16 @@ describe('map feature projection', () => {
       },
     ]
     const trafficFeatures = createTrafficAreaFeatureCollection([weatherObject], weatherPresentation)
-    const weatherFeatures = createWeatherAreaFeatureCollection(weatherAreaFeatures)
+    const baseGridFeatures = createWeatherBaseGridFeatureCollection(weatherAreaFeatures)
+    const cellFeatures = createWeatherCellFeatureCollection(weatherAreaFeatures)
+    const influenceFeatures = createWeatherInfluenceFeatureCollection(weatherAreaFeatures)
 
-    expect(mapSourceIds.weatherAreas).toBe('weather-area-source')
+    expect(mapSourceIds.weatherBaseGrid).toBe('weather-base-grid-source')
+    expect(mapSourceIds.weatherCells).toBe('weather-cell-source')
+    expect(mapSourceIds.weatherInfluences).toBe('weather-influence-source')
     expect(trafficFeatures.features).toHaveLength(0)
-    expect(weatherFeatures.features.length).toBeGreaterThan(1)
-    expect(weatherFeatures.features[0]?.id).toContain('weather:test-area:cell:')
+    expect(baseGridFeatures.features.map(feature => feature.id)).toEqual(['weather-grid:8:cell-1'])
+    expect(cellFeatures.features.map(feature => feature.id)).toEqual(['weather-cell:cell-2'])
+    expect(influenceFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area'])
   })
 })

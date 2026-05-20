@@ -6,13 +6,12 @@ import {
   createWeatherSparseField,
   updateWeatherSparseField,
   weatherCellForPoint,
-  weatherCellId,
   weatherSampleAtPointFromSparseField,
   weatherSparseFieldStats,
   type WeatherGridDefinition,
 } from '../src/packs/weather/cell-field.ts'
+import { hexResolution } from '../src/core/spatial/index.ts'
 import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
-import { renderedWeatherCellsForViewport, weatherCellsForViewport } from '../src/packs/weather/field.ts'
 import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -45,8 +44,7 @@ const osloViewport: GeoJsonPolygon = {
 
 const osloWeatherGrid: WeatherGridDefinition = {
   gridId: 'weather-grid:oslo-test',
-  cellSizeM: 750,
-  referenceLatitude: 59.9139,
+  truthResolution: hexResolution(8),
 }
 
 const polygonBounds = (polygons: ReadonlyArray<{ readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }>) => {
@@ -183,7 +181,7 @@ describe('weather pack', () => {
     expect(presentation.categoryId).toBe('weather')
     expect(presentation.noteworthyUpdates).toBe(false)
     expect(presentation.fields.map(field => field.key)).toContain('surface')
-    expect(parsedWeather.render?.cellSizeM).toBe(750)
+    expect(parsedWeather.render?.truthResolution).toBe(8)
     expect(parsedWeather.conditionKind).toBe('weather_influence')
     expect(weatherObject.spatial.position?.point.type).toBe('Point')
     const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
@@ -191,25 +189,25 @@ describe('weather pack', () => {
     expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
   })
 
-  test('pack-owned hex field covers the requested viewport', () => {
+  test('map projection exposes H3 base grid cells for the requested viewport', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
-    const hexes = weatherCellsForViewport({
+    const features = weatherPack.mapAreaFeatures?.({
       objects: osloAmbulanceScenario.initialObjects,
-      viewport: osloViewport,
-      zoom: 12,
-      at: start,
-    })
-    const bounds = polygonBounds(hexes.map(cell => cell.polygon))
+      currentTime: start,
+      map: { viewport: osloViewport, zoom: 12 },
+    }) ?? []
+    const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
+    const bounds = polygonBounds(baseGrid.map(feature => feature.geometry))
 
-    expect(hexes.length).toBeGreaterThan(0)
+    expect(baseGrid.length).toBeGreaterThan(0)
     expect(bounds.west).toBeLessThanOrEqual(10.62)
     expect(bounds.east).toBeGreaterThanOrEqual(10.88)
     expect(bounds.south).toBeLessThanOrEqual(59.88)
     expect(bounds.north).toBeGreaterThanOrEqual(59.98)
   })
 
-  test('rendered weather field limits map overlay cells without weakening truth sampling', () => {
+  test('map projection separates base grid, affected cells, and influence shapes', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const wideViewport: GeoJsonPolygon = {
@@ -222,22 +220,20 @@ describe('weather pack', () => {
         geoPointFromLonLat(10.35, 59.72).coordinates,
       ]],
     }
-    const truthCells = weatherCellsForViewport({
+    const features = weatherPack.mapAreaFeatures?.({
       objects: osloAmbulanceScenario.initialObjects,
-      viewport: wideViewport,
-      zoom: 12,
-      at: start,
-    })
-    const renderedCells = renderedWeatherCellsForViewport({
-      objects: osloAmbulanceScenario.initialObjects,
-      viewport: wideViewport,
-      zoom: 12,
-      at: start,
-    })
+      currentTime: start,
+      map: { viewport: wideViewport, zoom: 12 },
+    }) ?? []
+    const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
+    const affectedCells = features.filter(feature => feature.id.startsWith('weather-cell:'))
+    const influenceShapes = features.filter(feature => feature.id.startsWith('weather:'))
 
-    expect(truthCells.length).toBeGreaterThan(1_000)
-    expect(renderedCells.length).toBeGreaterThan(0)
-    expect(renderedCells.length).toBeLessThan(truthCells.length / 10)
+    expect(baseGrid.length).toBeGreaterThan(0)
+    expect(affectedCells.length).toBeGreaterThan(0)
+    expect(influenceShapes.length).toBeGreaterThan(0)
+    expect(baseGrid.length).toBeLessThanOrEqual(4_000)
+    expect(affectedCells.length).toBeLessThanOrEqual(8_000)
   })
 
   test('moving weather influence shapes follow simulation time', () => {
@@ -254,8 +250,8 @@ describe('weather pack', () => {
       currentTime: later,
       map: { viewport: osloViewport, zoom: 12 },
     }) ?? []
-    const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band:influence:4')
-    const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band:influence:4')
+    const startOuter = startFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
+    const laterOuter = laterFeatures.find(feature => feature.id === 'weather:weather:oslo-moving-rain-band')
     if (!startOuter || !laterOuter) throw new Error('expected moving weather influence features')
     const startCenter = polygonCentroid(startOuter.geometry)
     const laterCenter = polygonCentroid(laterOuter.geometry)
@@ -321,8 +317,7 @@ describe('weather pack', () => {
   test('stable non-default sparse cells remain queryable without staying active', () => {
     const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
     const point = geoPointFromLonLat(10.7522, 59.9139)
-    const cell = weatherCellForPoint(osloWeatherGrid, point)
-    const id = weatherCellId(osloWeatherGrid, cell)
+    const id = weatherCellForPoint(osloWeatherGrid, point)
     const storedSurface = {
       ...defaultSurface(),
       groundTemperatureC: -8,
@@ -332,8 +327,7 @@ describe('weather pack', () => {
       grid: osloWeatherGrid,
       cells: new Map([[id, {
         id,
-        q: cell.q,
-        r: cell.r,
+        resolution: osloWeatherGrid.truthResolution,
         center: point,
         state: {
           atmosphere: {

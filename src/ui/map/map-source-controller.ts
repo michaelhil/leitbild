@@ -7,7 +7,9 @@ import {
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
-  createWeatherAreaFeatureCollection,
+  createWeatherBaseGridFeatureCollection,
+  createWeatherCellFeatureCollection,
+  createWeatherInfluenceFeatureCollection,
   createWeatherLineFeatureCollection,
   mapSourceIds,
 } from '../map-features.ts'
@@ -111,12 +113,21 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     const current = currentMapForSourceUpdate()
     if (!current) return
     const lineSource = getGeoJsonSource(current, mapSourceIds.weatherLines)
-    const areaSource = getGeoJsonSource(current, mapSourceIds.weatherAreas)
+    const baseGridSource = getGeoJsonSource(current, mapSourceIds.weatherBaseGrid)
+    const cellSource = getGeoJsonSource(current, mapSourceIds.weatherCells)
+    const influenceSource = getGeoJsonSource(current, mapSourceIds.weatherInfluences)
+    const areaFeatures = config.getPackMapAreaFeatures()
     if (lineSource) {
       lineSource.setData(asMapLibreGeoJson(createWeatherLineFeatureCollection([...config.getObjects()], config.presentationFor)))
     }
-    if (areaSource) {
-      areaSource.setData(asMapLibreGeoJson(createWeatherAreaFeatureCollection(config.getPackMapAreaFeatures())))
+    if (baseGridSource) {
+      baseGridSource.setData(asMapLibreGeoJson(createWeatherBaseGridFeatureCollection(areaFeatures)))
+    }
+    if (cellSource) {
+      cellSource.setData(asMapLibreGeoJson(createWeatherCellFeatureCollection(areaFeatures)))
+    }
+    if (influenceSource) {
+      influenceSource.setData(asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)))
     }
   }
 

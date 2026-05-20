@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "h3-js": "^4.4.0",
     "lucide-svelte": "^1.0.1",
     "maplibre-gl": "^5.0.0",
     "pmtiles": "^4.4.1",

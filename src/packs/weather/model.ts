@@ -84,8 +84,10 @@ export const weatherQualitySchema = z.object({
 export type WeatherQuality = z.infer<typeof weatherQualitySchema>
 
 export const weatherRenderSchema = z.object({
-  cellSizeM: z.number().finite().positive(),
-  showField: z.boolean().default(true),
+  truthResolution: z.number().int().min(0).max(15).default(8),
+  showAffectedCells: z.boolean().default(true),
+  showInfluenceShape: z.boolean().default(true),
+  showIcon: z.boolean().default(true),
 })
 export type WeatherRender = z.infer<typeof weatherRenderSchema>
 

@@ -25,7 +25,7 @@ import {
 import { createWeatherAreaCommandKind } from '../commands.ts'
 import { weatherSampleAtPoint } from '../conditions.ts'
 import { defaultAtmosphere, defaultSurface } from '../defaults.ts'
-import { weatherDataAtTime, weatherObjectCurrentCenter } from '../field.ts'
+import { weatherDataAtTime, weatherObjectCurrentCenter } from '../influence.ts'
 import {
   createWeatherConditionPayloadSchema,
   weatherAtmosphereSchema,
