@@ -4,14 +4,14 @@ import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createWeatherAreaCommandKind } from './commands.ts'
 import { weatherSampleAtPoint } from './conditions.ts'
-import { renderedWeatherCellsForViewport, weatherInfluenceShapesForViewport } from './field.ts'
+import { renderedWeatherCellsForViewport, weatherInfluenceShapesForViewport, weatherPresentationSeverityForState, type WeatherPresentationSeverity } from './field.ts'
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
   weatherDomainDataSchema,
   weatherDomainId,
   type WeatherDomainData,
-  type WeatherSeverity,
+  type WeatherState,
 } from './model.ts'
 import { weatherScenarioSupport } from './scenario.ts'
 import { weatherSimProviderId } from './sim/constants.ts'
@@ -27,59 +27,70 @@ const oneDecimal = (value: number): string =>
 const percent = (value: number | undefined): string =>
   value === undefined ? 'unknown' : `${Math.round(value * 100)}%`
 
+const surfaceSummary = (state: WeatherState): string => {
+  const parts = [
+    ...(state.surface.wetness > 0.2 ? ['wet'] : []),
+    ...(state.surface.standingWater > 0.2 ? ['standing water'] : []),
+    ...(state.surface.snow > 0.2 ? ['snow'] : []),
+    ...(state.surface.ice > 0.2 ? ['ice'] : []),
+    ...(state.surface.frost > 0.2 ? ['frost'] : []),
+  ]
+  return parts.length > 0 ? parts.join(', ') : 'dry'
+}
+
 const weatherFields = (data: WeatherDomainData): ReadonlyArray<PackObjectField> => [
-  packField('air-temperature', 'Air temperature', `${oneDecimal(data.atmosphere.airTemperatureC)} °C`),
-  packField('ground-temperature', 'Ground temperature', `${oneDecimal(data.surface.groundTemperatureC)} °C`),
-  packField('precipitation', 'Precipitation', `${data.atmosphere.precipitation.type.replaceAll('_', ' ')} · ${oneDecimal(data.atmosphere.precipitation.intensityMmPerHour)} mm/h`),
-  packField('humidity', 'Humidity', percent(data.atmosphere.humidity)),
-  packField('visibility', 'Visibility', `${Math.round(data.atmosphere.visibilityM)} m`),
-  packField('wind', 'Wind', `${oneDecimal(data.atmosphere.windSpeedMps)} m/s from ${Math.round(data.atmosphere.windDirectionDeg)}°`),
-  packField('cloud-cover', 'Cloud cover', percent(data.atmosphere.cloudCover)),
-  packField('surface', 'Surface', data.surface.labels.join(', ')),
-  packField('wetness', 'Wetness', percent(data.surface.wetness)),
-  packField('snow', 'Snow', percent(data.surface.snow)),
-  packField('ice', 'Ice', percent(data.surface.ice)),
-  packField('friction', 'Friction', data.surface.frictionClass),
+  packField('air-temperature', 'Air temperature', `${oneDecimal(data.state.atmosphere.airTemperatureC)} °C`),
+  packField('ground-temperature', 'Ground temperature', `${oneDecimal(data.state.surface.groundTemperatureC)} °C`),
+  packField('precipitation', 'Precipitation', `${data.state.atmosphere.precipitation.type.replaceAll('_', ' ')} · ${oneDecimal(data.state.atmosphere.precipitation.intensityMmPerHour)} mm/h`),
+  packField('humidity', 'Humidity', percent(data.state.atmosphere.humidity)),
+  packField('visibility', 'Visibility', `${Math.round(data.state.atmosphere.visibilityM)} m`),
+  packField('wind', 'Wind', `${oneDecimal(data.state.atmosphere.windSpeedMps)} m/s from ${Math.round(data.state.atmosphere.windDirectionDeg)}°`),
+  packField('cloud-cover', 'Cloud cover', percent(data.state.atmosphere.cloudCover)),
+  packField('surface', 'Surface', surfaceSummary(data.state)),
+  packField('wetness', 'Wetness', percent(data.state.surface.wetness)),
+  packField('snow', 'Snow', percent(data.state.surface.snow)),
+  packField('ice', 'Ice', percent(data.state.surface.ice)),
+  ...Object.entries(data.state.extensions).map(([key, value]) => packField(`extension:${key}`, key, String(value))),
 ]
 
-const weatherValue = (data: Pick<WeatherDomainData, 'atmosphere' | 'surface'>): string => {
-  const precipitation = data.atmosphere.precipitation
+const weatherValue = (state: WeatherState): string => {
+  const precipitation = state.atmosphere.precipitation
   return [
-    `${oneDecimal(data.atmosphere.airTemperatureC)} °C air`,
-    `${oneDecimal(data.surface.groundTemperatureC)} °C road`,
+    `${oneDecimal(state.atmosphere.airTemperatureC)} °C air`,
+    `${oneDecimal(state.surface.groundTemperatureC)} °C road`,
     precipitation.type === 'none'
       ? 'no precipitation'
       : `${precipitation.type.replaceAll('_', ' ')} ${oneDecimal(precipitation.intensityMmPerHour)} mm/h`,
-    data.surface.frictionClass,
-    `wet ${percent(data.surface.wetness)}`,
+    surfaceSummary(state),
+    `wet ${percent(state.surface.wetness)}`,
   ].join(' · ')
 }
 
-const weatherColor = (severity: WeatherSeverity | undefined, data: WeatherDomainData | null): string => {
+const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: WeatherDomainData | null): string => {
   if (severity === 'hazard') return '#dc2626'
   if (severity === 'adverse') return '#d97706'
   if (severity === 'notice') {
-    if (data?.atmosphere.precipitation.type === 'snow') return '#0891b2'
+    if (data?.state.atmosphere.precipitation.type === 'snow') return '#0891b2'
     return '#2563eb'
   }
   return '#16834f'
 }
 
-const weatherCellColor = (severity: WeatherSeverity): string => {
+const weatherCellColor = (severity: WeatherPresentationSeverity): string => {
   if (severity === 'hazard') return '#dc2626'
   if (severity === 'adverse') return '#d97706'
   if (severity === 'notice') return '#2563eb'
   return '#16834f'
 }
 
-const weatherCellOpacity = (severity: WeatherSeverity): number => {
+const weatherCellOpacity = (severity: WeatherPresentationSeverity): number => {
   if (severity === 'hazard') return 0.16
   if (severity === 'adverse') return 0.12
   if (severity === 'notice') return 0.08
   return 0.035
 }
 
-const influenceShapeColor = (severity: WeatherSeverity): string =>
+const influenceShapeColor = (severity: WeatherPresentationSeverity): string =>
   severity === 'hazard'
     ? '#dc2626'
     : severity === 'adverse'
@@ -91,7 +102,7 @@ const influenceShapeColor = (severity: WeatherSeverity): string =>
 const influenceShapeOpacity = (weight: number, normalizedRadius: number): number =>
   Math.max(0.018, Math.min(0.085, 0.018 + weight * 0.055 + (1 - normalizedRadius) * 0.012))
 
-const statusToneFor = (severity: WeatherSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
+const statusToneFor = (severity: WeatherPresentationSeverity | undefined): 'ready' | 'working' | 'error' | 'idle' => {
   if (severity === 'hazard') return 'error'
   if (severity === 'adverse' || severity === 'notice') return 'working'
   return 'ready'
@@ -152,13 +163,14 @@ export const weatherPack: LeitbildPack = {
   createObjectTypes: [],
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
-    const tone = statusToneFor(data?.severity)
+    const severity = data ? weatherPresentationSeverityForState(data.state) : undefined
+    const tone = statusToneFor(severity)
     return {
       categoryId: 'weather',
       icon: 'weather',
-      color: weatherColor(data?.severity, data),
-      summary: data ? `${data.summary} · ${data.severity}` : object.operational.status,
-      status: packStatus(tone, data ? `${data.severity} weather` : 'Invalid weather data'),
+      color: weatherColor(severity, data),
+      summary: data ? `${data.summary} · ${severity}` : object.operational.status,
+      status: packStatus(tone, data ? `${severity} weather` : 'Invalid weather data'),
       fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather domain data')],
       noteworthyUpdates: false,
     }
@@ -172,16 +184,19 @@ export const weatherPack: LeitbildPack = {
       zoom: context.map.zoom,
       at,
     }).map(cell => ({
+      severity: weatherPresentationSeverityForState(cell.sample.state),
+      cell,
+    })).map(({ cell, severity }) => ({
       id: `weather:${cell.id}`,
       categoryId: 'weather',
       geometry: cell.polygon,
-      color: weatherCellColor(cell.sample.severity),
-      opacity: weatherCellOpacity(cell.sample.severity),
-      lineColor: weatherCellColor(cell.sample.severity),
-      lineOpacity: cell.sample.severity === 'normal' ? 0.045 : 0.11,
+      color: weatherCellColor(severity),
+      opacity: weatherCellOpacity(severity),
+      lineColor: weatherCellColor(severity),
+      lineOpacity: severity === 'normal' ? 0.045 : 0.11,
       lineWidth: 0.45,
       sortKey: 0,
-      summary: `${cell.sample.severity} weather`,
+      summary: `${severity} weather`,
     }))
     const influenceShapes = weatherInfluenceShapesForViewport({
       objects: context.objects,
@@ -206,7 +221,7 @@ export const weatherPack: LeitbildPack = {
     const point = samplePointFor(object)
     if (!point) return []
     const sample = weatherSampleAtPoint(context.objects, point, context.currentTime ?? nowIso())
-    return [packField('weather', 'Weather', weatherValue(sample))]
+    return [packField('weather', 'Weather', weatherValue(sample.state))]
   },
   defaultObjectLabel: (typeId, context): string => {
     if (typeId !== 'weather_probe' && typeId !== 'weather_area') throw new Error(`unsupported weather create type: ${typeId}`)

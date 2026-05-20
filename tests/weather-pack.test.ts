@@ -79,21 +79,24 @@ const polygonCentroid = (polygon: { readonly coordinates: ReadonlyArray<Readonly
 describe('weather pack', () => {
   test('validates generic atmosphere and surface condition data', () => {
     const at = nowIso()
-    const parsed = weatherDomainDataSchema.parse({
-      type: 'weather_condition',
-      schemaVersion: 1,
-      conditionKind: 'weather_influence',
-      severity: 'notice',
+    const state = {
       atmosphere: {
         ...defaultAtmosphere(at),
-        precipitation: { type: 'rain', intensityMmPerHour: 0.8 },
+        precipitation: { type: 'rain' as const, intensityMmPerHour: 0.8 },
       },
       surface: {
         ...defaultSurface(),
         wetness: 0.4,
-        frictionClass: 'wet',
-        labels: ['wet'],
       },
+      extensions: {
+        'test.blah': 0.6,
+      },
+    }
+    const parsed = weatherDomainDataSchema.parse({
+      type: 'weather_condition',
+      schemaVersion: 1,
+      conditionKind: 'weather_influence',
+      state,
       quality: { provenance: 'scenario', confidence: 1, validAt: at },
       influence: {
         priority: 0,
@@ -103,26 +106,16 @@ describe('weather pack', () => {
           semiMajorAxisM: 1000,
           semiMinorAxisM: 500,
           rotationDeg: 0,
-          state: {
-            atmosphere: {
-              ...defaultAtmosphere(at),
-              precipitation: { type: 'rain', intensityMmPerHour: 0.8 },
-            },
-            surface: {
-              ...defaultSurface(),
-              wetness: 0.4,
-              frictionClass: 'wet',
-              labels: ['wet'],
-            },
-          },
+          state,
           falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
         }],
       },
       summary: 'Light rain over the operating area',
     })
 
-    expect(parsed.atmosphere.humidity).toBe(0.65)
-    expect(parsed.surface.wetness).toBe(0.4)
+    expect(parsed.state.atmosphere.humidity).toBe(0.65)
+    expect(parsed.state.surface.wetness).toBe(0.4)
+    expect(parsed.state.extensions['test.blah']).toBe(0.6)
   })
 
   test('evolves precipitation into surface conditions without making routing decisions', () => {
@@ -131,16 +124,18 @@ describe('weather pack', () => {
       type: 'weather_condition',
       schemaVersion: 1,
       conditionKind: 'weather_influence',
-      severity: 'notice',
-      atmosphere: {
-        ...defaultAtmosphere(at),
-        airTemperatureC: -1,
-        precipitation: { type: 'freezing_rain', intensityMmPerHour: 1.4 },
-      },
-      surface: {
-        ...defaultSurface(),
-        groundTemperatureC: -1,
-        wetness: 0.35,
+      state: {
+        atmosphere: {
+          ...defaultAtmosphere(at),
+          airTemperatureC: -1,
+          precipitation: { type: 'freezing_rain', intensityMmPerHour: 1.4 },
+        },
+        surface: {
+          ...defaultSurface(),
+          groundTemperatureC: -1,
+          wetness: 0.35,
+        },
+        extensions: {},
       },
       quality: { provenance: 'scenario', confidence: 1, validAt: at },
       influence: {
@@ -162,6 +157,7 @@ describe('weather pack', () => {
               groundTemperatureC: -1,
               wetness: 0.35,
             },
+            extensions: {},
           },
           falloffCurve: [{ x: 0, y: 1 }, { x: 1, y: 0 }],
         }],
@@ -171,8 +167,8 @@ describe('weather pack', () => {
 
     const evolved = evolveWeatherData(base, '2026-01-01T10:10:00.000Z' as IsoTimestamp, 600)
 
-    expect(evolved.surface.ice).toBeGreaterThan(base.surface.ice)
-    expect(evolved.surface.frictionClass).not.toBe('normal')
+    expect(evolved.state.surface.ice).toBeGreaterThan(base.state.surface.ice)
+    expect(evolved.state.surface.wetness).toBeLessThanOrEqual(1)
     expect(evolved.type).toBe('weather_condition')
   })
 
@@ -191,8 +187,8 @@ describe('weather pack', () => {
     expect(parsedWeather.conditionKind).toBe('weather_influence')
     expect(weatherObject.spatial.position?.point.type).toBe('Point')
     const sample = weatherSampleAtPoint(osloAmbulanceScenario.initialObjects, geoPointFromLonLat(10.7522, 59.9139), nowIso())
-    expect(sample.sourceObjectIds.length).toBeGreaterThan(0)
-    expect(['none', 'rain']).toContain(sample.atmosphere.precipitation.type)
+    expect(sample.activeInfluenceIds.length).toBeGreaterThan(0)
+    expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
   })
 
   test('pack-owned hex field covers the requested viewport', () => {
@@ -277,9 +273,9 @@ describe('weather pack', () => {
     })
 
     expect(weatherSparseFieldStats(field)).toEqual({ cellCount: 0, activeCellCount: 0 })
-    expect(sample.sourceObjectIds).toHaveLength(0)
-    expect(sample.atmosphere.airTemperatureC).toBe(defaultAtmosphere(at).airTemperatureC)
-    expect(sample.surface.frictionClass).toBe(defaultSurface().frictionClass)
+    expect(sample.activeInfluenceIds).toHaveLength(0)
+    expect(sample.state.atmosphere.airTemperatureC).toBe(defaultAtmosphere(at).airTemperatureC)
+    expect(sample.state.surface.wetness).toBe(defaultSurface().wetness)
   })
 
   test('sparse field materializes only cells touched by weather objects', () => {
@@ -307,7 +303,7 @@ describe('weather pack', () => {
       at: start,
       elapsedSeconds: 180,
     }).field
-    const rememberedCell = [...startField.cells.values()].find(cell => cell.surface.wetness > defaultSurface().wetness)
+    const rememberedCell = [...startField.cells.values()].find(cell => cell.state.surface.wetness > defaultSurface().wetness)
     if (!rememberedCell) throw new Error('expected rain band to wet at least one weather cell')
     const later = new Date(Date.parse(start) + 900_000).toISOString() as IsoTimestamp
     const laterField = updateWeatherSparseField({
@@ -319,7 +315,7 @@ describe('weather pack', () => {
     const remembered = laterField.cells.get(rememberedCell.id)
 
     expect(remembered).toBeDefined()
-    expect(remembered?.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
+    expect(remembered?.state.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
   })
 
   test('stable non-default sparse cells remain queryable without staying active', () => {
@@ -331,9 +327,6 @@ describe('weather pack', () => {
       ...defaultSurface(),
       groundTemperatureC: -8,
       snow: 0.55,
-      frictionEstimate: 0.7,
-      frictionClass: 'slippery' as const,
-      labels: ['snow'],
     }
     const field = {
       grid: osloWeatherGrid,
@@ -342,12 +335,15 @@ describe('weather pack', () => {
         q: cell.q,
         r: cell.r,
         center: point,
-        atmosphere: {
-          ...defaultAtmosphere(at),
-          airTemperatureC: -8,
+        state: {
+          atmosphere: {
+            ...defaultAtmosphere(at),
+            airTemperatureC: -8,
+          },
+          surface: storedSurface,
+          extensions: {},
         },
-        surface: storedSurface,
-        sourceObjectIds: [],
+        activeInfluenceIds: [],
         residual: 0,
         updatedAt: at,
       }]]),
@@ -367,8 +363,7 @@ describe('weather pack', () => {
 
     expect(updated.cells.has(id)).toBe(true)
     expect(updated.activeCellIds.has(id)).toBe(false)
-    expect(sample.surface.snow).toBeGreaterThan(0.5)
-    expect(sample.surface.frictionClass).toBe('slippery')
+    expect(sample.state.surface.snow).toBeGreaterThan(0.5)
   })
 
   test('overlapping weather objects blend through the same sparse cell update pass', () => {
@@ -382,10 +377,10 @@ describe('weather pack', () => {
       at: start,
       elapsedSeconds: 60,
     }).field
-    const overlapped = [...updated.cells.values()].find(cell => cell.sourceObjectIds.length > 1)
+    const overlapped = [...updated.cells.values()].find(cell => cell.activeInfluenceIds.length > 1)
 
     expect(overlapped).toBeDefined()
-    expect(overlapped?.atmosphere.labels.length).toBeGreaterThan(0)
+    expect(overlapped?.state.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
   })
 
   test('local provider accepts real weather area commands', async () => {
@@ -399,7 +394,6 @@ describe('weather pack', () => {
       semiMinorAxisM: 700,
       rotationDeg: 20,
       summary: 'Operator-created rain area',
-      severity: 'notice',
       atmosphere: {
         precipitation: { type: 'rain', intensityMmPerHour: 1 },
       },
@@ -431,6 +425,6 @@ describe('weather pack', () => {
     expect(result.ok).toBe(true)
     expect(probe?.spatial.position?.point.coordinates).toEqual(geoPointFromLonLat(10.7522, 59.9139).coordinates)
     expect(parsed.conditionKind).toBe('point_observation')
-    expect(['none', 'rain']).toContain(parsed.atmosphere.precipitation.type)
+    expect(['none', 'rain']).toContain(parsed.state.atmosphere.precipitation.type)
   })
 })

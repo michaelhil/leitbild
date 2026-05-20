@@ -155,6 +155,7 @@ export interface PackScenarioExpansionContext {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
   readonly routing: RoutingAdapter
+  readonly providerConfigs: Record<string, unknown>
 }
 
 export interface PackScenarioOperationContext extends PackScenarioExpansionContext {

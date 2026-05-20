@@ -132,6 +132,7 @@ describe('local traffic simulator', () => {
       objects: [],
       objectById: () => undefined,
       routing: createDirectRoutingAdapter(),
+      providerConfigs: {},
     })
     const ring = object.spatial.geometry?.type === 'Polygon' ? object.spatial.geometry.coordinates[0] : undefined
 

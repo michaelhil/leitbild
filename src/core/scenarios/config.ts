@@ -185,6 +185,7 @@ const expandObject = async (
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
+    readonly providerConfigs: Record<string, unknown>
   },
 ): Promise<OperationalObject> => {
   const pack = packFor(context.packs, spec.pack)
@@ -193,6 +194,7 @@ const expandObject = async (
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
     routing: context.routing,
+    providerConfigs: context.providerConfigs,
   })
 }
 
@@ -203,6 +205,7 @@ const expandScriptAction = async (
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
+    readonly providerConfigs: Record<string, unknown>
   },
 ): Promise<ScenarioScriptAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
@@ -237,6 +240,7 @@ const expandScriptAction = async (
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
     routing: context.routing,
+    providerConfigs: context.providerConfigs,
   })
   context.objectMap.set(updated.id, updated)
   return { type: 'upsert_object', object: updated }
@@ -286,6 +290,7 @@ export const scenarioDefinitionFromConfig = async (
       packs: packsById,
       objectMap,
       routing: options.routing,
+      providerConfigs: config.providerConfigs,
     })
     if (objectMap.has(object.id)) throw new Error(`scenario ${config.id} has duplicate object id: ${object.id}`)
     objectMap.set(object.id, object)
@@ -302,6 +307,7 @@ export const scenarioDefinitionFromConfig = async (
           packs: packsById,
           objectMap,
           routing: options.routing,
+          providerConfigs: config.providerConfigs,
         }))
       }
       steps.push({

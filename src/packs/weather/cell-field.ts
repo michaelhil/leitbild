@@ -8,10 +8,10 @@ import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import {
   type WeatherAtmosphere,
   type WeatherDomainData,
+  type WeatherExtensions,
   type WeatherFalloffCurve,
   type WeatherInfluenceKeyframe,
   type WeatherSample,
-  type WeatherSeverity,
   type WeatherState,
   type WeatherSurface,
   weatherDomainDataSchema,
@@ -44,9 +44,8 @@ export interface WeatherCellState {
   readonly q: number
   readonly r: number
   readonly center: GeoJsonPoint
-  readonly atmosphere: WeatherAtmosphere
-  readonly surface: WeatherSurface
-  readonly sourceObjectIds: ReadonlyArray<ObjectId>
+  readonly state: WeatherState
+  readonly activeInfluenceIds: ReadonlyArray<ObjectId>
   readonly residual: number
   readonly updatedAt: IsoTimestamp
 }
@@ -136,6 +135,7 @@ export const weatherCellCenter = (grid: WeatherGridDefinition, cell: WeatherAxia
 const defaultStateFor = (at: IsoTimestamp): WeatherState => ({
   atmosphere: defaultAtmosphere(at),
   surface: defaultSurface(),
+  extensions: {},
 })
 
 const evaluateCurve = (curve: WeatherFalloffCurve, normalizedDistance: number): number => {
@@ -198,11 +198,9 @@ const mixAtmosphere = (current: WeatherAtmosphere, target: WeatherAtmosphere, we
     type: precipitationTypeFor(current.precipitation.type, target.precipitation.type, weight),
     intensityMmPerHour: Math.max(0, lerp(current.precipitation.intensityMmPerHour, target.precipitation.intensityMmPerHour, weight)),
   },
-  labels: [],
 })
 
 const mixSurface = (current: WeatherSurface, target: WeatherSurface, weight: number): WeatherSurface => ({
-  ...target,
   groundTemperatureC: lerp(current.groundTemperatureC, target.groundTemperatureC, weight),
   wetness: clamp01(lerp(current.wetness, target.wetness, weight)),
   standingWater: clamp01(lerp(current.standingWater, target.standingWater, weight)),
@@ -211,29 +209,34 @@ const mixSurface = (current: WeatherSurface, target: WeatherSurface, weight: num
   frost: clamp01(lerp(current.frost, target.frost, weight)),
 })
 
+const mixExtensionValue = (
+  current: WeatherExtensions[string] | undefined,
+  target: WeatherExtensions[string],
+  weight: number,
+): WeatherExtensions[string] => {
+  if (typeof target === 'number') return lerp(typeof current === 'number' ? current : 0, target, weight)
+  if (typeof target === 'string') return weight >= 0.5 ? target : (typeof current === 'string' ? current : target)
+  if (typeof target === 'boolean') return weight >= 0.5 ? target : (typeof current === 'boolean' ? current : target)
+  throw new Error('unsupported weather extension value')
+}
+
+const mixExtensions = (
+  current: WeatherExtensions,
+  target: WeatherExtensions,
+  weight: number,
+): WeatherExtensions => {
+  const mixed: Record<string, WeatherExtensions[string]> = { ...current }
+  for (const [key, value] of Object.entries(target)) {
+    mixed[key] = mixExtensionValue(current[key], value, weight)
+  }
+  return mixed
+}
+
 const mixState = (current: WeatherState, target: WeatherState, weight: number): WeatherState => ({
   atmosphere: mixAtmosphere(current.atmosphere, target.atmosphere, weight),
   surface: mixSurface(current.surface, target.surface, weight),
+  extensions: mixExtensions(current.extensions, target.extensions, weight),
 })
-
-const atmosphereLabelsFor = (atmosphere: WeatherAtmosphere): ReadonlyArray<string> => {
-  const labels = [
-    ...(atmosphere.precipitation.type !== 'none' ? [atmosphere.precipitation.type.replaceAll('_', '-')] : []),
-    ...(atmosphere.visibilityM < 2000 ? ['low-visibility'] : []),
-    ...(atmosphere.windSpeedMps > 10 ? ['windy'] : []),
-    ...(atmosphere.cloudCover !== undefined && atmosphere.cloudCover > 0.7 ? ['cloudy'] : []),
-  ]
-  return labels.length > 0 ? labels : ['fair']
-}
-
-const severityFor = (state: WeatherState): WeatherSeverity =>
-  state.surface.frictionClass === 'icy' || state.atmosphere.visibilityM < 800
-    ? 'hazard'
-    : state.surface.frictionClass === 'slippery' || state.atmosphere.visibilityM < 2000
-      ? 'adverse'
-      : state.atmosphere.precipitation.type !== 'none' || state.surface.frictionClass === 'wet'
-        ? 'notice'
-        : 'normal'
 
 const interpolateCurve = (
   from: WeatherFalloffCurve,
@@ -373,16 +376,16 @@ const solveForcedState = (config: {
   readonly center: LocalPoint
   readonly influences: ReadonlyArray<WeatherInfluenceEntry>
   readonly referenceLatitude: number
-}): { readonly state: WeatherState; readonly sourceObjectIds: ReadonlyArray<ObjectId> } => {
+}): { readonly state: WeatherState; readonly activeInfluenceIds: ReadonlyArray<ObjectId> } => {
   let state = config.base
-  const sourceObjectIds: ObjectId[] = []
+  const activeInfluenceIds: ObjectId[] = []
   for (const influence of config.influences) {
     const weight = influenceWeightFor(config.center, influence.frame, config.referenceLatitude)
     if (weight <= 0) continue
     state = mixState(state, influence.frame.state, weight)
-    sourceObjectIds.push(influence.objectId)
+    activeInfluenceIds.push(influence.objectId)
   }
-  return { state, sourceObjectIds }
+  return { state, activeInfluenceIds }
 }
 
 const cellStateFrom = (config: {
@@ -398,7 +401,8 @@ const cellStateFrom = (config: {
   const defaultState = defaultStateFor(config.at)
   const base = {
     atmosphere: defaultState.atmosphere,
-    surface: previous?.surface ?? defaultState.surface,
+    surface: previous?.state.surface ?? defaultState.surface,
+    extensions: previous?.state.extensions ?? defaultState.extensions,
   }
   const forced = solveForcedState({
     base,
@@ -413,18 +417,18 @@ const cellStateFrom = (config: {
     elapsedSeconds: config.elapsedSeconds,
     defaultSurface: defaultState.surface,
   })
-  if (forced.sourceObjectIds.length === 0 && evolved.defaultLike) return null
+  if (forced.activeInfluenceIds.length === 0 && evolved.defaultLike) return null
   return {
     id,
     q: config.cell.q,
     r: config.cell.r,
     center: weatherCellCenter(config.field.grid, config.cell),
-    atmosphere: {
-      ...forced.state.atmosphere,
-      labels: [...atmosphereLabelsFor(forced.state.atmosphere)],
+    state: {
+      atmosphere: forced.state.atmosphere,
+      surface: evolved.surface,
+      extensions: forced.state.extensions,
     },
-    surface: evolved.surface,
-    sourceObjectIds: forced.sourceObjectIds,
+    activeInfluenceIds: forced.activeInfluenceIds,
     residual: evolved.residual,
     updatedAt: config.at,
   }
@@ -513,24 +517,19 @@ export const weatherSampleAtPointFromSparseField = (config: {
   if (!existing) {
     const state = defaultStateFor(config.at)
     return {
-      severity: severityFor(state),
-      atmosphere: { ...state.atmosphere, labels: [...atmosphereLabelsFor(state.atmosphere)] },
-      surface: state.surface,
+      state,
       quality: { provenance: 'scenario', confidence: 0.6, validAt: config.at },
-      sourceObjectIds: [],
+      activeInfluenceIds: [],
     }
   }
-  const state = { atmosphere: existing.atmosphere, surface: existing.surface }
   return {
-    severity: severityFor(state),
-    atmosphere: existing.atmosphere,
-    surface: existing.surface,
+    state: existing.state,
     quality: {
-      provenance: existing.sourceObjectIds.length > 0 ? 'inferred' : 'scenario',
-      confidence: existing.sourceObjectIds.length > 0 ? 0.85 : 0.7,
+      provenance: existing.activeInfluenceIds.length > 0 ? 'inferred' : 'scenario',
+      confidence: existing.activeInfluenceIds.length > 0 ? 0.85 : 0.7,
       validAt: existing.updatedAt,
     },
-    sourceObjectIds: existing.sourceObjectIds,
+    activeInfluenceIds: existing.activeInfluenceIds,
   }
 }
 

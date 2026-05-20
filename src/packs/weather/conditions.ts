@@ -1,5 +1,5 @@
 import type { GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { weatherDomainDataSchema, type WeatherAtmosphere, type WeatherDomainData, type WeatherEvolution, type WeatherSample, type WeatherSurface } from './model.ts'
+import { type WeatherAtmosphere, type WeatherDomainData, type WeatherSample, type WeatherSurface } from './model.ts'
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import { weatherSampleAtPointFromField } from './field.ts'
 
@@ -10,17 +10,7 @@ const clamp = (value: number, min: number, max: number): number =>
 
 const clamp01 = (value: number): number => clamp(value, 0, 1)
 
-const lerp = (from: number, to: number, fraction: number): number =>
-  from + (to - from) * fraction
-
 const surfaceEpsilon = 0.005
-
-const fractionFor = (evolution: WeatherEvolution, at: IsoTimestamp): number => {
-  const start = Date.parse(evolution.startsAt)
-  const end = Date.parse(evolution.endsAt)
-  if (end <= start) return 1
-  return clamp((Date.parse(at) - start) / (end - start), 0, 1)
-}
 
 const precipitationAddsWetness = (type: string): boolean =>
   type === 'rain' || type === 'freezing_rain' || type === 'sleet' || type === 'hail'
@@ -47,38 +37,19 @@ export const surfaceIsDefaultLike = (
 
 export const deriveAtmosphere = (
   atmosphere: WeatherAtmosphere,
-  evolution: WeatherEvolution | undefined,
-  at: IsoTimestamp,
+  _at: IsoTimestamp,
 ): WeatherAtmosphere => {
-  if (!evolution) return atmosphere
-  const fraction = fractionFor(evolution, at)
-  return {
-    ...atmosphere,
-    airTemperatureC: evolution.airTemperatureC ? lerp(evolution.airTemperatureC.from, evolution.airTemperatureC.to, fraction) : atmosphere.airTemperatureC,
-    humidity: evolution.humidity ? clamp01(lerp(evolution.humidity.from, evolution.humidity.to, fraction)) : atmosphere.humidity,
-    windSpeedMps: evolution.windSpeedMps ? Math.max(0, lerp(evolution.windSpeedMps.from, evolution.windSpeedMps.to, fraction)) : atmosphere.windSpeedMps,
-    visibilityM: evolution.visibilityM ? Math.max(0, lerp(evolution.visibilityM.from, evolution.visibilityM.to, fraction)) : atmosphere.visibilityM,
-    cloudCover: evolution.cloudCover ? clamp01(lerp(evolution.cloudCover.from, evolution.cloudCover.to, fraction)) : atmosphere.cloudCover,
-    precipitation: {
-      type: evolution.precipitation?.type ?? atmosphere.precipitation.type,
-      intensityMmPerHour: evolution.precipitation?.intensityMmPerHour
-        ? Math.max(0, lerp(evolution.precipitation.intensityMmPerHour.from, evolution.precipitation.intensityMmPerHour.to, fraction))
-        : atmosphere.precipitation.intensityMmPerHour,
-    },
-  }
+  return atmosphere
 }
 
 export const evolveSurface = (config: {
   readonly surface: WeatherSurface
   readonly atmosphere: WeatherAtmosphere
-  readonly evolution?: WeatherEvolution
   readonly at: IsoTimestamp
   readonly elapsedSeconds: number
 }): WeatherSurface => {
   const dtMinutes = Math.max(0, config.elapsedSeconds / 60)
-  const targetGroundTemperature = config.evolution?.groundTemperatureC
-    ? lerp(config.evolution.groundTemperatureC.from, config.evolution.groundTemperatureC.to, fractionFor(config.evolution, config.at))
-    : config.atmosphere.airTemperatureC
+  const targetGroundTemperature = config.atmosphere.airTemperatureC
   const groundTemperatureC = config.surface.groundTemperatureC + (targetGroundTemperature - config.surface.groundTemperatureC) * clamp01(dtMinutes / 20)
   const precipitation = config.atmosphere.precipitation
   const precipitationAmount = precipitation.intensityMmPerHour * dtMinutes / 60
@@ -118,24 +89,6 @@ export const evolveSurface = (config: {
     standingWater = clamp01(standingWater - drying * 0.7)
   }
 
-  const blackIceRisk = clamp01(ice + (groundTemperatureC < 0 && wetness > 0.1 ? wetness * 0.7 : 0))
-  const frictionEstimate = clamp01(1 - Math.max(wetness * 0.25, snow * 0.55, blackIceRisk * 0.8, standingWater * 0.35))
-  const frictionClass = blackIceRisk > 0.65
-    ? 'icy'
-    : snow > 0.45 || blackIceRisk > 0.35
-      ? 'slippery'
-      : wetness > 0.2 || standingWater > 0.15
-        ? 'wet'
-        : 'normal'
-  const labels = [
-    ...(wetness > 0.2 ? ['wet'] : []),
-    ...(standingWater > 0.2 ? ['standing-water'] : []),
-    ...(snow > 0.2 ? ['snow'] : []),
-    ...(blackIceRisk > 0.35 ? ['black-ice-risk'] : []),
-    ...(frost > 0.25 ? ['frost'] : []),
-    ...(wetness <= 0.2 && snow <= 0.2 && blackIceRisk <= 0.35 ? ['dry'] : []),
-  ]
-
   return {
     groundTemperatureC,
     wetness,
@@ -143,9 +96,6 @@ export const evolveSurface = (config: {
     snow,
     ice,
     frost,
-    frictionEstimate,
-    frictionClass,
-    labels,
   }
 }
 
@@ -173,7 +123,6 @@ export const surfaceEvolutionResidual = (config: {
 export const evolveSurfaceWithResidual = (config: {
   readonly surface: WeatherSurface
   readonly atmosphere: WeatherAtmosphere
-  readonly evolution?: WeatherEvolution
   readonly at: IsoTimestamp
   readonly elapsedSeconds: number
   readonly defaultSurface?: WeatherSurface
@@ -201,31 +150,20 @@ export const evolveWeatherData = (
   at: IsoTimestamp,
   elapsedSeconds: number,
 ): WeatherDomainData => {
-  const atmosphere = deriveAtmosphere(data.atmosphere, data.evolution, at)
+  const atmosphere = deriveAtmosphere(data.state.atmosphere, at)
   const surface = evolveSurface({
-    surface: data.surface,
+    surface: data.state.surface,
     atmosphere,
     at,
     elapsedSeconds,
-    ...(data.evolution ? { evolution: data.evolution } : {}),
   })
-  const labels = [
-    ...(atmosphere.precipitation.type !== 'none' ? [atmosphere.precipitation.type.replaceAll('_', '-')] : []),
-    ...(atmosphere.visibilityM < 2000 ? ['low-visibility'] : []),
-    ...(atmosphere.windSpeedMps > 10 ? ['windy'] : []),
-    ...(atmosphere.cloudCover !== undefined && atmosphere.cloudCover > 0.7 ? ['cloudy'] : []),
-  ]
   return {
     ...data,
-    atmosphere: { ...atmosphere, labels: labels.length > 0 ? labels : ['fair'] },
-    surface,
-    severity: surface.frictionClass === 'icy' || atmosphere.visibilityM < 800
-      ? 'hazard'
-      : surface.frictionClass === 'slippery' || atmosphere.visibilityM < 2000
-        ? 'adverse'
-        : atmosphere.precipitation.type !== 'none' || surface.frictionClass === 'wet'
-          ? 'notice'
-          : 'normal',
+    state: {
+      atmosphere,
+      surface,
+      extensions: data.state.extensions,
+    },
     quality: { ...data.quality, validAt: at },
   }
 }

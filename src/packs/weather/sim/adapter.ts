@@ -36,6 +36,7 @@ import {
   type CreateWeatherAreaPayload,
   type WeatherDomainData,
   type WeatherSample,
+  type WeatherState,
 } from '../model.ts'
 import { createWeatherDomainData } from '../scenario.ts'
 import { weatherSimAdapterId, weatherSimDomain, weatherSimProviderId } from './constants.ts'
@@ -76,11 +77,6 @@ const emit = (
   }
 }
 
-type WeatherPriority = NonNullable<OperationalObject['operational']['priority']>
-
-const severityPriority = (severity: WeatherDomainData['severity']): WeatherPriority =>
-  severity === 'hazard' ? 'high' : severity === 'adverse' ? 'normal' : 'low'
-
 const spatialFor = (config: {
   readonly point?: GeoJsonPoint
   readonly at: IsoTimestamp
@@ -98,6 +94,12 @@ const spatialFor = (config: {
   }
 }
 
+const operationalStatusFor = (): OperationalObject['operational'] => ({
+  status: 'active',
+  priority: 'low',
+  mode: 'simulated',
+})
+
 const createWeatherConditionObject = (config: {
   readonly id: ObjectId
   readonly label: string
@@ -113,21 +115,8 @@ const createWeatherConditionObject = (config: {
   lifecycle: 'active',
   revision: 0,
   spatial: spatialFor(config),
-  operational: {
-    status: config.data.severity,
-    priority: severityPriority(config.data.severity),
-    mode: 'simulated',
-  },
-  alerts: config.data.severity === 'hazard'
-    ? [{
-        id: `${config.id}:weather`,
-        kind: 'weather_condition',
-        severity: 'warning',
-        message: config.data.summary,
-        raisedAt: config.at,
-        acknowledged: false,
-      }]
-    : [],
+  operational: operationalStatusFor(),
+  alerts: [],
   provenance: {
     source: config.causedByCommandId ? 'operator' : 'simulator',
     adapterId: weatherSimAdapterId,
@@ -149,12 +138,10 @@ const weatherProbeDataFromSample = (config: {
   type: 'weather_condition',
   schemaVersion: 1,
   conditionKind: 'point_observation',
-  severity: config.sample.severity,
-  atmosphere: config.sample.atmosphere,
-  surface: config.sample.surface,
+  state: config.sample.state,
   quality: {
     ...config.sample.quality,
-    provenance: config.sample.sourceObjectIds.length > 0 ? 'inferred' : config.sample.quality.provenance,
+    provenance: config.sample.activeInfluenceIds.length > 0 ? 'inferred' : config.sample.quality.provenance,
     validAt: config.at,
   },
   summary: config.summary,
@@ -179,11 +166,7 @@ const resampleWeatherProbe = (
   return {
     ...object,
     revision: object.revision + 1,
-    operational: {
-      ...object.operational,
-      status: next.severity,
-      priority: severityPriority(next.severity),
-    },
+    operational: operationalStatusFor(),
     timestamps: {
       ...object.timestamps,
       updatedAt: at,
@@ -193,15 +176,15 @@ const resampleWeatherProbe = (
 }
 
 const dataChangedMeaningfully = (previous: WeatherDomainData, next: WeatherDomainData): boolean => (
-  previous.severity !== next.severity ||
-  previous.atmosphere.precipitation.type !== next.atmosphere.precipitation.type ||
-  Math.abs(previous.atmosphere.precipitation.intensityMmPerHour - next.atmosphere.precipitation.intensityMmPerHour) >= 0.05 ||
-  Math.abs(previous.atmosphere.airTemperatureC - next.atmosphere.airTemperatureC) >= 0.1 ||
-  Math.abs(previous.surface.groundTemperatureC - next.surface.groundTemperatureC) >= 0.1 ||
-  Math.abs(previous.surface.wetness - next.surface.wetness) >= minimumSurfaceDelta ||
-  Math.abs(previous.surface.snow - next.surface.snow) >= minimumSurfaceDelta ||
-  Math.abs(previous.surface.ice - next.surface.ice) >= minimumSurfaceDelta ||
-  Math.abs(previous.surface.frost - next.surface.frost) >= minimumSurfaceDelta
+  previous.state.atmosphere.precipitation.type !== next.state.atmosphere.precipitation.type ||
+  Math.abs(previous.state.atmosphere.precipitation.intensityMmPerHour - next.state.atmosphere.precipitation.intensityMmPerHour) >= 0.05 ||
+  Math.abs(previous.state.atmosphere.airTemperatureC - next.state.atmosphere.airTemperatureC) >= 0.1 ||
+  Math.abs(previous.state.surface.groundTemperatureC - next.state.surface.groundTemperatureC) >= 0.1 ||
+  Math.abs(previous.state.surface.wetness - next.state.surface.wetness) >= minimumSurfaceDelta ||
+  Math.abs(previous.state.surface.snow - next.state.surface.snow) >= minimumSurfaceDelta ||
+  Math.abs(previous.state.surface.ice - next.state.surface.ice) >= minimumSurfaceDelta ||
+  Math.abs(previous.state.surface.frost - next.state.surface.frost) >= minimumSurfaceDelta ||
+  JSON.stringify(previous.state.extensions) !== JSON.stringify(next.state.extensions)
 )
 
 const pointChangedMeaningfully = (previous: GeoJsonPoint | undefined, next: GeoJsonPoint | null): boolean => {
@@ -227,13 +210,12 @@ const createOperatorWeatherAreaData = (
       ...defaultAtmosphere(at).precipitation,
       ...payload.atmosphere?.precipitation,
     },
-    labels: payload.atmosphere?.labels ?? defaultAtmosphere(at).labels,
   })
   const surface = weatherSurfaceSchema.parse({
     ...defaultSurface(),
     ...payload.surface,
-    labels: payload.surface?.labels ?? defaultSurface().labels,
   })
+  const state: WeatherState = { atmosphere, surface, extensions: payload.extensions ?? {} }
   const influence = weatherInfluenceSchema.parse({
     priority: 0,
     keyframes: [{
@@ -242,16 +224,14 @@ const createOperatorWeatherAreaData = (
       semiMajorAxisM: payload.semiMajorAxisM,
       semiMinorAxisM: payload.semiMinorAxisM,
       rotationDeg: payload.rotationDeg,
-      state: { atmosphere, surface },
+      state,
       falloffCurve: payload.falloffCurve,
     }],
   })
   const data = createWeatherDomainData({
     at,
     summary: payload.summary,
-    severity: payload.severity,
-    ...(payload.atmosphere ? { atmosphere: payload.atmosphere } : {}),
-    ...(payload.surface ? { surface: payload.surface } : {}),
+    state,
     influence,
   })
   return {
@@ -301,11 +281,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
           ...object,
           revision: object.revision + 1,
           spatial: spatialFor({ ...(center ? { point: center } : {}), at }),
-          operational: {
-            ...object.operational,
-            status: next.severity,
-            priority: severityPriority(next.severity),
-          },
+          operational: operationalStatusFor(),
           timestamps: {
             ...object.timestamps,
             updatedAt: at,

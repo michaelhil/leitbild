@@ -3,10 +3,10 @@ import { geoPointFromLonLat } from '../../core/model/index.ts'
 import {
   type WeatherAtmosphere,
   type WeatherDomainData,
+  type WeatherExtensions,
   type WeatherFalloffCurve,
   type WeatherInfluenceKeyframe,
   type WeatherSample,
-  type WeatherSeverity,
   type WeatherState,
   type WeatherSurface,
   weatherDomainDataSchema,
@@ -45,8 +45,10 @@ export interface WeatherInfluenceShape {
   readonly weight: number
   readonly normalizedRadius: number
   readonly summary: string
-  readonly severity: WeatherSeverity
+  readonly severity: WeatherPresentationSeverity
 }
+
+export type WeatherPresentationSeverity = 'normal' | 'notice' | 'adverse' | 'hazard'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
@@ -226,8 +228,9 @@ const visibleCellsFor = (viewport: GeoJsonPolygon, config: WeatherFieldConfig): 
 }
 
 const stateFromData = (data: WeatherDomainData): WeatherState => ({
-  atmosphere: data.atmosphere,
-  surface: data.surface,
+  atmosphere: data.state.atmosphere,
+  surface: data.state.surface,
+  extensions: data.state.extensions,
 })
 
 const precipitationTypeFor = (
@@ -252,68 +255,52 @@ const mixAtmosphere = (current: WeatherAtmosphere, target: WeatherAtmosphere, we
     type: precipitationTypeFor(current.precipitation.type, target.precipitation.type, weight),
     intensityMmPerHour: Math.max(0, lerp(current.precipitation.intensityMmPerHour, target.precipitation.intensityMmPerHour, weight)),
   },
-  labels: [],
 })
 
-const frictionClassFor = (surface: Pick<WeatherSurface, 'wetness' | 'standingWater' | 'snow' | 'ice' | 'frost'>): WeatherSurface['frictionClass'] => {
-  const blackIceRisk = clamp01(surface.ice + surface.frost * 0.35 + surface.wetness * 0.25)
-  if (blackIceRisk > 0.6) return 'icy'
-  if (surface.snow > 0.45 || blackIceRisk > 0.35) return 'slippery'
-  if (surface.wetness > 0.2 || surface.standingWater > 0.15) return 'wet'
-  return 'normal'
+const mixSurface = (current: WeatherSurface, target: WeatherSurface, weight: number): WeatherSurface => ({
+  groundTemperatureC: lerp(current.groundTemperatureC, target.groundTemperatureC, weight),
+  wetness: clamp01(lerp(current.wetness, target.wetness, weight)),
+  standingWater: clamp01(lerp(current.standingWater, target.standingWater, weight)),
+  snow: clamp01(lerp(current.snow, target.snow, weight)),
+  ice: clamp01(lerp(current.ice, target.ice, weight)),
+  frost: clamp01(lerp(current.frost, target.frost, weight)),
+})
+
+const mixExtensionValue = (
+  current: WeatherExtensions[string] | undefined,
+  target: WeatherExtensions[string],
+  weight: number,
+): WeatherExtensions[string] => {
+  if (typeof target === 'number') return lerp(typeof current === 'number' ? current : 0, target, weight)
+  if (typeof target === 'string') return weight >= 0.5 ? target : (typeof current === 'string' ? current : target)
+  if (typeof target === 'boolean') return weight >= 0.5 ? target : (typeof current === 'boolean' ? current : target)
+  throw new Error('unsupported weather extension value')
 }
 
-const labelsForSurface = (surface: Pick<WeatherSurface, 'wetness' | 'standingWater' | 'snow' | 'ice' | 'frost'>): ReadonlyArray<string> => {
-  const labels = [
-    ...(surface.wetness > 0.2 ? ['wet'] : []),
-    ...(surface.standingWater > 0.2 ? ['standing-water'] : []),
-    ...(surface.snow > 0.2 ? ['snow'] : []),
-    ...(surface.ice > 0.25 ? ['ice'] : []),
-    ...(surface.frost > 0.25 ? ['frost'] : []),
-  ]
-  return labels.length > 0 ? labels : ['dry']
-}
-
-const mixSurface = (current: WeatherSurface, target: WeatherSurface, weight: number): WeatherSurface => {
-  const mixed = {
-    groundTemperatureC: lerp(current.groundTemperatureC, target.groundTemperatureC, weight),
-    wetness: clamp01(lerp(current.wetness, target.wetness, weight)),
-    standingWater: clamp01(lerp(current.standingWater, target.standingWater, weight)),
-    snow: clamp01(lerp(current.snow, target.snow, weight)),
-    ice: clamp01(lerp(current.ice, target.ice, weight)),
-    frost: clamp01(lerp(current.frost, target.frost, weight)),
+const mixExtensions = (
+  current: WeatherExtensions,
+  target: WeatherExtensions,
+  weight: number,
+): WeatherExtensions => {
+  const mixed: Record<string, WeatherExtensions[string]> = { ...current }
+  for (const [key, value] of Object.entries(target)) {
+    mixed[key] = mixExtensionValue(current[key], value, weight)
   }
-  const frictionClass = frictionClassFor(mixed)
-  const frictionEstimate = clamp01(1 - Math.max(mixed.wetness * 0.25, mixed.snow * 0.55, mixed.ice * 0.8, mixed.standingWater * 0.35, mixed.frost * 0.35))
-  return {
-    ...mixed,
-    frictionEstimate,
-    frictionClass,
-    labels: [...labelsForSurface(mixed)],
-  }
+  return mixed
 }
 
 const mixState = (current: WeatherState, target: WeatherState, weight: number): WeatherState => ({
   atmosphere: mixAtmosphere(current.atmosphere, target.atmosphere, weight),
   surface: mixSurface(current.surface, target.surface, weight),
+  extensions: mixExtensions(current.extensions, target.extensions, weight),
 })
 
-const atmosphereLabelsFor = (atmosphere: WeatherAtmosphere): ReadonlyArray<string> => {
-  const labels = [
-    ...(atmosphere.precipitation.type !== 'none' ? [atmosphere.precipitation.type.replaceAll('_', '-')] : []),
-    ...(atmosphere.visibilityM < 2000 ? ['low-visibility'] : []),
-    ...(atmosphere.windSpeedMps > 10 ? ['windy'] : []),
-    ...(atmosphere.cloudCover !== undefined && atmosphere.cloudCover > 0.7 ? ['cloudy'] : []),
-  ]
-  return labels.length > 0 ? labels : ['fair']
-}
-
-const severityFor = (state: WeatherState): WeatherSeverity =>
-  state.surface.frictionClass === 'icy' || state.atmosphere.visibilityM < 800
+export const weatherPresentationSeverityForState = (state: WeatherState): WeatherPresentationSeverity =>
+  state.surface.ice > 0.55 || state.atmosphere.visibilityM < 800
     ? 'hazard'
-    : state.surface.frictionClass === 'slippery' || state.atmosphere.visibilityM < 2000
+    : state.surface.snow > 0.45 || state.surface.ice > 0.25 || state.atmosphere.visibilityM < 2000
       ? 'adverse'
-      : state.atmosphere.precipitation.type !== 'none' || state.surface.frictionClass === 'wet'
+      : state.atmosphere.precipitation.type !== 'none' || state.surface.wetness > 0.2 || state.surface.standingWater > 0.15
         ? 'notice'
         : 'normal'
 
@@ -425,6 +412,7 @@ const influenceWeightFor = (
 const baseStateFor = (at: IsoTimestamp): WeatherState => ({
   atmosphere: defaultAtmosphere(at),
   surface: defaultSurface(),
+  extensions: {},
 })
 
 const fieldCellSizeFor = (objects: ReadonlyArray<OperationalObject>, zoom?: number): number => {
@@ -447,25 +435,19 @@ const solveStateAtLocalPoint = (
   at: IsoTimestamp,
 ): WeatherSample => {
   let state = baseStateFor(at)
-  const sourceObjectIds: string[] = []
+  const activeInfluenceIds: string[] = []
   for (const entry of sortedInfluenceObjects(objects)) {
     const frame = activeFrameAt(entry.data, at)
     if (!frame) continue
     const weight = influenceWeightFor(localPoint, frame, config.referenceLatitude)
     if (weight <= 0) continue
     state = mixState(state, frame.state, weight)
-    sourceObjectIds.push(entry.object.id)
-  }
-  const normalizedState = {
-    atmosphere: { ...state.atmosphere, labels: [...atmosphereLabelsFor(state.atmosphere)] },
-    surface: state.surface,
+    activeInfluenceIds.push(entry.object.id)
   }
   return {
-    severity: severityFor(normalizedState),
-    atmosphere: normalizedState.atmosphere,
-    surface: normalizedState.surface,
-    quality: { provenance: sourceObjectIds.length > 0 ? 'inferred' : 'scenario', confidence: sourceObjectIds.length > 0 ? 0.85 : 0.6, validAt: at },
-    sourceObjectIds,
+    state,
+    quality: { provenance: activeInfluenceIds.length > 0 ? 'inferred' : 'scenario', confidence: activeInfluenceIds.length > 0 ? 0.85 : 0.6, validAt: at },
+    activeInfluenceIds,
   }
 }
 
@@ -588,7 +570,7 @@ export const weatherInfluenceShapesForViewport = (config: {
         weight,
         normalizedRadius,
         summary: data.summary,
-        severity: data.severity,
+        severity: weatherPresentationSeverityForState(frame.state),
       }
     })
   })
@@ -607,15 +589,9 @@ export const weatherDataAtTime = (
   if (data.conditionKind !== 'weather_influence') return data
   const frame = activeFrameAt(data, at)
   if (!frame) return data
-  const state = {
-    atmosphere: { ...frame.state.atmosphere, labels: [...atmosphereLabelsFor(frame.state.atmosphere)] },
-    surface: frame.state.surface,
-  }
   return {
     ...data,
-    atmosphere: state.atmosphere,
-    surface: state.surface,
-    severity: severityFor(state),
+    state: frame.state,
     quality: { ...data.quality, validAt: data.quality.validAt },
   }
 }

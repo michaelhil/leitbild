@@ -6,14 +6,8 @@ export const weatherDomainId = 'weather' as const
 export const precipitationTypeSchema = z.enum(['none', 'rain', 'snow', 'sleet', 'freezing_rain', 'hail'])
 export type PrecipitationType = z.infer<typeof precipitationTypeSchema>
 
-export const frictionClassSchema = z.enum(['normal', 'wet', 'slippery', 'icy', 'blocked'])
-export type FrictionClass = z.infer<typeof frictionClassSchema>
-
 export const weatherProvenanceKindSchema = z.enum(['scenario', 'forecast', 'observed', 'inferred', 'intervention'])
 export type WeatherProvenanceKind = z.infer<typeof weatherProvenanceKindSchema>
-
-export const weatherSeveritySchema = z.enum(['normal', 'notice', 'adverse', 'hazard'])
-export type WeatherSeverity = z.infer<typeof weatherSeveritySchema>
 
 const normalizedSchema = z.number().finite().min(0).max(1)
 
@@ -30,7 +24,6 @@ export const weatherAtmosphereSchema = z.object({
   visibilityM: z.number().finite().nonnegative(),
   cloudCover: normalizedSchema.optional(),
   precipitation: precipitationSchema,
-  labels: z.array(z.string().min(1)).default([]),
 })
 export type WeatherAtmosphere = z.infer<typeof weatherAtmosphereSchema>
 export const weatherAtmospherePatchSchema = weatherAtmosphereSchema.partial()
@@ -43,13 +36,45 @@ export const weatherSurfaceSchema = z.object({
   snow: normalizedSchema,
   ice: normalizedSchema,
   frost: normalizedSchema,
-  frictionEstimate: normalizedSchema.optional(),
-  frictionClass: frictionClassSchema,
-  labels: z.array(z.string().min(1)).default([]),
 })
 export type WeatherSurface = z.infer<typeof weatherSurfaceSchema>
 export const weatherSurfacePatchSchema = weatherSurfaceSchema.partial()
 export type WeatherSurfacePatch = z.infer<typeof weatherSurfacePatchSchema>
+
+export const weatherExtensionValueSchema = z.union([
+  z.number().finite(),
+  z.string(),
+  z.boolean(),
+])
+export type WeatherExtensionValue = z.infer<typeof weatherExtensionValueSchema>
+
+export const weatherExtensionsSchema = z.record(weatherExtensionValueSchema).default({})
+export type WeatherExtensions = z.infer<typeof weatherExtensionsSchema>
+
+export const weatherExtensionDefinitionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('number'),
+    default: z.number().finite(),
+    unit: z.string().min(1).optional(),
+    min: z.number().finite().optional(),
+    max: z.number().finite().optional(),
+    interpolation: z.literal('linear').default('linear'),
+  }),
+  z.object({
+    type: z.literal('string'),
+    default: z.string(),
+    interpolation: z.literal('step').default('step'),
+  }),
+  z.object({
+    type: z.literal('boolean'),
+    default: z.boolean(),
+    interpolation: z.literal('step').default('step'),
+  }),
+])
+export type WeatherExtensionDefinition = z.infer<typeof weatherExtensionDefinitionSchema>
+
+export const weatherExtensionDefinitionsSchema = z.record(weatherExtensionDefinitionSchema).default({})
+export type WeatherExtensionDefinitions = z.infer<typeof weatherExtensionDefinitionsSchema>
 
 export const weatherQualitySchema = z.object({
   provenance: weatherProvenanceKindSchema,
@@ -57,31 +82,6 @@ export const weatherQualitySchema = z.object({
   validAt: z.string().datetime(),
 })
 export type WeatherQuality = z.infer<typeof weatherQualitySchema>
-
-export const numericTrendSchema = z.object({
-  from: z.number().finite(),
-  to: z.number().finite(),
-})
-export type NumericTrend = z.infer<typeof numericTrendSchema>
-
-export const precipitationTrendSchema = z.object({
-  type: precipitationTypeSchema.optional(),
-  intensityMmPerHour: numericTrendSchema.optional(),
-})
-export type PrecipitationTrend = z.infer<typeof precipitationTrendSchema>
-
-export const weatherEvolutionSchema = z.object({
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
-  airTemperatureC: numericTrendSchema.optional(),
-  groundTemperatureC: numericTrendSchema.optional(),
-  visibilityM: numericTrendSchema.optional(),
-  windSpeedMps: numericTrendSchema.optional(),
-  humidity: numericTrendSchema.optional(),
-  cloudCover: numericTrendSchema.optional(),
-  precipitation: precipitationTrendSchema.optional(),
-})
-export type WeatherEvolution = z.infer<typeof weatherEvolutionSchema>
 
 export const weatherRenderSchema = z.object({
   cellSizeM: z.number().finite().positive(),
@@ -92,6 +92,7 @@ export type WeatherRender = z.infer<typeof weatherRenderSchema>
 export const weatherStateSchema = z.object({
   atmosphere: weatherAtmosphereSchema,
   surface: weatherSurfaceSchema,
+  extensions: weatherExtensionsSchema,
 })
 export type WeatherState = z.infer<typeof weatherStateSchema>
 
@@ -138,12 +139,9 @@ export const weatherDomainDataSchema = z.object({
   type: z.literal('weather_condition'),
   schemaVersion: z.literal(1),
   conditionKind: z.enum(['weather_influence', 'point_observation']),
-  severity: weatherSeveritySchema,
-  atmosphere: weatherAtmosphereSchema,
-  surface: weatherSurfaceSchema,
+  state: weatherStateSchema,
   quality: weatherQualitySchema,
   influence: weatherInfluenceSchema.optional(),
-  evolution: weatherEvolutionSchema.optional(),
   render: weatherRenderSchema.optional(),
   summary: z.string().min(1),
 })
@@ -153,9 +151,9 @@ export const createWeatherAreaPayloadSchema = z.object({
   objectType: z.literal('weather_area'),
   label: z.string().min(1).max(80),
   summary: z.string().min(1).max(180).default('Operator-created weather area'),
-  severity: weatherSeveritySchema.default('notice'),
   atmosphere: weatherAtmospherePatchSchema.optional(),
   surface: weatherSurfacePatchSchema.optional(),
+  extensions: weatherExtensionsSchema.optional(),
   center: geoJsonPointSchema.optional(),
   semiMajorAxisM: z.number().finite().positive().optional(),
   semiMinorAxisM: z.number().finite().positive().optional(),
@@ -188,9 +186,7 @@ export const createWeatherConditionPayloadSchema = z.union([
 export type CreateWeatherConditionPayload = z.infer<typeof createWeatherConditionPayloadSchema>
 
 export interface WeatherSample {
-  readonly severity: WeatherSeverity
-  readonly atmosphere: WeatherAtmosphere
-  readonly surface: WeatherSurface
+  readonly state: WeatherState
   readonly quality: WeatherQuality
-  readonly sourceObjectIds: ReadonlyArray<string>
+  readonly activeInfluenceIds: ReadonlyArray<string>
 }

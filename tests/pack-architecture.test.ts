@@ -182,7 +182,19 @@ describe('pack architecture', () => {
     expect(runtime?.providerConfigs).toEqual({
       [ambulanceSimProviderId]: {},
       [trafficSimProviderId]: {},
-      [weatherSimProviderId]: {},
+      [weatherSimProviderId]: {
+        fields: {
+          extensions: {
+            'research.operatorWeatherLoad': {
+              type: 'number',
+              unit: '0..1',
+              default: 0,
+              min: 0,
+              max: 1,
+            },
+          },
+        },
+      },
     })
   })
 

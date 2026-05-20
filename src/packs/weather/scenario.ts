@@ -6,22 +6,23 @@ import {
   type OperationalObject,
 } from '../../core/model/index.ts'
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
-import {
-  evolveWeatherData,
-} from './conditions.ts'
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import {
   weatherAtmosphereSchema,
   weatherDomainDataSchema,
-  weatherSeveritySchema,
   weatherAtmospherePatchSchema,
+  weatherExtensionDefinitionsSchema,
+  weatherExtensionsSchema,
   weatherSurfacePatchSchema,
   weatherSurfaceSchema,
   weatherFalloffCurveSchema,
   weatherInfluenceSchema,
   type WeatherAtmospherePatch,
   type WeatherDomainData,
+  type WeatherExtensionDefinitions,
+  type WeatherExtensions,
   type WeatherInfluence,
+  type WeatherState,
   type WeatherSurfacePatch,
 } from './model.ts'
 import { weatherSimAdapterId, weatherSimDomain } from './sim/constants.ts'
@@ -40,6 +41,7 @@ const weatherKeyframeSpecSchema = z.object({
   falloffCurve: weatherFalloffCurveSchema.optional(),
   atmosphere: weatherAtmospherePatchSchema.default({}),
   surface: weatherSurfacePatchSchema.default({}),
+  extensions: weatherExtensionsSchema,
 })
 
 const weatherConditionSpecSchema = z.object({
@@ -51,43 +53,55 @@ const weatherConditionSpecSchema = z.object({
   showField: z.boolean().default(true),
   priority: z.number().int().default(0),
   summary: z.string().min(1),
-  severity: weatherSeveritySchema.default('normal'),
   atmosphere: weatherAtmospherePatchSchema.default({}),
   surface: weatherSurfacePatchSchema.default({}),
+  extensions: weatherExtensionsSchema,
   falloffCurve: weatherFalloffCurveSchema.default([{ x: 0, y: 1 }, { x: 1, y: 0 }]),
   keyframes: z.array(weatherKeyframeSpecSchema).min(1),
 })
 
+const weatherProviderConfigSchema = z.object({
+  fields: z.object({
+    extensions: weatherExtensionDefinitionsSchema,
+  }).default({ extensions: {} }),
+}).default({ fields: { extensions: {} } })
+
+const weatherProviderConfigFor = (providerConfigs: Record<string, unknown>): z.infer<typeof weatherProviderConfigSchema> =>
+  weatherProviderConfigSchema.parse(providerConfigs.weather ?? {})
+
+const extensionDefaultsFor = (definitions: WeatherExtensionDefinitions): WeatherExtensions =>
+  Object.fromEntries(Object.entries(definitions).map(([key, definition]) => [key, definition.default]))
+
+const validatedExtensions = (
+  extensions: WeatherExtensions,
+  definitions: WeatherExtensionDefinitions,
+): WeatherExtensions => {
+  for (const [key, value] of Object.entries(extensions)) {
+    const definition = definitions[key]
+    if (!definition) throw new Error(`weather extension "${key}" is not declared in providerConfigs.weather.fields.extensions`)
+    if (typeof value !== definition.type) throw new Error(`weather extension "${key}" must be ${definition.type}`)
+    if (definition.type === 'number') {
+      const numericValue = value
+      if (typeof numericValue !== 'number') throw new Error(`weather extension "${key}" must be number`)
+      if (definition.min !== undefined && numericValue < definition.min) throw new Error(`weather extension "${key}" is below min ${definition.min}`)
+      if (definition.max !== undefined && numericValue > definition.max) throw new Error(`weather extension "${key}" is above max ${definition.max}`)
+    }
+  }
+  return extensions
+}
+
 export const createWeatherDomainData = (config: {
   readonly at: IsoTimestamp
   readonly summary: string
-  readonly severity: z.infer<typeof weatherSeveritySchema>
-  readonly atmosphere?: WeatherAtmospherePatch
-  readonly surface?: WeatherSurfacePatch
+  readonly state: WeatherState
   readonly influence: WeatherInfluence
   readonly render?: { readonly cellSizeM: number; readonly showField: boolean }
 }): WeatherDomainData => {
-  const atmosphere = weatherAtmosphereSchema.parse({
-    ...defaultAtmosphere(config.at),
-    ...config.atmosphere,
-    precipitation: {
-      ...defaultAtmosphere(config.at).precipitation,
-      ...config.atmosphere?.precipitation,
-    },
-    labels: config.atmosphere?.labels ?? defaultAtmosphere(config.at).labels,
-  })
-  const surface = weatherSurfaceSchema.parse({
-    ...defaultSurface(),
-    ...config.surface,
-    labels: config.surface?.labels ?? defaultSurface().labels,
-  })
-  return weatherDomainDataSchema.parse(evolveWeatherData({
+  return weatherDomainDataSchema.parse({
     type: 'weather_condition',
     schemaVersion: 1,
     conditionKind: 'weather_influence',
-    severity: config.severity,
-    atmosphere,
-    surface,
+    state: config.state,
     quality: {
       provenance: 'scenario',
       confidence: 1,
@@ -96,16 +110,19 @@ export const createWeatherDomainData = (config: {
     influence: config.influence,
     ...(config.render ? { render: config.render } : {}),
     summary: config.summary,
-  }, config.at, 0))
+  })
 }
 
 const weatherStateForSpec = (config: {
   readonly at: IsoTimestamp
   readonly baseAtmosphere: WeatherAtmospherePatch
   readonly baseSurface: WeatherSurfacePatch
+  readonly baseExtensions: WeatherExtensions
   readonly atmosphere: WeatherAtmospherePatch
   readonly surface: WeatherSurfacePatch
-}) => ({
+  readonly extensions: WeatherExtensions
+  readonly extensionDefinitions: WeatherExtensionDefinitions
+}): WeatherState => ({
   atmosphere: weatherAtmosphereSchema.parse({
     ...defaultAtmosphere(config.at),
     ...config.baseAtmosphere,
@@ -115,19 +132,23 @@ const weatherStateForSpec = (config: {
       ...config.baseAtmosphere.precipitation,
       ...config.atmosphere.precipitation,
     },
-    labels: config.atmosphere.labels ?? config.baseAtmosphere.labels ?? defaultAtmosphere(config.at).labels,
   }),
   surface: weatherSurfaceSchema.parse({
     ...defaultSurface(),
     ...config.baseSurface,
     ...config.surface,
-    labels: config.surface.labels ?? config.baseSurface.labels ?? defaultSurface().labels,
   }),
+  extensions: validatedExtensions({
+    ...extensionDefaultsFor(config.extensionDefinitions),
+    ...config.baseExtensions,
+    ...config.extensions,
+  }, config.extensionDefinitions),
 })
 
 const influenceForSpec = (
   spec: z.infer<typeof weatherConditionSpecSchema>,
   at: IsoTimestamp,
+  extensionDefinitions: WeatherExtensionDefinitions,
 ): WeatherInfluence => weatherInfluenceSchema.parse({
   priority: spec.priority,
   keyframes: spec.keyframes.map(keyframe => ({
@@ -140,8 +161,11 @@ const influenceForSpec = (
       at,
       baseAtmosphere: spec.atmosphere,
       baseSurface: spec.surface,
+      baseExtensions: spec.extensions,
       atmosphere: keyframe.atmosphere,
       surface: keyframe.surface,
+      extensions: keyframe.extensions,
+      extensionDefinitions,
     }),
     falloffCurve: keyframe.falloffCurve ?? spec.falloffCurve,
   })),
@@ -150,16 +174,15 @@ const influenceForSpec = (
 const weatherConditionObject = (config: {
   readonly spec: z.infer<typeof weatherConditionSpecSchema>
   readonly at: IsoTimestamp
+  readonly extensionDefinitions: WeatherExtensionDefinitions
 }): OperationalObject => {
-  const influence = influenceForSpec(config.spec, config.at)
+  const influence = influenceForSpec(config.spec, config.at, config.extensionDefinitions)
   const firstFrame = influence.keyframes[0]
   if (!firstFrame) throw new Error(`weather condition ${config.spec.id} has no keyframes`)
   const data = createWeatherDomainData({
     at: config.at,
     summary: config.spec.summary,
-    severity: config.spec.severity,
-    ...(Object.keys(config.spec.atmosphere).length > 0 ? { atmosphere: config.spec.atmosphere } : {}),
-    ...(Object.keys(config.spec.surface).length > 0 ? { surface: config.spec.surface } : {}),
+    state: firstFrame.state,
     influence,
     render: { cellSizeM: config.spec.cellSizeM, showField: config.spec.showField },
   })
@@ -179,20 +202,11 @@ const weatherConditionObject = (config: {
       frame: { kind: 'wgs84' },
     },
     operational: {
-      status: data.severity,
-      priority: data.severity === 'hazard' ? 'high' : data.severity === 'adverse' ? 'normal' : 'low',
+      status: 'active',
+      priority: 'low',
       mode: 'simulated',
     },
-    alerts: data.severity === 'hazard'
-      ? [{
-          id: `${config.spec.id}:weather`,
-          kind: 'weather_condition',
-          severity: 'warning',
-          message: config.spec.summary,
-          raisedAt: config.at,
-          acknowledged: false,
-        }]
-      : [],
+    alerts: [],
     provenance: {
       source: 'simulator',
       adapterId: weatherSimAdapterId,
@@ -209,7 +223,12 @@ const weatherConditionObject = (config: {
 export const weatherScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec, context): OperationalObject => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
-    return weatherConditionObject({ spec, at: context.at })
+    const providerConfig = weatherProviderConfigFor(context.providerConfigs)
+    return weatherConditionObject({
+      spec,
+      at: context.at,
+      extensionDefinitions: providerConfig.fields.extensions,
+    })
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`weather scenario operation is not supported yet: ${rawOperation.type}`)

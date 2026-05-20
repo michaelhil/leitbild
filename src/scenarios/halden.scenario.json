@@ -84,7 +84,6 @@
       "showField": true,
       "priority": 5,
       "summary": "Cool humid weather with intermittent light rain over central Halden",
-      "severity": "notice",
       "atmosphere": {
         "airTemperatureC": 5,
         "humidity": 0.86,
@@ -92,8 +91,7 @@
         "windDirectionDeg": 210,
         "visibilityM": 9000,
         "cloudCover": 0.82,
-        "precipitation": { "type": "rain", "intensityMmPerHour": 0.6 },
-        "labels": ["showers", "cloudy"]
+        "precipitation": { "type": "rain", "intensityMmPerHour": 0.6 }
       },
       "surface": {
         "groundTemperatureC": 4.5,
@@ -101,10 +99,7 @@
         "standingWater": 0.05,
         "snow": 0,
         "ice": 0,
-        "frost": 0,
-        "frictionEstimate": 0.92,
-        "frictionClass": "wet",
-        "labels": ["wet"]
+        "frost": 0
       },
       "keyframes": [
         {
@@ -127,10 +122,7 @@
           },
           "surface": {
             "wetness": 0.38,
-            "standingWater": 0.07,
-            "frictionEstimate": 0.88,
-            "frictionClass": "wet",
-            "labels": ["wet"]
+            "standingWater": 0.07
           },
           "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.7, "y": 0.8 }, { "x": 1, "y": 0 }]
         }

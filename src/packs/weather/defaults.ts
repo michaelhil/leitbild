@@ -9,7 +9,6 @@ export const defaultAtmosphere = (_at: IsoTimestamp): WeatherAtmosphere => ({
   visibilityM: 12000,
   cloudCover: 0.45,
   precipitation: { type: 'none', intensityMmPerHour: 0 },
-  labels: ['calm'],
 })
 
 export const defaultSurface = (): WeatherSurface => ({
@@ -19,7 +18,4 @@ export const defaultSurface = (): WeatherSurface => ({
   snow: 0,
   ice: 0,
   frost: 0,
-  frictionEstimate: 1,
-  frictionClass: 'normal',
-  labels: ['dry'],
 })
