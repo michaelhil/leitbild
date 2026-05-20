@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "pwr.westinghouse-lite.v1",
+  "title": "Westinghouse-style PWR Lite",
+  "timestep": {
+    "fixedStepMs": 100
+  },
+  "components": [
+    {
+      "id": "core",
+      "kind": "reactorCoreLite",
+      "label": "Reactor Core",
+      "parameters": {
+        "ratedPowerMw": 3400,
+        "initialPowerFraction": 0.85
+      }
+    },
+    {
+      "id": "sgA",
+      "kind": "steamGeneratorLite",
+      "label": "Steam Generator A",
+      "parameters": {
+        "nominalPressureMPa": 6.9,
+        "nominalLevelPercent": 0.55,
+        "heatTransferCoefficientMwPerK": 12
+      }
+    },
+    {
+      "id": "rcpA",
+      "kind": "centrifugalPump",
+      "label": "Reactor Coolant Pump A",
+      "parameters": {
+        "nominalFlowKgPerS": 4700,
+        "nominalHeadPa": 650000
+      }
+    },
+    {
+      "id": "feedwaterA",
+      "kind": "feedwaterSourceLite",
+      "label": "Feedwater Train A",
+      "parameters": {
+        "nominalFlowKgPerS": 760,
+        "temperatureC": 220
+      }
+    },
+    {
+      "id": "turbine",
+      "kind": "turbineLoadSinkLite",
+      "label": "Turbine Generator",
+      "parameters": {
+        "nominalElectricMw": 1100,
+        "initialLoadFraction": 0.85
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "rcs-hot-leg-a",
+      "from": "core.hotLegA",
+      "to": "sgA.primaryInlet",
+      "medium": "primary-water"
+    },
+    {
+      "id": "rcs-cold-leg-a",
+      "from": "sgA.primaryOutlet",
+      "to": "rcpA.inlet",
+      "medium": "primary-water"
+    },
+    {
+      "id": "rcp-a-to-core",
+      "from": "rcpA.outlet",
+      "to": "core.coldLegA",
+      "medium": "primary-water"
+    },
+    {
+      "id": "fw-a-to-sg-a",
+      "from": "feedwaterA.outlet",
+      "to": "sgA.feedwaterInlet",
+      "medium": "feedwater"
+    },
+    {
+      "id": "sg-a-steam-to-turbine",
+      "from": "sgA.steamOutlet",
+      "to": "turbine.steamInlet",
+      "edgeKind": "steamFlow",
+      "medium": "steam"
+    }
+  ],
+  "publishedVariables": [
+    "core.powerMw",
+    "sgA.levelPercent",
+    "sgA.pressureMPa",
+    "rcpA.running",
+    "feedwaterA.flowKgPerS",
+    "turbine.electricMw"
+  ]
+}

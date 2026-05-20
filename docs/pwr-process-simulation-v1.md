@@ -26,9 +26,49 @@ Inside the pack:
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
-## Canonical Authoring Model
+## Scenario-Owned Process Assembly
 
-V1 uses a TypeScript data-builder DSL that emits JSON-compatible data.
+The full plant run should be assembled from a Leitbild Scenario Definition. The scenario declares active packs and may include one or more `processSystems`. Each process system names the owning pack, the component library, and a graph data object.
+
+```json
+{
+  "processSystems": [
+    {
+      "id": "plant",
+      "pack": "pwr",
+      "componentLibrary": "pwr-lite",
+      "graph": {
+        "schemaVersion": 1,
+        "id": "pwr.westinghouse-lite.v1",
+        "title": "Westinghouse-style PWR Lite",
+        "timestep": { "fixedStepMs": 100 },
+        "components": [],
+        "connections": [],
+        "publishedVariables": []
+      }
+    }
+  ]
+}
+```
+
+This makes the plant topology config-owned rather than hardcoded in TypeScript. A future AI agent can author a complete plant graph by writing scenario/config data, then Leitbild validates and compiles it before runtime.
+
+The reusable machinery remains code-owned:
+
+- component type definitions,
+- parameter/state schemas,
+- graph compiler,
+- solver/runtime,
+- provider query surface,
+- command/event handlers.
+
+That boundary is deliberate. Scenarios instantiate components and connect them; they do not invent arbitrary physics in V1.
+
+## Canonical Graph Format
+
+V1 uses JSON-compatible graph data as the canonical runtime input. The current built-in PWR lite graph lives at `src/packs/pwr/specs/westinghouse-lite.graph.json`.
+
+A TypeScript data-builder DSL remains available as an authoring and test helper.
 
 This gives:
 
@@ -37,6 +77,8 @@ This gives:
 - Runtime Zod validation for loaded specs.
 - A pure-data canonical shape that can later be serialized to JSON or generated from YAML.
 - Mermaid diagrams generated from the canonical graph instead of Mermaid being the source of truth.
+
+The builder is not the runtime source of truth. Runtime plant assembly should load graph data from the Scenario Definition or from a graph data file referenced by scenario tooling.
 
 Mermaid is documentation/debug output only. It is not the canonical plant model.
 

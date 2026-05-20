@@ -73,6 +73,16 @@ export const createScenarioCatalog = (config: {
     for (const packId of Object.keys(scenario.providerConfigs)) {
       if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has provider config for inactive pack: ${packId}`)
     }
+    const processSystemIds = new Set<string>()
+    for (const processSystem of scenario.processSystems) {
+      if (processSystemIds.has(processSystem.id)) {
+        throw new Error(`scenario ${scenario.id} has duplicate process system id: ${processSystem.id}`)
+      }
+      processSystemIds.add(processSystem.id)
+      if (!scenario.packs.includes(processSystem.pack)) {
+        throw new Error(`scenario ${scenario.id} has process system ${processSystem.id} for inactive pack: ${processSystem.pack}`)
+      }
+    }
     const activeCategoryIds = new Set(
       scenario.packs.flatMap(packId => packs.get(packId)?.categories.map(category => category.id) ?? []),
     )

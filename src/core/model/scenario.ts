@@ -67,6 +67,13 @@ export interface ScenarioInitialObjectContext {
   readonly context: ObjectContext
 }
 
+export interface ScenarioProcessSystemDefinition {
+  readonly id: string
+  readonly pack: string
+  readonly componentLibrary: string
+  readonly graph: unknown
+}
+
 export interface ScenarioGuidance {
   readonly id: string
   readonly title: string
@@ -140,6 +147,7 @@ export interface ScenarioDefinition {
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
+  readonly processSystems: ReadonlyArray<ScenarioProcessSystemDefinition>
   readonly providerConfigs: Record<string, unknown>
   readonly missionId?: string
   readonly surface: SurfaceDefinition
@@ -230,6 +238,13 @@ export const scenarioInitialObjectContextSchema = z.object({
   context: objectContextSchema,
 })
 
+export const scenarioProcessSystemDefinitionSchema = z.object({
+  id: idSchema,
+  pack: idSchema,
+  componentLibrary: idSchema,
+  graph: z.custom<unknown>(value => value !== undefined, 'graph is required'),
+})
+
 export const scenarioGuidanceSchema = z.object({
   id: idSchema,
   title: z.string().min(1),
@@ -316,6 +331,7 @@ export const scenarioDefinitionSchema = z.object({
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
+  processSystems: z.array(scenarioProcessSystemDefinitionSchema).default([]),
   providerConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
   surface: surfaceDefinitionSchema,

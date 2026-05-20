@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { compilePlantGraph, component, connect, plantGraph, plantGraphToMermaid, pwrComponentRegistry, pwrLitePlantSpec } from '../src/packs/pwr/index.ts'
+import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/model/index.ts'
+import { compilePlantGraph, compilePwrProcessSystems, component, connect, plantGraph, plantGraphToMermaid, pwrComponentRegistry, pwrLitePlantSpec } from '../src/packs/pwr/index.ts'
 
 describe('PWR plant graph foundation', () => {
   test('compiles the PWR lite plant graph into indexed components, edges, and variables', () => {
@@ -17,6 +18,38 @@ describe('PWR plant graph foundation', () => {
       'feedwaterA.flowKgPerS',
       'turbine.electricMw',
     ])
+  })
+
+  test('compiles a PWR process system from scenario-owned graph data', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'pwr-sgtr-training',
+      schemaVersion: 1,
+      title: 'PWR SGTR Training',
+      packs: ['pwr'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [
+        {
+          id: 'plant',
+          pack: 'pwr',
+          componentLibrary: 'pwr-lite',
+          graph: pwrLitePlantSpec,
+        },
+      ],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const systems = compilePwrProcessSystems(scenario.processSystems)
+
+    expect(systems).toHaveLength(1)
+    expect(systems[0]?.id).toBe('plant')
+    expect(systems[0]?.graph.components.map(component => String(component.id))).toContain('core')
   })
 
   test('rejects incompatible typed port connections before runtime', () => {
