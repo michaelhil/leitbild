@@ -23,6 +23,8 @@ const weatherAreaQuerySchema = z.object({
 const weatherMapFeaturesQuerySchema = z.object({
   viewport: geoJsonPolygonSchema,
   zoom: z.number().finite().min(0).max(24),
+  at: z.string().datetime().optional(),
+  animationDurationMs: z.number().finite().positive().max(10_000).optional(),
   layers: z.array(z.enum(['baseGrid', 'affectedCells', 'influenceShapes'])).default(['baseGrid', 'affectedCells', 'influenceShapes']),
 })
 
@@ -163,12 +165,14 @@ export const answerWeatherQuery = (config: {
     }
     if (config.request.kind === 'weather.mapFeatures') {
       const payload = weatherMapFeaturesQuerySchema.parse(config.request.payload)
+      const at = (payload.at ?? config.at) as IsoTimestamp
       const features = projectWeatherFieldForMap({
         field: config.field,
         objects: config.objects,
         viewport: payload.viewport,
         zoom: payload.zoom,
-        at: config.at,
+        at,
+        ...(payload.animationDurationMs === undefined ? {} : { animationDurationMs: payload.animationDurationMs }),
       }).filter((feature: PackMapAreaFeature): boolean => {
         if (feature.id.startsWith('weather-grid:')) return payload.layers.includes('baseGrid')
         if (feature.id.startsWith('weather-cell:')) return payload.layers.includes('affectedCells')

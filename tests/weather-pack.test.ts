@@ -273,7 +273,7 @@ describe('weather pack', () => {
     const startResponse = await connection.query({
       packId: 'weather',
       kind: 'weather.mapFeatures',
-      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'] },
+      payload: { viewport: osloViewport, zoom: 12, layers: ['influenceShapes'], at: start, animationDurationMs: 2000 },
     })
     await connection.setClock({ currentTime: later, updatedAt: nowIso(), paused: true, speed: 1 })
     const laterResponse = await connection.query({
@@ -293,6 +293,8 @@ describe('weather pack', () => {
     const laterCenter = polygonCentroid(laterOuter.geometry)
 
     expect(laterCenter.lon).toBeGreaterThan(startCenter.lon + 0.1)
+    expect(startOuter.animation?.fromTime).toBe(start)
+    expect(startOuter.animation?.toGeometry.coordinates.length).toBe(startOuter.geometry.coordinates.length)
   })
 
   test('sparse field default query is global without materializing cells', () => {

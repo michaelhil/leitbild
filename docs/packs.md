@@ -177,6 +177,7 @@ Pack-specific presentation belongs behind `LeitbildPack`:
 - `contextualFields` lets a pack add derived fields to other packs' objects without teaching the generic rail or map about that pack. For example, a weather pack may add a `Weather` field to an ambulance by sampling active weather objects at the ambulance position.
 - `mapAreaFeatures` lets a pack synchronously project object-derived spatial features into generic rendered areas when the current object snapshot is sufficient.
 - `mapAreaFeatureQueries` lets a pack request provider-backed spatial features when rendering depends on provider-owned private state. Weather uses this for H3 map features because the weather sparse field lives inside the weather provider, not in generic UI state.
+- `PackMapAreaFeature.animation` is optional presentation metadata for smooth visual interpolation between provider query refreshes. It may move rendered geometry between two provider-computed geometries, but it must not be treated as canonical simulation truth or used to update pack state.
 - `createObjectTypes.parameters` lets packs declare creation controls for the generic create modal. Traffic can request severity, speed factor, and reason without hardcoding traffic fields into the modal.
 - `PackQueryRequest` is the generic read-only API shape for provider-owned computations. Core validates the envelope and routes it through the Simulation Hub; the active provider validates the payload and returns a typed result or an explicit failure.
 

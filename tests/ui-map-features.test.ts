@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, DomainId, ObjectId, ControlInstanceId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, DomainId, ObjectId, ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
@@ -8,6 +9,7 @@ import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import {
+  animatePackMapAreaFeatures,
   createObjectFeatureCollection,
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
@@ -15,6 +17,7 @@ import {
   createWeatherBaseGridFeatureCollection,
   createWeatherCellFeatureCollection,
   createWeatherInfluenceFeatureCollection,
+  hasActivePackMapAreaFeatureAnimation,
   mapSourceIds,
 } from '../src/ui/map-features.ts'
 
@@ -275,5 +278,45 @@ describe('map feature projection', () => {
     expect(baseGridFeatures.features.map(feature => feature.id)).toEqual(['weather-grid:8:cell-1'])
     expect(cellFeatures.features.map(feature => feature.id)).toEqual(['weather-cell:cell-2'])
     expect(influenceFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area'])
+  })
+
+  test('interpolates animated pack map area polygons without changing pack truth', () => {
+    const fromGeometry = {
+      type: 'Polygon' as const,
+      coordinates: [[
+        geoPointFromLonLat(10.0, 59.0).coordinates,
+        geoPointFromLonLat(10.2, 59.0).coordinates,
+        geoPointFromLonLat(10.2, 59.2).coordinates,
+        geoPointFromLonLat(10.0, 59.0).coordinates,
+      ]],
+    }
+    const toGeometry = {
+      type: 'Polygon' as const,
+      coordinates: [[
+        geoPointFromLonLat(11.0, 60.0).coordinates,
+        geoPointFromLonLat(11.2, 60.0).coordinates,
+        geoPointFromLonLat(11.2, 60.2).coordinates,
+        geoPointFromLonLat(11.0, 60.0).coordinates,
+      ]],
+    }
+    const features: ReadonlyArray<PackMapAreaFeature> = [{
+      id: 'weather:animated',
+      categoryId: 'weather',
+      geometry: fromGeometry,
+      animation: {
+        fromGeometry,
+        toGeometry,
+        fromTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
+        toTime: '2026-01-01T10:00:02.000Z' as IsoTimestamp,
+      },
+      color: '#2563eb',
+      summary: 'animated weather',
+    }]
+
+    const animated = animatePackMapAreaFeatures(features, '2026-01-01T10:00:01.000Z')
+    expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:01.000Z')).toBe(true)
+    expect(Number(animated[0]?.geometry.coordinates[0]?.[0]?.[0])).toBeCloseTo(10.5)
+    expect(Number(features[0]?.geometry.coordinates[0]?.[0]?.[0])).toBe(10)
+    expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:03.000Z')).toBe(false)
   })
 })

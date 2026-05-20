@@ -155,6 +155,8 @@ export const weatherPack: LeitbildPack = {
         payload: {
           viewport: context.map.viewport,
           zoom: context.map.zoom,
+          ...(context.currentTime ? { at: context.currentTime } : {}),
+          animationDurationMs: 2_000,
           layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
         },
       }]

@@ -27,6 +27,7 @@ export interface MapSourceController {
   readonly refreshRoutes: () => void
   readonly refreshTraffic: () => void
   readonly refreshWeather: () => void
+  readonly refreshWeatherInfluences: () => void
   readonly refreshPlacementPreview: () => void
   readonly schedule: (dirty: MapSourceDirty) => void
   readonly stop: () => void
@@ -109,13 +110,22 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     }
   }
 
+  const refreshWeatherInfluences = (): void => {
+    const current = currentMapForSourceUpdate()
+    if (!current) return
+    const influenceSource = getGeoJsonSource(current, mapSourceIds.weatherInfluences)
+    const areaFeatures = config.getPackMapAreaFeatures()
+    if (influenceSource) {
+      influenceSource.setData(asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)))
+    }
+  }
+
   const refreshWeather = (): void => {
     const current = currentMapForSourceUpdate()
     if (!current) return
     const lineSource = getGeoJsonSource(current, mapSourceIds.weatherLines)
     const baseGridSource = getGeoJsonSource(current, mapSourceIds.weatherBaseGrid)
     const cellSource = getGeoJsonSource(current, mapSourceIds.weatherCells)
-    const influenceSource = getGeoJsonSource(current, mapSourceIds.weatherInfluences)
     const areaFeatures = config.getPackMapAreaFeatures()
     if (lineSource) {
       lineSource.setData(asMapLibreGeoJson(createWeatherLineFeatureCollection([...config.getObjects()], config.presentationFor)))
@@ -126,9 +136,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     if (cellSource) {
       cellSource.setData(asMapLibreGeoJson(createWeatherCellFeatureCollection(areaFeatures)))
     }
-    if (influenceSource) {
-      influenceSource.setData(asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)))
-    }
+    refreshWeatherInfluences()
   }
 
   const refreshPlacementPreview = (): void => {
@@ -194,6 +202,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     refreshRoutes,
     refreshTraffic,
     refreshWeather,
+    refreshWeatherInfluences,
     refreshPlacementPreview,
     schedule,
     stop,

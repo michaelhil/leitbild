@@ -4,6 +4,7 @@ import { hexCellBoundary, hexCellResolution, hexCellsForPolygon, hexParentCell, 
 import type { PackMapAreaFeature } from '../../core/packs/protocol.ts'
 import {
   activeWeatherInfluencesAt,
+  activeWeatherInfluenceFrameAt,
   weatherInfluenceEllipsePolygon,
 } from './influence.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
@@ -168,15 +169,30 @@ const affectedCellFeaturesFromField = (config: {
 const influenceShapeFeatures = (config: {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly at: IsoTimestamp
+  readonly animationDurationMs?: number
 }): ReadonlyArray<PackMapAreaFeature> =>
   activeWeatherInfluencesAt(config.objects, config.at).flatMap(influence => {
     const parsed = weatherDomainDataSchema.safeParse(config.objects.find(object => object.id === influence.objectId)?.domainData)
     if (parsed.success && parsed.data.render?.showInfluenceShape === false) return []
     const severity = weatherPresentationSeverityForState(influence.frame.state)
+    const animationDurationMs = config.animationDurationMs ?? 0
+    const toTime = new Date(Date.parse(config.at) + animationDurationMs).toISOString() as IsoTimestamp
+    const toFrame = animationDurationMs > 0 && parsed.success
+      ? activeWeatherInfluenceFrameAt(parsed.data, toTime)
+      : null
+    const geometry = weatherInfluenceEllipsePolygon(influence.frame)
     return [{
       id: `weather:${influence.objectId}`,
       categoryId: 'weather',
-      geometry: weatherInfluenceEllipsePolygon(influence.frame),
+      geometry,
+      ...(toFrame ? {
+        animation: {
+          fromGeometry: geometry,
+          toGeometry: weatherInfluenceEllipsePolygon(toFrame),
+          fromTime: config.at,
+          toTime,
+        },
+      } : {}),
       color: influenceShapeColor(severity),
       opacity: influenceShapeOpacity(1, 0),
       lineColor: influenceShapeColor(severity),
@@ -193,11 +209,16 @@ export const projectWeatherFieldForMap = (config: {
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
   readonly at?: IsoTimestamp
+  readonly animationDurationMs?: number
 }): ReadonlyArray<PackMapAreaFeature> => {
   const at = config.at ?? nowIso()
   return [
     ...baseGridFeatures({ viewport: config.viewport, zoom: config.zoom }),
     ...affectedCellFeaturesFromField({ field: config.field, viewport: config.viewport, zoom: config.zoom }),
-    ...influenceShapeFeatures({ objects: config.objects, at }),
+    ...influenceShapeFeatures({
+      objects: config.objects,
+      at,
+      ...(config.animationDurationMs === undefined ? {} : { animationDurationMs: config.animationDurationMs }),
+    }),
   ]
 }

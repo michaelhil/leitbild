@@ -113,6 +113,7 @@ export interface PackMapAreaFeature {
   readonly id: string
   readonly categoryId: string
   readonly geometry: GeoJsonPolygon
+  readonly animation?: PackMapAreaFeatureAnimation
   readonly color: string
   readonly summary: string
   readonly opacity?: number
@@ -120,6 +121,13 @@ export interface PackMapAreaFeature {
   readonly lineOpacity?: number
   readonly lineWidth?: number
   readonly sortKey?: number
+}
+
+export interface PackMapAreaFeatureAnimation {
+  readonly fromGeometry: GeoJsonPolygon
+  readonly toGeometry: GeoJsonPolygon
+  readonly fromTime: IsoTimestamp
+  readonly toTime: IsoTimestamp
 }
 
 export interface PackQueryRequest {

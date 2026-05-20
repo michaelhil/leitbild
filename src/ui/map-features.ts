@@ -225,6 +225,79 @@ const weatherAreaFeatureCollection = (
     })),
 })
 
+const clamp01 = (value: number): number =>
+  Math.max(0, Math.min(1, value))
+
+const interpolateCoordinate = (
+  from: readonly [number, number],
+  to: readonly [number, number],
+  fraction: number,
+): [number, number] => [
+  from[0] + (to[0] - from[0]) * fraction,
+  from[1] + (to[1] - from[1]) * fraction,
+]
+
+const compatiblePolygon = (from: GeoJsonPolygon, to: GeoJsonPolygon): boolean =>
+  from.coordinates.length === to.coordinates.length
+  && from.coordinates.every((ring, ringIndex) => ring.length === to.coordinates[ringIndex]?.length)
+
+const interpolatePolygon = (
+  from: GeoJsonPolygon,
+  to: GeoJsonPolygon,
+  fraction: number,
+): GeoJsonPolygon => {
+  if (!compatiblePolygon(from, to)) return fraction < 1 ? from : to
+  return {
+    type: 'Polygon',
+    coordinates: from.coordinates.map((ring, ringIndex) => {
+      const toRing = to.coordinates[ringIndex]
+      if (!toRing) throw new Error('compatible polygon ring disappeared during interpolation')
+      return ring.map((coordinate, coordinateIndex) => {
+        const target = toRing[coordinateIndex]
+        if (!target) throw new Error('compatible polygon coordinate disappeared during interpolation')
+        return interpolateCoordinate(coordinate, target, fraction)
+      })
+    }) as unknown as GeoJsonPolygon['coordinates'],
+  }
+}
+
+export const animatePackMapAreaFeatures = (
+  features: ReadonlyArray<PackMapAreaFeature>,
+  currentTime: string | undefined,
+): ReadonlyArray<PackMapAreaFeature> => {
+  if (!currentTime) return features
+  const currentMs = Date.parse(currentTime)
+  if (!Number.isFinite(currentMs)) return features
+  return features.map(feature => {
+    const animation = feature.animation
+    if (!animation) return feature
+    const fromMs = Date.parse(animation.fromTime)
+    const toMs = Date.parse(animation.toTime)
+    if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs <= fromMs) return feature
+    const fraction = clamp01((currentMs - fromMs) / (toMs - fromMs))
+    return {
+      ...feature,
+      geometry: interpolatePolygon(animation.fromGeometry, animation.toGeometry, fraction),
+    }
+  })
+}
+
+export const hasActivePackMapAreaFeatureAnimation = (
+  features: ReadonlyArray<PackMapAreaFeature>,
+  currentTime: string | undefined,
+): boolean => {
+  if (!currentTime) return false
+  const currentMs = Date.parse(currentTime)
+  if (!Number.isFinite(currentMs)) return false
+  return features.some(feature => {
+    const animation = feature.animation
+    if (!animation) return false
+    const fromMs = Date.parse(animation.fromTime)
+    const toMs = Date.parse(animation.toTime)
+    return Number.isFinite(fromMs) && Number.isFinite(toMs) && currentMs >= fromMs && currentMs < toMs
+  })
+}
+
 export const createWeatherBaseGridFeatureCollection = (
   packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> =>

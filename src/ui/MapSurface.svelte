@@ -5,6 +5,8 @@
   import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { iconSvgDataUrl, type IconName } from './icons.ts'
   import {
+    animatePackMapAreaFeatures,
+    hasActivePackMapAreaFeatureAnimation,
     mapLayerIds,
     pointOf,
   } from './map-features.ts'
@@ -80,6 +82,7 @@
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
+  let packAreaAnimationFrame: number | null = null
   let packAreaRefreshInterval: ReturnType<typeof setInterval> | null = null
   let packAreaFeatureRequestSerial = 0
   let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
@@ -215,6 +218,7 @@
       if (serial !== packAreaFeatureRequestSerial) return
       cachedPackMapAreaFeatures = features
       sourceController.schedule({ weather: true })
+      schedulePackAreaFeatureAnimation()
     } catch (err) {
       onMapError(err instanceof Error ? err.message : String(err))
     }
@@ -233,7 +237,7 @@
     getPlacementPoints: () => placementPoints,
     hasNewInfo: (object) => hasNewInfo(object),
     presentationFor: (object) => presentationFor(object),
-    getPackMapAreaFeatures: () => cachedPackMapAreaFeatures,
+    getPackMapAreaFeatures: () => animatePackMapAreaFeatures(cachedPackMapAreaFeatures, currentDisplayTime()),
     updateMarkerPopup: (sourceObjects) => {
       refreshMarkerPopup(sourceObjects)
     },
@@ -256,6 +260,25 @@
     if (displayFrame === null) return
     cancelAnimationFrame(displayFrame)
     displayFrame = null
+  }
+
+  const packAreaFeatureAnimationActive = (): boolean =>
+    hasActivePackMapAreaFeatureAnimation(cachedPackMapAreaFeatures, currentDisplayTime())
+
+  const stopPackAreaFeatureAnimation = (): void => {
+    if (packAreaAnimationFrame === null) return
+    cancelAnimationFrame(packAreaAnimationFrame)
+    packAreaAnimationFrame = null
+  }
+
+  const schedulePackAreaFeatureAnimation = (): void => {
+    if (packAreaAnimationFrame !== null) return
+    if (!packAreaFeatureAnimationActive()) return
+    packAreaAnimationFrame = requestAnimationFrame(() => {
+      packAreaAnimationFrame = null
+      sourceController.refreshWeatherInfluences()
+      if (packAreaFeatureAnimationActive()) schedulePackAreaFeatureAnimation()
+    })
   }
 
   const stopPackAreaRefresh = (): void => {
@@ -447,6 +470,7 @@
       mapInputDebugController.stop()
       sourceController.stop()
       stopDisplayAnimation()
+      stopPackAreaFeatureAnimation()
       stopPackAreaRefresh()
       hideMarkerPopup()
       mapLifecycle?.destroy()
@@ -482,11 +506,13 @@
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
+    schedulePackAreaFeatureAnimation()
   })
 
   $effect(() => {
     clock
     if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
+    schedulePackAreaFeatureAnimation()
     void refreshPackMapAreaFeatures()
   })
 
