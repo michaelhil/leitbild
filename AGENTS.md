@@ -46,6 +46,7 @@
 - Providers must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
 - Provider-owned read models must be exposed through the generic pack query surface. Do not add domain-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
 - Pack queries must be read-only. They must not issue commands, mutate provider state, emit events, or commit canonical changes.
+- Process-control packs such as `pwr` must keep continuous physics inside the pack-owned runtime. Use validated component graphs, typed ports, compiled runtime indices, pack queries, and discrete domain events; do not turn internal process variables into `OperationalObject`s or use event messages as the continuous physics solver.
 - Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
 - Model cross-object and cross-simulation interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.
