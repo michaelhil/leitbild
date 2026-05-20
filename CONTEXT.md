@@ -129,12 +129,12 @@ The machine-readable contract describing available vector tile layers, fields, g
 _Avoid_: relying on prose docs or hard-coded tile assumptions inside simulation providers
 
 **Spatial Field Index**:
-A generic, globally stable cell index used by packs that need field-like spatial state, such as weather, wildfire, radiation, or population exposure. V1 wraps H3 in `src/core/spatial/*`; pack code uses the wrapper and never imports H3 directly.
+A generic, globally stable cell index used by packs that need field-like spatial state, such as weather, wildfire, radiation, or population exposure. V1 wraps H3 in `src/core/spatial/*`; pack code uses the wrapper and never imports `h3-js` directly. The wrapper exposes branded cell ids, validated resolutions, point-to-cell lookup, polygon coverage, cell boundaries, centers, parents, and neighbor rings.
 _Avoid_: pack-specific grid implementations in UI modules, direct H3 imports outside the wrapper, or treating visual cells as operational objects
 
 **Weather Sparse Field**:
-The weather pack's materialized subset of the global spatial field. It stores cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth.
-_Avoid_: computing weather only for the viewport, or making weather cells canonical Leitbild operational objects
+The weather pack's materialized subset of the global H3 spatial field. It stores H3 cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth. Map rendering receives projected features for base grid outlines, affected cells, and influence shapes; it does not own weather computation.
+_Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
 **Map Context Layer**:
 A vector tile layer that provides environmental or infrastructure context such as roads, POIs, water, buildings, land use, or boundaries.
@@ -183,6 +183,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - The **Map Capability Manifest** is the contract for discovering which **Map Context Layers** and properties exist.
 - A **Spatial Field Index** can be reused by multiple packs, but each pack owns its own field semantics and computation.
 - A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features, not the field store itself.
+- H3 is a shared indexing vocabulary, not shared domain truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 

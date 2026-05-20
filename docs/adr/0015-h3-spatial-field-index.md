@@ -24,6 +24,14 @@ Rules:
 
 The weather pack now uses an H3 sparse field for ground truth computation. Default global conditions are implicit. Materialized cells are those currently affected by weather influence objects, those still evolving after a prior influence, or stable non-default cells that should remain queryable.
 
+The UI receives weather as projected map features, not as a weather field store. Weather map projection is split into:
+
+- base H3 grid outlines for the current viewport and zoom
+- affected H3 cells derived from active weather influence objects
+- weather influence shapes derived from keyframed ovals
+
+Those feature families are rendered with generic MapLibre sources and layers. The generic map must not import weather sparse-field code or H3 directly.
+
 ## Consequences
 
 Positive:
@@ -33,12 +41,14 @@ Positive:
 - natural aggregation via H3 parent cells for lower zooms and larger regions
 - a clean dependency boundary around H3
 - less risk that weather-specific grid math leaks into generic UI code
+- reusable cell ids for future pack-to-pack references, such as wildfire smoke over weather cells or radiation deposition over response assets
 
 Tradeoffs:
 
 - H3 is a real runtime dependency and must remain isolated
 - Map visualization still needs careful feature budgeting by viewport and zoom
 - exact rendered visual cells may be coarser than truth cells at low zoom
+- the spatial index is shared, but pack field state is not; cross-pack use requires explicit query or interaction contracts
 
 Rejected:
 

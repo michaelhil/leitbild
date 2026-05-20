@@ -189,10 +189,10 @@ The boundary remains pack-owned:
 
 - the pack computes its own field state
 - the pack decides which field cells are materialized, active, decaying, or default
-- the pack projects only the needed visual features through `mapAreaFeatures`
+- the pack projects only the needed visual features through `mapAreaFeatures`; weather currently projects base grid outlines, affected H3 cells, and weather influence shapes
 - the generic UI renders those features through MapLibre sources and layers without knowing the pack's internal data structures
 
-This prevents the map from becoming weather-specific while still letting several future packs reuse the same spatial index vocabulary.
+This prevents the map from becoming weather-specific while still letting several future packs reuse the same spatial index vocabulary. H3 cell ids are allowed to cross pack boundaries as spatial references; weather state, fire state, radiation state, and exposure state must remain separate pack-owned data unless an explicit interaction or query contract is introduced.
 
 ## Interaction Contributions
 
