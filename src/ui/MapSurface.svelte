@@ -136,6 +136,7 @@
       mapLayerIds.weatherCellOutline,
       mapLayerIds.weatherInfluenceFill,
       mapLayerIds.weatherInfluenceOutline,
+      mapLayerIds.weatherInfluenceSymbols,
       mapLayerIds.weatherLineCasing,
       mapLayerIds.weatherLine,
     ]

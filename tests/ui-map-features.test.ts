@@ -17,6 +17,7 @@ import {
   createWeatherBaseGridFeatureCollection,
   createWeatherCellFeatureCollection,
   createWeatherInfluenceFeatureCollection,
+  createWeatherInfluenceSymbolFeatureCollection,
   hasActivePackMapAreaFeatureAnimation,
   mapSourceIds,
 } from '../src/ui/map-features.ts'
@@ -240,7 +241,7 @@ describe('map feature projection', () => {
       color: '#2563eb',
       summary: 'notice weather',
     })
-    const weatherAreaFeatures = [
+    const weatherAreaFeatures: ReadonlyArray<PackMapAreaFeature> = [
       {
         id: 'weather-grid:8:cell-1',
         categoryId: 'weather',
@@ -261,6 +262,8 @@ describe('map feature projection', () => {
         id: 'weather:test-area',
         categoryId: 'weather',
         geometry: weatherObject.spatial.geometry,
+        anchorPoint: geoPointFromLonLat(10.75, 59.91),
+        symbol: { icon: 'weather', tone: 'working' },
         color: '#2563eb',
         summary: 'notice weather',
         opacity: 0.12,
@@ -270,14 +273,18 @@ describe('map feature projection', () => {
     const baseGridFeatures = createWeatherBaseGridFeatureCollection(weatherAreaFeatures)
     const cellFeatures = createWeatherCellFeatureCollection(weatherAreaFeatures)
     const influenceFeatures = createWeatherInfluenceFeatureCollection(weatherAreaFeatures)
+    const influenceSymbolFeatures = createWeatherInfluenceSymbolFeatureCollection(weatherAreaFeatures)
 
     expect(mapSourceIds.weatherBaseGrid).toBe('weather-base-grid-source')
     expect(mapSourceIds.weatherCells).toBe('weather-cell-source')
     expect(mapSourceIds.weatherInfluences).toBe('weather-influence-source')
+    expect(mapSourceIds.weatherInfluenceSymbols).toBe('weather-influence-symbol-source')
     expect(trafficFeatures.features).toHaveLength(0)
     expect(baseGridFeatures.features.map(feature => feature.id)).toEqual(['weather-grid:8:cell-1'])
     expect(cellFeatures.features.map(feature => feature.id)).toEqual(['weather-cell:cell-2'])
     expect(influenceFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area'])
+    expect(influenceSymbolFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area:symbol'])
+    expect(influenceSymbolFeatures.features[0]?.geometry.coordinates).toEqual(geoPointFromLonLat(10.75, 59.91).coordinates)
   })
 
   test('interpolates animated pack map area polygons without changing pack truth', () => {
@@ -306,9 +313,13 @@ describe('map feature projection', () => {
       animation: {
         fromGeometry,
         toGeometry,
+        fromAnchorPoint: geoPointFromLonLat(10.1, 59.1),
+        toAnchorPoint: geoPointFromLonLat(11.1, 60.1),
         fromTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
         toTime: '2026-01-01T10:00:02.000Z' as IsoTimestamp,
       },
+      anchorPoint: geoPointFromLonLat(10.1, 59.1),
+      symbol: { icon: 'weather', tone: 'working' },
       color: '#2563eb',
       summary: 'animated weather',
     }]
@@ -316,7 +327,9 @@ describe('map feature projection', () => {
     const animated = animatePackMapAreaFeatures(features, '2026-01-01T10:00:01.000Z')
     expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:01.000Z')).toBe(true)
     expect(Number(animated[0]?.geometry.coordinates[0]?.[0]?.[0])).toBeCloseTo(10.5)
+    expect(Number(animated[0]?.anchorPoint?.coordinates[0])).toBeCloseTo(10.6)
     expect(Number(features[0]?.geometry.coordinates[0]?.[0]?.[0])).toBe(10)
+    expect(Number(features[0]?.anchorPoint?.coordinates[0])).toBe(10.1)
     expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:03.000Z')).toBe(false)
   })
 })

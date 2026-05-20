@@ -212,6 +212,7 @@ describe('weather pack', () => {
     expect(osloAmbulanceScenario.packs).toContain('weather')
     expect(presentation.categoryId).toBe('weather')
     expect(presentation.noteworthyUpdates).toBe(false)
+    expect(presentation.mapIconVisible).toBe(false)
     expect(presentation.fields.map(field => field.key)).toContain('surface')
     expect(parsedWeather.render?.truthResolution).toBe(8)
     expect(parsedWeather.conditionKind).toBe('weather_influence')

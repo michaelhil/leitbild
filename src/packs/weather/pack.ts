@@ -145,6 +145,7 @@ export const weatherPack: LeitbildPack = {
       summary: data ? `${data.summary} · ${severity}` : object.operational.status,
       status: packStatus(tone, data ? `${severity} weather` : 'Invalid weather data'),
       fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather domain data')],
+      mapIconVisible: data?.conditionKind !== 'weather_influence',
       noteworthyUpdates: false,
     }
   },

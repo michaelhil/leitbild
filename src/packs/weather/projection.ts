@@ -185,14 +185,23 @@ const influenceShapeFeatures = (config: {
       id: `weather:${influence.objectId}`,
       categoryId: 'weather',
       geometry,
+      anchorPoint: influence.frame.center,
       ...(toFrame ? {
         animation: {
           fromGeometry: geometry,
           toGeometry: weatherInfluenceEllipsePolygon(toFrame),
+          fromAnchorPoint: influence.frame.center,
+          toAnchorPoint: toFrame.center,
           fromTime: config.at,
           toTime,
         },
       } : {}),
+      symbol: {
+        icon: 'weather',
+        tone: 'working',
+        opacity: 0.92,
+        size: 0.82,
+      },
       color: influenceShapeColor(severity),
       opacity: influenceShapeOpacity(1, 0),
       lineColor: influenceShapeColor(severity),

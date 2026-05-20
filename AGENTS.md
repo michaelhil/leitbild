@@ -30,7 +30,7 @@
 - Generic UI modules must consume pack presentation and creation protocols instead of importing pack-specific models, simulators, geometry helpers, or condition calculators.
 - Shared spatial indexing belongs in `src/core/spatial/*`. The `h3-js` dependency may only be imported by the core spatial wrapper; packs and UI must consume Leitbild spatial interfaces instead of depending on H3 directly.
 - Weather field computation belongs inside the weather pack. UI may request provider-projected map features through the pack query protocol, but must not import weather models, weather cell math, or weather condition calculators.
-- Pack map-feature animation metadata is presentation-only. It can smooth rendered geometry between provider query refreshes, but it must not become a simulation update path or a substitute for provider-owned truth.
+- Pack map-feature animation metadata is presentation-only. It can smooth rendered geometry and attached symbol anchors between provider query refreshes, but it must not become a simulation update path or a substitute for provider-owned truth.
 - New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
 - Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.

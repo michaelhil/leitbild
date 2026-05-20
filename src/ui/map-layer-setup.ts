@@ -10,6 +10,7 @@ import {
   createWeatherBaseGridFeatureCollection,
   createWeatherCellFeatureCollection,
   createWeatherInfluenceFeatureCollection,
+  createWeatherInfluenceSymbolFeatureCollection,
   createWeatherLineFeatureCollection,
   mapLayerIds,
   mapSourceIds,
@@ -53,6 +54,10 @@ export const addOperationalMapSourcesAndLayers = (config: {
   current.addSource(mapSourceIds.weatherInfluences, {
     type: 'geojson',
     data: asMutableGeoJson(createWeatherInfluenceFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.weatherInfluenceSymbols, {
+    type: 'geojson',
+    data: asMutableGeoJson(createWeatherInfluenceSymbolFeatureCollection(config.packMapAreaFeatures) as unknown as GeoJSON),
   })
   current.addSource(mapSourceIds.trafficLines, {
     type: 'geojson',
@@ -126,6 +131,20 @@ export const addOperationalMapSourcesAndLayers = (config: {
     layout: {
       'line-cap': 'round',
       'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.weatherInfluenceSymbols,
+    type: 'symbol',
+    source: mapSourceIds.weatherInfluenceSymbols,
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': ['coalesce', ['get', 'size'], 0.82],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+    paint: {
+      'icon-opacity': ['coalesce', ['get', 'opacity'], 0.92],
     },
   })
   current.addLayer({

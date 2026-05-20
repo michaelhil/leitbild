@@ -1,6 +1,6 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../core/model/index.ts'
 import type { PackMapAreaFeature, PackObjectStatusTone, PackObjectPresentation } from '../core/packs/protocol.ts'
-import { remainingRouteGeometry } from '../core/model/index.ts'
+import { geoPointFromLonLat, remainingRouteGeometry } from '../core/model/index.ts'
 import { statusToneColor } from './status-presentation.ts'
 
 export const mapSourceIds = {
@@ -10,6 +10,7 @@ export const mapSourceIds = {
   weatherBaseGrid: 'weather-base-grid-source',
   weatherCells: 'weather-cell-source',
   weatherInfluences: 'weather-influence-source',
+  weatherInfluenceSymbols: 'weather-influence-symbol-source',
   trafficLines: 'traffic-line-source',
   trafficAreas: 'traffic-area-source',
   placementPreview: 'placement-preview-source',
@@ -21,6 +22,7 @@ export const mapLayerIds = {
   weatherCellOutline: 'weather-cell-outline',
   weatherInfluenceFill: 'weather-influence-fill',
   weatherInfluenceOutline: 'weather-influence-outline',
+  weatherInfluenceSymbols: 'weather-influence-symbols',
   weatherLineCasing: 'weather-line-casing',
   weatherLine: 'weather-lines',
   trafficAreaFill: 'traffic-area-fill',
@@ -58,6 +60,14 @@ interface ObjectFeatureProperties {
   readonly hasNewInfo: boolean
 }
 
+interface AreaSymbolFeatureProperties {
+  readonly id: string
+  readonly icon: string
+  readonly summary: string
+  readonly opacity: number
+  readonly size: number
+}
+
 interface RouteFeatureProperties {
   readonly selected: boolean
 }
@@ -83,15 +93,16 @@ export const createObjectFeatureCollection = (
   selectedObjectId: string | null,
   highlightedObjectIds: ReadonlyArray<string>,
   hasNewInfo: (object: OperationalObject) => boolean,
-  presentObject: (object: OperationalObject) => { readonly icon: string; readonly color: string; readonly muted?: boolean; readonly status?: { readonly tone: PackObjectStatusTone } },
+  presentObject: (object: OperationalObject) => { readonly icon: string; readonly color: string; readonly muted?: boolean; readonly mapIconVisible?: boolean; readonly status?: { readonly tone: PackObjectStatusTone } },
 ): GeoJsonFeatureCollection<GeoJsonPoint, ObjectFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
     .filter(object => pointOf(object))
-    .map(object => {
+    .flatMap(object => {
       const presentation = presentObject(object)
+      if (presentation.mapIconVisible === false) return []
       const statusTone = presentation.status?.tone ?? 'idle'
-      return {
+      return [{
         type: 'Feature',
         id: object.id,
         geometry: pointOf(object)!,
@@ -104,7 +115,7 @@ export const createObjectFeatureCollection = (
           highlighted: highlightedObjectIds.includes(object.id),
           hasNewInfo: hasNewInfo(object),
         },
-      }
+      }]
     }),
 })
 
@@ -237,6 +248,15 @@ const interpolateCoordinate = (
   from[1] + (to[1] - from[1]) * fraction,
 ]
 
+const interpolatePoint = (
+  from: GeoJsonPoint,
+  to: GeoJsonPoint,
+  fraction: number,
+): GeoJsonPoint => {
+  const coordinate = interpolateCoordinate(from.coordinates, to.coordinates, fraction)
+  return geoPointFromLonLat(coordinate[0], coordinate[1])
+}
+
 const compatiblePolygon = (from: GeoJsonPolygon, to: GeoJsonPolygon): boolean =>
   from.coordinates.length === to.coordinates.length
   && from.coordinates.every((ring, ringIndex) => ring.length === to.coordinates[ringIndex]?.length)
@@ -278,6 +298,9 @@ export const animatePackMapAreaFeatures = (
     return {
       ...feature,
       geometry: interpolatePolygon(animation.fromGeometry, animation.toGeometry, fraction),
+      ...(animation.fromAnchorPoint && animation.toAnchorPoint ? {
+        anchorPoint: interpolatePoint(animation.fromAnchorPoint, animation.toAnchorPoint, fraction),
+      } : {}),
     }
   })
 }
@@ -312,3 +335,28 @@ export const createWeatherInfluenceFeatureCollection = (
   packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
 ): GeoJsonFeatureCollection<GeoJsonPolygon, ZoneFeatureProperties> =>
   weatherAreaFeatureCollection(packAreaFeatures, feature => feature.id.startsWith('weather:'))
+
+export const createWeatherInfluenceSymbolFeatureCollection = (
+  packAreaFeatures: ReadonlyArray<PackMapAreaFeature>,
+): GeoJsonFeatureCollection<GeoJsonPoint, AreaSymbolFeatureProperties> => ({
+  type: 'FeatureCollection',
+  features: packAreaFeatures
+    .filter(feature => feature.categoryId === 'weather')
+    .filter(feature => feature.id.startsWith('weather:'))
+    .filter(feature => feature.symbol && feature.anchorPoint)
+    .map(feature => {
+      if (!feature.symbol || !feature.anchorPoint) throw new Error('weather influence symbol feature lost symbol or anchor point')
+      return {
+        type: 'Feature',
+        id: `${feature.id}:symbol`,
+        geometry: feature.anchorPoint,
+        properties: {
+          id: feature.id,
+          icon: `object-${feature.symbol.icon}-${feature.symbol.tone ?? 'working'}`,
+          summary: feature.summary,
+          opacity: feature.symbol.opacity ?? 0.92,
+          size: feature.symbol.size ?? 0.82,
+        },
+      }
+    }),
+})

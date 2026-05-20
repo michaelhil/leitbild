@@ -10,6 +10,7 @@ import {
   createWeatherBaseGridFeatureCollection,
   createWeatherCellFeatureCollection,
   createWeatherInfluenceFeatureCollection,
+  createWeatherInfluenceSymbolFeatureCollection,
   createWeatherLineFeatureCollection,
   mapSourceIds,
 } from '../map-features.ts'
@@ -117,6 +118,10 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     const areaFeatures = config.getPackMapAreaFeatures()
     if (influenceSource) {
       influenceSource.setData(asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)))
+    }
+    const symbolSource = getGeoJsonSource(current, mapSourceIds.weatherInfluenceSymbols)
+    if (symbolSource) {
+      symbolSource.setData(asMapLibreGeoJson(createWeatherInfluenceSymbolFeatureCollection(areaFeatures)))
     }
   }
 

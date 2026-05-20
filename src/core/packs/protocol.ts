@@ -16,6 +16,7 @@ export interface PackObjectPresentation {
   readonly fields: ReadonlyArray<PackObjectField>
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
+  readonly mapIconVisible?: boolean
   readonly noteworthyUpdates?: boolean
 }
 
@@ -113,7 +114,9 @@ export interface PackMapAreaFeature {
   readonly id: string
   readonly categoryId: string
   readonly geometry: GeoJsonPolygon
+  readonly anchorPoint?: GeoJsonPoint
   readonly animation?: PackMapAreaFeatureAnimation
+  readonly symbol?: PackMapAreaFeatureSymbol
   readonly color: string
   readonly summary: string
   readonly opacity?: number
@@ -126,8 +129,17 @@ export interface PackMapAreaFeature {
 export interface PackMapAreaFeatureAnimation {
   readonly fromGeometry: GeoJsonPolygon
   readonly toGeometry: GeoJsonPolygon
+  readonly fromAnchorPoint?: GeoJsonPoint
+  readonly toAnchorPoint?: GeoJsonPoint
   readonly fromTime: IsoTimestamp
   readonly toTime: IsoTimestamp
+}
+
+export interface PackMapAreaFeatureSymbol {
+  readonly icon: string
+  readonly tone?: PackObjectStatusTone
+  readonly opacity?: number
+  readonly size?: number
 }
 
 export interface PackQueryRequest {
