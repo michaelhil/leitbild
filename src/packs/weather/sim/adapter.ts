@@ -8,7 +8,7 @@ import type {
   OperationalObject,
   SimulationClockState,
 } from '../../../core/model/index.ts'
-import { nowIso } from '../../../core/model/index.ts'
+import { geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
 import type {
   SimulationAdapter,
   SimulationConnection,
@@ -16,6 +16,12 @@ import type {
   SimulationEvent,
   SimulationEventHandler,
 } from '../../../simulation/protocol.ts'
+import {
+  createWeatherSparseField,
+  updateWeatherSparseField,
+  weatherGridForObjects,
+  type WeatherSparseField,
+} from '../cell-field.ts'
 import { createWeatherAreaCommandKind } from '../commands.ts'
 import { weatherSampleAtPoint } from '../conditions.ts'
 import { defaultAtmosphere, defaultSurface } from '../defaults.ts'
@@ -271,6 +277,11 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
     const startedAt = nowIso()
     let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
     let lastTickWallMs = Date.now()
+    let sparseField: WeatherSparseField = createWeatherSparseField(weatherGridForObjects({
+      gridId: `${config.controlInstanceId}:weather`,
+      objects: [...objects.values()],
+      fallbackPoint: objects.values().next().value?.spatial.position?.point ?? geoPointFromLonLat(0, 0),
+    }))
 
     const advance = (): void => {
       const nowWallMs = Date.now()
@@ -310,6 +321,12 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
         })
       }
       const weatherObjectsAfterZoneEvolution = [...objects.values()]
+      sparseField = updateWeatherSparseField({
+        field: sparseField,
+        objects: weatherObjectsAfterZoneEvolution,
+        at,
+        elapsedSeconds,
+      }).field
       for (const object of weatherObjectsAfterZoneEvolution) {
         const updated = resampleWeatherProbe(object, weatherObjectsAfterZoneEvolution, at)
         if (!updated) continue

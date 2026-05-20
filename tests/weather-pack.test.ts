@@ -2,6 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, GeoJsonPolygon, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
+import {
+  createWeatherSparseField,
+  updateWeatherSparseField,
+  weatherCellForPoint,
+  weatherCellId,
+  weatherSampleAtPointFromSparseField,
+  weatherSparseFieldStats,
+  type WeatherGridDefinition,
+} from '../src/packs/weather/cell-field.ts'
 import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
 import { renderedWeatherCellsForViewport, weatherCellsForViewport } from '../src/packs/weather/field.ts'
 import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
@@ -32,6 +41,12 @@ const osloViewport: GeoJsonPolygon = {
     geoPointFromLonLat(10.62, 59.98).coordinates,
     geoPointFromLonLat(10.62, 59.88).coordinates,
   ]],
+}
+
+const osloWeatherGrid: WeatherGridDefinition = {
+  gridId: 'weather-grid:oslo-test',
+  cellSizeM: 750,
+  referenceLatitude: 59.9139,
 }
 
 const polygonBounds = (polygons: ReadonlyArray<{ readonly coordinates: ReadonlyArray<ReadonlyArray<readonly [number, number]>> }>) => {
@@ -250,6 +265,127 @@ describe('weather pack', () => {
     const laterCenter = polygonCentroid(laterOuter.geometry)
 
     expect(laterCenter.lon).toBeGreaterThan(startCenter.lon + 0.1)
+  })
+
+  test('sparse field default query is global without materializing cells', () => {
+    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
+    const field = createWeatherSparseField(osloWeatherGrid)
+    const sample = weatherSampleAtPointFromSparseField({
+      field,
+      point: geoPointFromLonLat(-73.9857, 40.7484),
+      at,
+    })
+
+    expect(weatherSparseFieldStats(field)).toEqual({ cellCount: 0, activeCellCount: 0 })
+    expect(sample.sourceObjectIds).toHaveLength(0)
+    expect(sample.atmosphere.airTemperatureC).toBe(defaultAtmosphere(at).airTemperatureC)
+    expect(sample.surface.frictionClass).toBe(defaultSurface().frictionClass)
+  })
+
+  test('sparse field materializes only cells touched by weather objects', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const field = createWeatherSparseField(osloWeatherGrid)
+    const updated = updateWeatherSparseField({
+      field,
+      objects: osloAmbulanceScenario.initialObjects,
+      at: start,
+      elapsedSeconds: 60,
+    })
+
+    expect(updated.field.cells.size).toBeGreaterThan(0)
+    expect(updated.field.activeCellIds.size).toBeGreaterThan(0)
+    expect(updated.touchedCellIds.size).toBe(updated.field.cells.size)
+  })
+
+  test('sparse field preserves surface memory after a weather object moves away', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const startField = updateWeatherSparseField({
+      field: createWeatherSparseField(osloWeatherGrid),
+      objects: osloAmbulanceScenario.initialObjects,
+      at: start,
+      elapsedSeconds: 180,
+    }).field
+    const rememberedCell = [...startField.cells.values()].find(cell => cell.surface.wetness > defaultSurface().wetness)
+    if (!rememberedCell) throw new Error('expected rain band to wet at least one weather cell')
+    const later = new Date(Date.parse(start) + 900_000).toISOString() as IsoTimestamp
+    const laterField = updateWeatherSparseField({
+      field: startField,
+      objects: osloAmbulanceScenario.initialObjects,
+      at: later,
+      elapsedSeconds: 60,
+    }).field
+    const remembered = laterField.cells.get(rememberedCell.id)
+
+    expect(remembered).toBeDefined()
+    expect(remembered?.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
+  })
+
+  test('stable non-default sparse cells remain queryable without staying active', () => {
+    const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
+    const point = geoPointFromLonLat(10.7522, 59.9139)
+    const cell = weatherCellForPoint(osloWeatherGrid, point)
+    const id = weatherCellId(osloWeatherGrid, cell)
+    const storedSurface = {
+      ...defaultSurface(),
+      groundTemperatureC: -8,
+      snow: 0.55,
+      frictionEstimate: 0.7,
+      frictionClass: 'slippery' as const,
+      labels: ['snow'],
+    }
+    const field = {
+      grid: osloWeatherGrid,
+      cells: new Map([[id, {
+        id,
+        q: cell.q,
+        r: cell.r,
+        center: point,
+        atmosphere: {
+          ...defaultAtmosphere(at),
+          airTemperatureC: -8,
+        },
+        surface: storedSurface,
+        sourceObjectIds: [],
+        residual: 0,
+        updatedAt: at,
+      }]]),
+      activeCellIds: new Set([id]),
+    }
+    const updated = updateWeatherSparseField({
+      field,
+      objects: [],
+      at,
+      elapsedSeconds: 0,
+    }).field
+    const sample = weatherSampleAtPointFromSparseField({
+      field: updated,
+      point,
+      at,
+    })
+
+    expect(updated.cells.has(id)).toBe(true)
+    expect(updated.activeCellIds.has(id)).toBe(false)
+    expect(sample.surface.snow).toBeGreaterThan(0.5)
+    expect(sample.surface.frictionClass).toBe('slippery')
+  })
+
+  test('overlapping weather objects blend through the same sparse cell update pass', () => {
+    const start = osloAmbulanceScenario.world.startsAt
+    if (!start) throw new Error('expected Oslo scenario start time')
+    const weatherObjects = osloAmbulanceScenario.initialObjects.filter(object => object.domain === 'weather')
+    expect(weatherObjects.length).toBeGreaterThanOrEqual(2)
+    const updated = updateWeatherSparseField({
+      field: createWeatherSparseField(osloWeatherGrid),
+      objects: weatherObjects,
+      at: start,
+      elapsedSeconds: 60,
+    }).field
+    const overlapped = [...updated.cells.values()].find(cell => cell.sourceObjectIds.length > 1)
+
+    expect(overlapped).toBeDefined()
+    expect(overlapped?.atmosphere.labels.length).toBeGreaterThan(0)
   })
 
   test('local provider accepts real weather area commands', async () => {
