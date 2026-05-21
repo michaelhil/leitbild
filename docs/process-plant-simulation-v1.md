@@ -437,6 +437,8 @@ Current runtime behavior is deliberately minimal but functional:
 - steam generator level, pressure, primary outlet temperature, tube-metal temperature, and secondary temperature trend in response to feedwater, generated steam, turbine steam use, and primary-side heat input,
 - turbine electrical output follows load, inlet steam flow, and available steam pressure,
 - condenser sink receives turbine exhaust steam and trends condensate temperature and back pressure,
+- pressurizer pressure, level, water inventory, water temperature, steam temperature, heater demand, spray demand, relief valve position, and relief flow are now explicit component variables,
+- pressurizer heaters, spray, and relief flow change pressure and inventory through the same fixed-step behavior contract as the rest of the runtime,
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
@@ -593,7 +595,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10 seconds and five minutes of six systems in roughly 0.60 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 6x wall-clock penalty for 6x the plant count, and roughly 500x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The first physics-deepening pass kept those optimizations: richer core/steam-generator behavior added variables and arithmetic, not extra runtime graph scans or new orchestration layers.
+Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10 seconds and five minutes of six systems in roughly 0.62 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 6x wall-clock penalty for 6x the plant count, and roughly 480x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The first physics-deepening passes kept those optimizations: richer core, steam-generator, and pressurizer behavior added variables and arithmetic, not extra runtime graph scans or new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 

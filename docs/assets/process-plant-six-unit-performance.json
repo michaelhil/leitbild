@@ -4,29 +4,29 @@
     "systemCount": 1,
     "componentCount": 44,
     "linkCount": 58,
-    "variableCount": 235,
+    "variableCount": 244,
     "simulatedMs": 300000,
-    "wallMs": 98.95275000000004,
+    "wallMs": 101.36325,
     "wallMsSamples": [
-      112.15008400000002,
-      98.95275000000004,
-      98.06616700000001
+      116.62095900000003,
+      98.205375,
+      101.36325
     ],
-    "realtimeFactor": 3031.7500018948426
+    "realtimeFactor": 2959.652536792181
   },
   {
     "label": "six-system",
     "systemCount": 6,
     "componentCount": 264,
     "linkCount": 348,
-    "variableCount": 1410,
+    "variableCount": 1464,
     "simulatedMs": 300000,
-    "wallMs": 595.3982500000002,
+    "wallMs": 622.5241660000002,
     "wallMsSamples": [
-      589.9323750000001,
-      595.3982500000002,
-      620.8297499999999
+      622.5241660000002,
+      651.3937080000003,
+      607.8781249999997
     ],
-    "realtimeFactor": 503.86443023640044
+    "realtimeFactor": 481.90900271010514
   }
 ]

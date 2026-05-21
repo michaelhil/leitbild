@@ -137,6 +137,19 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'steamFlowKgPerS') return 0
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
   }
+  if (component.kind === 'pressurizer') {
+    const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
+    const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
+    if (localPath === 'pressureMPa') return nominalPressure
+    if (localPath === 'levelPercent') return nominalLevelFraction * 100
+    if (localPath === 'waterInventoryKg') return parameterNumber(component, 'nominalWaterInventoryKg')
+    if (localPath === 'waterTemperatureC') return optionalParameterNumber(component, 'initialWaterTemperatureC', 345)
+    if (localPath === 'steamTemperatureC') return optionalParameterNumber(component, 'initialSteamTemperatureC', saturationTemperatureCFromPressureMPa(nominalPressure))
+    if (localPath === 'heaterPowerMw') return 0
+    if (localPath === 'sprayFlowKgPerS') return 0
+    if (localPath === 'reliefValvePositionFraction') return 0
+    if (localPath === 'reliefFlowKgPerS') return 0
+  }
   if (component.kind === 'centrifugalPump') {
     if (localPath === 'running') return true
     if (localPath === 'speedFraction') return 1
@@ -269,6 +282,83 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         componentVariablePath(component, 'fuelTemperatureC'),
         relaxToward(context.readNumber(componentVariablePath(component, 'fuelTemperatureC')), fuelTemperatureTarget, context.dtSeconds, optionalParameterNumber(component, 'fuelThermalTimeConstantS', 20)),
       )
+    },
+  },
+  {
+    id: 'pressurizer-pressure-inventory-state',
+    phase: 'updateComponentState',
+    componentKind: 'pressurizer',
+    reads: [
+      'pressureMPa',
+      'levelPercent',
+      'waterInventoryKg',
+      'waterTemperatureC',
+      'steamTemperatureC',
+      'heaterPowerMw',
+      'sprayFlowKgPerS',
+      'reliefValvePositionFraction',
+      'incoming:primaryCoolant.temperatureC',
+    ],
+    writes: [
+      'pressureMPa',
+      'levelPercent',
+      'waterInventoryKg',
+      'waterTemperatureC',
+      'steamTemperatureC',
+      'reliefFlowKgPerS',
+    ],
+    update: ({ system, component, context }): void => {
+      const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
+      const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
+      const nominalInventory = parameterNumber(component, 'nominalWaterInventoryKg')
+      const fullInventory = nominalInventory / Math.max(0.01, nominalLevelFraction)
+      const reliefSetpoint = optionalParameterNumber(component, 'reliefSetpointMPa', nominalPressure * 1.08)
+      const reliefCapacity = optionalParameterNumber(component, 'reliefCapacityKgPerS', 80)
+      const currentPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
+      const heaterPower = clamp(context.readNumber(componentVariablePath(component, 'heaterPowerMw')), 0, 50)
+      const sprayFlow = clamp(context.readNumber(componentVariablePath(component, 'sprayFlowKgPerS')), 0, 500)
+      const reliefValvePosition = clamp(context.readNumber(componentVariablePath(component, 'reliefValvePositionFraction')), 0, 1)
+      const automaticReliefDemand = clamp((currentPressure - reliefSetpoint) / Math.max(0.1, reliefSetpoint * 0.04), 0, 1)
+      const reliefDemand = Math.max(reliefValvePosition, automaticReliefDemand)
+      const reliefFlow = reliefCapacity * reliefDemand * clamp(currentPressure / nominalPressure, 0.1, 1.4)
+
+      const surgeTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
+        ?? context.readNumber(componentVariablePath(component, 'waterTemperatureC'))
+      const waterTemperature = context.readNumber(componentVariablePath(component, 'waterTemperatureC'))
+      const nextWaterTemperature = relaxToward(
+        waterTemperature,
+        clamp(surgeTemperature + heaterPower * 0.35 - sprayFlow * 0.04, 180, 370),
+        context.dtSeconds,
+        optionalParameterNumber(component, 'thermalTimeConstantS', 20),
+      )
+      const steamTemperatureTarget = saturationTemperatureCFromPressureMPa(currentPressure) + heaterPower * 0.2 - sprayFlow * 0.02
+      const nextSteamTemperature = relaxToward(
+        context.readNumber(componentVariablePath(component, 'steamTemperatureC')),
+        clamp(steamTemperatureTarget, 100, 370),
+        context.dtSeconds,
+        optionalParameterNumber(component, 'thermalTimeConstantS', 20),
+      )
+      const currentInventory = context.readNumber(componentVariablePath(component, 'waterInventoryKg'))
+      const nextInventory = clamp(currentInventory + (sprayFlow - reliefFlow) * context.dtSeconds, 0, fullInventory)
+      const thermalPressureBias = (nextWaterTemperature - optionalParameterNumber(component, 'initialWaterTemperatureC', 345)) * 0.035
+      const pressureRate =
+        heaterPower * optionalParameterNumber(component, 'heaterPressureRampMPaPerMwS', 0.0009)
+        - sprayFlow * optionalParameterNumber(component, 'sprayPressureRampMPaPerKgS', 0.00012)
+        - reliefFlow * optionalParameterNumber(component, 'reliefPressureRampMPaPerKgS', 0.0012)
+      const pressureTarget = clamp(nominalPressure + thermalPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
+      const nextPressure = relaxToward(
+        currentPressure + pressureRate * context.dtSeconds,
+        pressureTarget,
+        context.dtSeconds,
+        optionalParameterNumber(component, 'pressureTimeConstantS', 12),
+      )
+
+      context.write(componentVariablePath(component, 'reliefFlowKgPerS'), reliefFlow)
+      context.write(componentVariablePath(component, 'waterTemperatureC'), nextWaterTemperature)
+      context.write(componentVariablePath(component, 'steamTemperatureC'), nextSteamTemperature)
+      context.write(componentVariablePath(component, 'waterInventoryKg'), nextInventory)
+      context.write(componentVariablePath(component, 'levelPercent'), clamp((nextInventory / fullInventory) * 100, 0, 100))
+      context.write(componentVariablePath(component, 'pressureMPa'), clamp(nextPressure, 0.2, 18))
     },
   },
   {

@@ -43,6 +43,7 @@ describe('process plant runtime', () => {
     })
     expect(Number(level?.value)).toBeCloseTo(55, 6)
     expect(Number(level?.canonicalValue)).toBeCloseTo(0.55, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.levelPercent'))?.value)).toBeCloseTo(55, 6)
   })
 
   test('runs the declared solver phases and publishes telemetry', () => {
@@ -69,6 +70,9 @@ describe('process plant runtime', () => {
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
       'core.heatToCoolantMw',
+      'pressurizer.pressureMPa',
+      'pressurizer.levelPercent',
+      'pressurizer.reliefFlowKgPerS',
       'sgA.levelPercent',
       'sgA.pressureMPa',
       'sgA.heatTransferMw',
@@ -338,6 +342,25 @@ describe('process plant runtime', () => {
     expect(trippedFissionPower).toBeLessThan(initialFissionPower)
     expect(decayHeat).toBeGreaterThan(0)
     expect(heatToCoolant).toBeGreaterThan(trippedFissionPower)
+  })
+
+  test('pressurizer heaters and relief valve change pressure through component behavior', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    const initialPressure = Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.heaterPowerMw'), value: 20 })
+    for (let index = 0; index < 120; index += 1) runtime.tick(100)
+    const heatedPressure = Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))
+    expect(heatedPressure).toBeGreaterThan(initialPressure)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.heaterPowerMw'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.reliefValvePositionFraction'), value: 1 })
+    for (let index = 0; index < 120; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('pressurizer.reliefFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(heatedPressure)
+    expect(Number(runtime.readVariable(valueOf('pressurizer-relief-to-tank.flowKgPerS')))).toBeGreaterThan(0)
   })
 
   test('loss of feedwater trends steam generator inventory downward', () => {

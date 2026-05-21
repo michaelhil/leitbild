@@ -132,6 +132,8 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       let flowSource: number
       if (fromComponent.kind === 'centrifugalPump' || fromComponent.kind === 'feedwaterSource') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
+      } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'reliefFlowKgPerS'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         const turbineSteamDemand = averageFor(system.graph.components, component => {
           if (component.kind !== 'turbineLoadSink') return null
@@ -168,6 +170,8 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         target = context.readNumber(componentVariablePath(fromComponent, 'primaryOutletTemperatureC'))
       } else if (fromComponent.kind === 'feedwaterSource') {
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+      } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'steamTemperatureC'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {
