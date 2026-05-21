@@ -260,6 +260,14 @@ Current built-in query kinds:
 - `traffic.conditions`
 - `traffic.condition`
 - `traffic.conditionsForRoute`
+- `process-plant.systems.list`
+- `process-plant.graph.read`
+- `process-plant.variables.read`
+- `process-plant.variables.search`
+- `process-plant.runtime.status`
+- `process-plant.telemetry.published`
+
+Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, a writable variable path, and a typed value. The provider validates the write and queues it for the next solver phase; it does not mutate variables through the query route.
 
 ## Interaction Contributions
 

@@ -35,16 +35,27 @@ const step = (
   clock.elapsedMs += stepMs
 }
 
-export const createProcessPlantRuntime = (system: CompiledProcessPlantSystem): ProcessPlantRuntime => {
-  const table = createProcessPlantVariableTable(system, initialComponentValueFor)
+export const createProcessPlantRuntime = (config: {
+  readonly system: CompiledProcessPlantSystem
+  readonly restoredSnapshot?: ProcessPlantRuntimeSnapshot
+}): ProcessPlantRuntime => {
+  const system = config.system
+  const table = createProcessPlantVariableTable(
+    system,
+    initialComponentValueFor,
+    config.restoredSnapshot?.variables,
+    config.restoredSnapshot?.queuedCommands,
+  )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const clock: RuntimeClock = {
-    elapsedMs: 0,
-    remainderMs: 0,
+    elapsedMs: config.restoredSnapshot?.elapsedMs ?? 0,
+    remainderMs: config.restoredSnapshot?.remainderMs ?? 0,
   }
 
   const snapshot = (): ProcessPlantRuntimeSnapshot => ({
     elapsedMs: clock.elapsedMs,
+    remainderMs: clock.remainderMs,
+    queuedCommands: table.queuedCommands(),
     variables: table.snapshot(),
   })
 

@@ -31,6 +31,7 @@ const scenarioFor = (
     providerIds: scenario.providerIds,
     world: scenario.world,
     initialObjects: scenario.initialObjects.filter(object => object.domain === adapter.domain),
+    processSystems: (scenario.processSystems ?? []).filter(processSystem => processSystem.pack === adapter.packId),
     providerConfigs: scenario.providerConfigs,
     providerConfig: scenario.providerConfigs[adapter.id] ?? {},
   }
@@ -61,6 +62,9 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
             controlInstanceId: config.controlInstanceId,
             ...(scenario === undefined ? {} : { scenario }),
             ...(initialObjects === undefined ? {} : { initialObjects }),
+            ...(config.providerStateStores?.[adapter.id] === undefined
+              ? {}
+              : { providerStateStore: config.providerStateStores[adapter.id] }),
           }),
         }
       }))

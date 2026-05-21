@@ -11,6 +11,7 @@ import type { SimulationAdapter } from '../../simulation/protocol.ts'
 import { createSimulationHub } from '../../simulation/hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import { createJsonlEventLog } from './event-log.ts'
+import { createJsonProviderStateStore } from './provider-state-store.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
 import type { DomainEvent } from '../model/index.ts'
@@ -85,6 +86,13 @@ export const createControlInstanceRegistry = (config: {
       controlInstanceId: id,
       path: join(instanceDir, 'snapshot.json'),
     })
+    const providerStateStores = Object.fromEntries(config.simulationAdapters.map(adapter => [
+      adapter.id,
+      createJsonProviderStateStore({
+        providerId: adapter.id,
+        path: join(instanceDir, 'providers', `${adapter.id}.json`),
+      }),
+    ]))
     let restoredSnapshot = await snapshotStore.load()
     let restoredEvents: ReadonlyArray<DomainEvent> = []
     if (
@@ -109,19 +117,21 @@ export const createControlInstanceRegistry = (config: {
     if (scenarioId !== undefined && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
     const simulation = await createSimulationHub(config.simulationAdapters).connect({
       controlInstanceId: id,
-      ...(!restoredSnapshot && scenarioRuntime
+      ...(scenarioRuntime
         ? {
             scenario: {
               scenarioId: scenarioRuntime.scenarioId,
               providerIds: scenarioRuntime.providers.map(provider => provider.providerId),
               world: scenarioRuntime.scenario.world,
               initialObjects: scenarioRuntime.initialObjects,
+              processSystems: scenarioRuntime.scenario.processSystems,
               providerConfigs: scenarioRuntime.providerConfigs,
               providerConfig: {},
             },
           }
         : {}),
       ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
+      providerStateStores,
     })
     const runtime = await createControlInstanceRuntime({
       id,

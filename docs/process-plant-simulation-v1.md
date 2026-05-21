@@ -23,7 +23,7 @@ Inside the pack:
 - a variable registry exposes stable paths, units, writability, and publish policy.
 - connections can act as process links with optional physical metadata and link-local variables.
 - discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
-- future pack queries expose read-only process state through Leitbild's generic query surface after provider lifecycle integration exists.
+- pack queries expose read-only process state through Leitbild's generic query surface after provider lifecycle integration exists.
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
@@ -407,18 +407,26 @@ The initial target is credible process directionality and control-room usefulnes
 
 V1 should use the existing generic pack query route. Do not add `/api/process-plant/*` endpoint families without a new ADR.
 
-Candidate queries:
+Implemented queries:
 
+- `process-plant.systems.list`
+- `process-plant.graph.read`
 - `process-plant.variables.read`
 - `process-plant.variables.search`
-- `process-plant.graph.read`
+- `process-plant.runtime.status`
+- `process-plant.telemetry.published`
+
+Candidate future queries:
+
 - `process-plant.alarms.list`
 - `process-plant.trends.read`
-- `process-plant.runtime.status`
 
-Candidate commands:
+Implemented commands:
 
 - `process-plant.control.write`
+
+Candidate future commands:
+
 - `process-plant.control.operate`
 - `process-plant.alarm.acknowledge`
 - `process-plant.scenario.injectFault`
@@ -432,19 +440,23 @@ Candidate events:
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-These are future runtime surfaces. The current implementation covers graph/spec validation plus a headless fixed-step runtime and testbed. Provider integration should be added only when the runtime lifecycle, snapshot/restore, and query routing are implemented together.
+The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, and a minimal writable-variable command path. Process-control UI surfaces remain a follow-up.
 
 ## Persistence And Replay
 
-The process plant provider will own private runtime state. It must persist enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
+The process plant provider owns private runtime state. It persists enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
 
 Persist:
 
-- plant spec id/version,
-- compiled graph version/hash,
-- component states,
-- values needed for restart,
-- clock state,
+- process system id,
+- runtime elapsed time,
+- fixed-step remainder,
+- queued commands that have been accepted but not yet applied at a solver phase boundary,
+- current process variable values.
+
+Future persistence additions:
+
+- plant spec id/version or graph hash for stronger stale-state detection,
 - active alarms,
 - trend buffer policy.
 

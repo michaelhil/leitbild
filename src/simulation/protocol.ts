@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
@@ -54,6 +54,11 @@ export interface SimulationConnection {
   readonly close: () => Promise<void>
 }
 
+export interface SimulationProviderStateStore {
+  readonly load: () => Promise<unknown | null>
+  readonly save: (state: unknown) => Promise<void>
+}
+
 export interface SimulationAdapter {
   readonly id: string
   readonly packId: string
@@ -67,6 +72,7 @@ export interface SimulationScenarioRuntimeConfig {
   readonly providerIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
+  readonly processSystems?: ReadonlyArray<ScenarioProcessSystemDefinition>
   readonly providerConfigs: Record<string, unknown>
   readonly providerConfig: unknown
 }
@@ -75,4 +81,6 @@ export interface SimulationConnectionConfig {
   readonly controlInstanceId: ControlInstanceId
   readonly scenario?: SimulationScenarioRuntimeConfig
   readonly initialObjects?: ReadonlyArray<OperationalObject>
+  readonly providerStateStore?: SimulationProviderStateStore
+  readonly providerStateStores?: Readonly<Record<string, SimulationProviderStateStore>>
 }

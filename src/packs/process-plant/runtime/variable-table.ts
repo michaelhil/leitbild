@@ -12,6 +12,7 @@ export interface ProcessPlantVariableTable {
   readonly readBoolean: (path: VariablePath) => boolean
   readonly readOptionalNumber: (path: VariablePath, defaultValue: number) => number
   readonly write: (path: VariablePath, value: ProcessPlantValue) => void
+  readonly queuedCommands: () => ReadonlyArray<ProcessPlantCommand>
   readonly snapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly publishedSnapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
 }
@@ -22,6 +23,14 @@ const assertValueMatchesCurrentType = (
   next: ProcessPlantValue,
 ): void => {
   if (typeof current !== typeof next) throw new Error(`process plant variable ${path} expects ${typeof current} value`)
+}
+
+const assertValueMatchesDeclaredType = (
+  variable: CompiledVariable,
+  value: ProcessPlantValue,
+): void => {
+  const expectedType = variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number'
+  if (typeof value !== expectedType) throw new Error(`process plant variable ${variable.path} expects ${expectedType} value`)
 }
 
 const snapshotVariable = (
@@ -36,6 +45,7 @@ const snapshotVariable = (
     canonicalValue: toCanonicalProcessValue(value, variable.descriptor.unit),
     quantity: variable.descriptor.quantity,
     unit: variable.descriptor.unit,
+    domain: variable.descriptor.domain,
     kind: variable.descriptor.kind,
     writable: variable.descriptor.writable,
     published: variable.published,
@@ -45,13 +55,37 @@ const snapshotVariable = (
 export const createProcessPlantVariableTable = (
   system: CompiledProcessPlantSystem,
   initialComponentValueFor: (component: CompiledComponent, path: VariablePath) => ProcessPlantValue,
+  restoredVariables?: ReadonlyArray<ProcessPlantVariableSnapshot>,
+  restoredCommands?: ReadonlyArray<ProcessPlantCommand>,
 ): ProcessPlantVariableTable => {
   const variables = system.graph.variables
   const variableByPath = new Map(variables.map(variable => [variable.path, variable]))
   const values = new Map<VariablePath, ProcessPlantValue>()
   const commands: ProcessPlantCommand[] = []
+  const restoredValues = restoredVariables === undefined
+    ? null
+    : new Map(restoredVariables.map(variable => [variable.path, variable.value]))
+
+  if (restoredValues) {
+    for (const restoredVariable of restoredVariables ?? []) {
+      if (!variableByPath.has(restoredVariable.path)) {
+        throw new Error(`restored process plant variable is not declared by graph: ${restoredVariable.path}`)
+      }
+    }
+    for (const variable of variables) {
+      if (!restoredValues.has(variable.path)) {
+        throw new Error(`restored process plant state is missing variable: ${variable.path}`)
+      }
+      assertValueMatchesDeclaredType(variable, restoredValues.get(variable.path)!)
+    }
+  }
 
   for (const variable of variables) {
+    const restoredValue = restoredValues?.get(variable.path)
+    if (restoredValue !== undefined) {
+      values.set(variable.path, restoredValue)
+      continue
+    }
     if (variable.owner.type === 'component') {
       const component = system.graph.components[variable.owner.componentIndex]
       if (!component) throw new Error(`variable ${variable.path} references missing component index ${variable.owner.componentIndex}`)
@@ -75,14 +109,18 @@ export const createProcessPlantVariableTable = (
     values.set(path, value)
   }
 
+  const queueCommand = (command: ProcessPlantCommand): void => {
+    const variable = variableByPath.get(command.path)
+    if (!variable) throw new Error(`unknown process plant variable: ${command.path}`)
+    if (!variable.descriptor.writable) throw new Error(`process plant variable is not writable: ${command.path}`)
+    assertValueMatchesCurrentType(command.path, read(command.path), command.value)
+    commands.push(command)
+  }
+
+  for (const command of restoredCommands ?? []) queueCommand(command)
+
   return {
-    queueCommand: (command: ProcessPlantCommand): void => {
-      const variable = variableByPath.get(command.path)
-      if (!variable) throw new Error(`unknown process plant variable: ${command.path}`)
-      if (!variable.descriptor.writable) throw new Error(`process plant variable is not writable: ${command.path}`)
-      assertValueMatchesCurrentType(command.path, read(command.path), command.value)
-      commands.push(command)
-    },
+    queueCommand,
     applyQueuedCommands: (): void => {
       for (const command of commands.splice(0)) {
         write(command.path, command.value)
@@ -107,6 +145,7 @@ export const createProcessPlantVariableTable = (
       return value
     },
     write,
+    queuedCommands: (): ReadonlyArray<ProcessPlantCommand> => [...commands],
     snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> => variables.map(variable => snapshotVariable(values, variable)),
     publishedSnapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
       variables.filter(variable => variable.published).map(variable => snapshotVariable(values, variable)),

@@ -8,7 +8,7 @@ export interface ProcessPlantTestbed {
 }
 
 export const createProcessPlantTestbed = (system: CompiledProcessPlantSystem): ProcessPlantTestbed => {
-  const runtime = createProcessPlantRuntime(system)
+  const runtime = createProcessPlantRuntime({ system })
   return {
     runtime,
     runFor: (durationMs: number): ProcessPlantRuntimeSnapshot => {

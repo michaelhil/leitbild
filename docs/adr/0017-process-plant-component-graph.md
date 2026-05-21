@@ -22,11 +22,13 @@ The graph uses typed component ports and typed links. Raw component/port referen
 
 Connections are also process links. They may remain pure topology, or they may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area. Link variables join the same process variable registry as component variables and can be published, read, or controlled using stable variable paths.
 
-Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries will expose selected read-only process state through the generic pack query surface after the runtime lifecycle is integrated with a Control Instance provider.
+Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries expose selected read-only process state through the generic pack query surface; process-plant does not add a process-specific HTTP endpoint family.
 
-Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests and future provider integration.
+Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests, provider persistence, and queries.
 
 The runtime code is factored into an orchestrator, a variable table, component behaviors, and process-link behaviors. The variable table is the single authoritative in-memory state for compiled component and link variables; behavior modules do not maintain shadow copies.
+
+The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Control Instance directory rather than writing dense process variables into the Control Instance object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
 
 ## Consequences
 
@@ -40,8 +42,10 @@ The runtime code is factored into an orchestrator, a variable table, component b
 - Complex valves, instruments, or fittings can still become components later when they need multiple ports or rich internal behavior.
 - Internal high-frequency plant state does not become durable journal noise.
 - Future higher-fidelity components can replace simpler component definitions behind the same typed ports and variable paths.
-- The pack now has a real headless runtime/testbed before public query or UI surfaces are added.
-- Adding a process API without runtime snapshot/restore and provider lifecycle support would be premature.
+- The pack now has a real headless runtime/testbed plus Control Instance provider integration.
+- The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
+- `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
+- Provider-private state restores process runtimes after reload without turning variables into operational objects.
 
 ## Guardrails
 
@@ -54,4 +58,5 @@ The runtime code is factored into an orchestrator, a variable table, component b
 - Do not add placeholder component behavior. Component graph metadata is allowed because it is used by validation and compilation; solver behavior must be real when added.
 - Do not use free-text variable units.
 - Do not put unrelated behavior into process links. A link variable should observe or modify that one connection; multi-port or standalone behavior belongs in a component.
-- Do not add public process query/command endpoints until they can be backed by the runtime lifecycle rather than static graph metadata.
+- Do not expose process variables through object snapshots or object updates.
+- Do not persist queued commands only in memory; accepted commands must survive provider close/reopen until the solver applies them.

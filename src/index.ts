@@ -3,6 +3,7 @@ import { createControlInstanceRegistry } from './core/control-instances/registry
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
 import { leitbildPacks } from './app-assembly.ts'
 import { createLocalAmbulanceSimulationAdapter } from './packs/ambulance/sim/adapter.ts'
+import { createLocalProcessPlantSimulationAdapter } from './packs/process-plant/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
 import { createLocalWeatherSimulationAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
@@ -19,6 +20,7 @@ const registry = createControlInstanceRegistry({
     createLocalAmbulanceSimulationAdapter({ routing }),
     createLocalTrafficSimulationAdapter({ routing }),
     createLocalWeatherSimulationAdapter(),
+    createLocalProcessPlantSimulationAdapter(),
   ],
   interactionHandlers: leitbildPacks.flatMap(pack => pack.interactionHandlers ?? []),
 })

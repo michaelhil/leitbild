@@ -19,7 +19,7 @@ const valueOf = (path: string): VariablePath => path as VariablePath
 
 describe('process plant runtime', () => {
   test('initializes a headless runtime from scenario-owned graph data', () => {
-    const runtime = createProcessPlantRuntime(compiledSystem())
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
     const snapshot = runtime.snapshot()
 
     expect(snapshot.elapsedMs).toBe(0)
@@ -39,7 +39,7 @@ describe('process plant runtime', () => {
   })
 
   test('runs the declared solver phases and publishes telemetry', () => {
-    const runtime = createProcessPlantRuntime(compiledSystem())
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
     const tick = runtime.tick(1_000)
 
     expect(tick.simulatedMs).toBe(1_000)
@@ -60,7 +60,7 @@ describe('process plant runtime', () => {
   })
 
   test('rejects writes to non-writable variables', () => {
-    const runtime = createProcessPlantRuntime(compiledSystem())
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     expect(() => runtime.writeCommand({
       type: 'setVariable',
@@ -70,7 +70,7 @@ describe('process plant runtime', () => {
   })
 
   test('applies operator commands through the fixed-step update loop', () => {
-    const runtime = createProcessPlantRuntime(compiledSystem())
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.writeCommand({
       type: 'setVariable',
@@ -84,8 +84,8 @@ describe('process plant runtime', () => {
   })
 
   test('evolves plant variables without coupling behavior to the caller tick size', () => {
-    const oneBigTick = createProcessPlantRuntime(compiledSystem())
-    const repeatedTicks = createProcessPlantRuntime(compiledSystem())
+    const oneBigTick = createProcessPlantRuntime({ system: compiledSystem() })
+    const repeatedTicks = createProcessPlantRuntime({ system: compiledSystem() })
 
     oneBigTick.writeCommand({ type: 'setVariable', path: valueOf('core.rodInsertionFraction'), value: 0.6 })
     repeatedTicks.writeCommand({ type: 'setVariable', path: valueOf('core.rodInsertionFraction'), value: 0.6 })
@@ -105,7 +105,7 @@ describe('process plant runtime', () => {
   })
 
   test('process link variables behave as readable sensors and writable flow modifiers', () => {
-    const runtime = createProcessPlantRuntime(compiledSystem())
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.tick(1_000)
     const openFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))
