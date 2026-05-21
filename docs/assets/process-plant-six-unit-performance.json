@@ -1,0 +1,32 @@
+[
+  {
+    "label": "single-unit",
+    "systemCount": 1,
+    "componentCount": 44,
+    "linkCount": 58,
+    "variableCount": 229,
+    "simulatedMs": 300000,
+    "wallMs": 404.77087500000016,
+    "wallMsSamples": [
+      364.338125,
+      454.30541700000015,
+      404.77087500000016
+    ],
+    "realtimeFactor": 741.1600451737045
+  },
+  {
+    "label": "six-unit",
+    "systemCount": 6,
+    "componentCount": 264,
+    "linkCount": 348,
+    "variableCount": 1374,
+    "simulatedMs": 300000,
+    "wallMs": 3149.476667000001,
+    "wallMsSamples": [
+      3611.2099160000007,
+      3149.476667000001,
+      3114.762667000001
+    ],
+    "realtimeFactor": 95.25392048252947
+  }
+]

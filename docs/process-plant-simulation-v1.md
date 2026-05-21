@@ -462,11 +462,11 @@ Implemented queries:
 - `process-plant.variables.search`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
+- `process-plant.trends.read`
 
 Candidate future queries:
 
 - `process-plant.alarms.list`
-- `process-plant.trends.read`
 
 Implemented commands:
 
@@ -489,6 +489,38 @@ Candidate events:
 
 The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, and a minimal writable-variable command path. Process-control UI surfaces remain a follow-up.
 
+Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
+
+Example provider config:
+
+```json
+{
+  "providerConfigs": {
+    "process-plant": {
+      "systems": {
+        "unit-2": {
+          "telemetry": {
+            "sampleIntervalMs": 5000,
+            "variables": ["core.powerMw", "sgA.levelPercent", "turbine.electricMw"]
+          },
+          "schedule": {
+            "actions": [
+              {
+                "id": "unit-2-rcp-a-trip",
+                "atMs": 60000,
+                "type": "setVariable",
+                "path": "rcpA.running",
+                "value": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ## Persistence And Replay
 
 The process plant provider owns private runtime state. It persists enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
@@ -499,15 +531,19 @@ Persist:
 - runtime elapsed time,
 - fixed-step remainder,
 - queued commands that have been accepted but not yet applied at a solver phase boundary,
-- current process variable values.
+- current process variable values,
+- fired scheduled action ids,
+- configured telemetry buffers when telemetry is enabled for the process system.
 
 Future persistence additions:
 
 - plant spec id/version or graph hash for stronger stale-state detection,
 - active alarms,
-- trend buffer policy.
+- explicit long-run trend retention policy.
 
 Do not persist every high-frequency telemetry frame into the durable journal. The durable journal remains meaningful accepted history. Provider snapshots hold current runtime truth.
+
+Telemetry is opt-in and pack-owned. A process system without telemetry config still runs and can be queried for current variable snapshots. A process system with telemetry config records selected variables at the configured interval and exposes the samples through `process-plant.trends.read`.
 
 ## Performance Strategy
 
@@ -522,6 +558,18 @@ The performance strategy is architectural:
 - add typed arrays only after profiling proves they are needed.
 
 V1 acceptance should include a headless performance test for the first reactor graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
+
+The current multi-unit benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per unit. It records three selected variables per unit and compares runtime with a single-unit run on the current local machine.
+
+![Six-unit process plant benchmark](./assets/process-plant-six-unit-trace.svg)
+
+Generated artifacts:
+
+- [process-plant-six-unit-trace.svg](./assets/process-plant-six-unit-trace.svg)
+- [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
+- [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
+
+The first benchmark result on the current hardware simulated five minutes of one unit in roughly 0.40 seconds and five minutes of six units in roughly 3.15 seconds, using median wall time over three measured runs after a warm-up run. That is about a 7.8x wall-clock penalty for 6x the plant count. It still runs about 95x faster than real time for the six-unit case, so the penalty does not matter for real-time six-unit operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of units or higher-fidelity components.
 
 ## Implementation Phases
 

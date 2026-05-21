@@ -3,6 +3,7 @@ import {
   componentVariablePath,
   compileProcessPlantSystem,
   createBehaviorContext,
+  createProcessPlantClusterTestbed,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
   pressurizedWaterReactorPlantSpec,
@@ -146,6 +147,55 @@ describe('process plant runtime', () => {
 
     expect(snapshot.elapsedMs).toBe(500)
     expect(snapshot.variables.length).toBeGreaterThan(0)
+  })
+
+  test('cluster testbed runs independent systems with isolated scheduled faults and telemetry', () => {
+    const cluster = createProcessPlantClusterTestbed([
+      {
+        system: compileProcessPlantSystem({
+          id: 'unit-1',
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          graph: pressurizedWaterReactorPlantSpec,
+        }),
+        telemetry: {
+          sampleIntervalMs: 1_000,
+          variables: [valueOf('rcpA.running'), valueOf('turbine.electricMw')],
+        },
+        schedule: { actions: [] },
+      },
+      {
+        system: compileProcessPlantSystem({
+          id: 'unit-2',
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          graph: pressurizedWaterReactorPlantSpec,
+        }),
+        telemetry: {
+          sampleIntervalMs: 1_000,
+          variables: [valueOf('rcpA.running'), valueOf('turbine.electricMw')],
+        },
+        schedule: {
+          actions: [{
+            id: 'unit-2-rcp-a-trip',
+            atMs: 2_000,
+            type: 'setVariable',
+            path: valueOf('rcpA.running'),
+            value: false,
+          }],
+        },
+      },
+    ])
+
+    const snapshots = cluster.runFor(5_000, 1_000)
+    const bySystem = new Map(snapshots.map(snapshot => [snapshot.systemId, snapshot]))
+    const unit1 = bySystem.get('unit-1')
+    const unit2 = bySystem.get('unit-2')
+    if (!unit1 || !unit2) throw new Error('expected both process plant unit snapshots')
+    expect(unit1.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(true)
+    expect(unit2.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(false)
+    expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.points.length).toBe(6)
+    expect(unit2.telemetry?.find(series => series.path === valueOf('rcpA.running'))?.points.at(-1)?.value).toBe(false)
   })
 
   test('process link variables behave as readable sensors and writable flow modifiers', () => {

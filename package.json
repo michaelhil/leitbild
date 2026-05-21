@@ -16,6 +16,7 @@
     "maps:rebuild": "bun run scripts/maps/rebuild-vector-map.ts",
     "maps:promote": "bun run scripts/maps/promote-vector-tiles.ts",
     "maps:status": "bun run scripts/maps/map-status.ts",
+    "process-plant:benchmark": "bun run scripts/process-plant/six-unit-benchmark.ts",
     "test": "bun test",
     "health": "bun run check && bun test && bun run build:ui"
   },

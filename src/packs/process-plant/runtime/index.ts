@@ -1,5 +1,7 @@
 export * from './behavior-contract.ts'
 export * from './model.ts'
 export * from './runtime.ts'
+export * from './schedule.ts'
 export * from './testbed.ts'
+export * from './telemetry.ts'
 export * from './units.ts'

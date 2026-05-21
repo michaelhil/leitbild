@@ -32,6 +32,8 @@ Component and process-link behaviors run through a constrained behavior context.
 
 The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Control Instance directory rather than writing dense process variables into the Control Instance object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
 
+The provider also owns process-specific schedules and telemetry buffers. Scenario `providerConfigs["process-plant"]` can configure timed variable writes and selected trend sampling per process system. This keeps pump trips, valve operations, rod moves, and process trends inside the process-plant pack instead of turning core scenario scripting into a process-control language.
+
 The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine steam use/electrical output, and a condenser sink. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop.
 
 ## Consequences
@@ -52,9 +54,11 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - The runtime phase list reflects actual execution; telemetry publication is a read-out from the variable table, not a hidden state-changing phase.
 - The pack now has a real headless runtime/testbed plus Control Instance provider integration.
 - The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
+- The generic query surface can also read configured trend buffers through `process-plant.trends.read`.
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.
 - The current built-in graph can now exercise the first primary/secondary energy path in headless tests.
+- Multi-unit process scenarios do not need a separate cluster runtime. A scenario can instantiate multiple process systems, each with the same graph and different schedules/telemetry config. The current six-unit benchmark runs six expanded plant graphs independently in one provider.
 
 ## Guardrails
 

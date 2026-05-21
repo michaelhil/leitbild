@@ -266,10 +266,13 @@ Current built-in query kinds:
 - `process-plant.variables.search`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
+- `process-plant.trends.read`
 
 Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, a writable variable path, and a typed value. The provider validates the write and queues it for the next solver phase; it does not mutate variables through the query route.
 
 Process-plant graph queries now expose compiled connection metadata as `connectionKind`, optional fluid `service`, `nominalFluid`, `designPhase`, `solverModel`, and indexed incoming/outgoing adjacency. Consumers should use the pack query surface rather than parsing scenario files directly when they need the runtime topology.
+
+Process-plant provider config may define timed process actions and telemetry sampling per process system. This makes multi-unit scenarios possible without adding a new cluster abstraction to Leitbild core: a scenario can instantiate multiple `processSystems`, and each system can have its own telemetry variables and schedule. The process-plant provider persists runtime snapshots, fired scheduled actions, and telemetry buffers in provider-private state; it does not write dense process trends into the Control Instance event journal.
 
 ## Interaction Contributions
 

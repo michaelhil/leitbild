@@ -11,7 +11,20 @@ import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/pr
 import { processPlantControlWriteCommandKind, processPlantControlWritePayloadSchema } from '../commands.ts'
 import { compileProcessPlantSystems } from '../process-systems.ts'
 import { createProcessPlantRuntime } from '../runtime/index.ts'
-import type { ProcessPlantRuntimeSnapshot } from '../runtime/index.ts'
+import {
+  createProcessPlantScheduleRunner,
+  createProcessPlantTelemetryRecorder,
+  processPlantScheduleConfigSchema,
+  processPlantScheduleSnapshotSchema,
+  processPlantTelemetryConfigSchema,
+  processPlantTelemetrySnapshotSchema,
+  type ProcessPlantRuntimeSnapshot,
+  type ProcessPlantScheduleConfig,
+  type ProcessPlantScheduleSnapshot,
+  type ProcessPlantTelemetryConfig,
+  type ProcessPlantTelemetryRecorder,
+  type ProcessPlantTelemetrySnapshot,
+} from '../runtime/index.ts'
 import {
   processQuantitySchema,
   processUnitSchema,
@@ -51,6 +64,8 @@ const processPlantProviderStateSchema = z.object({
   systems: z.array(z.object({
     systemId: z.string().min(1),
     runtime: processPlantRuntimeSnapshotSchema,
+    schedule: processPlantScheduleSnapshotSchema.optional(),
+    telemetry: processPlantTelemetrySnapshotSchema.optional(),
   })),
 })
 
@@ -59,8 +74,21 @@ interface ProcessPlantProviderState {
   readonly systems: ReadonlyArray<{
     readonly systemId: string
     readonly runtime: ProcessPlantRuntimeSnapshot
+    readonly schedule?: ProcessPlantScheduleSnapshot
+    readonly telemetry?: ProcessPlantTelemetrySnapshot
   }>
 }
+
+const processPlantProviderSystemConfigSchema = z.object({
+  schedule: processPlantScheduleConfigSchema.optional(),
+  telemetry: processPlantTelemetryConfigSchema.optional(),
+}).strict()
+
+const processPlantProviderConfigSchema = z.object({
+  systems: z.record(processPlantProviderSystemConfigSchema).default({}),
+}).strict()
+
+type ProcessPlantProviderConfig = z.infer<typeof processPlantProviderConfigSchema>
 
 const updateIntervalMs = 1_000
 
@@ -76,9 +104,11 @@ const providerStateFor = (
   systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
 ): ProcessPlantProviderState => ({
   schemaVersion: 1,
-  systems: [...systems.values()].map(({ system, runtime }) => ({
+  systems: [...systems.values()].map(({ system, runtime, schedule, telemetry }) => ({
     systemId: system.id,
     runtime: runtime.snapshot(),
+    schedule: schedule.snapshot(),
+    ...(telemetry === undefined ? {} : { telemetry: telemetry.snapshot() }),
   })),
 })
 
@@ -88,6 +118,27 @@ const restoredSnapshotFor = (
 ): ProcessPlantRuntimeSnapshot | undefined => {
   const restored = providerState?.systems.find(system => system.systemId === systemId)
   return restored?.runtime
+}
+
+const restoredScheduleFor = (
+  providerState: ProcessPlantProviderState | null,
+  systemId: string,
+): ProcessPlantScheduleSnapshot | undefined => {
+  const restored = providerState?.systems.find(system => system.systemId === systemId)
+  return restored?.schedule
+}
+
+const restoredTelemetryFor = (
+  providerState: ProcessPlantProviderState | null,
+  systemId: string,
+): ProcessPlantTelemetrySnapshot | undefined => {
+  const restored = providerState?.systems.find(system => system.systemId === systemId)
+  return restored?.telemetry
+}
+
+const processPlantProviderConfigFor = (config: SimulationConnectionConfig): ProcessPlantProviderConfig => {
+  const rawConfig = config.scenario?.providerConfigs?.['process-plant'] ?? {}
+  return processPlantProviderConfigSchema.parse(rawConfig)
 }
 
 const saveProviderState = async (
@@ -109,18 +160,40 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
     const providerState = rawProviderState === undefined || rawProviderState === null
       ? null
       : processPlantProviderStateSchema.parse(rawProviderState) as ProcessPlantProviderState
+    const providerConfig = processPlantProviderConfigFor(config)
     const compiledSystems = compileProcessPlantSystems(config.scenario?.processSystems ?? [])
     const systems = new Map<string, ProcessPlantSystemRuntime>(compiledSystems.map(system => [
       system.id,
-      {
-        system,
-        runtime: createProcessPlantRuntime({
+      (() => {
+        const systemConfig = providerConfig.systems[system.id]
+        const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
+        const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
+        const runtime = createProcessPlantRuntime({
           system,
           ...(restoredSnapshotFor(providerState, system.id) === undefined
             ? {}
             : { restoredSnapshot: restoredSnapshotFor(providerState, system.id)! }),
-        }),
-      },
+        })
+        const telemetry: ProcessPlantTelemetryRecorder | undefined = telemetryConfig === undefined
+          ? undefined
+          : createProcessPlantTelemetryRecorder({
+              telemetry: telemetryConfig,
+              ...(restoredTelemetryFor(providerState, system.id) === undefined
+                ? {}
+                : { restoredSnapshot: restoredTelemetryFor(providerState, system.id)! }),
+            })
+        telemetry?.recordDueSamples(runtime)
+        const restoredSchedule = restoredScheduleFor(providerState, system.id)
+        return {
+          system,
+          runtime,
+          schedule: createProcessPlantScheduleRunner({
+            ...(scheduleConfig === undefined ? {} : { schedule: scheduleConfig }),
+            ...(restoredSchedule === undefined ? {} : { restoredSnapshot: restoredSchedule }),
+          }),
+          ...(telemetry === undefined ? {} : { telemetry }),
+        }
+      })(),
     ]))
     let clock: SimulationClockState = {
       currentTime: config.scenario?.world.startsAt ?? nowIso(),
@@ -137,7 +210,11 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
-      for (const { runtime } of systems.values()) runtime.tick(elapsedMs)
+      for (const { runtime, schedule, telemetry } of systems.values()) {
+        schedule.applyDueActions(runtime, runtime.snapshot().elapsedMs + elapsedMs)
+        runtime.tick(elapsedMs)
+        telemetry?.recordDueSamples(runtime)
+      }
       await saveProviderState(config, systems)
     }
 

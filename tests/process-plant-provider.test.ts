@@ -21,7 +21,7 @@ const createMemoryStateStore = (): SimulationProviderStateStore => {
   }
 }
 
-const scenarioConfig = () => ({
+const scenarioConfig = (processPlantConfig: unknown = {}) => ({
   scenarioId: 'process-plant-test',
   providerIds: ['process-plant-local'],
   world: {
@@ -35,7 +35,9 @@ const scenarioConfig = () => ({
     componentLibrary: 'process-plant',
     graph: pressurizedWaterReactorPlantSpec,
   }],
-  providerConfigs: {},
+  providerConfigs: {
+    'process-plant': processPlantConfig,
+  },
   providerConfig: {},
 })
 
@@ -138,6 +140,53 @@ describe('process plant simulation provider', () => {
     expect((read.result as { variables: ReadonlyArray<{ readonly value: unknown }> }).variables[0]?.value).toBe(false)
 
     await secondConnection.close()
+  })
+
+  test('applies pack-owned scheduled actions and exposes configured telemetry trends', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            telemetry: {
+              sampleIntervalMs: 1_000,
+              variables: ['rcpA.running', 'turbine.electricMw'],
+            },
+            schedule: {
+              actions: [{
+                id: 'plant-rcp-a-trip',
+                atMs: 1_000,
+                type: 'setVariable',
+                path: 'rcpA.running',
+                value: false,
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    await Bun.sleep(1_100)
+
+    const read = await connection.query(query('process-plant.variables.read', {
+      systemId: 'plant',
+      paths: ['rcpA.running'],
+    }))
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    expect((read.result as { variables: ReadonlyArray<{ readonly value: unknown }> }).variables[0]?.value).toBe(false)
+
+    const trends = await connection.query(query('process-plant.trends.read', {
+      systemId: 'plant',
+      paths: ['rcpA.running'],
+    }))
+    expect(trends.ok).toBe(true)
+    if (!trends.ok) throw new Error(trends.reason)
+    const series = (trends.result as { series: ReadonlyArray<{ readonly points: ReadonlyArray<{ readonly value: unknown }> }> }).series[0]
+    expect(series?.points.map(point => point.value)).toContain(false)
+
+    await connection.close()
   })
 
   test('rejects invalid process variable writes explicitly', async () => {

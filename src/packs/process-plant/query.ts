@@ -6,10 +6,13 @@ import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
 import { processQuantitySchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
 import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
+import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
 
 export interface ProcessPlantSystemRuntime {
   readonly system: CompiledProcessPlantSystem
   readonly runtime: ProcessPlantRuntime
+  readonly schedule: ProcessPlantScheduleRunner
+  readonly telemetry?: ProcessPlantTelemetryRecorder
 }
 
 const systemQuerySchema = z.object({
@@ -27,6 +30,11 @@ const variablesSearchQuerySchema = z.object({
   domain: variableDomainSchema.optional(),
   quantity: processQuantitySchema.optional(),
   publishedOnly: z.boolean().default(false),
+})
+
+const trendsReadQuerySchema = z.object({
+  systemId: idSchema,
+  paths: z.array(variablePathSchema).min(1).optional(),
 })
 
 const success = (
@@ -162,6 +170,15 @@ export const answerProcessPlantQuery = (config: {
       const system = requireSystem(config.systems, payload.systemId)
       return success(config.request, {
         variables: system.runtime.snapshot().variables.filter(variable => variable.published),
+      }, config.at)
+    }
+    if (config.request.kind === 'process-plant.trends.read') {
+      const payload = trendsReadQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      if (!system.telemetry) return failure(config.request, `process plant telemetry is not configured for system: ${payload.systemId}`, config.at)
+      return success(config.request, {
+        systemId: payload.systemId,
+        series: system.telemetry.series(payload.paths),
       }, config.at)
     }
     return failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)
