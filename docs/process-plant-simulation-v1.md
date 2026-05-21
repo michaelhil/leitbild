@@ -426,18 +426,22 @@ This follows the same broad lesson as serious simulator integrations such as Fly
 Current runtime behavior is deliberately minimal but functional:
 
 - reactor power responds gradually to rod insertion demand,
-- reactor heat is transferred into a primary coolant temperature rise using a lumped `Q = m * cp * dT` approximation,
-- core coolant, steam generator primary/secondary temperatures, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
+- reactor heat is transferred into a primary coolant temperature rise using a shared lumped `Q = m * cp * dT` helper,
+- core fuel temperature and decay heat are now explicit state variables, so reactor trips can leave residual heat removal demand after fission power falls,
+- core coolant, steam generator primary/secondary temperatures, SG tube-metal temperature, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
 - pump flow follows running state and speed demand,
 - process links propagate simple flow and temperature values through primary coolant, feedwater, auxiliary feedwater, main steam, condensate, charging, letdown, and turbine-exhaust services,
-- steam generator heat transfer depends on `primaryCoolant` flow, primary/secondary temperature difference, and level,
+- steam generator heat transfer depends on `primaryCoolant` flow, tube-metal temperature, secondary temperature, and level,
 - steam generator steam production is derived from heat transfer using a simple latent-heat approximation,
-- steam generator inventory, level, pressure, primary outlet temperature, and secondary temperature trend in response to feedwater, generated steam, and turbine steam use,
+- steam generator secondary inventory is a bounded mass-balance state driven by feedwater and outgoing steam flow,
+- steam generator level, pressure, primary outlet temperature, tube-metal temperature, and secondary temperature trend in response to feedwater, generated steam, turbine steam use, and primary-side heat input,
 - turbine electrical output follows load, inlet steam flow, and available steam pressure,
 - condenser sink receives turbine exhaust steam and trends condensate temperature and back pressure,
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
+
+The current thermophysical helpers live in `src/packs/process-plant/runtime/thermophysics.ts`. They are intentionally approximate and code-backed: specific heat, latent heat, water temperature rise from heat/flow, steam flow from heat, a pressure-to-saturation-temperature approximation, and a small energy-balance helper. Keep this shared helper layer thin. It should prevent duplicated constants and arithmetic drift without pretending to be RELAP, Modelica, or a steam-table package.
 
 The runtime is connected through the process-plant simulation provider. The provider owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Control Instance command path.
 
@@ -589,7 +593,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10-0.11 seconds and five minutes of six systems in roughly 0.60-0.68 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 5.5-6.5x wall-clock penalty for 6x the plant count, and roughly 440-500x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution.
+Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10 seconds and five minutes of six systems in roughly 0.60 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 6x wall-clock penalty for 6x the plant count, and roughly 500x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The first physics-deepening pass kept those optimizations: richer core/steam-generator behavior added variables and arithmetic, not extra runtime graph scans or new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 

@@ -14,7 +14,11 @@
         "ratedPowerMw": 3400,
         "initialPowerFraction": 0.85,
         "initialCoolantInletTemperatureC": 290,
-        "coolantThermalTimeConstantS": 8
+        "coolantThermalTimeConstantS": 8,
+        "fuelThermalTimeConstantS": 20,
+        "fuelTemperatureRiseAtRatedPowerC": 140,
+        "decayHeatFractionAtPower": 0.06,
+        "decayHeatTimeConstantS": 900
       }
     },
     {
@@ -60,7 +64,8 @@
         "nominalSecondaryInventoryKg": 56000,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
-        "inventoryTimeConstantS": 20
+        "inventoryTimeConstantS": 20,
+        "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
     {
@@ -76,7 +81,8 @@
         "nominalSecondaryInventoryKg": 56000,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
-        "inventoryTimeConstantS": 20
+        "inventoryTimeConstantS": 20,
+        "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
     {
@@ -92,7 +98,8 @@
         "nominalSecondaryInventoryKg": 56000,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
-        "inventoryTimeConstantS": 20
+        "inventoryTimeConstantS": 20,
+        "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
     {
@@ -108,7 +115,8 @@
         "nominalSecondaryInventoryKg": 56000,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
-        "inventoryTimeConstantS": 20
+        "inventoryTimeConstantS": 20,
+        "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
     {
@@ -2819,6 +2827,8 @@
   ],
   "publishedVariables": [
     "core.powerMw",
+    "core.fuelTemperatureC",
+    "core.decayHeatMw",
     "core.coolantInletTemperatureC",
     "core.coolantOutletTemperatureC",
     "core.heatToCoolantMw",
@@ -2826,6 +2836,7 @@
     "sgA.pressureMPa",
     "sgA.primaryInletTemperatureC",
     "sgA.primaryOutletTemperatureC",
+    "sgA.tubeMetalTemperatureC",
     "sgA.heatTransferMw",
     "sgA.secondaryTemperatureC",
     "sgA.steamFlowKgPerS",
@@ -2847,6 +2858,7 @@
     "sgB.pressureMPa",
     "sgB.primaryInletTemperatureC",
     "sgB.primaryOutletTemperatureC",
+    "sgB.tubeMetalTemperatureC",
     "sgB.heatTransferMw",
     "sgB.secondaryTemperatureC",
     "sgB.steamFlowKgPerS",
@@ -2868,6 +2880,7 @@
     "sgC.pressureMPa",
     "sgC.primaryInletTemperatureC",
     "sgC.primaryOutletTemperatureC",
+    "sgC.tubeMetalTemperatureC",
     "sgC.heatTransferMw",
     "sgC.secondaryTemperatureC",
     "sgC.steamFlowKgPerS",
@@ -2889,6 +2902,7 @@
     "sgD.pressureMPa",
     "sgD.primaryInletTemperatureC",
     "sgD.primaryOutletTemperatureC",
+    "sgD.tubeMetalTemperatureC",
     "sgD.heatTransferMw",
     "sgD.secondaryTemperatureC",
     "sgD.steamFlowKgPerS",

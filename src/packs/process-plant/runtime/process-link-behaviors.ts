@@ -189,6 +189,23 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
     writes: ['pressureMPa'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'pressureMPa'),
     update: ({ system, link, context }): void => {
+      const fromComponent = system.graph.components[link.fromComponentIndex]
+      if (!fromComponent) throw new Error(`process link ${link.id} references missing source component`)
+      if (fromComponent.kind === 'steamGenerator') {
+        context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(fromComponent, 'pressureMPa')))
+        return
+      }
+      const sourcePressure = averageIncomingLinkValue(
+        system,
+        link.fromComponentIndex,
+        'pressureMPa',
+        context,
+        candidate => candidate.service === link.service,
+      )
+      if (sourcePressure !== null) {
+        context.write(processLinkVariablePath(link, 'pressureMPa'), sourcePressure)
+        return
+      }
       const steamPressure = averageFor(system.graph.components, component =>
         component.kind === 'steamGenerator' ? context.readNumber(componentVariablePath(component, 'pressureMPa')) : null,
       )

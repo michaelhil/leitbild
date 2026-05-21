@@ -34,7 +34,7 @@ The process-plant simulation provider owns provider-private runtime state. It pe
 
 The provider also owns process-specific schedules and telemetry buffers. Scenario `providerConfigs["process-plant"]` can configure timed variable writes and selected trend sampling per process system. This keeps pump trips, valve operations, rod moves, and process trends inside the process-plant pack instead of turning core scenario scripting into a process-control language.
 
-The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine steam use/electrical output, and a condenser sink. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop.
+The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, decay heat, fuel temperature, primary coolant flow/temperature, steam-generator tube-metal heat transfer, secondary-side mass balance, steam production, turbine steam use/electrical output, and a condenser sink. Shared thermophysical helpers hold the approximate constants and formulas used by these behaviors. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop.
 
 ## Consequences
 
@@ -59,6 +59,7 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.
 - The current built-in graph can now exercise the first primary/secondary energy path in headless tests.
 - Multi-unit process scenarios do not need a separate cluster runtime. A scenario can instantiate multiple process systems, each with the same graph and different schedules/telemetry config. The current six-unit benchmark runs six expanded plant graphs independently in one provider.
+- Physics-deepening work must preserve the optimized execution model: compile once, use the variable table as the only authoritative state, reuse compiled adjacency indexes, and avoid per-tick graph parsing or new shadow state.
 
 ## Guardrails
 
@@ -75,3 +76,4 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Do not persist queued commands only in memory; accepted commands must survive provider close/reopen until the solver applies them.
 - Do not give behavior modules unrestricted access to mutate the variable table.
 - Do not add a dynamic behavior/plugin loader until there is a concrete second implementation pressure; scenario data instantiates graphs, but solver behavior remains reviewed TypeScript code in V1.
+- Do not duplicate thermophysical constants in individual behaviors; add reviewed helper functions when a formula becomes shared across components or links.

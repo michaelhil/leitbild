@@ -64,6 +64,8 @@ describe('process plant runtime', () => {
     const publishedPaths = tick.publishedVariables.map(variable => String(variable.path))
     expect(publishedPaths).toEqual(expect.arrayContaining([
       'core.powerMw',
+      'core.fuelTemperatureC',
+      'core.decayHeatMw',
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
       'core.heatToCoolantMw',
@@ -72,6 +74,7 @@ describe('process plant runtime', () => {
       'sgA.heatTransferMw',
       'sgA.primaryInletTemperatureC',
       'sgA.primaryOutletTemperatureC',
+      'sgA.tubeMetalTemperatureC',
       'sgA.secondaryTemperatureC',
       'sgA.steamFlowKgPerS',
       'sgA.secondaryInventoryKg',
@@ -313,10 +316,28 @@ describe('process plant runtime', () => {
       .toBeGreaterThan(Number(runtime.readVariable(valueOf('core.coolantInletTemperatureC'))))
     expect(Number(runtime.readVariable(valueOf('sgA.primaryOutletTemperatureC'))))
       .toBeLessThan(Number(runtime.readVariable(valueOf('sgA.primaryInletTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('sgA.tubeMetalTemperatureC'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('sgA.secondaryTemperatureC'))))
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('sgA.steamFlowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('reactor trip leaves decay heat while fission power falls', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const initialFissionPower = Number(runtime.readVariable(valueOf('core.powerMw')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('core.rodInsertionFraction'), value: 1 })
+    for (let index = 0; index < 150; index += 1) runtime.tick(100)
+
+    const trippedFissionPower = Number(runtime.readVariable(valueOf('core.powerMw')))
+    const decayHeat = Number(runtime.readVariable(valueOf('core.decayHeatMw')))
+    const heatToCoolant = Number(runtime.readVariable(valueOf('core.heatToCoolantMw')))
+    expect(trippedFissionPower).toBeLessThan(initialFissionPower)
+    expect(decayHeat).toBeGreaterThan(0)
+    expect(heatToCoolant).toBeGreaterThan(trippedFissionPower)
   })
 
   test('loss of feedwater trends steam generator inventory downward', () => {
