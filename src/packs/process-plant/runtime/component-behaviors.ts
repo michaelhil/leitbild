@@ -16,6 +16,11 @@ export const approach = (current: number, target: number, maxDelta: number): num
   return current + Math.sign(target - current) * maxDelta
 }
 
+export const relaxToward = (current: number, target: number, dtSeconds: number, timeConstantSeconds: number): number => {
+  const fraction = clamp(dtSeconds / timeConstantSeconds, 0, 1)
+  return current + (target - current) * fraction
+}
+
 const specificHeatWaterKjPerKgK = 4.2
 const latentHeatSteamMjPerKg = 2.3
 
@@ -124,6 +129,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'reactor-core-reactivity-control',
     phase: 'updateControlLogic',
     componentKind: 'reactorCore',
+    reads: ['rodInsertionFraction', 'reactivityPcm'],
     writes: ['reactivityPcm'],
     update: ({ component, context }): void => {
       if (!hasComponentVariable(component, 'rodInsertionFraction') || !hasComponentVariable(component, 'reactivityPcm')) return
@@ -137,6 +143,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'turbine-electrical-output',
     phase: 'solveElectrical',
     componentKind: 'turbineLoadSink',
+    reads: ['loadFraction', 'steamFlowKgPerS', 'incoming:flowKgPerS', 'incoming:pressureMPa'],
     writes: ['electricMw', 'steamFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const inletSteamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
@@ -150,7 +157,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), inletSteamFlow)
       context.write(
         componentVariablePath(component, 'electricMw'),
-        approach(current, target, parameterNumber(component, 'nominalElectricMw') * 0.2 * context.dtSeconds),
+        relaxToward(current, target, context.dtSeconds, optionalParameterNumber(component, 'electricalTimeConstantS', 5)),
       )
     },
   },
@@ -158,6 +165,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'centrifugal-pump-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
+    reads: ['running', 'speedFraction'],
     writes: ['flowKgPerS'],
     update: ({ component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
@@ -169,6 +177,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'reactor-core-heat-to-coolant',
     phase: 'solveThermalTransfer',
     componentKind: 'reactorCore',
+    reads: ['powerMw'],
     writes: ['heatToCoolantMw'],
     update: ({ component, context }): void => {
       context.write(componentVariablePath(component, 'heatToCoolantMw'), context.readNumber(componentVariablePath(component, 'powerMw')))
@@ -178,6 +187,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'steam-generator-heat-transfer',
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
+    reads: ['secondaryTemperatureC', 'levelPercent', 'incoming:primary-water.temperatureC', 'incoming:primary-water.flowKgPerS'],
     writes: ['heatTransferMw', 'steamFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.medium === 'primary-water')
@@ -196,6 +206,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'reactor-core-power-state',
     phase: 'updateComponentState',
     componentKind: 'reactorCore',
+    reads: ['rodInsertionFraction', 'reactivityPcm', 'powerMw'],
     writes: ['powerMw'],
     update: ({ component, context }): void => {
       const ratedPower = parameterNumber(component, 'ratedPowerMw')
@@ -210,6 +221,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'reactor-core-coolant-temperature-state',
     phase: 'updateComponentState',
     componentKind: 'reactorCore',
+    reads: ['coolantInletTemperatureC', 'coolantOutletTemperatureC', 'heatToCoolantMw', 'incoming:temperatureC', 'incoming:flowKgPerS'],
     writes: ['coolantInletTemperatureC', 'coolantOutletTemperatureC'],
     update: ({ system, component, context }): void => {
       const inletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
@@ -218,14 +230,26 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const heatToCoolant = context.readNumber(componentVariablePath(component, 'heatToCoolantMw'))
       const outletTarget = clamp(inletTemperature + (heatToCoolant * 1_000) / (flow * specificHeatWaterKjPerKgK), 220, 360)
       const currentOutlet = context.readNumber(componentVariablePath(component, 'coolantOutletTemperatureC'))
-      context.write(componentVariablePath(component, 'coolantInletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC')), inletTemperature, 2 * context.dtSeconds))
-      context.write(componentVariablePath(component, 'coolantOutletTemperatureC'), approach(currentOutlet, outletTarget, 2 * context.dtSeconds))
+      const timeConstantSeconds = optionalParameterNumber(component, 'coolantThermalTimeConstantS', 8)
+      context.write(componentVariablePath(component, 'coolantInletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC')), inletTemperature, context.dtSeconds, timeConstantSeconds))
+      context.write(componentVariablePath(component, 'coolantOutletTemperatureC'), relaxToward(currentOutlet, outletTarget, context.dtSeconds, timeConstantSeconds))
     },
   },
   {
     id: 'steam-generator-inventory-pressure-state',
     phase: 'updateComponentState',
     componentKind: 'steamGenerator',
+    reads: [
+      'pressureMPa',
+      'levelPercent',
+      'heatTransferMw',
+      'steamFlowKgPerS',
+      'primaryInletTemperatureC',
+      'primaryOutletTemperatureC',
+      'secondaryTemperatureC',
+      'incoming:primary-water.temperatureC',
+      'incoming:primary-water.flowKgPerS',
+    ],
     writes: ['pressureMPa', 'levelPercent', 'primaryInletTemperatureC', 'primaryOutletTemperatureC', 'secondaryTemperatureC', 'secondaryInventoryKg'],
     update: ({ system, component, context }): void => {
       const feedwaterFlow = averageFor(system.graph.components, candidate =>
@@ -242,17 +266,18 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
       const primaryFlow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.medium === 'primary-water') ?? 1)
       const primaryOutletTarget = clamp(primaryInletTemperature - (heatTransfer * 1_000) / (primaryFlow * specificHeatWaterKjPerKgK), 180, primaryInletTemperature)
-      context.write(componentVariablePath(component, 'primaryInletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC')), primaryInletTemperature, 2 * context.dtSeconds))
-      context.write(componentVariablePath(component, 'primaryOutletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')), primaryOutletTarget, 2 * context.dtSeconds))
+      const primaryTimeConstantSeconds = optionalParameterNumber(component, 'primaryThermalTimeConstantS', 10)
+      context.write(componentVariablePath(component, 'primaryInletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC')), primaryInletTemperature, context.dtSeconds, primaryTimeConstantSeconds))
+      context.write(componentVariablePath(component, 'primaryOutletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')), primaryOutletTarget, context.dtSeconds, primaryTimeConstantSeconds))
       const secondaryTemperatureTarget = clamp(280 + (context.readNumber(pressurePath) - nominalPressure) * 7, 180, 330)
-      context.write(componentVariablePath(component, 'secondaryTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, 0.3 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'secondaryTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, context.dtSeconds, optionalParameterNumber(component, 'secondaryThermalTimeConstantS', 25)))
       const currentPressure = context.readNumber(pressurePath)
       const generatedSteamFlow = context.readNumber(componentVariablePath(component, 'steamFlowKgPerS'))
       const pressureTarget = nominalPressure + ((generatedSteamFlow - turbineSteamFlow) / 1_000) * nominalPressure
       context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
       const currentLevel = context.readNumber(levelPath)
       const levelTarget = clamp(currentLevel + (feedwaterFlow - turbineSteamFlow) * 0.0008, 0, 100)
-      context.write(levelPath, approach(currentLevel, levelTarget, 0.4 * context.dtSeconds))
+      context.write(levelPath, relaxToward(currentLevel, levelTarget, context.dtSeconds, optionalParameterNumber(component, 'inventoryTimeConstantS', 20)))
       const nominalInventory = optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000)
       context.write(componentVariablePath(component, 'secondaryInventoryKg'), nominalInventory * context.readNumber(levelPath) / 100)
     },
@@ -261,6 +286,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'condenser-steam-sink-state',
     phase: 'updateComponentState',
     componentKind: 'condenserSink',
+    reads: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa', 'incoming:flowKgPerS'],
     writes: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa'],
     update: ({ system, component, context }): void => {
       const steamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
@@ -270,7 +296,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
       const targetBackPressure = 7_000 + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
-      context.write(componentVariablePath(component, 'condensateTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, 1.5 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'condensateTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, context.dtSeconds, optionalParameterNumber(component, 'condenserThermalTimeConstantS', 12)))
       context.write(componentVariablePath(component, 'backPressurePa'), approach(context.readNumber(componentVariablePath(component, 'backPressurePa')), targetBackPressure, 500 * context.dtSeconds))
     },
   },

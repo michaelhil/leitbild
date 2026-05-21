@@ -9,7 +9,8 @@ import {
   processPlantSolverPhases,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
-import { initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
+import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
+import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/process-link-behaviors.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
@@ -207,6 +208,7 @@ describe('process plant runtime', () => {
 
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBe(0)
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))).toBe(0)
   })
 
   test('turbine load demand changes steam use and electrical output', () => {
@@ -237,6 +239,16 @@ describe('process plant runtime', () => {
     expect(() => context.write(componentVariablePath(component, 'powerMw'), 10)).toThrow('cannot write undeclared variable')
   })
 
+  test('behavior definitions declare read and write surfaces for auditability', () => {
+    const behaviorIds = new Set<string>()
+    for (const behavior of [...componentBehaviorDefinitions, ...processLinkBehaviorDefinitions]) {
+      expect(behavior.reads.length).toBeGreaterThan(0)
+      expect(behavior.writes.length).toBeGreaterThan(0)
+      expect(behaviorIds.has(behavior.id)).toBe(false)
+      behaviorIds.add(behavior.id)
+    }
+  })
+
   test('behavior contexts reject non-finite numeric writes before they corrupt runtime state', () => {
     const system = compiledSystem()
     const table = createProcessPlantVariableTable(system, initialComponentValueFor)
@@ -251,5 +263,20 @@ describe('process plant runtime', () => {
     })
 
     expect(() => context.write(componentVariablePath(component, 'reactivityPcm'), Number.NaN)).toThrow('non-finite value')
+  })
+
+  test('runtime rejects physically invalid writable process values before they enter the solver', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    expect(() => runtime.writeCommand({
+      type: 'setVariable',
+      path: valueOf('sg-a-steam-to-turbine.valve.positionFraction'),
+      value: 1.2,
+    })).toThrow('fraction value must be between 0 and 1')
+    expect(() => runtime.writeCommand({
+      type: 'setVariable',
+      path: valueOf('feedwaterA.flowKgPerS'),
+      value: -1,
+    })).toThrow('flowRate value must be non-negative')
   })
 })

@@ -154,6 +154,42 @@ const validateInitialValueType = (
   }
 }
 
+const validateInitialValueBounds = (
+  descriptor: { readonly quantity: ProcessQuantity; readonly unit: ProcessUnit; readonly initialValue: ProcessVariableValue },
+  ctx: z.RefinementCtx,
+): void => {
+  if (typeof descriptor.initialValue !== 'number') return
+  if (descriptor.quantity === 'ratio' && descriptor.unit === 'fraction' && (descriptor.initialValue < 0 || descriptor.initialValue > 1)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['initialValue'],
+      message: 'fraction initialValue must be between 0 and 1',
+    })
+  }
+  if (descriptor.quantity === 'ratio' && descriptor.unit === 'percent' && (descriptor.initialValue < 0 || descriptor.initialValue > 100)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['initialValue'],
+      message: 'percent initialValue must be between 0 and 100',
+    })
+  }
+  if (
+    (descriptor.quantity === 'flowRate'
+      || descriptor.quantity === 'head'
+      || descriptor.quantity === 'mass'
+      || descriptor.quantity === 'power'
+      || descriptor.quantity === 'pressure'
+      || descriptor.quantity === 'radiationDoseRate')
+    && descriptor.initialValue < 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['initialValue'],
+      message: `${descriptor.quantity} initialValue must be non-negative`,
+    })
+  }
+}
+
 const variableDescriptorBaseSchema = z.object({
   path: variablePathSchema,
   label: z.string().min(1),
@@ -189,6 +225,7 @@ export const processLinkVariableDescriptorSchema = variableDescriptorBaseSchema.
 }).superRefine((descriptor, ctx) => {
   validateQuantityUnit(descriptor, ctx)
   validateInitialValueType(descriptor, ctx)
+  validateInitialValueBounds(descriptor, ctx)
   if (descriptor.sensorId !== undefined && descriptor.actuatorId !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,

@@ -29,6 +29,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       ratedPowerMw: z.number().finite().positive(),
       initialPowerFraction: normalized,
       initialCoolantInletTemperatureC: z.number().finite().optional(),
+      coolantThermalTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'powerMw', label: 'Core power', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
@@ -56,6 +57,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       initialPrimaryInletTemperatureC: z.number().finite().optional(),
       initialSecondaryTemperatureC: z.number().finite().optional(),
       nominalSecondaryInventoryKg: z.number().finite().positive().optional(),
+      primaryThermalTimeConstantS: z.number().finite().positive().optional(),
+      secondaryThermalTimeConstantS: z.number().finite().positive().optional(),
+      inventoryTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
@@ -116,6 +120,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalElectricMw: z.number().finite().positive(),
       initialLoadFraction: normalized,
       nominalSteamFlowKgPerS: z.number().finite().positive(),
+      electricalTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
@@ -135,6 +140,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       coolingWaterTemperatureC: z.number().finite(),
       nominalSteamFlowKgPerS: z.number().finite().positive(),
       condensateApproachTemperatureK: z.number().finite().nonnegative(),
+      condenserThermalTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'steamFlowKgPerS', label: 'Condenser steam flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),

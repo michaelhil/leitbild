@@ -390,6 +390,35 @@ describe('process plant graph foundation', () => {
     expect(booleanResult.success).toBe(false)
   })
 
+  test('rejects physically invalid link initial values before runtime', () => {
+    const invalidFraction = processLinkVariableDescriptorSchema.safeParse({
+      path: 'valve.positionFraction',
+      label: 'Valve position',
+      kind: 'control',
+      domain: 'control',
+      writable: true,
+      publish: 'telemetry',
+      quantity: 'ratio',
+      unit: 'fraction',
+      initialValue: 1.5,
+      actuatorId: 'MSIV-A',
+    })
+    const invalidFlow = processLinkVariableDescriptorSchema.safeParse({
+      path: 'flowKgPerS',
+      label: 'Main steam flow',
+      kind: 'derived',
+      domain: 'hydraulic',
+      writable: false,
+      publish: 'telemetry',
+      quantity: 'flowRate',
+      unit: 'kg/s',
+      initialValue: -10,
+    })
+
+    expect(invalidFraction.success).toBe(false)
+    expect(invalidFlow.success).toBe(false)
+  })
+
   test('generates Mermaid documentation from compiled topology', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const mermaid = plantGraphToMermaid(compiled)

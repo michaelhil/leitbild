@@ -24,6 +24,7 @@ export interface ComponentBehaviorDefinition {
   readonly id: string
   readonly phase: ProcessPlantSolverPhase
   readonly componentKind: string
+  readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
   readonly update: (input: {
     readonly system: CompiledProcessPlantSystem
@@ -35,6 +36,7 @@ export interface ComponentBehaviorDefinition {
 export interface ProcessLinkBehaviorDefinition {
   readonly id: string
   readonly phase: ProcessPlantSolverPhase
+  readonly reads: ReadonlyArray<string>
   readonly writes: ReadonlyArray<string>
   readonly appliesTo: (link: CompiledProcessLink) => boolean
   readonly update: (input: {
@@ -81,6 +83,24 @@ export const assertProcessPlantRuntimeInvariants = (table: ProcessPlantVariableT
     if (typeof variable.canonicalValue === 'number' && !Number.isFinite(variable.canonicalValue)) {
       throw new Error(`process plant invariant failed: ${variable.path} has non-finite canonical value`)
     }
+    if (typeof variable.value === 'number') {
+      if (variable.quantity === 'ratio' && variable.unit === 'fraction' && (variable.value < 0 || variable.value > 1)) {
+        throw new Error(`process plant invariant failed: ${variable.path} fraction value is outside 0..1`)
+      }
+      if (variable.quantity === 'ratio' && variable.unit === 'percent' && (variable.value < 0 || variable.value > 100)) {
+        throw new Error(`process plant invariant failed: ${variable.path} percent value is outside 0..100`)
+      }
+      if (
+        (variable.quantity === 'flowRate'
+          || variable.quantity === 'head'
+          || variable.quantity === 'mass'
+          || variable.quantity === 'power'
+          || variable.quantity === 'pressure'
+          || variable.quantity === 'radiationDoseRate')
+        && variable.value < 0
+      ) {
+        throw new Error(`process plant invariant failed: ${variable.path} ${variable.quantity} value is negative`)
+      }
+    }
   }
 }
-

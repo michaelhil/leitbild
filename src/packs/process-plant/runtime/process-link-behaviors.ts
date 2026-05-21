@@ -1,6 +1,6 @@
 import type { CompiledProcessLink } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { approach, averageFor, clamp, parameterNumber } from './component-behaviors.ts'
+import { approach, averageFor, clamp, parameterNumber, relaxToward } from './component-behaviors.ts'
 import {
   componentVariablePath,
   createBehaviorContext,
@@ -17,6 +17,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
   {
     id: 'process-link-fluid-flow',
     phase: 'solveFluidFlowLinks',
+    reads: ['valve.positionFraction?', 'leak.areaFraction?', 'source component flow demand'],
     writes: ['flowKgPerS'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
@@ -36,12 +37,15 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       const turbineSteamFlow = averageFor(system.graph.components, component =>
         component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'steamFlowKgPerS')) : null,
       ) ?? 0
+      const sourceSteamFlow = fromComponent.kind === 'steamGenerator'
+        ? context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
+        : null
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const flowSource = link.kind === 'steamFlow'
         ? fromComponent.kind === 'turbineLoadSink'
           ? turbineSteamFlow
-          : turbineSteamDemand ?? 0
+          : Math.min(turbineSteamDemand ?? 0, sourceSteamFlow ?? turbineSteamDemand ?? 0)
         : link.medium === 'feedwater'
           ? feedwaterFlow
           : primaryFlow
@@ -51,6 +55,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
   {
     id: 'process-link-temperature',
     phase: 'updateProcessLinkState',
+    reads: ['temperatureC', 'source component temperature state'],
     writes: ['temperatureC'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'temperatureC'),
     update: ({ system, link, context }): void => {
@@ -75,12 +80,13 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       } else {
         target = context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       }
-      context.write(processLinkVariablePath(link, 'temperatureC'), approach(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, 3 * context.dtSeconds))
+      context.write(processLinkVariablePath(link, 'temperatureC'), relaxToward(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, context.dtSeconds, 10))
     },
   },
   {
     id: 'process-link-steam-pressure',
     phase: 'updateProcessLinkState',
+    reads: ['source steam generator pressureMPa'],
     writes: ['pressureMPa'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'pressureMPa'),
     update: ({ system, link, context }): void => {
@@ -93,6 +99,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
   {
     id: 'process-link-radiation-from-leak',
     phase: 'updateProcessLinkState',
+    reads: ['radiationMSvPerH', 'leak.areaFraction?'],
     writes: ['radiationMSvPerH'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'radiationMSvPerH'),
     update: ({ link, context }): void => {

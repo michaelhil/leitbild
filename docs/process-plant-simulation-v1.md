@@ -359,6 +359,10 @@ This keeps the current implementation small without hiding data ownership. The r
 
 Behavior modules do not receive the raw variable table directly. Each behavior runs through a `ProcessPlantBehaviorContext` for a single phase and component or process link. That context can read declared variables, but it may write only the local output variables declared by that behavior. Wrong-type writes, unknown paths, non-finite numbers, and writes outside the behavior's declared outputs fail loudly. This is intentionally simpler than a full plugin engine, but it gives the runtime a real contract before more plant components are added.
 
+Each behavior also declares a human/audit-facing `reads` list beside its write list. This is intentionally metadata-first in the current pass: it makes dependencies visible in tests and reviews without prematurely building a full dependency scheduler. The next step, if behavior complexity grows, is to normalize all graph reads through medium-aware helpers and then enforce read declarations at runtime.
+
+The variable table rejects physically invalid writable values before they enter the queued command buffer. Generic guardrails currently include finite numbers, ratio bounds (`fraction` in `0..1`, `percent` in `0..100`), and non-negative values for flow, head, mass, power, pressure, and radiation dose rate. The same bounds are checked again as runtime invariants after solver phases. This is not a substitute for detailed physics validation, but it prevents bad commands and behavior errors from quietly corrupting the process state.
+
 The runtime phase order is explicit:
 
 1. `applyCommands`
@@ -378,6 +382,7 @@ Current runtime behavior is deliberately minimal but functional:
 
 - reactor power responds gradually to rod insertion demand,
 - reactor heat is transferred into a primary coolant temperature rise using a lumped `Q = m * cp * dT` approximation,
+- core coolant, steam generator primary/secondary temperatures, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
 - pump flow follows running state and speed demand,
 - process links propagate simple flow and temperature values through primary, feedwater, steam, and turbine-exhaust connections,
 - steam generator heat transfer depends on primary-water flow, primary/secondary temperature difference, and level,

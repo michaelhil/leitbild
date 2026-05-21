@@ -13,7 +13,8 @@
       "parameters": {
         "ratedPowerMw": 3400,
         "initialPowerFraction": 0.85,
-        "initialCoolantInletTemperatureC": 290
+        "initialCoolantInletTemperatureC": 290,
+        "coolantThermalTimeConstantS": 8
       }
     },
     {
@@ -26,7 +27,10 @@
         "heatTransferCoefficientMwPerK": 75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
-        "nominalSecondaryInventoryKg": 56000
+        "nominalSecondaryInventoryKg": 56000,
+        "primaryThermalTimeConstantS": 10,
+        "secondaryThermalTimeConstantS": 25,
+        "inventoryTimeConstantS": 20
       }
     },
     {
@@ -54,7 +58,8 @@
       "parameters": {
         "nominalElectricMw": 1100,
         "initialLoadFraction": 0.85,
-        "nominalSteamFlowKgPerS": 1050
+        "nominalSteamFlowKgPerS": 1050,
+        "electricalTimeConstantS": 5
       }
     },
     {
@@ -64,7 +69,8 @@
       "parameters": {
         "coolingWaterTemperatureC": 18,
         "nominalSteamFlowKgPerS": 1050,
-        "condensateApproachTemperatureK": 12
+        "condensateApproachTemperatureK": 12,
+        "condenserThermalTimeConstantS": 12
       }
     }
   ],

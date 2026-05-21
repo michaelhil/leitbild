@@ -141,7 +141,7 @@ The weather pack's materialized subset of the global H3 spatial field. It stores
 _Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
 **Process Plant Runtime**:
-The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine output, and condenser sink behavior.
+The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, rejects physically invalid writable values before they enter the command queue, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine output, and condenser sink behavior.
 _Avoid_: modeling continuous process physics as object-to-object events, process-specific HTTP endpoint families, or treating process variables as operational objects
 
 **Process Variable Table**:
@@ -165,7 +165,7 @@ One ordered pass in a continuous process simulation tick, such as applying comma
 _Avoid_: hidden update ordering inside component callbacks or continuous physics over the interaction event bus
 
 **Process Plant Behavior Context**:
-The constrained execution surface given to one process-plant component or process-link behavior during one solver phase. It can read declared process variables and write only the behavior's declared output variables.
+The constrained execution surface given to one process-plant component or process-link behavior during one solver phase. Behavior definitions declare audit-facing read dependencies and write outputs. The context can read declared process variables and write only the behavior's declared output variables.
 _Avoid_: giving behavior modules unrestricted variable-table mutation access, hidden shadow state, or arbitrary scenario-authored equations in V1
 
 **Map Context Layer**:

@@ -33,6 +33,32 @@ const assertValueMatchesDeclaredType = (
   if (typeof value !== expectedType) throw new Error(`process plant variable ${variable.path} expects ${expectedType} value`)
 }
 
+const assertValueWithinPhysicalBounds = (
+  variable: CompiledVariable,
+  value: ProcessPlantValue,
+): void => {
+  if (typeof value !== 'number') return
+  const path = String(variable.path)
+  const quantity = variable.descriptor.quantity
+  if (quantity === 'ratio' && variable.descriptor.unit === 'fraction' && (value < 0 || value > 1)) {
+    throw new Error(`process plant variable ${path} fraction value must be between 0 and 1`)
+  }
+  if (quantity === 'ratio' && variable.descriptor.unit === 'percent' && (value < 0 || value > 100)) {
+    throw new Error(`process plant variable ${path} percent value must be between 0 and 100`)
+  }
+  if (
+    (quantity === 'flowRate'
+      || quantity === 'head'
+      || quantity === 'mass'
+      || quantity === 'power'
+      || quantity === 'pressure'
+      || quantity === 'radiationDoseRate')
+    && value < 0
+  ) {
+    throw new Error(`process plant variable ${path} ${quantity} value must be non-negative`)
+  }
+}
+
 const snapshotVariable = (
   values: ReadonlyMap<VariablePath, ProcessPlantValue>,
   variable: CompiledVariable,
@@ -104,8 +130,11 @@ export const createProcessPlantVariableTable = (
   }
 
   const write = (path: VariablePath, value: ProcessPlantValue): void => {
+    const variable = variableByPath.get(path)
+    if (!variable) throw new Error(`unknown process plant variable: ${path}`)
     const current = read(path)
     assertValueMatchesCurrentType(path, current, value)
+    assertValueWithinPhysicalBounds(variable, value)
     values.set(path, value)
   }
 
@@ -114,6 +143,7 @@ export const createProcessPlantVariableTable = (
     if (!variable) throw new Error(`unknown process plant variable: ${command.path}`)
     if (!variable.descriptor.writable) throw new Error(`process plant variable is not writable: ${command.path}`)
     assertValueMatchesCurrentType(command.path, read(command.path), command.value)
+    assertValueWithinPhysicalBounds(variable, command.value)
     commands.push(command)
   }
 
