@@ -3,7 +3,7 @@ import {
   componentVariablePath,
   compileProcessPlantSystem,
   createBehaviorContext,
-  createProcessPlantClusterTestbed,
+  createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
   pressurizedWaterReactorPlantSpec,
@@ -149,8 +149,8 @@ describe('process plant runtime', () => {
     expect(snapshot.variables.length).toBeGreaterThan(0)
   })
 
-  test('cluster testbed runs independent systems with isolated scheduled faults and telemetry', () => {
-    const cluster = createProcessPlantClusterTestbed([
+  test('multi-system testbed runs independent systems with isolated scheduled faults and telemetry', () => {
+    const multiSystem = createProcessPlantMultiSystemTestbed([
       {
         system: compileProcessPlantSystem({
           id: 'unit-1',
@@ -179,23 +179,76 @@ describe('process plant runtime', () => {
           actions: [{
             id: 'unit-2-rcp-a-trip',
             atMs: 2_000,
-            type: 'setVariable',
-            path: valueOf('rcpA.running'),
-            value: false,
+            type: 'tripComponent',
+            componentId: 'rcpA' as never,
           }],
         },
       },
     ])
 
-    const snapshots = cluster.runFor(5_000, 1_000)
+    const snapshots = multiSystem.runFor(5_000, 1_000)
     const bySystem = new Map(snapshots.map(snapshot => [snapshot.systemId, snapshot]))
     const unit1 = bySystem.get('unit-1')
     const unit2 = bySystem.get('unit-2')
     if (!unit1 || !unit2) throw new Error('expected both process plant unit snapshots')
     expect(unit1.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(true)
     expect(unit2.runtime.variables.find(variable => variable.path === valueOf('rcpA.running'))?.value).toBe(false)
+    expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.systemId).toBe('unit-1')
     expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.points.length).toBe(6)
+    expect(unit1.telemetry?.find(series => series.path === valueOf('turbine.electricMw'))?.points.at(-1)).toMatchObject({
+      quantity: 'power',
+      unit: 'MW',
+      source: 'runtime',
+    })
     expect(unit2.telemetry?.find(series => series.path === valueOf('rcpA.running'))?.points.at(-1)?.value).toBe(false)
+  })
+
+  test('per-system initialState is applied without mutating shared graphRef runtime state', () => {
+    const unitA = compileProcessPlantSystem({
+      id: 'unit-a',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: pressurizedWaterReactorPlantSpec,
+      initialState: {
+        'core.rodInsertionFraction': 0.75,
+        'sgA.secondaryInventoryKg': 48_000,
+      },
+    })
+    const unitB = compileProcessPlantSystem({
+      id: 'unit-b',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: pressurizedWaterReactorPlantSpec,
+    })
+    const runtimeA = createProcessPlantRuntime({ system: unitA })
+    const runtimeB = createProcessPlantRuntime({ system: unitB })
+
+    expect(runtimeA.readVariable(valueOf('core.rodInsertionFraction'))).toBe(0.75)
+    expect(runtimeA.readVariable(valueOf('sgA.secondaryInventoryKg'))).toBe(48_000)
+    expect(runtimeB.readVariable(valueOf('core.rodInsertionFraction'))).not.toBe(0.75)
+    expect(runtimeB.readVariable(valueOf('sgA.secondaryInventoryKg'))).not.toBe(48_000)
+  })
+
+  test('per-system restore preserves each unit independently', () => {
+    const unitA = compiledSystem()
+    const unitB = compileProcessPlantSystem({
+      id: 'plant-b',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: pressurizedWaterReactorPlantSpec,
+    })
+    const runtimeA = createProcessPlantRuntime({ system: unitA })
+    const runtimeB = createProcessPlantRuntime({ system: unitB })
+    runtimeA.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
+    runtimeA.tick(1_000)
+    runtimeB.tick(1_000)
+
+    const restoredA = createProcessPlantRuntime({ system: unitA, restoredSnapshot: runtimeA.snapshot() })
+    const restoredB = createProcessPlantRuntime({ system: unitB, restoredSnapshot: runtimeB.snapshot() })
+
+    expect(restoredA.readVariable(valueOf('rcpA.running'))).toBe(false)
+    expect(restoredB.readVariable(valueOf('rcpA.running'))).toBe(true)
+    expect(restoredA.snapshot().elapsedMs).toBe(restoredB.snapshot().elapsedMs)
   })
 
   test('process link variables behave as readable sensors and writable flow modifiers', () => {

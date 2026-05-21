@@ -38,7 +38,16 @@ The full plant run is assembled from a Leitbild Scenario Definition. The scenari
       "id": "plant",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1"
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": {
+          "ratedPowerMw": 2890
+        }
+      },
+      "initialState": {
+        "core.rodInsertionFraction": 0.18,
+        "sgA.secondaryInventoryKg": 60000
+      }
     }
   ]
 }
@@ -46,7 +55,9 @@ The full plant run is assembled from a Leitbild Scenario Definition. The scenari
 
 `graphRef` points to a pack-owned graph catalog entry. Use it when a scenario wants to instantiate an existing validated graph one or many times. A process system may alternatively provide an inline `graph` object for a fully scenario-authored topology. It must define exactly one of `graph` or `graphRef`; unknown refs fail before runtime.
 
-This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can either instantiate a known graph by ref or author a complete plant graph as scenario/config data, then Leitbild validates and compiles it before runtime.
+Per-system `parameters` and `initialState` configure an instance without changing topology. `parameters` overlays component parameter objects before graph compilation. `initialState` sets declared runtime variable values before the first solver tick. `initialState` is initialization, not an operator command, so it can set declared state variables that are read-only during runtime. Runtime commands and scheduled process actions still require writable variables.
+
+This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can either instantiate a known graph by ref or author a complete plant graph as scenario/config data, then Leitbild validates and compiles it before runtime. Do not patch topology through `parameters` or `initialState`; use a different `graphRef` or inline `graph` when topology must change.
 
 The reusable machinery remains code-owned:
 
@@ -553,9 +564,9 @@ The performance strategy is architectural:
 
 V1 acceptance should include a headless performance test for the first reactor graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
 
-The current multi-unit benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per unit. The systems use `graphRef: "process-plant.pressurized-water-reactor.v1"` so the graph is catalog-resolved instead of repeated as six inline JSON objects. The benchmark records three selected variables per unit and compares runtime with a single-unit run on the current local machine.
+The current multi-system benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per system. Six is only a useful measurement fixture, not a design target. The same model should support arbitrary `n` systems and mixed graph refs, such as four systems using one graph ref and eight using another. The systems use `graphRef: "process-plant.pressurized-water-reactor.v1"` so the graph is catalog-resolved instead of repeated as six inline JSON objects. The benchmark records three selected variables per system and compares runtime with a single-system run on the current local machine.
 
-![Six-unit process plant benchmark](./assets/process-plant-six-unit-trace.svg)
+![Multi-system process plant benchmark](./assets/process-plant-six-unit-trace.svg)
 
 Generated artifacts:
 
@@ -563,7 +574,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-The latest benchmark result on the current hardware simulated five minutes of one unit in roughly 0.41 seconds and five minutes of six units in roughly 2.07 seconds, using median wall time over three measured runs after a warm-up run. That is about a 5.0x wall-clock penalty for 6x the plant count. It still runs about 145x faster than real time for the six-unit case, so the penalty does not matter for real-time six-unit operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of units or higher-fidelity components.
+The latest benchmark result on the current hardware simulated five minutes of one system in roughly 0.35 seconds and five minutes of six systems in roughly 2.06 seconds, using median wall time over three measured runs after a warm-up run. That is about a 5.9x wall-clock penalty for 6x the plant count. It still runs about 146x faster than real time for the six-system case, so the penalty does not matter for real-time operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of systems or higher-fidelity components.
 
 ## Implementation Phases
 

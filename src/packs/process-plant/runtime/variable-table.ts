@@ -1,5 +1,5 @@
 import type { CompiledComponent, CompiledVariable, VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { CompiledProcessPlantSystem, ProcessPlantInitialVariableValue } from '../process-systems.ts'
 import type { ProcessPlantCommand, ProcessPlantValue, ProcessPlantVariableSnapshot } from './model.ts'
 import { toCanonicalProcessValue } from './units.ts'
 
@@ -83,6 +83,7 @@ export const createProcessPlantVariableTable = (
   initialComponentValueFor: (component: CompiledComponent, path: VariablePath) => ProcessPlantValue,
   restoredVariables?: ReadonlyArray<ProcessPlantVariableSnapshot>,
   restoredCommands?: ReadonlyArray<ProcessPlantCommand>,
+  initialVariables?: ReadonlyArray<ProcessPlantInitialVariableValue>,
 ): ProcessPlantVariableTable => {
   const variables = system.graph.variables
   const variableByPath = new Map(variables.map(variable => [variable.path, variable]))
@@ -120,6 +121,16 @@ export const createProcessPlantVariableTable = (
     }
     if (variable.initialValue === undefined) throw new Error(`process link variable ${variable.path} has no initial value`)
     values.set(variable.path, variable.initialValue)
+  }
+
+  if (!restoredValues) {
+    for (const initial of initialVariables ?? []) {
+      const variable = variableByPath.get(initial.path)
+      if (!variable) throw new Error(`process plant initialState references unknown variable: ${initial.path}`)
+      assertValueMatchesDeclaredType(variable, initial.value)
+      assertValueWithinPhysicalBounds(variable, initial.value)
+      values.set(initial.path, initial.value)
+    }
   }
 
   const read = (path: VariablePath): ProcessPlantValue => {

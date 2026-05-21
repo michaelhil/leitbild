@@ -2,9 +2,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
-  createProcessPlantClusterTestbed,
+  createProcessPlantMultiSystemTestbed,
   processPlantPressurizedWaterReactorGraphRef,
-  type ProcessPlantClusterSystemConfig,
+  type ProcessPlantMultiSystemConfig,
   type ProcessPlantTelemetrySeries,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
@@ -49,7 +49,7 @@ const telemetryConfig = {
   variables: telemetryVariables.map(variablePath),
 }
 
-const unitConfigs = (): ReadonlyArray<ProcessPlantClusterSystemConfig> => [
+const unitConfigs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> => [
   {
     system: compiledSystem('unit-1'),
     telemetry: telemetryConfig,
@@ -62,9 +62,8 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantClusterSystemConfig> => [
       actions: [{
         id: 'unit-2-rcp-a-trip',
         atMs: 60_000,
-        type: 'setVariable',
-        path: variablePath('rcpA.running'),
-        value: false,
+        type: 'tripComponent',
+        componentId: 'rcpA' as never,
       }],
     },
   },
@@ -75,9 +74,8 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantClusterSystemConfig> => [
       actions: [{
         id: 'unit-3-rcp-b-trip',
         atMs: 120_000,
-        type: 'setVariable',
-        path: variablePath('rcpB.running'),
-        value: false,
+        type: 'tripComponent',
+        componentId: 'rcpB' as never,
       }],
     },
   },
@@ -89,16 +87,14 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantClusterSystemConfig> => [
         {
           id: 'unit-4-feed-pump-a-trip',
           atMs: 180_000,
-          type: 'setVariable',
-          path: variablePath('mainFeedwaterPumpA.running'),
-          value: false,
+          type: 'tripComponent',
+          componentId: 'mainFeedwaterPumpA' as never,
         },
         {
           id: 'unit-4-feed-pump-b-trip',
           atMs: 180_000,
-          type: 'setVariable',
-          path: variablePath('mainFeedwaterPumpB.running'),
-          value: false,
+          type: 'tripComponent',
+          componentId: 'mainFeedwaterPumpB' as never,
         },
       ],
     },
@@ -124,16 +120,14 @@ const unitConfigs = (): ReadonlyArray<ProcessPlantClusterSystemConfig> => [
         {
           id: 'unit-6-rcp-c-trip',
           atMs: 150_000,
-          type: 'setVariable',
-          path: variablePath('rcpC.running'),
-          value: false,
+          type: 'tripComponent',
+          componentId: 'rcpC' as never,
         },
         {
           id: 'unit-6-feed-pump-a-trip',
           atMs: 240_000,
-          type: 'setVariable',
-          path: variablePath('mainFeedwaterPumpA.running'),
-          value: false,
+          type: 'tripComponent',
+          componentId: 'mainFeedwaterPumpA' as never,
         },
       ],
     },
@@ -148,10 +142,10 @@ const median = (values: ReadonlyArray<number>): number => {
 
 const runBenchmarkOnce = (
   label: string,
-  configs: ReadonlyArray<ProcessPlantClusterSystemConfig>,
-): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantClusterTestbed>['runFor']> } => {
+  configs: ReadonlyArray<ProcessPlantMultiSystemConfig>,
+): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']> } => {
   const started = performance.now()
-  const traces = createProcessPlantClusterTestbed(configs).runFor(durationMs, stepMs)
+  const traces = createProcessPlantMultiSystemTestbed(configs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
   const graph = configs[0]?.system.graph
   if (!graph) throw new Error('process plant benchmark requires at least one system')
@@ -173,8 +167,8 @@ const runBenchmarkOnce = (
 
 const runBenchmark = (
   label: string,
-  configFactory: () => ReadonlyArray<ProcessPlantClusterSystemConfig>,
-): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantClusterTestbed>['runFor']> } => {
+  configFactory: () => ReadonlyArray<ProcessPlantMultiSystemConfig>,
+): { readonly result: BenchmarkResult; readonly traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']> } => {
   const repeatCount = 3
   runBenchmarkOnce(label, configFactory())
   const runs = Array.from({ length: repeatCount }, () => runBenchmarkOnce(label, configFactory()))
@@ -230,7 +224,7 @@ const svgEscape = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
 const renderSvg = (
-  traces: ReturnType<ReturnType<typeof createProcessPlantClusterTestbed>['runFor']>,
+  traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']>,
   performance: ReadonlyArray<BenchmarkResult>,
 ): string => {
   const width = 1200
@@ -270,14 +264,14 @@ const renderSvg = (
       </g>`
   }).join('')
   const single = performance.find(result => result.label === 'single-unit')
-  const cluster = performance.find(result => result.label === 'six-unit')
-  if (!single || !cluster) throw new Error('benchmark performance summary is incomplete')
+  const multiSystem = performance.find(result => result.label === 'six-system')
+  if (!single || !multiSystem) throw new Error('benchmark performance summary is incomplete')
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="title desc">
-  <title id="title">Six-unit process plant benchmark trace</title>
+  <title id="title">Multi-system process plant benchmark trace</title>
   <desc id="desc">A two by three grid of process variable traces for six independently scheduled process plant units.</desc>
   <rect width="100%" height="100%" fill="#f8fafc"/>
-  <text x="70" y="38" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#111827">Six-unit process plant benchmark</text>
-  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single unit ${single.wallMs.toFixed(1)} ms; six units ${cluster.wallMs.toFixed(1)} ms; wall-clock ratio ${(cluster.wallMs / single.wallMs).toFixed(2)}x; simulated ${durationMs / 1000}s.</text>
+  <text x="70" y="38" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#111827">Multi-system process plant benchmark</text>
+  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single system ${single.wallMs.toFixed(1)} ms; six systems ${multiSystem.wallMs.toFixed(1)} ms; wall-clock ratio ${(multiSystem.wallMs / single.wallMs).toFixed(2)}x; simulated ${durationMs / 1000}s.</text>
   ${panels}
   <g font-family="Inter, system-ui, sans-serif" font-size="13" fill="#374151">
     <line x1="70" y1="640" x2="100" y2="640" stroke="${coreColor}" stroke-width="3"/><text x="110" y="644">Core power MW, scaled 2500-3200</text>
@@ -289,7 +283,7 @@ const renderSvg = (
 }
 
 const renderCsv = (
-  traces: ReturnType<ReturnType<typeof createProcessPlantClusterTestbed>['runFor']>,
+  traces: ReturnType<ReturnType<typeof createProcessPlantMultiSystemTestbed>['runFor']>,
 ): string => {
   const rows = ['systemId,seconds,corePowerMw,sgALevelPercent,turbineElectricMw']
   for (const trace of traces) {
@@ -312,7 +306,7 @@ const renderCsv = (
 
 const main = async (): Promise<void> => {
   const oneUnit = runBenchmark('single-unit', () => [unitConfigs()[0]!])
-  const sixUnit = runBenchmark('six-unit', unitConfigs)
+  const sixUnit = runBenchmark('six-system', unitConfigs)
   const performance = [oneUnit.result, sixUnit.result]
   await mkdir(dirname(traceSvgPath), { recursive: true })
   await writeFile(traceSvgPath, renderSvg(sixUnit.traces, performance), 'utf8')

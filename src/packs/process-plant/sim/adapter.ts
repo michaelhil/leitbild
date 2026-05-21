@@ -177,6 +177,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const telemetry: ProcessPlantTelemetryRecorder | undefined = telemetryConfig === undefined
           ? undefined
           : createProcessPlantTelemetryRecorder({
+              systemId: system.id,
               telemetry: telemetryConfig,
               ...(restoredTelemetryFor(providerState, system.id) === undefined
                 ? {}
@@ -188,6 +189,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           system,
           runtime,
           schedule: createProcessPlantScheduleRunner({
+            system,
             ...(scheduleConfig === undefined ? {} : { schedule: scheduleConfig }),
             ...(restoredSchedule === undefined ? {} : { restoredSnapshot: restoredSchedule }),
           }),

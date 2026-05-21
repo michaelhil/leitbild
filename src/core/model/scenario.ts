@@ -73,6 +73,8 @@ export interface ScenarioProcessSystemDefinition {
   readonly componentLibrary: string
   readonly graph?: unknown
   readonly graphRef?: string
+  readonly parameters?: Record<string, unknown>
+  readonly initialState?: Record<string, unknown>
 }
 
 export interface ScenarioGuidance {
@@ -245,6 +247,8 @@ export const scenarioProcessSystemDefinitionSchema = z.object({
   componentLibrary: idSchema,
   graph: z.unknown().optional(),
   graphRef: idSchema.optional(),
+  parameters: z.record(z.unknown()).optional(),
+  initialState: z.record(z.unknown()).optional(),
 }).superRefine((definition, ctx) => {
   const hasGraph = definition.graph !== undefined
   const hasGraphRef = definition.graphRef !== undefined

@@ -43,6 +43,7 @@ export const createProcessPlantRuntime = (config: {
     initialComponentValueFor,
     config.restoredSnapshot?.variables,
     config.restoredSnapshot?.queuedCommands,
+    system.initialState,
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const clock: RuntimeClock = {

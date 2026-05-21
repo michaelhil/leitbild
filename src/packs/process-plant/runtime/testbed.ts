@@ -20,34 +20,37 @@ export const createProcessPlantTestbed = (system: CompiledProcessPlantSystem): P
   }
 }
 
-export interface ProcessPlantClusterSystemConfig {
+export interface ProcessPlantMultiSystemConfig {
   readonly system: CompiledProcessPlantSystem
   readonly schedule?: ProcessPlantScheduleConfig
   readonly telemetry?: ProcessPlantTelemetryConfig
 }
 
-export interface ProcessPlantClusterSystemSnapshot {
+export interface ProcessPlantMultiSystemSnapshot {
   readonly systemId: string
   readonly runtime: ProcessPlantRuntimeSnapshot
   readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries>
 }
 
-export interface ProcessPlantClusterTestbed {
-  readonly runFor: (durationMs: number, stepMs: number) => ReadonlyArray<ProcessPlantClusterSystemSnapshot>
+export interface ProcessPlantMultiSystemTestbed {
+  readonly runFor: (durationMs: number, stepMs: number) => ReadonlyArray<ProcessPlantMultiSystemSnapshot>
 }
 
-export const createProcessPlantClusterTestbed = (
-  configs: ReadonlyArray<ProcessPlantClusterSystemConfig>,
-): ProcessPlantClusterTestbed => {
+export const createProcessPlantMultiSystemTestbed = (
+  configs: ReadonlyArray<ProcessPlantMultiSystemConfig>,
+): ProcessPlantMultiSystemTestbed => {
   const systemIds = new Set<string>()
   const systems = configs.map(config => {
-    if (systemIds.has(config.system.id)) throw new Error(`duplicate process plant cluster system id: ${config.system.id}`)
+    if (systemIds.has(config.system.id)) throw new Error(`duplicate process plant multi-system id: ${config.system.id}`)
     systemIds.add(config.system.id)
     const runtime = createProcessPlantRuntime({ system: config.system })
     const telemetry = config.telemetry === undefined
       ? undefined
-      : createProcessPlantTelemetryRecorder({ telemetry: config.telemetry })
-    const schedule = createProcessPlantScheduleRunner(config.schedule === undefined ? {} : { schedule: config.schedule })
+      : createProcessPlantTelemetryRecorder({ systemId: config.system.id, telemetry: config.telemetry })
+    const schedule = createProcessPlantScheduleRunner({
+      system: config.system,
+      ...(config.schedule === undefined ? {} : { schedule: config.schedule }),
+    })
     telemetry?.recordDueSamples(runtime)
     return {
       system: config.system,
@@ -58,9 +61,9 @@ export const createProcessPlantClusterTestbed = (
   })
 
   return {
-    runFor: (durationMs: number, stepMs: number): ReadonlyArray<ProcessPlantClusterSystemSnapshot> => {
-      if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error(`process plant cluster durationMs must be positive, got ${durationMs}`)
-      if (!Number.isFinite(stepMs) || stepMs <= 0) throw new Error(`process plant cluster stepMs must be positive, got ${stepMs}`)
+    runFor: (durationMs: number, stepMs: number): ReadonlyArray<ProcessPlantMultiSystemSnapshot> => {
+      if (!Number.isFinite(durationMs) || durationMs <= 0) throw new Error(`process plant multi-system durationMs must be positive, got ${durationMs}`)
+      if (!Number.isFinite(stepMs) || stepMs <= 0) throw new Error(`process plant multi-system stepMs must be positive, got ${stepMs}`)
       let simulatedMs = 0
       while (simulatedMs < durationMs) {
         const tickMs = Math.min(stepMs, durationMs - simulatedMs)

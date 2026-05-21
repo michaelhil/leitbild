@@ -6,9 +6,13 @@ export interface ProcessPlantTelemetryPoint {
   readonly elapsedMs: number
   readonly value: number | boolean
   readonly canonicalValue: number | boolean
+  readonly quantity: string
+  readonly unit: string
+  readonly source: 'runtime'
 }
 
 export interface ProcessPlantTelemetrySeries {
+  readonly systemId: string
   readonly path: VariablePath
   readonly points: ReadonlyArray<ProcessPlantTelemetryPoint>
 }
@@ -41,9 +45,13 @@ const processPlantTelemetryPointSchema = z.object({
   elapsedMs: z.number().int().nonnegative(),
   value: z.union([z.number().finite(), z.boolean()]),
   canonicalValue: z.union([z.number().finite(), z.boolean()]),
+  quantity: z.string().min(1),
+  unit: z.string().min(1),
+  source: z.literal('runtime'),
 }).strict()
 
 const processPlantTelemetrySeriesSchema = z.object({
+  systemId: z.string().min(1),
   path: variablePathSchema,
   points: z.array(processPlantTelemetryPointSchema),
 }).strict()
@@ -74,10 +82,14 @@ const appendPoint = (
     elapsedMs,
     value: variable.value,
     canonicalValue: variable.canonicalValue,
+    quantity: variable.quantity,
+    unit: variable.unit,
+    source: 'runtime',
   })
 }
 
 export const createProcessPlantTelemetryRecorder = (config: {
+  readonly systemId: string
   readonly telemetry: ProcessPlantTelemetryConfig
   readonly restoredSnapshot?: ProcessPlantTelemetrySnapshot
 }): ProcessPlantTelemetryRecorder => {
@@ -101,6 +113,9 @@ export const createProcessPlantTelemetryRecorder = (config: {
   const series = new Map<VariablePath, ProcessPlantTelemetryPoint[]>(
     telemetry.variables.map(path => {
       const restoredSeries = restored?.series.find(candidate => candidate.path === path)
+      if (restoredSeries && restoredSeries.systemId !== config.systemId) {
+        throw new Error(`restored process plant telemetry series belongs to system ${restoredSeries.systemId}, expected ${config.systemId}`)
+      }
       return [path, [...(restoredSeries?.points ?? [])]]
     }),
   )
@@ -125,14 +140,14 @@ export const createProcessPlantTelemetryRecorder = (config: {
       sampleIntervalMs: telemetry.sampleIntervalMs,
       variables: telemetry.variables,
       nextSampleAtMs,
-      series: [...series.entries()].map(([path, points]) => ({ path, points: [...points] })),
+      series: [...series.entries()].map(([path, points]) => ({ systemId: config.systemId, path, points: [...points] })),
     }),
     series: (paths?: ReadonlyArray<VariablePath>): ReadonlyArray<ProcessPlantTelemetrySeries> => {
       const selectedPaths = paths ?? telemetry.variables
       return selectedPaths.map(path => {
         const points = series.get(path)
         if (!points) throw new Error(`process plant telemetry series not found: ${path}`)
-        return { path, points: [...points] }
+        return { systemId: config.systemId, path, points: [...points] }
       })
     },
   }

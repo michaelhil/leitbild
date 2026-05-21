@@ -127,6 +127,75 @@ describe('process plant graph foundation', () => {
     expect(String(systems[0]?.graph.specId)).toBe(processPlantPressurizedWaterReactorGraphRef)
   })
 
+  test('applies per-system component parameter overlays without changing topology', () => {
+    const system = compileProcessPlantSystem({
+      id: 'unit-parameterized',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graphRef: processPlantPressurizedWaterReactorGraphRef,
+      parameters: {
+        core: {
+          ratedPowerMw: 2_200,
+        },
+      },
+    })
+
+    const core = system.graph.components.find(component => component.id === 'core')
+    expect(core?.parameters).toMatchObject({ ratedPowerMw: 2_200 })
+    expect(system.graph.components.length).toBe(pressurizedWaterReactorPlantSpec.components.length)
+  })
+
+  test('rejects parameter overlays for unknown components', () => {
+    expect(() => compileProcessPlantSystem({
+      id: 'bad-parameter-overlay',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graphRef: processPlantPressurizedWaterReactorGraphRef,
+      parameters: {
+        missingComponent: {},
+      },
+    })).toThrow('process system parameter overlay references unknown component: missingComponent')
+  })
+
+  test('rejects invalid per-system initialState paths and values before runtime starts', () => {
+    expect(() => compileProcessPlantSystem({
+      id: 'bad-initial-state-path',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graphRef: processPlantPressurizedWaterReactorGraphRef,
+      initialState: {
+        'missing.variable': 1,
+      },
+    })).toThrow('process plant initialState references unknown variable: missing.variable')
+
+    expect(() => compileProcessPlantSystem({
+      id: 'bad-initial-state-value',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graphRef: processPlantPressurizedWaterReactorGraphRef,
+      initialState: {
+        'core.rodInsertionFraction': 2,
+      },
+    })).toThrow('process plant initialState for core.rodInsertionFraction fraction value must be between 0 and 1')
+  })
+
+  test('rejects duplicate process plant system ids', () => {
+    expect(() => compileProcessPlantSystems([
+      {
+        id: 'unit',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        graphRef: processPlantPressurizedWaterReactorGraphRef,
+      },
+      {
+        id: 'unit',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        graphRef: processPlantPressurizedWaterReactorGraphRef,
+      },
+    ])).toThrow('duplicate process plant system id: unit')
+  })
+
   test('rejects process systems that mix inline graph and graphRef', () => {
     expect(() => scenarioDefinitionSchema.parse({
       id: 'ambiguous-graph-source',
