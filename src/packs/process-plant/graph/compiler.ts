@@ -8,6 +8,7 @@ import type {
   ComponentDefinition,
   ComponentId,
   ComponentKind,
+  ConnectionId,
   EdgeKind,
   LocalVariablePath,
   PlantGraphSpec,
@@ -101,6 +102,9 @@ const resolveDefinition = (
 const variablePathFor = (componentId: ComponentId, localPath: LocalVariablePath): VariablePath =>
   `${componentId}.${localPath}` as VariablePath
 
+const connectionVariablePathFor = (connectionId: ConnectionId, localPath: LocalVariablePath): VariablePath =>
+  `${connectionId}.${localPath}` as VariablePath
+
 const parseInitialState = (
   definition: ComponentDefinition,
   initialState: unknown,
@@ -175,20 +179,40 @@ export const compilePlantGraph = (
       toComponentIndex,
       toPortIndex: components[toComponentIndex]?.ports[to.portName]?.index ?? -1,
       ...(connection.medium === undefined ? {} : { medium: connection.medium }),
+      ...(connection.physical === undefined ? {} : { physical: connection.physical }),
+      variables: connection.variables.map(variable => ({
+        ...variable,
+        path: connectionVariablePathFor(connection.id, variable.path),
+      })),
     }
     edgesByKind[kind].push(index)
     return compiled
   })
 
   const published = new Set(spec.publishedVariables)
-  const variables: CompiledVariable[] = components.flatMap(component =>
+  const componentVariables: CompiledVariable[] = components.flatMap(component =>
     component.variables.map(descriptor => ({
       path: descriptor.path,
-      componentIndex: component.index,
+      owner: { type: 'component' as const, componentIndex: component.index },
       descriptor,
       published: published.has(descriptor.path),
     })),
   )
+  const connectionVariables: CompiledVariable[] = edges.flatMap(edge =>
+    edge.variables.map(descriptor => {
+      const source = spec.connections[edge.index]?.variables.find(variable => connectionVariablePathFor(edge.id, variable.path) === descriptor.path)
+      if (!source) throw new Error(`connection ${edge.id} failed to resolve variable ${descriptor.path}`)
+      return {
+        path: descriptor.path,
+        owner: { type: 'connection' as const, edgeIndex: edge.index },
+        descriptor,
+        published: published.has(descriptor.path),
+        initialValue: source.initialValue,
+      }
+    }),
+  )
+  const variables = [...componentVariables, ...connectionVariables]
+  assertUnique(variables, variable => variable.path, 'variable path')
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)

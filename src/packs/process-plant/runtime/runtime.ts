@@ -1,5 +1,5 @@
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import type { CompiledComponent, CompiledVariable, VariablePath } from '../graph/index.ts'
+import type { CompiledComponent, CompiledEdge, CompiledVariable, VariablePath } from '../graph/index.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue, type ProcessPlantVariableSnapshot } from './model.ts'
 import { toCanonicalProcessValue } from './units.ts'
 
@@ -29,8 +29,14 @@ const parameterNumber = (component: CompiledComponent, key: string): number => {
 const variablePath = (component: CompiledComponent, localPath: string): VariablePath =>
   `${component.id}.${localPath}` as VariablePath
 
+const edgeVariablePath = (edge: CompiledEdge, localPath: string): VariablePath =>
+  `${edge.id}.${localPath}` as VariablePath
+
 const hasVariable = (component: CompiledComponent, localPath: string): boolean =>
   component.variables.some(variable => variable.path === variablePath(component, localPath))
+
+const hasEdgeVariable = (edge: CompiledEdge, localPath: string): boolean =>
+  edge.variables.some(variable => variable.path === edgeVariablePath(edge, localPath))
 
 const readNumber = (state: RuntimeState, path: VariablePath): number => {
   const value = state.values.get(path)
@@ -47,6 +53,11 @@ const readBoolean = (state: RuntimeState, path: VariablePath): boolean => {
 const writeValue = (state: RuntimeState, path: VariablePath, value: ProcessPlantValue): void => {
   if (!state.variableByPath.has(path)) throw new Error(`unknown process plant variable: ${path}`)
   state.values.set(path, value)
+}
+
+const readOptionalNumber = (state: RuntimeState, path: VariablePath, defaultValue: number): number => {
+  if (!state.variableByPath.has(path)) return defaultValue
+  return readNumber(state, path)
 }
 
 const initialValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
@@ -83,9 +94,14 @@ const createInitialState = (system: CompiledProcessPlantSystem): RuntimeState =>
   const variableByPath = new Map(system.graph.variables.map(variable => [variable.path, variable]))
   const values = new Map<VariablePath, ProcessPlantValue>()
   for (const variable of system.graph.variables) {
-    const component = system.graph.components[variable.componentIndex]
-    if (!component) throw new Error(`variable ${variable.path} references missing component index ${variable.componentIndex}`)
-    values.set(variable.path, initialValueFor(component, variable.path))
+    if (variable.owner.type === 'component') {
+      const component = system.graph.components[variable.owner.componentIndex]
+      if (!component) throw new Error(`variable ${variable.path} references missing component index ${variable.owner.componentIndex}`)
+      values.set(variable.path, initialValueFor(component, variable.path))
+      continue
+    }
+    if (variable.initialValue === undefined) throw new Error(`connection variable ${variable.path} has no initial value`)
+    values.set(variable.path, variable.initialValue)
   }
   return {
     values,
@@ -151,6 +167,26 @@ const solveFluidFlow = (system: CompiledProcessPlantSystem, state: RuntimeState)
     const speed = clamp(readNumber(state, variablePath(component, 'speedFraction')), 0, 1.2)
     writeValue(state, variablePath(component, 'flowKgPerS'), running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0)
   }
+  const primaryFlow = averageFor(system.graph.components, component =>
+    component.kind === 'centrifugalPump' ? readNumber(state, variablePath(component, 'flowKgPerS')) : null,
+  ) ?? 0
+  const feedwaterFlow = averageFor(system.graph.components, component =>
+    component.kind === 'feedwaterSource' ? readNumber(state, variablePath(component, 'flowKgPerS')) : null,
+  ) ?? 0
+  const turbineSteamDemand = averageFor(system.graph.components, component =>
+    component.kind === 'turbineLoadSink' ? readNumber(state, variablePath(component, 'electricMw')) * 0.7 : null,
+  ) ?? 0
+  for (const edge of system.graph.edges) {
+    if (!hasEdgeVariable(edge, 'flowKgPerS')) continue
+    const valveFactor = clamp(readOptionalNumber(state, edgeVariablePath(edge, 'valve.positionFraction'), 1), 0, 1)
+    const leakFraction = clamp(readOptionalNumber(state, edgeVariablePath(edge, 'leak.areaFraction'), 0), 0, 1)
+    const flowSource = edge.kind === 'steamFlow'
+      ? turbineSteamDemand
+      : edge.medium === 'feedwater'
+        ? feedwaterFlow
+        : primaryFlow
+    writeValue(state, edgeVariablePath(edge, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
+  }
 }
 
 const solveThermalTransfer = (system: CompiledProcessPlantSystem, state: RuntimeState): void => {
@@ -198,6 +234,19 @@ const updateComponentState = (system: CompiledProcessPlantSystem, state: Runtime
       const steamDemandFlow = turbineLoadMw * 0.7
       const levelTarget = clamp(currentLevel + (feedwaterFlow - steamDemandFlow) * 0.0008, 0, 100)
       writeValue(state, levelPath, approach(currentLevel, levelTarget, 0.4 * dtSeconds))
+    }
+  }
+  const steamPressure = averageFor(system.graph.components, component =>
+    component.kind === 'steamGenerator' ? readNumber(state, variablePath(component, 'pressureMPa')) : null,
+  )
+  for (const edge of system.graph.edges) {
+    if (steamPressure !== null && hasEdgeVariable(edge, 'pressureMPa')) {
+      writeValue(state, edgeVariablePath(edge, 'pressureMPa'), steamPressure)
+    }
+    if (hasEdgeVariable(edge, 'radiationMSvPerH')) {
+      const leakFraction = clamp(readOptionalNumber(state, edgeVariablePath(edge, 'leak.areaFraction'), 0), 0, 1)
+      const currentRadiation = readNumber(state, edgeVariablePath(edge, 'radiationMSvPerH'))
+      writeValue(state, edgeVariablePath(edge, 'radiationMSvPerH'), approach(currentRadiation, 0.02 + leakFraction * 25, 2 * dtSeconds))
     }
   }
 }

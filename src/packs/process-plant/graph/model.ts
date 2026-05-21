@@ -10,6 +10,7 @@ export type PortName = Brand<string, 'ProcessPlantPortName'>
 export type PortRef = Brand<string, 'ProcessPlantPortRef'>
 export type LocalVariablePath = Brand<string, 'ProcessPlantLocalVariablePath'>
 export type VariablePath = Brand<string, 'ProcessPlantVariablePath'>
+export type ProcessVariableValue = number | boolean
 
 export const plantGraphIdSchema = idSchema.transform(value => value as PlantGraphId)
 export const componentIdSchema = idSchema.transform(value => value as ComponentId)
@@ -61,7 +62,7 @@ export type EdgeKind = z.infer<typeof edgeKindSchema>
 export const variableKindSchema = z.enum(['state', 'derived', 'control', 'parameter', 'alarm', 'discrete'])
 export type VariableKind = z.infer<typeof variableKindSchema>
 
-export const variableDomainSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator'])
+export const variableDomainSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator', 'radiological'])
 export type VariableDomain = z.infer<typeof variableDomainSchema>
 
 export const variablePublishPolicySchema = z.enum(['internal', 'telemetry', 'alarm', 'leitbild'])
@@ -73,6 +74,7 @@ export const processQuantitySchema = z.enum([
   'head',
   'power',
   'pressure',
+  'radiationDoseRate',
   'ratio',
   'reactivity',
   'temperature',
@@ -85,6 +87,7 @@ export const processUnitSchema = z.enum([
   'fraction',
   'kg/s',
   'MPa',
+  'mSv/h',
   'MW',
   'Pa',
   'pcm',
@@ -98,10 +101,13 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   head: new Set(['Pa']),
   power: new Set(['MW']),
   pressure: new Set(['MPa', 'Pa']),
+  radiationDoseRate: new Set(['mSv/h']),
   ratio: new Set(['fraction', 'percent']),
   reactivity: new Set(['pcm']),
   temperature: new Set(['degC']),
 }
+
+export const processVariableValueSchema = z.union([z.number().finite(), z.boolean()])
 
 export const portDefinitionSchema = z.object({
   kind: portKindSchema,
@@ -140,6 +146,39 @@ export const componentVariableDescriptorSchema = variableDescriptorBaseSchema.ex
 }).superRefine(validateQuantityUnit)
 export type ComponentVariableDescriptor = z.infer<typeof componentVariableDescriptorSchema>
 
+export const connectionPhysicalSpecSchema = z.object({
+  lengthM: z.number().finite().positive().optional(),
+  diameterM: z.number().finite().positive().optional(),
+  roughnessM: z.number().finite().nonnegative().optional(),
+  volumeM3: z.number().finite().positive().optional(),
+  nominalResistance: z.number().finite().nonnegative().optional(),
+}).strict()
+export type ConnectionPhysicalSpec = z.infer<typeof connectionPhysicalSpecSchema>
+
+export const connectionVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
+  path: localVariablePathSchema,
+  initialValue: processVariableValueSchema,
+  sensorId: idSchema.optional(),
+  actuatorId: idSchema.optional(),
+}).superRefine((descriptor, ctx) => {
+  validateQuantityUnit(descriptor, ctx)
+  if (descriptor.sensorId !== undefined && descriptor.actuatorId !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actuatorId'],
+      message: 'connection variable cannot declare both sensorId and actuatorId',
+    })
+  }
+  if (!descriptor.writable && descriptor.actuatorId !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['actuatorId'],
+      message: 'actuatorId requires a writable connection variable',
+    })
+  }
+})
+export type ConnectionVariableDescriptor = z.infer<typeof connectionVariableDescriptorSchema>
+
 export const timestepSpecSchema = z.object({
   fixedStepMs: z.number().int().positive().max(10_000),
 })
@@ -160,6 +199,8 @@ export const connectionSpecSchema = z.object({
   to: portRefSchema,
   edgeKind: edgeKindSchema.optional(),
   medium: z.string().min(1).optional(),
+  physical: connectionPhysicalSpecSchema.optional(),
+  variables: z.array(connectionVariableDescriptorSchema).default([]),
 })
 export type ConnectionSpec = z.infer<typeof connectionSpecSchema>
 
@@ -210,13 +251,18 @@ export interface CompiledEdge {
   readonly toComponentIndex: number
   readonly toPortIndex: number
   readonly medium?: string
+  readonly physical?: ConnectionPhysicalSpec
+  readonly variables: ReadonlyArray<VariableDescriptor>
 }
 
 export interface CompiledVariable {
   readonly path: VariablePath
-  readonly componentIndex: number
+  readonly owner:
+    | { readonly type: 'component'; readonly componentIndex: number }
+    | { readonly type: 'connection'; readonly edgeIndex: number }
   readonly descriptor: VariableDescriptor
   readonly published: boolean
+  readonly initialValue?: ProcessVariableValue
 }
 
 export interface CompiledPlantGraph {

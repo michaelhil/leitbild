@@ -83,7 +83,74 @@
       "from": "sgA.steamOutlet",
       "to": "turbine.steamInlet",
       "edgeKind": "steamFlow",
-      "medium": "steam"
+      "medium": "steam",
+      "physical": {
+        "lengthM": 38,
+        "diameterM": 0.72,
+        "volumeM3": 15.5,
+        "nominalResistance": 0.08
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "sensorId": "FT-SG-A-001"
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9,
+          "sensorId": "PT-SG-A-001"
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02,
+          "sensorId": "RT-SG-A-001"
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Main steam isolation valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "MSIV-A"
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "Main steam leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        }
+      ]
     }
   ],
   "publishedVariables": [
@@ -92,6 +159,11 @@
     "sgA.pressureMPa",
     "rcpA.running",
     "feedwaterA.flowKgPerS",
-    "turbine.electricMw"
+    "turbine.electricMw",
+    "sg-a-steam-to-turbine.flowKgPerS",
+    "sg-a-steam-to-turbine.pressureMPa",
+    "sg-a-steam-to-turbine.radiationMSvPerH",
+    "sg-a-steam-to-turbine.valve.positionFraction",
+    "sg-a-steam-to-turbine.leak.areaFraction"
   ]
 }

@@ -51,6 +51,11 @@ describe('process plant runtime', () => {
       'rcpA.running',
       'feedwaterA.flowKgPerS',
       'turbine.electricMw',
+      'sg-a-steam-to-turbine.flowKgPerS',
+      'sg-a-steam-to-turbine.pressureMPa',
+      'sg-a-steam-to-turbine.radiationMSvPerH',
+      'sg-a-steam-to-turbine.valve.positionFraction',
+      'sg-a-steam-to-turbine.leak.areaFraction',
     ])
   })
 
@@ -97,5 +102,33 @@ describe('process plant runtime', () => {
 
     expect(snapshot.elapsedMs).toBe(500)
     expect(snapshot.variables.length).toBeGreaterThan(0)
+  })
+
+  test('connection variables behave as readable sensors and writable flow modifiers', () => {
+    const runtime = createProcessPlantRuntime(compiledSystem())
+
+    runtime.tick(1_000)
+    const openFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))
+    expect(openFlow).toBeGreaterThan(0)
+
+    runtime.writeCommand({
+      type: 'setVariable',
+      path: valueOf('sg-a-steam-to-turbine.valve.positionFraction'),
+      value: 0.5,
+    })
+    runtime.writeCommand({
+      type: 'setVariable',
+      path: valueOf('sg-a-steam-to-turbine.leak.areaFraction'),
+      value: 0.1,
+    })
+    runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))).toBeLessThan(openFlow)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.radiationMSvPerH')))).toBeGreaterThan(0.02)
+    expect(() => runtime.writeCommand({
+      type: 'setVariable',
+      path: valueOf('sg-a-steam-to-turbine.pressureMPa'),
+      value: 1,
+    })).toThrow('not writable')
   })
 })

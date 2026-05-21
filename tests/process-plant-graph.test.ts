@@ -28,7 +28,17 @@ describe('process plant graph foundation', () => {
       'rcpA.running',
       'feedwaterA.flowKgPerS',
       'turbine.electricMw',
+      'sg-a-steam-to-turbine.flowKgPerS',
+      'sg-a-steam-to-turbine.pressureMPa',
+      'sg-a-steam-to-turbine.radiationMSvPerH',
+      'sg-a-steam-to-turbine.valve.positionFraction',
+      'sg-a-steam-to-turbine.leak.areaFraction',
     ])
+    expect(compiled.edges[4]?.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
+    expect(compiled.variables.find(variable => variable.path === 'sg-a-steam-to-turbine.flowKgPerS')?.owner).toEqual({
+      type: 'connection',
+      edgeIndex: 4,
+    })
   })
 
   test('compiles a process plant system from scenario-owned graph data', () => {

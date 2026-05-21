@@ -1,4 +1,4 @@
-import type { ComponentId, ComponentKind, ComponentInstanceSpec, ConnectionId, EdgeKind, PlantGraphId, PlantGraphSpec, PortRef, VariablePath } from './model.ts'
+import type { ComponentId, ComponentKind, ComponentInstanceSpec, ConnectionId, ConnectionPhysicalSpec, ConnectionVariableDescriptor, EdgeKind, PlantGraphId, PlantGraphSpec, PortRef, VariablePath } from './model.ts'
 import { plantGraphSpecSchema } from './model.ts'
 
 export const component = (
@@ -20,6 +20,8 @@ export const connect = (
   options: {
     readonly edgeKind?: EdgeKind
     readonly medium?: string
+    readonly physical?: ConnectionPhysicalSpec
+    readonly variables?: ReadonlyArray<ConnectionVariableDescriptor>
   } = {},
 ) => ({
   id: id as ConnectionId,
@@ -27,6 +29,8 @@ export const connect = (
   to: to as PortRef,
   ...(options.edgeKind === undefined ? {} : { edgeKind: options.edgeKind }),
   ...(options.medium === undefined ? {} : { medium: options.medium }),
+  ...(options.physical === undefined ? {} : { physical: options.physical }),
+  ...(options.variables === undefined ? {} : { variables: options.variables }),
 })
 
 export const plantGraph = (spec: {

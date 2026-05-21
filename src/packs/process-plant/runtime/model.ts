@@ -1,6 +1,6 @@
-import type { ProcessQuantity, ProcessUnit, VariableKind, VariablePath } from '../graph/index.ts'
+import type { ProcessQuantity, ProcessUnit, ProcessVariableValue, VariableKind, VariablePath } from '../graph/index.ts'
 
-export type ProcessPlantValue = number | boolean
+export type ProcessPlantValue = ProcessVariableValue
 
 export const processPlantSolverPhases = [
   'applyCommands',

@@ -148,6 +148,10 @@ _Avoid_: modeling continuous process physics as object-to-object events, HTTP en
 A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, and publish policy.
 _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
 
+**Process Link**:
+A typed connection between process plant components. A process link may be a simple topology edge, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
+_Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection
+
 **Solver Phase**:
 One ordered pass in a continuous process simulation tick, such as applying commands, solving electrical behavior, solving fluid flow, solving heat transfer, or publishing outputs.
 _Avoid_: hidden update ordering inside component callbacks or continuous physics over the interaction event bus
@@ -203,6 +207,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - H3 is a shared indexing vocabulary, not shared domain truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
 - A **Process Plant Runtime** belongs to the `process-plant` pack and consumes a compiled process system from a Scenario Definition.
 - **Process Variables** are not **Operational Objects**; selected variables may be published through future pack queries or surfaces.
+- A **Process Link** can contribute **Process Variables** to the same registry as component variables; sensors and actuators are metadata on variables, not separate node types by default.
 - **Solver Phases** update continuous plant state; **Domain Events** remain for discrete accepted history and operational transitions.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.

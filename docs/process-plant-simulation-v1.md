@@ -21,6 +21,7 @@ Inside the pack:
 - a graph compiler validates raw specs and compiles them into indexed runtime graphs.
 - a fixed-step headless runtime owns continuous process evolution.
 - a variable registry exposes stable paths, units, writability, and publish policy.
+- connections can act as process links with optional physical metadata and link-local variables.
 - discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
 - future pack queries expose read-only process state through Leitbild's generic query surface after provider lifecycle integration exists.
 
@@ -105,10 +106,80 @@ interface ConnectionSpec {
   readonly to: PortRef
   readonly edgeKind?: EdgeKind
   readonly medium?: string
+  readonly physical?: ConnectionPhysicalSpec
+  readonly variables?: ReadonlyArray<ConnectionVariableDescriptor>
 }
 ```
 
 Raw port refs use a compact authoring form such as `sgA.primaryOutlet`. Runtime code must not repeatedly parse these refs during every tick. They are parsed and resolved once by the compiler.
+
+## Process Links
+
+A connection is also the place to model simple conduit-local behavior. In a process plant this often corresponds to piping, a duct, a cable, a bus, a shaft, or a signal wire. V1 calls this a **Process Link**.
+
+The important design choice is that a link can stay visually and conceptually simple while still exposing useful process variables. For example, the main steam line can remain one graph connection from `sgA.steamOutlet` to `turbine.steamInlet`, while the same link owns:
+
+- flow sensor value,
+- pressure sensor value,
+- radiation monitor value,
+- isolation valve position,
+- leak area.
+
+That avoids graph explosion. A simple valve or sensor does not need to become a node sandwiched between two pipe segments unless it has enough internal behavior to deserve first-class component status.
+
+Example:
+
+```json
+{
+  "id": "sg-a-steam-to-turbine",
+  "from": "sgA.steamOutlet",
+  "to": "turbine.steamInlet",
+  "edgeKind": "steamFlow",
+  "medium": "steam",
+  "physical": {
+    "lengthM": 38,
+    "diameterM": 0.72,
+    "volumeM3": 15.5,
+    "nominalResistance": 0.08
+  },
+  "variables": [
+    {
+      "path": "flowKgPerS",
+      "label": "Main steam flow",
+      "kind": "derived",
+      "domain": "hydraulic",
+      "writable": false,
+      "publish": "telemetry",
+      "quantity": "flowRate",
+      "unit": "kg/s",
+      "initialValue": 0,
+      "sensorId": "FT-SG-A-001"
+    },
+    {
+      "path": "valve.positionFraction",
+      "label": "Main steam isolation valve position",
+      "kind": "control",
+      "domain": "control",
+      "writable": true,
+      "publish": "telemetry",
+      "quantity": "ratio",
+      "unit": "fraction",
+      "initialValue": 1,
+      "actuatorId": "MSIV-A"
+    }
+  ]
+}
+```
+
+Compiled link variables use stable paths just like component variables:
+
+- `sg-a-steam-to-turbine.flowKgPerS`
+- `sg-a-steam-to-turbine.pressureMPa`
+- `sg-a-steam-to-turbine.radiationMSvPerH`
+- `sg-a-steam-to-turbine.valve.positionFraction`
+- `sg-a-steam-to-turbine.leak.areaFraction`
+
+Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
 
 ## Typed Ports And Edges
 
@@ -218,6 +289,7 @@ Units are structured metadata, not free text. Current quantities and units are i
 - `temperature`: `degC`
 - `head`: `Pa`
 - `boolean`: `boolean`
+- `radiationDoseRate`: `mSv/h`
 
 The runtime snapshots include both the display value and a canonical value for ratios. For example, `sgA.levelPercent` may publish `55` with unit `percent`, while its canonical value is `0.55`.
 
@@ -265,7 +337,7 @@ V1 should use a deterministic fixed-step solver. A 100 ms internal timestep is a
 
 ## Runtime And Solver Phases
 
-The current runtime is intentionally headless. It is created from a `CompiledProcessPlantSystem`, owns one variable table, accepts typed variable-write commands for writable variables, and advances only through fixed internal timesteps.
+The current runtime is intentionally headless. It is created from a `CompiledProcessPlantSystem`, owns one variable table for component and link variables, accepts typed variable-write commands for writable variables, and advances only through fixed internal timesteps.
 
 The runtime phase order is explicit:
 
@@ -286,6 +358,8 @@ Current runtime behavior is deliberately minimal but functional:
 - steam generator heat transfer depends on core power, primary flow, and level,
 - steam generator level and pressure trend in response to feedwater and turbine load,
 - turbine electrical output follows load and available steam pressure.
+- link flow variables can be modified by link-local valve position and leak area,
+- link radiation variables can respond to leak state.
 
 The runtime is not yet connected to a Control Instance provider. That is deliberate: the pack now has a real executable kernel and headless tests, so the next integration step can expose actual process state instead of a placeholder API.
 
