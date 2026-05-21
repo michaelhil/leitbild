@@ -48,7 +48,7 @@ export type PortKind = z.infer<typeof portKindSchema>
 export const portDirectionSchema = z.enum(['in', 'out', 'bidirectional'])
 export type PortDirection = z.infer<typeof portDirectionSchema>
 
-export const edgeKindSchema = z.enum([
+export const processLinkKindSchema = z.enum([
   'hydraulicFlow',
   'thermalContact',
   'steamFlow',
@@ -57,7 +57,7 @@ export const edgeKindSchema = z.enum([
   'controlSignal',
   'logicSignal',
 ])
-export type EdgeKind = z.infer<typeof edgeKindSchema>
+export type ProcessLinkKind = z.infer<typeof processLinkKindSchema>
 
 export const variableKindSchema = z.enum(['state', 'derived', 'control', 'parameter', 'alarm', 'discrete'])
 export type VariableKind = z.infer<typeof variableKindSchema>
@@ -128,6 +128,29 @@ const validateQuantityUnit = (
   }
 }
 
+const validateInitialValueType = (
+  descriptor: { readonly quantity: ProcessQuantity; readonly initialValue: ProcessVariableValue },
+  ctx: z.RefinementCtx,
+): void => {
+  if (descriptor.quantity === 'boolean') {
+    if (typeof descriptor.initialValue !== 'boolean') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initialValue'],
+        message: 'boolean quantity requires a boolean initialValue',
+      })
+    }
+    return
+  }
+  if (typeof descriptor.initialValue !== 'number') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['initialValue'],
+      message: `${descriptor.quantity} quantity requires a numeric initialValue`,
+    })
+  }
+}
+
 const variableDescriptorBaseSchema = z.object({
   path: variablePathSchema,
   label: z.string().min(1),
@@ -155,29 +178,30 @@ export const connectionPhysicalSpecSchema = z.object({
 }).strict()
 export type ConnectionPhysicalSpec = z.infer<typeof connectionPhysicalSpecSchema>
 
-export const connectionVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
+export const processLinkVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
   path: localVariablePathSchema,
   initialValue: processVariableValueSchema,
   sensorId: idSchema.optional(),
   actuatorId: idSchema.optional(),
 }).superRefine((descriptor, ctx) => {
   validateQuantityUnit(descriptor, ctx)
+  validateInitialValueType(descriptor, ctx)
   if (descriptor.sensorId !== undefined && descriptor.actuatorId !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['actuatorId'],
-      message: 'connection variable cannot declare both sensorId and actuatorId',
+      message: 'process link variable cannot declare both sensorId and actuatorId',
     })
   }
   if (!descriptor.writable && descriptor.actuatorId !== undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['actuatorId'],
-      message: 'actuatorId requires a writable connection variable',
+      message: 'actuatorId requires a writable process link variable',
     })
   }
 })
-export type ConnectionVariableDescriptor = z.infer<typeof connectionVariableDescriptorSchema>
+export type ProcessLinkVariableDescriptor = z.infer<typeof processLinkVariableDescriptorSchema>
 
 export const timestepSpecSchema = z.object({
   fixedStepMs: z.number().int().positive().max(10_000),
@@ -197,10 +221,10 @@ export const connectionSpecSchema = z.object({
   id: connectionIdSchema,
   from: portRefSchema,
   to: portRefSchema,
-  edgeKind: edgeKindSchema.optional(),
+  linkKind: processLinkKindSchema.optional(),
   medium: z.string().min(1).optional(),
   physical: connectionPhysicalSpecSchema.optional(),
-  variables: z.array(connectionVariableDescriptorSchema).default([]),
+  variables: z.array(processLinkVariableDescriptorSchema).default([]),
 })
 export type ConnectionSpec = z.infer<typeof connectionSpecSchema>
 
@@ -242,10 +266,10 @@ export interface CompiledComponent {
   readonly variables: ReadonlyArray<VariableDescriptor>
 }
 
-export interface CompiledEdge {
+export interface CompiledProcessLink {
   readonly index: number
   readonly id: ConnectionId
-  readonly kind: EdgeKind
+  readonly kind: ProcessLinkKind
   readonly fromComponentIndex: number
   readonly fromPortIndex: number
   readonly toComponentIndex: number
@@ -259,7 +283,7 @@ export interface CompiledVariable {
   readonly path: VariablePath
   readonly owner:
     | { readonly type: 'component'; readonly componentIndex: number }
-    | { readonly type: 'connection'; readonly edgeIndex: number }
+    | { readonly type: 'link'; readonly linkIndex: number }
   readonly descriptor: VariableDescriptor
   readonly published: boolean
   readonly initialValue?: ProcessVariableValue
@@ -271,7 +295,7 @@ export interface CompiledPlantGraph {
   readonly timestep: TimestepSpec
   readonly components: ReadonlyArray<CompiledComponent>
   readonly componentIndexById: ReadonlyMap<ComponentId, number>
-  readonly edges: ReadonlyArray<CompiledEdge>
-  readonly edgesByKind: Readonly<Record<EdgeKind, ReadonlyArray<number>>>
+  readonly links: ReadonlyArray<CompiledProcessLink>
+  readonly linksByKind: Readonly<Record<ProcessLinkKind, ReadonlyArray<number>>>
   readonly variables: ReadonlyArray<CompiledVariable>
 }

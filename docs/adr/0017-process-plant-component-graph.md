@@ -18,13 +18,15 @@ The canonical plant topology is validated JSON-compatible `PlantGraphSpec` data 
 
 Mermaid diagrams are generated from this graph for review and documentation; Mermaid is not the source of truth.
 
-The graph uses typed component ports and typed edges. Raw component/port references are parsed once by a graph compiler, which validates topology, parameters, port compatibility, variable publication, and connection direction before runtime. The compiler produces indexed component and edge tables for the future solver.
+The graph uses typed component ports and typed links. Raw component/port references are parsed once by a graph compiler, which validates topology, parameters, port compatibility, variable publication, and connection direction before runtime. The compiler produces indexed component and link tables for the future solver.
 
 Connections are also process links. They may remain pure topology, or they may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area. Link variables join the same process variable registry as component variables and can be published, read, or controlled using stable variable paths.
 
 Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries will expose selected read-only process state through the generic pack query surface after the runtime lifecycle is integrated with a Control Instance provider.
 
 Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests and future provider integration.
+
+The runtime code is factored into an orchestrator, a variable table, component behaviors, and process-link behaviors. The variable table is the single authoritative in-memory state for compiled component and link variables; behavior modules do not maintain shadow copies.
 
 ## Consequences
 
@@ -33,6 +35,7 @@ Process variables use structured quantity/unit metadata instead of free-text uni
 - AI agents and humans can author whole plant topologies as scenario/config data, while component physics remains code-backed and tested.
 - Invalid plant graphs fail before simulation starts.
 - Control-room surfaces and AI agents can use stable variable paths rather than ad hoc object fields.
+- Process-link terminology is used in compiled/runtime code. Scenario authors still define `connections`, and may add an optional `linkKind` plus physical/link-variable metadata.
 - Simple conduit-local sensors, valves, and leaks can be modeled without exploding the graph into many tiny components.
 - Complex valves, instruments, or fittings can still become components later when they need multiple ports or rich internal behavior.
 - Internal high-frequency plant state does not become durable journal noise.

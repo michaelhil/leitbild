@@ -1,4 +1,4 @@
-import type { ComponentId, ComponentKind, ComponentInstanceSpec, ConnectionId, ConnectionPhysicalSpec, ConnectionVariableDescriptor, EdgeKind, PlantGraphId, PlantGraphSpec, PortRef, VariablePath } from './model.ts'
+import type { ComponentId, ComponentKind, ComponentInstanceSpec, ConnectionId, ConnectionPhysicalSpec, ProcessLinkVariableDescriptor, ProcessLinkKind, PlantGraphId, PlantGraphSpec, PortRef, VariablePath } from './model.ts'
 import { plantGraphSpecSchema } from './model.ts'
 
 export const component = (
@@ -18,16 +18,16 @@ export const connect = (
   from: string,
   to: string,
   options: {
-    readonly edgeKind?: EdgeKind
+    readonly linkKind?: ProcessLinkKind
     readonly medium?: string
     readonly physical?: ConnectionPhysicalSpec
-    readonly variables?: ReadonlyArray<ConnectionVariableDescriptor>
+    readonly variables?: ReadonlyArray<ProcessLinkVariableDescriptor>
   } = {},
 ) => ({
   id: id as ConnectionId,
   from: from as PortRef,
   to: to as PortRef,
-  ...(options.edgeKind === undefined ? {} : { edgeKind: options.edgeKind }),
+  ...(options.linkKind === undefined ? {} : { linkKind: options.linkKind }),
   ...(options.medium === undefined ? {} : { medium: options.medium }),
   ...(options.physical === undefined ? {} : { physical: options.physical }),
   ...(options.variables === undefined ? {} : { variables: options.variables }),

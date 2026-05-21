@@ -82,7 +82,7 @@
       "id": "sg-a-steam-to-turbine",
       "from": "sgA.steamOutlet",
       "to": "turbine.steamInlet",
-      "edgeKind": "steamFlow",
+      "linkKind": "steamFlow",
       "medium": "steam",
       "physical": {
         "lengthM": 38,

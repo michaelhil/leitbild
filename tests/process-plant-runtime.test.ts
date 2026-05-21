@@ -104,7 +104,7 @@ describe('process plant runtime', () => {
     expect(snapshot.variables.length).toBeGreaterThan(0)
   })
 
-  test('connection variables behave as readable sensors and writable flow modifiers', () => {
+  test('process link variables behave as readable sensors and writable flow modifiers', () => {
     const runtime = createProcessPlantRuntime(compiledSystem())
 
     runtime.tick(1_000)

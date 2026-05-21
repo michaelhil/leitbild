@@ -144,12 +144,16 @@ _Avoid_: computing weather truth only for the viewport, making weather cells can
 The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and future provider integration.
 _Avoid_: modeling continuous process physics as object-to-object events, HTTP endpoint behavior before a real runtime lifecycle exists, or treating process variables as operational objects
 
+**Process Variable Table**:
+The single authoritative in-memory store for compiled process variables inside one process plant runtime. Component and process-link behavior modules read and write through this table; they do not maintain duplicate state maps.
+_Avoid_: shadow variable stores in solver behavior, command handling outside writability/type validation, or copying plant state into operational objects
+
 **Process Variable**:
 A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, and publish policy.
 _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
 
 **Process Link**:
-A typed connection between process plant components. A process link may be a simple topology edge, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
+A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
 _Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection
 
 **Solver Phase**:
@@ -206,6 +210,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features through `weather.mapFeatures`, not the field store itself.
 - H3 is a shared indexing vocabulary, not shared domain truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
 - A **Process Plant Runtime** belongs to the `process-plant` pack and consumes a compiled process system from a Scenario Definition.
+- A **Process Variable Table** is the authoritative runtime store for one compiled process system.
 - **Process Variables** are not **Operational Objects**; selected variables may be published through future pack queries or surfaces.
 - A **Process Link** can contribute **Process Variables** to the same registry as component variables; sensors and actuators are metadata on variables, not separate node types by default.
 - **Solver Phases** update continuous plant state; **Domain Events** remain for discrete accepted history and operational transitions.

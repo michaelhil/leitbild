@@ -6,7 +6,7 @@ Leitbild should be able to host process-control simulations that interact with t
 
 V1 is not a licensing-grade thermal-hydraulic analysis code. It is a medium-fidelity process-control simulator intended to test whether Leitbild can run, inspect, control, and coordinate coupled plant models credibly enough for control-room workflow research, AI-agent studies, and cross-domain scenario interaction.
 
-The key feasibility question is whether a scenario-owned component graph, typed ports/edges, a compiled runtime graph, and a fixed-step solver can make plant evolution understandable, efficient, replayable, and extensible.
+The key feasibility question is whether a scenario-owned component graph, typed ports/links, a compiled runtime graph, and a fixed-step solver can make plant evolution understandable, efficient, replayable, and extensible.
 
 ## Core Decision
 
@@ -104,10 +104,10 @@ interface ConnectionSpec {
   readonly id: ConnectionId
   readonly from: PortRef
   readonly to: PortRef
-  readonly edgeKind?: EdgeKind
+  readonly linkKind?: ProcessLinkKind
   readonly medium?: string
   readonly physical?: ConnectionPhysicalSpec
-  readonly variables?: ReadonlyArray<ConnectionVariableDescriptor>
+  readonly variables?: ReadonlyArray<ProcessLinkVariableDescriptor>
 }
 ```
 
@@ -134,7 +134,7 @@ Example:
   "id": "sg-a-steam-to-turbine",
   "from": "sgA.steamOutlet",
   "to": "turbine.steamInlet",
-  "edgeKind": "steamFlow",
+  "linkKind": "steamFlow",
   "medium": "steam",
   "physical": {
     "lengthM": 38,
@@ -181,7 +181,7 @@ Compiled link variables use stable paths just like component variables:
 
 Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
 
-## Typed Ports And Edges
+## Typed Ports And Process Links
 
 Component definitions declare named ports with a kind and direction.
 
@@ -202,7 +202,7 @@ Port directions:
 - `out`
 - `bidirectional`
 
-Edge kinds:
+Link kinds:
 
 - `hydraulicFlow`
 - `thermalContact`
@@ -239,10 +239,10 @@ Compilation steps:
 5. Parse port refs.
 6. Validate referenced components and ports.
 7. Validate port compatibility and direction.
-8. Infer or validate edge kind.
-9. Validate published variables against component variable definitions.
-10. Build indexed component and edge tables.
-11. Group edges by edge kind.
+8. Infer or validate link kind.
+9. Validate published variables against compiled component and process-link variables.
+10. Build indexed component and link tables.
+11. Group links by link kind.
 12. Produce a compiled variable registry.
 
 Invalid topology fails before simulation starts with explicit diagnostics. There should be no silent fallbacks.
@@ -256,8 +256,8 @@ interface CompiledPlantGraph {
   readonly specId: PlantGraphId
   readonly components: ReadonlyArray<CompiledComponent>
   readonly componentIndexById: ReadonlyMap<ComponentId, number>
-  readonly edges: ReadonlyArray<CompiledEdge>
-  readonly edgesByKind: Readonly<Record<EdgeKind, ReadonlyArray<number>>>
+  readonly links: ReadonlyArray<CompiledProcessLink>
+  readonly linksByKind: Readonly<Record<ProcessLinkKind, ReadonlyArray<number>>>
   readonly variables: ReadonlyArray<CompiledVariable>
 }
 ```
@@ -307,6 +307,8 @@ Example paths:
 - `sgA.levelPercent`
 - `feedwaterA.flowKgPerS`
 - `turbine.electricMw`
+- `sg-a-steam-to-turbine.flowKgPerS`
+- `sg-a-steam-to-turbine.valve.positionFraction`
 
 The registry is the shared language for process surfaces, AI agents, tests, trends, scenario scripts, and pack queries.
 
@@ -319,7 +321,7 @@ Do not model continuous plant physics through component-to-component event messa
 Instead:
 
 - components expose ports and variables,
-- the compiled graph owns connections,
+- the compiled graph owns process links,
 - solver passes compute flows, transfers, inventories, and state changes,
 - events are emitted only for discrete transitions.
 
@@ -338,6 +340,15 @@ V1 should use a deterministic fixed-step solver. A 100 ms internal timestep is a
 ## Runtime And Solver Phases
 
 The current runtime is intentionally headless. It is created from a `CompiledProcessPlantSystem`, owns one variable table for component and link variables, accepts typed variable-write commands for writable variables, and advances only through fixed internal timesteps.
+
+Runtime code is split by responsibility:
+
+- `runtime.ts` is the fixed-step orchestrator and clock.
+- `variable-table.ts` owns the process variable map, queued variable-write commands, type/writability checks, and snapshots.
+- `component-behaviors.ts` owns current component initialization and component solver behavior.
+- `process-link-behaviors.ts` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, and radiation updates.
+
+This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state.
 
 The runtime phase order is explicit:
 
@@ -445,7 +456,7 @@ The performance strategy is architectural:
 
 - compile graph once,
 - use numeric component and port indices,
-- group edges by physical domain,
+- group links by physical domain,
 - use a fixed timestep,
 - publish selected variables only,
 - avoid parsing raw graph strings in the solver loop,

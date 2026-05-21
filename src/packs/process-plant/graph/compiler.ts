@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import type {
   CompiledComponent,
-  CompiledEdge,
+  CompiledProcessLink,
   CompiledPlantGraph,
   CompiledPort,
   CompiledVariable,
@@ -9,7 +9,7 @@ import type {
   ComponentId,
   ComponentKind,
   ConnectionId,
-  EdgeKind,
+  ProcessLinkKind,
   LocalVariablePath,
   PlantGraphSpec,
   PortDefinition,
@@ -17,18 +17,18 @@ import type {
   PortRef,
   VariablePath,
 } from './model.ts'
-import { edgeKindSchema, plantGraphSpecSchema } from './model.ts'
+import { plantGraphSpecSchema, processLinkKindSchema } from './model.ts'
 
 interface ResolvedPortRef {
   readonly componentId: ComponentId
   readonly portName: string
 }
 
-const edgeKinds: ReadonlyArray<EdgeKind> = edgeKindSchema.options
+const linkKinds: ReadonlyArray<ProcessLinkKind> = processLinkKindSchema.options
 
-const emptyEdgesByKind = (): Record<EdgeKind, number[]> => {
-  const entries = edgeKinds.map((kind): readonly [EdgeKind, number[]] => [kind, []])
-  return Object.fromEntries(entries) as Record<EdgeKind, number[]>
+const emptyLinksByKind = (): Record<ProcessLinkKind, number[]> => {
+  const entries = linkKinds.map((kind): readonly [ProcessLinkKind, number[]] => [kind, []])
+  return Object.fromEntries(entries) as Record<ProcessLinkKind, number[]>
 }
 
 const parsePortRef = (ref: PortRef): ResolvedPortRef => {
@@ -79,8 +79,8 @@ const directionAllowsConnection = (from: PortDefinition, to: PortDefinition): bo
   return fromCanSend && toCanReceive
 }
 
-const inferEdgeKind = (from: PortDefinition, to: PortDefinition): EdgeKind => {
-  if (!compatiblePortKinds(from, to)) throw new Error(`cannot infer edge kind for incompatible port kinds ${from.kind} -> ${to.kind}`)
+const inferProcessLinkKind = (from: PortDefinition, to: PortDefinition): ProcessLinkKind => {
+  if (!compatiblePortKinds(from, to)) throw new Error(`cannot infer link kind for incompatible port kinds ${from.kind} -> ${to.kind}`)
   if (from.kind === 'steam' && to.kind === 'steam') return 'steamFlow'
   if (from.kind === 'electricalAc' && to.kind === 'electricalAc') return 'electricalPower'
   if (from.kind === 'mechanicalShaft' && to.kind === 'mechanicalShaft') return 'mechanicalTorque'
@@ -102,7 +102,7 @@ const resolveDefinition = (
 const variablePathFor = (componentId: ComponentId, localPath: LocalVariablePath): VariablePath =>
   `${componentId}.${localPath}` as VariablePath
 
-const connectionVariablePathFor = (connectionId: ConnectionId, localPath: LocalVariablePath): VariablePath =>
+const processLinkVariablePathFor = (connectionId: ConnectionId, localPath: LocalVariablePath): VariablePath =>
   `${connectionId}.${localPath}` as VariablePath
 
 const parseInitialState = (
@@ -148,8 +148,8 @@ export const compilePlantGraph = (
     return compiled
   })
 
-  const edgesByKind = emptyEdgesByKind()
-  const edges: CompiledEdge[] = spec.connections.map((connection, index) => {
+  const linksByKind = emptyLinksByKind()
+  const links: CompiledProcessLink[] = spec.connections.map((connection, index) => {
     const from = parsePortRef(connection.from)
     const to = parsePortRef(connection.to)
     const fromComponentIndex = componentIndexById.get(from.componentId)
@@ -165,12 +165,12 @@ export const compilePlantGraph = (
     if (!toPort) throw new Error(`connection ${connection.id} references unknown port: ${to.componentId}.${to.portName}`)
     if (!compatiblePortKinds(fromPort, toPort)) throw new Error(`connection ${connection.id} has incompatible port kinds: ${fromPort.kind} -> ${toPort.kind}`)
     if (!directionAllowsConnection(fromPort, toPort)) throw new Error(`connection ${connection.id} has invalid port directions: ${fromPort.direction} -> ${toPort.direction}`)
-    const inferredKind = inferEdgeKind(fromPort, toPort)
-    const kind = connection.edgeKind ?? inferredKind
-    if (connection.edgeKind !== undefined && connection.edgeKind !== inferredKind) {
-      throw new Error(`connection ${connection.id} declares edge kind ${connection.edgeKind} but port kinds require ${inferredKind}`)
+    const inferredKind = inferProcessLinkKind(fromPort, toPort)
+    const kind = connection.linkKind ?? inferredKind
+    if (connection.linkKind !== undefined && connection.linkKind !== inferredKind) {
+      throw new Error(`connection ${connection.id} declares link kind ${connection.linkKind} but port kinds require ${inferredKind}`)
     }
-    const compiled: CompiledEdge = {
+    const compiled: CompiledProcessLink = {
       index,
       id: connection.id,
       kind,
@@ -182,10 +182,10 @@ export const compilePlantGraph = (
       ...(connection.physical === undefined ? {} : { physical: connection.physical }),
       variables: connection.variables.map(variable => ({
         ...variable,
-        path: connectionVariablePathFor(connection.id, variable.path),
+        path: processLinkVariablePathFor(connection.id, variable.path),
       })),
     }
-    edgesByKind[kind].push(index)
+    linksByKind[kind].push(index)
     return compiled
   })
 
@@ -198,20 +198,20 @@ export const compilePlantGraph = (
       published: published.has(descriptor.path),
     })),
   )
-  const connectionVariables: CompiledVariable[] = edges.flatMap(edge =>
-    edge.variables.map(descriptor => {
-      const source = spec.connections[edge.index]?.variables.find(variable => connectionVariablePathFor(edge.id, variable.path) === descriptor.path)
-      if (!source) throw new Error(`connection ${edge.id} failed to resolve variable ${descriptor.path}`)
+  const linkVariables: CompiledVariable[] = links.flatMap(link =>
+    link.variables.map(descriptor => {
+      const source = spec.connections[link.index]?.variables.find(variable => processLinkVariablePathFor(link.id, variable.path) === descriptor.path)
+      if (!source) throw new Error(`connection ${link.id} failed to resolve variable ${descriptor.path}`)
       return {
         path: descriptor.path,
-        owner: { type: 'connection' as const, edgeIndex: edge.index },
+        owner: { type: 'link' as const, linkIndex: link.index },
         descriptor,
         published: published.has(descriptor.path),
         initialValue: source.initialValue,
       }
     }),
   )
-  const variables = [...componentVariables, ...connectionVariables]
+  const variables = [...componentVariables, ...linkVariables]
   assertUnique(variables, variable => variable.path, 'variable path')
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
   for (const path of published) {
@@ -224,8 +224,8 @@ export const compilePlantGraph = (
     timestep: spec.timestep,
     components,
     componentIndexById,
-    edges,
-    edgesByKind,
+    links,
+    linksByKind,
     variables,
   }
 }

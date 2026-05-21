@@ -10,17 +10,18 @@ import {
   plantGraphToMermaid,
   pressurizedWaterReactorPlantSpec,
   processPlantComponentRegistry,
+  processLinkVariableDescriptorSchema,
   variableDescriptorSchema,
 } from '../src/packs/process-plant/index.ts'
 
 describe('process plant graph foundation', () => {
-  test('compiles the pressurized water reactor graph into indexed components, edges, and variables', () => {
+  test('compiles the pressurized water reactor graph into indexed components, links, and variables', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
 
     expect(String(compiled.specId)).toBe('process-plant.pressurized-water-reactor.v1')
     expect(compiled.components.map(component => String(component.id))).toEqual(['core', 'sgA', 'rcpA', 'feedwaterA', 'turbine'])
-    expect(compiled.edgesByKind.hydraulicFlow).toEqual([0, 1, 2, 3])
-    expect(compiled.edgesByKind.steamFlow).toEqual([4])
+    expect(compiled.linksByKind.hydraulicFlow).toEqual([0, 1, 2, 3])
+    expect(compiled.linksByKind.steamFlow).toEqual([4])
     expect(compiled.variables.filter(variable => variable.published).map(variable => String(variable.path))).toEqual([
       'core.powerMw',
       'sgA.levelPercent',
@@ -34,10 +35,10 @@ describe('process plant graph foundation', () => {
       'sg-a-steam-to-turbine.valve.positionFraction',
       'sg-a-steam-to-turbine.leak.areaFraction',
     ])
-    expect(compiled.edges[4]?.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
+    expect(compiled.links[4]?.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
     expect(compiled.variables.find(variable => variable.path === 'sg-a-steam-to-turbine.flowKgPerS')?.owner).toEqual({
-      type: 'connection',
-      edgeIndex: 4,
+      type: 'link',
+      linkIndex: 4,
     })
   })
 
@@ -145,10 +146,10 @@ describe('process plant graph foundation', () => {
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate component id')
   })
 
-  test('rejects explicit edge kinds that conflict with typed ports', () => {
+  test('rejects explicit link kinds that conflict with typed ports', () => {
     const invalid = plantGraph({
-      id: 'process-plant.invalid-edge-kind.v1',
-      title: 'Invalid Edge Kind Graph',
+      id: 'process-plant.invalid-link-kind.v1',
+      title: 'Invalid Link Kind Graph',
       fixedStepMs: 100,
       components: [
         component('feedwaterA', 'feedwaterSource', 'Feedwater Train A', {
@@ -162,26 +163,26 @@ describe('process plant graph foundation', () => {
         }),
       ],
       connections: [
-        connect('bad-steam-edge', 'feedwaterA.outlet', 'sgA.feedwaterInlet', { edgeKind: 'steamFlow' }),
+        connect('bad-steam-link', 'feedwaterA.outlet', 'sgA.feedwaterInlet', { linkKind: 'steamFlow' }),
       ],
     })
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('port kinds require hydraulicFlow')
   })
 
-  test('keeps string port refs out of compiled edges', () => {
+  test('keeps string port refs out of compiled links', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
-    const firstEdge = compiled.edges[0]
-    if (!firstEdge) throw new Error('expected compiled graph to contain at least one edge')
+    const firstLink = compiled.links[0]
+    if (!firstLink) throw new Error('expected compiled graph to contain at least one link')
 
-    expect(firstEdge).toMatchObject({
+    expect(firstLink).toMatchObject({
       fromComponentIndex: 0,
       fromPortIndex: 0,
       toComponentIndex: 1,
       toPortIndex: 0,
     })
-    expect('from' in firstEdge).toBe(false)
-    expect('to' in firstEdge).toBe(false)
+    expect('from' in firstLink).toBe(false)
+    expect('to' in firstLink).toBe(false)
   })
 
   test('rejects published variables that are not declared by component definitions', () => {
@@ -237,6 +238,124 @@ describe('process plant graph foundation', () => {
     })
 
     expect(result.success).toBe(false)
+  })
+
+  test('rejects duplicate link-local variable paths', () => {
+    const duplicateLinkVariable = processLinkVariableDescriptorSchema.parse({
+      path: 'flowKgPerS',
+      label: 'Main steam flow',
+      kind: 'derived',
+      domain: 'hydraulic',
+      writable: false,
+      publish: 'telemetry',
+      quantity: 'flowRate',
+      unit: 'kg/s',
+      initialValue: 0,
+    })
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-turbine'
+        ? {
+            ...connection,
+            variables: [duplicateLinkVariable, { ...duplicateLinkVariable, label: 'Duplicate main steam flow' }],
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate variable path: sg-a-steam-to-turbine.flowKgPerS')
+  })
+
+  test('rejects duplicate final variable paths across components and links', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: [
+        ...pressurizedWaterReactorPlantSpec.connections,
+        {
+          id: 'core',
+          from: 'sgA.steamOutlet',
+          to: 'turbine.steamInlet',
+          linkKind: 'steamFlow',
+          variables: [
+            {
+              path: 'powerMw',
+              label: 'Duplicate core power',
+              kind: 'derived',
+              domain: 'thermal',
+              writable: false,
+              publish: 'telemetry',
+              quantity: 'power',
+              unit: 'MW',
+              initialValue: 0,
+            },
+          ],
+        },
+      ],
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate variable path: core.powerMw')
+  })
+
+  test('rejects link actuators on non-writable variables', () => {
+    const result = processLinkVariableDescriptorSchema.safeParse({
+      path: 'valve.positionFraction',
+      label: 'Valve position',
+      kind: 'control',
+      domain: 'control',
+      writable: false,
+      publish: 'telemetry',
+      quantity: 'ratio',
+      unit: 'fraction',
+      initialValue: 1,
+      actuatorId: 'MSIV-A',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  test('rejects link variables that declare both sensor and actuator ids', () => {
+    const result = processLinkVariableDescriptorSchema.safeParse({
+      path: 'pressureMPa',
+      label: 'Main steam pressure',
+      kind: 'control',
+      domain: 'control',
+      writable: true,
+      publish: 'telemetry',
+      quantity: 'pressure',
+      unit: 'MPa',
+      initialValue: 6.9,
+      sensorId: 'PT-SG-A-001',
+      actuatorId: 'PT-SG-A-SETPOINT',
+    })
+
+    expect(result.success).toBe(false)
+  })
+
+  test('rejects link initial values that do not match quantity type', () => {
+    const numericResult = processLinkVariableDescriptorSchema.safeParse({
+      path: 'flowKgPerS',
+      label: 'Main steam flow',
+      kind: 'derived',
+      domain: 'hydraulic',
+      writable: false,
+      publish: 'telemetry',
+      quantity: 'flowRate',
+      unit: 'kg/s',
+      initialValue: true,
+    })
+    const booleanResult = processLinkVariableDescriptorSchema.safeParse({
+      path: 'open',
+      label: 'Valve open',
+      kind: 'discrete',
+      domain: 'control',
+      writable: true,
+      publish: 'telemetry',
+      quantity: 'boolean',
+      unit: 'boolean',
+      initialValue: 1,
+    })
+
+    expect(numericResult.success).toBe(false)
+    expect(booleanResult.success).toBe(false)
   })
 
   test('generates Mermaid documentation from compiled topology', () => {
