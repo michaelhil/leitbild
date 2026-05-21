@@ -3,7 +3,7 @@ import type { CompiledPlantGraph } from './model.ts'
 const nodeId = (index: number): string => `c${index}`
 
 export const plantGraphToMermaid = (graph: CompiledPlantGraph): string => {
-  const lines = ['flowchart LR']
+  const lines = ['flowchart TB']
   for (const component of graph.components) {
     lines.push(`  ${nodeId(component.index)}["${component.label}"]`)
   }
@@ -11,7 +11,8 @@ export const plantGraphToMermaid = (graph: CompiledPlantGraph): string => {
     const from = graph.components[link.fromComponentIndex]
     const to = graph.components[link.toComponentIndex]
     if (!from || !to) throw new Error(`compiled link ${link.id} references missing component index`)
-    lines.push(`  ${nodeId(from.index)} -- "${link.kind}" --> ${nodeId(to.index)}`)
+    const service = link.service === undefined ? 'no-service' : String(link.service)
+    lines.push(`  ${nodeId(from.index)} -- "${service}<br/>${link.kind}<br/>${link.id}" --> ${nodeId(to.index)}`)
   }
   return `${lines.join('\n')}\n`
 }

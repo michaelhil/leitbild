@@ -10,6 +10,7 @@ export type PortName = Brand<string, 'ProcessPlantPortName'>
 export type PortRef = Brand<string, 'ProcessPlantPortRef'>
 export type LocalVariablePath = Brand<string, 'ProcessPlantLocalVariablePath'>
 export type VariablePath = Brand<string, 'ProcessPlantVariablePath'>
+export type ConnectionService = Brand<string, 'ProcessPlantConnectionService'>
 export type ProcessVariableValue = number | boolean
 
 export const plantGraphIdSchema = idSchema.transform(value => value as PlantGraphId)
@@ -48,16 +49,30 @@ export type PortKind = z.infer<typeof portKindSchema>
 export const portDirectionSchema = z.enum(['in', 'out', 'bidirectional'])
 export type PortDirection = z.infer<typeof portDirectionSchema>
 
-export const processLinkKindSchema = z.enum([
-  'hydraulicFlow',
+export const connectionKindSchema = z.enum([
+  'fluidFlow',
   'thermalContact',
-  'steamFlow',
   'electricalPower',
   'mechanicalTorque',
   'controlSignal',
   'logicSignal',
 ])
-export type ProcessLinkKind = z.infer<typeof processLinkKindSchema>
+export type ConnectionKind = z.infer<typeof connectionKindSchema>
+
+export const fluidKindSchema = z.enum(['water', 'steam', 'air', 'oil', 'generic'])
+export type FluidKind = z.infer<typeof fluidKindSchema>
+
+export const designPhaseSchema = z.enum(['liquid', 'steam', 'gas', 'twoPhase'])
+export type DesignPhase = z.infer<typeof designPhaseSchema>
+
+export const fluidSolverModelSchema = z.enum(['incompressibleLiquid', 'compressibleSteam', 'twoPhaseApprox', 'sourceSink'])
+export type FluidSolverModel = z.infer<typeof fluidSolverModelSchema>
+
+export const connectionServiceSchema = z.string()
+  .min(1)
+  .max(128)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/)
+  .transform(value => value as ConnectionService)
 
 export const variableKindSchema = z.enum(['state', 'derived', 'control', 'parameter', 'alarm', 'discrete'])
 export type VariableKind = z.infer<typeof variableKindSchema>
@@ -70,6 +85,7 @@ export type VariablePublishPolicy = z.infer<typeof variablePublishPolicySchema>
 
 export const processQuantitySchema = z.enum([
   'boolean',
+  'energyPerMass',
   'flowRate',
   'head',
   'mass',
@@ -87,6 +103,7 @@ export const processUnitSchema = z.enum([
   'degC',
   'fraction',
   'kg',
+  'kJ/kg',
   'kg/s',
   'MPa',
   'mSv/h',
@@ -99,6 +116,7 @@ export type ProcessUnit = z.infer<typeof processUnitSchema>
 
 const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<ProcessUnit>>> = {
   boolean: new Set(['boolean']),
+  energyPerMass: new Set(['kJ/kg']),
   flowRate: new Set(['kg/s']),
   head: new Set(['Pa']),
   mass: new Set(['kg']),
@@ -261,10 +279,32 @@ export const connectionSpecSchema = z.object({
   id: connectionIdSchema,
   from: portRefSchema,
   to: portRefSchema,
-  linkKind: processLinkKindSchema.optional(),
-  medium: z.string().min(1).optional(),
+  connectionKind: connectionKindSchema,
+  service: connectionServiceSchema.optional(),
+  nominalFluid: fluidKindSchema.optional(),
+  designPhase: designPhaseSchema.optional(),
+  solverModel: fluidSolverModelSchema.optional(),
   physical: connectionPhysicalSpecSchema.optional(),
   variables: z.array(processLinkVariableDescriptorSchema).default([]),
+}).strict().superRefine((connection, ctx) => {
+  const fluidMetadata = connection.service !== undefined
+    || connection.nominalFluid !== undefined
+    || connection.designPhase !== undefined
+    || connection.solverModel !== undefined
+  if (connection.connectionKind !== 'fluidFlow' && fluidMetadata) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['connectionKind'],
+      message: 'fluid metadata requires connectionKind fluidFlow',
+    })
+  }
+  if (connection.connectionKind === 'fluidFlow' && connection.service === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['service'],
+      message: 'fluidFlow connections require service',
+    })
+  }
 })
 export type ConnectionSpec = z.infer<typeof connectionSpecSchema>
 
@@ -276,7 +316,7 @@ export const plantGraphSpecSchema = z.object({
   components: z.array(componentInstanceSpecSchema).min(1),
   connections: z.array(connectionSpecSchema),
   publishedVariables: z.array(variablePathSchema).default([]),
-})
+}).strict()
 export type PlantGraphSpec = z.infer<typeof plantGraphSpecSchema>
 
 export interface ComponentDefinition {
@@ -309,12 +349,17 @@ export interface CompiledComponent {
 export interface CompiledProcessLink {
   readonly index: number
   readonly id: ConnectionId
-  readonly kind: ProcessLinkKind
+  readonly kind: ConnectionKind
   readonly fromComponentIndex: number
   readonly fromPortIndex: number
+  readonly fromPortName: PortName
   readonly toComponentIndex: number
   readonly toPortIndex: number
-  readonly medium?: string
+  readonly toPortName: PortName
+  readonly service?: ConnectionService
+  readonly nominalFluid?: FluidKind
+  readonly designPhase?: DesignPhase
+  readonly solverModel?: FluidSolverModel
   readonly physical?: ConnectionPhysicalSpec
   readonly variables: ReadonlyArray<VariableDescriptor>
 }
@@ -336,6 +381,9 @@ export interface CompiledPlantGraph {
   readonly components: ReadonlyArray<CompiledComponent>
   readonly componentIndexById: ReadonlyMap<ComponentId, number>
   readonly links: ReadonlyArray<CompiledProcessLink>
-  readonly linksByKind: Readonly<Record<ProcessLinkKind, ReadonlyArray<number>>>
+  readonly linksByKind: Readonly<Record<ConnectionKind, ReadonlyArray<number>>>
+  readonly incomingLinksByComponent: ReadonlyArray<ReadonlyArray<number>>
+  readonly outgoingLinksByComponent: ReadonlyArray<ReadonlyArray<number>>
+  readonly linksByService: ReadonlyMap<ConnectionService, ReadonlyArray<number>>
   readonly variables: ReadonlyArray<CompiledVariable>
 }

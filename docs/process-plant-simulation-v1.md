@@ -104,8 +104,11 @@ interface ConnectionSpec {
   readonly id: ConnectionId
   readonly from: PortRef
   readonly to: PortRef
-  readonly linkKind?: ProcessLinkKind
-  readonly medium?: string
+  readonly connectionKind: ConnectionKind
+  readonly service?: ConnectionService
+  readonly nominalFluid?: FluidKind
+  readonly designPhase?: DesignPhase
+  readonly solverModel?: FluidSolverModel
   readonly physical?: ConnectionPhysicalSpec
   readonly variables?: ReadonlyArray<ProcessLinkVariableDescriptor>
 }
@@ -117,7 +120,9 @@ Raw port refs use a compact authoring form such as `sgA.primaryOutlet`. Runtime 
 
 A connection is also the place to model simple conduit-local behavior. In a process plant this often corresponds to piping, a duct, a cable, a bus, a shaft, or a signal wire. V1 calls this a **Process Link**.
 
-The important design choice is that a link can stay visually and conceptually simple while still exposing useful process variables. For example, the main steam line can remain one graph connection from `sgA.steamOutlet` to `turbine.steamInlet`, while the same link owns:
+The important design choice is that a link can stay visually and conceptually simple while still exposing useful process variables. A connection has a structural `connectionKind`, and fluid connections add a `service` such as `primaryCoolant`, `mainSteam`, `feedwater`, `auxFeedwater`, `condensate`, `charging`, or `letdown`. The service is the stable operational grouping; `nominalFluid`, `designPhase`, and `solverModel` describe the expected design condition without pretending that the fluid can never change phase.
+
+For example, a main steam line can remain one graph connection from a steam generator to its isolation valve while the same link owns:
 
 - flow sensor value,
 - pressure sensor value,
@@ -131,11 +136,14 @@ Example:
 
 ```json
 {
-  "id": "sg-a-steam-to-turbine",
+  "id": "sg-a-steam-to-msiv-a",
   "from": "sgA.steamOutlet",
-  "to": "turbine.steamInlet",
-  "linkKind": "steamFlow",
-  "medium": "steam",
+  "to": "mainSteamIsolationValveA.inlet",
+  "connectionKind": "fluidFlow",
+  "service": "mainSteam",
+  "nominalFluid": "steam",
+  "designPhase": "steam",
+  "solverModel": "compressibleSteam",
   "physical": {
     "lengthM": 38,
     "diameterM": 0.72,
@@ -173,11 +181,11 @@ Example:
 
 Compiled link variables use stable paths just like component variables:
 
-- `sg-a-steam-to-turbine.flowKgPerS`
-- `sg-a-steam-to-turbine.pressureMPa`
-- `sg-a-steam-to-turbine.radiationMSvPerH`
-- `sg-a-steam-to-turbine.valve.positionFraction`
-- `sg-a-steam-to-turbine.leak.areaFraction`
+- `sg-a-steam-to-msiv-a.flowKgPerS`
+- `sg-a-steam-to-msiv-a.pressureMPa`
+- `sg-a-steam-to-msiv-a.radiationMSvPerH`
+- `sg-a-steam-to-msiv-a.valve.positionFraction`
+- `sg-a-steam-to-msiv-a.leak.areaFraction`
 
 Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
 
@@ -204,28 +212,35 @@ Port directions:
 
 Link kinds:
 
-- `hydraulicFlow`
+- `fluidFlow`
 - `thermalContact`
-- `steamFlow`
 - `electricalPower`
 - `mechanicalTorque`
 - `controlSignal`
 - `logicSignal`
 
-Typed ports are part of the graph. They prevent impossible topology and determine which solver pass owns a connection. For example, a hydraulic pump outlet can connect to a pipe inlet, but an electrical breaker output cannot connect directly to a hydraulic pump inlet.
+Typed ports are part of the graph. They prevent impossible topology and determine which solver pass owns a connection. For example, a hydraulic pump outlet can connect to a pipe inlet, but an electrical breaker output cannot connect directly to a hydraulic pump inlet. Connection services are not inferred from free-text labels; they are explicit authoring metadata validated by the graph schema.
 
 ## Current Component Library
 
-The current component library is intentionally small. It defines graph interfaces, variables, parameter schemas, and the first runtime behavior slice.
+The current component library defines graph interfaces, variables, parameter schemas, topology-only components, and the first runtime behavior slice.
 
 - `reactorCore`
+- `reactorVessel`
 - `steamGenerator`
 - `centrifugalPump`
-- `feedwaterSource`
+- `processHeader`
+- `steamHeader`
+- `processTank`
+- `processValve`
+- `steamValve`
+- `pressurizer`
+- `pressurizerHeaters`
+- `generatorSink`
 - `turbineLoadSink`
 - `condenserSink`
 
-These names avoid temporary fidelity labels. The current implementation is still an early model, but the public component kind names should remain stable unless a deliberate breaking change is made.
+These names avoid temporary fidelity labels. Some components are topology components today: they provide typed ports and audited graph structure without claiming internal dynamics. Solver behavior is only added when it is real and tested.
 
 ## Graph Compiler
 
@@ -240,10 +255,10 @@ Compilation steps:
 5. Parse port refs.
 6. Validate referenced components and ports.
 7. Validate port compatibility and direction.
-8. Infer or validate link kind.
+8. Validate the declared connection kind against typed ports.
 9. Validate published variables against compiled component and process-link variables.
 10. Build indexed component and link tables.
-11. Group links by link kind.
+11. Group links by connection kind, component adjacency, and fluid service.
 12. Produce a compiled variable registry.
 
 Invalid topology fails before simulation starts with explicit diagnostics. There should be no silent fallbacks.
@@ -258,12 +273,21 @@ interface CompiledPlantGraph {
   readonly components: ReadonlyArray<CompiledComponent>
   readonly componentIndexById: ReadonlyMap<ComponentId, number>
   readonly links: ReadonlyArray<CompiledProcessLink>
-  readonly linksByKind: Readonly<Record<ProcessLinkKind, ReadonlyArray<number>>>
+  readonly linksByKind: Readonly<Record<ConnectionKind, ReadonlyArray<number>>>
+  readonly incomingLinksByComponent: ReadonlyArray<ReadonlyArray<number>>
+  readonly outgoingLinksByComponent: ReadonlyArray<ReadonlyArray<number>>
+  readonly linksByService: ReadonlyMap<ConnectionService, ReadonlyArray<number>>
   readonly variables: ReadonlyArray<CompiledVariable>
 }
 ```
 
-This keeps the future solver deterministic and efficient. If profiling later shows the need, the indexed graph can move hot numeric state into typed arrays without redesigning the spec.
+This keeps the future solver deterministic and efficient. The runtime does not reparse string port refs in hot loops. If profiling later shows the need, the indexed graph can move hot numeric state into typed arrays without redesigning the spec.
+
+## Current Expanded Plant Model
+
+The built-in graph now models a four-loop plant skeleton rather than a single-loop toy graph. It includes a core, vessel/pressurizer topology, four steam generators, four reactor coolant pumps, main feedwater pumps/header/control valves, auxiliary feedwater tank/pumps/header/valves, main steam isolation valves/header/turbine stop valve, turbine, generator, condenser, condensate pumps, charging, letdown, and volume-control tank.
+
+The graph artifact [process-plant-expanded-graph.mmd](./assets/process-plant-expanded-graph.mmd) is generated from the compiled graph. The trend artifact [process-plant-expanded-trace.svg](./assets/process-plant-expanded-trace.svg) comes from a headless runtime run with an RCP A trip at T+120s and loss of both main feedwater pumps at T+240s.
 
 ## Variable Registry
 
@@ -309,12 +333,13 @@ Example paths:
 - `sgA.levelPercent`
 - `sgA.heatTransferMw`
 - `sgA.steamFlowKgPerS`
-- `feedwaterA.flowKgPerS`
+- `mainFeedwaterPumpA.flowKgPerS`
+- `feedwater-control-valve-a-to-sg-a.flowKgPerS`
 - `turbine.electricMw`
 - `condenser.condensateTemperatureC`
 - `rcs-hot-leg-a.temperatureC`
-- `sg-a-steam-to-turbine.flowKgPerS`
-- `sg-a-steam-to-turbine.valve.positionFraction`
+- `sg-a-steam-to-msiv-a.flowKgPerS`
+- `sg-a-steam-to-msiv-a.valve.positionFraction`
 
 The registry is the shared language for process surfaces, AI agents, tests, trends, scenario scripts, and pack queries.
 
@@ -359,7 +384,7 @@ This keeps the current implementation small without hiding data ownership. The r
 
 Behavior modules do not receive the raw variable table directly. Each behavior runs through a `ProcessPlantBehaviorContext` for a single phase and component or process link. That context can read declared variables, but it may write only the local output variables declared by that behavior. Wrong-type writes, unknown paths, non-finite numbers, and writes outside the behavior's declared outputs fail loudly. This is intentionally simpler than a full plugin engine, but it gives the runtime a real contract before more plant components are added.
 
-Each behavior also declares a human/audit-facing `reads` list beside its write list. This is intentionally metadata-first in the current pass: it makes dependencies visible in tests and reviews without prematurely building a full dependency scheduler. The next step, if behavior complexity grows, is to normalize all graph reads through medium-aware helpers and then enforce read declarations at runtime.
+Each behavior also declares a human/audit-facing `reads` list beside its write list. This is intentionally metadata-first in the current pass: it makes dependencies visible in tests and reviews without prematurely building a full dependency scheduler. Reads should refer to connection services such as `primaryCoolant`, `feedwater`, or `mainSteam`, not old free-text medium labels.
 
 The variable table rejects physically invalid writable values before they enter the queued command buffer. Generic guardrails currently include finite numbers, ratio bounds (`fraction` in `0..1`, `percent` in `0..100`), and non-negative values for flow, head, mass, power, pressure, and radiation dose rate. The same bounds are checked again as runtime invariants after solver phases. This is not a substitute for detailed physics validation, but it prevents bad commands and behavior errors from quietly corrupting the process state.
 
@@ -384,8 +409,8 @@ Current runtime behavior is deliberately minimal but functional:
 - reactor heat is transferred into a primary coolant temperature rise using a lumped `Q = m * cp * dT` approximation,
 - core coolant, steam generator primary/secondary temperatures, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
 - pump flow follows running state and speed demand,
-- process links propagate simple flow and temperature values through primary, feedwater, steam, and turbine-exhaust connections,
-- steam generator heat transfer depends on primary-water flow, primary/secondary temperature difference, and level,
+- process links propagate simple flow and temperature values through primary coolant, feedwater, auxiliary feedwater, main steam, condensate, charging, letdown, and turbine-exhaust services,
+- steam generator heat transfer depends on `primaryCoolant` flow, primary/secondary temperature difference, and level,
 - steam generator steam production is derived from heat transfer using a simple latent-heat approximation,
 - steam generator inventory, level, pressure, primary outlet temperature, and secondary temperature trend in response to feedwater, generated steam, and turbine steam use,
 - turbine electrical output follows load, inlet steam flow, and available steam pressure,

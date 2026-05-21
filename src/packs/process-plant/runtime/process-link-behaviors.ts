@@ -13,23 +13,111 @@ import type { ProcessPlantVariableTable } from './variable-table.ts'
 const hasProcessLinkVariable = (link: CompiledProcessLink, localPath: string): boolean =>
   link.variables.some(variable => variable.path === processLinkVariablePath(link, localPath))
 
+const serviceMatches = (link: CompiledProcessLink, service: CompiledProcessLink['service']): boolean =>
+  service !== undefined && link.service === service
+
+const sumIncomingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  localPath: string,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+  linkMatches: (link: CompiledProcessLink) => boolean,
+): number => {
+  let total = 0
+  for (const linkIndex of system.graph.incomingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || !linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+  }
+  return total
+}
+
+const averageIncomingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  localPath: string,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+  linkMatches: (link: CompiledProcessLink) => boolean,
+): number | null => {
+  let total = 0
+  let count = 0
+  for (const linkIndex of system.graph.incomingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || !linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+    count += 1
+  }
+  return count === 0 ? null : total / count
+}
+
+const outgoingLinkCount = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  linkMatches: (link: CompiledProcessLink) => boolean,
+): number => {
+  let count = 0
+  for (const linkIndex of system.graph.outgoingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (link && linkMatches(link)) count += 1
+  }
+  return count
+}
+
+const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
+  let count = 0
+  for (const link of system.graph.links) {
+    const fromComponent = system.graph.components[link.fromComponentIndex]
+    if (fromComponent?.kind === 'steamGenerator' && link.kind === 'fluidFlow' && link.service === 'mainSteam') count += 1
+  }
+  return Math.max(1, count)
+}
+
+const primaryCoolantFlowForCoreOutlet = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+): number | null => {
+  const fromPortName = String(link.fromPortName)
+  if (!fromPortName.startsWith('hotLeg')) return null
+  const loopName = fromPortName.slice('hotLeg'.length)
+  if (loopName.length === 0) return null
+  const matchingColdLeg = `coldLeg${loopName}`
+  return sumIncomingLinkValue(
+    system,
+    link.fromComponentIndex,
+    'flowKgPerS',
+    context,
+    candidate => candidate.kind === 'fluidFlow' && candidate.service === 'primaryCoolant' && String(candidate.toPortName) === matchingColdLeg,
+  )
+}
+
+const passiveFlowFromIncomingService = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+): number => {
+  const service = link.service
+  const matchingService = (candidate: CompiledProcessLink): boolean => candidate.kind === 'fluidFlow' && serviceMatches(candidate, service)
+  const incomingFlow = sumIncomingLinkValue(system, link.fromComponentIndex, 'flowKgPerS', context, matchingService)
+  const outgoingCount = Math.max(1, outgoingLinkCount(system, link.fromComponentIndex, matchingService))
+  return incomingFlow / outgoingCount
+}
+
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
     id: 'process-link-fluid-flow',
     phase: 'solveFluidFlowLinks',
     reads: ['valve.positionFraction?', 'leak.areaFraction?', 'source component flow demand'],
     writes: ['flowKgPerS'],
-    appliesTo: (link): boolean => hasProcessLinkVariable(link, 'flowKgPerS'),
+    appliesTo: (link): boolean => link.kind === 'fluidFlow' && hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
       const fromComponent = system.graph.components[link.fromComponentIndex]
       const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
-      const primaryFlow = averageFor(system.graph.components, component =>
-        component.kind === 'centrifugalPump' ? context.readNumber(componentVariablePath(component, 'flowKgPerS')) : null,
-      ) ?? 0
-      const feedwaterFlow = averageFor(system.graph.components, component =>
-        component.kind === 'feedwaterSource' ? context.readNumber(componentVariablePath(component, 'flowKgPerS')) : null,
-      ) ?? 0
       const turbineSteamDemand = averageFor(system.graph.components, component => {
         if (component.kind !== 'turbineLoadSink') return null
         return context.readNumber(componentVariablePath(component, 'loadFraction')) * parameterNumber(component, 'nominalSteamFlowKgPerS')
@@ -42,13 +130,18 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         : null
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
-      const flowSource = link.kind === 'steamFlow'
-        ? fromComponent.kind === 'turbineLoadSink'
-          ? turbineSteamFlow
-          : Math.min(turbineSteamDemand ?? 0, sourceSteamFlow ?? turbineSteamDemand ?? 0)
-        : link.medium === 'feedwater'
-          ? feedwaterFlow
-          : primaryFlow
+      let flowSource: number
+      if (fromComponent.kind === 'centrifugalPump' || fromComponent.kind === 'feedwaterSource') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
+      } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
+        flowSource = Math.min((turbineSteamDemand ?? 0) / mainSteamSourceCount(system), sourceSteamFlow ?? turbineSteamDemand ?? 0)
+      } else if (fromComponent.kind === 'turbineLoadSink') {
+        flowSource = turbineSteamFlow
+      } else if (fromComponent.kind === 'reactorCore' && link.service === 'primaryCoolant') {
+        flowSource = primaryCoolantFlowForCoreOutlet(system, link, context) ?? passiveFlowFromIncomingService(system, link, context)
+      } else {
+        flowSource = passiveFlowFromIncomingService(system, link, context)
+      }
       context.write(processLinkVariablePath(link, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
     },
   },
@@ -65,20 +158,20 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       let target: number
       if (fromComponent.kind === 'reactorCore') {
         target = context.readNumber(componentVariablePath(fromComponent, 'coolantOutletTemperatureC'))
-      } else if (fromComponent.kind === 'steamGenerator' && link.medium === 'primary-water') {
+      } else if (fromComponent.kind === 'steamGenerator' && link.service === 'primaryCoolant') {
         target = context.readNumber(componentVariablePath(fromComponent, 'primaryOutletTemperatureC'))
       } else if (fromComponent.kind === 'feedwaterSource') {
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
-      } else if (fromComponent.kind === 'steamGenerator' && link.medium === 'steam') {
+      } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {
         target = 120
       } else if (toComponent.kind === 'reactorCore') {
-        target = averageFor(system.graph.components, component =>
-          component.kind === 'steamGenerator' ? context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')) : null,
-        ) ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
+        target = averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
+          ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       } else {
-        target = context.readNumber(processLinkVariablePath(link, 'temperatureC'))
+        target = averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
+          ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       }
       context.write(processLinkVariablePath(link, 'temperatureC'), relaxToward(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, context.dtSeconds, 10))
     },

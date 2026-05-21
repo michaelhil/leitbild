@@ -18,13 +18,91 @@
       }
     },
     {
+      "id": "vessel",
+      "kind": "reactorVessel",
+      "label": "Reactor Vessel",
+      "parameters": {}
+    },
+    {
+      "id": "pressurizer",
+      "kind": "pressurizer",
+      "label": "Pressurizer",
+      "parameters": {}
+    },
+    {
+      "id": "pressurizerHeaters",
+      "kind": "pressurizerHeaters",
+      "label": "Pressurizer Heaters",
+      "parameters": {}
+    },
+    {
+      "id": "pressurizerReliefValve",
+      "kind": "processValve",
+      "label": "Pressurizer Relief Valve",
+      "parameters": {}
+    },
+    {
+      "id": "pressurizerReliefTank",
+      "kind": "processTank",
+      "label": "Pressurizer Relief Tank",
+      "parameters": {}
+    },
+    {
       "id": "sgA",
       "kind": "steamGenerator",
       "label": "Steam Generator A",
       "parameters": {
         "nominalPressureMPa": 6.9,
         "nominalLevelPercent": 0.55,
-        "heatTransferCoefficientMwPerK": 75,
+        "heatTransferCoefficientMwPerK": 18.75,
+        "initialPrimaryInletTemperatureC": 322,
+        "initialSecondaryTemperatureC": 285,
+        "nominalSecondaryInventoryKg": 56000,
+        "primaryThermalTimeConstantS": 10,
+        "secondaryThermalTimeConstantS": 25,
+        "inventoryTimeConstantS": 20
+      }
+    },
+    {
+      "id": "sgB",
+      "kind": "steamGenerator",
+      "label": "Steam Generator B",
+      "parameters": {
+        "nominalPressureMPa": 6.9,
+        "nominalLevelPercent": 0.55,
+        "heatTransferCoefficientMwPerK": 18.75,
+        "initialPrimaryInletTemperatureC": 322,
+        "initialSecondaryTemperatureC": 285,
+        "nominalSecondaryInventoryKg": 56000,
+        "primaryThermalTimeConstantS": 10,
+        "secondaryThermalTimeConstantS": 25,
+        "inventoryTimeConstantS": 20
+      }
+    },
+    {
+      "id": "sgC",
+      "kind": "steamGenerator",
+      "label": "Steam Generator C",
+      "parameters": {
+        "nominalPressureMPa": 6.9,
+        "nominalLevelPercent": 0.55,
+        "heatTransferCoefficientMwPerK": 18.75,
+        "initialPrimaryInletTemperatureC": 322,
+        "initialSecondaryTemperatureC": 285,
+        "nominalSecondaryInventoryKg": 56000,
+        "primaryThermalTimeConstantS": 10,
+        "secondaryThermalTimeConstantS": 25,
+        "inventoryTimeConstantS": 20
+      }
+    },
+    {
+      "id": "sgD",
+      "kind": "steamGenerator",
+      "label": "Steam Generator D",
+      "parameters": {
+        "nominalPressureMPa": 6.9,
+        "nominalLevelPercent": 0.55,
+        "heatTransferCoefficientMwPerK": 18.75,
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
         "nominalSecondaryInventoryKg": 56000,
@@ -38,18 +116,180 @@
       "kind": "centrifugalPump",
       "label": "Reactor Coolant Pump A",
       "parameters": {
-        "nominalFlowKgPerS": 17000,
+        "nominalFlowKgPerS": 4250,
         "nominalHeadPa": 650000
       }
     },
     {
-      "id": "feedwaterA",
-      "kind": "feedwaterSource",
-      "label": "Feedwater Train A",
+      "id": "rcpB",
+      "kind": "centrifugalPump",
+      "label": "Reactor Coolant Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 4250,
+        "nominalHeadPa": 650000
+      }
+    },
+    {
+      "id": "rcpC",
+      "kind": "centrifugalPump",
+      "label": "Reactor Coolant Pump C",
+      "parameters": {
+        "nominalFlowKgPerS": 4250,
+        "nominalHeadPa": 650000
+      }
+    },
+    {
+      "id": "rcpD",
+      "kind": "centrifugalPump",
+      "label": "Reactor Coolant Pump D",
+      "parameters": {
+        "nominalFlowKgPerS": 4250,
+        "nominalHeadPa": 650000
+      }
+    },
+    {
+      "id": "mainFeedwaterPumpA",
+      "kind": "centrifugalPump",
+      "label": "Main Feedwater Pump A",
       "parameters": {
         "nominalFlowKgPerS": 760,
-        "temperatureC": 220
+        "nominalHeadPa": 1100000
       }
+    },
+    {
+      "id": "mainFeedwaterPumpB",
+      "kind": "centrifugalPump",
+      "label": "Main Feedwater Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 760,
+        "nominalHeadPa": 1100000
+      }
+    },
+    {
+      "id": "feedwaterTank",
+      "kind": "processTank",
+      "label": "Feedwater Tank",
+      "parameters": {}
+    },
+    {
+      "id": "feedwaterHeader",
+      "kind": "processHeader",
+      "label": "Main Feedwater Header",
+      "parameters": {}
+    },
+    {
+      "id": "feedwaterControlValveA",
+      "kind": "processValve",
+      "label": "Feedwater Control Valve A",
+      "parameters": {}
+    },
+    {
+      "id": "feedwaterControlValveB",
+      "kind": "processValve",
+      "label": "Feedwater Control Valve B",
+      "parameters": {}
+    },
+    {
+      "id": "feedwaterControlValveC",
+      "kind": "processValve",
+      "label": "Feedwater Control Valve C",
+      "parameters": {}
+    },
+    {
+      "id": "feedwaterControlValveD",
+      "kind": "processValve",
+      "label": "Feedwater Control Valve D",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterTank",
+      "kind": "processTank",
+      "label": "Auxiliary Feedwater Tank",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterPumpMotor",
+      "kind": "centrifugalPump",
+      "label": "Motor-Driven Auxiliary Feedwater Pump",
+      "parameters": {
+        "nominalFlowKgPerS": 170,
+        "nominalHeadPa": 1200000
+      }
+    },
+    {
+      "id": "auxFeedwaterPumpTurbine",
+      "kind": "centrifugalPump",
+      "label": "Turbine-Driven Auxiliary Feedwater Pump",
+      "parameters": {
+        "nominalFlowKgPerS": 170,
+        "nominalHeadPa": 1200000
+      }
+    },
+    {
+      "id": "auxFeedwaterHeader",
+      "kind": "processHeader",
+      "label": "Auxiliary Feedwater Header",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterValveA",
+      "kind": "processValve",
+      "label": "Auxiliary Feedwater Valve A",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterValveB",
+      "kind": "processValve",
+      "label": "Auxiliary Feedwater Valve B",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterValveC",
+      "kind": "processValve",
+      "label": "Auxiliary Feedwater Valve C",
+      "parameters": {}
+    },
+    {
+      "id": "auxFeedwaterValveD",
+      "kind": "processValve",
+      "label": "Auxiliary Feedwater Valve D",
+      "parameters": {}
+    },
+    {
+      "id": "mainSteamIsolationValveA",
+      "kind": "steamValve",
+      "label": "Main Steam Isolation Valve A",
+      "parameters": {}
+    },
+    {
+      "id": "mainSteamIsolationValveB",
+      "kind": "steamValve",
+      "label": "Main Steam Isolation Valve B",
+      "parameters": {}
+    },
+    {
+      "id": "mainSteamIsolationValveC",
+      "kind": "steamValve",
+      "label": "Main Steam Isolation Valve C",
+      "parameters": {}
+    },
+    {
+      "id": "mainSteamIsolationValveD",
+      "kind": "steamValve",
+      "label": "Main Steam Isolation Valve D",
+      "parameters": {}
+    },
+    {
+      "id": "mainSteamHeader",
+      "kind": "steamHeader",
+      "label": "Main Steam Header",
+      "parameters": {}
+    },
+    {
+      "id": "turbineStopValve",
+      "kind": "steamValve",
+      "label": "Turbine Stop Valve",
+      "parameters": {}
     },
     {
       "id": "turbine",
@@ -63,6 +303,12 @@
       }
     },
     {
+      "id": "generator",
+      "kind": "generatorSink",
+      "label": "Electrical Generator",
+      "parameters": {}
+    },
+    {
       "id": "condenser",
       "kind": "condenserSink",
       "label": "Main Condenser",
@@ -72,29 +318,153 @@
         "condensateApproachTemperatureK": 12,
         "condenserThermalTimeConstantS": 12
       }
+    },
+    {
+      "id": "condensatePumpA",
+      "kind": "centrifugalPump",
+      "label": "Condensate Pump A",
+      "parameters": {
+        "nominalFlowKgPerS": 760,
+        "nominalHeadPa": 700000
+      }
+    },
+    {
+      "id": "condensatePumpB",
+      "kind": "centrifugalPump",
+      "label": "Condensate Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 760,
+        "nominalHeadPa": 700000
+      }
+    },
+    {
+      "id": "volumeControlTank",
+      "kind": "processTank",
+      "label": "Volume Control Tank",
+      "parameters": {}
+    },
+    {
+      "id": "chargingPump",
+      "kind": "centrifugalPump",
+      "label": "Charging Pump",
+      "parameters": {
+        "nominalFlowKgPerS": 90,
+        "nominalHeadPa": 1600000
+      }
+    },
+    {
+      "id": "letdownValve",
+      "kind": "processValve",
+      "label": "Letdown Valve",
+      "parameters": {}
     }
   ],
   "connections": [
     {
-      "id": "rcs-hot-leg-a",
+      "id": "core-to-vessel-thermal",
+      "from": "core.vesselThermal",
+      "to": "vessel.coreThermal",
+      "connectionKind": "thermalContact",
+      "variables": []
+    },
+    {
+      "id": "pressurizer-surge-line",
       "from": "core.hotLegA",
-      "to": "sgA.primaryInlet",
-      "medium": "primary-water",
+      "to": "pressurizer.surgeLine",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "Hot leg flow",
+          "label": "Pressurizer surge line flow",
           "kind": "derived",
           "domain": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 17000
+          "initialValue": 4250
         },
         {
           "path": "temperatureC",
-          "label": "Hot leg temperature",
+          "label": "Pressurizer surge line temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
+    },
+    {
+      "id": "pressurizer-relief-to-tank",
+      "from": "pressurizer.reliefOutlet",
+      "to": "pressurizerReliefTank.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryRelief",
+      "nominalFluid": "steam",
+      "designPhase": "twoPhase",
+      "solverModel": "twoPhaseApprox",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Pressurizer relief flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Pressurizer relief temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
+    },
+    {
+      "id": "rcs-hot-leg-a",
+      "from": "core.hotLegA",
+      "to": "sgA.primaryInlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 31,
+        "diameterM": 0.76,
+        "volumeM3": 14,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS hot leg A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS hot leg A temperature",
           "kind": "derived",
           "domain": "thermal",
           "writable": false,
@@ -109,22 +479,32 @@
       "id": "rcs-cold-leg-a",
       "from": "sgA.primaryOutlet",
       "to": "rcpA.inlet",
-      "medium": "primary-water",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 34,
+        "diameterM": 0.76,
+        "volumeM3": 15,
+        "nominalResistance": 0.04
+      },
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "Cold leg flow",
+          "label": "RCS cold leg A flow",
           "kind": "derived",
           "domain": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 17000
+          "initialValue": 4250
         },
         {
           "path": "temperatureC",
-          "label": "Cold leg temperature",
+          "label": "RCS cold leg A temperature",
           "kind": "derived",
           "domain": "thermal",
           "writable": false,
@@ -139,22 +519,26 @@
       "id": "rcp-a-to-core",
       "from": "rcpA.outlet",
       "to": "core.coldLegA",
-      "medium": "primary-water",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "Pump discharge flow",
+          "label": "RCP A discharge flow",
           "kind": "derived",
           "domain": "hydraulic",
           "writable": false,
           "publish": "telemetry",
           "quantity": "flowRate",
           "unit": "kg/s",
-          "initialValue": 17000
+          "initialValue": 4250
         },
         {
           "path": "temperatureC",
-          "label": "Pump discharge temperature",
+          "label": "RCP A discharge temperature",
           "kind": "derived",
           "domain": "thermal",
           "writable": false,
@@ -166,14 +550,360 @@
       ]
     },
     {
-      "id": "fw-a-to-sg-a",
-      "from": "feedwaterA.outlet",
-      "to": "sgA.feedwaterInlet",
-      "medium": "feedwater",
+      "id": "rcs-hot-leg-b",
+      "from": "core.hotLegB",
+      "to": "sgB.primaryInlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 31,
+        "diameterM": 0.76,
+        "volumeM3": 14,
+        "nominalResistance": 0.04
+      },
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "Feedwater flow to steam generator",
+          "label": "RCS hot leg B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS hot leg B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
+    },
+    {
+      "id": "rcs-cold-leg-b",
+      "from": "sgB.primaryOutlet",
+      "to": "rcpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 34,
+        "diameterM": 0.76,
+        "volumeM3": 15,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS cold leg B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS cold leg B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "rcp-b-to-core",
+      "from": "rcpB.outlet",
+      "to": "core.coldLegB",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCP B discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCP B discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "rcs-hot-leg-c",
+      "from": "core.hotLegC",
+      "to": "sgC.primaryInlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 31,
+        "diameterM": 0.76,
+        "volumeM3": 14,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS hot leg C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS hot leg C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
+    },
+    {
+      "id": "rcs-cold-leg-c",
+      "from": "sgC.primaryOutlet",
+      "to": "rcpC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 34,
+        "diameterM": 0.76,
+        "volumeM3": 15,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS cold leg C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS cold leg C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "rcp-c-to-core",
+      "from": "rcpC.outlet",
+      "to": "core.coldLegC",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCP C discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCP C discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "rcs-hot-leg-d",
+      "from": "core.hotLegD",
+      "to": "sgD.primaryInlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 31,
+        "diameterM": 0.76,
+        "volumeM3": 14,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS hot leg D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS hot leg D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
+    },
+    {
+      "id": "rcs-cold-leg-d",
+      "from": "sgD.primaryOutlet",
+      "to": "rcpD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "physical": {
+        "lengthM": 34,
+        "diameterM": 0.76,
+        "volumeM3": 15,
+        "nominalResistance": 0.04
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCS cold leg D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCS cold leg D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "rcp-d-to-core",
+      "from": "rcpD.outlet",
+      "to": "core.coldLegD",
+      "connectionKind": "fluidFlow",
+      "service": "primaryCoolant",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RCP D discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 4250
+        },
+        {
+          "path": "temperatureC",
+          "label": "RCP D discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
+    },
+    {
+      "id": "feedwater-tank-to-main-feedwater-pump-a",
+      "from": "feedwaterTank.outlet",
+      "to": "mainFeedwaterPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main feedwater pump A suction flow",
           "kind": "derived",
           "domain": "hydraulic",
           "writable": false,
@@ -184,7 +914,7 @@
         },
         {
           "path": "temperatureC",
-          "label": "Feedwater temperature to steam generator",
+          "label": "Main feedwater pump A suction temperature",
           "kind": "derived",
           "domain": "thermal",
           "writable": false,
@@ -196,11 +926,196 @@
       ]
     },
     {
-      "id": "sg-a-steam-to-turbine",
+      "id": "feedwater-tank-to-main-feedwater-pump-b",
+      "from": "feedwaterTank.outlet",
+      "to": "mainFeedwaterPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main feedwater pump B suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main feedwater pump B suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "main-feedwater-pump-a-to-header",
+      "from": "mainFeedwaterPumpA.outlet",
+      "to": "feedwaterHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main feedwater pump A discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main feedwater pump A discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "main-feedwater-pump-b-to-header",
+      "from": "mainFeedwaterPumpB.outlet",
+      "to": "feedwaterHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main feedwater pump B discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main feedwater pump B discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "feedwater-header-to-control-valve-a",
+      "from": "feedwaterHeader.outletA",
+      "to": "feedwaterControlValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater header branch A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater header branch A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "feedwater-control-valve-a-to-sg-a",
+      "from": "feedwaterControlValveA.outlet",
+      "to": "sgA.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater to steam generator A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater to steam generator A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Feedwater control valve A position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "FWCV-A"
+        }
+      ]
+    },
+    {
+      "id": "sg-a-steam-to-msiv-a",
       "from": "sgA.steamOutlet",
-      "to": "turbine.steamInlet",
-      "linkKind": "steamFlow",
-      "medium": "steam",
+      "to": "mainSteamIsolationValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
       "physical": {
         "lengthM": 38,
         "diameterM": 0.72,
@@ -210,7 +1125,7 @@
       "variables": [
         {
           "path": "flowKgPerS",
-          "label": "Main steam flow",
+          "label": "Main steam A flow",
           "kind": "derived",
           "domain": "hydraulic",
           "writable": false,
@@ -221,8 +1136,19 @@
           "sensorId": "FT-SG-A-001"
         },
         {
+          "path": "temperatureC",
+          "label": "Main steam A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
           "path": "pressureMPa",
-          "label": "Main steam pressure",
+          "label": "Main steam A pressure",
           "kind": "derived",
           "domain": "thermal",
           "writable": false,
@@ -233,8 +1159,41 @@
           "sensorId": "PT-SG-A-001"
         },
         {
+          "path": "qualityFraction",
+          "label": "Main steam A steam quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam A void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam A specific enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
           "path": "radiationMSvPerH",
-          "label": "Main steam radiation",
+          "label": "Main steam A radiation",
           "kind": "derived",
           "domain": "radiological",
           "writable": false,
@@ -246,7 +1205,7 @@
         },
         {
           "path": "valve.positionFraction",
-          "label": "Main steam isolation valve position",
+          "label": "Main steam A isolation valve position",
           "kind": "control",
           "domain": "control",
           "writable": true,
@@ -258,7 +1217,7 @@
         },
         {
           "path": "leak.areaFraction",
-          "label": "Main steam leak area",
+          "label": "Main steam A leak area",
           "kind": "control",
           "domain": "control",
           "writable": true,
@@ -270,11 +1229,855 @@
       ]
     },
     {
+      "id": "msiv-a-to-main-steam-header",
+      "from": "mainSteamIsolationValveA.outlet",
+      "to": "mainSteamHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam header inlet A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam header inlet A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        }
+      ]
+    },
+    {
+      "id": "feedwater-header-to-control-valve-b",
+      "from": "feedwaterHeader.outletB",
+      "to": "feedwaterControlValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater header branch B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater header branch B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "feedwater-control-valve-b-to-sg-b",
+      "from": "feedwaterControlValveB.outlet",
+      "to": "sgB.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater to steam generator B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater to steam generator B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Feedwater control valve B position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "FWCV-B"
+        }
+      ]
+    },
+    {
+      "id": "sg-b-steam-to-msiv-b",
+      "from": "sgB.steamOutlet",
+      "to": "mainSteamIsolationValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "physical": {
+        "lengthM": 42,
+        "diameterM": 0.72,
+        "volumeM3": 15.5,
+        "nominalResistance": 0.08
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "sensorId": "FT-SG-B-001"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam B pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9,
+          "sensorId": "PT-SG-B-001"
+        },
+        {
+          "path": "qualityFraction",
+          "label": "Main steam B steam quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam B void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam B specific enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam B radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02,
+          "sensorId": "RT-SG-B-001"
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Main steam B isolation valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "MSIV-B"
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "Main steam B leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "msiv-b-to-main-steam-header",
+      "from": "mainSteamIsolationValveB.outlet",
+      "to": "mainSteamHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam header inlet B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam header inlet B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        }
+      ]
+    },
+    {
+      "id": "feedwater-header-to-control-valve-c",
+      "from": "feedwaterHeader.outletC",
+      "to": "feedwaterControlValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater header branch C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater header branch C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "feedwater-control-valve-c-to-sg-c",
+      "from": "feedwaterControlValveC.outlet",
+      "to": "sgC.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater to steam generator C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater to steam generator C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Feedwater control valve C position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "FWCV-C"
+        }
+      ]
+    },
+    {
+      "id": "sg-c-steam-to-msiv-c",
+      "from": "sgC.steamOutlet",
+      "to": "mainSteamIsolationValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "physical": {
+        "lengthM": 46,
+        "diameterM": 0.72,
+        "volumeM3": 15.5,
+        "nominalResistance": 0.08
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "sensorId": "FT-SG-C-001"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam C pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9,
+          "sensorId": "PT-SG-C-001"
+        },
+        {
+          "path": "qualityFraction",
+          "label": "Main steam C steam quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam C void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam C specific enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam C radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02,
+          "sensorId": "RT-SG-C-001"
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Main steam C isolation valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "MSIV-C"
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "Main steam C leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "msiv-c-to-main-steam-header",
+      "from": "mainSteamIsolationValveC.outlet",
+      "to": "mainSteamHeader.inletC",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam header inlet C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam header inlet C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        }
+      ]
+    },
+    {
+      "id": "feedwater-header-to-control-valve-d",
+      "from": "feedwaterHeader.outletD",
+      "to": "feedwaterControlValveD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater header branch D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater header branch D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
+    },
+    {
+      "id": "feedwater-control-valve-d-to-sg-d",
+      "from": "feedwaterControlValveD.outlet",
+      "to": "sgD.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "feedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater to steam generator D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 380
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater to steam generator D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Feedwater control valve D position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "FWCV-D"
+        }
+      ]
+    },
+    {
+      "id": "sg-d-steam-to-msiv-d",
+      "from": "sgD.steamOutlet",
+      "to": "mainSteamIsolationValveD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "physical": {
+        "lengthM": 50,
+        "diameterM": 0.72,
+        "volumeM3": 15.5,
+        "nominalResistance": 0.08
+      },
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0,
+          "sensorId": "FT-SG-D-001"
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam D pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9,
+          "sensorId": "PT-SG-D-001"
+        },
+        {
+          "path": "qualityFraction",
+          "label": "Main steam D steam quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam D void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam D specific enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam D radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02,
+          "sensorId": "RT-SG-D-001"
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Main steam D isolation valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "MSIV-D"
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "Main steam D leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        }
+      ]
+    },
+    {
+      "id": "msiv-d-to-main-steam-header",
+      "from": "mainSteamIsolationValveD.outlet",
+      "to": "mainSteamHeader.inletD",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam header inlet D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam header inlet D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        }
+      ]
+    },
+    {
+      "id": "main-steam-header-to-turbine-stop-valve",
+      "from": "mainSteamHeader.outletA",
+      "to": "turbineStopValve.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam to turbine stop valve flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam to turbine stop valve temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam header pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Turbine stop valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 1,
+          "actuatorId": "TSV-001"
+        }
+      ]
+    },
+    {
+      "id": "turbine-stop-valve-to-turbine",
+      "from": "turbineStopValve.outlet",
+      "to": "turbine.steamInlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Turbine inlet steam flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Turbine inlet steam temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Turbine inlet pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
       "id": "turbine-exhaust-to-condenser",
       "from": "turbine.exhaustSteamOutlet",
       "to": "condenser.steamInlet",
-      "linkKind": "steamFlow",
-      "medium": "steam",
+      "connectionKind": "fluidFlow",
+      "service": "exhaustSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
       "variables": [
         {
           "path": "flowKgPerS",
@@ -299,6 +2102,719 @@
           "initialValue": 120
         }
       ]
+    },
+    {
+      "id": "turbine-to-generator",
+      "from": "turbine.generatorOutput",
+      "to": "generator.electricalInput",
+      "connectionKind": "electricalPower",
+      "variables": []
+    },
+    {
+      "id": "condenser-to-condensate-pump-a",
+      "from": "condenser.condensateOutlet",
+      "to": "condensatePumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "condensate",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condensate pump A suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condensate pump A suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        }
+      ]
+    },
+    {
+      "id": "condensate-pump-a-to-feedwater-tank",
+      "from": "condensatePumpA.outlet",
+      "to": "feedwaterTank.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "condensate",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condensate pump A discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condensate pump A discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        }
+      ]
+    },
+    {
+      "id": "condenser-to-condensate-pump-b",
+      "from": "condenser.condensateOutlet",
+      "to": "condensatePumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "condensate",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condensate pump B suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condensate pump B suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        }
+      ]
+    },
+    {
+      "id": "condensate-pump-b-to-feedwater-tank",
+      "from": "condensatePumpB.outlet",
+      "to": "feedwaterTank.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "condensate",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condensate pump B discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condensate pump B discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-tank-to-motor-pump",
+      "from": "auxFeedwaterTank.outlet",
+      "to": "auxFeedwaterPumpMotor.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Motor AFW pump suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 170
+        },
+        {
+          "path": "temperatureC",
+          "label": "Motor AFW pump suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-tank-to-turbine-pump",
+      "from": "auxFeedwaterTank.outlet",
+      "to": "auxFeedwaterPumpTurbine.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Turbine AFW pump suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 170
+        },
+        {
+          "path": "temperatureC",
+          "label": "Turbine AFW pump suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "motor-afw-pump-to-header",
+      "from": "auxFeedwaterPumpMotor.outlet",
+      "to": "auxFeedwaterHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Motor AFW pump discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 170
+        },
+        {
+          "path": "temperatureC",
+          "label": "Motor AFW pump discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "turbine-afw-pump-to-header",
+      "from": "auxFeedwaterPumpTurbine.outlet",
+      "to": "auxFeedwaterHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Turbine AFW pump discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 170
+        },
+        {
+          "path": "temperatureC",
+          "label": "Turbine AFW pump discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-header-to-valve-a",
+      "from": "auxFeedwaterHeader.outletA",
+      "to": "auxFeedwaterValveA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "AFW header branch A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "AFW header branch A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-valve-a-to-sg-a",
+      "from": "auxFeedwaterValveA.outlet",
+      "to": "sgA.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Auxiliary feedwater to steam generator A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "Auxiliary feedwater to steam generator A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Auxiliary feedwater valve A position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0,
+          "actuatorId": "AFW-A"
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-header-to-valve-b",
+      "from": "auxFeedwaterHeader.outletB",
+      "to": "auxFeedwaterValveB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "AFW header branch B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "AFW header branch B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-valve-b-to-sg-b",
+      "from": "auxFeedwaterValveB.outlet",
+      "to": "sgB.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Auxiliary feedwater to steam generator B flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "Auxiliary feedwater to steam generator B temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Auxiliary feedwater valve B position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0,
+          "actuatorId": "AFW-B"
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-header-to-valve-c",
+      "from": "auxFeedwaterHeader.outletC",
+      "to": "auxFeedwaterValveC.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "AFW header branch C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "AFW header branch C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-valve-c-to-sg-c",
+      "from": "auxFeedwaterValveC.outlet",
+      "to": "sgC.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Auxiliary feedwater to steam generator C flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "Auxiliary feedwater to steam generator C temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Auxiliary feedwater valve C position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0,
+          "actuatorId": "AFW-C"
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-header-to-valve-d",
+      "from": "auxFeedwaterHeader.outletD",
+      "to": "auxFeedwaterValveD.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "AFW header branch D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "AFW header branch D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-valve-d-to-sg-d",
+      "from": "auxFeedwaterValveD.outlet",
+      "to": "sgD.feedwaterInlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Auxiliary feedwater to steam generator D flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 85
+        },
+        {
+          "path": "temperatureC",
+          "label": "Auxiliary feedwater to steam generator D temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Auxiliary feedwater valve D position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0,
+          "actuatorId": "AFW-D"
+        }
+      ]
+    },
+    {
+      "id": "vct-to-charging-pump",
+      "from": "volumeControlTank.outlet",
+      "to": "chargingPump.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Charging pump suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 90
+        },
+        {
+          "path": "temperatureC",
+          "label": "Charging pump suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 40
+        }
+      ]
+    },
+    {
+      "id": "charging-pump-to-cold-leg-a",
+      "from": "chargingPump.outlet",
+      "to": "core.coldLegA",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Charging to cold leg A flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 90
+        },
+        {
+          "path": "temperatureC",
+          "label": "Charging to cold leg A temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 40
+        }
+      ]
+    },
+    {
+      "id": "letdown-to-vct",
+      "from": "letdownValve.outlet",
+      "to": "volumeControlTank.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "letdown",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Letdown to volume control tank flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 45
+        },
+        {
+          "path": "temperatureC",
+          "label": "Letdown to volume control tank temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        },
+        {
+          "path": "valve.positionFraction",
+          "label": "Letdown valve position",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.5,
+          "actuatorId": "LD-001"
+        }
+      ]
     }
   ],
   "publishedVariables": [
@@ -315,26 +2831,98 @@
     "sgA.steamFlowKgPerS",
     "sgA.secondaryInventoryKg",
     "rcpA.running",
-    "feedwaterA.flowKgPerS",
-    "feedwaterA.temperatureC",
+    "rcpA.flowKgPerS",
+    "rcs-hot-leg-a.flowKgPerS",
+    "rcs-hot-leg-a.temperatureC",
+    "rcs-cold-leg-a.flowKgPerS",
+    "rcs-cold-leg-a.temperatureC",
+    "sg-a-steam-to-msiv-a.flowKgPerS",
+    "sg-a-steam-to-msiv-a.pressureMPa",
+    "sg-a-steam-to-msiv-a.radiationMSvPerH",
+    "sg-a-steam-to-msiv-a.valve.positionFraction",
+    "sg-a-steam-to-msiv-a.leak.areaFraction",
+    "feedwater-control-valve-a-to-sg-a.flowKgPerS",
+    "aux-feedwater-valve-a-to-sg-a.flowKgPerS",
+    "sgB.levelPercent",
+    "sgB.pressureMPa",
+    "sgB.primaryInletTemperatureC",
+    "sgB.primaryOutletTemperatureC",
+    "sgB.heatTransferMw",
+    "sgB.secondaryTemperatureC",
+    "sgB.steamFlowKgPerS",
+    "sgB.secondaryInventoryKg",
+    "rcpB.running",
+    "rcpB.flowKgPerS",
+    "rcs-hot-leg-b.flowKgPerS",
+    "rcs-hot-leg-b.temperatureC",
+    "rcs-cold-leg-b.flowKgPerS",
+    "rcs-cold-leg-b.temperatureC",
+    "sg-b-steam-to-msiv-b.flowKgPerS",
+    "sg-b-steam-to-msiv-b.pressureMPa",
+    "sg-b-steam-to-msiv-b.radiationMSvPerH",
+    "sg-b-steam-to-msiv-b.valve.positionFraction",
+    "sg-b-steam-to-msiv-b.leak.areaFraction",
+    "feedwater-control-valve-b-to-sg-b.flowKgPerS",
+    "aux-feedwater-valve-b-to-sg-b.flowKgPerS",
+    "sgC.levelPercent",
+    "sgC.pressureMPa",
+    "sgC.primaryInletTemperatureC",
+    "sgC.primaryOutletTemperatureC",
+    "sgC.heatTransferMw",
+    "sgC.secondaryTemperatureC",
+    "sgC.steamFlowKgPerS",
+    "sgC.secondaryInventoryKg",
+    "rcpC.running",
+    "rcpC.flowKgPerS",
+    "rcs-hot-leg-c.flowKgPerS",
+    "rcs-hot-leg-c.temperatureC",
+    "rcs-cold-leg-c.flowKgPerS",
+    "rcs-cold-leg-c.temperatureC",
+    "sg-c-steam-to-msiv-c.flowKgPerS",
+    "sg-c-steam-to-msiv-c.pressureMPa",
+    "sg-c-steam-to-msiv-c.radiationMSvPerH",
+    "sg-c-steam-to-msiv-c.valve.positionFraction",
+    "sg-c-steam-to-msiv-c.leak.areaFraction",
+    "feedwater-control-valve-c-to-sg-c.flowKgPerS",
+    "aux-feedwater-valve-c-to-sg-c.flowKgPerS",
+    "sgD.levelPercent",
+    "sgD.pressureMPa",
+    "sgD.primaryInletTemperatureC",
+    "sgD.primaryOutletTemperatureC",
+    "sgD.heatTransferMw",
+    "sgD.secondaryTemperatureC",
+    "sgD.steamFlowKgPerS",
+    "sgD.secondaryInventoryKg",
+    "rcpD.running",
+    "rcpD.flowKgPerS",
+    "rcs-hot-leg-d.flowKgPerS",
+    "rcs-hot-leg-d.temperatureC",
+    "rcs-cold-leg-d.flowKgPerS",
+    "rcs-cold-leg-d.temperatureC",
+    "sg-d-steam-to-msiv-d.flowKgPerS",
+    "sg-d-steam-to-msiv-d.pressureMPa",
+    "sg-d-steam-to-msiv-d.radiationMSvPerH",
+    "sg-d-steam-to-msiv-d.valve.positionFraction",
+    "sg-d-steam-to-msiv-d.leak.areaFraction",
+    "feedwater-control-valve-d-to-sg-d.flowKgPerS",
+    "aux-feedwater-valve-d-to-sg-d.flowKgPerS",
+    "mainFeedwaterPumpA.running",
+    "mainFeedwaterPumpB.running",
+    "mainFeedwaterPumpA.flowKgPerS",
+    "mainFeedwaterPumpB.flowKgPerS",
+    "auxFeedwaterPumpMotor.running",
+    "auxFeedwaterPumpTurbine.running",
+    "auxFeedwaterPumpMotor.flowKgPerS",
+    "auxFeedwaterPumpTurbine.flowKgPerS",
     "turbine.electricMw",
     "turbine.steamFlowKgPerS",
     "condenser.steamFlowKgPerS",
     "condenser.condensateTemperatureC",
     "condenser.backPressurePa",
-    "rcs-hot-leg-a.flowKgPerS",
-    "rcs-hot-leg-a.temperatureC",
-    "rcs-cold-leg-a.flowKgPerS",
-    "rcs-cold-leg-a.temperatureC",
-    "rcp-a-to-core.flowKgPerS",
-    "rcp-a-to-core.temperatureC",
-    "fw-a-to-sg-a.flowKgPerS",
-    "fw-a-to-sg-a.temperatureC",
-    "sg-a-steam-to-turbine.flowKgPerS",
-    "sg-a-steam-to-turbine.pressureMPa",
-    "sg-a-steam-to-turbine.radiationMSvPerH",
-    "sg-a-steam-to-turbine.valve.positionFraction",
-    "sg-a-steam-to-turbine.leak.areaFraction",
+    "main-steam-header-to-turbine-stop-valve.flowKgPerS",
+    "main-steam-header-to-turbine-stop-valve.pressureMPa",
+    "turbine-stop-valve-to-turbine.flowKgPerS",
+    "turbine-stop-valve-to-turbine.pressureMPa",
     "turbine-exhaust-to-condenser.flowKgPerS",
     "turbine-exhaust-to-condenser.temperatureC"
   ]

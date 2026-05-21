@@ -59,7 +59,8 @@ describe('process plant runtime', () => {
       'updateComponentState',
       'updateProcessLinkState',
     ])
-    expect(tick.publishedVariables.map(variable => String(variable.path))).toEqual([
+    const publishedPaths = tick.publishedVariables.map(variable => String(variable.path))
+    expect(publishedPaths).toEqual(expect.arrayContaining([
       'core.powerMw',
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
@@ -72,9 +73,15 @@ describe('process plant runtime', () => {
       'sgA.secondaryTemperatureC',
       'sgA.steamFlowKgPerS',
       'sgA.secondaryInventoryKg',
+      'sgB.steamFlowKgPerS',
+      'sgC.steamFlowKgPerS',
+      'sgD.steamFlowKgPerS',
       'rcpA.running',
-      'feedwaterA.flowKgPerS',
-      'feedwaterA.temperatureC',
+      'rcpB.running',
+      'rcpC.running',
+      'rcpD.running',
+      'mainFeedwaterPumpA.running',
+      'mainFeedwaterPumpB.running',
       'turbine.electricMw',
       'turbine.steamFlowKgPerS',
       'condenser.steamFlowKgPerS',
@@ -84,18 +91,16 @@ describe('process plant runtime', () => {
       'rcs-hot-leg-a.temperatureC',
       'rcs-cold-leg-a.flowKgPerS',
       'rcs-cold-leg-a.temperatureC',
-      'rcp-a-to-core.flowKgPerS',
-      'rcp-a-to-core.temperatureC',
-      'fw-a-to-sg-a.flowKgPerS',
-      'fw-a-to-sg-a.temperatureC',
-      'sg-a-steam-to-turbine.flowKgPerS',
-      'sg-a-steam-to-turbine.pressureMPa',
-      'sg-a-steam-to-turbine.radiationMSvPerH',
-      'sg-a-steam-to-turbine.valve.positionFraction',
-      'sg-a-steam-to-turbine.leak.areaFraction',
+      'feedwater-control-valve-a-to-sg-a.flowKgPerS',
+      'sg-a-steam-to-msiv-a.flowKgPerS',
+      'sg-a-steam-to-msiv-a.pressureMPa',
+      'sg-a-steam-to-msiv-a.radiationMSvPerH',
+      'sg-a-steam-to-msiv-a.valve.positionFraction',
+      'sg-a-steam-to-msiv-a.leak.areaFraction',
       'turbine-exhaust-to-condenser.flowKgPerS',
       'turbine-exhaust-to-condenser.temperatureC',
-    ])
+    ]))
+    expect(publishedPaths.length).toBeGreaterThan(80)
   })
 
   test('rejects writes to non-writable variables', () => {
@@ -147,26 +152,26 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.tick(1_000)
-    const openFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))
+    const openFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
     expect(openFlow).toBeGreaterThan(0)
 
     runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-turbine.valve.positionFraction'),
+      path: valueOf('sg-a-steam-to-msiv-a.valve.positionFraction'),
       value: 0.5,
     })
     runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-turbine.leak.areaFraction'),
+      path: valueOf('sg-a-steam-to-msiv-a.leak.areaFraction'),
       value: 0.1,
     })
     runtime.tick(100)
 
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))).toBeLessThan(openFlow)
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.radiationMSvPerH')))).toBeGreaterThan(0.02)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(openFlow)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.radiationMSvPerH')))).toBeGreaterThan(0.02)
     expect(() => runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-turbine.pressureMPa'),
+      path: valueOf('sg-a-steam-to-msiv-a.pressureMPa'),
       value: 1,
     })).toThrow('not writable')
   })
@@ -191,7 +196,8 @@ describe('process plant runtime', () => {
 
     runtime.tick(1_000)
     const before = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
-    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterA.flowKgPerS'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpA.running'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
     for (let index = 0; index < 120; index += 1) runtime.tick(100)
 
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(before)
@@ -208,7 +214,7 @@ describe('process plant runtime', () => {
 
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBe(0)
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-turbine.flowKgPerS')))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBe(0)
   })
 
   test('turbine load demand changes steam use and electrical output', () => {
@@ -270,13 +276,13 @@ describe('process plant runtime', () => {
 
     expect(() => runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-turbine.valve.positionFraction'),
+      path: valueOf('sg-a-steam-to-msiv-a.valve.positionFraction'),
       value: 1.2,
     })).toThrow('fraction value must be between 0 and 1')
     expect(() => runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('feedwaterA.flowKgPerS'),
+      path: valueOf('mainFeedwaterPumpA.speedFraction'),
       value: -1,
-    })).toThrow('flowRate value must be non-negative')
+    })).toThrow('fraction value must be between 0 and 1')
   })
 })

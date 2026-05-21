@@ -15,13 +15,32 @@ const variable = (descriptor: ComponentVariableInput): ComponentVariableDescript
 
 export const defineComponent = (definition: ComponentDefinition): ComponentDefinition => definition
 
+const topologyComponent = (
+  kind: string,
+  label: string,
+  ports: ComponentDefinition['ports'],
+): ComponentDefinition => defineComponent({
+  kind: kind as ComponentKind,
+  label,
+  ports,
+  parametersSchema: z.object({}).strict(),
+  variables: [],
+})
+
 const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'reactorCore' as ComponentKind,
     label: 'Reactor Core',
     ports: {
       hotLegA: { kind: 'hydraulicThermal', direction: 'out' },
+      hotLegB: { kind: 'hydraulicThermal', direction: 'out' },
+      hotLegC: { kind: 'hydraulicThermal', direction: 'out' },
+      hotLegD: { kind: 'hydraulicThermal', direction: 'out' },
       coldLegA: { kind: 'hydraulicThermal', direction: 'in' },
+      coldLegB: { kind: 'hydraulicThermal', direction: 'in' },
+      coldLegC: { kind: 'hydraulicThermal', direction: 'in' },
+      coldLegD: { kind: 'hydraulicThermal', direction: 'in' },
+      vesselThermal: { kind: 'thermal', direction: 'out' },
       rodDemand: { kind: 'controlSignal', direction: 'in' },
       tripSignal: { kind: 'logicSignal', direction: 'in' },
     },
@@ -39,6 +58,60 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'coolantOutletTemperatureC', label: 'Core coolant outlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'heatToCoolantMw', label: 'Heat to coolant', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
     ],
+  }),
+  topologyComponent('reactorVessel', 'Reactor Vessel', {
+    coreThermal: { kind: 'thermal', direction: 'in' },
+    lowerPlenum: { kind: 'hydraulicThermal', direction: 'out' },
+    upperPlenum: { kind: 'hydraulicThermal', direction: 'in' },
+    pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional' },
+  }),
+  topologyComponent('processHeader', 'Process Header', {
+    inletA: { kind: 'hydraulicThermal', direction: 'in' },
+    inletB: { kind: 'hydraulicThermal', direction: 'in' },
+    inletC: { kind: 'hydraulicThermal', direction: 'in' },
+    inletD: { kind: 'hydraulicThermal', direction: 'in' },
+    outletA: { kind: 'hydraulicThermal', direction: 'out' },
+    outletB: { kind: 'hydraulicThermal', direction: 'out' },
+    outletC: { kind: 'hydraulicThermal', direction: 'out' },
+    outletD: { kind: 'hydraulicThermal', direction: 'out' },
+  }),
+  topologyComponent('processTank', 'Process Tank', {
+    inlet: { kind: 'hydraulicThermal', direction: 'in' },
+    outlet: { kind: 'hydraulicThermal', direction: 'out' },
+  }),
+  topologyComponent('processValve', 'Process Valve', {
+    inlet: { kind: 'hydraulicThermal', direction: 'in' },
+    outlet: { kind: 'hydraulicThermal', direction: 'out' },
+    demand: { kind: 'controlSignal', direction: 'in' },
+  }),
+  topologyComponent('steamHeader', 'Steam Header', {
+    inletA: { kind: 'steam', direction: 'in' },
+    inletB: { kind: 'steam', direction: 'in' },
+    inletC: { kind: 'steam', direction: 'in' },
+    inletD: { kind: 'steam', direction: 'in' },
+    outletA: { kind: 'steam', direction: 'out' },
+    outletB: { kind: 'steam', direction: 'out' },
+    outletC: { kind: 'steam', direction: 'out' },
+    outletD: { kind: 'steam', direction: 'out' },
+  }),
+  topologyComponent('steamValve', 'Steam Valve', {
+    inlet: { kind: 'steam', direction: 'in' },
+    outlet: { kind: 'steam', direction: 'out' },
+    demand: { kind: 'controlSignal', direction: 'in' },
+  }),
+  topologyComponent('pressurizer', 'Pressurizer', {
+    surgeLine: { kind: 'hydraulicThermal', direction: 'bidirectional' },
+    sprayInlet: { kind: 'hydraulicThermal', direction: 'in' },
+    reliefOutlet: { kind: 'hydraulicThermal', direction: 'out' },
+    heaterPower: { kind: 'electricalAc', direction: 'in' },
+  }),
+  topologyComponent('pressurizerHeaters', 'Pressurizer Heaters', {
+    powerInlet: { kind: 'electricalAc', direction: 'in' },
+    heatOutput: { kind: 'thermal', direction: 'out' },
+  }),
+  topologyComponent('generatorSink', 'Generator Sink', {
+    electricalInput: { kind: 'electricalAc', direction: 'in' },
+    electricalOutput: { kind: 'electricalAc', direction: 'out' },
   }),
   defineComponent({
     kind: 'steamGenerator' as ComponentKind,

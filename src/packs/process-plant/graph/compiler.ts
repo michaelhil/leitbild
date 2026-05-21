@@ -8,8 +8,9 @@ import type {
   ComponentDefinition,
   ComponentId,
   ComponentKind,
+  ConnectionKind,
+  ConnectionService,
   ConnectionId,
-  ProcessLinkKind,
   LocalVariablePath,
   PlantGraphSpec,
   PortDefinition,
@@ -17,18 +18,18 @@ import type {
   PortRef,
   VariablePath,
 } from './model.ts'
-import { plantGraphSpecSchema, processLinkKindSchema } from './model.ts'
+import { connectionKindSchema, plantGraphSpecSchema } from './model.ts'
 
 interface ResolvedPortRef {
   readonly componentId: ComponentId
   readonly portName: string
 }
 
-const linkKinds: ReadonlyArray<ProcessLinkKind> = processLinkKindSchema.options
+const connectionKinds: ReadonlyArray<ConnectionKind> = connectionKindSchema.options
 
-const emptyLinksByKind = (): Record<ProcessLinkKind, number[]> => {
-  const entries = linkKinds.map((kind): readonly [ProcessLinkKind, number[]] => [kind, []])
-  return Object.fromEntries(entries) as Record<ProcessLinkKind, number[]>
+const emptyLinksByKind = (): Record<ConnectionKind, number[]> => {
+  const entries = connectionKinds.map((kind): readonly [ConnectionKind, number[]] => [kind, []])
+  return Object.fromEntries(entries) as Record<ConnectionKind, number[]>
 }
 
 const parsePortRef = (ref: PortRef): ResolvedPortRef => {
@@ -79,15 +80,14 @@ const directionAllowsConnection = (from: PortDefinition, to: PortDefinition): bo
   return fromCanSend && toCanReceive
 }
 
-const inferProcessLinkKind = (from: PortDefinition, to: PortDefinition): ProcessLinkKind => {
+const inferConnectionKind = (from: PortDefinition, to: PortDefinition): ConnectionKind => {
   if (!compatiblePortKinds(from, to)) throw new Error(`cannot infer link kind for incompatible port kinds ${from.kind} -> ${to.kind}`)
-  if (from.kind === 'steam' && to.kind === 'steam') return 'steamFlow'
   if (from.kind === 'electricalAc' && to.kind === 'electricalAc') return 'electricalPower'
   if (from.kind === 'mechanicalShaft' && to.kind === 'mechanicalShaft') return 'mechanicalTorque'
   if (from.kind === 'controlSignal' && to.kind === 'controlSignal') return 'controlSignal'
   if (from.kind === 'logicSignal' && to.kind === 'logicSignal') return 'logicSignal'
   if (from.kind === 'thermal' || to.kind === 'thermal') return 'thermalContact'
-  return 'hydraulicFlow'
+  return 'fluidFlow'
 }
 
 const resolveDefinition = (
@@ -149,6 +149,9 @@ export const compilePlantGraph = (
   })
 
   const linksByKind = emptyLinksByKind()
+  const incomingLinksByComponent: number[][] = spec.components.map(() => [])
+  const outgoingLinksByComponent: number[][] = spec.components.map(() => [])
+  const mutableLinksByService = new Map<ConnectionService, number[]>()
   const links: CompiledProcessLink[] = spec.connections.map((connection, index) => {
     const from = parsePortRef(connection.from)
     const to = parsePortRef(connection.to)
@@ -165,10 +168,10 @@ export const compilePlantGraph = (
     if (!toPort) throw new Error(`connection ${connection.id} references unknown port: ${to.componentId}.${to.portName}`)
     if (!compatiblePortKinds(fromPort, toPort)) throw new Error(`connection ${connection.id} has incompatible port kinds: ${fromPort.kind} -> ${toPort.kind}`)
     if (!directionAllowsConnection(fromPort, toPort)) throw new Error(`connection ${connection.id} has invalid port directions: ${fromPort.direction} -> ${toPort.direction}`)
-    const inferredKind = inferProcessLinkKind(fromPort, toPort)
-    const kind = connection.linkKind ?? inferredKind
-    if (connection.linkKind !== undefined && connection.linkKind !== inferredKind) {
-      throw new Error(`connection ${connection.id} declares link kind ${connection.linkKind} but port kinds require ${inferredKind}`)
+    const inferredKind = inferConnectionKind(fromPort, toPort)
+    const kind = connection.connectionKind
+    if (kind !== inferredKind) {
+      throw new Error(`connection ${connection.id} declares connection kind ${kind} but port kinds require ${inferredKind}`)
     }
     const compiled: CompiledProcessLink = {
       index,
@@ -176,9 +179,14 @@ export const compilePlantGraph = (
       kind,
       fromComponentIndex,
       fromPortIndex: components[fromComponentIndex]?.ports[from.portName]?.index ?? -1,
+      fromPortName: from.portName as PortName,
       toComponentIndex,
       toPortIndex: components[toComponentIndex]?.ports[to.portName]?.index ?? -1,
-      ...(connection.medium === undefined ? {} : { medium: connection.medium }),
+      toPortName: to.portName as PortName,
+      ...(connection.service === undefined ? {} : { service: connection.service }),
+      ...(connection.nominalFluid === undefined ? {} : { nominalFluid: connection.nominalFluid }),
+      ...(connection.designPhase === undefined ? {} : { designPhase: connection.designPhase }),
+      ...(connection.solverModel === undefined ? {} : { solverModel: connection.solverModel }),
       ...(connection.physical === undefined ? {} : { physical: connection.physical }),
       variables: connection.variables.map(variable => ({
         ...variable,
@@ -186,6 +194,13 @@ export const compilePlantGraph = (
       })),
     }
     linksByKind[kind].push(index)
+    incomingLinksByComponent[toComponentIndex]?.push(index)
+    outgoingLinksByComponent[fromComponentIndex]?.push(index)
+    if (connection.service !== undefined) {
+      const serviceLinks = mutableLinksByService.get(connection.service) ?? []
+      serviceLinks.push(index)
+      mutableLinksByService.set(connection.service, serviceLinks)
+    }
     return compiled
   })
 
@@ -226,6 +241,9 @@ export const compilePlantGraph = (
     componentIndexById,
     links,
     linksByKind,
+    incomingLinksByComponent,
+    outgoingLinksByComponent,
+    linksByService: new Map([...mutableLinksByService.entries()].map(([service, indexes]) => [service, [...indexes]])),
     variables,
   }
 }

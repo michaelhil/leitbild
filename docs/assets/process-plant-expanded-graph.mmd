@@ -1,0 +1,104 @@
+flowchart TB
+  c0["Reactor Core"]
+  c1["Reactor Vessel"]
+  c2["Pressurizer"]
+  c3["Pressurizer Heaters"]
+  c4["Pressurizer Relief Valve"]
+  c5["Pressurizer Relief Tank"]
+  c6["Steam Generator A"]
+  c7["Steam Generator B"]
+  c8["Steam Generator C"]
+  c9["Steam Generator D"]
+  c10["Reactor Coolant Pump A"]
+  c11["Reactor Coolant Pump B"]
+  c12["Reactor Coolant Pump C"]
+  c13["Reactor Coolant Pump D"]
+  c14["Main Feedwater Pump A"]
+  c15["Main Feedwater Pump B"]
+  c16["Feedwater Tank"]
+  c17["Main Feedwater Header"]
+  c18["Feedwater Control Valve A"]
+  c19["Feedwater Control Valve B"]
+  c20["Feedwater Control Valve C"]
+  c21["Feedwater Control Valve D"]
+  c22["Auxiliary Feedwater Tank"]
+  c23["Motor-Driven Auxiliary Feedwater Pump"]
+  c24["Turbine-Driven Auxiliary Feedwater Pump"]
+  c25["Auxiliary Feedwater Header"]
+  c26["Auxiliary Feedwater Valve A"]
+  c27["Auxiliary Feedwater Valve B"]
+  c28["Auxiliary Feedwater Valve C"]
+  c29["Auxiliary Feedwater Valve D"]
+  c30["Main Steam Isolation Valve A"]
+  c31["Main Steam Isolation Valve B"]
+  c32["Main Steam Isolation Valve C"]
+  c33["Main Steam Isolation Valve D"]
+  c34["Main Steam Header"]
+  c35["Turbine Stop Valve"]
+  c36["Turbine Generator"]
+  c37["Electrical Generator"]
+  c38["Main Condenser"]
+  c39["Condensate Pump A"]
+  c40["Condensate Pump B"]
+  c41["Volume Control Tank"]
+  c42["Charging Pump"]
+  c43["Letdown Valve"]
+  c0 -- "no-service<br/>thermalContact<br/>core-to-vessel-thermal" --> c1
+  c0 -- "primaryCoolant<br/>fluidFlow<br/>pressurizer-surge-line" --> c2
+  c2 -- "primaryRelief<br/>fluidFlow<br/>pressurizer-relief-to-tank" --> c5
+  c0 -- "primaryCoolant<br/>fluidFlow<br/>rcs-hot-leg-a" --> c6
+  c6 -- "primaryCoolant<br/>fluidFlow<br/>rcs-cold-leg-a" --> c10
+  c10 -- "primaryCoolant<br/>fluidFlow<br/>rcp-a-to-core" --> c0
+  c0 -- "primaryCoolant<br/>fluidFlow<br/>rcs-hot-leg-b" --> c7
+  c7 -- "primaryCoolant<br/>fluidFlow<br/>rcs-cold-leg-b" --> c11
+  c11 -- "primaryCoolant<br/>fluidFlow<br/>rcp-b-to-core" --> c0
+  c0 -- "primaryCoolant<br/>fluidFlow<br/>rcs-hot-leg-c" --> c8
+  c8 -- "primaryCoolant<br/>fluidFlow<br/>rcs-cold-leg-c" --> c12
+  c12 -- "primaryCoolant<br/>fluidFlow<br/>rcp-c-to-core" --> c0
+  c0 -- "primaryCoolant<br/>fluidFlow<br/>rcs-hot-leg-d" --> c9
+  c9 -- "primaryCoolant<br/>fluidFlow<br/>rcs-cold-leg-d" --> c13
+  c13 -- "primaryCoolant<br/>fluidFlow<br/>rcp-d-to-core" --> c0
+  c16 -- "feedwater<br/>fluidFlow<br/>feedwater-tank-to-main-feedwater-pump-a" --> c14
+  c16 -- "feedwater<br/>fluidFlow<br/>feedwater-tank-to-main-feedwater-pump-b" --> c15
+  c14 -- "feedwater<br/>fluidFlow<br/>main-feedwater-pump-a-to-header" --> c17
+  c15 -- "feedwater<br/>fluidFlow<br/>main-feedwater-pump-b-to-header" --> c17
+  c17 -- "feedwater<br/>fluidFlow<br/>feedwater-header-to-control-valve-a" --> c18
+  c18 -- "feedwater<br/>fluidFlow<br/>feedwater-control-valve-a-to-sg-a" --> c6
+  c6 -- "mainSteam<br/>fluidFlow<br/>sg-a-steam-to-msiv-a" --> c30
+  c30 -- "mainSteam<br/>fluidFlow<br/>msiv-a-to-main-steam-header" --> c34
+  c17 -- "feedwater<br/>fluidFlow<br/>feedwater-header-to-control-valve-b" --> c19
+  c19 -- "feedwater<br/>fluidFlow<br/>feedwater-control-valve-b-to-sg-b" --> c7
+  c7 -- "mainSteam<br/>fluidFlow<br/>sg-b-steam-to-msiv-b" --> c31
+  c31 -- "mainSteam<br/>fluidFlow<br/>msiv-b-to-main-steam-header" --> c34
+  c17 -- "feedwater<br/>fluidFlow<br/>feedwater-header-to-control-valve-c" --> c20
+  c20 -- "feedwater<br/>fluidFlow<br/>feedwater-control-valve-c-to-sg-c" --> c8
+  c8 -- "mainSteam<br/>fluidFlow<br/>sg-c-steam-to-msiv-c" --> c32
+  c32 -- "mainSteam<br/>fluidFlow<br/>msiv-c-to-main-steam-header" --> c34
+  c17 -- "feedwater<br/>fluidFlow<br/>feedwater-header-to-control-valve-d" --> c21
+  c21 -- "feedwater<br/>fluidFlow<br/>feedwater-control-valve-d-to-sg-d" --> c9
+  c9 -- "mainSteam<br/>fluidFlow<br/>sg-d-steam-to-msiv-d" --> c33
+  c33 -- "mainSteam<br/>fluidFlow<br/>msiv-d-to-main-steam-header" --> c34
+  c34 -- "mainSteam<br/>fluidFlow<br/>main-steam-header-to-turbine-stop-valve" --> c35
+  c35 -- "mainSteam<br/>fluidFlow<br/>turbine-stop-valve-to-turbine" --> c36
+  c36 -- "exhaustSteam<br/>fluidFlow<br/>turbine-exhaust-to-condenser" --> c38
+  c36 -- "no-service<br/>electricalPower<br/>turbine-to-generator" --> c37
+  c38 -- "condensate<br/>fluidFlow<br/>condenser-to-condensate-pump-a" --> c39
+  c39 -- "condensate<br/>fluidFlow<br/>condensate-pump-a-to-feedwater-tank" --> c16
+  c38 -- "condensate<br/>fluidFlow<br/>condenser-to-condensate-pump-b" --> c40
+  c40 -- "condensate<br/>fluidFlow<br/>condensate-pump-b-to-feedwater-tank" --> c16
+  c22 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-tank-to-motor-pump" --> c23
+  c22 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-tank-to-turbine-pump" --> c24
+  c23 -- "auxFeedwater<br/>fluidFlow<br/>motor-afw-pump-to-header" --> c25
+  c24 -- "auxFeedwater<br/>fluidFlow<br/>turbine-afw-pump-to-header" --> c25
+  c25 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-header-to-valve-a" --> c26
+  c26 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-valve-a-to-sg-a" --> c6
+  c25 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-header-to-valve-b" --> c27
+  c27 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-valve-b-to-sg-b" --> c7
+  c25 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-header-to-valve-c" --> c28
+  c28 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-valve-c-to-sg-c" --> c8
+  c25 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-header-to-valve-d" --> c29
+  c29 -- "auxFeedwater<br/>fluidFlow<br/>aux-feedwater-valve-d-to-sg-d" --> c9
+  c41 -- "charging<br/>fluidFlow<br/>vct-to-charging-pump" --> c42
+  c42 -- "charging<br/>fluidFlow<br/>charging-pump-to-cold-leg-a" --> c0
+  c43 -- "letdown<br/>fluidFlow<br/>letdown-to-vct" --> c41
+

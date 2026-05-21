@@ -269,6 +269,8 @@ Current built-in query kinds:
 
 Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, a writable variable path, and a typed value. The provider validates the write and queues it for the next solver phase; it does not mutate variables through the query route.
 
+Process-plant graph queries now expose compiled connection metadata as `connectionKind`, optional fluid `service`, `nominalFluid`, `designPhase`, `solverModel`, and indexed incoming/outgoing adjacency. Consumers should use the pack query surface rather than parsing scenario files directly when they need the runtime topology.
+
 ## Interaction Contributions
 
 Packs may contribute interaction capability for cross-object and cross-simulation behavior.

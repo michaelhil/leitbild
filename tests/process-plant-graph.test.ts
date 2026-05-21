@@ -19,57 +19,46 @@ describe('process plant graph foundation', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
 
     expect(String(compiled.specId)).toBe('process-plant.pressurized-water-reactor.v1')
-    expect(compiled.components.map(component => String(component.id))).toEqual(['core', 'sgA', 'rcpA', 'feedwaterA', 'turbine', 'condenser'])
-    expect(compiled.linksByKind.hydraulicFlow).toEqual([0, 1, 2, 3])
-    expect(compiled.linksByKind.steamFlow).toEqual([4, 5])
+    expect(compiled.components.length).toBeGreaterThanOrEqual(40)
+    expect(compiled.components.map(component => String(component.id))).toEqual(expect.arrayContaining([
+      'core',
+      'vessel',
+      'sgA',
+      'sgB',
+      'sgC',
+      'sgD',
+      'rcpA',
+      'rcpB',
+      'rcpC',
+      'rcpD',
+      'mainSteamHeader',
+      'turbine',
+      'generator',
+      'condenser',
+    ]))
+    expect(compiled.linksByKind.fluidFlow.length).toBeGreaterThan(40)
+    expect(compiled.linksByKind.thermalContact).toEqual([0])
+    expect(compiled.linksByKind.electricalPower.length).toBe(1)
+    expect(compiled.linksByService.get('primaryCoolant' as never)?.length).toBeGreaterThanOrEqual(13)
+    expect(compiled.linksByService.get('mainSteam' as never)?.length).toBeGreaterThanOrEqual(10)
+    const coreIndex = compiled.componentIndexById.get('core' as never)
+    if (coreIndex === undefined) throw new Error('expected core component')
+    expect(compiled.incomingLinksByComponent[coreIndex]?.length).toBeGreaterThanOrEqual(5)
+    expect(compiled.outgoingLinksByComponent[coreIndex]?.length).toBeGreaterThanOrEqual(5)
     const publishedVariables = compiled.variables.filter(variable => variable.published).map(variable => String(variable.path))
     expect(publishedVariables).toContain('core.coolantOutletTemperatureC')
     expect(publishedVariables).toContain('sgA.heatTransferMw')
+    expect(publishedVariables).toContain('sgD.heatTransferMw')
     expect(publishedVariables).toContain('sgA.steamFlowKgPerS')
     expect(publishedVariables).toContain('condenser.condensateTemperatureC')
     expect(publishedVariables).toContain('rcs-hot-leg-a.temperatureC')
     expect(publishedVariables).toContain('turbine-exhaust-to-condenser.flowKgPerS')
-    expect(publishedVariables).toEqual([
-      'core.powerMw',
-      'core.coolantInletTemperatureC',
-      'core.coolantOutletTemperatureC',
-      'core.heatToCoolantMw',
-      'sgA.levelPercent',
-      'sgA.pressureMPa',
-      'sgA.heatTransferMw',
-      'sgA.primaryInletTemperatureC',
-      'sgA.primaryOutletTemperatureC',
-      'sgA.secondaryTemperatureC',
-      'sgA.steamFlowKgPerS',
-      'sgA.secondaryInventoryKg',
-      'rcpA.running',
-      'feedwaterA.flowKgPerS',
-      'feedwaterA.temperatureC',
-      'turbine.electricMw',
-      'turbine.steamFlowKgPerS',
-      'condenser.steamFlowKgPerS',
-      'condenser.condensateTemperatureC',
-      'condenser.backPressurePa',
-      'rcs-hot-leg-a.flowKgPerS',
-      'rcs-hot-leg-a.temperatureC',
-      'rcs-cold-leg-a.flowKgPerS',
-      'rcs-cold-leg-a.temperatureC',
-      'rcp-a-to-core.flowKgPerS',
-      'rcp-a-to-core.temperatureC',
-      'fw-a-to-sg-a.flowKgPerS',
-      'fw-a-to-sg-a.temperatureC',
-      'sg-a-steam-to-turbine.flowKgPerS',
-      'sg-a-steam-to-turbine.pressureMPa',
-      'sg-a-steam-to-turbine.radiationMSvPerH',
-      'sg-a-steam-to-turbine.valve.positionFraction',
-      'sg-a-steam-to-turbine.leak.areaFraction',
-      'turbine-exhaust-to-condenser.flowKgPerS',
-      'turbine-exhaust-to-condenser.temperatureC',
-    ])
-    expect(compiled.links[4]?.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
-    expect(compiled.variables.find(variable => variable.path === 'sg-a-steam-to-turbine.flowKgPerS')?.owner).toEqual({
+    const steamLink = compiled.links.find(link => link.id === 'sg-a-steam-to-msiv-a')
+    if (!steamLink) throw new Error('expected SG A main steam link')
+    expect(steamLink.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
+    expect(compiled.variables.find(variable => variable.path === 'sg-a-steam-to-msiv-a.flowKgPerS')?.owner).toEqual({
       type: 'link',
-      linkIndex: 4,
+      linkIndex: steamLink.index,
     })
   })
 
@@ -150,7 +139,7 @@ describe('process plant graph foundation', () => {
         }),
       ],
       connections: [
-        connect('bad-electrical-to-hydraulic', 'turbine.generatorOutput', 'rcpA.inlet'),
+        connect('bad-electrical-to-hydraulic', 'turbine.generatorOutput', 'rcpA.inlet', { connectionKind: 'electricalPower' }),
       ],
     })
 
@@ -195,11 +184,11 @@ describe('process plant graph foundation', () => {
         }),
       ],
       connections: [
-        connect('bad-steam-link', 'feedwaterA.outlet', 'sgA.feedwaterInlet', { linkKind: 'steamFlow' }),
+        connect('bad-steam-link', 'feedwaterA.outlet', 'sgA.feedwaterInlet', { connectionKind: 'thermalContact' }),
       ],
     })
 
-    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('port kinds require hydraulicFlow')
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('port kinds require fluidFlow')
   })
 
   test('keeps string port refs out of compiled links', () => {
@@ -209,8 +198,9 @@ describe('process plant graph foundation', () => {
 
     expect(firstLink).toMatchObject({
       fromComponentIndex: 0,
-      fromPortIndex: 0,
+      fromPortName: 'vesselThermal',
       toComponentIndex: 1,
+      toPortName: 'coreThermal',
       toPortIndex: 0,
     })
     expect('from' in firstLink).toBe(false)
@@ -286,7 +276,7 @@ describe('process plant graph foundation', () => {
     })
     const invalid = {
       ...pressurizedWaterReactorPlantSpec,
-      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-turbine'
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-msiv-a'
         ? {
             ...connection,
             variables: [duplicateLinkVariable, { ...duplicateLinkVariable, label: 'Duplicate main steam flow' }],
@@ -294,7 +284,7 @@ describe('process plant graph foundation', () => {
         : connection),
     }
 
-    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate variable path: sg-a-steam-to-turbine.flowKgPerS')
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate variable path: sg-a-steam-to-msiv-a.flowKgPerS')
   })
 
   test('rejects duplicate final variable paths across components and links', () => {
@@ -305,8 +295,12 @@ describe('process plant graph foundation', () => {
         {
           id: 'core',
           from: 'sgA.steamOutlet',
-          to: 'turbine.steamInlet',
-          linkKind: 'steamFlow',
+          to: 'mainSteamIsolationValveA.inlet',
+          connectionKind: 'fluidFlow',
+          service: 'mainSteam',
+          nominalFluid: 'steam',
+          designPhase: 'steam',
+          solverModel: 'compressibleSteam',
           variables: [
             {
               path: 'powerMw',
@@ -423,9 +417,10 @@ describe('process plant graph foundation', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const mermaid = plantGraphToMermaid(compiled)
 
-    expect(mermaid).toContain('flowchart LR')
+    expect(mermaid).toContain('flowchart TB')
     expect(mermaid).toContain('Reactor Core')
-    expect(mermaid).toContain('hydraulicFlow')
-    expect(mermaid).toContain('steamFlow')
+    expect(mermaid).toContain('primaryCoolant')
+    expect(mermaid).toContain('mainSteam')
+    expect(mermaid).toContain('fluidFlow')
   })
 })

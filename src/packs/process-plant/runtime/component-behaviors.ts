@@ -79,6 +79,26 @@ const averageIncomingLinkValue = (
   return count === 0 ? null : total / count
 }
 
+const averageOutgoingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
+): number | null => {
+  let total = 0
+  let count = 0
+  for (const link of system.graph.links) {
+    if (link.fromComponentIndex !== component.index) continue
+    if (!linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+    count += 1
+  }
+  return count === 0 ? null : total / count
+}
+
 export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
   const localPath = String(path).slice(String(component.id).length + 1)
   if (component.kind === 'reactorCore') {
@@ -187,12 +207,12 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'steam-generator-heat-transfer',
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
-    reads: ['secondaryTemperatureC', 'levelPercent', 'incoming:primary-water.temperatureC', 'incoming:primary-water.flowKgPerS'],
+    reads: ['secondaryTemperatureC', 'levelPercent', 'incoming:primaryCoolant.temperatureC', 'incoming:primaryCoolant.flowKgPerS'],
     writes: ['heatTransferMw', 'steamFlowKgPerS'],
     update: ({ system, component, context }): void => {
-      const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.medium === 'primary-water')
+      const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
-      const primaryWaterFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.medium === 'primary-water') ?? 0
+      const primaryWaterFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 0
       const secondaryTemperature = context.readNumber(componentVariablePath(component, 'secondaryTemperatureC'))
       const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 50, 0, 1)
       const transferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK') * Math.max(0, primaryWaterTemperature - secondaryTemperature)
@@ -247,24 +267,21 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       'primaryInletTemperatureC',
       'primaryOutletTemperatureC',
       'secondaryTemperatureC',
-      'incoming:primary-water.temperatureC',
-      'incoming:primary-water.flowKgPerS',
+      'incoming:primaryCoolant.temperatureC',
+      'incoming:primaryCoolant.flowKgPerS',
     ],
     writes: ['pressureMPa', 'levelPercent', 'primaryInletTemperatureC', 'primaryOutletTemperatureC', 'secondaryTemperatureC', 'secondaryInventoryKg'],
     update: ({ system, component, context }): void => {
-      const feedwaterFlow = averageFor(system.graph.components, candidate =>
-        candidate.kind === 'feedwaterSource' ? context.readNumber(componentVariablePath(candidate, 'flowKgPerS')) : null,
-      ) ?? 0
-      const turbineSteamFlow = averageFor(system.graph.components, candidate =>
-        candidate.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(candidate, 'steamFlowKgPerS')) : null,
-      ) ?? 0
+      const feedwaterFlow = (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'feedwater') ?? 0)
+        + (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'auxFeedwater') ?? 0)
+      const turbineSteamFlow = averageOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'mainSteam') ?? 0
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
       const heatTransfer = context.readNumber(componentVariablePath(component, 'heatTransferMw'))
       const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
-      const primaryInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.medium === 'primary-water')
+      const primaryInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
-      const primaryFlow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.medium === 'primary-water') ?? 1)
+      const primaryFlow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 1)
       const primaryOutletTarget = clamp(primaryInletTemperature - (heatTransfer * 1_000) / (primaryFlow * specificHeatWaterKjPerKgK), 180, primaryInletTemperature)
       const primaryTimeConstantSeconds = optionalParameterNumber(component, 'primaryThermalTimeConstantS', 10)
       context.write(componentVariablePath(component, 'primaryInletTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC')), primaryInletTemperature, context.dtSeconds, primaryTimeConstantSeconds))

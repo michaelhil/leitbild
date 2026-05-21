@@ -1,4 +1,20 @@
-import type { ComponentId, ComponentKind, ComponentInstanceSpec, ConnectionId, ConnectionPhysicalSpec, ProcessLinkVariableDescriptor, ProcessLinkKind, PlantGraphId, PlantGraphSpec, PortRef, VariablePath } from './model.ts'
+import type {
+  ComponentId,
+  ComponentKind,
+  ComponentInstanceSpec,
+  ConnectionId,
+  ConnectionKind,
+  ConnectionPhysicalSpec,
+  ConnectionService,
+  DesignPhase,
+  FluidKind,
+  FluidSolverModel,
+  ProcessLinkVariableDescriptor,
+  PlantGraphId,
+  PlantGraphSpec,
+  PortRef,
+  VariablePath,
+} from './model.ts'
 import { plantGraphSpecSchema } from './model.ts'
 
 export const component = (
@@ -18,8 +34,11 @@ export const connect = (
   from: string,
   to: string,
   options: {
-    readonly linkKind?: ProcessLinkKind
-    readonly medium?: string
+    readonly connectionKind?: ConnectionKind
+    readonly service?: string
+    readonly nominalFluid?: FluidKind
+    readonly designPhase?: DesignPhase
+    readonly solverModel?: FluidSolverModel
     readonly physical?: ConnectionPhysicalSpec
     readonly variables?: ReadonlyArray<ProcessLinkVariableDescriptor>
   } = {},
@@ -27,8 +46,11 @@ export const connect = (
   id: id as ConnectionId,
   from: from as PortRef,
   to: to as PortRef,
-  ...(options.linkKind === undefined ? {} : { linkKind: options.linkKind }),
-  ...(options.medium === undefined ? {} : { medium: options.medium }),
+  connectionKind: options.connectionKind,
+  ...(options.service === undefined ? {} : { service: options.service as ConnectionService }),
+  ...(options.nominalFluid === undefined ? {} : { nominalFluid: options.nominalFluid }),
+  ...(options.designPhase === undefined ? {} : { designPhase: options.designPhase }),
+  ...(options.solverModel === undefined ? {} : { solverModel: options.solverModel }),
   ...(options.physical === undefined ? {} : { physical: options.physical }),
   ...(options.variables === undefined ? {} : { variables: options.variables }),
 })

@@ -41,8 +41,10 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - AI agents and humans can author whole plant topologies as scenario/config data, while component physics remains code-backed and tested.
 - Invalid plant graphs fail before simulation starts.
 - Control-room surfaces and AI agents can use stable variable paths rather than ad hoc object fields.
-- Process-link terminology is used in compiled/runtime code. Scenario authors still define `connections`, and may add an optional `linkKind` plus physical/link-variable metadata.
+- Process-link terminology is used in compiled/runtime code. Scenario authors define `connections` with an explicit `connectionKind`; fluid links must also declare a `service` such as `primaryCoolant`, `mainSteam`, `feedwater`, `auxFeedwater`, or `condensate`.
+- `nominalFluid`, `designPhase`, and `solverModel` describe design intent for a fluid connection without making phase or fluid identity a brittle hard-coded label.
 - Simple conduit-local sensors, valves, and leaks can be modeled without exploding the graph into many tiny components.
+- The built-in graph now exercises a four-loop plant skeleton with four steam generators, four reactor coolant pumps, main and auxiliary feedwater paths, main steam/header/turbine/condenser paths, charging/letdown, and pressurizer topology.
 - Complex valves, instruments, or fittings can still become components later when they need multiple ports or rich internal behavior.
 - Internal high-frequency plant state does not become durable journal noise.
 - Future higher-fidelity components can replace simpler component definitions behind the same typed ports and variable paths.
