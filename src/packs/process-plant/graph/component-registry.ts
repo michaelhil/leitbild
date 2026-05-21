@@ -14,10 +14,10 @@ const variable = (descriptor: ComponentVariableInput): ComponentVariableDescript
 
 export const defineComponent = (definition: ComponentDefinition): ComponentDefinition => definition
 
-const pwrComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
+const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
-    kind: 'reactorCoreLite' as ComponentKind,
-    label: 'Reactor Core Lite',
+    kind: 'reactorCore' as ComponentKind,
+    label: 'Reactor Core',
     ports: {
       hotLegA: { kind: 'hydraulicThermal', direction: 'out' },
       coldLegA: { kind: 'hydraulicThermal', direction: 'in' },
@@ -35,8 +35,8 @@ const pwrComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     ],
   }),
   defineComponent({
-    kind: 'steamGeneratorLite' as ComponentKind,
-    label: 'Steam Generator Lite',
+    kind: 'steamGenerator' as ComponentKind,
+    label: 'Steam Generator',
     ports: {
       primaryInlet: { kind: 'hydraulicThermal', direction: 'in' },
       primaryOutlet: { kind: 'hydraulicThermal', direction: 'out' },
@@ -75,8 +75,8 @@ const pwrComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     ],
   }),
   defineComponent({
-    kind: 'feedwaterSourceLite' as ComponentKind,
-    label: 'Feedwater Source Lite',
+    kind: 'feedwaterSource' as ComponentKind,
+    label: 'Feedwater Source',
     ports: {
       outlet: { kind: 'hydraulicThermal', direction: 'out' },
       flowDemand: { kind: 'controlSignal', direction: 'in' },
@@ -90,8 +90,8 @@ const pwrComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     ],
   }),
   defineComponent({
-    kind: 'turbineLoadSinkLite' as ComponentKind,
-    label: 'Turbine Load Sink Lite',
+    kind: 'turbineLoadSink' as ComponentKind,
+    label: 'Turbine Load Sink',
     ports: {
       steamInlet: { kind: 'steam', direction: 'in' },
       loadDemand: { kind: 'controlSignal', direction: 'in' },
@@ -108,6 +108,6 @@ const pwrComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   }),
 ]
 
-export const pwrComponentRegistry: ReadonlyMap<ComponentKind, ComponentDefinition> = new Map(
-  pwrComponentDefinitions.map(definition => [definition.kind, definition]),
+export const processPlantComponentRegistry: ReadonlyMap<ComponentKind, ComponentDefinition> = new Map(
+  processPlantComponentDefinitions.map(definition => [definition.kind, definition]),
 )

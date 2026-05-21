@@ -94,7 +94,7 @@ const resolveDefinition = (
   kind: ComponentKind,
 ): ComponentDefinition => {
   const definition = registry.get(kind)
-  if (!definition) throw new Error(`unknown PWR component kind: ${kind}`)
+  if (!definition) throw new Error(`unknown process plant component kind: ${kind}`)
   return definition
 }
 

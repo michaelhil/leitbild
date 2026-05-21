@@ -6,7 +6,7 @@ import { plantGraphSpecSchema } from '../graph/index.ts'
 
 const specDir = dirname(fileURLToPath(import.meta.url))
 
-export const readPwrPlantGraphSpec = (fileName: string): PlantGraphSpec => {
+export const readProcessPlantGraphSpec = (fileName: string): PlantGraphSpec => {
   const raw = JSON.parse(readFileSync(join(specDir, fileName), 'utf8')) as unknown
   return plantGraphSpecSchema.parse(raw)
 }

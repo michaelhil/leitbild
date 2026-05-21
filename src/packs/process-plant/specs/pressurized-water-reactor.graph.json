@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "id": "pwr.westinghouse-lite.v1",
-  "title": "Westinghouse-style PWR Lite",
+  "id": "process-plant.pressurized-water-reactor.v1",
+  "title": "Pressurized Water Reactor",
   "timestep": {
     "fixedStepMs": 100
   },
   "components": [
     {
       "id": "core",
-      "kind": "reactorCoreLite",
+      "kind": "reactorCore",
       "label": "Reactor Core",
       "parameters": {
         "ratedPowerMw": 3400,
@@ -17,7 +17,7 @@
     },
     {
       "id": "sgA",
-      "kind": "steamGeneratorLite",
+      "kind": "steamGenerator",
       "label": "Steam Generator A",
       "parameters": {
         "nominalPressureMPa": 6.9,
@@ -36,7 +36,7 @@
     },
     {
       "id": "feedwaterA",
-      "kind": "feedwaterSourceLite",
+      "kind": "feedwaterSource",
       "label": "Feedwater Train A",
       "parameters": {
         "nominalFlowKgPerS": 760,
@@ -45,7 +45,7 @@
     },
     {
       "id": "turbine",
-      "kind": "turbineLoadSinkLite",
+      "kind": "turbineLoadSink",
       "label": "Turbine Generator",
       "parameters": {
         "nominalElectricMw": 1100,

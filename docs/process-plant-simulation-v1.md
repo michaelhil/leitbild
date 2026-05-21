@@ -1,46 +1,46 @@
-# PWR Process Simulation V1 Design Spec
+# Process Plant Simulation V1 Design Spec
 
 ## Purpose
 
-Leitbild should be able to host process-control simulations that interact with the wider operational world. The first feasibility target is a simplified Westinghouse-style pressurized water reactor (PWR) plant that can support common emergency scenario studies such as steam generator tube rupture (SGTR), loss of feedwater, turbine trip/load rejection, reactor trip, and recovery actions.
+Leitbild should be able to host process-control simulations that interact with the wider operational world. The first feasibility target is a pressurized water reactor plant, but the pack identity is deliberately broader: `process-plant`.
 
-V1 is not a licensing-grade thermal-hydraulic analysis code. It is a medium-fidelity process-control simulator intended to test whether Leitbild can run, inspect, control, and coordinate a coupled plant model credibly enough for control-room workflow research, AI-agent studies, and cross-domain scenario interaction.
+V1 is not a licensing-grade thermal-hydraulic analysis code. It is a medium-fidelity process-control simulator intended to test whether Leitbild can run, inspect, control, and coordinate coupled plant models credibly enough for control-room workflow research, AI-agent studies, and cross-domain scenario interaction.
 
-The key feasibility question is whether a declarative component graph, typed ports/edges, a compiled runtime graph, and a fixed-step solver can make plant evolution understandable, efficient, replayable, and extensible.
+The key feasibility question is whether a scenario-owned component graph, typed ports/edges, a compiled runtime graph, and a fixed-step solver can make plant evolution understandable, efficient, replayable, and extensible.
 
 ## Core Decision
 
-The PWR simulation lives inside a `pwr` pack. Leitbild core remains use-case agnostic.
+Process plant simulations live inside the `process-plant` pack. Leitbild core remains use-case agnostic.
 
-The architectural decision is recorded in [ADR 0017](./adr/0017-pwr-process-simulation-component-graph.md).
+The architectural decision is recorded in [ADR 0017](./adr/0017-process-plant-component-graph.md).
 
 Inside the pack:
 
 - `PlantGraphSpec` describes plant topology and parameters as validated data.
-- Component definitions declare parameters, ports, variables, and later solver behavior.
-- A graph compiler validates raw specs and compiles them into indexed runtime graphs.
-- A fixed-step runtime owns continuous process evolution.
-- A variable registry exposes stable paths, units, writability, and publish policy.
-- Discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
-- Pack queries expose read-only process state through Leitbild's generic query surface.
+- component definitions declare parameters, ports, variables, and later solver behavior.
+- a graph compiler validates raw specs and compiles them into indexed runtime graphs.
+- a fixed-step runtime owns continuous process evolution.
+- a variable registry exposes stable paths, units, writability, and publish policy.
+- discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
+- pack queries expose read-only process state through Leitbild's generic query surface.
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
 ## Scenario-Owned Process Assembly
 
-The full plant run should be assembled from a Leitbild Scenario Definition. The scenario declares active packs and may include one or more `processSystems`. Each process system names the owning pack, the component library, and a graph data object.
+The full plant run is assembled from a Leitbild Scenario Definition. The scenario declares active packs and may include one or more `processSystems`. Each process system names the owning pack, the component library, and a graph data object.
 
 ```json
 {
   "processSystems": [
     {
       "id": "plant",
-      "pack": "pwr",
-      "componentLibrary": "pwr-lite",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
       "graph": {
         "schemaVersion": 1,
-        "id": "pwr.westinghouse-lite.v1",
-        "title": "Westinghouse-style PWR Lite",
+        "id": "process-plant.pressurized-water-reactor.v1",
+        "title": "Pressurized Water Reactor",
         "timestep": { "fixedStepMs": 100 },
         "components": [],
         "connections": [],
@@ -51,7 +51,7 @@ The full plant run should be assembled from a Leitbild Scenario Definition. The 
 }
 ```
 
-This makes the plant topology config-owned rather than hardcoded in TypeScript. A future AI agent can author a complete plant graph by writing scenario/config data, then Leitbild validates and compiles it before runtime.
+This makes plant topology config-owned rather than hardcoded in TypeScript. A future AI agent can author a complete plant graph by writing scenario/config data, then Leitbild validates and compiles it before runtime.
 
 The reusable machinery remains code-owned:
 
@@ -66,19 +66,9 @@ That boundary is deliberate. Scenarios instantiate components and connect them; 
 
 ## Canonical Graph Format
 
-V1 uses JSON-compatible graph data as the canonical runtime input. The current built-in PWR lite graph lives at `src/packs/pwr/specs/westinghouse-lite.graph.json`.
+V1 uses JSON-compatible graph data as the canonical runtime input. The current built-in pressurized water reactor graph lives at `src/packs/process-plant/specs/pressurized-water-reactor.graph.json`.
 
-A TypeScript data-builder DSL remains available as an authoring and test helper.
-
-This gives:
-
-- TypeScript autocomplete and refactoring support.
-- Branded ids for internal code.
-- Runtime Zod validation for loaded specs.
-- A pure-data canonical shape that can later be serialized to JSON or generated from YAML.
-- Mermaid diagrams generated from the canonical graph instead of Mermaid being the source of truth.
-
-The builder is not the runtime source of truth. Runtime plant assembly should load graph data from the Scenario Definition or from a graph data file referenced by scenario tooling.
+A TypeScript data-builder DSL remains available as an authoring and test helper. The builder is not the runtime source of truth. Runtime plant assembly should load graph data from the Scenario Definition or from a graph data file referenced by scenario tooling.
 
 Mermaid is documentation/debug output only. It is not the canonical plant model.
 
@@ -129,6 +119,7 @@ Port kinds:
 - `hydraulic`
 - `thermal`
 - `hydraulicThermal`
+- `steam`
 - `electricalAc`
 - `mechanicalShaft`
 - `controlSignal`
@@ -151,6 +142,18 @@ Edge kinds:
 - `logicSignal`
 
 Typed ports are part of the graph. They prevent impossible topology and determine which solver pass owns a connection. For example, a hydraulic pump outlet can connect to a pipe inlet, but an electrical breaker output cannot connect directly to a hydraulic pump inlet.
+
+## Current Component Library
+
+The current component library is intentionally small. It defines graph interfaces and variables, not running physics yet.
+
+- `reactorCore`
+- `steamGenerator`
+- `centrifugalPump`
+- `feedwaterSource`
+- `turbineLoadSink`
+
+These names avoid temporary fidelity labels. The current implementation is still an early model, but the public component kind names should remain stable unless a deliberate breaking change is made.
 
 ## Graph Compiler
 
@@ -215,11 +218,9 @@ Example paths:
 
 - `core.powerMw`
 - `core.reactivityPcm`
-- `rcs.loopA.hotLeg.temperatureC`
-- `pressurizer.pressureMPa`
 - `sgA.levelPercent`
-- `feedwater.trainA.flowKgPerS`
-- `protection.reactorTrip.active`
+- `feedwaterA.flowKgPerS`
+- `turbine.electricMw`
 
 The registry is the shared language for process surfaces, AI agents, tests, trends, scenario scripts, and pack queries.
 
@@ -227,7 +228,7 @@ The registry is the shared language for process surfaces, AI agents, tests, tren
 
 Continuous physics is solver-owned. Discrete events are for operational changes.
 
-Do not model continuous plant physics through component-to-component event messages such as “pump emitted water” or “steam generator received hot water.” That creates order-dependent behavior and breaks physical coherence.
+Do not model continuous plant physics through component-to-component event messages such as "pump emitted water" or "steam generator received hot water." That creates order-dependent behavior and breaks physical coherence.
 
 Instead:
 
@@ -248,24 +249,11 @@ Discrete event examples:
 
 V1 should use a deterministic fixed-step solver. A 100 ms internal timestep is a reasonable first target, with lower-frequency telemetry publication.
 
-Solver pass order:
-
-1. apply queued commands,
-2. apply scheduled scenario injections,
-3. run control and protection logic,
-4. solve hydraulic and steam flow approximations,
-5. solve heat transfer approximations,
-6. update component states,
-7. compute derived variables,
-8. evaluate alarms and trips,
-9. publish selected telemetry/events,
-10. store provider snapshot state.
-
-## V1 Feasibility Scenarios
+## Feasibility Scenarios
 
 V1 should prove the architecture against three scenario families.
 
-SGTR-like transient:
+Steam generator tube rupture-like transient:
 
 - primary-to-secondary leak path,
 - primary pressure/inventory effect,
@@ -276,7 +264,7 @@ SGTR-like transient:
 Loss of feedwater:
 
 - feedwater flow reduction or loss,
-- SG level decrease,
+- steam generator level decrease,
 - degraded heat removal,
 - reactor/turbine trip logic,
 - simplified auxiliary/emergency feedwater path.
@@ -292,38 +280,38 @@ The initial target is credible process directionality and control-room usefulnes
 
 ## Pack Surface
 
-V1 should use the existing generic pack query route. Do not add `/api/pwr/*` endpoint families without a new ADR.
+V1 should use the existing generic pack query route. Do not add `/api/process-plant/*` endpoint families without a new ADR.
 
 Candidate queries:
 
-- `pwr.variables.read`
-- `pwr.variables.search`
-- `pwr.graph.read`
-- `pwr.alarms.list`
-- `pwr.trends.read`
-- `pwr.runtime.status`
+- `process-plant.variables.read`
+- `process-plant.variables.search`
+- `process-plant.graph.read`
+- `process-plant.alarms.list`
+- `process-plant.trends.read`
+- `process-plant.runtime.status`
 
 Candidate commands:
 
-- `pwr.control.write`
-- `pwr.control.operate`
-- `pwr.alarm.acknowledge`
-- `pwr.scenario.injectFault`
+- `process-plant.control.write`
+- `process-plant.control.operate`
+- `process-plant.alarm.acknowledge`
+- `process-plant.scenario.injectFault`
 
 Candidate events:
 
-- `pwr.alarm.entered`
-- `pwr.alarm.cleared`
-- `pwr.trip.actuated`
-- `pwr.operator.action`
-- `pwr.variable.thresholdCrossed`
-- `pwr.modeChanged`
+- `process-plant.alarm.entered`
+- `process-plant.alarm.cleared`
+- `process-plant.trip.actuated`
+- `process-plant.operator.action`
+- `process-plant.variable.thresholdCrossed`
+- `process-plant.modeChanged`
 
-These are future runtime surfaces. Phase 1 implements only the graph/spec foundation.
+These are future runtime surfaces. The current implementation covers only the graph/spec foundation.
 
 ## Persistence And Replay
 
-The PWR provider will own private runtime state. It must persist enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
+The process plant provider will own private runtime state. It must persist enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
 
 Persist:
 
@@ -349,11 +337,9 @@ The performance strategy is architectural:
 - avoid parsing raw graph strings in the solver loop,
 - add typed arrays only after profiling proves they are needed.
 
-V1 acceptance should include a headless performance test for the first PWR graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
+V1 acceptance should include a headless performance test for the first reactor graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
 
 ## Implementation Phases
-
-Phase 0: documentation and ADRs.
 
 Phase 1: graph/spec foundation:
 
@@ -363,7 +349,7 @@ Phase 1: graph/spec foundation:
 - graph compiler,
 - validation diagnostics,
 - Mermaid generator,
-- first PWR lite graph spec,
+- first pressurized water reactor graph spec,
 - compiler tests.
 
 Phase 2: runtime skeleton:
@@ -375,22 +361,22 @@ Phase 2: runtime skeleton:
 
 Phase 3: minimal process slice:
 
-- reactor core lite,
+- reactor core,
 - primary loop,
-- steam generator lite,
+- steam generator,
 - feedwater source,
 - turbine/load sink,
 - simple control/protection logic.
 
 Phase 4: emergency scenario tests:
 
-- SGTR-like transient,
+- steam generator tube rupture-like transient,
 - loss-of-feedwater transient,
 - turbine trip/load rejection.
 
 Phase 5: Leitbild integration:
 
-- PWR pack,
+- process plant pack registration,
 - provider adapter,
 - generic pack queries,
 - commands,
@@ -407,7 +393,7 @@ Phase 6: first control-room surface:
 ## Non-Goals For V1
 
 - full plant fidelity,
-- RELAP/TRACE replacement,
+- licensing-grade analysis,
 - FMI/FMUs,
 - multi-rate solvers,
 - arbitrary user-authored equations,
@@ -418,8 +404,8 @@ Phase 6: first control-room surface:
 
 ## Guardrails
 
-- Keep PWR-specific logic in `src/packs/pwr/*`.
-- Keep Leitbild core free of PWR terminology.
+- Keep process-plant logic in `src/packs/process-plant/*`.
+- Keep Leitbild core free of plant-specific terminology.
 - Use TypeScript and Bun.
 - Do not add JavaScript files.
 - Do not add placeholder production paths.

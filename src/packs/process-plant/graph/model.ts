@@ -3,13 +3,13 @@ import type { Brand } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 
 export type PlantGraphId = Brand<string, 'PlantGraphId'>
-export type ComponentId = Brand<string, 'PwrComponentId'>
-export type ComponentKind = Brand<string, 'PwrComponentKind'>
-export type ConnectionId = Brand<string, 'PwrConnectionId'>
-export type PortName = Brand<string, 'PwrPortName'>
-export type PortRef = Brand<string, 'PwrPortRef'>
-export type LocalVariablePath = Brand<string, 'PwrLocalVariablePath'>
-export type VariablePath = Brand<string, 'PwrVariablePath'>
+export type ComponentId = Brand<string, 'ProcessPlantComponentId'>
+export type ComponentKind = Brand<string, 'ProcessPlantComponentKind'>
+export type ConnectionId = Brand<string, 'ProcessPlantConnectionId'>
+export type PortName = Brand<string, 'ProcessPlantPortName'>
+export type PortRef = Brand<string, 'ProcessPlantPortRef'>
+export type LocalVariablePath = Brand<string, 'ProcessPlantLocalVariablePath'>
+export type VariablePath = Brand<string, 'ProcessPlantVariablePath'>
 
 export const plantGraphIdSchema = idSchema.transform(value => value as PlantGraphId)
 export const componentIdSchema = idSchema.transform(value => value as ComponentId)
