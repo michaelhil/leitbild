@@ -75,9 +75,13 @@
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
         "nominalSecondaryInventoryKg": 56000,
+        "nominalSteamFlowKgPerS": 760,
+        "recirculationRatio": 4.2,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "inventoryTimeConstantS": 20,
+        "steamQualityTimeConstantS": 8,
+        "steamPressureGainMPaPerKgS": 0.006,
         "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
@@ -92,9 +96,13 @@
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
         "nominalSecondaryInventoryKg": 56000,
+        "nominalSteamFlowKgPerS": 760,
+        "recirculationRatio": 4.2,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "inventoryTimeConstantS": 20,
+        "steamQualityTimeConstantS": 8,
+        "steamPressureGainMPaPerKgS": 0.006,
         "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
@@ -109,9 +117,13 @@
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
         "nominalSecondaryInventoryKg": 56000,
+        "nominalSteamFlowKgPerS": 760,
+        "recirculationRatio": 4.2,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "inventoryTimeConstantS": 20,
+        "steamQualityTimeConstantS": 8,
+        "steamPressureGainMPaPerKgS": 0.006,
         "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
@@ -126,9 +138,13 @@
         "initialPrimaryInletTemperatureC": 322,
         "initialSecondaryTemperatureC": 285,
         "nominalSecondaryInventoryKg": 56000,
+        "nominalSteamFlowKgPerS": 760,
+        "recirculationRatio": 4.2,
         "primaryThermalTimeConstantS": 10,
         "secondaryThermalTimeConstantS": 25,
         "inventoryTimeConstantS": 20,
+        "steamQualityTimeConstantS": 8,
+        "steamPressureGainMPaPerKgS": 0.006,
         "tubeMetalThermalCapacityMjPerK": 8000
       }
     },
@@ -174,7 +190,9 @@
       "label": "Main Feedwater Pump A",
       "parameters": {
         "nominalFlowKgPerS": 760,
-        "nominalHeadPa": 1100000
+        "nominalHeadPa": 1100000,
+        "flowTimeConstantS": 6,
+        "maxFlowRampKgPerS2": 220
       }
     },
     {
@@ -183,7 +201,9 @@
       "label": "Main Feedwater Pump B",
       "parameters": {
         "nominalFlowKgPerS": 760,
-        "nominalHeadPa": 1100000
+        "nominalHeadPa": 1100000,
+        "flowTimeConstantS": 6,
+        "maxFlowRampKgPerS2": 220
       }
     },
     {
@@ -234,7 +254,9 @@
       "label": "Motor-Driven Auxiliary Feedwater Pump",
       "parameters": {
         "nominalFlowKgPerS": 170,
-        "nominalHeadPa": 1200000
+        "nominalHeadPa": 1200000,
+        "flowTimeConstantS": 4,
+        "maxFlowRampKgPerS2": 90
       }
     },
     {
@@ -243,7 +265,9 @@
       "label": "Turbine-Driven Auxiliary Feedwater Pump",
       "parameters": {
         "nominalFlowKgPerS": 170,
-        "nominalHeadPa": 1200000
+        "nominalHeadPa": 1200000,
+        "flowTimeConstantS": 4,
+        "maxFlowRampKgPerS2": 90
       }
     },
     {
@@ -346,7 +370,9 @@
       "label": "Condensate Pump A",
       "parameters": {
         "nominalFlowKgPerS": 760,
-        "nominalHeadPa": 700000
+        "nominalHeadPa": 700000,
+        "flowTimeConstantS": 8,
+        "maxFlowRampKgPerS2": 180
       }
     },
     {
@@ -355,7 +381,9 @@
       "label": "Condensate Pump B",
       "parameters": {
         "nominalFlowKgPerS": 760,
-        "nominalHeadPa": 700000
+        "nominalHeadPa": 700000,
+        "flowTimeConstantS": 8,
+        "maxFlowRampKgPerS2": 180
       }
     },
     {
@@ -2864,6 +2892,9 @@
     "sgA.heatTransferMw",
     "sgA.secondaryTemperatureC",
     "sgA.steamFlowKgPerS",
+    "sgA.boilingRateKgPerS",
+    "sgA.feedwaterFlowKgPerS",
+    "sgA.steamQualityFraction",
     "sgA.secondaryInventoryKg",
     "rcpA.running",
     "rcpA.flowKgPerS",
@@ -2886,6 +2917,9 @@
     "sgB.heatTransferMw",
     "sgB.secondaryTemperatureC",
     "sgB.steamFlowKgPerS",
+    "sgB.boilingRateKgPerS",
+    "sgB.feedwaterFlowKgPerS",
+    "sgB.steamQualityFraction",
     "sgB.secondaryInventoryKg",
     "rcpB.running",
     "rcpB.flowKgPerS",
@@ -2908,6 +2942,9 @@
     "sgC.heatTransferMw",
     "sgC.secondaryTemperatureC",
     "sgC.steamFlowKgPerS",
+    "sgC.boilingRateKgPerS",
+    "sgC.feedwaterFlowKgPerS",
+    "sgC.steamQualityFraction",
     "sgC.secondaryInventoryKg",
     "rcpC.running",
     "rcpC.flowKgPerS",
@@ -2930,6 +2967,9 @@
     "sgD.heatTransferMw",
     "sgD.secondaryTemperatureC",
     "sgD.steamFlowKgPerS",
+    "sgD.boilingRateKgPerS",
+    "sgD.feedwaterFlowKgPerS",
+    "sgD.steamQualityFraction",
     "sgD.secondaryInventoryKg",
     "rcpD.running",
     "rcpD.flowKgPerS",

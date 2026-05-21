@@ -81,6 +81,9 @@ describe('process plant runtime', () => {
       'sgA.tubeMetalTemperatureC',
       'sgA.secondaryTemperatureC',
       'sgA.steamFlowKgPerS',
+      'sgA.boilingRateKgPerS',
+      'sgA.feedwaterFlowKgPerS',
+      'sgA.steamQualityFraction',
       'sgA.secondaryInventoryKg',
       'sgB.steamFlowKgPerS',
       'sgC.steamFlowKgPerS',
@@ -324,6 +327,9 @@ describe('process plant runtime', () => {
       .toBeGreaterThan(Number(runtime.readVariable(valueOf('sgA.secondaryTemperatureC'))))
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('sgA.steamFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('sgA.steamQualityFraction')))).toBeGreaterThan(0.75)
     expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(0)
   })
@@ -368,12 +374,16 @@ describe('process plant runtime', () => {
 
     runtime.tick(1_000)
     const before = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+    const initialFeedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpA.running'), value: false })
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
+    runtime.tick(100)
+    expect(Number(runtime.readVariable(valueOf('mainFeedwaterPumpA.flowKgPerS')))).toBeGreaterThan(0)
     for (let index = 0; index < 120; index += 1) runtime.tick(100)
 
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(before)
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(56_000 * before / 100)
+    expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeLessThan(initialFeedwaterFlow)
   })
 
   test('reactor coolant pump trip collapses primary link flow and heat transfer', () => {

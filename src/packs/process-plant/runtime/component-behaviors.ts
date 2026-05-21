@@ -135,6 +135,9 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     }
     if (localPath === 'secondaryTemperatureC') return optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285)
     if (localPath === 'steamFlowKgPerS') return 0
+    if (localPath === 'boilingRateKgPerS') return 0
+    if (localPath === 'feedwaterFlowKgPerS') return 0
+    if (localPath === 'steamQualityFraction') return 0.99
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
   }
   if (component.kind === 'pressurizer') {
@@ -219,7 +222,14 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     update: ({ component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
-      context.write(componentVariablePath(component, 'flowKgPerS'), running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0)
+      const targetFlow = running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0
+      const currentFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
+      const timeConstant = optionalParameterNumber(component, 'flowTimeConstantS', 0)
+      const maxRamp = optionalParameterNumber(component, 'maxFlowRampKgPerS2', Number.POSITIVE_INFINITY)
+      const relaxedFlow = timeConstant > 0
+        ? relaxToward(currentFlow, targetFlow, context.dtSeconds, timeConstant)
+        : targetFlow
+      context.write(componentVariablePath(component, 'flowKgPerS'), approach(currentFlow, relaxedFlow, maxRamp * context.dtSeconds))
     },
   },
   {
@@ -239,19 +249,27 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
     reads: ['tubeMetalTemperatureC', 'secondaryTemperatureC', 'levelPercent', 'incoming:primaryCoolant.temperatureC', 'incoming:primaryCoolant.flowKgPerS'],
-    writes: ['heatTransferMw', 'steamFlowKgPerS'],
+    writes: ['heatTransferMw', 'steamFlowKgPerS', 'boilingRateKgPerS'],
     update: ({ system, component, context }): void => {
       const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
       const primaryWaterFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 0
       const secondaryTemperature = context.readNumber(componentVariablePath(component, 'secondaryTemperatureC'))
       const tubeMetalTemperature = context.readNumber(componentVariablePath(component, 'tubeMetalTemperatureC'))
-      const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 50, 0, 1)
-      const transferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK') * Math.max(0, tubeMetalTemperature - secondaryTemperature)
+      const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
+      const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 100, 0, 1)
+      const levelHeatTransferFactor = clamp(levelFraction / Math.max(0.05, nominalLevelFraction), 0.05, 1.15)
+      const recirculationRatio = optionalParameterNumber(component, 'recirculationRatio', 4)
+      const recirculationHeatTransferFactor = clamp(0.65 + recirculationRatio * 0.09, 0.8, 1.35)
+      const transferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK')
+        * recirculationHeatTransferFactor
+        * Math.max(0, tubeMetalTemperature - secondaryTemperature)
       const flowCapacity = heatMwFromWaterFlowAndDeltaT(primaryWaterFlow, Math.max(0, primaryWaterTemperature - secondaryTemperature))
-      const heatTransfer = Math.max(0, Math.min(transferCapacity, flowCapacity) * levelFraction)
+      const heatTransfer = Math.max(0, Math.min(transferCapacity, flowCapacity) * levelHeatTransferFactor)
+      const boilingRate = steamFlowKgPerSFromHeatMw(heatTransfer)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
-      context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlowKgPerSFromHeatMw(heatTransfer))
+      context.write(componentVariablePath(component, 'boilingRateKgPerS'), boilingRate)
+      context.write(componentVariablePath(component, 'steamFlowKgPerS'), Math.min(boilingRate, optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760) * 1.25))
     },
   },
   {
@@ -388,6 +406,9 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       'levelPercent',
       'heatTransferMw',
       'steamFlowKgPerS',
+      'boilingRateKgPerS',
+      'feedwaterFlowKgPerS',
+      'steamQualityFraction',
       'primaryInletTemperatureC',
       'primaryOutletTemperatureC',
       'tubeMetalTemperatureC',
@@ -396,10 +417,21 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       'incoming:primaryCoolant.temperatureC',
       'incoming:primaryCoolant.flowKgPerS',
     ],
-    writes: ['pressureMPa', 'levelPercent', 'primaryInletTemperatureC', 'primaryOutletTemperatureC', 'tubeMetalTemperatureC', 'secondaryTemperatureC', 'secondaryInventoryKg'],
+    writes: [
+      'pressureMPa',
+      'levelPercent',
+      'primaryInletTemperatureC',
+      'primaryOutletTemperatureC',
+      'tubeMetalTemperatureC',
+      'secondaryTemperatureC',
+      'secondaryInventoryKg',
+      'feedwaterFlowKgPerS',
+      'steamQualityFraction',
+    ],
     update: ({ system, component, context }): void => {
       const feedwaterFlow = (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'feedwater') ?? 0)
         + (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'auxFeedwater') ?? 0)
+      context.write(componentVariablePath(component, 'feedwaterFlowKgPerS'), feedwaterFlow)
       const turbineSteamFlow = averageOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'mainSteam') ?? 0
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
@@ -431,9 +463,23 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       context.write(componentVariablePath(component, 'secondaryTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, context.dtSeconds, optionalParameterNumber(component, 'secondaryThermalTimeConstantS', 25)))
       const currentPressure = context.readNumber(pressurePath)
       const generatedSteamFlow = context.readNumber(componentVariablePath(component, 'steamFlowKgPerS'))
+      const boilingRate = context.readNumber(componentVariablePath(component, 'boilingRateKgPerS'))
       const temperaturePressureBias = (context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')) - saturationTemperatureCFromPressureMPa(nominalPressure)) / 100
-      const pressureTarget = nominalPressure * (1 + temperaturePressureBias) + ((generatedSteamFlow - turbineSteamFlow) / 1_000) * nominalPressure
+      const pressureTarget = nominalPressure * (1 + temperaturePressureBias)
+        + (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
       context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
+      const steamQualityTarget = turbineSteamFlow <= 0
+        ? 1
+        : clamp(boilingRate / Math.max(1, turbineSteamFlow), 0.78, 1)
+      context.write(
+        componentVariablePath(component, 'steamQualityFraction'),
+        relaxToward(
+          context.readNumber(componentVariablePath(component, 'steamQualityFraction')),
+          steamQualityTarget,
+          context.dtSeconds,
+          optionalParameterNumber(component, 'steamQualityTimeConstantS', 8),
+        ),
+      )
       const nominalInventory = optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000)
       const currentInventory = context.readNumber(componentVariablePath(component, 'secondaryInventoryKg'))
       const nextInventory = clamp(currentInventory + (feedwaterFlow - turbineSteamFlow) * context.dtSeconds, 0, nominalInventory)

@@ -429,12 +429,12 @@ Current runtime behavior is deliberately minimal but functional:
 - reactor heat is transferred into a primary coolant temperature rise using a shared lumped `Q = m * cp * dT` helper,
 - core fuel temperature and decay heat are now explicit state variables, so reactor trips can leave residual heat removal demand after fission power falls,
 - core coolant, steam generator primary/secondary temperatures, SG tube-metal temperature, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
-- pump flow follows running state and speed demand,
+- pump flow follows running state and speed demand; pumps can optionally declare bounded response time/ramp limits without changing pumps that intentionally remain instantaneous,
 - process links propagate simple flow and temperature values through primary coolant, feedwater, auxiliary feedwater, main steam, condensate, charging, letdown, and turbine-exhaust services,
-- steam generator heat transfer depends on `primaryCoolant` flow, tube-metal temperature, secondary temperature, and level,
-- steam generator steam production is derived from heat transfer using a simple latent-heat approximation,
+- steam generator heat transfer depends on `primaryCoolant` flow, tube-metal temperature, secondary temperature, level, and recirculation ratio,
+- steam generator boiling rate and steam production are derived from heat transfer using a simple latent-heat approximation,
 - steam generator secondary inventory is a bounded mass-balance state driven by feedwater and outgoing steam flow,
-- steam generator level, pressure, primary outlet temperature, tube-metal temperature, and secondary temperature trend in response to feedwater, generated steam, turbine steam use, and primary-side heat input,
+- steam generator level, pressure, primary outlet temperature, tube-metal temperature, secondary temperature, feedwater inflow, boiling rate, and steam quality trend in response to feedwater, generated steam, turbine steam use, and primary-side heat input,
 - turbine electrical output follows load, inlet steam flow, and available steam pressure,
 - condenser sink receives turbine exhaust steam and trends condensate temperature and back pressure,
 - pressurizer pressure, level, water inventory, water temperature, steam temperature, heater demand, spray demand, relief valve position, and relief flow are now explicit component variables,
@@ -595,7 +595,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10 seconds and five minutes of six systems in roughly 0.62 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 6x wall-clock penalty for 6x the plant count, and roughly 480x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The first physics-deepening passes kept those optimizations: richer core, steam-generator, and pressurizer behavior added variables and arithmetic, not extra runtime graph scans or new orchestration layers.
+Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.11 seconds and five minutes of six systems in roughly 0.61 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 5.6x wall-clock penalty for 6x the plant count, and roughly 490x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The first physics-deepening passes kept those optimizations: richer core, steam-generator, feedwater-pump, and pressurizer behavior added variables and arithmetic, not extra runtime graph scans or new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 
@@ -630,7 +630,7 @@ Phase 3: minimal process slice:
 - condenser sink,
 - simple control/protection logic.
 
-The first coupled energy/flow path is now in place inside the headless runtime: reactor core, primary flow/temperature propagation, steam generator heat transfer and steam production, turbine load response, and condenser sink behavior. Feedwater is still modeled as a controlled source rather than a returned condensate loop. Protection logic, alarms, richer accident/fault injection, and first process-control surfaces remain follow-up work.
+The first coupled energy/flow path is now in place inside the headless runtime: reactor core, primary flow/temperature propagation, steam generator heat transfer, secondary boiling/quality/inventory response, bounded feedwater pump response, turbine load response, and condenser sink behavior. The feedwater train now uses explicit pumps, headers, valves, and links in the graph, but tank inventory/source-sink accounting and a fully returned condensate loop are still follow-up work. Protection logic, alarms, richer accident/fault injection, and first process-control surfaces also remain follow-up work.
 
 Phase 4: emergency scenario tests:
 
