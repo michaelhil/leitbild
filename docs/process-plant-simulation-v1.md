@@ -19,10 +19,10 @@ Inside the pack:
 - `PlantGraphSpec` describes plant topology and parameters as validated data.
 - component definitions declare parameters, ports, variables, and later solver behavior.
 - a graph compiler validates raw specs and compiles them into indexed runtime graphs.
-- a fixed-step runtime owns continuous process evolution.
+- a fixed-step headless runtime owns continuous process evolution.
 - a variable registry exposes stable paths, units, writability, and publish policy.
 - discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
-- pack queries expose read-only process state through Leitbild's generic query surface.
+- future pack queries expose read-only process state through Leitbild's generic query surface after provider lifecycle integration exists.
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
@@ -145,7 +145,7 @@ Typed ports are part of the graph. They prevent impossible topology and determin
 
 ## Current Component Library
 
-The current component library is intentionally small. It defines graph interfaces and variables, not running physics yet.
+The current component library is intentionally small. It defines graph interfaces, variables, parameter schemas, and the first runtime behavior slice.
 
 - `reactorCore`
 - `steamGenerator`
@@ -202,10 +202,24 @@ Variable descriptors include:
 - `path`
 - `label`
 - `kind`
+- `quantity`
 - `unit`
 - `domain`
 - `writable`
 - `publish`
+
+Units are structured metadata, not free text. Current quantities and units are intentionally finite:
+
+- `power`: `MW`
+- `reactivity`: `pcm`
+- `ratio`: `fraction` or `percent`
+- `pressure`: `MPa` or `Pa`
+- `flowRate`: `kg/s`
+- `temperature`: `degC`
+- `head`: `Pa`
+- `boolean`: `boolean`
+
+The runtime snapshots include both the display value and a canonical value for ratios. For example, `sgA.levelPercent` may publish `55` with unit `percent`, while its canonical value is `0.55`.
 
 Publish policies:
 
@@ -248,6 +262,32 @@ Discrete event examples:
 - threshold crossed.
 
 V1 should use a deterministic fixed-step solver. A 100 ms internal timestep is a reasonable first target, with lower-frequency telemetry publication.
+
+## Runtime And Solver Phases
+
+The current runtime is intentionally headless. It is created from a `CompiledProcessPlantSystem`, owns one variable table, accepts typed variable-write commands for writable variables, and advances only through fixed internal timesteps.
+
+The runtime phase order is explicit:
+
+1. `applyCommands`
+2. `updateControlLogic`
+3. `solveElectrical`
+4. `solveFluidFlow`
+5. `solveThermalTransfer`
+6. `updateComponentState`
+7. `publishOutputs`
+
+This follows the same broad lesson as serious simulator integrations such as FlyByWire: simulator bridges and user inputs should be outside the continuous model, while the model itself runs in a clear read/update/write rhythm. Continuous physics should not depend on incidental event order or browser update cadence.
+
+Current runtime behavior is deliberately minimal but functional:
+
+- reactor power responds gradually to rod insertion demand,
+- pump flow follows running state and speed demand,
+- steam generator heat transfer depends on core power, primary flow, and level,
+- steam generator level and pressure trend in response to feedwater and turbine load,
+- turbine electrical output follows load and available steam pressure.
+
+The runtime is not yet connected to a Control Instance provider. That is deliberate: the pack now has a real executable kernel and headless tests, so the next integration step can expose actual process state instead of a placeholder API.
 
 ## Feasibility Scenarios
 
@@ -307,7 +347,7 @@ Candidate events:
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-These are future runtime surfaces. The current implementation covers only the graph/spec foundation.
+These are future runtime surfaces. The current implementation covers graph/spec validation plus a headless fixed-step runtime and testbed. Provider integration should be added only when the runtime lifecycle, snapshot/restore, and query routing are implemented together.
 
 ## Persistence And Replay
 
@@ -352,12 +392,13 @@ Phase 1: graph/spec foundation:
 - first pressurized water reactor graph spec,
 - compiler tests.
 
-Phase 2: runtime skeleton:
+Phase 2: runtime kernel:
 
 - variable registry runtime,
-- fixed-step runtime shell,
-- provider snapshot shape,
-- read-only variable query.
+- fixed-step solver phases,
+- structured variable units,
+- writable-variable command validation,
+- headless process testbed.
 
 Phase 3: minimal process slice:
 
@@ -367,6 +408,8 @@ Phase 3: minimal process slice:
 - feedwater source,
 - turbine/load sink,
 - simple control/protection logic.
+
+The first part of Phase 3 is underway inside the headless runtime. Protection logic, alarms, provider snapshots, and Control Instance query/command integration remain separate follow-up work.
 
 Phase 4: emergency scenario tests:
 

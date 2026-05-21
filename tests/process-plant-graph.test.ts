@@ -10,6 +10,7 @@ import {
   plantGraphToMermaid,
   pressurizedWaterReactorPlantSpec,
   processPlantComponentRegistry,
+  variableDescriptorSchema,
 } from '../src/packs/process-plant/index.ts'
 
 describe('process plant graph foundation', () => {
@@ -189,6 +190,43 @@ describe('process plant graph foundation', () => {
     })
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('published variable does not exist')
+  })
+
+  test('rejects unsupported initial state instead of validating it as parameters', () => {
+    const invalid = plantGraph({
+      id: 'process-plant.unsupported-initial-state.v1',
+      title: 'Unsupported Initial State Graph',
+      fixedStepMs: 100,
+      components: [
+        {
+          ...component('core', 'reactorCore', 'Reactor Core', {
+            ratedPowerMw: 3400,
+            initialPowerFraction: 0.85,
+          }),
+          initialState: {
+            powerMw: 1000,
+          },
+        },
+      ],
+      connections: [],
+    })
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('does not define initial state schema')
+  })
+
+  test('rejects invalid quantity and unit combinations', () => {
+    const result = variableDescriptorSchema.safeParse({
+      path: 'core.powerMw',
+      label: 'Core power',
+      kind: 'state',
+      domain: 'nuclear',
+      writable: false,
+      publish: 'telemetry',
+      quantity: 'power',
+      unit: 'percent',
+    })
+
+    expect(result.success).toBe(false)
   })
 
   test('generates Mermaid documentation from compiled topology', () => {

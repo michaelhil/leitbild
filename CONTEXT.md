@@ -140,6 +140,18 @@ _Avoid_: pack-specific grid implementations in UI modules, direct H3 imports out
 The weather pack's materialized subset of the global H3 spatial field. It stores H3 cells currently under a weather influence, cells evolving after prior influence, and stable non-default cells that remain queryable. Default global weather is implicit and does not require materializing every cell on earth. Map rendering receives provider-projected features for base grid outlines, affected cells, and influence shapes through a pack query; it does not own weather computation.
 _Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
+**Process Plant Runtime**:
+The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and future provider integration.
+_Avoid_: modeling continuous process physics as object-to-object events, HTTP endpoint behavior before a real runtime lifecycle exists, or treating process variables as operational objects
+
+**Process Variable**:
+A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, and publish policy.
+_Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
+
+**Solver Phase**:
+One ordered pass in a continuous process simulation tick, such as applying commands, solving electrical behavior, solving fluid flow, solving heat transfer, or publishing outputs.
+_Avoid_: hidden update ordering inside component callbacks or continuous physics over the interaction event bus
+
 **Map Context Layer**:
 A vector tile layer that provides environmental or infrastructure context such as roads, POIs, water, buildings, land use, or boundaries.
 _Avoid_: Operational Object when the feature is static OSM-derived context
@@ -189,6 +201,9 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - A **Spatial Field Index** can be reused by multiple packs, but each pack owns its own field semantics and computation.
 - A **Weather Sparse Field** belongs to the weather simulation provider; the map receives projected features through `weather.mapFeatures`, not the field store itself.
 - H3 is a shared indexing vocabulary, not shared domain truth. Weather, wildfire, radiation, or exposure packs may all use the same cell ids while keeping separate pack-owned state and update loops.
+- A **Process Plant Runtime** belongs to the `process-plant` pack and consumes a compiled process system from a Scenario Definition.
+- **Process Variables** are not **Operational Objects**; selected variables may be published through future pack queries or surfaces.
+- **Solver Phases** update continuous plant state; **Domain Events** remain for discrete accepted history and operational transitions.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.
 

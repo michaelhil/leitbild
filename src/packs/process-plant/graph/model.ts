@@ -67,26 +67,77 @@ export type VariableDomain = z.infer<typeof variableDomainSchema>
 export const variablePublishPolicySchema = z.enum(['internal', 'telemetry', 'alarm', 'leitbild'])
 export type VariablePublishPolicy = z.infer<typeof variablePublishPolicySchema>
 
+export const processQuantitySchema = z.enum([
+  'boolean',
+  'flowRate',
+  'head',
+  'power',
+  'pressure',
+  'ratio',
+  'reactivity',
+  'temperature',
+])
+export type ProcessQuantity = z.infer<typeof processQuantitySchema>
+
+export const processUnitSchema = z.enum([
+  'boolean',
+  'degC',
+  'fraction',
+  'kg/s',
+  'MPa',
+  'MW',
+  'Pa',
+  'pcm',
+  'percent',
+])
+export type ProcessUnit = z.infer<typeof processUnitSchema>
+
+const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<ProcessUnit>>> = {
+  boolean: new Set(['boolean']),
+  flowRate: new Set(['kg/s']),
+  head: new Set(['Pa']),
+  power: new Set(['MW']),
+  pressure: new Set(['MPa', 'Pa']),
+  ratio: new Set(['fraction', 'percent']),
+  reactivity: new Set(['pcm']),
+  temperature: new Set(['degC']),
+}
+
 export const portDefinitionSchema = z.object({
   kind: portKindSchema,
   direction: portDirectionSchema,
 })
 export type PortDefinition = z.infer<typeof portDefinitionSchema>
 
-export const variableDescriptorSchema = z.object({
+const validateQuantityUnit = (
+  descriptor: { readonly quantity: ProcessQuantity; readonly unit: ProcessUnit },
+  ctx: z.RefinementCtx,
+): void => {
+  if (!allowedUnitsByQuantity[descriptor.quantity].has(descriptor.unit)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['unit'],
+      message: `unit ${descriptor.unit} is not valid for quantity ${descriptor.quantity}`,
+    })
+  }
+}
+
+const variableDescriptorBaseSchema = z.object({
   path: variablePathSchema,
   label: z.string().min(1),
   kind: variableKindSchema,
   domain: variableDomainSchema,
   writable: z.boolean(),
   publish: variablePublishPolicySchema,
-  unit: z.string().min(1).optional(),
+  quantity: processQuantitySchema,
+  unit: processUnitSchema,
 })
+export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
 
-export const componentVariableDescriptorSchema = variableDescriptorSchema.extend({
+export const componentVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
   path: localVariablePathSchema,
-})
+}).superRefine(validateQuantityUnit)
 export type ComponentVariableDescriptor = z.infer<typeof componentVariableDescriptorSchema>
 
 export const timestepSpecSchema = z.object({

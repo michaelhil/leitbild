@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { ComponentDefinition, ComponentKind, ComponentVariableDescriptor, LocalVariablePath } from './model.ts'
+import { componentVariableDescriptorSchema } from './model.ts'
 
 const normalized = z.number().finite().min(0).max(1)
 
@@ -8,7 +9,7 @@ type ComponentVariableInput = Omit<ComponentVariableDescriptor, 'path'> & {
 }
 
 const variable = (descriptor: ComponentVariableInput): ComponentVariableDescriptor => ({
-  ...descriptor,
+  ...componentVariableDescriptorSchema.parse(descriptor),
   path: descriptor.path as LocalVariablePath,
 })
 
@@ -29,9 +30,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       initialPowerFraction: normalized,
     }),
     variables: [
-      variable({ path: 'powerMw', label: 'Core power', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', unit: 'MW' }),
-      variable({ path: 'reactivityPcm', label: 'Reactivity', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', unit: 'pcm' }),
-      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', domain: 'control', writable: true, publish: 'telemetry' }),
+      variable({ path: 'powerMw', label: 'Core power', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'reactivityPcm', label: 'Reactivity', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
+      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
     ],
   }),
   defineComponent({
@@ -50,9 +51,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       heatTransferCoefficientMwPerK: z.number().finite().positive(),
     }),
     variables: [
-      variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', unit: '%' }),
-      variable({ path: 'pressureMPa', label: 'Steam generator pressure', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', unit: 'MPa' }),
-      variable({ path: 'heatTransferMw', label: 'Heat transfer', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', unit: 'MW' }),
+      variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'pressureMPa', label: 'Steam generator pressure', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
+      variable({ path: 'heatTransferMw', label: 'Heat transfer', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
     ],
   }),
   defineComponent({
@@ -69,9 +70,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalHeadPa: z.number().finite().positive(),
     }),
     variables: [
-      variable({ path: 'running', label: 'Running', kind: 'discrete', domain: 'control', writable: true, publish: 'telemetry' }),
-      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', domain: 'control', writable: true, publish: 'telemetry' }),
-      variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', unit: 'kg/s' }),
+      variable({ path: 'running', label: 'Running', kind: 'discrete', domain: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
   defineComponent({
@@ -86,7 +87,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       temperatureC: z.number().finite(),
     }),
     variables: [
-      variable({ path: 'flowKgPerS', label: 'Feedwater flow', kind: 'state', domain: 'hydraulic', writable: true, publish: 'telemetry', unit: 'kg/s' }),
+      variable({ path: 'flowKgPerS', label: 'Feedwater flow', kind: 'state', domain: 'hydraulic', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
   defineComponent({
@@ -102,8 +103,8 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       initialLoadFraction: normalized,
     }),
     variables: [
-      variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', unit: 'MW' }),
-      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', domain: 'control', writable: true, publish: 'telemetry' }),
+      variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
     ],
   }),
 ]

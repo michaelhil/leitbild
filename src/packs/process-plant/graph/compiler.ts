@@ -101,6 +101,17 @@ const resolveDefinition = (
 const variablePathFor = (componentId: ComponentId, localPath: LocalVariablePath): VariablePath =>
   `${componentId}.${localPath}` as VariablePath
 
+const parseInitialState = (
+  definition: ComponentDefinition,
+  initialState: unknown,
+  componentId: ComponentId,
+): unknown => {
+  if (!definition.initialStateSchema) {
+    throw new Error(`component ${componentId} initialState provided but kind ${definition.kind} does not define initial state schema`)
+  }
+  return parseWithContext(definition.initialStateSchema, initialState, `component ${componentId} initialState`)
+}
+
 export const compilePlantGraph = (
   input: unknown,
   registry: ReadonlyMap<ComponentKind, ComponentDefinition>,
@@ -122,7 +133,7 @@ export const compilePlantGraph = (
       label: component.label,
       parameters: parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`),
       ...(component.initialState === undefined ? {} : {
-        initialState: parseWithContext(definition.initialStateSchema ?? definition.parametersSchema, component.initialState, `component ${component.id} initialState`),
+        initialState: parseInitialState(definition, component.initialState, component.id),
       }),
       ports: compilePorts(definition),
       variables: definition.variables.map(variable => ({

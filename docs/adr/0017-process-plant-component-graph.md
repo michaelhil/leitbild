@@ -20,7 +20,9 @@ Mermaid diagrams are generated from this graph for review and documentation; Mer
 
 The graph uses typed component ports and typed edges. Raw component/port references are parsed once by a graph compiler, which validates topology, parameters, port compatibility, variable publication, and connection direction before runtime. The compiler produces indexed component and edge tables for the future solver.
 
-Continuous physics stays inside the process plant provider runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries expose selected read-only process state through the generic pack query surface.
+Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries will expose selected read-only process state through the generic pack query surface after the runtime lifecycle is integrated with a Control Instance provider.
+
+Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests and future provider integration.
 
 ## Consequences
 
@@ -31,6 +33,8 @@ Continuous physics stays inside the process plant provider runtime. Leitbild eve
 - Control-room surfaces and AI agents can use stable variable paths rather than ad hoc object fields.
 - Internal high-frequency plant state does not become durable journal noise.
 - Future higher-fidelity components can replace simpler component definitions behind the same typed ports and variable paths.
+- The pack now has a real headless runtime/testbed before public query or UI surfaces are added.
+- Adding a process API without runtime snapshot/restore and provider lifecycle support would be premature.
 
 ## Guardrails
 
@@ -41,3 +45,5 @@ Continuous physics stays inside the process plant provider runtime. Leitbild eve
 - Do not make Mermaid or diagrams canonical topology.
 - Do not make TypeScript plant graph files the runtime source of truth when scenario/config data can define the graph.
 - Do not add placeholder component behavior. Component graph metadata is allowed because it is used by validation and compilation; solver behavior must be real when added.
+- Do not use free-text variable units.
+- Do not add public process query/command endpoints until they can be backed by the runtime lifecycle rather than static graph metadata.
