@@ -6,10 +6,11 @@ export const processPlantSolverPhases = [
   'applyCommands',
   'updateControlLogic',
   'solveElectrical',
-  'solveFluidFlow',
+  'solveFluidFlowComponents',
+  'solveFluidFlowLinks',
   'solveThermalTransfer',
   'updateComponentState',
-  'publishOutputs',
+  'updateProcessLinkState',
 ] as const
 export type ProcessPlantSolverPhase = typeof processPlantSolverPhases[number]
 

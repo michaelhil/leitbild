@@ -345,20 +345,26 @@ Runtime code is split by responsibility:
 
 - `runtime.ts` is the fixed-step orchestrator and clock.
 - `variable-table.ts` owns the process variable map, queued variable-write commands, type/writability checks, and snapshots.
+- `behavior-contract.ts` defines the constrained execution context used by solver behavior.
 - `component-behaviors.ts` owns current component initialization and component solver behavior.
 - `process-link-behaviors.ts` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, and radiation updates.
 
 This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state.
+
+Behavior modules do not receive the raw variable table directly. Each behavior runs through a `ProcessPlantBehaviorContext` for a single phase and component or process link. That context can read declared variables, but it may write only the local output variables declared by that behavior. Wrong-type writes, unknown paths, non-finite numbers, and writes outside the behavior's declared outputs fail loudly. This is intentionally simpler than a full plugin engine, but it gives the runtime a real contract before more plant components are added.
 
 The runtime phase order is explicit:
 
 1. `applyCommands`
 2. `updateControlLogic`
 3. `solveElectrical`
-4. `solveFluidFlow`
-5. `solveThermalTransfer`
-6. `updateComponentState`
-7. `publishOutputs`
+4. `solveFluidFlowComponents`
+5. `solveFluidFlowLinks`
+6. `solveThermalTransfer`
+7. `updateComponentState`
+8. `updateProcessLinkState`
+
+Publishing is not a hidden solver phase. After the fixed-step loop advances, the runtime returns the selected published variables from the authoritative variable table. Keeping publication as a read-out rather than a phase avoids implying that process state changes during telemetry extraction.
 
 This follows the same broad lesson as serious simulator integrations such as FlyByWire: simulator bridges and user inputs should be outside the continuous model, while the model itself runs in a clear read/update/write rhythm. Continuous physics should not depend on incidental event order or browser update cadence.
 
@@ -371,8 +377,9 @@ Current runtime behavior is deliberately minimal but functional:
 - turbine electrical output follows load and available steam pressure.
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
+- runtime invariants reject non-finite process values before they can become snapshots or telemetry.
 
-The runtime is not yet connected to a Control Instance provider. That is deliberate: the pack now has a real executable kernel and headless tests, so the next integration step can expose actual process state instead of a placeholder API.
+The runtime is connected through the process-plant simulation provider. The provider owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Control Instance command path.
 
 ## Feasibility Scenarios
 

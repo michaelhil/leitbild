@@ -26,7 +26,9 @@ Continuous physics stays inside the process plant pack runtime. Leitbild events 
 
 Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests, provider persistence, and queries.
 
-The runtime code is factored into an orchestrator, a variable table, component behaviors, and process-link behaviors. The variable table is the single authoritative in-memory state for compiled component and link variables; behavior modules do not maintain shadow copies.
+The runtime code is factored into an orchestrator, a variable table, component behaviors, process-link behaviors, and a small behavior contract. The variable table is the single authoritative in-memory state for compiled component and link variables; behavior modules do not maintain shadow copies.
+
+Component and process-link behaviors run through a constrained behavior context. A behavior may read declared process variables, but it may write only the output variables it declares for its current component or link. This keeps the solver functional and explicit without turning V1 into a general-purpose runtime plugin framework. The runtime also checks generic invariants after each fixed step so non-finite process values fail before they become provider snapshots or telemetry.
 
 The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Control Instance directory rather than writing dense process variables into the Control Instance object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
 
@@ -42,6 +44,8 @@ The process-plant simulation provider owns provider-private runtime state. It pe
 - Complex valves, instruments, or fittings can still become components later when they need multiple ports or rich internal behavior.
 - Internal high-frequency plant state does not become durable journal noise.
 - Future higher-fidelity components can replace simpler component definitions behind the same typed ports and variable paths.
+- Solver behavior now has an explicit write contract, making richer future components less likely to corrupt unrelated plant state.
+- The runtime phase list reflects actual execution; telemetry publication is a read-out from the variable table, not a hidden state-changing phase.
 - The pack now has a real headless runtime/testbed plus Control Instance provider integration.
 - The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
@@ -60,3 +64,5 @@ The process-plant simulation provider owns provider-private runtime state. It pe
 - Do not put unrelated behavior into process links. A link variable should observe or modify that one connection; multi-port or standalone behavior belongs in a component.
 - Do not expose process variables through object snapshots or object updates.
 - Do not persist queued commands only in memory; accepted commands must survive provider close/reopen until the solver applies them.
+- Do not give behavior modules unrestricted access to mutate the variable table.
+- Do not add a dynamic behavior/plugin loader until there is a concrete second implementation pressure; scenario data instantiates graphs, but solver behavior remains reviewed TypeScript code in V1.

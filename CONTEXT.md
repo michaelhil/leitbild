@@ -161,8 +161,12 @@ A typed connection between process plant components. A process link may be a sim
 _Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection
 
 **Solver Phase**:
-One ordered pass in a continuous process simulation tick, such as applying commands, solving electrical behavior, solving fluid flow, solving heat transfer, or publishing outputs.
+One ordered pass in a continuous process simulation tick, such as applying commands, solving electrical behavior, solving component/link fluid flow, solving heat transfer, or updating component and link state.
 _Avoid_: hidden update ordering inside component callbacks or continuous physics over the interaction event bus
+
+**Process Plant Behavior Context**:
+The constrained execution surface given to one process-plant component or process-link behavior during one solver phase. It can read declared process variables and write only the behavior's declared output variables.
+_Avoid_: giving behavior modules unrestricted variable-table mutation access, hidden shadow state, or arbitrary scenario-authored equations in V1
 
 **Map Context Layer**:
 A vector tile layer that provides environmental or infrastructure context such as roads, POIs, water, buildings, land use, or boundaries.
@@ -218,6 +222,7 @@ _Avoid_: expecting the live feed to be a permanent replay store
 - **Process Variables** are not **Operational Objects**; selected variables are exposed through generic pack queries and future process surfaces.
 - A **Process Link** can contribute **Process Variables** to the same registry as component variables; sensors and actuators are metadata on variables, not separate node types by default.
 - **Solver Phases** update continuous plant state; **Domain Events** remain for discrete accepted history and operational transitions.
+- A **Process Plant Behavior Context** is created inside one **Solver Phase** and enforces write discipline against the **Process Variable Table**.
 - **Provider Private State** restores provider-owned runtime mechanics after reload without contaminating **Projected State**.
 - The **Durable Journal** stores meaningful accepted history, not every volatile movement update.
 - The **Live Change Feed** keeps connected Clients current; stale Clients reload **Projected State** from a snapshot.

@@ -1,6 +1,11 @@
 import type { CompiledComponent, VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import type { ProcessPlantValue } from './model.ts'
+import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
+import {
+  componentVariablePath,
+  createBehaviorContext,
+  type ComponentBehaviorDefinition,
+} from './behavior-contract.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
 
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
@@ -17,9 +22,6 @@ export const parameterNumber = (component: CompiledComponent, key: string): numb
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`component ${component.id} missing numeric parameter ${key}`)
   return value
 }
-
-export const componentVariablePath = (component: CompiledComponent, localPath: string): VariablePath =>
-  `${component.id}.${localPath}` as VariablePath
 
 const hasComponentVariable = (component: CompiledComponent, localPath: string): boolean =>
   component.variables.some(variable => variable.path === componentVariablePath(component, localPath))
@@ -69,87 +71,132 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
   throw new Error(`component ${component.id} has no runtime initializer for variable ${path}`)
 }
 
-export const updateControlLogic = (system: CompiledProcessPlantSystem, table: ProcessPlantVariableTable, dtSeconds: number): void => {
-  for (const component of system.graph.components) {
-    if (component.kind !== 'reactorCore') continue
-    const rodPath = componentVariablePath(component, 'rodInsertionFraction')
-    const reactivityPath = componentVariablePath(component, 'reactivityPcm')
-    if (!hasComponentVariable(component, 'rodInsertionFraction') || !hasComponentVariable(component, 'reactivityPcm')) continue
-    const rodInsertion = clamp(table.readNumber(rodPath), 0, 1)
-    const targetReactivity = (0.5 - rodInsertion) * 1_200
-    const reactivity = table.readNumber(reactivityPath)
-    table.write(reactivityPath, approach(reactivity, targetReactivity, 500 * dtSeconds))
-  }
-}
-
-export const solveElectrical = (system: CompiledProcessPlantSystem, table: ProcessPlantVariableTable, dtSeconds: number): void => {
-  const averageSteamGeneratorPressure = averageFor(system.graph.components, component => {
-    if (component.kind !== 'steamGenerator') return null
-    return table.readNumber(componentVariablePath(component, 'pressureMPa')) / parameterNumber(component, 'nominalPressureMPa')
-  })
-  for (const component of system.graph.components) {
-    if (component.kind !== 'turbineLoadSink') continue
-    const load = clamp(table.readNumber(componentVariablePath(component, 'loadFraction')), 0, 1)
-    const target = parameterNumber(component, 'nominalElectricMw') * load * clamp(averageSteamGeneratorPressure ?? 1, 0, 1.2)
-    const current = table.readNumber(componentVariablePath(component, 'electricMw'))
-    table.write(componentVariablePath(component, 'electricMw'), approach(current, target, parameterNumber(component, 'nominalElectricMw') * 0.2 * dtSeconds))
-  }
-}
-
-export const solveFluidFlowComponents = (system: CompiledProcessPlantSystem, table: ProcessPlantVariableTable): void => {
-  for (const component of system.graph.components) {
-    if (component.kind !== 'centrifugalPump') continue
-    const running = table.readBoolean(componentVariablePath(component, 'running'))
-    const speed = clamp(table.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
-    table.write(componentVariablePath(component, 'flowKgPerS'), running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0)
-  }
-}
-
-export const solveThermalTransfer = (system: CompiledProcessPlantSystem, table: ProcessPlantVariableTable): void => {
-  const corePower = averageFor(system.graph.components, component =>
-    component.kind === 'reactorCore' ? table.readNumber(componentVariablePath(component, 'powerMw')) : null,
-  ) ?? 0
-  const primaryFlowFraction = averageFor(system.graph.components, component => {
-    if (component.kind !== 'centrifugalPump') return null
-    const nominal = parameterNumber(component, 'nominalFlowKgPerS')
-    return nominal === 0 ? 0 : table.readNumber(componentVariablePath(component, 'flowKgPerS')) / nominal
-  }) ?? 0
-  for (const component of system.graph.components) {
-    if (component.kind !== 'steamGenerator') continue
-    const levelFraction = clamp(table.readNumber(componentVariablePath(component, 'levelPercent')) / 50, 0, 1)
-    const heatTransfer = corePower * clamp(primaryFlowFraction, 0, 1.15) * levelFraction
-    table.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
-  }
-}
-
-export const updateComponentState = (system: CompiledProcessPlantSystem, table: ProcessPlantVariableTable, dtSeconds: number): void => {
-  const turbineLoadMw = averageFor(system.graph.components, component =>
-    component.kind === 'turbineLoadSink' ? table.readNumber(componentVariablePath(component, 'electricMw')) : null,
-  ) ?? 0
-  const feedwaterFlow = averageFor(system.graph.components, component =>
-    component.kind === 'feedwaterSource' ? table.readNumber(componentVariablePath(component, 'flowKgPerS')) : null,
-  ) ?? 0
-  for (const component of system.graph.components) {
-    if (component.kind === 'reactorCore') {
+export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
+  {
+    id: 'reactor-core-reactivity-control',
+    phase: 'updateControlLogic',
+    componentKind: 'reactorCore',
+    writes: ['reactivityPcm'],
+    update: ({ component, context }): void => {
+      if (!hasComponentVariable(component, 'rodInsertionFraction') || !hasComponentVariable(component, 'reactivityPcm')) return
+      const rodInsertion = clamp(context.readNumber(componentVariablePath(component, 'rodInsertionFraction')), 0, 1)
+      const targetReactivity = (0.5 - rodInsertion) * 1_200
+      const reactivity = context.readNumber(componentVariablePath(component, 'reactivityPcm'))
+      context.write(componentVariablePath(component, 'reactivityPcm'), approach(reactivity, targetReactivity, 500 * context.dtSeconds))
+    },
+  },
+  {
+    id: 'turbine-electrical-output',
+    phase: 'solveElectrical',
+    componentKind: 'turbineLoadSink',
+    writes: ['electricMw'],
+    update: ({ system, component, context }): void => {
+      const averageSteamGeneratorPressure = averageFor(system.graph.components, candidate => {
+        if (candidate.kind !== 'steamGenerator') return null
+        return context.readNumber(componentVariablePath(candidate, 'pressureMPa')) / parameterNumber(candidate, 'nominalPressureMPa')
+      })
+      const load = clamp(context.readNumber(componentVariablePath(component, 'loadFraction')), 0, 1)
+      const target = parameterNumber(component, 'nominalElectricMw') * load * clamp(averageSteamGeneratorPressure ?? 1, 0, 1.2)
+      const current = context.readNumber(componentVariablePath(component, 'electricMw'))
+      context.write(
+        componentVariablePath(component, 'electricMw'),
+        approach(current, target, parameterNumber(component, 'nominalElectricMw') * 0.2 * context.dtSeconds),
+      )
+    },
+  },
+  {
+    id: 'centrifugal-pump-flow',
+    phase: 'solveFluidFlowComponents',
+    componentKind: 'centrifugalPump',
+    writes: ['flowKgPerS'],
+    update: ({ component, context }): void => {
+      const running = context.readBoolean(componentVariablePath(component, 'running'))
+      const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
+      context.write(componentVariablePath(component, 'flowKgPerS'), running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0)
+    },
+  },
+  {
+    id: 'steam-generator-heat-transfer',
+    phase: 'solveThermalTransfer',
+    componentKind: 'steamGenerator',
+    writes: ['heatTransferMw'],
+    update: ({ system, component, context }): void => {
+      const corePower = averageFor(system.graph.components, candidate =>
+        candidate.kind === 'reactorCore' ? context.readNumber(componentVariablePath(candidate, 'powerMw')) : null,
+      ) ?? 0
+      const primaryFlowFraction = averageFor(system.graph.components, candidate => {
+        if (candidate.kind !== 'centrifugalPump') return null
+        const nominal = parameterNumber(candidate, 'nominalFlowKgPerS')
+        return nominal === 0 ? 0 : context.readNumber(componentVariablePath(candidate, 'flowKgPerS')) / nominal
+      }) ?? 0
+      const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 50, 0, 1)
+      const heatTransfer = corePower * clamp(primaryFlowFraction, 0, 1.15) * levelFraction
+      context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
+    },
+  },
+  {
+    id: 'reactor-core-power-state',
+    phase: 'updateComponentState',
+    componentKind: 'reactorCore',
+    writes: ['powerMw'],
+    update: ({ component, context }): void => {
       const ratedPower = parameterNumber(component, 'ratedPowerMw')
-      const rodInsertion = clamp(table.readNumber(componentVariablePath(component, 'rodInsertionFraction')), 0, 1)
-      const reactivity = table.readNumber(componentVariablePath(component, 'reactivityPcm'))
+      const rodInsertion = clamp(context.readNumber(componentVariablePath(component, 'rodInsertionFraction')), 0, 1)
+      const reactivity = context.readNumber(componentVariablePath(component, 'reactivityPcm'))
       const targetPower = ratedPower * clamp(1 - rodInsertion + reactivity / 10_000, 0, 1.15)
-      const currentPower = table.readNumber(componentVariablePath(component, 'powerMw'))
-      table.write(componentVariablePath(component, 'powerMw'), approach(currentPower, targetPower, ratedPower * 0.08 * dtSeconds))
-    }
-    if (component.kind === 'steamGenerator') {
+      const currentPower = context.readNumber(componentVariablePath(component, 'powerMw'))
+      context.write(componentVariablePath(component, 'powerMw'), approach(currentPower, targetPower, ratedPower * 0.08 * context.dtSeconds))
+    },
+  },
+  {
+    id: 'steam-generator-inventory-pressure-state',
+    phase: 'updateComponentState',
+    componentKind: 'steamGenerator',
+    writes: ['pressureMPa', 'levelPercent'],
+    update: ({ system, component, context }): void => {
+      const turbineLoadMw = averageFor(system.graph.components, candidate =>
+        candidate.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(candidate, 'electricMw')) : null,
+      ) ?? 0
+      const feedwaterFlow = averageFor(system.graph.components, candidate =>
+        candidate.kind === 'feedwaterSource' ? context.readNumber(componentVariablePath(candidate, 'flowKgPerS')) : null,
+      ) ?? 0
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
-      const heatTransfer = table.readNumber(componentVariablePath(component, 'heatTransferMw'))
+      const heatTransfer = context.readNumber(componentVariablePath(component, 'heatTransferMw'))
       const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
-      const currentPressure = table.readNumber(pressurePath)
+      const currentPressure = context.readNumber(pressurePath)
       const pressureTarget = nominalPressure + ((heatTransfer - turbineLoadMw * 2.9) / 3_400) * nominalPressure
-      table.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * dtSeconds))
-      const currentLevel = table.readNumber(levelPath)
+      context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
+      const currentLevel = context.readNumber(levelPath)
       const steamDemandFlow = turbineLoadMw * 0.7
       const levelTarget = clamp(currentLevel + (feedwaterFlow - steamDemandFlow) * 0.0008, 0, 100)
-      table.write(levelPath, approach(currentLevel, levelTarget, 0.4 * dtSeconds))
+      context.write(levelPath, approach(currentLevel, levelTarget, 0.4 * context.dtSeconds))
+    },
+  },
+]
+
+export const runComponentBehaviors = (
+  system: CompiledProcessPlantSystem,
+  table: ProcessPlantVariableTable,
+  phase: ProcessPlantSolverPhase,
+  dtSeconds: number,
+): void => {
+  for (const behavior of componentBehaviorDefinitions) {
+    if (behavior.phase !== phase) continue
+    for (const component of system.graph.components) {
+      if (String(component.kind) !== behavior.componentKind) continue
+      const writablePaths = new Set(behavior.writes.map(localPath => componentVariablePath(component, localPath)))
+      behavior.update({
+        system,
+        component,
+        context: createBehaviorContext({
+          behaviorId: behavior.id,
+          phase,
+          dtSeconds,
+          table,
+          writablePaths,
+        }),
+      })
     }
   }
 }

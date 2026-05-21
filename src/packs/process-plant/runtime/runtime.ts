@@ -2,14 +2,11 @@ import type { VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import {
   initialComponentValueFor,
-  solveElectrical,
-  solveFluidFlowComponents,
-  solveThermalTransfer,
-  updateComponentState,
-  updateControlLogic,
+  runComponentBehaviors,
 } from './component-behaviors.ts'
+import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
-import { solveFluidFlowLinks, updateProcessLinkState } from './process-link-behaviors.ts'
+import { runProcessLinkBehaviors } from './process-link-behaviors.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
 
 interface RuntimeClock {
@@ -25,13 +22,14 @@ const step = (
 ): void => {
   const dtSeconds = stepMs / 1_000
   table.applyQueuedCommands()
-  updateControlLogic(system, table, dtSeconds)
-  solveElectrical(system, table, dtSeconds)
-  solveFluidFlowComponents(system, table)
-  solveFluidFlowLinks(system, table)
-  solveThermalTransfer(system, table)
-  updateComponentState(system, table, dtSeconds)
-  updateProcessLinkState(system, table, dtSeconds)
+  runComponentBehaviors(system, table, 'updateControlLogic', dtSeconds)
+  runComponentBehaviors(system, table, 'solveElectrical', dtSeconds)
+  runComponentBehaviors(system, table, 'solveFluidFlowComponents', dtSeconds)
+  runProcessLinkBehaviors(system, table, 'solveFluidFlowLinks', dtSeconds)
+  runComponentBehaviors(system, table, 'solveThermalTransfer', dtSeconds)
+  runComponentBehaviors(system, table, 'updateComponentState', dtSeconds)
+  runProcessLinkBehaviors(system, table, 'updateProcessLinkState', dtSeconds)
+  assertProcessPlantRuntimeInvariants(table)
   clock.elapsedMs += stepMs
 }
 

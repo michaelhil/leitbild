@@ -1,12 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  componentVariablePath,
   compileProcessPlantSystem,
+  createBehaviorContext,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
   pressurizedWaterReactorPlantSpec,
   processPlantSolverPhases,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
+import { initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
+import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
   id: 'plant',
@@ -44,6 +48,16 @@ describe('process plant runtime', () => {
 
     expect(tick.simulatedMs).toBe(1_000)
     expect(tick.phases).toEqual(processPlantSolverPhases)
+    expect(tick.phases).toEqual([
+      'applyCommands',
+      'updateControlLogic',
+      'solveElectrical',
+      'solveFluidFlowComponents',
+      'solveFluidFlowLinks',
+      'solveThermalTransfer',
+      'updateComponentState',
+      'updateProcessLinkState',
+    ])
     expect(tick.publishedVariables.map(variable => String(variable.path))).toEqual([
       'core.powerMw',
       'sgA.levelPercent',
@@ -130,5 +144,37 @@ describe('process plant runtime', () => {
       path: valueOf('sg-a-steam-to-turbine.pressureMPa'),
       value: 1,
     })).toThrow('not writable')
+  })
+
+  test('behavior contexts reject writes outside declared outputs', () => {
+    const system = compiledSystem()
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor)
+    const component = system.graph.components.find(candidate => candidate.id === 'core')
+    if (!component) throw new Error('expected core component')
+    const context = createBehaviorContext({
+      behaviorId: 'test-behavior',
+      phase: 'updateControlLogic',
+      dtSeconds: 0.1,
+      table,
+      writablePaths: new Set([componentVariablePath(component, 'reactivityPcm')]),
+    })
+
+    expect(() => context.write(componentVariablePath(component, 'powerMw'), 10)).toThrow('cannot write undeclared variable')
+  })
+
+  test('behavior contexts reject non-finite numeric writes before they corrupt runtime state', () => {
+    const system = compiledSystem()
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor)
+    const component = system.graph.components.find(candidate => candidate.id === 'core')
+    if (!component) throw new Error('expected core component')
+    const context = createBehaviorContext({
+      behaviorId: 'test-behavior',
+      phase: 'updateControlLogic',
+      dtSeconds: 0.1,
+      table,
+      writablePaths: new Set([componentVariablePath(component, 'reactivityPcm')]),
+    })
+
+    expect(() => context.write(componentVariablePath(component, 'reactivityPcm'), Number.NaN)).toThrow('non-finite value')
   })
 })
