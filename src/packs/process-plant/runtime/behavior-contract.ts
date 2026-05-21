@@ -2,12 +2,35 @@ import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../gr
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
+import { assertProcessPlantValueIsFinite } from './variable-validation.ts'
+
+const componentVariablePathCache = new WeakMap<CompiledComponent, Map<string, VariablePath>>()
+const processLinkVariablePathCache = new WeakMap<CompiledProcessLink, Map<string, VariablePath>>()
 
 export const componentVariablePath = (component: CompiledComponent, localPath: string): VariablePath =>
-  `${component.id}.${localPath}` as VariablePath
+  cachedVariablePath(componentVariablePathCache, component, String(component.id), localPath)
 
 export const processLinkVariablePath = (link: CompiledProcessLink, localPath: string): VariablePath =>
-  `${link.id}.${localPath}` as VariablePath
+  cachedVariablePath(processLinkVariablePathCache, link, String(link.id), localPath)
+
+const cachedVariablePath = <T extends object>(
+  cache: WeakMap<T, Map<string, VariablePath>>,
+  owner: T,
+  ownerId: string,
+  localPath: string,
+): VariablePath => {
+  const existingOwnerCache = cache.get(owner)
+  if (existingOwnerCache) {
+    const existing = existingOwnerCache.get(localPath)
+    if (existing) return existing
+    const created = `${ownerId}.${localPath}` as VariablePath
+    existingOwnerCache.set(localPath, created)
+    return created
+  }
+  const created = `${ownerId}.${localPath}` as VariablePath
+  cache.set(owner, new Map([[localPath, created]]))
+  return created
+}
 
 export interface ProcessPlantBehaviorContext {
   readonly phase: ProcessPlantSolverPhase
@@ -46,12 +69,6 @@ export interface ProcessLinkBehaviorDefinition {
   }) => void
 }
 
-const assertFiniteValue = (path: VariablePath, value: ProcessPlantValue): void => {
-  if (typeof value === 'number' && !Number.isFinite(value)) {
-    throw new Error(`process plant behavior attempted to write non-finite value to ${path}`)
-  }
-}
-
 export const createBehaviorContext = (config: {
   readonly behaviorId: string
   readonly phase: ProcessPlantSolverPhase
@@ -70,37 +87,11 @@ export const createBehaviorContext = (config: {
     if (!config.writablePaths.has(path)) {
       throw new Error(`process plant behavior ${config.behaviorId} cannot write undeclared variable: ${path}`)
     }
-    assertFiniteValue(path, value)
+    assertProcessPlantValueIsFinite(path, value)
     config.table.write(path, value)
   },
 })
 
 export const assertProcessPlantRuntimeInvariants = (table: ProcessPlantVariableTable): void => {
-  for (const variable of table.snapshot()) {
-    if (typeof variable.value === 'number' && !Number.isFinite(variable.value)) {
-      throw new Error(`process plant invariant failed: ${variable.path} has non-finite value`)
-    }
-    if (typeof variable.canonicalValue === 'number' && !Number.isFinite(variable.canonicalValue)) {
-      throw new Error(`process plant invariant failed: ${variable.path} has non-finite canonical value`)
-    }
-    if (typeof variable.value === 'number') {
-      if (variable.quantity === 'ratio' && variable.unit === 'fraction' && (variable.value < 0 || variable.value > 1)) {
-        throw new Error(`process plant invariant failed: ${variable.path} fraction value is outside 0..1`)
-      }
-      if (variable.quantity === 'ratio' && variable.unit === 'percent' && (variable.value < 0 || variable.value > 100)) {
-        throw new Error(`process plant invariant failed: ${variable.path} percent value is outside 0..100`)
-      }
-      if (
-        (variable.quantity === 'flowRate'
-          || variable.quantity === 'head'
-          || variable.quantity === 'mass'
-          || variable.quantity === 'power'
-          || variable.quantity === 'pressure'
-          || variable.quantity === 'radiationDoseRate')
-        && variable.value < 0
-      ) {
-        throw new Error(`process plant invariant failed: ${variable.path} ${variable.quantity} value is negative`)
-      }
-    }
-  }
+  table.assertInvariants()
 }

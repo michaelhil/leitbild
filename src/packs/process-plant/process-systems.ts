@@ -11,6 +11,7 @@ import {
 } from './graph/index.ts'
 import { processPlantComponentRegistry } from './graph/index.ts'
 import { resolveProcessPlantGraphSpec } from './specs/index.ts'
+import { assertProcessPlantVariableValueValid } from './runtime/variable-validation.ts'
 
 export interface ProcessPlantInitialVariableValue {
   readonly path: VariablePath
@@ -77,26 +78,11 @@ const assertInitialStateTargetsDeclaredVariables = (
   for (const initial of initialState) {
     const variable = variableByPath.get(initial.path)
     if (!variable) throw new Error(`process plant initialState references unknown variable: ${initial.path}`)
-    const expectedType = variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number'
-    if (typeof initial.value !== expectedType) throw new Error(`process plant initialState for ${initial.path} must be ${expectedType}`)
-    if (typeof initial.value === 'number') {
-      if (variable.descriptor.quantity === 'ratio' && variable.descriptor.unit === 'fraction' && (initial.value < 0 || initial.value > 1)) {
-        throw new Error(`process plant initialState for ${initial.path} fraction value must be between 0 and 1`)
-      }
-      if (variable.descriptor.quantity === 'ratio' && variable.descriptor.unit === 'percent' && (initial.value < 0 || initial.value > 100)) {
-        throw new Error(`process plant initialState for ${initial.path} percent value must be between 0 and 100`)
-      }
-      if (
-        (variable.descriptor.quantity === 'flowRate'
-          || variable.descriptor.quantity === 'head'
-          || variable.descriptor.quantity === 'mass'
-          || variable.descriptor.quantity === 'power'
-          || variable.descriptor.quantity === 'pressure'
-          || variable.descriptor.quantity === 'radiationDoseRate')
-        && initial.value < 0
-      ) {
-        throw new Error(`process plant initialState for ${initial.path} ${variable.descriptor.quantity} value must be non-negative`)
-      }
+    try {
+      assertProcessPlantVariableValueValid(variable, initial.value)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      throw new Error(message.replace(`process plant variable ${initial.path}`, `process plant initialState for ${initial.path}`))
     }
   }
 }

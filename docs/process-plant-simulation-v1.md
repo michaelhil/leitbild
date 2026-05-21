@@ -380,18 +380,19 @@ The current runtime is intentionally headless. It is created from a `CompiledPro
 Runtime code is split by responsibility:
 
 - `runtime.ts` is the fixed-step orchestrator and clock.
-- `variable-table.ts` owns the process variable map, queued variable-write commands, type/writability checks, and snapshots.
+- `variable-table.ts` owns the slot-backed process variable table, queued variable-write commands, type/writability checks, and snapshots.
+- `execution-plan.ts` compiles the graph and registered behavior definitions into per-phase invocation lists so the hot loop does not rediscover behavior applicability on every tick.
 - `behavior-contract.ts` defines the constrained execution context used by solver behavior.
 - `component-behaviors.ts` owns current component initialization and component solver behavior.
 - `process-link-behaviors.ts` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, and radiation updates.
 
-This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state.
+This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state. Public APIs remain path-based for humans, AI agents, snapshots, telemetry, and commands, but runtime storage uses compiled variable slots internally.
 
 Behavior modules do not receive the raw variable table directly. Each behavior runs through a `ProcessPlantBehaviorContext` for a single phase and component or process link. That context can read declared variables, but it may write only the local output variables declared by that behavior. Wrong-type writes, unknown paths, non-finite numbers, and writes outside the behavior's declared outputs fail loudly. This is intentionally simpler than a full plugin engine, but it gives the runtime a real contract before more plant components are added.
 
 Each behavior also declares a human/audit-facing `reads` list beside its write list. This is intentionally metadata-first in the current pass: it makes dependencies visible in tests and reviews without prematurely building a full dependency scheduler. Reads should refer to connection services such as `primaryCoolant`, `feedwater`, or `mainSteam`, not old free-text medium labels.
 
-The variable table rejects physically invalid writable values before they enter the queued command buffer. Generic guardrails currently include finite numbers, ratio bounds (`fraction` in `0..1`, `percent` in `0..100`), and non-negative values for flow, head, mass, power, pressure, and radiation dose rate. The same bounds are checked again as runtime invariants after solver phases. This is not a substitute for detailed physics validation, but it prevents bad commands and behavior errors from quietly corrupting the process state.
+The variable table rejects physically invalid writable values before they enter the queued command buffer and validates behavior writes before they reach storage. Generic guardrails currently include finite numbers, ratio bounds (`fraction` in `0..1`, `percent` in `0..100`), and non-negative values for flow, head, mass, power, pressure, and radiation dose rate. A full invariant scan is available as an explicit runtime/debug check, but normal runtime does not allocate full snapshots on every fixed step. This is not a substitute for detailed physics validation, but it prevents bad commands and behavior errors from quietly corrupting the process state without turning validation into the dominant workload.
 
 The runtime phase order is explicit:
 
@@ -404,7 +405,9 @@ The runtime phase order is explicit:
 7. `updateComponentState`
 8. `updateProcessLinkState`
 
-Publishing is not a hidden solver phase. After the fixed-step loop advances, the runtime returns the selected published variables from the authoritative variable table. Keeping publication as a read-out rather than a phase avoids implying that process state changes during telemetry extraction.
+Publishing is not a hidden solver phase. After the fixed-step loop advances, the runtime returns the selected published variables from the authoritative variable table. Keeping publication as a read-out rather than a phase avoids implying that process state changes during telemetry extraction. Telemetry recorders resolve selected variable paths once and sample those variables directly; they do not snapshot the entire runtime just to read a few trends.
+
+Runtime snapshots include the graph spec id and compiled variable path list. Restore rejects snapshots whose graph identity or variable layout no longer matches the compiled system, which prevents stale provider-private state from being applied to a different plant graph.
 
 This follows the same broad lesson as serious simulator integrations such as FlyByWire: simulator bridges and user inputs should be outside the continuous model, while the model itself runs in a clear read/update/write rhythm. Continuous physics should not depend on incidental event order or browser update cadence.
 
@@ -574,7 +577,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-The latest benchmark result on the current hardware simulated five minutes of one system in roughly 0.35 seconds and five minutes of six systems in roughly 2.06 seconds, using median wall time over three measured runs after a warm-up run. That is about a 5.9x wall-clock penalty for 6x the plant count. It still runs about 146x faster than real time for the six-system case, so the penalty does not matter for real-time operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of systems or higher-fidelity components.
+The latest benchmark result on the current hardware simulated five minutes of one system in roughly 0.096 seconds and five minutes of six systems in roughly 0.58 seconds, using median wall time over three measured runs after a warm-up run. That is about a 6.0x wall-clock penalty for 6x the plant count. It runs about 518x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution.
 
 ## Implementation Phases
 

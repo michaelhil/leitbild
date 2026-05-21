@@ -68,13 +68,19 @@ const outgoingLinkCount = (
 }
 
 const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
+  const cached = mainSteamSourceCountCache.get(system)
+  if (cached !== undefined) return cached
   let count = 0
   for (const link of system.graph.links) {
     const fromComponent = system.graph.components[link.fromComponentIndex]
     if (fromComponent?.kind === 'steamGenerator' && link.kind === 'fluidFlow' && link.service === 'mainSteam') count += 1
   }
-  return Math.max(1, count)
+  const result = Math.max(1, count)
+  mainSteamSourceCountCache.set(system, result)
+  return result
 }
+
+const mainSteamSourceCountCache = new WeakMap<CompiledProcessPlantSystem, number>()
 
 const primaryCoolantFlowForCoreOutlet = (
   system: CompiledProcessPlantSystem,
@@ -118,13 +124,6 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       const fromComponent = system.graph.components[link.fromComponentIndex]
       const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
-      const turbineSteamDemand = averageFor(system.graph.components, component => {
-        if (component.kind !== 'turbineLoadSink') return null
-        return context.readNumber(componentVariablePath(component, 'loadFraction')) * parameterNumber(component, 'nominalSteamFlowKgPerS')
-      })
-      const turbineSteamFlow = averageFor(system.graph.components, component =>
-        component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'steamFlowKgPerS')) : null,
-      ) ?? 0
       const sourceSteamFlow = fromComponent.kind === 'steamGenerator'
         ? context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
         : null
@@ -134,8 +133,15 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       if (fromComponent.kind === 'centrifugalPump' || fromComponent.kind === 'feedwaterSource') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
+        const turbineSteamDemand = averageFor(system.graph.components, component => {
+          if (component.kind !== 'turbineLoadSink') return null
+          return context.readNumber(componentVariablePath(component, 'loadFraction')) * parameterNumber(component, 'nominalSteamFlowKgPerS')
+        })
         flowSource = Math.min((turbineSteamDemand ?? 0) / mainSteamSourceCount(system), sourceSteamFlow ?? turbineSteamDemand ?? 0)
       } else if (fromComponent.kind === 'turbineLoadSink') {
+        const turbineSteamFlow = averageFor(system.graph.components, component =>
+          component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'steamFlowKgPerS')) : null,
+        ) ?? 0
         flowSource = turbineSteamFlow
       } else if (fromComponent.kind === 'reactorCore' && link.service === 'primaryCoolant') {
         flowSource = primaryCoolantFlowForCoreOutlet(system, link, context) ?? passiveFlowFromIncomingService(system, link, context)

@@ -2,6 +2,9 @@ import type { CompiledComponent, CompiledVariable, VariablePath } from '../graph
 import type { CompiledProcessPlantSystem, ProcessPlantInitialVariableValue } from '../process-systems.ts'
 import type { ProcessPlantCommand, ProcessPlantValue, ProcessPlantVariableSnapshot } from './model.ts'
 import { toCanonicalProcessValue } from './units.ts'
+import {
+  assertProcessPlantVariableValueValid,
+} from './variable-validation.ts'
 
 export interface ProcessPlantVariableTable {
   readonly queueCommand: (command: ProcessPlantCommand) => void
@@ -13,57 +16,18 @@ export interface ProcessPlantVariableTable {
   readonly readOptionalNumber: (path: VariablePath, defaultValue: number) => number
   readonly write: (path: VariablePath, value: ProcessPlantValue) => void
   readonly queuedCommands: () => ReadonlyArray<ProcessPlantCommand>
+  readonly snapshotVariable: (path: VariablePath) => ProcessPlantVariableSnapshot
   readonly snapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly publishedSnapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
-}
-
-const assertValueMatchesCurrentType = (
-  path: VariablePath,
-  current: ProcessPlantValue,
-  next: ProcessPlantValue,
-): void => {
-  if (typeof current !== typeof next) throw new Error(`process plant variable ${path} expects ${typeof current} value`)
-}
-
-const assertValueMatchesDeclaredType = (
-  variable: CompiledVariable,
-  value: ProcessPlantValue,
-): void => {
-  const expectedType = variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number'
-  if (typeof value !== expectedType) throw new Error(`process plant variable ${variable.path} expects ${expectedType} value`)
-}
-
-const assertValueWithinPhysicalBounds = (
-  variable: CompiledVariable,
-  value: ProcessPlantValue,
-): void => {
-  if (typeof value !== 'number') return
-  const path = String(variable.path)
-  const quantity = variable.descriptor.quantity
-  if (quantity === 'ratio' && variable.descriptor.unit === 'fraction' && (value < 0 || value > 1)) {
-    throw new Error(`process plant variable ${path} fraction value must be between 0 and 1`)
-  }
-  if (quantity === 'ratio' && variable.descriptor.unit === 'percent' && (value < 0 || value > 100)) {
-    throw new Error(`process plant variable ${path} percent value must be between 0 and 100`)
-  }
-  if (
-    (quantity === 'flowRate'
-      || quantity === 'head'
-      || quantity === 'mass'
-      || quantity === 'power'
-      || quantity === 'pressure'
-      || quantity === 'radiationDoseRate')
-    && value < 0
-  ) {
-    throw new Error(`process plant variable ${path} ${quantity} value must be non-negative`)
-  }
+  readonly assertInvariants: () => void
 }
 
 const snapshotVariable = (
-  values: ReadonlyMap<VariablePath, ProcessPlantValue>,
+  values: ReadonlyArray<ProcessPlantValue>,
   variable: CompiledVariable,
+  slot: number,
 ): ProcessPlantVariableSnapshot => {
-  const value = values.get(variable.path)
+  const value = values[slot]
   if (value === undefined) throw new Error(`variable ${variable.path} has no runtime value`)
   return {
     path: variable.path,
@@ -86,8 +50,8 @@ export const createProcessPlantVariableTable = (
   initialVariables?: ReadonlyArray<ProcessPlantInitialVariableValue>,
 ): ProcessPlantVariableTable => {
   const variables = system.graph.variables
-  const variableByPath = new Map(variables.map(variable => [variable.path, variable]))
-  const values = new Map<VariablePath, ProcessPlantValue>()
+  const variableByPath = new Map(variables.map((variable, slot) => [variable.path, { variable, slot }]))
+  const values: ProcessPlantValue[] = new Array(variables.length)
   const commands: ProcessPlantCommand[] = []
   const restoredValues = restoredVariables === undefined
     ? null
@@ -103,58 +67,57 @@ export const createProcessPlantVariableTable = (
       if (!restoredValues.has(variable.path)) {
         throw new Error(`restored process plant state is missing variable: ${variable.path}`)
       }
-      assertValueMatchesDeclaredType(variable, restoredValues.get(variable.path)!)
+      assertProcessPlantVariableValueValid(variable, restoredValues.get(variable.path)!)
     }
   }
 
-  for (const variable of variables) {
+  for (let slot = 0; slot < variables.length; slot += 1) {
+    const variable = variables[slot]
+    if (!variable) throw new Error(`compiled process plant graph has missing variable slot: ${slot}`)
     const restoredValue = restoredValues?.get(variable.path)
     if (restoredValue !== undefined) {
-      values.set(variable.path, restoredValue)
+      values[slot] = restoredValue
       continue
     }
     if (variable.owner.type === 'component') {
       const component = system.graph.components[variable.owner.componentIndex]
       if (!component) throw new Error(`variable ${variable.path} references missing component index ${variable.owner.componentIndex}`)
-      values.set(variable.path, initialComponentValueFor(component, variable.path))
+      values[slot] = initialComponentValueFor(component, variable.path)
       continue
     }
     if (variable.initialValue === undefined) throw new Error(`process link variable ${variable.path} has no initial value`)
-    values.set(variable.path, variable.initialValue)
+    values[slot] = variable.initialValue
   }
 
   if (!restoredValues) {
     for (const initial of initialVariables ?? []) {
-      const variable = variableByPath.get(initial.path)
-      if (!variable) throw new Error(`process plant initialState references unknown variable: ${initial.path}`)
-      assertValueMatchesDeclaredType(variable, initial.value)
-      assertValueWithinPhysicalBounds(variable, initial.value)
-      values.set(initial.path, initial.value)
+      const entry = variableByPath.get(initial.path)
+      if (!entry) throw new Error(`process plant initialState references unknown variable: ${initial.path}`)
+      assertProcessPlantVariableValueValid(entry.variable, initial.value)
+      values[entry.slot] = initial.value
     }
   }
 
   const read = (path: VariablePath): ProcessPlantValue => {
-    if (!variableByPath.has(path)) throw new Error(`unknown process plant variable: ${path}`)
-    const value = values.get(path)
+    const entry = variableByPath.get(path)
+    if (!entry) throw new Error(`unknown process plant variable: ${path}`)
+    const value = values[entry.slot]
     if (value === undefined) throw new Error(`variable ${path} has no runtime value`)
     return value
   }
 
   const write = (path: VariablePath, value: ProcessPlantValue): void => {
-    const variable = variableByPath.get(path)
-    if (!variable) throw new Error(`unknown process plant variable: ${path}`)
-    const current = read(path)
-    assertValueMatchesCurrentType(path, current, value)
-    assertValueWithinPhysicalBounds(variable, value)
-    values.set(path, value)
+    const entry = variableByPath.get(path)
+    if (!entry) throw new Error(`unknown process plant variable: ${path}`)
+    assertProcessPlantVariableValueValid(entry.variable, value)
+    values[entry.slot] = value
   }
 
   const queueCommand = (command: ProcessPlantCommand): void => {
-    const variable = variableByPath.get(command.path)
-    if (!variable) throw new Error(`unknown process plant variable: ${command.path}`)
-    if (!variable.descriptor.writable) throw new Error(`process plant variable is not writable: ${command.path}`)
-    assertValueMatchesCurrentType(command.path, read(command.path), command.value)
-    assertValueWithinPhysicalBounds(variable, command.value)
+    const entry = variableByPath.get(command.path)
+    if (!entry) throw new Error(`unknown process plant variable: ${command.path}`)
+    if (!entry.variable.descriptor.writable) throw new Error(`process plant variable is not writable: ${command.path}`)
+    assertProcessPlantVariableValueValid(entry.variable, command.value)
     commands.push(command)
   }
 
@@ -187,8 +150,32 @@ export const createProcessPlantVariableTable = (
     },
     write,
     queuedCommands: (): ReadonlyArray<ProcessPlantCommand> => [...commands],
-    snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> => variables.map(variable => snapshotVariable(values, variable)),
+    snapshotVariable: (path: VariablePath): ProcessPlantVariableSnapshot => {
+      const entry = variableByPath.get(path)
+      if (!entry) throw new Error(`unknown process plant variable: ${path}`)
+      return snapshotVariable(values, entry.variable, entry.slot)
+    },
+    snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
+      variables.map((variable, slot) => snapshotVariable(values, variable, slot)),
     publishedSnapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
-      variables.filter(variable => variable.published).map(variable => snapshotVariable(values, variable)),
+      variables.flatMap((variable, slot) => variable.published ? [snapshotVariable(values, variable, slot)] : []),
+    assertInvariants: (): void => {
+      for (let slot = 0; slot < variables.length; slot += 1) {
+        const variable = variables[slot]
+        if (!variable) throw new Error(`compiled process plant graph has missing variable slot: ${slot}`)
+        const value = values[slot]
+        if (value === undefined) throw new Error(`process plant invariant failed: ${variable.path} has no runtime value`)
+        try {
+          assertProcessPlantVariableValueValid(variable, value)
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          throw new Error(message.replace(`process plant variable ${variable.path}`, `process plant invariant failed: ${variable.path}`))
+        }
+        const canonicalValue = toCanonicalProcessValue(value, variable.descriptor.unit)
+        if (typeof canonicalValue === 'number' && !Number.isFinite(canonicalValue)) {
+          throw new Error(`process plant invariant failed: ${variable.path} has non-finite canonical value`)
+        }
+      }
+    },
   }
 }

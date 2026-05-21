@@ -251,6 +251,30 @@ describe('process plant runtime', () => {
     expect(restoredA.snapshot().elapsedMs).toBe(restoredB.snapshot().elapsedMs)
   })
 
+  test('runtime snapshots carry graph identity and reject mismatched graph restores', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.tick(1_000)
+    const snapshot = runtime.snapshot()
+
+    expect(snapshot.graphSpecId).toBe(String(system.graph.specId))
+    expect(snapshot.variablePaths).toEqual(system.graph.variables.map(variable => variable.path))
+    expect(() => createProcessPlantRuntime({
+      system,
+      restoredSnapshot: {
+        ...snapshot,
+        graphSpecId: 'process-plant.other-graph.v1',
+      },
+    })).toThrow('does not match system graph')
+    expect(() => createProcessPlantRuntime({
+      system,
+      restoredSnapshot: {
+        ...snapshot,
+        variablePaths: snapshot.variablePaths.slice(1),
+      },
+    })).toThrow('variable path count')
+  })
+
   test('process link variables behave as readable sensors and writable flow modifiers', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 

@@ -84,12 +84,7 @@ const snapshotsFor = (
   system: ProcessPlantSystemRuntime,
   paths: ReadonlyArray<VariablePath>,
 ): ReadonlyArray<ProcessPlantVariableSnapshot> => {
-  const byPath = new Map(system.runtime.snapshot().variables.map(variable => [variable.path, variable]))
-  return paths.map(path => {
-    const variable = byPath.get(path)
-    if (!variable) throw new Error(`process plant variable not found: ${path}`)
-    return variable
-  })
+  return paths.map(path => system.runtime.readVariableSnapshot(path))
 }
 
 const matchesSearch = (
@@ -123,7 +118,7 @@ export const answerProcessPlantQuery = (config: {
           componentCount: system.graph.components.length,
           linkCount: system.graph.links.length,
           variableCount: system.graph.variables.length,
-          elapsedMs: runtime.snapshot().elapsedMs,
+          elapsedMs: runtime.elapsedMs(),
         })),
       }, config.at)
     }

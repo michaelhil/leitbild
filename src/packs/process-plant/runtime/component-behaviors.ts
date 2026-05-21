@@ -68,8 +68,9 @@ const averageIncomingLinkValue = (
 ): number | null => {
   let total = 0
   let count = 0
-  for (const link of system.graph.links) {
-    if (link.toComponentIndex !== component.index) continue
+  for (const linkIndex of system.graph.incomingLinksByComponent[component.index] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link) continue
     if (!linkMatches(link)) continue
     const path = processLinkVariablePath(link, localPath)
     if (!context.has(path)) continue
@@ -88,8 +89,9 @@ const averageOutgoingLinkValue = (
 ): number | null => {
   let total = 0
   let count = 0
-  for (const link of system.graph.links) {
-    if (link.fromComponentIndex !== component.index) continue
+  for (const linkIndex of system.graph.outgoingLinksByComponent[component.index] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link) continue
     if (!linkMatches(link)) continue
     const path = processLinkVariablePath(link, localPath)
     if (!context.has(path)) continue

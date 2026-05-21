@@ -49,6 +49,8 @@ const processPlantVariableSnapshotSchema = z.object({
 })
 
 const processPlantRuntimeSnapshotSchema = z.object({
+  graphSpecId: z.string().min(1),
+  variablePaths: z.array(variablePathSchema).min(1),
   elapsedMs: z.number().finite().nonnegative(),
   remainderMs: z.number().finite().nonnegative(),
   queuedCommands: z.array(z.object({
@@ -213,7 +215,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
       for (const { runtime, schedule, telemetry } of systems.values()) {
-        schedule.applyDueActions(runtime, runtime.snapshot().elapsedMs + elapsedMs)
+        schedule.applyDueActions(runtime, runtime.elapsedMs() + elapsedMs)
         runtime.tick(elapsedMs)
         telemetry?.recordDueSamples(runtime)
       }

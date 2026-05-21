@@ -64,11 +64,6 @@ export const processPlantTelemetrySnapshotSchema = z.object({
   series: z.array(processPlantTelemetrySeriesSchema),
 }).strict()
 
-const variableByPath = (
-  snapshot: ReadonlyArray<ProcessPlantVariableSnapshot>,
-): ReadonlyMap<VariablePath, ProcessPlantVariableSnapshot> =>
-  new Map(snapshot.map(variable => [variable.path, variable]))
-
 const appendPoint = (
   series: Map<VariablePath, ProcessPlantTelemetryPoint[]>,
   elapsedMs: number,
@@ -123,14 +118,11 @@ export const createProcessPlantTelemetryRecorder = (config: {
 
   return {
     recordDueSamples: (runtime: ProcessPlantRuntime): void => {
-      const runtimeSnapshot = runtime.snapshot()
-      if (runtimeSnapshot.elapsedMs < nextSampleAtMs) return
-      const variables = variableByPath(runtimeSnapshot.variables)
-      while (nextSampleAtMs <= runtimeSnapshot.elapsedMs) {
+      const runtimeElapsedMs = runtime.elapsedMs()
+      if (runtimeElapsedMs < nextSampleAtMs) return
+      while (nextSampleAtMs <= runtimeElapsedMs) {
         for (const path of telemetry.variables) {
-          const variable = variables.get(path)
-          if (!variable) throw new Error(`process plant telemetry variable is not declared by runtime: ${path}`)
-          appendPoint(series, nextSampleAtMs, variable)
+          appendPoint(series, nextSampleAtMs, runtime.readVariableSnapshot(path))
         }
         nextSampleAtMs += telemetry.sampleIntervalMs
       }

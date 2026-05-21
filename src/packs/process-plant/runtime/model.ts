@@ -40,6 +40,8 @@ export interface ProcessPlantTickResult {
 }
 
 export interface ProcessPlantRuntimeSnapshot {
+  readonly graphSpecId: string
+  readonly variablePaths: ReadonlyArray<VariablePath>
   readonly elapsedMs: number
   readonly remainderMs: number
   readonly queuedCommands: ReadonlyArray<ProcessPlantCommand>
@@ -48,7 +50,9 @@ export interface ProcessPlantRuntimeSnapshot {
 
 export interface ProcessPlantRuntime {
   readonly tick: (elapsedMs: number) => ProcessPlantTickResult
+  readonly elapsedMs: () => number
   readonly readVariable: (path: VariablePath) => ProcessPlantValue
+  readonly readVariableSnapshot: (path: VariablePath) => ProcessPlantVariableSnapshot
   readonly writeCommand: (command: ProcessPlantCommand) => void
   readonly snapshot: () => ProcessPlantRuntimeSnapshot
 }
