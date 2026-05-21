@@ -32,6 +32,8 @@ Component and process-link behaviors run through a constrained behavior context.
 
 The process-plant simulation provider owns provider-private runtime state. It persists runtime snapshots in a provider sidecar under the Control Instance directory rather than writing dense process variables into the Control Instance object snapshot or durable event journal. The sidecar includes elapsed process time, fixed-step remainder, queued commands, and variable values.
 
+The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine steam use/electrical output, and a condenser sink. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop.
+
 ## Consequences
 
 - Leitbild core remains process-plant-agnostic.
@@ -50,6 +52,7 @@ The process-plant simulation provider owns provider-private runtime state. It pe
 - The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.
+- The current built-in graph can now exercise the first primary/secondary energy path in headless tests.
 
 ## Guardrails
 

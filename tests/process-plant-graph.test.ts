@@ -19,21 +19,52 @@ describe('process plant graph foundation', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
 
     expect(String(compiled.specId)).toBe('process-plant.pressurized-water-reactor.v1')
-    expect(compiled.components.map(component => String(component.id))).toEqual(['core', 'sgA', 'rcpA', 'feedwaterA', 'turbine'])
+    expect(compiled.components.map(component => String(component.id))).toEqual(['core', 'sgA', 'rcpA', 'feedwaterA', 'turbine', 'condenser'])
     expect(compiled.linksByKind.hydraulicFlow).toEqual([0, 1, 2, 3])
-    expect(compiled.linksByKind.steamFlow).toEqual([4])
-    expect(compiled.variables.filter(variable => variable.published).map(variable => String(variable.path))).toEqual([
+    expect(compiled.linksByKind.steamFlow).toEqual([4, 5])
+    const publishedVariables = compiled.variables.filter(variable => variable.published).map(variable => String(variable.path))
+    expect(publishedVariables).toContain('core.coolantOutletTemperatureC')
+    expect(publishedVariables).toContain('sgA.heatTransferMw')
+    expect(publishedVariables).toContain('sgA.steamFlowKgPerS')
+    expect(publishedVariables).toContain('condenser.condensateTemperatureC')
+    expect(publishedVariables).toContain('rcs-hot-leg-a.temperatureC')
+    expect(publishedVariables).toContain('turbine-exhaust-to-condenser.flowKgPerS')
+    expect(publishedVariables).toEqual([
       'core.powerMw',
+      'core.coolantInletTemperatureC',
+      'core.coolantOutletTemperatureC',
+      'core.heatToCoolantMw',
       'sgA.levelPercent',
       'sgA.pressureMPa',
+      'sgA.heatTransferMw',
+      'sgA.primaryInletTemperatureC',
+      'sgA.primaryOutletTemperatureC',
+      'sgA.secondaryTemperatureC',
+      'sgA.steamFlowKgPerS',
+      'sgA.secondaryInventoryKg',
       'rcpA.running',
       'feedwaterA.flowKgPerS',
+      'feedwaterA.temperatureC',
       'turbine.electricMw',
+      'turbine.steamFlowKgPerS',
+      'condenser.steamFlowKgPerS',
+      'condenser.condensateTemperatureC',
+      'condenser.backPressurePa',
+      'rcs-hot-leg-a.flowKgPerS',
+      'rcs-hot-leg-a.temperatureC',
+      'rcs-cold-leg-a.flowKgPerS',
+      'rcs-cold-leg-a.temperatureC',
+      'rcp-a-to-core.flowKgPerS',
+      'rcp-a-to-core.temperatureC',
+      'fw-a-to-sg-a.flowKgPerS',
+      'fw-a-to-sg-a.temperatureC',
       'sg-a-steam-to-turbine.flowKgPerS',
       'sg-a-steam-to-turbine.pressureMPa',
       'sg-a-steam-to-turbine.radiationMSvPerH',
       'sg-a-steam-to-turbine.valve.positionFraction',
       'sg-a-steam-to-turbine.leak.areaFraction',
+      'turbine-exhaust-to-condenser.flowKgPerS',
+      'turbine-exhaust-to-condenser.temperatureC',
     ])
     expect(compiled.links[4]?.physical).toMatchObject({ lengthM: 38, diameterM: 0.72 })
     expect(compiled.variables.find(variable => variable.path === 'sg-a-steam-to-turbine.flowKgPerS')?.owner).toEqual({
@@ -115,6 +146,7 @@ describe('process plant graph foundation', () => {
         component('turbine', 'turbineLoadSink', 'Turbine Generator', {
           nominalElectricMw: 1100,
           initialLoadFraction: 0.85,
+          nominalSteamFlowKgPerS: 1050,
         }),
       ],
       connections: [

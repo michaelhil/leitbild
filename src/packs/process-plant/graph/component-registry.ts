@@ -28,11 +28,15 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     parametersSchema: z.object({
       ratedPowerMw: z.number().finite().positive(),
       initialPowerFraction: normalized,
+      initialCoolantInletTemperatureC: z.number().finite().optional(),
     }),
     variables: [
       variable({ path: 'powerMw', label: 'Core power', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'reactivityPcm', label: 'Reactivity', kind: 'state', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
       variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'coolantInletTemperatureC', label: 'Core coolant inlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'coolantOutletTemperatureC', label: 'Core coolant outlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'heatToCoolantMw', label: 'Heat to coolant', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
     ],
   }),
   defineComponent({
@@ -49,11 +53,19 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       nominalPressureMPa: z.number().finite().positive(),
       nominalLevelPercent: normalized,
       heatTransferCoefficientMwPerK: z.number().finite().positive(),
+      initialPrimaryInletTemperatureC: z.number().finite().optional(),
+      initialSecondaryTemperatureC: z.number().finite().optional(),
+      nominalSecondaryInventoryKg: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
       variable({ path: 'pressureMPa', label: 'Steam generator pressure', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
       variable({ path: 'heatTransferMw', label: 'Heat transfer', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+      variable({ path: 'primaryInletTemperatureC', label: 'Primary inlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'primaryOutletTemperatureC', label: 'Primary outlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'secondaryTemperatureC', label: 'Secondary temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'steamFlowKgPerS', label: 'Steam production', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'secondaryInventoryKg', label: 'Secondary inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
     ],
   }),
   defineComponent({
@@ -88,6 +100,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     }),
     variables: [
       variable({ path: 'flowKgPerS', label: 'Feedwater flow', kind: 'state', domain: 'hydraulic', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'temperatureC', label: 'Feedwater temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
     ],
   }),
   defineComponent({
@@ -95,16 +108,38 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     label: 'Turbine Load Sink',
     ports: {
       steamInlet: { kind: 'steam', direction: 'in' },
+      exhaustSteamOutlet: { kind: 'steam', direction: 'out' },
       loadDemand: { kind: 'controlSignal', direction: 'in' },
       generatorOutput: { kind: 'electricalAc', direction: 'out' },
     },
     parametersSchema: z.object({
       nominalElectricMw: z.number().finite().positive(),
       initialLoadFraction: normalized,
+      nominalSteamFlowKgPerS: z.number().finite().positive(),
     }),
     variables: [
       variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'steamFlowKgPerS', label: 'Turbine steam flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+    ],
+  }),
+  defineComponent({
+    kind: 'condenserSink' as ComponentKind,
+    label: 'Condenser Sink',
+    ports: {
+      steamInlet: { kind: 'steam', direction: 'in' },
+      condensateOutlet: { kind: 'hydraulicThermal', direction: 'out' },
+      coolingWater: { kind: 'hydraulicThermal', direction: 'in' },
+    },
+    parametersSchema: z.object({
+      coolingWaterTemperatureC: z.number().finite(),
+      nominalSteamFlowKgPerS: z.number().finite().positive(),
+      condensateApproachTemperatureK: z.number().finite().nonnegative(),
+    }),
+    variables: [
+      variable({ path: 'steamFlowKgPerS', label: 'Condenser steam flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'condensateTemperatureC', label: 'Condensate temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'backPressurePa', label: 'Condenser back pressure', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'Pa' }),
     ],
   }),
 ]

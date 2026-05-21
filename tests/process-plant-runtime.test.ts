@@ -51,25 +51,49 @@ describe('process plant runtime', () => {
     expect(tick.phases).toEqual([
       'applyCommands',
       'updateControlLogic',
-      'solveElectrical',
       'solveFluidFlowComponents',
       'solveFluidFlowLinks',
       'solveThermalTransfer',
+      'solveElectrical',
       'updateComponentState',
       'updateProcessLinkState',
     ])
     expect(tick.publishedVariables.map(variable => String(variable.path))).toEqual([
       'core.powerMw',
+      'core.coolantInletTemperatureC',
+      'core.coolantOutletTemperatureC',
+      'core.heatToCoolantMw',
       'sgA.levelPercent',
       'sgA.pressureMPa',
+      'sgA.heatTransferMw',
+      'sgA.primaryInletTemperatureC',
+      'sgA.primaryOutletTemperatureC',
+      'sgA.secondaryTemperatureC',
+      'sgA.steamFlowKgPerS',
+      'sgA.secondaryInventoryKg',
       'rcpA.running',
       'feedwaterA.flowKgPerS',
+      'feedwaterA.temperatureC',
       'turbine.electricMw',
+      'turbine.steamFlowKgPerS',
+      'condenser.steamFlowKgPerS',
+      'condenser.condensateTemperatureC',
+      'condenser.backPressurePa',
+      'rcs-hot-leg-a.flowKgPerS',
+      'rcs-hot-leg-a.temperatureC',
+      'rcs-cold-leg-a.flowKgPerS',
+      'rcs-cold-leg-a.temperatureC',
+      'rcp-a-to-core.flowKgPerS',
+      'rcp-a-to-core.temperatureC',
+      'fw-a-to-sg-a.flowKgPerS',
+      'fw-a-to-sg-a.temperatureC',
       'sg-a-steam-to-turbine.flowKgPerS',
       'sg-a-steam-to-turbine.pressureMPa',
       'sg-a-steam-to-turbine.radiationMSvPerH',
       'sg-a-steam-to-turbine.valve.positionFraction',
       'sg-a-steam-to-turbine.leak.areaFraction',
+      'turbine-exhaust-to-condenser.flowKgPerS',
+      'turbine-exhaust-to-condenser.temperatureC',
     ])
   })
 
@@ -144,6 +168,57 @@ describe('process plant runtime', () => {
       path: valueOf('sg-a-steam-to-turbine.pressureMPa'),
       value: 1,
     })).toThrow('not writable')
+  })
+
+  test('couples reactor heat, primary flow, steam generation, turbine load, and condenser sink', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    runtime.tick(1_000)
+
+    expect(Number(runtime.readVariable(valueOf('core.coolantOutletTemperatureC'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('core.coolantInletTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('sgA.primaryOutletTemperatureC'))))
+      .toBeLessThan(Number(runtime.readVariable(valueOf('sgA.primaryInletTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('sgA.steamFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('loss of feedwater trends steam generator inventory downward', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    runtime.tick(1_000)
+    const before = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterA.flowKgPerS'), value: 0 })
+    for (let index = 0; index < 120; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(before)
+    expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(56_000 * before / 100)
+  })
+
+  test('reactor coolant pump trip collapses primary link flow and heat transfer', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const flowingHeatTransfer = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
+  })
+
+  test('turbine load demand changes steam use and electrical output', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const loadedOutput = Number(runtime.readVariable(valueOf('turbine.electricMw')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('turbine.loadFraction'), value: 0.4 })
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeLessThan(loadedOutput)
+    expect(Number(runtime.readVariable(valueOf('turbine.steamFlowKgPerS')))).toBeCloseTo(420, 6)
   })
 
   test('behavior contexts reject writes outside declared outputs', () => {

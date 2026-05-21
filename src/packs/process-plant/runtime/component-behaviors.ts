@@ -4,6 +4,7 @@ import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
 import {
   componentVariablePath,
   createBehaviorContext,
+  processLinkVariablePath,
   type ComponentBehaviorDefinition,
 } from './behavior-contract.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
@@ -15,11 +16,23 @@ export const approach = (current: number, target: number, maxDelta: number): num
   return current + Math.sign(target - current) * maxDelta
 }
 
+const specificHeatWaterKjPerKgK = 4.2
+const latentHeatSteamMjPerKg = 2.3
+
 export const parameterNumber = (component: CompiledComponent, key: string): number => {
   const parameters = component.parameters
   if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
   const value = (parameters as Record<string, unknown>)[key]
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`component ${component.id} missing numeric parameter ${key}`)
+  return value
+}
+
+const optionalParameterNumber = (component: CompiledComponent, key: string, defaultValue: number): number => {
+  const parameters = component.parameters
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
+  const value = (parameters as Record<string, unknown>)[key]
+  if (value === undefined) return defaultValue
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`component ${component.id} parameter ${key} must be numeric`)
   return value
 }
 
@@ -41,6 +54,26 @@ export const averageFor = (
   return count === 0 ? null : total / count
 }
 
+const averageIncomingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
+): number | null => {
+  let total = 0
+  let count = 0
+  for (const link of system.graph.links) {
+    if (link.toComponentIndex !== component.index) continue
+    if (!linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+    count += 1
+  }
+  return count === 0 ? null : total / count
+}
+
 export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
   const localPath = String(path).slice(String(component.id).length + 1)
   if (component.kind === 'reactorCore') {
@@ -49,11 +82,19 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'powerMw') return ratedPowerMw * initialPowerFraction
     if (localPath === 'reactivityPcm') return 0
     if (localPath === 'rodInsertionFraction') return clamp(1 - initialPowerFraction, 0, 1)
+    if (localPath === 'coolantInletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290)
+    if (localPath === 'coolantOutletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290) + 32
+    if (localPath === 'heatToCoolantMw') return ratedPowerMw * initialPowerFraction
   }
   if (component.kind === 'steamGenerator') {
     if (localPath === 'levelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
     if (localPath === 'pressureMPa') return parameterNumber(component, 'nominalPressureMPa')
     if (localPath === 'heatTransferMw') return 0
+    if (localPath === 'primaryInletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322)
+    if (localPath === 'primaryOutletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322) - 32
+    if (localPath === 'secondaryTemperatureC') return optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285)
+    if (localPath === 'steamFlowKgPerS') return 0
+    if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
   }
   if (component.kind === 'centrifugalPump') {
     if (localPath === 'running') return true
@@ -62,11 +103,18 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
   }
   if (component.kind === 'feedwaterSource') {
     if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
+    if (localPath === 'temperatureC') return parameterNumber(component, 'temperatureC')
   }
   if (component.kind === 'turbineLoadSink') {
     const initialLoadFraction = parameterNumber(component, 'initialLoadFraction')
     if (localPath === 'electricMw') return parameterNumber(component, 'nominalElectricMw') * initialLoadFraction
     if (localPath === 'loadFraction') return initialLoadFraction
+    if (localPath === 'steamFlowKgPerS') return parameterNumber(component, 'nominalSteamFlowKgPerS') * initialLoadFraction
+  }
+  if (component.kind === 'condenserSink') {
+    if (localPath === 'steamFlowKgPerS') return 0
+    if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
+    if (localPath === 'backPressurePa') return 8_000
   }
   throw new Error(`component ${component.id} has no runtime initializer for variable ${path}`)
 }
@@ -89,15 +137,17 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'turbine-electrical-output',
     phase: 'solveElectrical',
     componentKind: 'turbineLoadSink',
-    writes: ['electricMw'],
+    writes: ['electricMw', 'steamFlowKgPerS'],
     update: ({ system, component, context }): void => {
-      const averageSteamGeneratorPressure = averageFor(system.graph.components, candidate => {
-        if (candidate.kind !== 'steamGenerator') return null
-        return context.readNumber(componentVariablePath(candidate, 'pressureMPa')) / parameterNumber(candidate, 'nominalPressureMPa')
-      })
+      const inletSteamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
+      const averageSteamPressure = averageIncomingLinkValue(system, component, 'pressureMPa', context)
+      const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const load = clamp(context.readNumber(componentVariablePath(component, 'loadFraction')), 0, 1)
-      const target = parameterNumber(component, 'nominalElectricMw') * load * clamp(averageSteamGeneratorPressure ?? 1, 0, 1.2)
+      const steamAvailability = clamp(inletSteamFlow / nominalSteamFlow, 0, 1.2)
+      const pressureAvailability = clamp((averageSteamPressure ?? 6.9) / 6.9, 0, 1.2)
+      const target = parameterNumber(component, 'nominalElectricMw') * load * Math.min(steamAvailability, pressureAvailability)
       const current = context.readNumber(componentVariablePath(component, 'electricMw'))
+      context.write(componentVariablePath(component, 'steamFlowKgPerS'), inletSteamFlow)
       context.write(
         componentVariablePath(component, 'electricMw'),
         approach(current, target, parameterNumber(component, 'nominalElectricMw') * 0.2 * context.dtSeconds),
@@ -116,22 +166,30 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     },
   },
   {
+    id: 'reactor-core-heat-to-coolant',
+    phase: 'solveThermalTransfer',
+    componentKind: 'reactorCore',
+    writes: ['heatToCoolantMw'],
+    update: ({ component, context }): void => {
+      context.write(componentVariablePath(component, 'heatToCoolantMw'), context.readNumber(componentVariablePath(component, 'powerMw')))
+    },
+  },
+  {
     id: 'steam-generator-heat-transfer',
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
-    writes: ['heatTransferMw'],
+    writes: ['heatTransferMw', 'steamFlowKgPerS'],
     update: ({ system, component, context }): void => {
-      const corePower = averageFor(system.graph.components, candidate =>
-        candidate.kind === 'reactorCore' ? context.readNumber(componentVariablePath(candidate, 'powerMw')) : null,
-      ) ?? 0
-      const primaryFlowFraction = averageFor(system.graph.components, candidate => {
-        if (candidate.kind !== 'centrifugalPump') return null
-        const nominal = parameterNumber(candidate, 'nominalFlowKgPerS')
-        return nominal === 0 ? 0 : context.readNumber(componentVariablePath(candidate, 'flowKgPerS')) / nominal
-      }) ?? 0
+      const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.medium === 'primary-water')
+        ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
+      const primaryWaterFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.medium === 'primary-water') ?? 0
+      const secondaryTemperature = context.readNumber(componentVariablePath(component, 'secondaryTemperatureC'))
       const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 50, 0, 1)
-      const heatTransfer = corePower * clamp(primaryFlowFraction, 0, 1.15) * levelFraction
+      const transferCapacity = parameterNumber(component, 'heatTransferCoefficientMwPerK') * Math.max(0, primaryWaterTemperature - secondaryTemperature)
+      const flowCapacity = primaryWaterFlow * specificHeatWaterKjPerKgK * Math.max(0, primaryWaterTemperature - secondaryTemperature) / 1_000
+      const heatTransfer = Math.max(0, Math.min(transferCapacity, flowCapacity) * levelFraction)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
+      context.write(componentVariablePath(component, 'steamFlowKgPerS'), heatTransfer / latentHeatSteamMjPerKg)
     },
   },
   {
@@ -149,28 +207,71 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     },
   },
   {
+    id: 'reactor-core-coolant-temperature-state',
+    phase: 'updateComponentState',
+    componentKind: 'reactorCore',
+    writes: ['coolantInletTemperatureC', 'coolantOutletTemperatureC'],
+    update: ({ system, component, context }): void => {
+      const inletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+        ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
+      const flow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 1)
+      const heatToCoolant = context.readNumber(componentVariablePath(component, 'heatToCoolantMw'))
+      const outletTarget = clamp(inletTemperature + (heatToCoolant * 1_000) / (flow * specificHeatWaterKjPerKgK), 220, 360)
+      const currentOutlet = context.readNumber(componentVariablePath(component, 'coolantOutletTemperatureC'))
+      context.write(componentVariablePath(component, 'coolantInletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC')), inletTemperature, 2 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'coolantOutletTemperatureC'), approach(currentOutlet, outletTarget, 2 * context.dtSeconds))
+    },
+  },
+  {
     id: 'steam-generator-inventory-pressure-state',
     phase: 'updateComponentState',
     componentKind: 'steamGenerator',
-    writes: ['pressureMPa', 'levelPercent'],
+    writes: ['pressureMPa', 'levelPercent', 'primaryInletTemperatureC', 'primaryOutletTemperatureC', 'secondaryTemperatureC', 'secondaryInventoryKg'],
     update: ({ system, component, context }): void => {
-      const turbineLoadMw = averageFor(system.graph.components, candidate =>
-        candidate.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(candidate, 'electricMw')) : null,
-      ) ?? 0
       const feedwaterFlow = averageFor(system.graph.components, candidate =>
         candidate.kind === 'feedwaterSource' ? context.readNumber(componentVariablePath(candidate, 'flowKgPerS')) : null,
+      ) ?? 0
+      const turbineSteamFlow = averageFor(system.graph.components, candidate =>
+        candidate.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(candidate, 'steamFlowKgPerS')) : null,
       ) ?? 0
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
       const heatTransfer = context.readNumber(componentVariablePath(component, 'heatTransferMw'))
       const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
+      const primaryInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.medium === 'primary-water')
+        ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
+      const primaryFlow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.medium === 'primary-water') ?? 1)
+      const primaryOutletTarget = clamp(primaryInletTemperature - (heatTransfer * 1_000) / (primaryFlow * specificHeatWaterKjPerKgK), 180, primaryInletTemperature)
+      context.write(componentVariablePath(component, 'primaryInletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC')), primaryInletTemperature, 2 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'primaryOutletTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')), primaryOutletTarget, 2 * context.dtSeconds))
+      const secondaryTemperatureTarget = clamp(280 + (context.readNumber(pressurePath) - nominalPressure) * 7, 180, 330)
+      context.write(componentVariablePath(component, 'secondaryTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, 0.3 * context.dtSeconds))
       const currentPressure = context.readNumber(pressurePath)
-      const pressureTarget = nominalPressure + ((heatTransfer - turbineLoadMw * 2.9) / 3_400) * nominalPressure
+      const generatedSteamFlow = context.readNumber(componentVariablePath(component, 'steamFlowKgPerS'))
+      const pressureTarget = nominalPressure + ((generatedSteamFlow - turbineSteamFlow) / 1_000) * nominalPressure
       context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
       const currentLevel = context.readNumber(levelPath)
-      const steamDemandFlow = turbineLoadMw * 0.7
-      const levelTarget = clamp(currentLevel + (feedwaterFlow - steamDemandFlow) * 0.0008, 0, 100)
+      const levelTarget = clamp(currentLevel + (feedwaterFlow - turbineSteamFlow) * 0.0008, 0, 100)
       context.write(levelPath, approach(currentLevel, levelTarget, 0.4 * context.dtSeconds))
+      const nominalInventory = optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000)
+      context.write(componentVariablePath(component, 'secondaryInventoryKg'), nominalInventory * context.readNumber(levelPath) / 100)
+    },
+  },
+  {
+    id: 'condenser-steam-sink-state',
+    phase: 'updateComponentState',
+    componentKind: 'condenserSink',
+    writes: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa'],
+    update: ({ system, component, context }): void => {
+      const steamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
+      const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
+      const targetCondensateTemperature = parameterNumber(component, 'coolingWaterTemperatureC')
+        + parameterNumber(component, 'condensateApproachTemperatureK')
+        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
+      const targetBackPressure = 7_000 + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
+      context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
+      context.write(componentVariablePath(component, 'condensateTemperatureC'), approach(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, 1.5 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'backPressurePa'), approach(context.readNumber(componentVariablePath(component, 'backPressurePa')), targetBackPressure, 500 * context.dtSeconds))
     },
   },
 ]

@@ -141,7 +141,7 @@ The weather pack's materialized subset of the global H3 spatial field. It stores
 _Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
 **Process Plant Runtime**:
-The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence.
+The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine output, and condenser sink behavior.
 _Avoid_: modeling continuous process physics as object-to-object events, process-specific HTTP endpoint families, or treating process variables as operational objects
 
 **Process Variable Table**:

@@ -12,7 +12,8 @@
       "label": "Reactor Core",
       "parameters": {
         "ratedPowerMw": 3400,
-        "initialPowerFraction": 0.85
+        "initialPowerFraction": 0.85,
+        "initialCoolantInletTemperatureC": 290
       }
     },
     {
@@ -22,7 +23,10 @@
       "parameters": {
         "nominalPressureMPa": 6.9,
         "nominalLevelPercent": 0.55,
-        "heatTransferCoefficientMwPerK": 12
+        "heatTransferCoefficientMwPerK": 75,
+        "initialPrimaryInletTemperatureC": 322,
+        "initialSecondaryTemperatureC": 285,
+        "nominalSecondaryInventoryKg": 56000
       }
     },
     {
@@ -30,7 +34,7 @@
       "kind": "centrifugalPump",
       "label": "Reactor Coolant Pump A",
       "parameters": {
-        "nominalFlowKgPerS": 4700,
+        "nominalFlowKgPerS": 17000,
         "nominalHeadPa": 650000
       }
     },
@@ -49,7 +53,18 @@
       "label": "Turbine Generator",
       "parameters": {
         "nominalElectricMw": 1100,
-        "initialLoadFraction": 0.85
+        "initialLoadFraction": 0.85,
+        "nominalSteamFlowKgPerS": 1050
+      }
+    },
+    {
+      "id": "condenser",
+      "kind": "condenserSink",
+      "label": "Main Condenser",
+      "parameters": {
+        "coolingWaterTemperatureC": 18,
+        "nominalSteamFlowKgPerS": 1050,
+        "condensateApproachTemperatureK": 12
       }
     }
   ],
@@ -58,25 +73,121 @@
       "id": "rcs-hot-leg-a",
       "from": "core.hotLegA",
       "to": "sgA.primaryInlet",
-      "medium": "primary-water"
+      "medium": "primary-water",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Hot leg flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 17000
+        },
+        {
+          "path": "temperatureC",
+          "label": "Hot leg temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 322
+        }
+      ]
     },
     {
       "id": "rcs-cold-leg-a",
       "from": "sgA.primaryOutlet",
       "to": "rcpA.inlet",
-      "medium": "primary-water"
+      "medium": "primary-water",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Cold leg flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 17000
+        },
+        {
+          "path": "temperatureC",
+          "label": "Cold leg temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
     },
     {
       "id": "rcp-a-to-core",
       "from": "rcpA.outlet",
       "to": "core.coldLegA",
-      "medium": "primary-water"
+      "medium": "primary-water",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Pump discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 17000
+        },
+        {
+          "path": "temperatureC",
+          "label": "Pump discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 290
+        }
+      ]
     },
     {
       "id": "fw-a-to-sg-a",
       "from": "feedwaterA.outlet",
       "to": "sgA.feedwaterInlet",
-      "medium": "feedwater"
+      "medium": "feedwater",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Feedwater flow to steam generator",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 760
+        },
+        {
+          "path": "temperatureC",
+          "label": "Feedwater temperature to steam generator",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 220
+        }
+      ]
     },
     {
       "id": "sg-a-steam-to-turbine",
@@ -151,19 +262,74 @@
           "initialValue": 0
         }
       ]
+    },
+    {
+      "id": "turbine-exhaust-to-condenser",
+      "from": "turbine.exhaustSteamOutlet",
+      "to": "condenser.steamInlet",
+      "linkKind": "steamFlow",
+      "medium": "steam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Turbine exhaust steam flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Turbine exhaust steam temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 120
+        }
+      ]
     }
   ],
   "publishedVariables": [
     "core.powerMw",
+    "core.coolantInletTemperatureC",
+    "core.coolantOutletTemperatureC",
+    "core.heatToCoolantMw",
     "sgA.levelPercent",
     "sgA.pressureMPa",
+    "sgA.primaryInletTemperatureC",
+    "sgA.primaryOutletTemperatureC",
+    "sgA.heatTransferMw",
+    "sgA.secondaryTemperatureC",
+    "sgA.steamFlowKgPerS",
+    "sgA.secondaryInventoryKg",
     "rcpA.running",
     "feedwaterA.flowKgPerS",
+    "feedwaterA.temperatureC",
     "turbine.electricMw",
+    "turbine.steamFlowKgPerS",
+    "condenser.steamFlowKgPerS",
+    "condenser.condensateTemperatureC",
+    "condenser.backPressurePa",
+    "rcs-hot-leg-a.flowKgPerS",
+    "rcs-hot-leg-a.temperatureC",
+    "rcs-cold-leg-a.flowKgPerS",
+    "rcs-cold-leg-a.temperatureC",
+    "rcp-a-to-core.flowKgPerS",
+    "rcp-a-to-core.temperatureC",
+    "fw-a-to-sg-a.flowKgPerS",
+    "fw-a-to-sg-a.temperatureC",
     "sg-a-steam-to-turbine.flowKgPerS",
     "sg-a-steam-to-turbine.pressureMPa",
     "sg-a-steam-to-turbine.radiationMSvPerH",
     "sg-a-steam-to-turbine.valve.positionFraction",
-    "sg-a-steam-to-turbine.leak.areaFraction"
+    "sg-a-steam-to-turbine.leak.areaFraction",
+    "turbine-exhaust-to-condenser.flowKgPerS",
+    "turbine-exhaust-to-condenser.temperatureC"
   ]
 }

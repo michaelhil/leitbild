@@ -5,10 +5,10 @@ export type ProcessPlantValue = ProcessVariableValue
 export const processPlantSolverPhases = [
   'applyCommands',
   'updateControlLogic',
-  'solveElectrical',
   'solveFluidFlowComponents',
   'solveFluidFlowLinks',
   'solveThermalTransfer',
+  'solveElectrical',
   'updateComponentState',
   'updateProcessLinkState',
 ] as const

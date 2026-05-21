@@ -20,23 +20,62 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
     writes: ['flowKgPerS'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
+      const fromComponent = system.graph.components[link.fromComponentIndex]
+      const toComponent = system.graph.components[link.toComponentIndex]
+      if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
       const primaryFlow = averageFor(system.graph.components, component =>
         component.kind === 'centrifugalPump' ? context.readNumber(componentVariablePath(component, 'flowKgPerS')) : null,
       ) ?? 0
       const feedwaterFlow = averageFor(system.graph.components, component =>
         component.kind === 'feedwaterSource' ? context.readNumber(componentVariablePath(component, 'flowKgPerS')) : null,
       ) ?? 0
-      const turbineSteamDemand = averageFor(system.graph.components, component =>
-        component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'electricMw')) * 0.7 : null,
+      const turbineSteamDemand = averageFor(system.graph.components, component => {
+        if (component.kind !== 'turbineLoadSink') return null
+        return context.readNumber(componentVariablePath(component, 'loadFraction')) * parameterNumber(component, 'nominalSteamFlowKgPerS')
+      })
+      const turbineSteamFlow = averageFor(system.graph.components, component =>
+        component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'steamFlowKgPerS')) : null,
       ) ?? 0
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const flowSource = link.kind === 'steamFlow'
-        ? turbineSteamDemand
+        ? fromComponent.kind === 'turbineLoadSink'
+          ? turbineSteamFlow
+          : turbineSteamDemand ?? 0
         : link.medium === 'feedwater'
           ? feedwaterFlow
           : primaryFlow
       context.write(processLinkVariablePath(link, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
+    },
+  },
+  {
+    id: 'process-link-temperature',
+    phase: 'updateProcessLinkState',
+    writes: ['temperatureC'],
+    appliesTo: (link): boolean => hasProcessLinkVariable(link, 'temperatureC'),
+    update: ({ system, link, context }): void => {
+      const fromComponent = system.graph.components[link.fromComponentIndex]
+      const toComponent = system.graph.components[link.toComponentIndex]
+      if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
+      let target: number
+      if (fromComponent.kind === 'reactorCore') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'coolantOutletTemperatureC'))
+      } else if (fromComponent.kind === 'steamGenerator' && link.medium === 'primary-water') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'primaryOutletTemperatureC'))
+      } else if (fromComponent.kind === 'feedwaterSource') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+      } else if (fromComponent.kind === 'steamGenerator' && link.medium === 'steam') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
+      } else if (fromComponent.kind === 'turbineLoadSink') {
+        target = 120
+      } else if (toComponent.kind === 'reactorCore') {
+        target = averageFor(system.graph.components, component =>
+          component.kind === 'steamGenerator' ? context.readNumber(componentVariablePath(component, 'primaryOutletTemperatureC')) : null,
+        ) ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
+      } else {
+        target = context.readNumber(processLinkVariablePath(link, 'temperatureC'))
+      }
+      context.write(processLinkVariablePath(link, 'temperatureC'), approach(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, 3 * context.dtSeconds))
     },
   },
   {

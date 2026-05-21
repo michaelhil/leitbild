@@ -223,6 +223,7 @@ The current component library is intentionally small. It defines graph interface
 - `centrifugalPump`
 - `feedwaterSource`
 - `turbineLoadSink`
+- `condenserSink`
 
 These names avoid temporary fidelity labels. The current implementation is still an early model, but the public component kind names should remain stable unless a deliberate breaking change is made.
 
@@ -286,6 +287,7 @@ Units are structured metadata, not free text. Current quantities and units are i
 - `ratio`: `fraction` or `percent`
 - `pressure`: `MPa` or `Pa`
 - `flowRate`: `kg/s`
+- `mass`: `kg`
 - `temperature`: `degC`
 - `head`: `Pa`
 - `boolean`: `boolean`
@@ -305,8 +307,12 @@ Example paths:
 - `core.powerMw`
 - `core.reactivityPcm`
 - `sgA.levelPercent`
+- `sgA.heatTransferMw`
+- `sgA.steamFlowKgPerS`
 - `feedwaterA.flowKgPerS`
 - `turbine.electricMw`
+- `condenser.condensateTemperatureC`
+- `rcs-hot-leg-a.temperatureC`
 - `sg-a-steam-to-turbine.flowKgPerS`
 - `sg-a-steam-to-turbine.valve.positionFraction`
 
@@ -357,10 +363,10 @@ The runtime phase order is explicit:
 
 1. `applyCommands`
 2. `updateControlLogic`
-3. `solveElectrical`
-4. `solveFluidFlowComponents`
-5. `solveFluidFlowLinks`
-6. `solveThermalTransfer`
+3. `solveFluidFlowComponents`
+4. `solveFluidFlowLinks`
+5. `solveThermalTransfer`
+6. `solveElectrical`
 7. `updateComponentState`
 8. `updateProcessLinkState`
 
@@ -371,10 +377,14 @@ This follows the same broad lesson as serious simulator integrations such as Fly
 Current runtime behavior is deliberately minimal but functional:
 
 - reactor power responds gradually to rod insertion demand,
+- reactor heat is transferred into a primary coolant temperature rise using a lumped `Q = m * cp * dT` approximation,
 - pump flow follows running state and speed demand,
-- steam generator heat transfer depends on core power, primary flow, and level,
-- steam generator level and pressure trend in response to feedwater and turbine load,
-- turbine electrical output follows load and available steam pressure.
+- process links propagate simple flow and temperature values through primary, feedwater, steam, and turbine-exhaust connections,
+- steam generator heat transfer depends on primary-water flow, primary/secondary temperature difference, and level,
+- steam generator steam production is derived from heat transfer using a simple latent-heat approximation,
+- steam generator inventory, level, pressure, primary outlet temperature, and secondary temperature trend in response to feedwater, generated steam, and turbine steam use,
+- turbine electrical output follows load, inlet steam flow, and available steam pressure,
+- condenser sink receives turbine exhaust steam and trends condensate temperature and back pressure,
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
@@ -511,9 +521,10 @@ Phase 3: minimal process slice:
 - steam generator,
 - feedwater source,
 - turbine/load sink,
+- condenser sink,
 - simple control/protection logic.
 
-The first part of Phase 3 is underway inside the headless runtime. Protection logic, alarms, provider snapshots, and Control Instance query/command integration remain separate follow-up work.
+The first coupled energy/flow path is now in place inside the headless runtime: reactor core, primary flow/temperature propagation, steam generator heat transfer and steam production, turbine load response, and condenser sink behavior. Feedwater is still modeled as a controlled source rather than a returned condensate loop. Protection logic, alarms, richer accident/fault injection, and first process-control surfaces remain follow-up work.
 
 Phase 4: emergency scenario tests:
 

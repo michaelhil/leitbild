@@ -23,10 +23,10 @@ const step = (
   const dtSeconds = stepMs / 1_000
   table.applyQueuedCommands()
   runComponentBehaviors(system, table, 'updateControlLogic', dtSeconds)
-  runComponentBehaviors(system, table, 'solveElectrical', dtSeconds)
   runComponentBehaviors(system, table, 'solveFluidFlowComponents', dtSeconds)
   runProcessLinkBehaviors(system, table, 'solveFluidFlowLinks', dtSeconds)
   runComponentBehaviors(system, table, 'solveThermalTransfer', dtSeconds)
+  runComponentBehaviors(system, table, 'solveElectrical', dtSeconds)
   runComponentBehaviors(system, table, 'updateComponentState', dtSeconds)
   runProcessLinkBehaviors(system, table, 'updateProcessLinkState', dtSeconds)
   assertProcessPlantRuntimeInvariants(table)
