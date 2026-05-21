@@ -3,8 +3,7 @@ import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
   createProcessPlantClusterTestbed,
-  pressurizedWaterReactorPlantSpec,
-  type PlantGraphSpec,
+  processPlantPressurizedWaterReactorGraphRef,
   type ProcessPlantClusterSystemConfig,
   type ProcessPlantTelemetrySeries,
   type VariablePath,
@@ -42,7 +41,7 @@ const compiledSystem = (id: string) => compileProcessPlantSystem({
   id,
   pack: 'process-plant',
   componentLibrary: 'process-plant',
-  graph: pressurizedWaterReactorPlantSpec as PlantGraphSpec,
+  graphRef: processPlantPressurizedWaterReactorGraphRef,
 })
 
 const telemetryConfig = {

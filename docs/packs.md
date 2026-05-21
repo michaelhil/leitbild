@@ -274,6 +274,8 @@ Process-plant graph queries now expose compiled connection metadata as `connecti
 
 Process-plant provider config may define timed process actions and telemetry sampling per process system. This makes multi-unit scenarios possible without adding a new cluster abstraction to Leitbild core: a scenario can instantiate multiple `processSystems`, and each system can have its own telemetry variables and schedule. The process-plant provider persists runtime snapshots, fired scheduled actions, and telemetry buffers in provider-private state; it does not write dense process trends into the Control Instance event journal.
 
+Process-plant systems may use either an inline `graph` or a pack-owned `graphRef`. `graphRef` is the preferred shape for scenarios that instantiate existing graphs such as `process-plant.pressurized-water-reactor.v1` many times. A process system must define exactly one graph source, and unknown refs fail in the process-plant compiler before runtime starts.
+
 ## Interaction Contributions
 
 Packs may contribute interaction capability for cross-object and cross-simulation behavior.

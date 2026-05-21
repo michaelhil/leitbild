@@ -1,6 +1,7 @@
 import type { ScenarioProcessSystemDefinition } from '../../core/model/index.ts'
 import { compilePlantGraph, type CompiledPlantGraph } from './graph/index.ts'
 import { processPlantComponentRegistry } from './graph/index.ts'
+import { resolveProcessPlantGraphSpec } from './specs/index.ts'
 
 export interface CompiledProcessPlantSystem {
   readonly id: string
@@ -20,7 +21,10 @@ export const compileProcessPlantSystem = (
   return {
     id: definition.id,
     componentLibrary: 'process-plant',
-    graph: compilePlantGraph(definition.graph, processPlantComponentRegistry),
+    graph: compilePlantGraph(
+      definition.graphRef === undefined ? definition.graph : resolveProcessPlantGraphSpec(definition.graphRef),
+      processPlantComponentRegistry,
+    ),
   }
 }
 

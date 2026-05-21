@@ -71,7 +71,8 @@ export interface ScenarioProcessSystemDefinition {
   readonly id: string
   readonly pack: string
   readonly componentLibrary: string
-  readonly graph: unknown
+  readonly graph?: unknown
+  readonly graphRef?: string
 }
 
 export interface ScenarioGuidance {
@@ -242,7 +243,18 @@ export const scenarioProcessSystemDefinitionSchema = z.object({
   id: idSchema,
   pack: idSchema,
   componentLibrary: idSchema,
-  graph: z.custom<unknown>(value => value !== undefined, 'graph is required'),
+  graph: z.unknown().optional(),
+  graphRef: idSchema.optional(),
+}).superRefine((definition, ctx) => {
+  const hasGraph = definition.graph !== undefined
+  const hasGraphRef = definition.graphRef !== undefined
+  if (hasGraph === hasGraphRef) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'process system must define exactly one of graph or graphRef',
+      path: hasGraph ? ['graphRef'] : ['graph'],
+    })
+  }
 })
 
 export const scenarioGuidanceSchema = z.object({

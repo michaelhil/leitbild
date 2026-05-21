@@ -38,21 +38,15 @@ The full plant run is assembled from a Leitbild Scenario Definition. The scenari
       "id": "plant",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graph": {
-        "schemaVersion": 1,
-        "id": "process-plant.pressurized-water-reactor.v1",
-        "title": "Pressurized Water Reactor",
-        "timestep": { "fixedStepMs": 100 },
-        "components": [],
-        "connections": [],
-        "publishedVariables": []
-      }
+      "graphRef": "process-plant.pressurized-water-reactor.v1"
     }
   ]
 }
 ```
 
-This makes plant topology config-owned rather than hardcoded in TypeScript. A future AI agent can author a complete plant graph by writing scenario/config data, then Leitbild validates and compiles it before runtime.
+`graphRef` points to a pack-owned graph catalog entry. Use it when a scenario wants to instantiate an existing validated graph one or many times. A process system may alternatively provide an inline `graph` object for a fully scenario-authored topology. It must define exactly one of `graph` or `graphRef`; unknown refs fail before runtime.
+
+This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can either instantiate a known graph by ref or author a complete plant graph as scenario/config data, then Leitbild validates and compiles it before runtime.
 
 The reusable machinery remains code-owned:
 
@@ -67,7 +61,7 @@ That boundary is deliberate. Scenarios instantiate components and connect them; 
 
 ## Canonical Graph Format
 
-V1 uses JSON-compatible graph data as the canonical runtime input. The current built-in pressurized water reactor graph lives at `src/packs/process-plant/specs/pressurized-water-reactor.graph.json`.
+V1 uses JSON-compatible graph data as the canonical runtime input. The current built-in pressurized water reactor graph lives at `src/packs/process-plant/specs/pressurized-water-reactor.graph.json` and is exposed to scenarios as `graphRef: "process-plant.pressurized-water-reactor.v1"`.
 
 A TypeScript data-builder DSL remains available as an authoring and test helper. The builder is not the runtime source of truth. Runtime plant assembly should load graph data from the Scenario Definition or from a graph data file referenced by scenario tooling.
 
@@ -559,7 +553,7 @@ The performance strategy is architectural:
 
 V1 acceptance should include a headless performance test for the first reactor graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
 
-The current multi-unit benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per unit. It records three selected variables per unit and compares runtime with a single-unit run on the current local machine.
+The current multi-unit benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per unit. The systems use `graphRef: "process-plant.pressurized-water-reactor.v1"` so the graph is catalog-resolved instead of repeated as six inline JSON objects. The benchmark records three selected variables per unit and compares runtime with a single-unit run on the current local machine.
 
 ![Six-unit process plant benchmark](./assets/process-plant-six-unit-trace.svg)
 
@@ -569,7 +563,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-The first benchmark result on the current hardware simulated five minutes of one unit in roughly 0.40 seconds and five minutes of six units in roughly 3.15 seconds, using median wall time over three measured runs after a warm-up run. That is about a 7.8x wall-clock penalty for 6x the plant count. It still runs about 95x faster than real time for the six-unit case, so the penalty does not matter for real-time six-unit operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of units or higher-fidelity components.
+The latest benchmark result on the current hardware simulated five minutes of one unit in roughly 0.41 seconds and five minutes of six units in roughly 2.07 seconds, using median wall time over three measured runs after a warm-up run. That is about a 5.0x wall-clock penalty for 6x the plant count. It still runs about 145x faster than real time for the six-unit case, so the penalty does not matter for real-time six-unit operation at the current fidelity. It does matter as a profiling signal: scheduler/telemetry overhead and repeated full variable snapshots should be watched before scaling to dozens of units or higher-fidelity components.
 
 ## Implementation Phases
 

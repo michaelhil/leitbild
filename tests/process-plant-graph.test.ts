@@ -9,6 +9,7 @@ import {
   plantGraph,
   plantGraphToMermaid,
   pressurizedWaterReactorPlantSpec,
+  processPlantPressurizedWaterReactorGraphRef,
   processPlantComponentRegistry,
   processLinkVariableDescriptorSchema,
   variableDescriptorSchema,
@@ -92,6 +93,108 @@ describe('process plant graph foundation', () => {
     expect(systems).toHaveLength(1)
     expect(systems[0]?.id).toBe('plant')
     expect(systems[0]?.graph.components.map(component => String(component.id))).toContain('core')
+  })
+
+  test('compiles a process plant system from a pack-owned graphRef', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'multi-unit-site',
+      schemaVersion: 1,
+      title: 'Multi Unit Site',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [
+        {
+          id: 'unit-1',
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          graphRef: processPlantPressurizedWaterReactorGraphRef,
+        },
+      ],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const systems = compileProcessPlantSystems(scenario.processSystems)
+
+    expect(systems).toHaveLength(1)
+    expect(systems[0]?.id).toBe('unit-1')
+    expect(String(systems[0]?.graph.specId)).toBe(processPlantPressurizedWaterReactorGraphRef)
+  })
+
+  test('rejects process systems that mix inline graph and graphRef', () => {
+    expect(() => scenarioDefinitionSchema.parse({
+      id: 'ambiguous-graph-source',
+      schemaVersion: 1,
+      title: 'Ambiguous Graph Source',
+      packs: ['process-plant'],
+      world: { environment: {} },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        graph: pressurizedWaterReactorPlantSpec,
+        graphRef: processPlantPressurizedWaterReactorGraphRef,
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    })).toThrow('process system must define exactly one of graph or graphRef')
+  })
+
+  test('rejects process systems without a graph source', () => {
+    expect(() => scenarioDefinitionSchema.parse({
+      id: 'missing-graph-source',
+      schemaVersion: 1,
+      title: 'Missing Graph Source',
+      packs: ['process-plant'],
+      world: { environment: {} },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    })).toThrow('process system must define exactly one of graph or graphRef')
+  })
+
+  test('rejects unknown process plant graph refs explicitly', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'unknown-graph-ref',
+      schemaVersion: 1,
+      title: 'Unknown Graph Ref',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [
+        {
+          id: 'plant',
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          graphRef: 'process-plant.unknown.v1',
+        },
+      ],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graphRef: process-plant.unknown.v1')
   })
 
   test('rejects old process pack ids instead of keeping compatibility aliases', () => {
