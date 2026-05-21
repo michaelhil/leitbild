@@ -42,16 +42,32 @@ const phaseInvocations = (
   return created
 }
 
+const assertDeclaredWritePathsExist = (
+  knownVariablePaths: ReadonlySet<VariablePath>,
+  config: {
+    readonly behaviorId: string
+    readonly writablePaths: ReadonlySet<VariablePath>
+  },
+): void => {
+  for (const path of config.writablePaths) {
+    if (!knownVariablePaths.has(path)) {
+      throw new Error(`process plant behavior ${config.behaviorId} declares write to unknown variable: ${path}`)
+    }
+  }
+}
+
 export const compileProcessPlantExecutionPlan = (
   system: CompiledProcessPlantSystem,
 ): ProcessPlantExecutionPlan => {
   const invocationsByPhase = new Map<ProcessPlantSolverPhase, ProcessPlantExecutionInvocation[]>()
+  const knownVariablePaths = new Set(system.graph.variables.map(variable => variable.path))
   let invocationCount = 0
 
   for (const behavior of componentBehaviorDefinitions) {
     for (const component of system.graph.components) {
       if (String(component.kind) !== behavior.componentKind) continue
       const writablePaths = new Set(behavior.writes.map(localPath => componentVariablePath(component, localPath)))
+      assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
       phaseInvocations(invocationsByPhase, behavior.phase).push({
         kind: 'component',
         behavior,
@@ -66,6 +82,7 @@ export const compileProcessPlantExecutionPlan = (
     for (const link of system.graph.links) {
       if (!behavior.appliesTo(link)) continue
       const writablePaths = new Set(behavior.writes.map(localPath => processLinkVariablePath(link, localPath)))
+      assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
       phaseInvocations(invocationsByPhase, behavior.phase).push({
         kind: 'link',
         behavior,

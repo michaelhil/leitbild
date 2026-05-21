@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   componentVariablePath,
+  compileProcessPlantExecutionPlan,
   compileProcessPlantSystem,
   createBehaviorContext,
   createProcessPlantMultiSystemTestbed,
@@ -380,6 +381,12 @@ describe('process plant runtime', () => {
       expect(behaviorIds.has(behavior.id)).toBe(false)
       behaviorIds.add(behavior.id)
     }
+  })
+
+  test('compiled execution plan validates behavior write declarations before runtime ticks', () => {
+    const plan = compileProcessPlantExecutionPlan(compiledSystem())
+
+    expect(plan.invocationCount).toBeGreaterThan(0)
   })
 
   test('behavior contexts reject non-finite numeric writes before they corrupt runtime state', () => {

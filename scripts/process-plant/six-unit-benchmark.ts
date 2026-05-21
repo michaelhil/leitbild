@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
+import { cpus, hostname, platform, release } from 'node:os'
 import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
@@ -21,10 +22,20 @@ interface BenchmarkResult {
   readonly realtimeFactor: number
 }
 
+interface BenchmarkEnvironment {
+  readonly hostname: string
+  readonly platform: string
+  readonly release: string
+  readonly bunVersion: string
+  readonly cpuCount: number
+  readonly cpuModel: string
+}
+
 const durationMs = 300_000
 const stepMs = 1_000
 const sampleIntervalMs = 5_000
-const artifactRoot = 'docs/assets'
+const artifactRoot = process.env.PROCESS_PLANT_BENCHMARK_ARTIFACT_ROOT ?? 'docs/assets'
+const shouldWriteArtifacts = process.env.PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS !== 'false'
 const traceSvgPath = `${artifactRoot}/process-plant-six-unit-trace.svg`
 const traceCsvPath = `${artifactRoot}/process-plant-six-unit-trace.csv`
 const performanceJsonPath = `${artifactRoot}/process-plant-six-unit-performance.json`
@@ -304,20 +315,37 @@ const renderCsv = (
   return `${rows.join('\n')}\n`
 }
 
+const benchmarkEnvironment = (): BenchmarkEnvironment => {
+  const firstCpu = cpus()[0]
+  return {
+    hostname: hostname(),
+    platform: platform(),
+    release: release(),
+    bunVersion: Bun.version,
+    cpuCount: cpus().length,
+    cpuModel: firstCpu?.model ?? 'unknown',
+  }
+}
+
 const main = async (): Promise<void> => {
   const oneUnit = runBenchmark('single-unit', () => [unitConfigs()[0]!])
   const sixUnit = runBenchmark('six-system', unitConfigs)
   const performance = [oneUnit.result, sixUnit.result]
-  await mkdir(dirname(traceSvgPath), { recursive: true })
-  await writeFile(traceSvgPath, renderSvg(sixUnit.traces, performance), 'utf8')
-  await writeFile(traceCsvPath, renderCsv(sixUnit.traces), 'utf8')
-  await writeFile(performanceJsonPath, `${JSON.stringify(performance, null, 2)}\n`, 'utf8')
+  if (shouldWriteArtifacts) {
+    await mkdir(dirname(traceSvgPath), { recursive: true })
+    await writeFile(traceSvgPath, renderSvg(sixUnit.traces, performance), 'utf8')
+    await writeFile(traceCsvPath, renderCsv(sixUnit.traces), 'utf8')
+    await writeFile(performanceJsonPath, `${JSON.stringify(performance, null, 2)}\n`, 'utf8')
+  }
   console.log(JSON.stringify({
-    artifacts: {
-      traceSvgPath,
-      traceCsvPath,
-      performanceJsonPath,
-    },
+    environment: benchmarkEnvironment(),
+    artifacts: shouldWriteArtifacts
+      ? {
+          traceSvgPath,
+          traceCsvPath,
+          performanceJsonPath,
+        }
+      : null,
     performance,
   }, null, 2))
 }

@@ -392,6 +392,18 @@ Behavior modules do not receive the raw variable table directly. Each behavior r
 
 Each behavior also declares a human/audit-facing `reads` list beside its write list. This is intentionally metadata-first in the current pass: it makes dependencies visible in tests and reviews without prematurely building a full dependency scheduler. Reads should refer to connection services such as `primaryCoolant`, `feedwater`, or `mainSteam`, not old free-text medium labels.
 
+When adding component or process-link behavior, use the runtime behavior API rather than scanning or mutating the graph directly. A new behavior should declare its solver phase, local read surface, local write surface, and update function. The execution-plan compiler expands that behavior once against the compiled graph, validates that declared write variables really exist, and then reuses the resulting invocation list on every tick. That means future behavior gets slot-backed storage, write validation, graph-restore checks, and fixed-step execution automatically as long as it stays inside the behavior contract.
+
+Behavior authoring rules:
+
+- keep continuous physics in behavior modules, not in Leitbild events or Control Instance object updates,
+- declare every local output in `writes`; undeclared writes fail and unknown write variables fail during execution-plan compilation,
+- use compiled graph indexes and adjacency maps such as `incomingLinksByComponent` and `outgoingLinksByComponent` instead of scanning all links in hot loops,
+- cache only static graph-derived data; do not cache process values outside the authoritative variable table,
+- do not add module-level mutable process state,
+- prefer helper functions for repeated physical calculations, but avoid speculative component frameworks before a second concrete model needs them,
+- add tests that cover both the behavior contract and the physical trend the behavior is meant to create.
+
 The variable table rejects physically invalid writable values before they enter the queued command buffer and validates behavior writes before they reach storage. Generic guardrails currently include finite numbers, ratio bounds (`fraction` in `0..1`, `percent` in `0..100`), and non-negative values for flow, head, mass, power, pressure, and radiation dose rate. A full invariant scan is available as an explicit runtime/debug check, but normal runtime does not allocate full snapshots on every fixed step. This is not a substitute for detailed physics validation, but it prevents bad commands and behavior errors from quietly corrupting the process state without turning validation into the dominant workload.
 
 The runtime phase order is explicit:
@@ -577,7 +589,9 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-The latest benchmark result on the current hardware simulated five minutes of one system in roughly 0.096 seconds and five minutes of six systems in roughly 0.58 seconds, using median wall time over three measured runs after a warm-up run. That is about a 6.0x wall-clock penalty for 6x the plant count. It runs about 518x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution.
+Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.10-0.11 seconds and five minutes of six systems in roughly 0.60-0.68 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 5.5-6.5x wall-clock penalty for 6x the plant count, and roughly 440-500x faster than real time for the six-system case at the current fidelity. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution.
+
+Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 
 ## Implementation Phases
 
