@@ -81,9 +81,28 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     outletC: { kind: 'hydraulicThermal', direction: 'out' },
     outletD: { kind: 'hydraulicThermal', direction: 'out' },
   }),
-  topologyComponent('processTank', 'Process Tank', {
-    inlet: { kind: 'hydraulicThermal', direction: 'in' },
-    outlet: { kind: 'hydraulicThermal', direction: 'out' },
+  defineComponent({
+    kind: 'processTank' as ComponentKind,
+    label: 'Process Tank',
+    ports: {
+      inlet: { kind: 'hydraulicThermal', direction: 'in' },
+      outlet: { kind: 'hydraulicThermal', direction: 'out' },
+    },
+    parametersSchema: z.object({
+      nominalInventoryKg: z.number().finite().positive(),
+      initialInventoryFraction: normalized,
+      initialTemperatureC: z.number().finite(),
+      makeupFlowKgPerS: z.number().finite().nonnegative(),
+      maxOutletFlowKgPerS: z.number().finite().nonnegative(),
+      thermalTimeConstantS: z.number().finite().positive().optional(),
+    }).strict(),
+    variables: [
+      variable({ path: 'inventoryKg', label: 'Tank inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
+      variable({ path: 'levelPercent', label: 'Tank level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'temperatureC', label: 'Tank temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+      variable({ path: 'makeupFlowKgPerS', label: 'Tank makeup flow', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'availableOutletFlowKgPerS', label: 'Available outlet flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+    ],
   }),
   topologyComponent('processValve', 'Process Valve', {
     inlet: { kind: 'hydraulicThermal', direction: 'in' },
@@ -202,6 +221,7 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
     parametersSchema: z.object({
       nominalFlowKgPerS: z.number().finite().positive(),
       nominalHeadPa: z.number().finite().positive(),
+      initialRunning: z.boolean().optional(),
       flowTimeConstantS: z.number().finite().positive().optional(),
       maxFlowRampKgPerS2: z.number().finite().positive().optional(),
     }),
@@ -260,10 +280,17 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       coolingWaterTemperatureC: z.number().finite(),
       nominalSteamFlowKgPerS: z.number().finite().positive(),
       condensateApproachTemperatureK: z.number().finite().nonnegative(),
+      nominalCondensateInventoryKg: z.number().finite().positive(),
+      initialCondensateInventoryFraction: normalized,
+      maxCondensateOutletFlowKgPerS: z.number().finite().nonnegative(),
       condenserThermalTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'steamFlowKgPerS', label: 'Condenser steam flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'condensateProductionKgPerS', label: 'Condensate production', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'condensateInventoryKg', label: 'Condensate inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
+      variable({ path: 'condensateLevelPercent', label: 'Condensate level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
+      variable({ path: 'availableCondensateOutletFlowKgPerS', label: 'Available condensate outlet flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'condensateTemperatureC', label: 'Condensate temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'backPressurePa', label: 'Condenser back pressure', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'Pa' }),
     ],

@@ -3,7 +3,7 @@
   <desc id="desc">A two by three grid of process variable traces for six independently scheduled process plant units.</desc>
   <rect width="100%" height="100%" fill="#f8fafc"/>
   <text x="70" y="38" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="700" fill="#111827">Multi-system process plant benchmark</text>
-  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single system 109.4 ms; six systems 607.7 ms; wall-clock ratio 5.56x; simulated 300s.</text>
+  <text x="70" y="62" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#4b5563">Single system 144.6 ms; six systems 704.3 ms; wall-clock ratio 4.87x; simulated 300s.</text>
   
       <g>
         <rect x="58" y="56" width="374" height="241" rx="10" fill="#ffffff" stroke="#d1d5db"/>

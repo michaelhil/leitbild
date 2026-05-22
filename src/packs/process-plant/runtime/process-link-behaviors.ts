@@ -113,6 +113,22 @@ const passiveFlowFromIncomingService = (
   return incomingFlow / outgoingCount
 }
 
+const sourceLimitedPumpFlow = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+  pumpFlow: number,
+): number => {
+  const incomingFlow = sumIncomingLinkValue(
+    system,
+    link.fromComponentIndex,
+    'flowKgPerS',
+    context,
+    candidate => candidate.kind === 'fluidFlow' && serviceMatches(candidate, link.service),
+  )
+  return incomingFlow > 0 ? Math.min(pumpFlow, incomingFlow) : pumpFlow
+}
+
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
     id: 'process-link-fluid-flow',
@@ -130,8 +146,16 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       let flowSource: number
-      if (fromComponent.kind === 'centrifugalPump' || fromComponent.kind === 'feedwaterSource') {
+      if (fromComponent.kind === 'centrifugalPump') {
+        flowSource = sourceLimitedPumpFlow(system, link, context, context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS')))
+      } else if (fromComponent.kind === 'feedwaterSource') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
+      } else if (fromComponent.kind === 'processTank') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'availableOutletFlowKgPerS'))
+          / Math.max(1, outgoingLinkCount(system, link.fromComponentIndex, candidate => candidate.kind === 'fluidFlow' && serviceMatches(candidate, link.service)))
+      } else if (fromComponent.kind === 'condenserSink' && link.service === 'condensate') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'availableCondensateOutletFlowKgPerS'))
+          / Math.max(1, outgoingLinkCount(system, link.fromComponentIndex, candidate => candidate.kind === 'fluidFlow' && serviceMatches(candidate, link.service)))
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'reliefFlowKgPerS'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
@@ -149,6 +173,9 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         flowSource = primaryCoolantFlowForCoreOutlet(system, link, context) ?? passiveFlowFromIncomingService(system, link, context)
       } else {
         flowSource = passiveFlowFromIncomingService(system, link, context)
+      }
+      if (toComponent.kind === 'centrifugalPump') {
+        flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
       }
       context.write(processLinkVariablePath(link, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
     },
@@ -172,6 +199,10 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         target = context.readNumber(componentVariablePath(fromComponent, 'steamTemperatureC'))
+      } else if (fromComponent.kind === 'processTank') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+      } else if (fromComponent.kind === 'condenserSink' && link.service === 'condensate') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'condensateTemperatureC'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {

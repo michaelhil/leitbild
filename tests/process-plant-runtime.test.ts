@@ -73,6 +73,11 @@ describe('process plant runtime', () => {
       'pressurizer.pressureMPa',
       'pressurizer.levelPercent',
       'pressurizer.reliefFlowKgPerS',
+      'feedwaterTank.inventoryKg',
+      'feedwaterTank.levelPercent',
+      'feedwaterTank.availableOutletFlowKgPerS',
+      'auxFeedwaterTank.inventoryKg',
+      'auxFeedwaterTank.levelPercent',
       'sgA.levelPercent',
       'sgA.pressureMPa',
       'sgA.heatTransferMw',
@@ -97,6 +102,10 @@ describe('process plant runtime', () => {
       'turbine.electricMw',
       'turbine.steamFlowKgPerS',
       'condenser.steamFlowKgPerS',
+      'condenser.condensateProductionKgPerS',
+      'condenser.condensateInventoryKg',
+      'condenser.condensateLevelPercent',
+      'condenser.availableCondensateOutletFlowKgPerS',
       'condenser.condensateTemperatureC',
       'condenser.backPressurePa',
       'rcs-hot-leg-a.flowKgPerS',
@@ -384,6 +393,41 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(before)
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(56_000 * before / 100)
     expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeLessThan(initialFeedwaterFlow)
+  })
+
+  test('feedwater and condensate inventories constrain secondary-side flow sources', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    const initialFeedwaterInventory = Number(runtime.readVariable(valueOf('feedwaterTank.inventoryKg')))
+    const initialCondenserInventory = Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterTank.makeupFlowKgPerS'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('condensatePumpA.running'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('condensatePumpB.running'), value: false })
+    for (let index = 0; index < 300; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('feedwaterTank.inventoryKg')))).toBeLessThan(initialFeedwaterInventory)
+    expect(Number(runtime.readVariable(valueOf('feedwaterTank.levelPercent')))).toBeLessThan(82)
+    expect(Number(runtime.readVariable(valueOf('condenser.condensateProductionKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeGreaterThan(initialCondenserInventory)
+  })
+
+  test('auxiliary feedwater tank depletes when auxiliary pumps feed steam generators', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    const initialAuxInventory = Number(runtime.readVariable(valueOf('auxFeedwaterTank.inventoryKg')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpA.running'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpMotor.running'), value: true })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpTurbine.running'), value: true })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('aux-feedwater-valve-a-to-sg-a.valve.positionFraction'), value: 1 })
+    for (let index = 0; index < 240; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('auxFeedwaterPumpMotor.flowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('auxFeedwaterTank.inventoryKg')))).toBeLessThan(initialAuxInventory)
+    expect(Number(runtime.readVariable(valueOf('aux-feedwater-valve-a-to-sg-a.flowKgPerS')))).toBeGreaterThan(0)
   })
 
   test('reactor coolant pump trip collapses primary link flow and heat transfer', () => {

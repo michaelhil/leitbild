@@ -62,7 +62,14 @@
       "id": "pressurizerReliefTank",
       "kind": "processTank",
       "label": "Pressurizer Relief Tank",
-      "parameters": {}
+      "parameters": {
+        "nominalInventoryKg": 80000,
+        "initialInventoryFraction": 0.15,
+        "initialTemperatureC": 80,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 0,
+        "thermalTimeConstantS": 120
+      }
     },
     {
       "id": "sgA",
@@ -210,7 +217,14 @@
       "id": "feedwaterTank",
       "kind": "processTank",
       "label": "Feedwater Tank",
-      "parameters": {}
+      "parameters": {
+        "nominalInventoryKg": 900000,
+        "initialInventoryFraction": 0.82,
+        "initialTemperatureC": 220,
+        "makeupFlowKgPerS": 1200,
+        "maxOutletFlowKgPerS": 1800,
+        "thermalTimeConstantS": 90
+      }
     },
     {
       "id": "feedwaterHeader",
@@ -246,7 +260,14 @@
       "id": "auxFeedwaterTank",
       "kind": "processTank",
       "label": "Auxiliary Feedwater Tank",
-      "parameters": {}
+      "parameters": {
+        "nominalInventoryKg": 350000,
+        "initialInventoryFraction": 0.95,
+        "initialTemperatureC": 38,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 420,
+        "thermalTimeConstantS": 180
+      }
     },
     {
       "id": "auxFeedwaterPumpMotor",
@@ -255,6 +276,7 @@
       "parameters": {
         "nominalFlowKgPerS": 170,
         "nominalHeadPa": 1200000,
+        "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
       }
@@ -266,6 +288,7 @@
       "parameters": {
         "nominalFlowKgPerS": 170,
         "nominalHeadPa": 1200000,
+        "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
       }
@@ -361,6 +384,9 @@
         "coolingWaterTemperatureC": 18,
         "nominalSteamFlowKgPerS": 1050,
         "condensateApproachTemperatureK": 12,
+        "nominalCondensateInventoryKg": 250000,
+        "initialCondensateInventoryFraction": 0.55,
+        "maxCondensateOutletFlowKgPerS": 1600,
         "condenserThermalTimeConstantS": 12
       }
     },
@@ -390,7 +416,14 @@
       "id": "volumeControlTank",
       "kind": "processTank",
       "label": "Volume Control Tank",
-      "parameters": {}
+      "parameters": {
+        "nominalInventoryKg": 120000,
+        "initialInventoryFraction": 0.7,
+        "initialTemperatureC": 45,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 160,
+        "thermalTimeConstantS": 120
+      }
     },
     {
       "id": "chargingPump",
@@ -2882,6 +2915,9 @@
     "pressurizer.sprayFlowKgPerS",
     "pressurizer.reliefValvePositionFraction",
     "pressurizer.reliefFlowKgPerS",
+    "pressurizerReliefTank.inventoryKg",
+    "pressurizerReliefTank.levelPercent",
+    "pressurizerReliefTank.temperatureC",
     "pressurizer-relief-to-tank.flowKgPerS",
     "pressurizer-relief-to-tank.temperatureC",
     "sgA.levelPercent",
@@ -2988,13 +3024,26 @@
     "mainFeedwaterPumpB.running",
     "mainFeedwaterPumpA.flowKgPerS",
     "mainFeedwaterPumpB.flowKgPerS",
+    "feedwaterTank.inventoryKg",
+    "feedwaterTank.levelPercent",
+    "feedwaterTank.temperatureC",
+    "feedwaterTank.makeupFlowKgPerS",
+    "feedwaterTank.availableOutletFlowKgPerS",
     "auxFeedwaterPumpMotor.running",
     "auxFeedwaterPumpTurbine.running",
     "auxFeedwaterPumpMotor.flowKgPerS",
     "auxFeedwaterPumpTurbine.flowKgPerS",
+    "auxFeedwaterTank.inventoryKg",
+    "auxFeedwaterTank.levelPercent",
+    "auxFeedwaterTank.temperatureC",
+    "auxFeedwaterTank.availableOutletFlowKgPerS",
     "turbine.electricMw",
     "turbine.steamFlowKgPerS",
     "condenser.steamFlowKgPerS",
+    "condenser.condensateProductionKgPerS",
+    "condenser.condensateInventoryKg",
+    "condenser.condensateLevelPercent",
+    "condenser.availableCondensateOutletFlowKgPerS",
     "condenser.condensateTemperatureC",
     "condenser.backPressurePa",
     "main-steam-header-to-turbine-stop-valve.flowKgPerS",

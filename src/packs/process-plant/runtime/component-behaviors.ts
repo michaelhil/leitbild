@@ -45,6 +45,15 @@ const optionalParameterNumber = (component: CompiledComponent, key: string, defa
   return value
 }
 
+const optionalParameterBoolean = (component: CompiledComponent, key: string, defaultValue: boolean): boolean => {
+  const parameters = component.parameters
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
+  const value = (parameters as Record<string, unknown>)[key]
+  if (value === undefined) return defaultValue
+  if (typeof value !== 'boolean') throw new Error(`component ${component.id} parameter ${key} must be boolean`)
+  return value
+}
+
 const hasComponentVariable = (component: CompiledComponent, localPath: string): boolean =>
   component.variables.some(variable => variable.path === componentVariablePath(component, localPath))
 
@@ -105,6 +114,44 @@ const averageOutgoingLinkValue = (
   return count === 0 ? null : total / count
 }
 
+const sumIncomingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
+): number => {
+  let total = 0
+  for (const linkIndex of system.graph.incomingLinksByComponent[component.index] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link) continue
+    if (!linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+  }
+  return total
+}
+
+const sumOutgoingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
+): number => {
+  let total = 0
+  for (const linkIndex of system.graph.outgoingLinksByComponent[component.index] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link) continue
+    if (!linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+  }
+  return total
+}
+
 export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
   const localPath = String(path).slice(String(component.id).length + 1)
   if (component.kind === 'reactorCore') {
@@ -154,9 +201,18 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'reliefFlowKgPerS') return 0
   }
   if (component.kind === 'centrifugalPump') {
-    if (localPath === 'running') return true
+    if (localPath === 'running') return optionalParameterBoolean(component, 'initialRunning', true)
     if (localPath === 'speedFraction') return 1
-    if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
+    if (localPath === 'flowKgPerS') return optionalParameterBoolean(component, 'initialRunning', true) ? parameterNumber(component, 'nominalFlowKgPerS') : 0
+  }
+  if (component.kind === 'processTank') {
+    const nominalInventory = parameterNumber(component, 'nominalInventoryKg')
+    const initialFraction = parameterNumber(component, 'initialInventoryFraction')
+    if (localPath === 'inventoryKg') return nominalInventory * initialFraction
+    if (localPath === 'levelPercent') return initialFraction * 100
+    if (localPath === 'temperatureC') return parameterNumber(component, 'initialTemperatureC')
+    if (localPath === 'makeupFlowKgPerS') return parameterNumber(component, 'makeupFlowKgPerS')
+    if (localPath === 'availableOutletFlowKgPerS') return parameterNumber(component, 'maxOutletFlowKgPerS')
   }
   if (component.kind === 'feedwaterSource') {
     if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
@@ -170,6 +226,10 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
   }
   if (component.kind === 'condenserSink') {
     if (localPath === 'steamFlowKgPerS') return 0
+    if (localPath === 'condensateProductionKgPerS') return 0
+    if (localPath === 'condensateInventoryKg') return parameterNumber(component, 'nominalCondensateInventoryKg') * parameterNumber(component, 'initialCondensateInventoryFraction')
+    if (localPath === 'condensateLevelPercent') return parameterNumber(component, 'initialCondensateInventoryFraction') * 100
+    if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
     if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
     if (localPath === 'backPressurePa') return 8_000
   }
@@ -380,6 +440,47 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     },
   },
   {
+    id: 'process-tank-inventory-state',
+    phase: 'updateComponentState',
+    componentKind: 'processTank',
+    reads: [
+      'inventoryKg',
+      'levelPercent',
+      'temperatureC',
+      'makeupFlowKgPerS',
+      'incoming:flowKgPerS',
+      'incoming:temperatureC',
+      'outgoing:flowKgPerS',
+    ],
+    writes: ['inventoryKg', 'levelPercent', 'temperatureC', 'availableOutletFlowKgPerS'],
+    update: ({ system, component, context }): void => {
+      const nominalInventory = parameterNumber(component, 'nominalInventoryKg')
+      const currentInventory = context.readNumber(componentVariablePath(component, 'inventoryKg'))
+      const incomingFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context)
+      const outgoingFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context)
+      const makeupFlow = clamp(context.readNumber(componentVariablePath(component, 'makeupFlowKgPerS')), 0, parameterNumber(component, 'maxOutletFlowKgPerS'))
+      const nextInventory = clamp(currentInventory + (incomingFlow + makeupFlow - outgoingFlow) * context.dtSeconds, 0, nominalInventory)
+      const nextLevel = clamp((nextInventory / nominalInventory) * 100, 0, 100)
+      const maxOutletFlow = parameterNumber(component, 'maxOutletFlowKgPerS')
+      const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
+      const nextAvailableOutletFlow = Math.min(maxOutletFlow, inventoryLimitedOutlet)
+      const incomingTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+      const targetTemperature = incomingTemperature ?? parameterNumber(component, 'initialTemperatureC')
+      context.write(componentVariablePath(component, 'inventoryKg'), nextInventory)
+      context.write(componentVariablePath(component, 'levelPercent'), nextLevel)
+      context.write(componentVariablePath(component, 'availableOutletFlowKgPerS'), nextAvailableOutletFlow)
+      context.write(
+        componentVariablePath(component, 'temperatureC'),
+        relaxToward(
+          context.readNumber(componentVariablePath(component, 'temperatureC')),
+          targetTemperature,
+          context.dtSeconds,
+          optionalParameterNumber(component, 'thermalTimeConstantS', 30),
+        ),
+      )
+    },
+  },
+  {
     id: 'reactor-core-coolant-temperature-state',
     phase: 'updateComponentState',
     componentKind: 'reactorCore',
@@ -494,15 +595,34 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     phase: 'updateComponentState',
     componentKind: 'condenserSink',
     reads: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa', 'incoming:flowKgPerS'],
-    writes: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa'],
+    writes: [
+      'steamFlowKgPerS',
+      'condensateProductionKgPerS',
+      'condensateInventoryKg',
+      'condensateLevelPercent',
+      'availableCondensateOutletFlowKgPerS',
+      'condensateTemperatureC',
+      'backPressurePa',
+    ],
     update: ({ system, component, context }): void => {
       const steamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
+      const condensateProduction = steamFlow
+      const outgoingCondensateFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'condensate')
+      const nominalInventory = parameterNumber(component, 'nominalCondensateInventoryKg')
+      const currentInventory = context.readNumber(componentVariablePath(component, 'condensateInventoryKg'))
+      const nextInventory = clamp(currentInventory + (condensateProduction - outgoingCondensateFlow) * context.dtSeconds, 0, nominalInventory)
+      const maxOutletFlow = parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
+      const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
       const targetCondensateTemperature = parameterNumber(component, 'coolingWaterTemperatureC')
         + parameterNumber(component, 'condensateApproachTemperatureK')
         + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
       const targetBackPressure = 7_000 + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
+      context.write(componentVariablePath(component, 'condensateProductionKgPerS'), condensateProduction)
+      context.write(componentVariablePath(component, 'condensateInventoryKg'), nextInventory)
+      context.write(componentVariablePath(component, 'condensateLevelPercent'), clamp((nextInventory / nominalInventory) * 100, 0, 100))
+      context.write(componentVariablePath(component, 'availableCondensateOutletFlowKgPerS'), Math.min(maxOutletFlow, inventoryLimitedOutlet))
       context.write(componentVariablePath(component, 'condensateTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, context.dtSeconds, optionalParameterNumber(component, 'condenserThermalTimeConstantS', 12)))
       context.write(componentVariablePath(component, 'backPressurePa'), approach(context.readNumber(componentVariablePath(component, 'backPressurePa')), targetBackPressure, 500 * context.dtSeconds))
     },
