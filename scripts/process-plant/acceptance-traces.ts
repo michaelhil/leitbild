@@ -27,7 +27,19 @@ const variablePath = (value: string): VariablePath => value as VariablePath
 
 const telemetryVariables = [
   'core.powerMw',
+  'core.fissionPowerMw',
+  'core.totalThermalPowerMw',
+  'core.temperatureFeedbackPcm',
+  'core.effectiveReactivityPcm',
+  'core.fuelLowerTemperatureC',
+  'core.fuelMidTemperatureC',
+  'core.fuelUpperTemperatureC',
+  'core.fuelStoredEnergyMj',
+  'core.decayHeatMw',
   'vessel.primaryPressureBiasMPa',
+  'vessel.compressibilityPressureBiasMPa',
+  'vessel.thermalExpansionPressureBiasMPa',
+  'vessel.meanPrimaryCoolantTemperatureC',
   'vessel.primaryCoolantInventoryKg',
   'pressurizer.pressureMPa',
   'pressurizer.steamMassKg',
@@ -252,6 +264,50 @@ const numericPoints = (
     return { x: point.elapsedMs / 1_000, y: point.value * scale }
   })
 
+const maxAbsoluteSeriesDelta = (
+  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
+  leftPath: string,
+  rightPath: string,
+): number => {
+  const left = seriesFor(telemetry, leftPath).points
+  const right = seriesFor(telemetry, rightPath).points
+  if (left.length !== right.length) throw new Error(`acceptance series length mismatch: ${leftPath} vs ${rightPath}`)
+  let maxDelta = 0
+  for (let index = 0; index < left.length; index += 1) {
+    const leftPoint = left[index]
+    const rightPoint = right[index]
+    if (!leftPoint || !rightPoint) throw new Error(`acceptance series point mismatch: ${leftPath} vs ${rightPath}`)
+    if (leftPoint.elapsedMs !== rightPoint.elapsedMs) throw new Error(`acceptance series timestamp mismatch: ${leftPath} vs ${rightPath}`)
+    if (typeof leftPoint.value !== 'number' || typeof rightPoint.value !== 'number') throw new Error(`acceptance series is not numeric: ${leftPath} vs ${rightPath}`)
+    maxDelta = Math.max(maxDelta, Math.abs(leftPoint.value - rightPoint.value))
+  }
+  return maxDelta
+}
+
+const maxAbsoluteComputedDelta = (
+  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
+  observedPath: string,
+  addendPaths: ReadonlyArray<string>,
+): number => {
+  const observed = seriesFor(telemetry, observedPath).points
+  const addendSeries = addendPaths.map(path => seriesFor(telemetry, path).points)
+  let maxDelta = 0
+  for (let index = 0; index < observed.length; index += 1) {
+    const observedPoint = observed[index]
+    if (!observedPoint || typeof observedPoint.value !== 'number') throw new Error(`acceptance observed series is not numeric: ${observedPath}`)
+    let expected = 0
+    for (let seriesIndex = 0; seriesIndex < addendSeries.length; seriesIndex += 1) {
+      const addendPoint = addendSeries[seriesIndex]?.[index]
+      const addendPath = addendPaths[seriesIndex]
+      if (!addendPoint || addendPoint.elapsedMs !== observedPoint.elapsedMs) throw new Error(`acceptance computed series timestamp mismatch: ${observedPath} vs ${String(addendPath)}`)
+      if (typeof addendPoint.value !== 'number') throw new Error(`acceptance computed series is not numeric: ${String(addendPath)}`)
+      expected += addendPoint.value
+    }
+    maxDelta = Math.max(maxDelta, Math.abs(observedPoint.value - expected))
+  }
+  return maxDelta
+}
+
 const check = (
   caseId: CaseId,
   description: string,
@@ -261,6 +317,9 @@ const check = (
 
 const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'core.powerMw',
+  'core.fissionPowerMw',
+  'core.totalThermalPowerMw',
+  'core.fuelStoredEnergyMj',
   'vessel.primaryCoolantInventoryKg',
   'pressurizer.pressureMPa',
   'pressurizer.steamMassKg',
@@ -293,6 +352,17 @@ const evaluateTelemetryIntegrity = (
     && nonnegativeTelemetryPaths.has(point.path)
     && point.value < -1e-9,
   )
+  const maxFissionMismatch = maxAbsoluteSeriesDelta(telemetry, 'core.powerMw', 'core.fissionPowerMw')
+  const maxThermalPowerMismatch = maxAbsoluteComputedDelta(
+    telemetry,
+    'core.totalThermalPowerMw',
+    ['core.fissionPowerMw', 'core.decayHeatMw'],
+  )
+  const maxPressureBiasMismatch = maxAbsoluteComputedDelta(
+    telemetry,
+    'vessel.primaryPressureBiasMPa',
+    ['vessel.compressibilityPressureBiasMPa', 'vessel.thermalExpansionPressureBiasMPa'],
+  )
   return [
     check(
       caseId,
@@ -305,6 +375,24 @@ const evaluateTelemetryIntegrity = (
       'nonnegative physical telemetry remains nonnegative',
       invalidNegative === undefined,
       invalidNegative === undefined ? 'all nonnegative' : `${invalidNegative.path}=${String(invalidNegative.value)}`,
+    ),
+    check(
+      caseId,
+      'reactor fission power alias remains exact',
+      maxFissionMismatch < 1e-6,
+      `maxMismatch=${maxFissionMismatch.toExponential(2)}MW`,
+    ),
+    check(
+      caseId,
+      'reactor thermal power equals fission plus decay heat',
+      maxThermalPowerMismatch < 1e-6,
+      `maxMismatch=${maxThermalPowerMismatch.toExponential(2)}MW`,
+    ),
+    check(
+      caseId,
+      'reactor vessel pressure bias equals compressibility plus thermal expansion',
+      maxPressureBiasMismatch < 1e-6,
+      `maxMismatch=${maxPressureBiasMismatch.toExponential(2)}MPa`,
     ),
   ]
 }

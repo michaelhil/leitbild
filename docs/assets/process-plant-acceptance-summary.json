@@ -4,29 +4,29 @@
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
   "caseCount": 7,
-  "checkCount": 33,
+  "checkCount": 54,
   "failedCheckCount": 0,
-  "wallMs": 2815.237208,
-  "realtimeFactor": 85.25036516212455,
+  "wallMs": 1292.03025,
+  "realtimeFactor": 185.7541648115437,
   "minRealtimeFactor": 20,
   "checks": [
     {
       "caseId": "baseline",
       "description": "baseline power stays bounded",
       "passed": true,
-      "details": "endPower=2977.1MW"
+      "details": "endPower=2706.9MW"
     },
     {
       "caseId": "baseline",
       "description": "baseline pressure stays plausible",
       "passed": true,
-      "details": "endPressure=16.02MPa"
+      "details": "endPressure=16.20MPa"
     },
     {
       "caseId": "baseline",
       "description": "baseline does not drift violently",
       "passed": true,
-      "details": "start=3001.7 end=2977.1MW"
+      "details": "start=2784.3 end=2706.9MW"
     },
     {
       "caseId": "baseline",
@@ -39,18 +39,36 @@
       "description": "nonnegative physical telemetry remains nonnegative",
       "passed": true,
       "details": "all nonnegative"
+    },
+    {
+      "caseId": "baseline",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "baseline",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "baseline",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
     },
     {
       "caseId": "sgtr",
       "description": "SGTR creates primary-to-secondary leak flow",
       "passed": true,
-      "details": "maxLeak=198.80kg/s"
+      "details": "maxLeak=199.26kg/s"
     },
     {
       "caseId": "sgtr",
       "description": "SGTR raises secondary radiation indication",
       "passed": true,
-      "details": "maxRadiation=135.736mSv/h"
+      "details": "maxRadiation=134.480mSv/h"
     },
     {
       "caseId": "sgtr",
@@ -63,6 +81,24 @@
       "description": "nonnegative physical telemetry remains nonnegative",
       "passed": true,
       "details": "all nonnegative"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
     },
     {
       "caseId": "loss-feedwater",
@@ -89,6 +125,24 @@
       "details": "all nonnegative"
     },
     {
+      "caseId": "loss-feedwater",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
       "caseId": "rcp-trip",
       "description": "RCP trip begins a coastdown, not an instant zero",
       "passed": true,
@@ -113,10 +167,28 @@
       "details": "all nonnegative"
     },
     {
+      "caseId": "rcp-trip",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
       "caseId": "relief-open",
       "description": "relief valve produces relief flow",
       "passed": true,
-      "details": "maxRelief=69.37kg/s"
+      "details": "maxRelief=69.99kg/s"
     },
     {
       "caseId": "relief-open",
@@ -135,6 +207,24 @@
       "description": "nonnegative physical telemetry remains nonnegative",
       "passed": true,
       "details": "all nonnegative"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
     },
     {
       "caseId": "load-reduction",
@@ -179,10 +269,28 @@
       "details": "all nonnegative"
     },
     {
+      "caseId": "load-reduction",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
       "caseId": "mixed-transient",
       "description": "mixed transient creates tube leak flow",
       "passed": true,
-      "details": "maxLeak=145.37kg/s"
+      "details": "maxLeak=144.93kg/s"
     },
     {
       "caseId": "mixed-transient",
@@ -207,6 +315,24 @@
       "description": "nonnegative physical telemetry remains nonnegative",
       "passed": true,
       "details": "all nonnegative"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
     }
   ],
   "performanceChecks": [
@@ -214,7 +340,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=85.3x min=20.0x"
+      "details": "realtimeFactor=185.8x min=20.0x"
     }
   ],
   "artifacts": {

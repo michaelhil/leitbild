@@ -85,6 +85,7 @@ export type VariablePublishPolicy = z.infer<typeof variablePublishPolicySchema>
 
 export const processQuantitySchema = z.enum([
   'boolean',
+  'energy',
   'energyPerMass',
   'flowRate',
   'flowRateDelta',
@@ -108,6 +109,7 @@ export const processUnitSchema = z.enum([
   'kg',
   'kJ/kg',
   'kg/s',
+  'MJ',
   'MPa',
   'mSv/h',
   'MW',
@@ -119,6 +121,7 @@ export type ProcessUnit = z.infer<typeof processUnitSchema>
 
 const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<ProcessUnit>>> = {
   boolean: new Set(['boolean']),
+  energy: new Set(['MJ']),
   energyPerMass: new Set(['kJ/kg']),
   flowRate: new Set(['kg/s']),
   flowRateDelta: new Set(['kg/s']),

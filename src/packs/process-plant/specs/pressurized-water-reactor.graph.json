@@ -22,7 +22,12 @@
         "referenceCoolantOutletTemperatureC": 322,
         "referenceFuelTemperatureC": 441,
         "coolantTemperatureFeedbackPcmPerC": -3,
-        "fuelTemperatureFeedbackPcmPerC": -1.2
+        "fuelTemperatureFeedbackPcmPerC": -1.2,
+        "criticalRodInsertionFraction": 0.15,
+        "rodWorthPcm": 1200,
+        "kineticsPcmPerEfoldPerSecond": 2400,
+        "maxPowerRampFractionPerS": 0.18,
+        "fuelThermalCapacityMjPerC": 45000
       }
     },
     {
@@ -32,7 +37,11 @@
       "parameters": {
         "nominalPrimaryCoolantInventoryKg": 285000,
         "initialPrimaryCoolantInventoryFraction": 1,
-        "primaryInventoryPressureGainMPaPerKg": 0.000035,
+        "primaryCoolantVolumeM3": 400,
+        "nominalPrimaryCoolantDensityKgPerM3": 712.5,
+        "effectiveBulkModulusMPa": 80,
+        "thermalExpansionCoefficientPerC": 0.0003,
+        "referencePrimaryCoolantTemperatureC": 306,
         "normalLetdownFlowKgPerS": 90
       }
     },
@@ -3570,7 +3579,17 @@
   ],
   "publishedVariables": [
     "core.powerMw",
+    "core.fissionPowerMw",
+    "core.totalThermalPowerMw",
+    "core.reactivityPcm",
+    "core.promptReactivityPcm",
+    "core.temperatureFeedbackPcm",
+    "core.effectiveReactivityPcm",
     "core.fuelTemperatureC",
+    "core.fuelLowerTemperatureC",
+    "core.fuelMidTemperatureC",
+    "core.fuelUpperTemperatureC",
+    "core.fuelStoredEnergyMj",
     "core.decayHeatMw",
     "core.coolantInletTemperatureC",
     "core.coolantOutletTemperatureC",
@@ -3741,6 +3760,9 @@
     "turbine-exhaust-to-condenser.temperatureC",
     "vessel.primaryCoolantInventoryKg",
     "vessel.primaryCoolantInventoryDeviationKg",
+    "vessel.meanPrimaryCoolantTemperatureC",
+    "vessel.compressibilityPressureBiasMPa",
+    "vessel.thermalExpansionPressureBiasMPa",
     "vessel.primaryPressureBiasMPa",
     "sgA.tubeLeakFraction",
     "sgA.primaryToSecondaryLeakKgPerS",

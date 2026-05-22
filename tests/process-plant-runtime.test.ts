@@ -104,13 +104,26 @@ describe('process plant runtime', () => {
     const publishedPaths = tick.publishedVariables.map(variable => String(variable.path))
     expect(publishedPaths).toEqual(expect.arrayContaining([
       'core.powerMw',
+      'core.fissionPowerMw',
+      'core.totalThermalPowerMw',
+      'core.reactivityPcm',
+      'core.promptReactivityPcm',
+      'core.temperatureFeedbackPcm',
+      'core.effectiveReactivityPcm',
       'core.fuelTemperatureC',
+      'core.fuelLowerTemperatureC',
+      'core.fuelMidTemperatureC',
+      'core.fuelUpperTemperatureC',
+      'core.fuelStoredEnergyMj',
       'core.decayHeatMw',
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
       'core.heatToCoolantMw',
       'vessel.primaryCoolantInventoryKg',
       'vessel.primaryCoolantInventoryDeviationKg',
+      'vessel.meanPrimaryCoolantTemperatureC',
+      'vessel.compressibilityPressureBiasMPa',
+      'vessel.thermalExpansionPressureBiasMPa',
       'vessel.primaryPressureBiasMPa',
       'vessel.chargingFlowKgPerS',
       'vessel.letdownFlowKgPerS',
@@ -559,6 +572,9 @@ describe('process plant runtime', () => {
     const hotFuel = createProcessPlantRuntime({
       system: compiledSystemWithInitialState({
         'core.fuelTemperatureC': 540,
+        'core.fuelLowerTemperatureC': 520,
+        'core.fuelMidTemperatureC': 550,
+        'core.fuelUpperTemperatureC': 540,
       }),
     })
 
@@ -569,6 +585,50 @@ describe('process plant runtime', () => {
 
     expect(Number(hotFuel.readVariable(valueOf('core.powerMw'))))
       .toBeLessThan(Number(baseline.readVariable(valueOf('core.powerMw'))))
+    expect(Number(hotFuel.readVariable(valueOf('core.temperatureFeedbackPcm')))).toBeLessThan(0)
+    expect(Number(hotFuel.readVariable(valueOf('core.effectiveReactivityPcm'))))
+      .toBeLessThan(Number(hotFuel.readVariable(valueOf('core.promptReactivityPcm'))))
+  })
+
+  test('reactor core initializes near critical and separates fission, decay, thermal power, and axial fuel heat', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const initialPower = Number(runtime.readVariable(valueOf('core.powerMw')))
+
+    for (let index = 0; index < 10; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('core.promptReactivityPcm')))).toBeCloseTo(0, 6)
+    expect(Math.abs(Number(runtime.readVariable(valueOf('core.effectiveReactivityPcm'))))).toBeLessThan(35)
+    expect(Number(runtime.readVariable(valueOf('core.fissionPowerMw')))).toBeCloseTo(Number(runtime.readVariable(valueOf('core.powerMw'))), 6)
+    expect(Number(runtime.readVariable(valueOf('core.totalThermalPowerMw'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('core.fissionPowerMw'))) + Number(runtime.readVariable(valueOf('core.decayHeatMw'))), 6)
+    expect(Number(runtime.readVariable(valueOf('core.fuelStoredEnergyMj')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('core.fuelMidTemperatureC'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('core.fuelLowerTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('core.powerMw')))).toBeGreaterThan(initialPower * 0.9)
+    expect(Number(runtime.readVariable(valueOf('core.powerMw')))).toBeLessThan(initialPower * 1.05)
+  })
+
+  test('positive rod reactivity is rate-limited and opposed by fuel and coolant temperature feedback', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 100; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('core.rodInsertionFraction'), value: 0.08 })
+    for (let index = 0; index < 240; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+
+    expect(Number(runtime.readVariable(valueOf('core.promptReactivityPcm')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('core.temperatureFeedbackPcm')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('core.effectiveReactivityPcm'))))
+      .toBeLessThan(Number(runtime.readVariable(valueOf('core.promptReactivityPcm'))))
+    expect(Number(runtime.readVariable(valueOf('core.powerMw'))))
+      .toBeGreaterThan(Number(baseline.readVariable(valueOf('core.powerMw'))))
+    expect(Number(runtime.readVariable(valueOf('core.powerMw')))).toBeLessThan(3400 * 1.2)
   })
 
   test('pressurizer heaters and relief valve change pressure through component behavior', () => {
@@ -653,6 +713,39 @@ describe('process plant runtime', () => {
     expect(hotLegPressureDrop).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureMPa'))))
       .toBeCloseTo(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))) - hotLegPressureDrop, 6)
+  })
+
+  test('reactor vessel pressure bias separates compressibility from thermal expansion effects', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const hotPrimary = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'core.coolantInletTemperatureC': 312,
+        'core.coolantOutletTemperatureC': 336,
+      }),
+    })
+
+    for (let index = 0; index < 40; index += 1) {
+      runtime.tick(100)
+      hotPrimary.tick(100)
+    }
+
+    expect(Number(hotPrimary.readVariable(valueOf('vessel.meanPrimaryCoolantTemperatureC'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('vessel.meanPrimaryCoolantTemperatureC'))))
+    expect(Number(hotPrimary.readVariable(valueOf('vessel.thermalExpansionPressureBiasMPa'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('vessel.thermalExpansionPressureBiasMPa'))))
+
+    const beforeLeakCompressibilityBias = Number(runtime.readVariable(valueOf('vessel.compressibilityPressureBiasMPa')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcs-cold-leg-a.leak.areaFraction'), value: 0.2 })
+    for (let index = 0; index < 240; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('vessel.compressibilityPressureBiasMPa'))))
+      .toBeLessThan(beforeLeakCompressibilityBias)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa'))))
+      .toBeCloseTo(
+        Number(runtime.readVariable(valueOf('vessel.compressibilityPressureBiasMPa')))
+        + Number(runtime.readVariable(valueOf('vessel.thermalExpansionPressureBiasMPa'))),
+        6,
+      )
   })
 
   test('primary coolant link pressure drop and leaks are link-local hydraulic effects', () => {
@@ -908,6 +1001,50 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowTargetKgPerS')))).toBeLessThan(initialTarget * 0.7)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.85)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('primary and secondary network flows remain coherent across pump and header links', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+
+    const initialHotLegFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    const initialHotLegPressureDrop = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureDropMPa')))
+    expect(Number(runtime.readVariable(valueOf('rcs-cold-leg-a.flowKgPerS')))).toBeCloseTo(initialHotLegFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('rcp-a-to-core.flowKgPerS')))).toBeCloseTo(initialHotLegFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('rcs-cold-leg-a.flowKgPerS')))).toBeCloseTo(initialHotLegFlow, 6)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.speedFraction'), value: 0.5 })
+    for (let index = 0; index < 80; index += 1) runtime.tick(100)
+
+    const reducedHotLegFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    expect(reducedHotLegFlow).toBeLessThan(initialHotLegFlow)
+    expect(Number(runtime.readVariable(valueOf('rcs-cold-leg-a.flowKgPerS')))).toBeCloseTo(reducedHotLegFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('rcp-a-to-core.flowKgPerS')))).toBeCloseTo(reducedHotLegFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureDropMPa')))).toBeLessThan(initialHotLegPressureDrop)
+
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.snapshot().variables)
+    const componentIndex = (componentId: string): number => {
+      const index = system.graph.componentIndexById.get(componentId as never)
+      if (index === undefined) throw new Error(`missing process plant component in test graph: ${componentId}`)
+      return index
+    }
+    const feedwaterHeaderBalance = componentFlowBalanceForService(
+      system,
+      componentIndex('feedwaterHeader'),
+      'feedwater' as ConnectionService,
+      table,
+    )
+    const mainSteamHeaderBalance = componentFlowBalanceForService(
+      system,
+      componentIndex('mainSteamHeader'),
+      'mainSteam' as ConnectionService,
+      table,
+    )
+
+    expect(feedwaterHeaderBalance.residualKgPerS).toBeCloseTo(0, 6)
+    expect(mainSteamHeaderBalance.residualKgPerS).toBeCloseTo(0, 6)
   })
 
   test('runtime restore preserves primary loop inertia state per unit', () => {

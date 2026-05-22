@@ -14,17 +14,32 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
   if (component.kind === 'reactorCore') {
     const ratedPowerMw = parameterNumber(component, 'ratedPowerMw')
     const initialPowerFraction = parameterNumber(component, 'initialPowerFraction')
-    if (localPath === 'powerMw') return ratedPowerMw * initialPowerFraction
+    const initialFissionPower = ratedPowerMw * initialPowerFraction
+    const initialCoolantInlet = optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290)
+    const initialCoolantOutlet = initialCoolantInlet + 32
+    const initialFuelRise = optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140) * initialPowerFraction
+    const initialFuelLower = initialCoolantOutlet + initialFuelRise * 0.88
+    const initialFuelMid = initialCoolantOutlet + initialFuelRise * 1.08
+    const initialFuelUpper = initialCoolantOutlet + initialFuelRise * 1.00
+    const initialFuelAverage = (initialFuelLower + initialFuelMid + initialFuelUpper) / 3
+    const initialDecayHeat = initialFissionPower * optionalParameterNumber(component, 'decayHeatFractionAtPower', 0.06)
+    if (localPath === 'powerMw') return initialFissionPower
+    if (localPath === 'fissionPowerMw') return initialFissionPower
+    if (localPath === 'totalThermalPowerMw') return initialFissionPower + initialDecayHeat
     if (localPath === 'reactivityPcm') return 0
-    if (localPath === 'rodInsertionFraction') return clamp(1 - initialPowerFraction, 0, 1)
-    if (localPath === 'coolantInletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290)
-    if (localPath === 'coolantOutletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290) + 32
-    if (localPath === 'fuelTemperatureC') {
-      const coolantOutlet = optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290) + 32
-      return coolantOutlet + optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140) * initialPowerFraction
-    }
-    if (localPath === 'decayHeatMw') return ratedPowerMw * initialPowerFraction * optionalParameterNumber(component, 'decayHeatFractionAtPower', 0.06)
-    if (localPath === 'heatToCoolantMw') return ratedPowerMw * initialPowerFraction
+    if (localPath === 'promptReactivityPcm') return 0
+    if (localPath === 'temperatureFeedbackPcm') return 0
+    if (localPath === 'effectiveReactivityPcm') return 0
+    if (localPath === 'rodInsertionFraction') return optionalParameterNumber(component, 'criticalRodInsertionFraction', clamp(1 - initialPowerFraction, 0, 1))
+    if (localPath === 'coolantInletTemperatureC') return initialCoolantInlet
+    if (localPath === 'coolantOutletTemperatureC') return initialCoolantOutlet
+    if (localPath === 'fuelTemperatureC') return initialFuelAverage
+    if (localPath === 'fuelLowerTemperatureC') return initialFuelLower
+    if (localPath === 'fuelMidTemperatureC') return initialFuelMid
+    if (localPath === 'fuelUpperTemperatureC') return initialFuelUpper
+    if (localPath === 'fuelStoredEnergyMj') return Math.max(0, initialFuelAverage - initialCoolantOutlet) * parameterNumber(component, 'fuelThermalCapacityMjPerC')
+    if (localPath === 'decayHeatMw') return initialDecayHeat
+    if (localPath === 'heatToCoolantMw') return initialFissionPower + initialDecayHeat
   }
   if (component.kind === 'steamGenerator') {
     if (localPath === 'levelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
@@ -56,7 +71,10 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     const initialFraction = parameterNumber(component, 'initialPrimaryCoolantInventoryFraction')
     if (localPath === 'primaryCoolantInventoryKg') return nominalInventory * initialFraction
     if (localPath === 'primaryCoolantInventoryDeviationKg') return nominalInventory * (initialFraction - 1)
-    if (localPath === 'primaryPressureBiasMPa') return optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0) * nominalInventory * (initialFraction - 1)
+    if (localPath === 'meanPrimaryCoolantTemperatureC') return parameterNumber(component, 'referencePrimaryCoolantTemperatureC')
+    if (localPath === 'compressibilityPressureBiasMPa') return 0
+    if (localPath === 'thermalExpansionPressureBiasMPa') return 0
+    if (localPath === 'primaryPressureBiasMPa') return 0
     if (localPath === 'chargingFlowKgPerS') return 0
     if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
     if (localPath === 'reliefOutflowKgPerS') return 0

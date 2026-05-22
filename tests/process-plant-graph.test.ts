@@ -360,6 +360,7 @@ describe('process plant graph foundation', () => {
         component('core', 'reactorCore', 'Reactor Core', {
           ratedPowerMw: 3400,
           initialPowerFraction: 0.85,
+          fuelThermalCapacityMjPerC: 45000,
         }),
         component('core', 'reactorCore', 'Second Reactor Core', {
           ratedPowerMw: 3400,
@@ -421,6 +422,7 @@ describe('process plant graph foundation', () => {
         component('core', 'reactorCore', 'Reactor Core', {
           ratedPowerMw: 3400,
           initialPowerFraction: 0.85,
+          fuelThermalCapacityMjPerC: 45000,
         }),
       ],
       connections: [],
@@ -452,6 +454,7 @@ describe('process plant graph foundation', () => {
           ...component('core', 'reactorCore', 'Reactor Core', {
             ratedPowerMw: 3400,
             initialPowerFraction: 0.85,
+            fuelThermalCapacityMjPerC: 45000,
           }),
           initialState: {
             powerMw: 1000,
