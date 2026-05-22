@@ -528,8 +528,45 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "pressurizer-surge-line pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "pressurizer-surge-line leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "pressurizer-surge-line leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
-      ]
+      ],
+      "physical": {
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
+      }
     },
     {
       "id": "pressurizer-relief-to-tank",
@@ -578,7 +615,9 @@
         "lengthM": 31,
         "diameterM": 0.76,
         "volumeM3": 14,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -613,6 +652,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-hot-leg-a pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-hot-leg-a leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-hot-leg-a leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -629,7 +701,9 @@
         "lengthM": 34,
         "diameterM": 0.76,
         "volumeM3": 15,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -664,6 +738,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-cold-leg-a pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-cold-leg-a leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-cold-leg-a leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -709,8 +816,45 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcp-a-to-core pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcp-a-to-core leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcp-a-to-core leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
-      ]
+      ],
+      "physical": {
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
+      }
     },
     {
       "id": "rcs-hot-leg-b",
@@ -725,7 +869,9 @@
         "lengthM": 31,
         "diameterM": 0.76,
         "volumeM3": 14,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -760,6 +906,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-hot-leg-b pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-hot-leg-b leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-hot-leg-b leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -776,7 +955,9 @@
         "lengthM": 34,
         "diameterM": 0.76,
         "volumeM3": 15,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -811,6 +992,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-cold-leg-b pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-cold-leg-b leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-cold-leg-b leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -856,8 +1070,45 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcp-b-to-core pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcp-b-to-core leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcp-b-to-core leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
-      ]
+      ],
+      "physical": {
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
+      }
     },
     {
       "id": "rcs-hot-leg-c",
@@ -872,7 +1123,9 @@
         "lengthM": 31,
         "diameterM": 0.76,
         "volumeM3": 14,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -907,6 +1160,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-hot-leg-c pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-hot-leg-c leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-hot-leg-c leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -923,7 +1209,9 @@
         "lengthM": 34,
         "diameterM": 0.76,
         "volumeM3": 15,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -958,6 +1246,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-cold-leg-c pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-cold-leg-c leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-cold-leg-c leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -1003,8 +1324,45 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcp-c-to-core pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcp-c-to-core leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcp-c-to-core leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
-      ]
+      ],
+      "physical": {
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
+      }
     },
     {
       "id": "rcs-hot-leg-d",
@@ -1019,7 +1377,9 @@
         "lengthM": 31,
         "diameterM": 0.76,
         "volumeM3": 14,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -1054,6 +1414,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-hot-leg-d pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-hot-leg-d leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-hot-leg-d leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -1070,7 +1463,9 @@
         "lengthM": 34,
         "diameterM": 0.76,
         "volumeM3": 15,
-        "nominalResistance": 0.04
+        "nominalResistance": 0.04,
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
       },
       "variables": [
         {
@@ -1105,6 +1500,39 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcs-cold-leg-d pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcs-cold-leg-d leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcs-cold-leg-d leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
       ]
     },
@@ -1150,8 +1578,45 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "pressureDropMPa",
+          "label": "rcp-d-to-core pressure drop",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressureDelta",
+          "unit": "MPa",
+          "initialValue": 0.04
+        },
+        {
+          "path": "leak.areaFraction",
+          "label": "rcp-d-to-core leak area",
+          "kind": "control",
+          "domain": "control",
+          "writable": true,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0
+        },
+        {
+          "path": "leakFlowKgPerS",
+          "label": "rcp-d-to-core leak flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
         }
-      ]
+      ],
+      "physical": {
+        "nominalFlowKgPerS": 4250,
+        "leakCoefficientKgPerSPerSqrtMPa": 520
+      }
     },
     {
       "id": "feedwater-tank-to-main-feedwater-pump-a",
@@ -3271,6 +3736,45 @@
     "rcp-c-to-core.pressureMPa",
     "rcs-hot-leg-d.pressureMPa",
     "rcs-cold-leg-d.pressureMPa",
-    "rcp-d-to-core.pressureMPa"
+    "rcp-d-to-core.pressureMPa",
+    "pressurizer-surge-line.pressureDropMPa",
+    "pressurizer-surge-line.leak.areaFraction",
+    "pressurizer-surge-line.leakFlowKgPerS",
+    "rcs-hot-leg-a.pressureDropMPa",
+    "rcs-hot-leg-a.leak.areaFraction",
+    "rcs-hot-leg-a.leakFlowKgPerS",
+    "rcs-cold-leg-a.pressureDropMPa",
+    "rcs-cold-leg-a.leak.areaFraction",
+    "rcs-cold-leg-a.leakFlowKgPerS",
+    "rcp-a-to-core.pressureDropMPa",
+    "rcp-a-to-core.leak.areaFraction",
+    "rcp-a-to-core.leakFlowKgPerS",
+    "rcs-hot-leg-b.pressureDropMPa",
+    "rcs-hot-leg-b.leak.areaFraction",
+    "rcs-hot-leg-b.leakFlowKgPerS",
+    "rcs-cold-leg-b.pressureDropMPa",
+    "rcs-cold-leg-b.leak.areaFraction",
+    "rcs-cold-leg-b.leakFlowKgPerS",
+    "rcp-b-to-core.pressureDropMPa",
+    "rcp-b-to-core.leak.areaFraction",
+    "rcp-b-to-core.leakFlowKgPerS",
+    "rcs-hot-leg-c.pressureDropMPa",
+    "rcs-hot-leg-c.leak.areaFraction",
+    "rcs-hot-leg-c.leakFlowKgPerS",
+    "rcs-cold-leg-c.pressureDropMPa",
+    "rcs-cold-leg-c.leak.areaFraction",
+    "rcs-cold-leg-c.leakFlowKgPerS",
+    "rcp-c-to-core.pressureDropMPa",
+    "rcp-c-to-core.leak.areaFraction",
+    "rcp-c-to-core.leakFlowKgPerS",
+    "rcs-hot-leg-d.pressureDropMPa",
+    "rcs-hot-leg-d.leak.areaFraction",
+    "rcs-hot-leg-d.leakFlowKgPerS",
+    "rcs-cold-leg-d.pressureDropMPa",
+    "rcs-cold-leg-d.leak.areaFraction",
+    "rcs-cold-leg-d.leakFlowKgPerS",
+    "rcp-d-to-core.pressureDropMPa",
+    "rcp-d-to-core.leak.areaFraction",
+    "rcp-d-to-core.leakFlowKgPerS"
   ]
 }

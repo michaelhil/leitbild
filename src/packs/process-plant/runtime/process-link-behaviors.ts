@@ -3,6 +3,10 @@ import { primaryLoopPumpForLink } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { approach, averageFor, clamp, parameterNumber, relaxToward } from './component-behaviors.ts'
 import {
+  pressureDrivenLeakFlowKgPerS,
+  pressureDropMPaFromFlow,
+} from './physics.ts'
+import {
   componentVariablePath,
   createBehaviorContext,
   processLinkVariablePath,
@@ -88,6 +92,15 @@ const findFirstComponentByKind = (
   kind: string,
 ) => system.graph.components.find(component => String(component.kind) === kind) ?? null
 
+const physicalNumber = (
+  link: CompiledProcessLink,
+  key: 'nominalResistance' | 'nominalFlowKgPerS' | 'leakCoefficientKgPerSPerSqrtMPa',
+  defaultValue: number,
+): number => {
+  const value = link.physical?.[key]
+  return value === undefined ? defaultValue : value
+}
+
 const passiveFlowFromIncomingService = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,
@@ -169,6 +182,51 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
     },
   },
   {
+    id: 'process-link-primary-pressure-drop',
+    phase: 'solveFluidFlowLinks',
+    reads: ['flowKgPerS', 'pressurizer.pressureMPa', 'physical.nominalResistance', 'physical.nominalFlowKgPerS'],
+    writes: ['pressureDropMPa', 'pressureMPa'],
+    appliesTo: (link): boolean =>
+      link.service === 'primaryCoolant'
+      && hasProcessLinkVariable(link, 'flowKgPerS')
+      && hasProcessLinkVariable(link, 'pressureDropMPa')
+      && hasProcessLinkVariable(link, 'pressureMPa'),
+    update: ({ system, link, context }): void => {
+      const pressurizer = findFirstComponentByKind(system, 'pressurizer')
+      if (pressurizer === null || !context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
+        throw new Error(`primary coolant pressure link ${link.id} requires a pressurizer pressure source`)
+      }
+      const flow = context.readNumber(processLinkVariablePath(link, 'flowKgPerS'))
+      const pressureDrop = pressureDropMPaFromFlow({
+        flowKgPerS: flow,
+        nominalFlowKgPerS: physicalNumber(link, 'nominalFlowKgPerS', 4_250),
+        nominalPressureDropMPa: physicalNumber(link, 'nominalResistance', 0),
+      })
+      const sourcePressure = context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
+      context.write(processLinkVariablePath(link, 'pressureDropMPa'), pressureDrop)
+      context.write(processLinkVariablePath(link, 'pressureMPa'), Math.max(0.2, sourcePressure - pressureDrop))
+    },
+  },
+  {
+    id: 'process-link-pressure-driven-leak',
+    phase: 'solveFluidFlowLinks',
+    reads: ['pressureMPa', 'leak.areaFraction?', 'physical.leakCoefficientKgPerSPerSqrtMPa'],
+    writes: ['leakFlowKgPerS'],
+    appliesTo: (link): boolean =>
+      link.kind === 'fluidFlow'
+      && hasProcessLinkVariable(link, 'pressureMPa')
+      && hasProcessLinkVariable(link, 'leakFlowKgPerS'),
+    update: ({ link, context }): void => {
+      const pressure = context.readNumber(processLinkVariablePath(link, 'pressureMPa'))
+      const leakArea = context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0)
+      context.write(processLinkVariablePath(link, 'leakFlowKgPerS'), pressureDrivenLeakFlowKgPerS({
+        areaFraction: leakArea,
+        pressureDeltaMPa: pressure - 0.101325,
+        coefficientKgPerSPerSqrtMPa: physicalNumber(link, 'leakCoefficientKgPerSPerSqrtMPa', 0),
+      }))
+    },
+  },
+  {
     id: 'process-link-temperature',
     phase: 'updateProcessLinkState',
     reads: ['temperatureC', 'source component temperature state'],
@@ -217,7 +275,8 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       if (link.service === 'primaryCoolant') {
         const pressurizer = findFirstComponentByKind(system, 'pressurizer')
         if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
-          context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')))
+          const pressureDrop = context.readOptionalNumber(processLinkVariablePath(link, 'pressureDropMPa'), 0)
+          context.write(processLinkVariablePath(link, 'pressureMPa'), Math.max(0.2, context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')) - pressureDrop))
           return
         }
       }

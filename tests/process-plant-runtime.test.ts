@@ -123,9 +123,15 @@ describe('process plant runtime', () => {
       'rcs-hot-leg-a.flowKgPerS',
       'rcs-hot-leg-a.temperatureC',
       'rcs-hot-leg-a.pressureMPa',
+      'rcs-hot-leg-a.pressureDropMPa',
+      'rcs-hot-leg-a.leak.areaFraction',
+      'rcs-hot-leg-a.leakFlowKgPerS',
       'rcs-cold-leg-a.flowKgPerS',
       'rcs-cold-leg-a.temperatureC',
       'rcs-cold-leg-a.pressureMPa',
+      'rcs-cold-leg-a.pressureDropMPa',
+      'rcs-cold-leg-a.leak.areaFraction',
+      'rcs-cold-leg-a.leakFlowKgPerS',
       'feedwater-control-valve-a-to-sg-a.flowKgPerS',
       'sg-a-steam-to-msiv-a.flowKgPerS',
       'sg-a-steam-to-msiv-a.pressureMPa',
@@ -407,7 +413,35 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryDeviationKg')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(initialPressure)
-    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureMPa')))).toBeCloseTo(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))), 6)
+    const hotLegPressureDrop = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureDropMPa')))
+    expect(hotLegPressureDrop).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureMPa'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))) - hotLegPressureDrop, 6)
+  })
+
+  test('primary coolant link pressure drop and leaks are link-local hydraulic effects', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 40; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+
+    const initialInventory = Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))
+    const initialHotLegFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcs-hot-leg-a.leak.areaFraction'), value: 0.15 })
+    for (let index = 0; index < 240; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.leakFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialInventory)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('pressurizer.pressureMPa'))))
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialHotLegFlow)
   })
 
   test('steam generator tube leak transfers primary coolant to secondary inventory and radiation', () => {
@@ -518,6 +552,22 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialA)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-b.flowKgPerS')))).toBeGreaterThan(initialB * 0.95)
     expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeLessThan(Number(runtime.readVariable(valueOf('rcpB.loopFlowKgPerS'))))
+  })
+
+  test('reactor coolant pump speed changes developed head and loop flow target', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const initialHead = Number(runtime.readVariable(valueOf('rcpA.developedHeadPa')))
+    const initialTarget = Number(runtime.readVariable(valueOf('rcpA.loopFlowTargetKgPerS')))
+    const initialFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.speedFraction'), value: 0.6 })
+    for (let index = 0; index < 160; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('rcpA.developedHeadPa')))).toBeLessThan(initialHead * 0.5)
+    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowTargetKgPerS')))).toBeLessThan(initialTarget * 0.7)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.85)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeGreaterThan(0)
   })
 
   test('runtime restore preserves primary loop inertia state per unit', () => {

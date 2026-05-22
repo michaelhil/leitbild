@@ -15,19 +15,21 @@ import {
   steamFlowKgPerSFromHeatMw,
   waterDeltaTFromHeatMw,
 } from './thermophysics.ts'
+import {
+  boundedApproach,
+  firstOrderLag,
+  inventoryBalanceStep,
+  pumpHeadResistanceFlowTarget,
+} from './physics.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
 
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
 
-export const approach = (current: number, target: number, maxDelta: number): number => {
-  if (Math.abs(target - current) <= maxDelta) return target
-  return current + Math.sign(target - current) * maxDelta
-}
+export const approach = (current: number, target: number, maxDelta: number): number =>
+  boundedApproach({ current, target, maxDelta })
 
-export const relaxToward = (current: number, target: number, dtSeconds: number, timeConstantSeconds: number): number => {
-  const fraction = clamp(dtSeconds / timeConstantSeconds, 0, 1)
-  return current + (target - current) * fraction
-}
+export const relaxToward = (current: number, target: number, dtSeconds: number, timeConstantSeconds: number): number =>
+  firstOrderLag({ current, target, dtSeconds, timeConstantSeconds })
 
 export const parameterNumber = (component: CompiledComponent, key: string): number => {
   const parameters = component.parameters
@@ -371,8 +373,16 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const pumpFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
       const resistance = optionalParameterNumber(component, 'loopResistanceCoefficient', 0)
       const naturalCirculationFlow = optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
+      const nominalFlow = parameterNumber(component, 'nominalFlowKgPerS')
+      const hydraulicTargetFlow = pumpHeadResistanceFlowTarget({
+        developedHeadPa: developedHead,
+        nominalHeadPa: nominalHead,
+        nominalFlowKgPerS: nominalFlow,
+        resistanceCoefficient: resistance,
+        minimumFlowKgPerS: naturalCirculationFlow,
+      })
       const targetFlow = running
-        ? pumpFlow / (1 + resistance)
+        ? Math.min(hydraulicTargetFlow, pumpFlow)
         : naturalCirculationFlow
       const currentLoopFlow = context.readNumber(componentVariablePath(component, 'loopFlowKgPerS'))
       const timeConstant = running
@@ -579,8 +589,16 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0),
       )
       const reliefFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'primaryRelief')
+      const primaryLeakFlow = sumLinkValueByService(system, 'leakFlowKgPerS', context, 'primaryCoolant')
       const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
-      const nextInventory = clamp(currentInventory + (chargingFlow - letdownFlow - reliefFlow - tubeLeakFlow) * context.dtSeconds, 0, nominalInventory * 1.15)
+      const nextInventory = inventoryBalanceStep({
+        currentInventory,
+        inflowKgPerS: chargingFlow,
+        outflowKgPerS: letdownFlow + reliefFlow + primaryLeakFlow + tubeLeakFlow,
+        dtSeconds: context.dtSeconds,
+        minInventory: 0,
+        maxInventory: nominalInventory * 1.15,
+      })
       const deviation = nextInventory - nominalInventory
       context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)
@@ -607,7 +625,14 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const incomingFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context)
       const outgoingFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context)
       const makeupFlow = clamp(context.readNumber(componentVariablePath(component, 'makeupFlowKgPerS')), 0, parameterNumber(component, 'maxOutletFlowKgPerS'))
-      const nextInventory = clamp(currentInventory + (incomingFlow + makeupFlow - outgoingFlow) * context.dtSeconds, 0, nominalInventory)
+      const nextInventory = inventoryBalanceStep({
+        currentInventory,
+        inflowKgPerS: incomingFlow + makeupFlow,
+        outflowKgPerS: outgoingFlow,
+        dtSeconds: context.dtSeconds,
+        minInventory: 0,
+        maxInventory: nominalInventory,
+      })
       const nextLevel = clamp((nextInventory / nominalInventory) * 100, 0, 100)
       const maxOutletFlow = parameterNumber(component, 'maxOutletFlowKgPerS')
       const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
@@ -732,7 +757,14 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       )
       const nominalInventory = optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000)
       const currentInventory = context.readNumber(componentVariablePath(component, 'secondaryInventoryKg'))
-      const nextInventory = clamp(currentInventory + (feedwaterFlow + tubeLeakFlow - turbineSteamFlow) * context.dtSeconds, 0, nominalInventory)
+      const nextInventory = inventoryBalanceStep({
+        currentInventory,
+        inflowKgPerS: feedwaterFlow + tubeLeakFlow,
+        outflowKgPerS: turbineSteamFlow,
+        dtSeconds: context.dtSeconds,
+        minInventory: 0,
+        maxInventory: nominalInventory,
+      })
       const inventoryTimeConstant = optionalParameterNumber(component, 'inventoryTimeConstantS', 20)
       const relaxedInventory = relaxToward(currentInventory, nextInventory, context.dtSeconds, inventoryTimeConstant)
       context.write(componentVariablePath(component, 'secondaryInventoryKg'), relaxedInventory)
@@ -760,7 +792,14 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const outgoingCondensateFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'condensate')
       const nominalInventory = parameterNumber(component, 'nominalCondensateInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'condensateInventoryKg'))
-      const nextInventory = clamp(currentInventory + (condensateProduction - outgoingCondensateFlow) * context.dtSeconds, 0, nominalInventory)
+      const nextInventory = inventoryBalanceStep({
+        currentInventory,
+        inflowKgPerS: condensateProduction,
+        outflowKgPerS: outgoingCondensateFlow,
+        dtSeconds: context.dtSeconds,
+        minInventory: 0,
+        maxInventory: nominalInventory,
+      })
       const maxOutletFlow = parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
       const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
       const targetCondensateTemperature = parameterNumber(component, 'coolingWaterTemperatureC')

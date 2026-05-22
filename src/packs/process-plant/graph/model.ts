@@ -236,6 +236,8 @@ export const connectionPhysicalSpecSchema = z.object({
   roughnessM: z.number().finite().nonnegative().optional(),
   volumeM3: z.number().finite().positive().optional(),
   nominalResistance: z.number().finite().nonnegative().optional(),
+  nominalFlowKgPerS: z.number().finite().positive().optional(),
+  leakCoefficientKgPerSPerSqrtMPa: z.number().finite().nonnegative().optional(),
 }).strict()
 export type ConnectionPhysicalSpec = z.infer<typeof connectionPhysicalSpecSchema>
 
