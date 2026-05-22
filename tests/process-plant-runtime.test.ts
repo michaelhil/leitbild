@@ -94,9 +94,15 @@ describe('process plant runtime', () => {
       'sgC.steamFlowKgPerS',
       'sgD.steamFlowKgPerS',
       'rcpA.running',
+      'rcpA.developedHeadPa',
+      'rcpA.loopFlowTargetKgPerS',
+      'rcpA.loopFlowKgPerS',
       'rcpB.running',
+      'rcpB.loopFlowKgPerS',
       'rcpC.running',
+      'rcpC.loopFlowKgPerS',
       'rcpD.running',
+      'rcpD.loopFlowKgPerS',
       'mainFeedwaterPumpA.running',
       'mainFeedwaterPumpB.running',
       'turbine.electricMw',
@@ -146,6 +152,7 @@ describe('process plant runtime', () => {
 
     expect(runtime.readVariable(valueOf('rcpA.running'))).toBe(false)
     expect(runtime.readVariable(valueOf('rcpA.flowKgPerS'))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeGreaterThan(0)
   })
 
   test('evolves plant variables without coupling behavior to the caller tick size', () => {
@@ -430,17 +437,50 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('aux-feedwater-valve-a-to-sg-a.flowKgPerS')))).toBeGreaterThan(0)
   })
 
-  test('reactor coolant pump trip collapses primary link flow and heat transfer', () => {
+  test('reactor coolant pump trip coasts down primary loop flow and heat transfer', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
     const flowingHeatTransfer = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
+    const initialFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
-    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBe(0)
+    const coastdownFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    expect(coastdownFlow).toBeGreaterThan(0)
+    expect(coastdownFlow).toBeLessThan(initialFlow)
+    for (let index = 0; index < 400; index += 1) runtime.tick(100)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.15)
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(100)
+  })
+
+  test('primary loop inertia is scoped to the tripped reactor coolant pump loop', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const initialA = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    const initialB = Number(runtime.readVariable(valueOf('rcs-hot-leg-b.flowKgPerS')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialA)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-b.flowKgPerS')))).toBeGreaterThan(initialB * 0.95)
+    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeLessThan(Number(runtime.readVariable(valueOf('rcpB.loopFlowKgPerS'))))
+  })
+
+  test('runtime restore preserves primary loop inertia state per unit', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
+    for (let index = 0; index < 30; index += 1) runtime.tick(100)
+    const beforeRestore = Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))
+    const restored = createProcessPlantRuntime({ system, restoredSnapshot: runtime.snapshot() })
+
+    expect(Number(restored.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeCloseTo(beforeRestore, 6)
+    restored.tick(100)
+    expect(Number(restored.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeLessThan(beforeRestore)
   })
 
   test('turbine load demand changes steam use and electrical output', () => {

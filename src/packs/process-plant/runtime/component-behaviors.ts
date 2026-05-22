@@ -1,4 +1,5 @@
 import type { CompiledComponent, VariablePath } from '../graph/index.ts'
+import { primaryLoopIdForPump } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
 import {
@@ -201,9 +202,14 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'reliefFlowKgPerS') return 0
   }
   if (component.kind === 'centrifugalPump') {
+    const running = optionalParameterBoolean(component, 'initialRunning', true)
+    const primaryLoopId = primaryLoopIdForPump(component)
     if (localPath === 'running') return optionalParameterBoolean(component, 'initialRunning', true)
     if (localPath === 'speedFraction') return 1
-    if (localPath === 'flowKgPerS') return optionalParameterBoolean(component, 'initialRunning', true) ? parameterNumber(component, 'nominalFlowKgPerS') : 0
+    if (localPath === 'flowKgPerS') return running ? parameterNumber(component, 'nominalFlowKgPerS') : 0
+    if (localPath === 'developedHeadPa') return running ? parameterNumber(component, 'nominalHeadPa') : 0
+    if (localPath === 'loopFlowTargetKgPerS') return primaryLoopId === null ? 0 : running ? parameterNumber(component, 'nominalFlowKgPerS') : optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
+    if (localPath === 'loopFlowKgPerS') return primaryLoopId === null ? 0 : running ? parameterNumber(component, 'nominalFlowKgPerS') : optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
   }
   if (component.kind === 'processTank') {
     const nominalInventory = parameterNumber(component, 'nominalInventoryKg')
@@ -290,6 +296,40 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         ? relaxToward(currentFlow, targetFlow, context.dtSeconds, timeConstant)
         : targetFlow
       context.write(componentVariablePath(component, 'flowKgPerS'), approach(currentFlow, relaxedFlow, maxRamp * context.dtSeconds))
+    },
+  },
+  {
+    id: 'centrifugal-pump-primary-loop-inertia',
+    phase: 'solveFluidFlowComponents',
+    componentKind: 'centrifugalPump',
+    reads: ['running', 'speedFraction', 'flowKgPerS', 'loopFlowKgPerS'],
+    writes: ['developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
+    update: ({ component, context }): void => {
+      const running = context.readBoolean(componentVariablePath(component, 'running'))
+      const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
+      const nominalHead = parameterNumber(component, 'nominalHeadPa')
+      const developedHead = running ? nominalHead * speed * speed : 0
+      context.write(componentVariablePath(component, 'developedHeadPa'), developedHead)
+
+      const primaryLoopId = primaryLoopIdForPump(component)
+      if (primaryLoopId === null) {
+        context.write(componentVariablePath(component, 'loopFlowTargetKgPerS'), 0)
+        context.write(componentVariablePath(component, 'loopFlowKgPerS'), 0)
+        return
+      }
+
+      const pumpFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
+      const resistance = optionalParameterNumber(component, 'loopResistanceCoefficient', 0)
+      const naturalCirculationFlow = optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
+      const targetFlow = running
+        ? pumpFlow / (1 + resistance)
+        : naturalCirculationFlow
+      const currentLoopFlow = context.readNumber(componentVariablePath(component, 'loopFlowKgPerS'))
+      const timeConstant = running
+        ? optionalParameterNumber(component, 'loopInertiaTimeConstantS', optionalParameterNumber(component, 'flowTimeConstantS', 4))
+        : optionalParameterNumber(component, 'coastdownTimeConstantS', optionalParameterNumber(component, 'loopInertiaTimeConstantS', 10))
+      context.write(componentVariablePath(component, 'loopFlowTargetKgPerS'), targetFlow)
+      context.write(componentVariablePath(component, 'loopFlowKgPerS'), relaxToward(currentLoopFlow, targetFlow, context.dtSeconds, timeConstant))
     },
   },
   {

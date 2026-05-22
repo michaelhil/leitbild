@@ -1,6 +1,7 @@
 import type { ScenarioProcessSystemDefinition } from '../../core/model/index.ts'
 import {
   compilePlantGraph,
+  assertPrimaryLoopTopologyValid,
   plantGraphSpecSchema,
   processVariableValueSchema,
   type CompiledPlantGraph,
@@ -101,6 +102,7 @@ export const compileProcessPlantSystem = (
     definition.parameters,
   )
   const compiledGraph = compilePlantGraph(graph, processPlantComponentRegistry)
+  assertPrimaryLoopTopologyValid(compiledGraph)
   const initialState = parseInitialState(definition.initialState)
   assertInitialStateTargetsDeclaredVariables(compiledGraph, initialState)
   return {

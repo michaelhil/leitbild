@@ -13,6 +13,7 @@ import {
   processPlantComponentRegistry,
   processLinkVariableDescriptorSchema,
   variableDescriptorSchema,
+  type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 
 describe('process plant graph foundation', () => {
@@ -125,6 +126,38 @@ describe('process plant graph foundation', () => {
     expect(systems).toHaveLength(1)
     expect(systems[0]?.id).toBe('unit-1')
     expect(String(systems[0]?.graph.specId)).toBe(processPlantPressurizedWaterReactorGraphRef)
+  })
+
+  test('rejects duplicate primary loop pump ownership before runtime', () => {
+    const invalid = structuredClone(pressurizedWaterReactorPlantSpec) as PlantGraphSpec
+    const rcpB = invalid.components.find(component => component.id === 'rcpB')
+    if (!rcpB || !rcpB.parameters || typeof rcpB.parameters !== 'object' || Array.isArray(rcpB.parameters)) {
+      throw new Error('expected RCP B parameters')
+    }
+    rcpB.parameters = {
+      ...rcpB.parameters,
+      primaryLoopId: 'A',
+    }
+
+    expect(() => compileProcessPlantSystem({
+      id: 'plant',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: invalid,
+    })).toThrow('primary loop A has multiple loop pumps')
+  })
+
+  test('rejects incomplete primary loop topology before runtime', () => {
+    const invalid = structuredClone(pressurizedWaterReactorPlantSpec) as PlantGraphSpec
+    invalid.connections = invalid.connections.filter(connection => connection.id !== 'rcs-hot-leg-a')
+    invalid.publishedVariables = invalid.publishedVariables.filter(path => !String(path).startsWith('rcs-hot-leg-a.'))
+
+    expect(() => compileProcessPlantSystem({
+      id: 'plant',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: invalid,
+    })).toThrow('primary loop A must have exactly one core hotLegA primaryCoolant outlet')
   })
 
   test('applies per-system component parameter overlays without changing topology', () => {

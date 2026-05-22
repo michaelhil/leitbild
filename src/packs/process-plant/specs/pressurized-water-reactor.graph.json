@@ -161,7 +161,12 @@
       "label": "Reactor Coolant Pump A",
       "parameters": {
         "nominalFlowKgPerS": 4250,
-        "nominalHeadPa": 650000
+        "nominalHeadPa": 650000,
+        "primaryLoopId": "A",
+        "loopInertiaTimeConstantS": 7,
+        "coastdownTimeConstantS": 18,
+        "loopResistanceCoefficient": 0,
+        "minimumNaturalCirculationFlowKgPerS": 0
       }
     },
     {
@@ -170,7 +175,12 @@
       "label": "Reactor Coolant Pump B",
       "parameters": {
         "nominalFlowKgPerS": 4250,
-        "nominalHeadPa": 650000
+        "nominalHeadPa": 650000,
+        "primaryLoopId": "B",
+        "loopInertiaTimeConstantS": 7,
+        "coastdownTimeConstantS": 18,
+        "loopResistanceCoefficient": 0,
+        "minimumNaturalCirculationFlowKgPerS": 0
       }
     },
     {
@@ -179,7 +189,12 @@
       "label": "Reactor Coolant Pump C",
       "parameters": {
         "nominalFlowKgPerS": 4250,
-        "nominalHeadPa": 650000
+        "nominalHeadPa": 650000,
+        "primaryLoopId": "C",
+        "loopInertiaTimeConstantS": 7,
+        "coastdownTimeConstantS": 18,
+        "loopResistanceCoefficient": 0,
+        "minimumNaturalCirculationFlowKgPerS": 0
       }
     },
     {
@@ -188,7 +203,12 @@
       "label": "Reactor Coolant Pump D",
       "parameters": {
         "nominalFlowKgPerS": 4250,
-        "nominalHeadPa": 650000
+        "nominalHeadPa": 650000,
+        "primaryLoopId": "D",
+        "loopInertiaTimeConstantS": 7,
+        "coastdownTimeConstantS": 18,
+        "loopResistanceCoefficient": 0,
+        "minimumNaturalCirculationFlowKgPerS": 0
       }
     },
     {
@@ -2934,6 +2954,9 @@
     "sgA.secondaryInventoryKg",
     "rcpA.running",
     "rcpA.flowKgPerS",
+    "rcpA.developedHeadPa",
+    "rcpA.loopFlowTargetKgPerS",
+    "rcpA.loopFlowKgPerS",
     "rcs-hot-leg-a.flowKgPerS",
     "rcs-hot-leg-a.temperatureC",
     "rcs-cold-leg-a.flowKgPerS",
@@ -2959,6 +2982,9 @@
     "sgB.secondaryInventoryKg",
     "rcpB.running",
     "rcpB.flowKgPerS",
+    "rcpB.developedHeadPa",
+    "rcpB.loopFlowTargetKgPerS",
+    "rcpB.loopFlowKgPerS",
     "rcs-hot-leg-b.flowKgPerS",
     "rcs-hot-leg-b.temperatureC",
     "rcs-cold-leg-b.flowKgPerS",
@@ -2984,6 +3010,9 @@
     "sgC.secondaryInventoryKg",
     "rcpC.running",
     "rcpC.flowKgPerS",
+    "rcpC.developedHeadPa",
+    "rcpC.loopFlowTargetKgPerS",
+    "rcpC.loopFlowKgPerS",
     "rcs-hot-leg-c.flowKgPerS",
     "rcs-hot-leg-c.temperatureC",
     "rcs-cold-leg-c.flowKgPerS",
@@ -3009,6 +3038,9 @@
     "sgD.secondaryInventoryKg",
     "rcpD.running",
     "rcpD.flowKgPerS",
+    "rcpD.developedHeadPa",
+    "rcpD.loopFlowTargetKgPerS",
+    "rcpD.loopFlowKgPerS",
     "rcs-hot-leg-d.flowKgPerS",
     "rcs-hot-leg-d.temperatureC",
     "rcs-cold-leg-d.flowKgPerS",

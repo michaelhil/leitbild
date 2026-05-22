@@ -1,4 +1,5 @@
 import type { CompiledProcessLink } from '../graph/index.ts'
+import { primaryLoopPumpForLink } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { approach, averageFor, clamp, parameterNumber, relaxToward } from './component-behaviors.ts'
 import {
@@ -82,25 +83,6 @@ const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
 
 const mainSteamSourceCountCache = new WeakMap<CompiledProcessPlantSystem, number>()
 
-const primaryCoolantFlowForCoreOutlet = (
-  system: CompiledProcessPlantSystem,
-  link: CompiledProcessLink,
-  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
-): number | null => {
-  const fromPortName = String(link.fromPortName)
-  if (!fromPortName.startsWith('hotLeg')) return null
-  const loopName = fromPortName.slice('hotLeg'.length)
-  if (loopName.length === 0) return null
-  const matchingColdLeg = `coldLeg${loopName}`
-  return sumIncomingLinkValue(
-    system,
-    link.fromComponentIndex,
-    'flowKgPerS',
-    context,
-    candidate => candidate.kind === 'fluidFlow' && candidate.service === 'primaryCoolant' && String(candidate.toPortName) === matchingColdLeg,
-  )
-}
-
 const passiveFlowFromIncomingService = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,
@@ -145,8 +127,11 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         : null
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
+      const primaryLoopPump = primaryLoopPumpForLink(system.graph, link)
       let flowSource: number
-      if (fromComponent.kind === 'centrifugalPump') {
+      if (primaryLoopPump !== null) {
+        flowSource = context.readNumber(componentVariablePath(primaryLoopPump, 'loopFlowKgPerS'))
+      } else if (fromComponent.kind === 'centrifugalPump') {
         flowSource = sourceLimitedPumpFlow(system, link, context, context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS')))
       } else if (fromComponent.kind === 'feedwaterSource') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
@@ -169,12 +154,10 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
           component.kind === 'turbineLoadSink' ? context.readNumber(componentVariablePath(component, 'steamFlowKgPerS')) : null,
         ) ?? 0
         flowSource = turbineSteamFlow
-      } else if (fromComponent.kind === 'reactorCore' && link.service === 'primaryCoolant') {
-        flowSource = primaryCoolantFlowForCoreOutlet(system, link, context) ?? passiveFlowFromIncomingService(system, link, context)
       } else {
         flowSource = passiveFlowFromIncomingService(system, link, context)
       }
-      if (toComponent.kind === 'centrifugalPump') {
+      if (primaryLoopPump === null && toComponent.kind === 'centrifugalPump') {
         flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
       }
       context.write(processLinkVariablePath(link, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
