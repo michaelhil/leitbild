@@ -1067,6 +1067,42 @@ describe('process plant runtime', () => {
     expect(mainSteamHeaderBalance.residualKgPerS).toBeCloseTo(0, 6)
   })
 
+  test('main steam demand follows available topology instead of a global source split', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+    const initialOpenBranchFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainSteamIsolationValveB.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainSteamIsolationValveC.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainSteamIsolationValveD.positionFraction'), value: 0 })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('sg-b-steam-to-msiv-b.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('sg-c-steam-to-msiv-c.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('sg-d-steam-to-msiv-d.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeGreaterThan(initialOpenBranchFlow)
+    expect(Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-stop-valve.flowKgPerS'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS'))), 6)
+  })
+
+  test('main steam header pressure ignores isolated steam generator branches with no flow', () => {
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'sgA.pressureMPa': 9,
+        'sgB.pressureMPa': 6,
+        'sgC.pressureMPa': 6,
+        'sgD.pressureMPa': 6,
+      }),
+    })
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainSteamIsolationValveA.positionFraction'), value: 0 })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.pressureMPa')))).toBeGreaterThan(8)
+    expect(Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-stop-valve.pressureMPa')))).toBeLessThan(7.2)
+  })
+
   test('runtime restore preserves primary loop inertia state per unit', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })

@@ -15,6 +15,30 @@ export const hasProcessLinkVariable = (link: CompiledProcessLink, localPath: str
 export const serviceMatches = (link: CompiledProcessLink, service: CompiledProcessLink['service']): boolean =>
   service !== undefined && link.service === service
 
+export const componentValveFactorForInboundLink = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: LinkBehaviorReadContext,
+): number => {
+  const toComponent = system.graph.components[link.toComponentIndex]
+  if (toComponent?.kind !== 'processValve' && toComponent?.kind !== 'steamValve') return 1
+  const effectivePositionPath = componentVariablePath(toComponent, 'effectivePositionFraction')
+  if (context.has(effectivePositionPath)) return clamp(context.readNumber(effectivePositionPath), 0, 1)
+  const positionPath = componentVariablePath(toComponent, 'positionFraction')
+  return context.has(positionPath) ? clamp(context.readNumber(positionPath), 0, 1) : 1
+}
+
+export const linkValveFactor = (
+  link: CompiledProcessLink,
+  context: Pick<LinkBehaviorReadContext, 'readOptionalNumber'>,
+): number => clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
+
+export const combinedValveFactorForLink = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: LinkBehaviorReadContext,
+): number => linkValveFactor(link, context) * componentValveFactorForInboundLink(system, link, context)
+
 export const sumIncomingLinkValue = (
   system: CompiledProcessPlantSystem,
   componentIndex: number,
@@ -73,6 +97,29 @@ export const averageIncomingLinkValue = (
     count += 1
   }
   return count === 0 ? null : total / count
+}
+
+export const flowWeightedIncomingLinkValue = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  localPath: string,
+  context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
+  linkMatches: (link: CompiledProcessLink) => boolean,
+): number | null => {
+  let weightedTotal = 0
+  let flowTotal = 0
+  for (const linkIndex of system.graph.incomingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || !linkMatches(link)) continue
+    const valuePath = processLinkVariablePath(link, localPath)
+    const flowPath = processLinkVariablePath(link, 'flowKgPerS')
+    if (!context.has(valuePath) || !context.has(flowPath)) continue
+    const flow = Math.max(0, context.readNumber(flowPath))
+    if (flow <= 0) continue
+    weightedTotal += context.readNumber(valuePath) * flow
+    flowTotal += flow
+  }
+  return flowTotal <= 0 ? null : weightedTotal / flowTotal
 }
 
 const downstreamValveDemandWeight = (
