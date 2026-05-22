@@ -2,7 +2,6 @@ import { componentVariablePath, type ComponentBehaviorDefinition } from '../beha
 import {
   approach,
   clamp,
-  findFirstComponentByKind,
   optionalParameterNumber,
   parameterNumber,
   relaxToward,
@@ -58,8 +57,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     writes: ['primaryToSecondaryLeakKgPerS', 'secondaryRadiationMSvPerH'],
     update: ({ system, component, context }): void => {
       const leakFraction = clamp(context.readNumber(componentVariablePath(component, 'tubeLeakFraction')), 0, 1)
-      const pressurizer = findFirstComponentByKind(system, 'pressurizer')
-      const primaryPressure = pressurizer === null ? 0 : context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
+      const primaryPressure = averageIncomingLinkValue(system, component, 'pressureMPa', context, link => link.service === 'primaryCoolant') ?? 0
       const secondaryPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
       const pressureDelta = Math.max(0, primaryPressure - secondaryPressure)
       const leakCoefficient = optionalParameterNumber(component, 'tubeLeakFlowCoefficientKgPerSPerSqrtMPa', 0)

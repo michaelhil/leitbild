@@ -60,12 +60,6 @@ export const averageFor = (
   return count === 0 ? null : total / count
 }
 
-export const findFirstComponentByKind = (
-  system: CompiledProcessPlantSystem,
-  kind: string,
-): CompiledComponent | null =>
-  system.graph.components.find(component => String(component.kind) === kind) ?? null
-
 export const sumComponentValueByKind = (
   system: CompiledProcessPlantSystem,
   kind: string,

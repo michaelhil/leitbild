@@ -15,18 +15,6 @@ const variable = (descriptor: ComponentVariableInput): ComponentVariableDescript
 
 export const defineComponent = (definition: ComponentDefinition): ComponentDefinition => definition
 
-const topologyComponent = (
-  kind: string,
-  label: string,
-  ports: ComponentDefinition['ports'],
-): ComponentDefinition => defineComponent({
-  kind: kind as ComponentKind,
-  label,
-  ports,
-  parametersSchema: z.object({}).strict(),
-  variables: [],
-})
-
 const headerVariables = (labelPrefix: string): ReadonlyArray<ComponentVariableDescriptor> => [
   variable({ path: 'inletFlowKgPerS', label: `${labelPrefix} inlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
   variable({ path: 'outletFlowKgPerS', label: `${labelPrefix} outlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
@@ -264,14 +252,6 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'reliefFlowKgPerS', label: 'Pressurizer relief flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
-  topologyComponent('pressurizerHeaters', 'Pressurizer Heaters', {
-    powerInlet: { kind: 'electricalAc', direction: 'in' },
-    heatOutput: { kind: 'thermal', direction: 'out' },
-  }),
-  topologyComponent('generatorSink', 'Generator Sink', {
-    electricalInput: { kind: 'electricalAc', direction: 'in' },
-    electricalOutput: { kind: 'electricalAc', direction: 'out' },
-  }),
   defineComponent({
     kind: 'steamGenerator' as ComponentKind,
     label: 'Steam Generator',
@@ -364,22 +344,6 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'developedHeadPa', label: 'Developed head', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'head', unit: 'Pa' }),
       variable({ path: 'loopFlowTargetKgPerS', label: 'Primary loop target flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'loopFlowKgPerS', label: 'Primary loop flow', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-    ],
-  }),
-  defineComponent({
-    kind: 'feedwaterSource' as ComponentKind,
-    label: 'Feedwater Source',
-    ports: {
-      outlet: { kind: 'hydraulicThermal', direction: 'out' },
-      flowDemand: { kind: 'controlSignal', direction: 'in' },
-    },
-    parametersSchema: z.object({
-      nominalFlowKgPerS: z.number().finite().positive(),
-      temperatureC: z.number().finite(),
-    }),
-    variables: [
-      variable({ path: 'flowKgPerS', label: 'Feedwater flow', kind: 'state', domain: 'hydraulic', writable: true, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-      variable({ path: 'temperatureC', label: 'Feedwater temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
     ],
   }),
   defineComponent({

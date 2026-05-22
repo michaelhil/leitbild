@@ -148,10 +148,6 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'outletFlowKgPerS') return 0
     if (localPath === 'flowBalanceResidualKgPerS') return 0
   }
-  if (component.kind === 'feedwaterSource') {
-    if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
-    if (localPath === 'temperatureC') return parameterNumber(component, 'temperatureC')
-  }
   if (component.kind === 'turbineLoadSink') {
     const initialLoadFraction = parameterNumber(component, 'initialLoadFraction')
     if (localPath === 'electricMw') return parameterNumber(component, 'nominalElectricMw') * initialLoadFraction

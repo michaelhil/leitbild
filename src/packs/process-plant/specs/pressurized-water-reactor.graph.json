@@ -65,12 +65,6 @@
       }
     },
     {
-      "id": "pressurizerHeaters",
-      "kind": "pressurizerHeaters",
-      "label": "Pressurizer Heaters",
-      "parameters": {}
-    },
-    {
       "id": "pressurizerReliefValve",
       "kind": "processValve",
       "label": "Pressurizer Relief Valve",
@@ -461,12 +455,6 @@
         "nominalSteamFlowKgPerS": 1050,
         "electricalTimeConstantS": 5
       }
-    },
-    {
-      "id": "generator",
-      "kind": "generatorSink",
-      "label": "Electrical Generator",
-      "parameters": {}
     },
     {
       "id": "condenser",
@@ -2778,13 +2766,6 @@
           "initialValue": 120
         }
       ]
-    },
-    {
-      "id": "turbine-to-generator",
-      "from": "turbine.generatorOutput",
-      "to": "generator.electricalInput",
-      "connectionKind": "electricalPower",
-      "variables": []
     },
     {
       "id": "condenser-to-condensate-pump-a",

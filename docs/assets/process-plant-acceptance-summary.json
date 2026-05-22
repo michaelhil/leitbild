@@ -6,8 +6,8 @@
   "caseCount": 7,
   "checkCount": 68,
   "failedCheckCount": 0,
-  "wallMs": 2345.656458,
-  "realtimeFactor": 102.31677327746176,
+  "wallMs": 2122.226541,
+  "realtimeFactor": 113.08877509698434,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -74,13 +74,13 @@
       "caseId": "sgtr",
       "description": "SGTR creates primary-to-secondary leak flow",
       "passed": true,
-      "details": "maxLeak=178.27kg/s"
+      "details": "maxLeak=177.62kg/s"
     },
     {
       "caseId": "sgtr",
       "description": "SGTR raises secondary radiation indication",
       "passed": true,
-      "details": "maxRadiation=119.646mSv/h"
+      "details": "maxRadiation=119.197mSv/h"
     },
     {
       "caseId": "sgtr",
@@ -116,7 +116,7 @@
       "caseId": "sgtr",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=2.99e+1kg steam=1.80e-12kg energy=1.14e-13MW"
+      "details": "inventory=2.98e+1kg steam=1.80e-12kg energy=1.14e-13MW"
     },
     {
       "caseId": "sgtr",
@@ -362,7 +362,7 @@
       "caseId": "mixed-transient",
       "description": "mixed transient creates tube leak flow",
       "passed": true,
-      "details": "maxLeak=132.87kg/s"
+      "details": "maxLeak=132.42kg/s"
     },
     {
       "caseId": "mixed-transient",
@@ -410,7 +410,7 @@
       "caseId": "mixed-transient",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=4.50e+1kg steam=9.09e-13kg energy=1.14e-13MW"
+      "details": "inventory=4.51e+1kg steam=9.04e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "mixed-transient",
@@ -424,7 +424,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=102.3x min=20.0x"
+      "details": "realtimeFactor=113.1x min=20.0x"
     }
   ],
   "artifacts": {

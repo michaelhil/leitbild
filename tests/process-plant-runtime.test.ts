@@ -9,6 +9,7 @@ import {
   createProcessPlantTestbed,
   pressurizedWaterReactorPlantSpec,
   processPlantSolverPhases,
+  processPlantComponentRegistry,
   type ConnectionService,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
@@ -1143,6 +1144,20 @@ describe('process plant runtime', () => {
       expect(behavior.writes.length).toBeGreaterThan(0)
       expect(behaviorIds.has(behavior.id)).toBe(false)
       behaviorIds.add(behavior.id)
+    }
+  })
+
+  test('reference graph component kinds all have runtime behavior coverage', () => {
+    const system = compiledSystem()
+    const behaviorKinds = new Set(componentBehaviorDefinitions.map(behavior => behavior.componentKind))
+    const initialReconciliationKinds = new Set(componentInitialReconciliationDefinitions.map(behavior => behavior.componentKind))
+
+    for (const component of system.graph.components) {
+      const kind = String(component.kind)
+      expect(processPlantComponentRegistry.has(component.kind)).toBe(true)
+      expect(
+        behaviorKinds.has(kind) || initialReconciliationKinds.has(kind),
+      ).toBe(true)
     }
   })
 

@@ -243,7 +243,7 @@ Typed ports are part of the graph. They prevent impossible topology and determin
 
 ## Current Component Library
 
-The current component library defines graph interfaces, variables, parameter schemas, topology-only components, and the first runtime behavior slice.
+The current component library defines graph interfaces, variables, parameter schemas, and runtime behavior-bearing components. Components should expose variables or reconciliation behavior; pure topology-only components are avoided because they make the graph look richer than the executable model.
 
 - `reactorCore`
 - `reactorVessel`
@@ -255,12 +255,10 @@ The current component library defines graph interfaces, variables, parameter sch
 - `processValve`
 - `steamValve`
 - `pressurizer`
-- `pressurizerHeaters`
-- `generatorSink`
 - `turbineLoadSink`
 - `condenserSink`
 
-These names avoid temporary fidelity labels. Some components are topology components today: they provide typed ports and audited graph structure without claiming internal dynamics. Solver behavior is only added when it is real and tested.
+These names avoid temporary fidelity labels. Solver behavior is only added when it is real and tested; a component that only exists to make a diagram look complete should be left out until it has an executable purpose.
 
 Reactor coolant pumps may declare a `primaryLoopId`. That marks the pump as the authoritative flow state owner for one primary loop. The process-system compiler validates that each declared primary loop has one pump inlet, one pump outlet, one core-to-steam-generator hot leg, and one pump-to-core cold leg before runtime starts. Primary-coolant links on that loop then read the pump's loop-flow state instead of independently inventing flow. This is intentionally still a lumped loop model, not a pressure-network solver, but pump trips now coast loop flow down over time instead of collapsing it instantly.
 

@@ -3,7 +3,6 @@ import { componentVariablePath } from '../behavior-contract.ts'
 import {
   approach,
   clamp,
-  findFirstComponentByKind,
   hasComponentVariable,
   optionalParameterNumber,
   parameterNumber,
@@ -20,6 +19,7 @@ import {
   primaryCoolantThermalExpansionPressureBiasMPa,
   reactorKineticsPowerStep,
 } from '../physics.ts'
+import { primarySystemReactorCore } from '../system-topology.ts'
 import { waterDeltaTFromHeatMw } from '../thermophysics.ts'
 
 export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
@@ -184,7 +184,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         maxInventory: nominalInventory * 1.15,
       })
       const deviation = nextInventory - nominalInventory
-      const core = findFirstComponentByKind(system, 'reactorCore')
+      const core = primarySystemReactorCore(system)
       const meanPrimaryCoolantTemperature = core === null
         ? parameterNumber(component, 'referencePrimaryCoolantTemperatureC')
         : (

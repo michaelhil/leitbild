@@ -21,6 +21,7 @@ import {
   type ProcessLinkBehaviorDefinition,
 } from './behavior-contract.ts'
 import type { ProcessPlantSolverPhase } from './model.ts'
+import { primarySystemPressurizer } from './system-topology.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
 
 const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
@@ -37,11 +38,6 @@ const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
 }
 
 const mainSteamSourceCountCache = new WeakMap<CompiledProcessPlantSystem, number>()
-
-const findFirstComponentByKind = (
-  system: CompiledProcessPlantSystem,
-  kind: string,
-) => system.graph.components.find(component => String(component.kind) === kind) ?? null
 
 const physicalNumber = (
   link: CompiledProcessLink,
@@ -91,8 +87,6 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         flowSource = context.readNumber(componentVariablePath(primaryLoopPump, 'loopFlowKgPerS'))
       } else if (fromComponent.kind === 'centrifugalPump') {
         flowSource = sourceLimitedPumpFlow(system, link, context, context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS')))
-      } else if (fromComponent.kind === 'feedwaterSource') {
-        flowSource = context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))
       } else if (fromComponent.kind === 'processTank') {
         flowSource = distributeFlowFromComponent(
           system,
@@ -141,7 +135,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       && hasProcessLinkVariable(link, 'pressureDropMPa')
       && hasProcessLinkVariable(link, 'pressureMPa'),
     update: ({ system, link, context }): void => {
-      const pressurizer = findFirstComponentByKind(system, 'pressurizer')
+      const pressurizer = primarySystemPressurizer(system)
       if (pressurizer === null || !context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
         throw new Error(`primary coolant pressure link ${link.id} requires a pressurizer pressure source`)
       }
@@ -190,8 +184,6 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         target = context.readNumber(componentVariablePath(fromComponent, 'coolantOutletTemperatureC'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'primaryCoolant') {
         target = context.readNumber(componentVariablePath(fromComponent, 'primaryOutletTemperatureC'))
-      } else if (fromComponent.kind === 'feedwaterSource') {
-        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         target = context.readNumber(componentVariablePath(fromComponent, 'steamTemperatureC'))
       } else if (fromComponent.kind === 'processTank') {
@@ -222,7 +214,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       const fromComponent = system.graph.components[link.fromComponentIndex]
       if (!fromComponent) throw new Error(`process link ${link.id} references missing source component`)
       if (link.service === 'primaryCoolant') {
-        const pressurizer = findFirstComponentByKind(system, 'pressurizer')
+        const pressurizer = primarySystemPressurizer(system)
         if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
           const pressureDrop = context.readOptionalNumber(processLinkVariablePath(link, 'pressureDropMPa'), 0)
           context.write(processLinkVariablePath(link, 'pressureMPa'), Math.max(0.2, context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')) - pressureDrop))

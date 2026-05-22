@@ -1,13 +1,13 @@
 import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import {
   clamp,
-  findFirstComponentByKind,
   optionalParameterNumber,
   parameterNumber,
   relaxToward,
 } from '../component-helpers.ts'
 import { averageIncomingComponentLinkValue as averageIncomingLinkValue } from '../component-link-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
+import { primarySystemReactorVessel } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa, steamFlowKgPerSFromHeatMw } from '../thermophysics.ts'
 
 export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
@@ -109,7 +109,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         * (nextSteamMass / nominalSteamMass)
         * ((nextSteamTemperature + 273.15) / Math.max(1, initialSteamTemperature + 273.15))
         * (nominalSteamVolume / steamVolume)
-      const reactorVessel = findFirstComponentByKind(system, 'reactorVessel')
+      const reactorVessel = primarySystemReactorVessel(system)
       const inventoryPressureBias = reactorVessel === null || !context.has(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
         ? 0
         : context.readNumber(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))

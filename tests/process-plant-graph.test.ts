@@ -35,12 +35,12 @@ describe('process plant graph foundation', () => {
       'rcpD',
       'mainSteamHeader',
       'turbine',
-      'generator',
       'condenser',
     ]))
+    expect(compiled.components.every(component => component.variables.length > 0)).toBe(true)
     expect(compiled.linksByKind.fluidFlow.length).toBeGreaterThan(40)
     expect(compiled.linksByKind.thermalContact).toEqual([0])
-    expect(compiled.linksByKind.electricalPower.length).toBe(1)
+    expect(compiled.linksByKind.electricalPower.length).toBe(0)
     expect(compiled.linksByService.get('primaryCoolant' as never)?.length).toBeGreaterThanOrEqual(13)
     expect(compiled.linksByService.get('mainSteam' as never)?.length).toBeGreaterThanOrEqual(10)
     const coreIndex = compiled.componentIndexById.get('core' as never)
@@ -379,9 +379,12 @@ describe('process plant graph foundation', () => {
       title: 'Invalid Link Kind Graph',
       fixedStepMs: 100,
       components: [
-        component('feedwaterA', 'feedwaterSource', 'Feedwater Train A', {
-          nominalFlowKgPerS: 760,
-          temperatureC: 220,
+        component('feedwaterA', 'processTank', 'Feedwater Tank A', {
+          nominalInventoryKg: 100_000,
+          initialInventoryFraction: 0.8,
+          initialTemperatureC: 220,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 760,
         }),
         component('sgA', 'steamGenerator', 'Steam Generator A', {
           nominalPressureMPa: 6.9,
