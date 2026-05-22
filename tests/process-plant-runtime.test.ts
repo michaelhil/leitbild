@@ -30,6 +30,14 @@ const compiledSystemWithParameters = (parameters: Record<string, Record<string, 
   parameters,
 })
 
+const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileProcessPlantSystem({
+  id: 'plant',
+  pack: 'process-plant',
+  componentLibrary: 'process-plant',
+  graph: pressurizedWaterReactorPlantSpec,
+  initialState,
+})
+
 const valueOf = (path: string): VariablePath => path as VariablePath
 
 describe('process plant runtime', () => {
@@ -557,6 +565,48 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('feedwaterTank.levelPercent')))).toBeLessThan(82)
     expect(Number(runtime.readVariable(valueOf('condenser.condensateProductionKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeGreaterThan(initialCondenserInventory)
+  })
+
+  test('main feedwater pumps cannot deliver flow after the feedwater tank is depleted', () => {
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'feedwaterTank.inventoryKg': 0,
+        'feedwaterTank.levelPercent': 0,
+        'feedwaterTank.makeupFlowKgPerS': 0,
+        'feedwaterTank.availableOutletFlowKgPerS': 0,
+        'turbine.loadFraction': 0,
+        'condenser.condensateInventoryKg': 0,
+        'condenser.condensateLevelPercent': 0,
+        'condenser.availableCondensateOutletFlowKgPerS': 0,
+        'condensatePumpA.running': false,
+        'condensatePumpB.running': false,
+      }),
+    })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('feedwaterTank.inventoryKg')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-tank-to-main-feedwater-pump-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('main-feedwater-pump-a-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeCloseTo(0, 6)
+  })
+
+  test('condensate pumps cannot deliver flow after the condenser hotwell is depleted', () => {
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'turbine.loadFraction': 0,
+        'condenser.condensateInventoryKg': 0,
+        'condenser.condensateLevelPercent': 0,
+        'condenser.availableCondensateOutletFlowKgPerS': 0,
+      }),
+    })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('condenser-to-condensate-pump-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('condensate-pump-a-to-feedwater-tank.flowKgPerS')))).toBeCloseTo(0, 6)
   })
 
   test('auxiliary feedwater tank depletes when auxiliary pumps feed steam generators', () => {

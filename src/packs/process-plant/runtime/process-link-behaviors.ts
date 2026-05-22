@@ -39,6 +39,28 @@ const sumIncomingLinkValue = (
   return total
 }
 
+const incomingLinkValueStats = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  localPath: string,
+  context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
+  linkMatches: (link: CompiledProcessLink) => boolean,
+): { readonly matchingLinks: number; readonly valuedLinks: number; readonly total: number } => {
+  let matchingLinks = 0
+  let valuedLinks = 0
+  let total = 0
+  for (const linkIndex of system.graph.incomingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || !linkMatches(link)) continue
+    matchingLinks += 1
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+    valuedLinks += 1
+  }
+  return { matchingLinks, valuedLinks, total }
+}
+
 const averageIncomingLinkValue = (
   system: CompiledProcessPlantSystem,
   componentIndex: number,
@@ -119,14 +141,16 @@ const sourceLimitedPumpFlow = (
   context: { readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean; readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number },
   pumpFlow: number,
 ): number => {
-  const incomingFlow = sumIncomingLinkValue(
+  const incomingFlow = incomingLinkValueStats(
     system,
     link.fromComponentIndex,
     'flowKgPerS',
     context,
     candidate => candidate.kind === 'fluidFlow' && serviceMatches(candidate, link.service),
   )
-  return incomingFlow > 0 ? Math.min(pumpFlow, incomingFlow) : pumpFlow
+  if (incomingFlow.matchingLinks === 0) return pumpFlow
+  if (incomingFlow.valuedLinks === 0) return 0
+  return Math.min(pumpFlow, incomingFlow.total)
 }
 
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
