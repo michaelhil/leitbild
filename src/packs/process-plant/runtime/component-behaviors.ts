@@ -229,6 +229,10 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'feedwaterFlowKgPerS') return 0
     if (localPath === 'steamQualityFraction') return 0.99
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
+    if (localPath === 'collapsedLevelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
+    if (localPath === 'voidFraction') return 0
+    if (localPath === 'swellLevelPercent') return 0
+    if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
     if (localPath === 'tubeLeakFraction') return 0
     if (localPath === 'primaryToSecondaryLeakKgPerS') return 0
     if (localPath === 'secondaryRadiationMSvPerH') return 0.02
@@ -678,6 +682,10 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     reads: [
       'pressureMPa',
       'levelPercent',
+      'collapsedLevelPercent',
+      'voidFraction',
+      'swellLevelPercent',
+      'steamMassKg',
       'heatTransferMw',
       'steamFlowKgPerS',
       'boilingRateKgPerS',
@@ -694,6 +702,10 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     writes: [
       'pressureMPa',
       'levelPercent',
+      'collapsedLevelPercent',
+      'voidFraction',
+      'swellLevelPercent',
+      'steamMassKg',
       'primaryInletTemperatureC',
       'primaryOutletTemperatureC',
       'tubeMetalTemperatureC',
@@ -737,12 +749,25 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const secondaryTemperatureTarget = clamp(saturationTemperatureCFromPressureMPa(context.readNumber(pressurePath)), 160, 330)
       context.write(componentVariablePath(component, 'secondaryTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')), secondaryTemperatureTarget, context.dtSeconds, optionalParameterNumber(component, 'secondaryThermalTimeConstantS', 25)))
       const currentPressure = context.readNumber(pressurePath)
-      const generatedSteamFlow = context.readNumber(componentVariablePath(component, 'steamFlowKgPerS'))
       const boilingRate = context.readNumber(componentVariablePath(component, 'boilingRateKgPerS'))
       const temperaturePressureBias = (context.readNumber(componentVariablePath(component, 'secondaryTemperatureC')) - saturationTemperatureCFromPressureMPa(nominalPressure)) / 100
-      const pressureTarget = nominalPressure * (1 + temperaturePressureBias)
-        + (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
-      context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
+      const nominalSteamMass = optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
+      const currentSteamMass = context.readNumber(componentVariablePath(component, 'steamMassKg'))
+      const steamMassTarget = inventoryBalanceStep({
+        currentInventory: currentSteamMass,
+        inflowKgPerS: boilingRate,
+        outflowKgPerS: turbineSteamFlow,
+        dtSeconds: context.dtSeconds,
+        minInventory: nominalSteamMass * 0.15,
+        maxInventory: nominalSteamMass * 2.5,
+      })
+      const nextSteamMass = relaxToward(
+        currentSteamMass,
+        steamMassTarget,
+        context.dtSeconds,
+        optionalParameterNumber(component, 'steamMassTimeConstantS', 4),
+      )
+      context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       const steamQualityTarget = turbineSteamFlow <= 0
         ? 1
         : clamp(boilingRate / Math.max(1, turbineSteamFlow), 0.78, 1)
@@ -768,7 +793,33 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const inventoryTimeConstant = optionalParameterNumber(component, 'inventoryTimeConstantS', 20)
       const relaxedInventory = relaxToward(currentInventory, nextInventory, context.dtSeconds, inventoryTimeConstant)
       context.write(componentVariablePath(component, 'secondaryInventoryKg'), relaxedInventory)
-      context.write(levelPath, clamp((relaxedInventory / nominalInventory) * 100, 0, 100))
+      const collapsedLevel = clamp((relaxedInventory / nominalInventory) * 100, 0, 100)
+      context.write(componentVariablePath(component, 'collapsedLevelPercent'), collapsedLevel)
+      const recirculationRatio = optionalParameterNumber(component, 'recirculationRatio', 1)
+      const nominalSteamFlow = optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760)
+      const recirculationMultiplier = clamp(1 + (recirculationRatio - 1) * 0.06, 1, 1.35)
+      const voidTarget = clamp(
+        optionalParameterNumber(component, 'voidFractionAtNominalBoiling', 0.16)
+        * recirculationMultiplier
+        * boilingRate / Math.max(1, nominalSteamFlow),
+        0,
+        0.45,
+      )
+      const voidFraction = relaxToward(
+        context.readNumber(componentVariablePath(component, 'voidFraction')),
+        voidTarget,
+        context.dtSeconds,
+        optionalParameterNumber(component, 'voidFractionTimeConstantS', 6),
+      )
+      context.write(componentVariablePath(component, 'voidFraction'), voidFraction)
+      const swellLevel = clamp(voidFraction * optionalParameterNumber(component, 'swellLevelGainPercent', 26), 0, 35)
+      context.write(componentVariablePath(component, 'swellLevelPercent'), swellLevel)
+      context.write(levelPath, clamp(collapsedLevel + swellLevel, 0, 100))
+      const pressureTarget = nominalPressure * clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6)
+        + (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
+        + temperaturePressureBias * nominalPressure
+        + ((relaxedInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
+      context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
     },
   },
   {

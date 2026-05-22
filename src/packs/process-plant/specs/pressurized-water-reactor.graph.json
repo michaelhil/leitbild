@@ -97,7 +97,13 @@
         "tubeMetalThermalCapacityMjPerK": 8000,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
-        "tubeLeakRadiationTimeConstantS": 5
+        "tubeLeakRadiationTimeConstantS": 5,
+        "nominalSteamMassKg": 12000,
+        "voidFractionAtNominalBoiling": 0.16,
+        "voidFractionTimeConstantS": 6,
+        "swellLevelGainPercent": 26,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "steamMassTimeConstantS": 4
       }
     },
     {
@@ -121,7 +127,13 @@
         "tubeMetalThermalCapacityMjPerK": 8000,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
-        "tubeLeakRadiationTimeConstantS": 5
+        "tubeLeakRadiationTimeConstantS": 5,
+        "nominalSteamMassKg": 12000,
+        "voidFractionAtNominalBoiling": 0.16,
+        "voidFractionTimeConstantS": 6,
+        "swellLevelGainPercent": 26,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "steamMassTimeConstantS": 4
       }
     },
     {
@@ -145,7 +157,13 @@
         "tubeMetalThermalCapacityMjPerK": 8000,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
-        "tubeLeakRadiationTimeConstantS": 5
+        "tubeLeakRadiationTimeConstantS": 5,
+        "nominalSteamMassKg": 12000,
+        "voidFractionAtNominalBoiling": 0.16,
+        "voidFractionTimeConstantS": 6,
+        "swellLevelGainPercent": 26,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "steamMassTimeConstantS": 4
       }
     },
     {
@@ -169,7 +187,13 @@
         "tubeMetalThermalCapacityMjPerK": 8000,
         "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
         "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
-        "tubeLeakRadiationTimeConstantS": 5
+        "tubeLeakRadiationTimeConstantS": 5,
+        "nominalSteamMassKg": 12000,
+        "voidFractionAtNominalBoiling": 0.16,
+        "voidFractionTimeConstantS": 6,
+        "swellLevelGainPercent": 26,
+        "pressureInventoryGainMPaPerFraction": 0.6,
+        "steamMassTimeConstantS": 4
       }
     },
     {
@@ -3775,6 +3799,22 @@
     "rcs-cold-leg-d.leakFlowKgPerS",
     "rcp-d-to-core.pressureDropMPa",
     "rcp-d-to-core.leak.areaFraction",
-    "rcp-d-to-core.leakFlowKgPerS"
+    "rcp-d-to-core.leakFlowKgPerS",
+    "sgA.collapsedLevelPercent",
+    "sgA.voidFraction",
+    "sgA.swellLevelPercent",
+    "sgA.steamMassKg",
+    "sgB.collapsedLevelPercent",
+    "sgB.voidFraction",
+    "sgB.swellLevelPercent",
+    "sgB.steamMassKg",
+    "sgC.collapsedLevelPercent",
+    "sgC.voidFraction",
+    "sgC.swellLevelPercent",
+    "sgC.steamMassKg",
+    "sgD.collapsedLevelPercent",
+    "sgD.voidFraction",
+    "sgD.swellLevelPercent",
+    "sgD.steamMassKg"
   ]
 }

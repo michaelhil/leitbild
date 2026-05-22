@@ -43,6 +43,9 @@ describe('process plant runtime', () => {
     })
     expect(Number(level?.value)).toBeCloseTo(55, 6)
     expect(Number(level?.canonicalValue)).toBeCloseTo(0.55, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.collapsedLevelPercent'))?.value)).toBeCloseTo(55, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.voidFraction'))?.value)).toBeCloseTo(0, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.steamMassKg'))?.value)).toBeCloseTo(12_000, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.levelPercent'))?.value)).toBeCloseTo(55, 6)
   })
 
@@ -93,6 +96,10 @@ describe('process plant runtime', () => {
       'sgA.feedwaterFlowKgPerS',
       'sgA.steamQualityFraction',
       'sgA.secondaryInventoryKg',
+      'sgA.collapsedLevelPercent',
+      'sgA.voidFraction',
+      'sgA.swellLevelPercent',
+      'sgA.steamMassKg',
       'sgA.tubeLeakFraction',
       'sgA.primaryToSecondaryLeakKgPerS',
       'sgA.secondaryRadiationMSvPerH',
@@ -474,7 +481,7 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.tick(1_000)
-    const before = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+    const beforeCollapsedLevel = Number(runtime.readVariable(valueOf('sgA.collapsedLevelPercent')))
     const initialFeedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpA.running'), value: false })
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
@@ -482,9 +489,12 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('mainFeedwaterPumpA.flowKgPerS')))).toBeGreaterThan(0)
     for (let index = 0; index < 120; index += 1) runtime.tick(100)
 
-    expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(before)
-    expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(56_000 * before / 100)
+    expect(Number(runtime.readVariable(valueOf('sgA.collapsedLevelPercent')))).toBeLessThan(beforeCollapsedLevel)
+    expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(56_000 * beforeCollapsedLevel / 100)
     expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeLessThan(initialFeedwaterFlow)
+    expect(Number(runtime.readVariable(valueOf('sgA.levelPercent'))))
+      .toBeGreaterThan(Number(runtime.readVariable(valueOf('sgA.collapsedLevelPercent'))))
+    expect(Number(runtime.readVariable(valueOf('sgA.voidFraction')))).toBeGreaterThan(0)
   })
 
   test('feedwater and condensate inventories constrain secondary-side flow sources', () => {
@@ -594,6 +604,28 @@ describe('process plant runtime', () => {
 
     expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeLessThan(loadedOutput)
     expect(Number(runtime.readVariable(valueOf('turbine.steamFlowKgPerS')))).toBeCloseTo(420, 6)
+  })
+
+  test('steam generator secondary pressure responds to steam mass imbalance', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 80; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+    const initialSteamMass = Number(runtime.readVariable(valueOf('sgA.steamMassKg')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('turbine.loadFraction'), value: 0.35 })
+    for (let index = 0; index < 160; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+
+    expect(Number(runtime.readVariable(valueOf('sgA.steamMassKg')))).toBeGreaterThan(initialSteamMass)
+    expect(Number(runtime.readVariable(valueOf('sgA.pressureMPa'))))
+      .toBeGreaterThan(Number(baseline.readVariable(valueOf('sgA.pressureMPa'))))
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.pressureMPa'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('sgA.pressureMPa'))), 6)
   })
 
   test('behavior contexts reject writes outside declared outputs', () => {
