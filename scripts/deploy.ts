@@ -11,6 +11,10 @@ const ssh = async (command: string): Promise<void> => {
   await $`ssh -p ${port} ${target} ${command}`
 }
 
+// Fail fast before spending time on local checks when the execution environment
+// cannot open SSH. Codex sandboxed runs need escalation for this command.
+await ssh('true')
+
 await $`bun install --frozen-lockfile`
 await $`bun run check`
 await $`bun test`
