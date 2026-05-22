@@ -2,7 +2,7 @@ import type { VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import {
   componentVariablePath,
-  createBehaviorContext,
+  createReusableBehaviorContext,
   processLinkVariablePath,
   type ComponentBehaviorDefinition,
   type ComponentInitialReconciliationDefinition,
@@ -128,19 +128,20 @@ export const runProcessPlantInitialReconciliation = (config: {
   readonly table: ProcessPlantVariableTable
   readonly plan: ProcessPlantExecutionPlan
 }): void => {
+  const context = createReusableBehaviorContext(config.table)
   for (const invocation of config.plan.initialReconciliationInvocations) {
     const component = config.system.graph.components[invocation.componentIndex]
     if (!component) throw new Error(`process plant initial reconciliation references missing component index: ${invocation.componentIndex}`)
+    context.configure({
+      behaviorId: invocation.behavior.id,
+      phase: 'solveFluidFlowComponents',
+      dtSeconds: 0,
+      writablePaths: invocation.writablePaths,
+    })
     invocation.behavior.reconcile({
       system: config.system,
       component,
-      context: createBehaviorContext({
-        behaviorId: invocation.behavior.id,
-        phase: 'solveFluidFlowComponents',
-        dtSeconds: 0,
-        table: config.table,
-        writablePaths: invocation.writablePaths,
-      }),
+      context,
     })
   }
   runProcessPlantExecutionPhase({
@@ -166,20 +167,21 @@ export const runProcessPlantExecutionPhase = (config: {
   readonly phase: ProcessPlantSolverPhase
   readonly dtSeconds: number
 }): void => {
+  const context = createReusableBehaviorContext(config.table)
   for (const invocation of config.plan.invocationsByPhase.get(config.phase) ?? []) {
+    context.configure({
+      behaviorId: invocation.behavior.id,
+      phase: config.phase,
+      dtSeconds: config.dtSeconds,
+      writablePaths: invocation.writablePaths,
+    })
     if (invocation.kind === 'component') {
       const component = config.system.graph.components[invocation.componentIndex]
       if (!component) throw new Error(`process plant execution plan references missing component index: ${invocation.componentIndex}`)
       invocation.behavior.update({
         system: config.system,
         component,
-        context: createBehaviorContext({
-          behaviorId: invocation.behavior.id,
-          phase: config.phase,
-          dtSeconds: config.dtSeconds,
-          table: config.table,
-          writablePaths: invocation.writablePaths,
-        }),
+        context,
       })
       continue
     }
@@ -188,13 +190,7 @@ export const runProcessPlantExecutionPhase = (config: {
     invocation.behavior.update({
       system: config.system,
       link,
-      context: createBehaviorContext({
-        behaviorId: invocation.behavior.id,
-        phase: config.phase,
-        dtSeconds: config.dtSeconds,
-        table: config.table,
-        writablePaths: invocation.writablePaths,
-      }),
+      context,
     })
   }
 }

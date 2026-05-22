@@ -43,6 +43,15 @@ export interface ProcessPlantBehaviorContext {
   readonly write: (path: VariablePath, value: ProcessPlantValue) => void
 }
 
+export interface ReusableProcessPlantBehaviorContext extends ProcessPlantBehaviorContext {
+  readonly configure: (config: {
+    readonly behaviorId: string
+    readonly phase: ProcessPlantSolverPhase
+    readonly dtSeconds: number
+    readonly writablePaths: ReadonlySet<VariablePath>
+  }) => void
+}
+
 export interface ComponentBehaviorDefinition {
   readonly id: string
   readonly phase: ProcessPlantSolverPhase
@@ -87,22 +96,47 @@ export const createBehaviorContext = (config: {
   readonly dtSeconds: number
   readonly table: ProcessPlantVariableTable
   readonly writablePaths: ReadonlySet<VariablePath>
-}): ProcessPlantBehaviorContext => ({
-  phase: config.phase,
-  dtSeconds: config.dtSeconds,
-  has: config.table.has,
-  read: config.table.read,
-  readNumber: config.table.readNumber,
-  readBoolean: config.table.readBoolean,
-  readOptionalNumber: config.table.readOptionalNumber,
-  write: (path, value): void => {
-    if (!config.writablePaths.has(path)) {
-      throw new Error(`process plant behavior ${config.behaviorId} cannot write undeclared variable: ${path}`)
-    }
-    assertProcessPlantValueIsFinite(path, value)
-    config.table.write(path, value)
-  },
-})
+}): ProcessPlantBehaviorContext => {
+  const context = createReusableBehaviorContext(config.table)
+  context.configure(config)
+  return context
+}
+
+export const createReusableBehaviorContext = (
+  table: ProcessPlantVariableTable,
+): ReusableProcessPlantBehaviorContext => {
+  let behaviorId = ''
+  let phase: ProcessPlantSolverPhase = 'updateControlLogic'
+  let dtSeconds = 0
+  let writablePaths: ReadonlySet<VariablePath> = new Set()
+
+  return {
+    get phase(): ProcessPlantSolverPhase {
+      return phase
+    },
+    get dtSeconds(): number {
+      return dtSeconds
+    },
+    configure: (config): void => {
+      behaviorId = config.behaviorId
+      phase = config.phase
+      dtSeconds = config.dtSeconds
+      writablePaths = config.writablePaths
+    },
+    has: table.has,
+    read: table.read,
+    readNumber: table.readNumber,
+    readBoolean: table.readBoolean,
+    readOptionalNumber: table.readOptionalNumber,
+    write: (path, value): void => {
+      if (!writablePaths.has(path)) {
+        throw new Error(`process plant behavior ${behaviorId} cannot write undeclared variable: ${path}`)
+      }
+      assertProcessPlantValueIsFinite(path, value)
+      table.write(path, value)
+    },
+  }
+}
 
 export const assertProcessPlantRuntimeInvariants = (table: ProcessPlantVariableTable): void => {
   table.assertInvariants()

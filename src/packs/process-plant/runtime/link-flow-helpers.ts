@@ -2,6 +2,7 @@ import type { CompiledProcessLink, VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { componentVariablePath, processLinkVariablePath } from './behavior-contract.ts'
 import { clamp } from './component-helpers.ts'
+import { downstreamDemandPathsForLink } from './topology-cache.ts'
 
 export type LinkBehaviorReadContext = {
   readonly has: (path: VariablePath) => boolean
@@ -9,8 +10,23 @@ export type LinkBehaviorReadContext = {
   readonly readOptionalNumber: (path: VariablePath, defaultValue: number) => number
 }
 
+const processLinkVariableLocalPathCache = new WeakMap<CompiledProcessLink, ReadonlySet<string>>()
+
+const processLinkVariableLocalPaths = (link: CompiledProcessLink): ReadonlySet<string> => {
+  const cached = processLinkVariableLocalPathCache.get(link)
+  if (cached) return cached
+  const prefix = `${String(link.id)}.`
+  const paths = new Set<string>()
+  for (const variable of link.variables) {
+    const fullPath = String(variable.path)
+    if (fullPath.startsWith(prefix)) paths.add(fullPath.slice(prefix.length))
+  }
+  processLinkVariableLocalPathCache.set(link, paths)
+  return paths
+}
+
 export const hasProcessLinkVariable = (link: CompiledProcessLink, localPath: string): boolean =>
-  link.variables.some(variable => variable.path === processLinkVariablePath(link, localPath))
+  processLinkVariableLocalPaths(link).has(localPath)
 
 export const serviceMatches = (link: CompiledProcessLink, service: CompiledProcessLink['service']): boolean =>
   service !== undefined && link.service === service
@@ -186,59 +202,23 @@ export const distributeFlowFromComponent = (
   return availableFlowKgPerS * outgoingDemandWeight(system, link, context) / totalDemandWeight
 }
 
-const isFluidDemandTerminal = (
-  system: CompiledProcessPlantSystem,
-  componentIndex: number,
-  service: CompiledProcessLink['service'],
-): boolean => {
-  const component = system.graph.components[componentIndex]
-  if (!component) return false
-  if ((service === 'feedwater' || service === 'auxFeedwater') && component.kind === 'steamGenerator') return true
-  if (service === 'condensate' && component.kind === 'processTank') return true
-  return false
-}
-
-const downstreamServiceDemandWeight = (
-  system: CompiledProcessPlantSystem,
-  componentIndex: number,
-  service: CompiledProcessLink['service'],
-  context: LinkBehaviorReadContext,
-  useLiveValvePositions: boolean,
-  visited: ReadonlySet<number>,
-): number => {
-  if (service === undefined) return 0
-  if (isFluidDemandTerminal(system, componentIndex, service)) return 1
-  if (visited.has(componentIndex)) return 0
-
-  const nextVisited = new Set(visited)
-  nextVisited.add(componentIndex)
-  let demandWeight = 0
-  for (const linkIndex of system.graph.outgoingLinksByComponent[componentIndex] ?? []) {
-    const link = system.graph.links[linkIndex]
-    if (!link || link.kind !== 'fluidFlow' || !serviceMatches(link, service)) continue
-    const valveFactor = useLiveValvePositions ? combinedValveFactorForLink(system, link, context) : 1
-    if (valveFactor <= 0) continue
-    demandWeight += valveFactor * downstreamServiceDemandWeight(
-      system,
-      link.toComponentIndex,
-      service,
-      context,
-      useLiveValvePositions,
-      nextVisited,
-    )
-  }
-  return demandWeight
-}
-
 export const downstreamServiceDemandFraction = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
 ): number => {
-  const maximumDemandWeight = downstreamServiceDemandWeight(system, link.toComponentIndex, link.service, context, false, new Set())
-  if (maximumDemandWeight <= 0) return 1
-  const liveDemandWeight = downstreamServiceDemandWeight(system, link.toComponentIndex, link.service, context, true, new Set())
-  return clamp(liveDemandWeight / maximumDemandWeight, 0, 1)
+  const downstreamPaths = downstreamDemandPathsForLink(system, link)
+  if (downstreamPaths.length === 0) return 1
+  let liveDemandWeight = 0
+  for (const path of downstreamPaths) {
+    let pathWeight = 1
+    for (const pathLink of path) {
+      pathWeight *= combinedValveFactorForLink(system, pathLink, context)
+      if (pathWeight <= 0) break
+    }
+    liveDemandWeight += pathWeight
+  }
+  return clamp(liveDemandWeight / downstreamPaths.length, 0, 1)
 }
 
 export const passiveFlowFromIncomingService = (

@@ -1,5 +1,4 @@
-import type { CompiledComponent, CompiledPlantGraph } from '../../graph/index.ts'
-import { primaryLoopIdForLink, primaryLoopIdForPump } from '../../graph/index.ts'
+import { primaryLoopIdForPump } from '../../graph/index.ts'
 import {
   componentVariablePath,
   type ComponentBehaviorDefinition,
@@ -7,21 +6,7 @@ import {
 } from '../behavior-contract.ts'
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward } from '../component-helpers.ts'
 import { pumpHeadResistanceFlowTarget } from '../physics.ts'
-import { physicalNumber } from '../process-link-physical.ts'
-
-const primaryLoopLinkResistanceCoefficient = (
-  component: CompiledComponent,
-  graph: CompiledPlantGraph,
-): number => {
-  const loopId = primaryLoopIdForPump(component)
-  if (loopId === null) return 0
-  let nominalPressureDropMPa = 0
-  for (const link of graph.links) {
-    if (primaryLoopIdForLink(graph, link) !== loopId) continue
-    nominalPressureDropMPa += Math.max(0, physicalNumber(link, 'nominalResistance', 0))
-  }
-  return nominalPressureDropMPa / 0.5
-}
+import { primaryLoopLinkResistanceCoefficient } from '../topology-cache.ts'
 
 export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
