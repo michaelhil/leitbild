@@ -302,25 +302,33 @@
       "id": "feedwaterControlValveA",
       "kind": "processValve",
       "label": "Feedwater Control Valve A",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "feedwaterControlValveB",
       "kind": "processValve",
       "label": "Feedwater Control Valve B",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "feedwaterControlValveC",
       "kind": "processValve",
       "label": "Feedwater Control Valve C",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "feedwaterControlValveD",
       "kind": "processValve",
       "label": "Feedwater Control Valve D",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "auxFeedwaterTank",
@@ -369,49 +377,65 @@
       "id": "auxFeedwaterValveA",
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve A",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 0
+      }
     },
     {
       "id": "auxFeedwaterValveB",
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve B",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 0
+      }
     },
     {
       "id": "auxFeedwaterValveC",
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve C",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 0
+      }
     },
     {
       "id": "auxFeedwaterValveD",
       "kind": "processValve",
       "label": "Auxiliary Feedwater Valve D",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 0
+      }
     },
     {
       "id": "mainSteamIsolationValveA",
       "kind": "steamValve",
       "label": "Main Steam Isolation Valve A",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "mainSteamIsolationValveB",
       "kind": "steamValve",
       "label": "Main Steam Isolation Valve B",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "mainSteamIsolationValveC",
       "kind": "steamValve",
       "label": "Main Steam Isolation Valve C",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "mainSteamIsolationValveD",
       "kind": "steamValve",
       "label": "Main Steam Isolation Valve D",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "mainSteamHeader",
@@ -423,7 +447,9 @@
       "id": "turbineStopValve",
       "kind": "steamValve",
       "label": "Turbine Stop Valve",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 1
+      }
     },
     {
       "id": "turbine",
@@ -504,7 +530,9 @@
       "id": "letdownValve",
       "kind": "processValve",
       "label": "Letdown Valve",
-      "parameters": {}
+      "parameters": {
+        "initialPositionFraction": 0.5
+      }
     }
   ],
   "connections": [
@@ -1848,18 +1876,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 220
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Feedwater control valve A position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "FWCV-A"
         }
       ]
     },
@@ -1958,18 +1974,6 @@
           "unit": "mSv/h",
           "initialValue": 0.02,
           "sensorId": "RT-SG-A-001"
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Main steam A isolation valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "MSIV-A"
         },
         {
           "path": "leak.areaFraction",
@@ -2083,18 +2087,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 220
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Feedwater control valve B position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "FWCV-B"
         }
       ]
     },
@@ -2193,18 +2185,6 @@
           "unit": "mSv/h",
           "initialValue": 0.02,
           "sensorId": "RT-SG-B-001"
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Main steam B isolation valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "MSIV-B"
         },
         {
           "path": "leak.areaFraction",
@@ -2318,18 +2298,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 220
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Feedwater control valve C position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "FWCV-C"
         }
       ]
     },
@@ -2428,18 +2396,6 @@
           "unit": "mSv/h",
           "initialValue": 0.02,
           "sensorId": "RT-SG-C-001"
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Main steam C isolation valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "MSIV-C"
         },
         {
           "path": "leak.areaFraction",
@@ -2553,18 +2509,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 220
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Feedwater control valve D position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "FWCV-D"
         }
       ]
     },
@@ -2665,18 +2609,6 @@
           "sensorId": "RT-SG-D-001"
         },
         {
-          "path": "valve.positionFraction",
-          "label": "Main steam D isolation valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "MSIV-D"
-        },
-        {
           "path": "leak.areaFraction",
           "label": "Main steam D leak area",
           "kind": "control",
@@ -2765,18 +2697,6 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 6.9
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Turbine stop valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 1,
-          "actuatorId": "TSV-001"
         }
       ]
     },
@@ -3203,18 +3123,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Auxiliary feedwater valve A position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0,
-          "actuatorId": "AFW-A"
         }
       ]
     },
@@ -3283,18 +3191,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Auxiliary feedwater valve B position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0,
-          "actuatorId": "AFW-B"
         }
       ]
     },
@@ -3363,18 +3259,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Auxiliary feedwater valve C position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0,
-          "actuatorId": "AFW-C"
         }
       ]
     },
@@ -3443,18 +3327,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 25
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Auxiliary feedwater valve D position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0,
-          "actuatorId": "AFW-D"
         }
       ]
     },
@@ -3557,18 +3429,6 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
-        },
-        {
-          "path": "valve.positionFraction",
-          "label": "Letdown valve position",
-          "kind": "control",
-          "domain": "control",
-          "writable": true,
-          "publish": "telemetry",
-          "quantity": "ratio",
-          "unit": "fraction",
-          "initialValue": 0.5,
-          "actuatorId": "LD-001"
         }
       ]
     }
@@ -3630,7 +3490,6 @@
     "sg-a-steam-to-msiv-a.flowKgPerS",
     "sg-a-steam-to-msiv-a.pressureMPa",
     "sg-a-steam-to-msiv-a.radiationMSvPerH",
-    "sg-a-steam-to-msiv-a.valve.positionFraction",
     "sg-a-steam-to-msiv-a.leak.areaFraction",
     "feedwater-control-valve-a-to-sg-a.flowKgPerS",
     "aux-feedwater-valve-a-to-sg-a.flowKgPerS",
@@ -3658,7 +3517,6 @@
     "sg-b-steam-to-msiv-b.flowKgPerS",
     "sg-b-steam-to-msiv-b.pressureMPa",
     "sg-b-steam-to-msiv-b.radiationMSvPerH",
-    "sg-b-steam-to-msiv-b.valve.positionFraction",
     "sg-b-steam-to-msiv-b.leak.areaFraction",
     "feedwater-control-valve-b-to-sg-b.flowKgPerS",
     "aux-feedwater-valve-b-to-sg-b.flowKgPerS",
@@ -3686,7 +3544,6 @@
     "sg-c-steam-to-msiv-c.flowKgPerS",
     "sg-c-steam-to-msiv-c.pressureMPa",
     "sg-c-steam-to-msiv-c.radiationMSvPerH",
-    "sg-c-steam-to-msiv-c.valve.positionFraction",
     "sg-c-steam-to-msiv-c.leak.areaFraction",
     "feedwater-control-valve-c-to-sg-c.flowKgPerS",
     "aux-feedwater-valve-c-to-sg-c.flowKgPerS",
@@ -3714,7 +3571,6 @@
     "sg-d-steam-to-msiv-d.flowKgPerS",
     "sg-d-steam-to-msiv-d.pressureMPa",
     "sg-d-steam-to-msiv-d.radiationMSvPerH",
-    "sg-d-steam-to-msiv-d.valve.positionFraction",
     "sg-d-steam-to-msiv-d.leak.areaFraction",
     "feedwater-control-valve-d-to-sg-d.flowKgPerS",
     "aux-feedwater-valve-d-to-sg-d.flowKgPerS",
@@ -3882,6 +3738,96 @@
     "sgD.inventoryPressureBiasMPa",
     "sgD.secondaryInventoryBalanceResidualKg",
     "sgD.steamMassBalanceResidualKg",
-    "sgD.boilingEnergyResidualMw"
+    "sgD.boilingEnergyResidualMw",
+    "pressurizerReliefValve.positionFraction",
+    "pressurizerReliefValve.effectivePositionFraction",
+    "pressurizerReliefValve.inletFlowKgPerS",
+    "pressurizerReliefValve.outletFlowKgPerS",
+    "pressurizerReliefValve.flowBalanceResidualKgPerS",
+    "feedwaterHeader.inletFlowKgPerS",
+    "feedwaterHeader.outletFlowKgPerS",
+    "feedwaterHeader.flowBalanceResidualKgPerS",
+    "feedwaterHeader.mixedTemperatureC",
+    "feedwaterHeader.mixedPressureMPa",
+    "feedwaterControlValveA.positionFraction",
+    "feedwaterControlValveA.effectivePositionFraction",
+    "feedwaterControlValveA.inletFlowKgPerS",
+    "feedwaterControlValveA.outletFlowKgPerS",
+    "feedwaterControlValveA.flowBalanceResidualKgPerS",
+    "feedwaterControlValveB.positionFraction",
+    "feedwaterControlValveB.effectivePositionFraction",
+    "feedwaterControlValveB.inletFlowKgPerS",
+    "feedwaterControlValveB.outletFlowKgPerS",
+    "feedwaterControlValveB.flowBalanceResidualKgPerS",
+    "feedwaterControlValveC.positionFraction",
+    "feedwaterControlValveC.effectivePositionFraction",
+    "feedwaterControlValveC.inletFlowKgPerS",
+    "feedwaterControlValveC.outletFlowKgPerS",
+    "feedwaterControlValveC.flowBalanceResidualKgPerS",
+    "feedwaterControlValveD.positionFraction",
+    "feedwaterControlValveD.effectivePositionFraction",
+    "feedwaterControlValveD.inletFlowKgPerS",
+    "feedwaterControlValveD.outletFlowKgPerS",
+    "feedwaterControlValveD.flowBalanceResidualKgPerS",
+    "auxFeedwaterHeader.inletFlowKgPerS",
+    "auxFeedwaterHeader.outletFlowKgPerS",
+    "auxFeedwaterHeader.flowBalanceResidualKgPerS",
+    "auxFeedwaterHeader.mixedTemperatureC",
+    "auxFeedwaterHeader.mixedPressureMPa",
+    "auxFeedwaterValveA.positionFraction",
+    "auxFeedwaterValveA.effectivePositionFraction",
+    "auxFeedwaterValveA.inletFlowKgPerS",
+    "auxFeedwaterValveA.outletFlowKgPerS",
+    "auxFeedwaterValveA.flowBalanceResidualKgPerS",
+    "auxFeedwaterValveB.positionFraction",
+    "auxFeedwaterValveB.effectivePositionFraction",
+    "auxFeedwaterValveB.inletFlowKgPerS",
+    "auxFeedwaterValveB.outletFlowKgPerS",
+    "auxFeedwaterValveB.flowBalanceResidualKgPerS",
+    "auxFeedwaterValveC.positionFraction",
+    "auxFeedwaterValveC.effectivePositionFraction",
+    "auxFeedwaterValveC.inletFlowKgPerS",
+    "auxFeedwaterValveC.outletFlowKgPerS",
+    "auxFeedwaterValveC.flowBalanceResidualKgPerS",
+    "auxFeedwaterValveD.positionFraction",
+    "auxFeedwaterValveD.effectivePositionFraction",
+    "auxFeedwaterValveD.inletFlowKgPerS",
+    "auxFeedwaterValveD.outletFlowKgPerS",
+    "auxFeedwaterValveD.flowBalanceResidualKgPerS",
+    "mainSteamIsolationValveA.positionFraction",
+    "mainSteamIsolationValveA.effectivePositionFraction",
+    "mainSteamIsolationValveA.inletFlowKgPerS",
+    "mainSteamIsolationValveA.outletFlowKgPerS",
+    "mainSteamIsolationValveA.flowBalanceResidualKgPerS",
+    "mainSteamIsolationValveB.positionFraction",
+    "mainSteamIsolationValveB.effectivePositionFraction",
+    "mainSteamIsolationValveB.inletFlowKgPerS",
+    "mainSteamIsolationValveB.outletFlowKgPerS",
+    "mainSteamIsolationValveB.flowBalanceResidualKgPerS",
+    "mainSteamIsolationValveC.positionFraction",
+    "mainSteamIsolationValveC.effectivePositionFraction",
+    "mainSteamIsolationValveC.inletFlowKgPerS",
+    "mainSteamIsolationValveC.outletFlowKgPerS",
+    "mainSteamIsolationValveC.flowBalanceResidualKgPerS",
+    "mainSteamIsolationValveD.positionFraction",
+    "mainSteamIsolationValveD.effectivePositionFraction",
+    "mainSteamIsolationValveD.inletFlowKgPerS",
+    "mainSteamIsolationValveD.outletFlowKgPerS",
+    "mainSteamIsolationValveD.flowBalanceResidualKgPerS",
+    "mainSteamHeader.inletFlowKgPerS",
+    "mainSteamHeader.outletFlowKgPerS",
+    "mainSteamHeader.flowBalanceResidualKgPerS",
+    "mainSteamHeader.mixedTemperatureC",
+    "mainSteamHeader.mixedPressureMPa",
+    "turbineStopValve.positionFraction",
+    "turbineStopValve.effectivePositionFraction",
+    "turbineStopValve.inletFlowKgPerS",
+    "turbineStopValve.outletFlowKgPerS",
+    "turbineStopValve.flowBalanceResidualKgPerS",
+    "letdownValve.positionFraction",
+    "letdownValve.effectivePositionFraction",
+    "letdownValve.inletFlowKgPerS",
+    "letdownValve.outletFlowKgPerS",
+    "letdownValve.flowBalanceResidualKgPerS"
   ]
 }

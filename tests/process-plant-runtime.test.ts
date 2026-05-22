@@ -215,7 +215,9 @@ describe('process plant runtime', () => {
       'sg-a-steam-to-msiv-a.flowKgPerS',
       'sg-a-steam-to-msiv-a.pressureMPa',
       'sg-a-steam-to-msiv-a.radiationMSvPerH',
-      'sg-a-steam-to-msiv-a.valve.positionFraction',
+      'mainSteamIsolationValveA.positionFraction',
+      'mainSteamIsolationValveA.effectivePositionFraction',
+      'mainSteamHeader.flowBalanceResidualKgPerS',
       'sg-a-steam-to-msiv-a.leak.areaFraction',
       'turbine-exhaust-to-condenser.flowKgPerS',
       'turbine-exhaust-to-condenser.temperatureC',
@@ -508,7 +510,7 @@ describe('process plant runtime', () => {
     })).toThrow('variable path count')
   })
 
-  test('process link variables behave as readable sensors and writable flow modifiers', () => {
+  test('process link sensors and component valves behave as readable control surfaces', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     runtime.tick(1_000)
@@ -517,7 +519,7 @@ describe('process plant runtime', () => {
 
     runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-msiv-a.valve.positionFraction'),
+      path: valueOf('mainSteamIsolationValveA.positionFraction'),
       value: 0.5,
     })
     runtime.writeCommand({
@@ -528,6 +530,8 @@ describe('process plant runtime', () => {
     runtime.tick(100)
 
     expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(openFlow)
+    expect(Number(runtime.readVariable(valueOf('mainSteamIsolationValveA.inletFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('mainSteamIsolationValveA.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.radiationMSvPerH')))).toBeGreaterThan(0.02)
     expect(() => runtime.writeCommand({
       type: 'setVariable',
@@ -859,9 +863,9 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
-    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-b-to-sg-b.valve.positionFraction'), value: 0 })
-    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-c-to-sg-c.valve.positionFraction'), value: 0 })
-    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-d-to-sg-d.valve.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveB.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveC.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveD.positionFraction'), value: 0 })
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
     const pumpDischargeFlow =
@@ -875,6 +879,8 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('feedwater-header-to-control-valve-d.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(openHeaderBranchFlow).toBeCloseTo(pumpDischargeFlow, 6)
     expect(openValveFlow).toBeCloseTo(openHeaderBranchFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwaterHeader.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwaterControlValveA.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeCloseTo(openValveFlow, 6)
     expect(Number(runtime.readVariable(valueOf('sgB.feedwaterFlowKgPerS')))).toBeCloseTo(0, 6)
   })
@@ -960,7 +966,7 @@ describe('process plant runtime', () => {
     runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
     runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpMotor.running'), value: true })
     runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpTurbine.running'), value: true })
-    runtime.writeCommand({ type: 'setVariable', path: valueOf('aux-feedwater-valve-a-to-sg-a.valve.positionFraction'), value: 1 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveA.positionFraction'), value: 1 })
     for (let index = 0; index < 240; index += 1) runtime.tick(100)
 
     expect(Number(runtime.readVariable(valueOf('auxFeedwaterPumpMotor.flowKgPerS')))).toBeGreaterThan(0)
@@ -1167,7 +1173,7 @@ describe('process plant runtime', () => {
 
     expect(() => runtime.writeCommand({
       type: 'setVariable',
-      path: valueOf('sg-a-steam-to-msiv-a.valve.positionFraction'),
+      path: valueOf('mainSteamIsolationValveA.positionFraction'),
       value: 1.2,
     })).toThrow('fraction value must be between 0 and 1')
     expect(() => runtime.writeCommand({

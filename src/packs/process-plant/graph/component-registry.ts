@@ -27,6 +27,22 @@ const topologyComponent = (
   variables: [],
 })
 
+const headerVariables = (labelPrefix: string): ReadonlyArray<ComponentVariableDescriptor> => [
+  variable({ path: 'inletFlowKgPerS', label: `${labelPrefix} inlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+  variable({ path: 'outletFlowKgPerS', label: `${labelPrefix} outlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+  variable({ path: 'flowBalanceResidualKgPerS', label: `${labelPrefix} flow balance residual`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
+  variable({ path: 'mixedTemperatureC', label: `${labelPrefix} mixed temperature`, kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
+  variable({ path: 'mixedPressureMPa', label: `${labelPrefix} mixed pressure`, kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),
+]
+
+const valveVariables = (labelPrefix: string): ReadonlyArray<ComponentVariableDescriptor> => [
+  variable({ path: 'positionFraction', label: `${labelPrefix} position`, kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+  variable({ path: 'effectivePositionFraction', label: `${labelPrefix} effective position`, kind: 'derived', domain: 'control', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+  variable({ path: 'inletFlowKgPerS', label: `${labelPrefix} inlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+  variable({ path: 'outletFlowKgPerS', label: `${labelPrefix} outlet flow`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+  variable({ path: 'flowBalanceResidualKgPerS', label: `${labelPrefix} flow balance residual`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
+]
+
 const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
     kind: 'reactorCore' as ComponentKind,
@@ -117,15 +133,24 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'netInventoryFlowKgPerS', label: 'Primary inventory net flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
     ],
   }),
-  topologyComponent('processHeader', 'Process Header', {
-    inletA: { kind: 'hydraulicThermal', direction: 'in' },
-    inletB: { kind: 'hydraulicThermal', direction: 'in' },
-    inletC: { kind: 'hydraulicThermal', direction: 'in' },
-    inletD: { kind: 'hydraulicThermal', direction: 'in' },
-    outletA: { kind: 'hydraulicThermal', direction: 'out' },
-    outletB: { kind: 'hydraulicThermal', direction: 'out' },
-    outletC: { kind: 'hydraulicThermal', direction: 'out' },
-    outletD: { kind: 'hydraulicThermal', direction: 'out' },
+  defineComponent({
+    kind: 'processHeader' as ComponentKind,
+    label: 'Process Header',
+    ports: {
+      inletA: { kind: 'hydraulicThermal', direction: 'in' },
+      inletB: { kind: 'hydraulicThermal', direction: 'in' },
+      inletC: { kind: 'hydraulicThermal', direction: 'in' },
+      inletD: { kind: 'hydraulicThermal', direction: 'in' },
+      outletA: { kind: 'hydraulicThermal', direction: 'out' },
+      outletB: { kind: 'hydraulicThermal', direction: 'out' },
+      outletC: { kind: 'hydraulicThermal', direction: 'out' },
+      outletD: { kind: 'hydraulicThermal', direction: 'out' },
+    },
+    parametersSchema: z.object({
+      initialTemperatureC: z.number().finite().optional(),
+      initialPressureMPa: z.number().finite().positive().optional(),
+    }).strict(),
+    variables: headerVariables('Process header'),
   }),
   defineComponent({
     kind: 'processTank' as ComponentKind,
@@ -150,25 +175,52 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'availableOutletFlowKgPerS', label: 'Available outlet flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
-  topologyComponent('processValve', 'Process Valve', {
-    inlet: { kind: 'hydraulicThermal', direction: 'in' },
-    outlet: { kind: 'hydraulicThermal', direction: 'out' },
-    demand: { kind: 'controlSignal', direction: 'in' },
+  defineComponent({
+    kind: 'processValve' as ComponentKind,
+    label: 'Process Valve',
+    ports: {
+      inlet: { kind: 'hydraulicThermal', direction: 'in' },
+      outlet: { kind: 'hydraulicThermal', direction: 'out' },
+      demand: { kind: 'controlSignal', direction: 'in' },
+    },
+    parametersSchema: z.object({
+      initialPositionFraction: normalized.optional(),
+      strokeTimeConstantS: z.number().finite().positive().optional(),
+    }).strict(),
+    variables: valveVariables('Process valve'),
   }),
-  topologyComponent('steamHeader', 'Steam Header', {
-    inletA: { kind: 'steam', direction: 'in' },
-    inletB: { kind: 'steam', direction: 'in' },
-    inletC: { kind: 'steam', direction: 'in' },
-    inletD: { kind: 'steam', direction: 'in' },
-    outletA: { kind: 'steam', direction: 'out' },
-    outletB: { kind: 'steam', direction: 'out' },
-    outletC: { kind: 'steam', direction: 'out' },
-    outletD: { kind: 'steam', direction: 'out' },
+  defineComponent({
+    kind: 'steamHeader' as ComponentKind,
+    label: 'Steam Header',
+    ports: {
+      inletA: { kind: 'steam', direction: 'in' },
+      inletB: { kind: 'steam', direction: 'in' },
+      inletC: { kind: 'steam', direction: 'in' },
+      inletD: { kind: 'steam', direction: 'in' },
+      outletA: { kind: 'steam', direction: 'out' },
+      outletB: { kind: 'steam', direction: 'out' },
+      outletC: { kind: 'steam', direction: 'out' },
+      outletD: { kind: 'steam', direction: 'out' },
+    },
+    parametersSchema: z.object({
+      initialTemperatureC: z.number().finite().optional(),
+      initialPressureMPa: z.number().finite().positive().optional(),
+    }).strict(),
+    variables: headerVariables('Steam header'),
   }),
-  topologyComponent('steamValve', 'Steam Valve', {
-    inlet: { kind: 'steam', direction: 'in' },
-    outlet: { kind: 'steam', direction: 'out' },
-    demand: { kind: 'controlSignal', direction: 'in' },
+  defineComponent({
+    kind: 'steamValve' as ComponentKind,
+    label: 'Steam Valve',
+    ports: {
+      inlet: { kind: 'steam', direction: 'in' },
+      outlet: { kind: 'steam', direction: 'out' },
+      demand: { kind: 'controlSignal', direction: 'in' },
+    },
+    parametersSchema: z.object({
+      initialPositionFraction: normalized.optional(),
+      strokeTimeConstantS: z.number().finite().positive().optional(),
+    }).strict(),
+    variables: valveVariables('Steam valve'),
   }),
   defineComponent({
     kind: 'pressurizer' as ComponentKind,

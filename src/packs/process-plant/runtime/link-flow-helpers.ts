@@ -1,12 +1,12 @@
-import type { CompiledProcessLink } from '../graph/index.ts'
+import type { CompiledProcessLink, VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { processLinkVariablePath } from './behavior-contract.ts'
+import { componentVariablePath, processLinkVariablePath } from './behavior-contract.ts'
 import { clamp } from './component-helpers.ts'
 
 export type LinkBehaviorReadContext = {
-  readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean
-  readonly readNumber: (path: ReturnType<typeof processLinkVariablePath>) => number
-  readonly readOptionalNumber: (path: ReturnType<typeof processLinkVariablePath>, defaultValue: number) => number
+  readonly has: (path: VariablePath) => boolean
+  readonly readNumber: (path: VariablePath) => number
+  readonly readOptionalNumber: (path: VariablePath, defaultValue: number) => number
 }
 
 export const hasProcessLinkVariable = (link: CompiledProcessLink, localPath: string): boolean =>
@@ -81,7 +81,15 @@ const downstreamValveDemandWeight = (
   context: LinkBehaviorReadContext,
 ): number | null => {
   const toComponent = system.graph.components[link.toComponentIndex]
-  if (toComponent?.kind !== 'processValve') return null
+  if (toComponent?.kind !== 'processValve' && toComponent?.kind !== 'steamValve') return null
+  const effectivePositionPath = componentVariablePath(toComponent, 'effectivePositionFraction')
+  if (context.has(effectivePositionPath)) {
+    return clamp(context.readNumber(effectivePositionPath), 0, 1)
+  }
+  const positionPath = componentVariablePath(toComponent, 'positionFraction')
+  if (context.has(positionPath)) {
+    return clamp(context.readNumber(positionPath), 0, 1)
+  }
   let demandWeight = 0
   let hasDemandSignal = false
   for (const outgoingLinkIndex of system.graph.outgoingLinksByComponent[toComponent.index] ?? []) {

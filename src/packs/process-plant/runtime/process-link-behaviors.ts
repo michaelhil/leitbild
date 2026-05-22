@@ -55,6 +55,19 @@ const physicalNumber = (
 const physicalFlowCapacityKgPerS = (link: CompiledProcessLink): number =>
   physicalNumber(link, 'nominalFlowKgPerS', Number.POSITIVE_INFINITY)
 
+const componentValveFactorForInboundLink = (
+  link: CompiledProcessLink,
+  system: CompiledProcessPlantSystem,
+  context: ReturnType<typeof createBehaviorContext>,
+): number => {
+  const toComponent = system.graph.components[link.toComponentIndex]
+  if (toComponent?.kind !== 'processValve' && toComponent?.kind !== 'steamValve') return 1
+  const effectivePositionPath = componentVariablePath(toComponent, 'effectivePositionFraction')
+  if (context.has(effectivePositionPath)) return clamp(context.readNumber(effectivePositionPath), 0, 1)
+  const positionPath = componentVariablePath(toComponent, 'positionFraction')
+  return context.has(positionPath) ? clamp(context.readNumber(positionPath), 0, 1) : 1
+}
+
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
     id: 'process-link-fluid-flow',
@@ -70,6 +83,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
         ? context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
         : null
       const valveFactor = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
+        * componentValveFactorForInboundLink(link, system, context)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const primaryLoopPump = primaryLoopPumpForLink(system.graph, link)
       let flowSource: number

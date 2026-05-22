@@ -3,6 +3,7 @@ import type {
   ComponentInitialReconciliationDefinition,
 } from '../behavior-contract.ts'
 import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.ts'
+import { junctionBehaviorDefinitions } from './junction-behaviors.ts'
 import { pressurizerBehaviorDefinitions } from './pressurizer-behaviors.ts'
 import { pumpBehaviorDefinitions, pumpInitialReconciliationDefinitions } from './pump-behaviors.ts'
 import { reactorBehaviorDefinitions } from './reactor-behaviors.ts'
@@ -11,6 +12,7 @@ import { steamGeneratorBehaviorDefinitions } from './steam-generator-behaviors.t
 const behaviorDefinitionsByFamily: ReadonlyArray<ComponentBehaviorDefinition> = [
   ...reactorBehaviorDefinitions,
   ...balanceOfPlantBehaviorDefinitions,
+  ...junctionBehaviorDefinitions,
   ...pumpBehaviorDefinitions,
   ...steamGeneratorBehaviorDefinitions,
   ...pressurizerBehaviorDefinitions,
@@ -24,6 +26,8 @@ const behaviorDefinitionById = (id: string): ComponentBehaviorDefinition => {
 
 export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   behaviorDefinitionById('reactor-core-reactivity-control'),
+  behaviorDefinitionById('processValve-effective-position'),
+  behaviorDefinitionById('steamValve-effective-position'),
   behaviorDefinitionById('turbine-electrical-output'),
   behaviorDefinitionById('centrifugal-pump-flow'),
   behaviorDefinitionById('centrifugal-pump-primary-loop-inertia'),
@@ -37,6 +41,10 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
   behaviorDefinitionById('reactor-core-coolant-temperature-state'),
   behaviorDefinitionById('steam-generator-inventory-pressure-state'),
   behaviorDefinitionById('condenser-steam-sink-state'),
+  behaviorDefinitionById('processValve-flow-diagnostics'),
+  behaviorDefinitionById('steamValve-flow-diagnostics'),
+  behaviorDefinitionById('processHeader-mixing-diagnostics'),
+  behaviorDefinitionById('steamHeader-mixing-diagnostics'),
 ]
 
 export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [

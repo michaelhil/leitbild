@@ -590,18 +590,18 @@ describe('process plant graph foundation', () => {
     }
     const invalidActuatorId = {
       ...pressurizedWaterReactorPlantSpec,
-      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'main-steam-header-to-turbine-stop-valve'
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-msiv-a' || connection.id === 'sg-b-steam-to-msiv-b'
         ? {
             ...connection,
-            variables: connection.variables.map(variable => variable.path === 'valve.positionFraction'
-              ? { ...variable, actuatorId: 'MSIV-A' }
+            variables: connection.variables.map(variable => variable.path === 'leak.areaFraction'
+              ? { ...variable, actuatorId: 'DUPLICATE-LEAK-ACTUATOR' }
               : variable),
           }
         : connection),
     }
 
     expect(() => compilePlantGraph(invalidSensorId, processPlantComponentRegistry)).toThrow('duplicate process sensor id: PT-SG-A-001')
-    expect(() => compilePlantGraph(invalidActuatorId, processPlantComponentRegistry)).toThrow('duplicate process actuator id: MSIV-A')
+    expect(() => compilePlantGraph(invalidActuatorId, processPlantComponentRegistry)).toThrow('duplicate process actuator id: DUPLICATE-LEAK-ACTUATOR')
   })
 
   test('rejects link initial values that do not match quantity type', () => {

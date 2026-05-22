@@ -133,6 +133,21 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'makeupFlowKgPerS') return parameterNumber(component, 'makeupFlowKgPerS')
     if (localPath === 'availableOutletFlowKgPerS') return parameterNumber(component, 'maxOutletFlowKgPerS')
   }
+  if (component.kind === 'processHeader' || component.kind === 'steamHeader') {
+    if (localPath === 'inletFlowKgPerS') return 0
+    if (localPath === 'outletFlowKgPerS') return 0
+    if (localPath === 'flowBalanceResidualKgPerS') return 0
+    if (localPath === 'mixedTemperatureC') return optionalParameterNumber(component, 'initialTemperatureC', component.kind === 'steamHeader' ? 285 : 220)
+    if (localPath === 'mixedPressureMPa') return optionalParameterNumber(component, 'initialPressureMPa', component.kind === 'steamHeader' ? 6.9 : 1)
+  }
+  if (component.kind === 'processValve' || component.kind === 'steamValve') {
+    const initialPosition = optionalParameterNumber(component, 'initialPositionFraction', 1)
+    if (localPath === 'positionFraction') return initialPosition
+    if (localPath === 'effectivePositionFraction') return initialPosition
+    if (localPath === 'inletFlowKgPerS') return 0
+    if (localPath === 'outletFlowKgPerS') return 0
+    if (localPath === 'flowBalanceResidualKgPerS') return 0
+  }
   if (component.kind === 'feedwaterSource') {
     if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
     if (localPath === 'temperatureC') return parameterNumber(component, 'temperatureC')
