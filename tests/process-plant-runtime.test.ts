@@ -22,6 +22,14 @@ const compiledSystem = () => compileProcessPlantSystem({
   graph: pressurizedWaterReactorPlantSpec,
 })
 
+const compiledSystemWithParameters = (parameters: Record<string, Record<string, unknown>>) => compileProcessPlantSystem({
+  id: 'plant',
+  pack: 'process-plant',
+  componentLibrary: 'process-plant',
+  graph: pressurizedWaterReactorPlantSpec,
+  parameters,
+})
+
 const valueOf = (path: string): VariablePath => path as VariablePath
 
 describe('process plant runtime', () => {
@@ -76,6 +84,12 @@ describe('process plant runtime', () => {
       'vessel.primaryCoolantInventoryKg',
       'vessel.primaryCoolantInventoryDeviationKg',
       'vessel.primaryPressureBiasMPa',
+      'vessel.chargingFlowKgPerS',
+      'vessel.letdownFlowKgPerS',
+      'vessel.reliefOutflowKgPerS',
+      'vessel.primaryLeakFlowKgPerS',
+      'vessel.tubeLeakFlowKgPerS',
+      'vessel.netInventoryFlowKgPerS',
       'pressurizer.pressureMPa',
       'pressurizer.levelPercent',
       'pressurizer.reliefFlowKgPerS',
@@ -406,6 +420,29 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('pressurizer-relief-to-tank.flowKgPerS')))).toBeGreaterThan(0)
   })
 
+  test('pressurizer pressure responds to pressurizer inventory as well as primary inventory', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const noLevelPressureGain = createProcessPlantRuntime({
+      system: compiledSystemWithParameters({ pressurizer: { levelPressureGainMPaPerFraction: 0 } }),
+    })
+
+    for (let index = 0; index < 40; index += 1) {
+      runtime.tick(100)
+      noLevelPressureGain.tick(100)
+    }
+    const initialLevel = Number(runtime.readVariable(valueOf('pressurizer.levelPercent')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.sprayFlowKgPerS'), value: 160 })
+    noLevelPressureGain.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.sprayFlowKgPerS'), value: 160 })
+    for (let index = 0; index < 160; index += 1) {
+      runtime.tick(100)
+      noLevelPressureGain.tick(100)
+    }
+
+    expect(Number(runtime.readVariable(valueOf('pressurizer.levelPercent')))).toBeGreaterThan(initialLevel)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))
+      .toBeGreaterThan(Number(noLevelPressureGain.readVariable(valueOf('pressurizer.pressureMPa'))))
+  })
+
   test('primary coolant inventory feeds the canonical pressurizer pressure response', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
@@ -419,6 +456,8 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialInventory)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryDeviationKg')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.reliefOutflowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.netInventoryFlowKgPerS')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(initialPressure)
     const hotLegPressureDrop = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureDropMPa')))
     expect(hotLegPressureDrop).toBeGreaterThan(0)
@@ -446,6 +485,9 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.leakFlowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialInventory)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.leakFlowKgPerS'))), 6)
+    expect(Number(runtime.readVariable(valueOf('vessel.netInventoryFlowKgPerS')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))
       .toBeLessThan(Number(baseline.readVariable(valueOf('pressurizer.pressureMPa'))))
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialHotLegFlow)
@@ -468,6 +510,8 @@ describe('process plant runtime', () => {
     }
 
     expect(Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.tubeLeakFlowKgPerS'))))
+      .toBeCloseTo(Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS'))), 6)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialPrimaryInventory)
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeGreaterThan(initialSecondaryInventory)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))

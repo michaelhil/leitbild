@@ -243,6 +243,12 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'primaryCoolantInventoryKg') return nominalInventory * initialFraction
     if (localPath === 'primaryCoolantInventoryDeviationKg') return nominalInventory * (initialFraction - 1)
     if (localPath === 'primaryPressureBiasMPa') return optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0) * nominalInventory * (initialFraction - 1)
+    if (localPath === 'chargingFlowKgPerS') return 0
+    if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
+    if (localPath === 'reliefOutflowKgPerS') return 0
+    if (localPath === 'primaryLeakFlowKgPerS') return 0
+    if (localPath === 'tubeLeakFlowKgPerS') return 0
+    if (localPath === 'netInventoryFlowKgPerS') return -optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
   }
   if (component.kind === 'pressurizer') {
     const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
@@ -551,6 +557,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const currentInventory = context.readNumber(componentVariablePath(component, 'waterInventoryKg'))
       const nextInventory = clamp(currentInventory + (sprayFlow - reliefFlow) * context.dtSeconds, 0, fullInventory)
       const thermalPressureBias = (nextWaterTemperature - optionalParameterNumber(component, 'initialWaterTemperatureC', 345)) * 0.035
+      const levelPressureBias = ((nextInventory / fullInventory) - nominalLevelFraction) * optionalParameterNumber(component, 'levelPressureGainMPaPerFraction', 1.4)
       const pressureRate =
         heaterPower * optionalParameterNumber(component, 'heaterPressureRampMPaPerMwS', 0.0009)
         - sprayFlow * optionalParameterNumber(component, 'sprayPressureRampMPaPerKgS', 0.00012)
@@ -559,7 +566,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const inventoryPressureBias = reactorVessel === null || !context.has(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
         ? 0
         : context.readNumber(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
-      const pressureTarget = clamp(nominalPressure + thermalPressureBias + inventoryPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
+      const pressureTarget = clamp(nominalPressure + thermalPressureBias + levelPressureBias + inventoryPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
       const nextPressure = relaxToward(
         currentPressure + pressureRate * context.dtSeconds,
         pressureTarget,
@@ -579,8 +586,18 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     id: 'reactor-vessel-primary-inventory-state',
     phase: 'updateComponentState',
     componentKind: 'reactorVessel',
-    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
-    writes: ['primaryCoolantInventoryKg', 'primaryCoolantInventoryDeviationKg', 'primaryPressureBiasMPa'],
+    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
+    writes: [
+      'primaryCoolantInventoryKg',
+      'primaryCoolantInventoryDeviationKg',
+      'primaryPressureBiasMPa',
+      'chargingFlowKgPerS',
+      'letdownFlowKgPerS',
+      'reliefOutflowKgPerS',
+      'primaryLeakFlowKgPerS',
+      'tubeLeakFlowKgPerS',
+      'netInventoryFlowKgPerS',
+    ],
     update: ({ system, component, context }): void => {
       const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'primaryCoolantInventoryKg'))
@@ -595,6 +612,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const reliefFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'primaryRelief')
       const primaryLeakFlow = sumLinkValueByService(system, 'leakFlowKgPerS', context, 'primaryCoolant')
       const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
+      const netInventoryFlow = chargingFlow - letdownFlow - reliefFlow - primaryLeakFlow - tubeLeakFlow
       const nextInventory = inventoryBalanceStep({
         currentInventory,
         inflowKgPerS: chargingFlow,
@@ -604,6 +622,12 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         maxInventory: nominalInventory * 1.15,
       })
       const deviation = nextInventory - nominalInventory
+      context.write(componentVariablePath(component, 'chargingFlowKgPerS'), chargingFlow)
+      context.write(componentVariablePath(component, 'letdownFlowKgPerS'), letdownFlow)
+      context.write(componentVariablePath(component, 'reliefOutflowKgPerS'), reliefFlow)
+      context.write(componentVariablePath(component, 'primaryLeakFlowKgPerS'), primaryLeakFlow)
+      context.write(componentVariablePath(component, 'tubeLeakFlowKgPerS'), tubeLeakFlow)
+      context.write(componentVariablePath(component, 'netInventoryFlowKgPerS'), netInventoryFlow)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)
       context.write(componentVariablePath(component, 'primaryPressureBiasMPa'), deviation * optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0))

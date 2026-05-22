@@ -48,7 +48,8 @@
         "reliefCapacityKgPerS": 85,
         "heaterPressureRampMPaPerMwS": 0.0009,
         "sprayPressureRampMPaPerKgS": 0.00012,
-        "reliefPressureRampMPaPerKgS": 0.0012
+        "reliefPressureRampMPaPerKgS": 0.0012,
+        "levelPressureGainMPaPerFraction": 1.4
       }
     },
     {
@@ -3815,6 +3816,12 @@
     "sgD.collapsedLevelPercent",
     "sgD.voidFraction",
     "sgD.swellLevelPercent",
-    "sgD.steamMassKg"
+    "sgD.steamMassKg",
+    "vessel.chargingFlowKgPerS",
+    "vessel.letdownFlowKgPerS",
+    "vessel.reliefOutflowKgPerS",
+    "vessel.primaryLeakFlowKgPerS",
+    "vessel.tubeLeakFlowKgPerS",
+    "vessel.netInventoryFlowKgPerS"
   ]
 }
