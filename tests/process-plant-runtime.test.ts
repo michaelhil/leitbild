@@ -12,7 +12,9 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
+import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/process-link-behaviors.ts'
+import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
@@ -319,6 +321,80 @@ describe('process plant runtime', () => {
     expect(restoredA.readVariable(valueOf('rcpA.running'))).toBe(false)
     expect(restoredB.readVariable(valueOf('rcpA.running'))).toBe(true)
     expect(restoredA.snapshot().elapsedMs).toBe(restoredB.snapshot().elapsedMs)
+  })
+
+  test('initial-state reconciliation makes dependent pump and link values consistent before first tick', () => {
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'mainFeedwaterPumpA.running': false,
+        'mainFeedwaterPumpB.running': false,
+        'rcpA.running': false,
+      }),
+    })
+
+    expect(Number(runtime.readVariable(valueOf('mainFeedwaterPumpA.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('mainFeedwaterPumpB.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('main-feedwater-pump-a-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('rcpA.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('rcpA.developedHeadPa')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeCloseTo(0, 6)
+  })
+
+  test('feedwater tank and condenser mass balances are internally consistent across fixed steps', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const dtSeconds = 0.1
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    for (let index = 0; index < 80; index += 1) {
+      const feedwaterBefore = Number(runtime.readVariable(valueOf('feedwaterTank.inventoryKg')))
+      const condenserBefore = Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))
+      runtime.tick(100)
+
+      const feedwaterAfter = Number(runtime.readVariable(valueOf('feedwaterTank.inventoryKg')))
+      const feedwaterInflow =
+        Number(runtime.readVariable(valueOf('condensate-pump-a-to-feedwater-tank.flowKgPerS')))
+        + Number(runtime.readVariable(valueOf('condensate-pump-b-to-feedwater-tank.flowKgPerS')))
+        + Number(runtime.readVariable(valueOf('feedwaterTank.makeupFlowKgPerS')))
+      const feedwaterOutflow =
+        Number(runtime.readVariable(valueOf('feedwater-tank-to-main-feedwater-pump-a.flowKgPerS')))
+        + Number(runtime.readVariable(valueOf('feedwater-tank-to-main-feedwater-pump-b.flowKgPerS')))
+      expect(feedwaterAfter - feedwaterBefore).toBeCloseTo((feedwaterInflow - feedwaterOutflow) * dtSeconds, 6)
+
+      const condenserAfter = Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))
+      const condenserInflow = Number(runtime.readVariable(valueOf('condenser.condensateProductionKgPerS')))
+      const condenserOutflow =
+        Number(runtime.readVariable(valueOf('condenser-to-condensate-pump-a.flowKgPerS')))
+        + Number(runtime.readVariable(valueOf('condenser-to-condensate-pump-b.flowKgPerS')))
+      expect(condenserAfter - condenserBefore).toBeCloseTo((condenserInflow - condenserOutflow) * dtSeconds, 6)
+    }
+  })
+
+  test('steam generator secondary inventory follows feedwater, tube leak, and steam outlet balance direction', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 30; index += 1) runtime.tick(100)
+    const inventoryBefore = Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpA.running'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('mainFeedwaterPumpB.running'), value: false })
+    for (let index = 0; index < 120; index += 1) runtime.tick(100)
+
+    const feedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
+    const leakFlow = Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))
+    const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
+    expect(feedwaterFlow + leakFlow).toBeLessThan(steamOutflow)
+    expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(inventoryBefore)
+  })
+
+  test('steam generator boiling rate remains energy-consistent with heat transfer', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+
+    const heatTransferMw = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
+    const boilingRateKgPerS = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
+    expect(boilingRateKgPerS * latentHeatSteamMjPerKg).toBeCloseTo(heatTransferMw, 6)
   })
 
   test('runtime snapshots carry graph identity and reject mismatched graph restores', () => {
@@ -740,7 +816,7 @@ describe('process plant runtime', () => {
 
   test('behavior definitions declare read and write surfaces for auditability', () => {
     const behaviorIds = new Set<string>()
-    for (const behavior of [...componentBehaviorDefinitions, ...processLinkBehaviorDefinitions]) {
+    for (const behavior of [...componentInitialReconciliationDefinitions, ...componentBehaviorDefinitions, ...processLinkBehaviorDefinitions]) {
       expect(behavior.reads.length).toBeGreaterThan(0)
       expect(behavior.writes.length).toBeGreaterThan(0)
       expect(behaviorIds.has(behavior.id)).toBe(false)

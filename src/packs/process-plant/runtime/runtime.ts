@@ -2,7 +2,7 @@ import type { VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { initialComponentValueFor } from './component-behaviors.ts'
 import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
-import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, type ProcessPlantExecutionPlan } from './execution-plan.ts'
+import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, runProcessPlantInitialReconciliation, type ProcessPlantExecutionPlan } from './execution-plan.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
 
@@ -67,6 +67,9 @@ export const createProcessPlantRuntime = (config: {
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
+  if (!config.restoredSnapshot) {
+    runProcessPlantInitialReconciliation({ system, table, plan })
+  }
   const assertInvariants = config.assertInvariants ?? false
   const clock: RuntimeClock = {
     elapsedMs: config.restoredSnapshot?.elapsedMs ?? 0,

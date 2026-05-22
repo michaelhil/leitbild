@@ -56,6 +56,18 @@ export interface ComponentBehaviorDefinition {
   }) => void
 }
 
+export interface ComponentInitialReconciliationDefinition {
+  readonly id: string
+  readonly componentKind: string
+  readonly reads: ReadonlyArray<string>
+  readonly writes: ReadonlyArray<string>
+  readonly reconcile: (input: {
+    readonly system: CompiledProcessPlantSystem
+    readonly component: CompiledComponent
+    readonly context: ProcessPlantBehaviorContext
+  }) => void
+}
+
 export interface ProcessLinkBehaviorDefinition {
   readonly id: string
   readonly phase: ProcessPlantSolverPhase

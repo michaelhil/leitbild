@@ -5,9 +5,10 @@ import {
   createBehaviorContext,
   processLinkVariablePath,
   type ComponentBehaviorDefinition,
+  type ComponentInitialReconciliationDefinition,
   type ProcessLinkBehaviorDefinition,
 } from './behavior-contract.ts'
-import { componentBehaviorDefinitions } from './component-behaviors.ts'
+import { componentBehaviorDefinitions, componentInitialReconciliationDefinitions } from './component-behaviors.ts'
 import type { ProcessPlantSolverPhase } from './model.ts'
 import { processLinkBehaviorDefinitions } from './process-link-behaviors.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
@@ -26,8 +27,15 @@ type ProcessPlantExecutionInvocation =
       readonly writablePaths: ReadonlySet<VariablePath>
     }
 
+type ProcessPlantInitialReconciliationInvocation = {
+  readonly behavior: ComponentInitialReconciliationDefinition
+  readonly componentIndex: number
+  readonly writablePaths: ReadonlySet<VariablePath>
+}
+
 export interface ProcessPlantExecutionPlan {
   readonly invocationsByPhase: ReadonlyMap<ProcessPlantSolverPhase, ReadonlyArray<ProcessPlantExecutionInvocation>>
+  readonly initialReconciliationInvocations: ReadonlyArray<ProcessPlantInitialReconciliationInvocation>
   readonly invocationCount: number
 }
 
@@ -60,8 +68,23 @@ export const compileProcessPlantExecutionPlan = (
   system: CompiledProcessPlantSystem,
 ): ProcessPlantExecutionPlan => {
   const invocationsByPhase = new Map<ProcessPlantSolverPhase, ProcessPlantExecutionInvocation[]>()
+  const initialReconciliationInvocations: ProcessPlantInitialReconciliationInvocation[] = []
   const knownVariablePaths = new Set(system.graph.variables.map(variable => variable.path))
   let invocationCount = 0
+
+  for (const behavior of componentInitialReconciliationDefinitions) {
+    for (const component of system.graph.components) {
+      if (String(component.kind) !== behavior.componentKind) continue
+      const writablePaths = new Set(behavior.writes.map(localPath => componentVariablePath(component, localPath)))
+      assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
+      initialReconciliationInvocations.push({
+        behavior,
+        componentIndex: component.index,
+        writablePaths,
+      })
+      invocationCount += 1
+    }
+  }
 
   for (const behavior of componentBehaviorDefinitions) {
     for (const component of system.graph.components) {
@@ -95,8 +118,45 @@ export const compileProcessPlantExecutionPlan = (
 
   return {
     invocationsByPhase,
+    initialReconciliationInvocations,
     invocationCount,
   }
+}
+
+export const runProcessPlantInitialReconciliation = (config: {
+  readonly system: CompiledProcessPlantSystem
+  readonly table: ProcessPlantVariableTable
+  readonly plan: ProcessPlantExecutionPlan
+}): void => {
+  for (const invocation of config.plan.initialReconciliationInvocations) {
+    const component = config.system.graph.components[invocation.componentIndex]
+    if (!component) throw new Error(`process plant initial reconciliation references missing component index: ${invocation.componentIndex}`)
+    invocation.behavior.reconcile({
+      system: config.system,
+      component,
+      context: createBehaviorContext({
+        behaviorId: invocation.behavior.id,
+        phase: 'solveFluidFlowComponents',
+        dtSeconds: 0,
+        table: config.table,
+        writablePaths: invocation.writablePaths,
+      }),
+    })
+  }
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    table: config.table,
+    plan: config.plan,
+    phase: 'solveFluidFlowLinks',
+    dtSeconds: 0,
+  })
+  runProcessPlantExecutionPhase({
+    system: config.system,
+    table: config.table,
+    plan: config.plan,
+    phase: 'updateProcessLinkState',
+    dtSeconds: 0,
+  })
 }
 
 export const runProcessPlantExecutionPhase = (config: {

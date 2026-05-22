@@ -7,6 +7,7 @@ import {
   createBehaviorContext,
   processLinkVariablePath,
   type ComponentBehaviorDefinition,
+  type ComponentInitialReconciliationDefinition,
 } from './behavior-contract.ts'
 import {
   energyBalanceTemperatureStep,
@@ -888,6 +889,48 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       context.write(componentVariablePath(component, 'availableCondensateOutletFlowKgPerS'), Math.min(maxOutletFlow, inventoryLimitedOutlet))
       context.write(componentVariablePath(component, 'condensateTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, context.dtSeconds, optionalParameterNumber(component, 'condenserThermalTimeConstantS', 12)))
       context.write(componentVariablePath(component, 'backPressurePa'), approach(context.readNumber(componentVariablePath(component, 'backPressurePa')), targetBackPressure, 500 * context.dtSeconds))
+    },
+  },
+]
+
+export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
+  {
+    id: 'centrifugal-pump-initial-state',
+    componentKind: 'centrifugalPump',
+    reads: ['running', 'speedFraction'],
+    writes: ['flowKgPerS', 'developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
+    reconcile: ({ component, context }): void => {
+      const running = context.readBoolean(componentVariablePath(component, 'running'))
+      const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
+      const nominalFlow = parameterNumber(component, 'nominalFlowKgPerS')
+      const nominalHead = parameterNumber(component, 'nominalHeadPa')
+      const developedHead = running ? nominalHead * speed * speed : 0
+      const componentFlow = running ? nominalFlow * speed : 0
+      context.write(componentVariablePath(component, 'flowKgPerS'), componentFlow)
+      context.write(componentVariablePath(component, 'developedHeadPa'), developedHead)
+
+      const primaryLoopId = primaryLoopIdForPump(component)
+      if (primaryLoopId === null) {
+        context.write(componentVariablePath(component, 'loopFlowTargetKgPerS'), 0)
+        context.write(componentVariablePath(component, 'loopFlowKgPerS'), 0)
+        return
+      }
+
+      const naturalCirculationFlow = optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
+      const loopTarget = running
+        ? Math.min(
+            pumpHeadResistanceFlowTarget({
+              developedHeadPa: developedHead,
+              nominalHeadPa: nominalHead,
+              nominalFlowKgPerS: nominalFlow,
+              resistanceCoefficient: optionalParameterNumber(component, 'loopResistanceCoefficient', 0),
+              minimumFlowKgPerS: naturalCirculationFlow,
+            }),
+            componentFlow,
+          )
+        : naturalCirculationFlow
+      context.write(componentVariablePath(component, 'loopFlowTargetKgPerS'), loopTarget)
+      context.write(componentVariablePath(component, 'loopFlowKgPerS'), loopTarget)
     },
   },
 ]
