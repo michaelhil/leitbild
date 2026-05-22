@@ -11,7 +11,7 @@ import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/si
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { createTestScenarioCatalog } from './helpers.ts'
+import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 describe('control instance registry', () => {
@@ -201,7 +201,15 @@ describe('control instance registry', () => {
     expect(firstAssigned?.spatial.route?.planned?.coordinates.length).toBeGreaterThanOrEqual(2)
     expect(secondAssigned?.spatial.route?.planned?.coordinates.length).toBeGreaterThanOrEqual(2)
 
-    await Bun.sleep(1_100)
+    await waitForCondition('both Halden ambulances moved after dispatch', () => {
+      const objects = runtime.snapshot().objects
+      const firstMoved = objects.find(object => object.id === 'amb:halden-1')
+      const secondMoved = objects.find(object => object.id === 'amb:halden-2')
+      return firstMoved?.spatial.position?.point.coordinates.join(',') !== firstStart
+        && secondMoved?.spatial.position?.point.coordinates.join(',') !== secondStart
+        && (firstMoved?.spatial.position?.speedMps ?? 0) > 0
+        && (secondMoved?.spatial.position?.speedMps ?? 0) > 0
+    })
 
     const moved = runtime.snapshot().objects
     const firstMoved = moved.find(object => object.id === 'amb:halden-1')

@@ -39,3 +39,23 @@ export const testScenarioRuntimeConfig = (): SimulationScenarioRuntimeConfig => 
 
 export const testControlInstanceId = (suffix: string): ControlInstanceId =>
   `control-instance:${suffix}` as ControlInstanceId
+
+export const waitForCondition = async (
+  label: string,
+  condition: () => boolean,
+  options?: {
+    readonly timeoutMs?: number
+    readonly intervalMs?: number
+  },
+): Promise<void> => {
+  const timeoutMs = options?.timeoutMs ?? 3_000
+  const intervalMs = options?.intervalMs ?? 25
+  const startedAt = Date.now()
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    if (condition()) return
+    await Bun.sleep(intervalMs)
+  }
+
+  throw new Error(`timed out waiting for condition: ${label}`)
+}
