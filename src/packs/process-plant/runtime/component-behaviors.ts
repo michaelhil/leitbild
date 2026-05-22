@@ -815,10 +815,8 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         minInventory: 0,
         maxInventory: nominalInventory,
       })
-      const inventoryTimeConstant = optionalParameterNumber(component, 'inventoryTimeConstantS', 20)
-      const relaxedInventory = relaxToward(currentInventory, nextInventory, context.dtSeconds, inventoryTimeConstant)
-      context.write(componentVariablePath(component, 'secondaryInventoryKg'), relaxedInventory)
-      const collapsedLevel = clamp((relaxedInventory / nominalInventory) * 100, 0, 100)
+      context.write(componentVariablePath(component, 'secondaryInventoryKg'), nextInventory)
+      const collapsedLevel = clamp((nextInventory / nominalInventory) * 100, 0, 100)
       context.write(componentVariablePath(component, 'collapsedLevelPercent'), collapsedLevel)
       const recirculationRatio = optionalParameterNumber(component, 'recirculationRatio', 1)
       const nominalSteamFlow = optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760)
@@ -843,7 +841,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       const pressureTarget = nominalPressure * clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6)
         + (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
         + temperaturePressureBias * nominalPressure
-        + ((relaxedInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
+        + ((nextInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
       context.write(pressurePath, approach(currentPressure, clamp(pressureTarget, nominalPressure * 0.2, nominalPressure * 1.4), 0.08 * context.dtSeconds))
     },
   },

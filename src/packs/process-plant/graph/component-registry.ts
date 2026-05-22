@@ -210,7 +210,6 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       recirculationRatio: z.number().finite().positive().optional(),
       primaryThermalTimeConstantS: z.number().finite().positive().optional(),
       secondaryThermalTimeConstantS: z.number().finite().positive().optional(),
-      inventoryTimeConstantS: z.number().finite().positive().optional(),
       steamQualityTimeConstantS: z.number().finite().positive().optional(),
       steamPressureGainMPaPerKgS: z.number().finite().nonnegative().optional(),
       nominalSteamMassKg: z.number().finite().positive().optional(),

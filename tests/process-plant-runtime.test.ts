@@ -387,6 +387,24 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(inventoryBefore)
   })
 
+  test('steam generator secondary inventory is mass-conservative across fixed steps', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const dtSeconds = 0.1
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('sgA.tubeLeakFraction'), value: 0.15 })
+    for (let index = 0; index < 80; index += 1) {
+      const inventoryBefore = Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))
+      runtime.tick(100)
+      const inventoryAfter = Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))
+      const feedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
+      const tubeLeakFlow = Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))
+      const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
+
+      expect(inventoryAfter - inventoryBefore).toBeCloseTo((feedwaterFlow + tubeLeakFlow - steamOutflow) * dtSeconds, 6)
+    }
+  })
+
   test('steam generator boiling rate remains energy-consistent with heat transfer', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
