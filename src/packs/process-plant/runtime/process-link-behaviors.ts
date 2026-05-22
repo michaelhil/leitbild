@@ -187,7 +187,7 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {
-        target = 120
+        target = context.readNumber(componentVariablePath(fromComponent, 'exhaustTemperatureC'))
       } else if (toComponent.kind === 'reactorCore') {
         target = averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
           ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))

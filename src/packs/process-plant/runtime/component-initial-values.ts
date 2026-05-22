@@ -107,10 +107,18 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'electricMw') return parameterNumber(component, 'nominalElectricMw') * initialLoadFraction
     if (localPath === 'loadFraction') return initialLoadFraction
     if (localPath === 'steamFlowKgPerS') return parameterNumber(component, 'nominalSteamFlowKgPerS') * initialLoadFraction
+    if (localPath === 'steamDemandKgPerS') return parameterNumber(component, 'nominalSteamFlowKgPerS') * initialLoadFraction
+    if (localPath === 'steamAvailabilityFraction') return 1
+    if (localPath === 'exhaustTemperatureC') {
+      const noLoad = optionalParameterNumber(component, 'exhaustTemperatureAtNoLoadC', 105)
+      const fullLoad = optionalParameterNumber(component, 'exhaustTemperatureAtFullLoadC', 145)
+      return noLoad + (fullLoad - noLoad) * initialLoadFraction
+    }
   }
   if (component.kind === 'condenserSink') {
     if (localPath === 'steamFlowKgPerS') return 0
     if (localPath === 'condensateProductionKgPerS') return 0
+    if (localPath === 'heatRejectedMw') return 0
     if (localPath === 'condensateInventoryKg') return parameterNumber(component, 'nominalCondensateInventoryKg') * parameterNumber(component, 'initialCondensateInventoryFraction')
     if (localPath === 'condensateLevelPercent') return parameterNumber(component, 'initialCondensateInventoryFraction') * 100
     if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')

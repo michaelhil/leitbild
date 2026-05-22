@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="968" viewBox="0 0 1200 968">
   <rect width="1200" height="968" fill="#f8fafc"/>
   <text x="50" y="42" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#111827">Process Plant Acceptance Traces</text>
-  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">7 representative transients from the real graphRef/runtime. Checks: 30/30 passed.</text>
+  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">7 representative transients from the real graphRef/runtime. Checks: 33/33 passed.</text>
   
     <g>
       <rect x="50" y="92" width="350" height="225" rx="12" fill="#ffffff" stroke="#d1d5db"/>

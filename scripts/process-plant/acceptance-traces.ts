@@ -40,6 +40,10 @@ const telemetryVariables = [
   'sgA.secondaryRadiationMSvPerH',
   'rcpA.loopFlowKgPerS',
   'turbine.electricMw',
+  'turbine.steamDemandKgPerS',
+  'turbine.steamAvailabilityFraction',
+  'turbine.exhaustTemperatureC',
+  'condenser.heatRejectedMw',
 ] as const satisfies ReadonlyArray<string>
 
 type CaseId = 'baseline' | 'sgtr' | 'loss-feedwater' | 'rcp-trip' | 'relief-open' | 'load-reduction' | 'mixed-transient'
@@ -269,6 +273,10 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'sgA.secondaryRadiationMSvPerH',
   'rcpA.loopFlowKgPerS',
   'turbine.electricMw',
+  'turbine.steamDemandKgPerS',
+  'turbine.steamAvailabilityFraction',
+  'turbine.exhaustTemperatureC',
+  'condenser.heatRejectedMw',
 ])
 
 const evaluateTelemetryIntegrity = (
@@ -354,9 +362,18 @@ const evaluateCase = (
     const beforeElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', 55_000)
     const afterElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
     const minElectric = minAfter(telemetry, 'turbine.electricMw', 120_000)
+    const beforeDemand = valueAtOrAfter(telemetry, 'turbine.steamDemandKgPerS', 55_000)
+    const afterDemand = valueAtOrAfter(telemetry, 'turbine.steamDemandKgPerS', durationMs)
+    const beforeHeatRejected = valueAtOrAfter(telemetry, 'condenser.heatRejectedMw', 55_000)
+    const afterHeatRejected = valueAtOrAfter(telemetry, 'condenser.heatRejectedMw', durationMs)
+    const minAvailability = minAfter(telemetry, 'turbine.steamAvailabilityFraction', 120_000)
+    const maxAvailability = maxAfter(telemetry, 'turbine.steamAvailabilityFraction', 120_000)
     return [
       check(caseId, 'load reduction lowers turbine output', afterElectric < beforeElectric * 0.7, `before=${beforeElectric.toFixed(1)} end=${afterElectric.toFixed(1)}MW`),
       check(caseId, 'load reduction keeps output nonnegative', minElectric >= 0, `min=${minElectric.toFixed(1)}MW`),
+      check(caseId, 'load reduction lowers turbine steam demand', afterDemand < beforeDemand * 0.6, `before=${beforeDemand.toFixed(1)} end=${afterDemand.toFixed(1)}kg/s`),
+      check(caseId, 'load reduction lowers condenser heat rejection', afterHeatRejected < beforeHeatRejected * 0.75, `before=${beforeHeatRejected.toFixed(1)} end=${afterHeatRejected.toFixed(1)}MW`),
+      check(caseId, 'turbine steam availability remains a bounded ratio', minAvailability >= 0 && maxAvailability <= 1, `min=${minAvailability.toFixed(2)} max=${maxAvailability.toFixed(2)}`),
     ]
   }
   const leak = maxAfter(telemetry, 'sgA.primaryToSecondaryLeakKgPerS', 55_000)

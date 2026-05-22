@@ -4,10 +4,10 @@
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
   "caseCount": 7,
-  "checkCount": 30,
+  "checkCount": 33,
   "failedCheckCount": 0,
-  "wallMs": 1214.499708,
-  "realtimeFactor": 197.61223359635423,
+  "wallMs": 2815.237208,
+  "realtimeFactor": 85.25036516212455,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -150,6 +150,24 @@
     },
     {
       "caseId": "load-reduction",
+      "description": "load reduction lowers turbine steam demand",
+      "passed": true,
+      "details": "before=892.5 end=472.5kg/s"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "load reduction lowers condenser heat rejection",
+      "passed": true,
+      "details": "before=2359.0 end=1234.9MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "turbine steam availability remains a bounded ratio",
+      "passed": true,
+      "details": "min=1.00 max=1.00"
+    },
+    {
+      "caseId": "load-reduction",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -196,7 +214,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=197.6x min=20.0x"
+      "details": "realtimeFactor=85.3x min=20.0x"
     }
   ],
   "artifacts": {

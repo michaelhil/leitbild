@@ -6,6 +6,7 @@ import {
   sumOutgoingComponentLinkValue as sumOutgoingLinkValue,
 } from '../component-link-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
+import { heatMwFromWaterFlowAndDeltaT, latentHeatSteamMjPerKg } from '../thermophysics.ts'
 
 export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
@@ -13,17 +14,24 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     phase: 'solveElectrical',
     componentKind: 'turbineLoadSink',
     reads: ['loadFraction', 'steamFlowKgPerS', 'incoming:flowKgPerS', 'incoming:pressureMPa'],
-    writes: ['electricMw', 'steamFlowKgPerS'],
+    writes: ['electricMw', 'steamFlowKgPerS', 'steamDemandKgPerS', 'steamAvailabilityFraction', 'exhaustTemperatureC'],
     update: ({ system, component, context }): void => {
       const inletSteamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
       const averageSteamPressure = averageIncomingLinkValue(system, component, 'pressureMPa', context)
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const load = clamp(context.readNumber(componentVariablePath(component, 'loadFraction')), 0, 1)
+      const steamDemand = nominalSteamFlow * load
       const steamAvailability = clamp(inletSteamFlow / nominalSteamFlow, 0, 1.2)
       const pressureAvailability = clamp((averageSteamPressure ?? 6.9) / 6.9, 0, 1.2)
       const target = parameterNumber(component, 'nominalElectricMw') * load * Math.min(steamAvailability, pressureAvailability)
       const current = context.readNumber(componentVariablePath(component, 'electricMw'))
+      const noLoadExhaust = optionalParameterNumber(component, 'exhaustTemperatureAtNoLoadC', 105)
+      const fullLoadExhaust = optionalParameterNumber(component, 'exhaustTemperatureAtFullLoadC', 145)
+      const exhaustTarget = noLoadExhaust + (fullLoadExhaust - noLoadExhaust) * clamp(Math.min(steamAvailability, load), 0, 1)
+      context.write(componentVariablePath(component, 'steamDemandKgPerS'), steamDemand)
+      context.write(componentVariablePath(component, 'steamAvailabilityFraction'), clamp(inletSteamFlow / Math.max(1, steamDemand), 0, 1))
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), inletSteamFlow)
+      context.write(componentVariablePath(component, 'exhaustTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'exhaustTemperatureC')), exhaustTarget, context.dtSeconds, optionalParameterNumber(component, 'electricalTimeConstantS', 5)))
       context.write(
         componentVariablePath(component, 'electricMw'),
         relaxToward(current, target, context.dtSeconds, optionalParameterNumber(component, 'electricalTimeConstantS', 5)),
@@ -82,10 +90,11 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     id: 'condenser-steam-sink-state',
     phase: 'updateComponentState',
     componentKind: 'condenserSink',
-    reads: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa', 'incoming:flowKgPerS'],
+    reads: ['steamFlowKgPerS', 'condensateTemperatureC', 'backPressurePa', 'incoming:flowKgPerS', 'incoming:temperatureC'],
     writes: [
       'steamFlowKgPerS',
       'condensateProductionKgPerS',
+      'heatRejectedMw',
       'condensateInventoryKg',
       'condensateLevelPercent',
       'availableCondensateOutletFlowKgPerS',
@@ -94,6 +103,8 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     ],
     update: ({ system, component, context }): void => {
       const steamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
+      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+        ?? optionalParameterNumber(component, 'exhaustCondensationTemperatureC', 120)
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const condensateProduction = steamFlow
       const outgoingCondensateFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'condensate')
@@ -112,9 +123,16 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const targetCondensateTemperature = parameterNumber(component, 'coolingWaterTemperatureC')
         + parameterNumber(component, 'condensateApproachTemperatureK')
         + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
-      const targetBackPressure = 7_000 + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
+        + clamp((steamTemperature - 120) / 80, 0, 1) * 8
+      const sensibleHeatMw = heatMwFromWaterFlowAndDeltaT(steamFlow, Math.max(0, steamTemperature - targetCondensateTemperature))
+      const latentHeatMw = steamFlow * latentHeatSteamMjPerKg
+      const heatRejected = latentHeatMw + sensibleHeatMw
+      const targetBackPressure = 7_000
+        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
+        + clamp((targetCondensateTemperature - (parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK'))) / 30, 0, 1) * 2_000
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
       context.write(componentVariablePath(component, 'condensateProductionKgPerS'), condensateProduction)
+      context.write(componentVariablePath(component, 'heatRejectedMw'), heatRejected)
       context.write(componentVariablePath(component, 'condensateInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'condensateLevelPercent'), clamp((nextInventory / nominalInventory) * 100, 0, 100))
       context.write(componentVariablePath(component, 'availableCondensateOutletFlowKgPerS'), Math.min(maxOutletFlow, inventoryLimitedOutlet))

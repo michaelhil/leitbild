@@ -142,6 +142,43 @@ export const passiveFlowFromIncomingService = (
   return distributeFlowFromComponent(system, link, context, incomingFlow)
 }
 
+export interface ComponentFlowBalance {
+  readonly componentId: string
+  readonly service: string
+  readonly inflowKgPerS: number
+  readonly outflowKgPerS: number
+  readonly residualKgPerS: number
+}
+
+export const componentFlowBalanceForService = (
+  system: CompiledProcessPlantSystem,
+  componentIndex: number,
+  service: CompiledProcessLink['service'],
+  context: Pick<LinkBehaviorReadContext, 'has' | 'readNumber'>,
+): ComponentFlowBalance => {
+  const component = system.graph.components[componentIndex]
+  if (!component) throw new Error(`process plant flow balance references missing component index: ${componentIndex}`)
+  if (service === undefined) throw new Error(`process plant flow balance for component ${component.id} requires a service`)
+  const matchesService = (candidate: CompiledProcessLink): boolean =>
+    candidate.kind === 'fluidFlow' && serviceMatches(candidate, service)
+  const inflowKgPerS = sumIncomingLinkValue(system, componentIndex, 'flowKgPerS', context, matchesService)
+  let outflowKgPerS = 0
+  for (const linkIndex of system.graph.outgoingLinksByComponent[componentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || !matchesService(link)) continue
+    const path = processLinkVariablePath(link, 'flowKgPerS')
+    if (!context.has(path)) continue
+    outflowKgPerS += context.readNumber(path)
+  }
+  return {
+    componentId: String(component.id),
+    service: String(service),
+    inflowKgPerS,
+    outflowKgPerS,
+    residualKgPerS: inflowKgPerS - outflowKgPerS,
+  }
+}
+
 export const sourceLimitedPumpFlow = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,

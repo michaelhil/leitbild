@@ -9,6 +9,7 @@ import {
   createProcessPlantTestbed,
   pressurizedWaterReactorPlantSpec,
   processPlantSolverPhases,
+  type ConnectionService,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
@@ -16,6 +17,7 @@ import { componentInitialReconciliationDefinitions } from '../src/packs/process-
 import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/process-link-behaviors.ts'
 import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
+import { componentFlowBalanceForService } from '../src/packs/process-plant/runtime/link-flow-helpers.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
   id: 'plant',
@@ -160,8 +162,12 @@ describe('process plant runtime', () => {
       'mainFeedwaterPumpB.running',
       'turbine.electricMw',
       'turbine.steamFlowKgPerS',
+      'turbine.steamDemandKgPerS',
+      'turbine.steamAvailabilityFraction',
+      'turbine.exhaustTemperatureC',
       'condenser.steamFlowKgPerS',
       'condenser.condensateProductionKgPerS',
+      'condenser.heatRejectedMw',
       'condenser.condensateInventoryKg',
       'condenser.condensateLevelPercent',
       'condenser.availableCondensateOutletFlowKgPerS',
@@ -529,6 +535,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.steamQualityFraction')))).toBeGreaterThan(0.75)
     expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('condenser.heatRejectedMw')))).toBeGreaterThan(0)
   })
 
   test('reactor trip leaves decay heat while fission power falls', () => {
@@ -766,6 +773,36 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgB.feedwaterFlowKgPerS')))).toBeCloseTo(0, 6)
   })
 
+  test('feedwater and auxiliary feedwater header branch flows conserve incoming service flow', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+
+    const table = createProcessPlantVariableTable(system, initialComponentValueFor, runtime.snapshot().variables)
+    const componentIndex = (componentId: string): number => {
+      const index = system.graph.componentIndexById.get(componentId as never)
+      if (index === undefined) throw new Error(`missing process plant component in test graph: ${componentId}`)
+      return index
+    }
+    const feedwaterHeaderBalance = componentFlowBalanceForService(
+      system,
+      componentIndex('feedwaterHeader'),
+      'feedwater' as ConnectionService,
+      table,
+    )
+    const auxFeedwaterHeaderBalance = componentFlowBalanceForService(
+      system,
+      componentIndex('auxFeedwaterHeader'),
+      'auxFeedwater' as ConnectionService,
+      table,
+    )
+
+    expect(feedwaterHeaderBalance.outflowKgPerS).toBeGreaterThan(0)
+    expect(feedwaterHeaderBalance.residualKgPerS).toBeCloseTo(0, 6)
+    expect(auxFeedwaterHeaderBalance.residualKgPerS).toBeCloseTo(0, 6)
+  })
+
   test('main feedwater pumps cannot deliver flow after the feedwater tank is depleted', () => {
     const runtime = createProcessPlantRuntime({
       system: compiledSystemWithInitialState({
@@ -892,11 +929,17 @@ describe('process plant runtime', () => {
 
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
     const loadedOutput = Number(runtime.readVariable(valueOf('turbine.electricMw')))
+    const loadedSteamDemand = Number(runtime.readVariable(valueOf('turbine.steamDemandKgPerS')))
+    const loadedHeatRejected = Number(runtime.readVariable(valueOf('condenser.heatRejectedMw')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('turbine.loadFraction'), value: 0.4 })
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
 
     expect(Number(runtime.readVariable(valueOf('turbine.electricMw')))).toBeLessThan(loadedOutput)
-    expect(Number(runtime.readVariable(valueOf('turbine.steamFlowKgPerS')))).toBeCloseTo(420, 6)
+    expect(Number(runtime.readVariable(valueOf('turbine.steamDemandKgPerS')))).toBeLessThan(loadedSteamDemand)
+    expect(Number(runtime.readVariable(valueOf('turbine.steamAvailabilityFraction')))).toBeGreaterThanOrEqual(0)
+    expect(Number(runtime.readVariable(valueOf('turbine.steamAvailabilityFraction')))).toBeLessThanOrEqual(1)
+    expect(Number(runtime.readVariable(valueOf('turbine.exhaustTemperatureC')))).toBeGreaterThan(100)
+    expect(Number(runtime.readVariable(valueOf('condenser.heatRejectedMw')))).toBeLessThan(loadedHeatRejected)
   })
 
   test('steam generator secondary pressure responds to steam mass imbalance', () => {
