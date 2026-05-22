@@ -133,6 +133,11 @@ describe('process plant runtime', () => {
       'vessel.netInventoryFlowKgPerS',
       'pressurizer.pressureMPa',
       'pressurizer.levelPercent',
+      'pressurizer.steamVolumeM3',
+      'pressurizer.steamPressureMPa',
+      'pressurizer.pressureTargetMPa',
+      'pressurizer.waterInventoryBalanceResidualKg',
+      'pressurizer.steamMassBalanceResidualKg',
       'pressurizer.reliefFlowKgPerS',
       'feedwaterTank.inventoryKg',
       'feedwaterTank.levelPercent',
@@ -149,12 +154,20 @@ describe('process plant runtime', () => {
       'sgA.steamFlowKgPerS',
       'sgA.boilingRateKgPerS',
       'sgA.feedwaterFlowKgPerS',
+      'sgA.steamOutflowKgPerS',
       'sgA.steamQualityFraction',
       'sgA.secondaryInventoryKg',
       'sgA.collapsedLevelPercent',
       'sgA.voidFraction',
       'sgA.swellLevelPercent',
       'sgA.steamMassKg',
+      'sgA.pressureTargetMPa',
+      'sgA.steamMassPressureBiasMPa',
+      'sgA.temperaturePressureBiasMPa',
+      'sgA.inventoryPressureBiasMPa',
+      'sgA.secondaryInventoryBalanceResidualKg',
+      'sgA.steamMassBalanceResidualKg',
+      'sgA.boilingEnergyResidualMw',
       'sgA.tubeLeakFraction',
       'sgA.primaryToSecondaryLeakKgPerS',
       'sgA.secondaryRadiationMSvPerH',
@@ -437,6 +450,7 @@ describe('process plant runtime', () => {
       const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
 
       expect(inventoryAfter - inventoryBefore).toBeCloseTo((feedwaterFlow + tubeLeakFlow - steamOutflow) * dtSeconds, 6)
+      expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryBalanceResidualKg')))).toBeCloseTo(0, 6)
     }
   })
 
@@ -454,6 +468,8 @@ describe('process plant runtime', () => {
       const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
 
       expect(steamMassAfter - steamMassBefore).toBeCloseTo((boilingRate - steamOutflow) * dtSeconds, 6)
+      expect(Number(runtime.readVariable(valueOf('sgA.steamOutflowKgPerS')))).toBeCloseTo(steamOutflow, 6)
+      expect(Number(runtime.readVariable(valueOf('sgA.steamMassBalanceResidualKg')))).toBeCloseTo(0, 6)
     }
   })
 
@@ -465,6 +481,7 @@ describe('process plant runtime', () => {
     const heatTransferMw = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
     const boilingRateKgPerS = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
     expect(boilingRateKgPerS * latentHeatSteamMjPerKg).toBeCloseTo(heatTransferMw, 6)
+    expect(Number(runtime.readVariable(valueOf('sgA.boilingEnergyResidualMw')))).toBeCloseTo(0, 6)
   })
 
   test('runtime snapshots carry graph identity and reject mismatched graph restores', () => {
@@ -664,33 +681,29 @@ describe('process plant runtime', () => {
     const netSteamMassFlow = Number(runtime.readVariable(valueOf('pressurizer.steamMassFlowKgPerS')))
 
     expect(steamMassAfter - steamMassBefore).toBeCloseTo(netSteamMassFlow * dtSeconds, 6)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.steamMassBalanceResidualKg')))).toBeCloseTo(0, 6)
 
     runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.reliefValvePositionFraction'), value: 1 })
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
     expect(Number(runtime.readVariable(valueOf('pressurizer.steamMassFlowKgPerS')))).toBeLessThan(0)
   })
 
-  test('pressurizer pressure responds to pressurizer inventory as well as primary inventory', () => {
+  test('pressurizer pressure target follows steam-space state and primary inventory bias', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
-    const noLevelPressureGain = createProcessPlantRuntime({
-      system: compiledSystemWithParameters({ pressurizer: { levelPressureGainMPaPerFraction: 0 } }),
-    })
 
-    for (let index = 0; index < 40; index += 1) {
-      runtime.tick(100)
-      noLevelPressureGain.tick(100)
-    }
-    const initialLevel = Number(runtime.readVariable(valueOf('pressurizer.levelPercent')))
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+    const initialSteamVolume = Number(runtime.readVariable(valueOf('pressurizer.steamVolumeM3')))
+    const initialPressureTarget = Number(runtime.readVariable(valueOf('pressurizer.pressureTargetMPa')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.sprayFlowKgPerS'), value: 160 })
-    noLevelPressureGain.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.sprayFlowKgPerS'), value: 160 })
-    for (let index = 0; index < 160; index += 1) {
-      runtime.tick(100)
-      noLevelPressureGain.tick(100)
-    }
+    for (let index = 0; index < 160; index += 1) runtime.tick(100)
 
-    expect(Number(runtime.readVariable(valueOf('pressurizer.levelPercent')))).toBeGreaterThan(initialLevel)
-    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))
-      .toBeGreaterThan(Number(noLevelPressureGain.readVariable(valueOf('pressurizer.pressureMPa'))))
+    const steamPressure = Number(runtime.readVariable(valueOf('pressurizer.steamPressureMPa')))
+    const target = Number(runtime.readVariable(valueOf('pressurizer.pressureTargetMPa')))
+    const vesselBias = Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))
+    expect(Number(runtime.readVariable(valueOf('pressurizer.steamVolumeM3')))).toBeLessThan(initialSteamVolume)
+    expect(target).toBeCloseTo(steamPressure + vesselBias, 3)
+    expect(target).toBeLessThan(initialPressureTarget)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.waterInventoryBalanceResidualKg')))).toBeCloseTo(0, 6)
   })
 
   test('primary coolant inventory feeds the canonical pressurizer pressure response', () => {

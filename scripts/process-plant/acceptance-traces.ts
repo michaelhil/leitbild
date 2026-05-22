@@ -42,12 +42,22 @@ const telemetryVariables = [
   'vessel.meanPrimaryCoolantTemperatureC',
   'vessel.primaryCoolantInventoryKg',
   'pressurizer.pressureMPa',
+  'pressurizer.steamPressureMPa',
+  'pressurizer.pressureTargetMPa',
   'pressurizer.steamMassKg',
+  'pressurizer.steamVolumeM3',
+  'pressurizer.waterInventoryBalanceResidualKg',
+  'pressurizer.steamMassBalanceResidualKg',
   'pressurizer.reliefFlowKgPerS',
   'sgA.levelPercent',
   'sgA.pressureMPa',
+  'sgA.pressureTargetMPa',
   'sgA.steamMassKg',
+  'sgA.steamOutflowKgPerS',
   'sgA.feedwaterFlowKgPerS',
+  'sgA.secondaryInventoryBalanceResidualKg',
+  'sgA.steamMassBalanceResidualKg',
+  'sgA.boilingEnergyResidualMw',
   'sgA.primaryToSecondaryLeakKgPerS',
   'sgA.secondaryRadiationMSvPerH',
   'rcpA.loopFlowKgPerS',
@@ -284,6 +294,18 @@ const maxAbsoluteSeriesDelta = (
   return maxDelta
 }
 
+const maxAbsoluteValue = (
+  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
+  path: string,
+): number => {
+  let maxValue = 0
+  for (const point of seriesFor(telemetry, path).points) {
+    if (typeof point.value !== 'number') throw new Error(`acceptance series is not numeric: ${path}`)
+    maxValue = Math.max(maxValue, Math.abs(point.value))
+  }
+  return maxValue
+}
+
 const maxAbsoluteComputedDelta = (
   telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
   observedPath: string,
@@ -322,10 +344,14 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'core.fuelStoredEnergyMj',
   'vessel.primaryCoolantInventoryKg',
   'pressurizer.pressureMPa',
+  'pressurizer.steamPressureMPa',
+  'pressurizer.pressureTargetMPa',
   'pressurizer.steamMassKg',
+  'pressurizer.steamVolumeM3',
   'pressurizer.reliefFlowKgPerS',
   'sgA.levelPercent',
   'sgA.pressureMPa',
+  'sgA.pressureTargetMPa',
   'sgA.steamMassKg',
   'sgA.feedwaterFlowKgPerS',
   'sgA.primaryToSecondaryLeakKgPerS',
@@ -363,6 +389,11 @@ const evaluateTelemetryIntegrity = (
     'vessel.primaryPressureBiasMPa',
     ['vessel.compressibilityPressureBiasMPa', 'vessel.thermalExpansionPressureBiasMPa'],
   )
+  const maxSgInventoryResidual = maxAbsoluteValue(telemetry, 'sgA.secondaryInventoryBalanceResidualKg')
+  const maxSgSteamResidual = maxAbsoluteValue(telemetry, 'sgA.steamMassBalanceResidualKg')
+  const maxSgBoilingEnergyResidual = maxAbsoluteValue(telemetry, 'sgA.boilingEnergyResidualMw')
+  const maxPressurizerWaterResidual = maxAbsoluteValue(telemetry, 'pressurizer.waterInventoryBalanceResidualKg')
+  const maxPressurizerSteamResidual = maxAbsoluteValue(telemetry, 'pressurizer.steamMassBalanceResidualKg')
   return [
     check(
       caseId,
@@ -393,6 +424,18 @@ const evaluateTelemetryIntegrity = (
       'reactor vessel pressure bias equals compressibility plus thermal expansion',
       maxPressureBiasMismatch < 1e-6,
       `maxMismatch=${maxPressureBiasMismatch.toExponential(2)}MPa`,
+    ),
+    check(
+      caseId,
+      'steam generator liquid and steam balances remain conservative',
+      maxSgInventoryResidual < 75 && maxSgSteamResidual < 25 && maxSgBoilingEnergyResidual < 1e-6,
+      `inventory=${maxSgInventoryResidual.toExponential(2)}kg steam=${maxSgSteamResidual.toExponential(2)}kg energy=${maxSgBoilingEnergyResidual.toExponential(2)}MW`,
+    ),
+    check(
+      caseId,
+      'pressurizer water and steam balances remain conservative',
+      maxPressurizerWaterResidual < 5 && maxPressurizerSteamResidual < 5,
+      `water=${maxPressurizerWaterResidual.toExponential(2)}kg steam=${maxPressurizerSteamResidual.toExponential(2)}kg`,
     ),
   ]
 }

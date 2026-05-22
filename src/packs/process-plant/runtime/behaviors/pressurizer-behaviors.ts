@@ -21,6 +21,11 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'waterInventoryKg',
       'steamMassKg',
       'steamMassFlowKgPerS',
+      'steamVolumeM3',
+      'steamPressureMPa',
+      'pressureTargetMPa',
+      'waterInventoryBalanceResidualKg',
+      'steamMassBalanceResidualKg',
       'waterTemperatureC',
       'steamTemperatureC',
       'heaterPowerMw',
@@ -35,6 +40,11 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'waterInventoryKg',
       'steamMassKg',
       'steamMassFlowKgPerS',
+      'steamVolumeM3',
+      'steamPressureMPa',
+      'pressureTargetMPa',
+      'waterInventoryBalanceResidualKg',
+      'steamMassBalanceResidualKg',
       'waterTemperatureC',
       'steamTemperatureC',
       'reliefFlowKgPerS',
@@ -44,7 +54,10 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
       const nominalInventory = parameterNumber(component, 'nominalWaterInventoryKg')
       const nominalSteamMass = optionalParameterNumber(component, 'nominalSteamMassKg', 1_800)
+      const nominalWaterDensity = optionalParameterNumber(component, 'nominalWaterDensityKgPerM3', 700)
       const fullInventory = nominalInventory / Math.max(0.01, nominalLevelFraction)
+      const fullVolume = fullInventory / nominalWaterDensity
+      const nominalSteamVolume = Math.max(0.1, (fullInventory - nominalInventory) / nominalWaterDensity)
       const reliefSetpoint = optionalParameterNumber(component, 'reliefSetpointMPa', nominalPressure * 1.08)
       const reliefCapacity = optionalParameterNumber(component, 'reliefCapacityKgPerS', 80)
       const currentPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
@@ -88,21 +101,21 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       const steamMassNetFlow = heaterSteamGeneration - sprayCondensation - reliefFlow
 
       const currentInventory = context.readNumber(componentVariablePath(component, 'waterInventoryKg'))
-      const nextInventory = clamp(currentInventory + (sprayFlow + sprayCondensation - reliefFlow - heaterSteamGeneration) * context.dtSeconds, 0, fullInventory)
-      const thermalPressureBias = (nextWaterTemperature - optionalParameterNumber(component, 'initialWaterTemperatureC', 345)) * 0.035
-      const levelPressureBias = ((nextInventory / fullInventory) - nominalLevelFraction) * optionalParameterNumber(component, 'levelPressureGainMPaPerFraction', 1.4)
-      const steamMassPressureBias = ((nextSteamMass / nominalSteamMass) - 1) * optionalParameterNumber(component, 'steamMassPressureGainMPaPerFraction', nominalPressure * 0.7)
-      const pressureRate =
-        heaterPower * optionalParameterNumber(component, 'heaterPressureRampMPaPerMwS', 0.0009)
-        - sprayFlow * optionalParameterNumber(component, 'sprayPressureRampMPaPerKgS', 0.00012)
-        - reliefFlow * optionalParameterNumber(component, 'reliefPressureRampMPaPerKgS', 0.0012)
+      const waterNetFlow = sprayFlow + sprayCondensation - heaterSteamGeneration
+      const nextInventory = clamp(currentInventory + waterNetFlow * context.dtSeconds, 0, fullInventory)
+      const steamVolume = Math.max(0.1, fullVolume - nextInventory / nominalWaterDensity)
+      const initialSteamTemperature = optionalParameterNumber(component, 'initialSteamTemperatureC', saturationTemperatureCFromPressureMPa(nominalPressure))
+      const steamPressure = nominalPressure
+        * (nextSteamMass / nominalSteamMass)
+        * ((nextSteamTemperature + 273.15) / Math.max(1, initialSteamTemperature + 273.15))
+        * (nominalSteamVolume / steamVolume)
       const reactorVessel = findFirstComponentByKind(system, 'reactorVessel')
       const inventoryPressureBias = reactorVessel === null || !context.has(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
         ? 0
         : context.readNumber(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
-      const pressureTarget = clamp(nominalPressure + thermalPressureBias + levelPressureBias + steamMassPressureBias + inventoryPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
+      const pressureTarget = clamp(steamPressure + inventoryPressureBias, 0.2, 18)
       const nextPressure = relaxToward(
-        currentPressure + pressureRate * context.dtSeconds,
+        currentPressure,
         pressureTarget,
         context.dtSeconds,
         optionalParameterNumber(component, 'pressureTimeConstantS', 12),
@@ -114,6 +127,11 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       context.write(componentVariablePath(component, 'waterInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       context.write(componentVariablePath(component, 'steamMassFlowKgPerS'), steamMassNetFlow)
+      context.write(componentVariablePath(component, 'steamVolumeM3'), steamVolume)
+      context.write(componentVariablePath(component, 'steamPressureMPa'), clamp(steamPressure, 0.2, 18))
+      context.write(componentVariablePath(component, 'pressureTargetMPa'), pressureTarget)
+      context.write(componentVariablePath(component, 'waterInventoryBalanceResidualKg'), nextInventory - currentInventory - waterNetFlow * context.dtSeconds)
+      context.write(componentVariablePath(component, 'steamMassBalanceResidualKg'), nextSteamMass - currentSteamMass - steamMassNetFlow * context.dtSeconds)
       context.write(componentVariablePath(component, 'levelPercent'), clamp((nextInventory / fullInventory) * 100, 0, 100))
       context.write(componentVariablePath(component, 'pressureMPa'), clamp(nextPressure, 0.2, 18))
     },

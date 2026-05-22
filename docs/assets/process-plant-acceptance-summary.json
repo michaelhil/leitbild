@@ -4,10 +4,10 @@
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
   "caseCount": 7,
-  "checkCount": 54,
+  "checkCount": 68,
   "failedCheckCount": 0,
-  "wallMs": 1292.03025,
-  "realtimeFactor": 185.7541648115437,
+  "wallMs": 1755.7517090000001,
+  "realtimeFactor": 136.69358757833336,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -20,7 +20,7 @@
       "caseId": "baseline",
       "description": "baseline pressure stays plausible",
       "passed": true,
-      "details": "endPressure=16.20MPa"
+      "details": "endPressure=15.10MPa"
     },
     {
       "caseId": "baseline",
@@ -59,16 +59,28 @@
       "details": "maxMismatch=0.00e+0MPa"
     },
     {
+      "caseId": "baseline",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=1.57e+1kg steam=1.82e-12kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "baseline",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
       "caseId": "sgtr",
       "description": "SGTR creates primary-to-secondary leak flow",
       "passed": true,
-      "details": "maxLeak=199.26kg/s"
+      "details": "maxLeak=178.27kg/s"
     },
     {
       "caseId": "sgtr",
       "description": "SGTR raises secondary radiation indication",
       "passed": true,
-      "details": "maxRadiation=134.480mSv/h"
+      "details": "maxRadiation=119.646mSv/h"
     },
     {
       "caseId": "sgtr",
@@ -99,6 +111,18 @@
       "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
       "passed": true,
       "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=2.99e+1kg steam=1.80e-12kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
     },
     {
       "caseId": "loss-feedwater",
@@ -143,6 +167,18 @@
       "details": "maxMismatch=0.00e+0MPa"
     },
     {
+      "caseId": "loss-feedwater",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=3.62e-12kg steam=9.09e-13kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
       "caseId": "rcp-trip",
       "description": "RCP trip begins a coastdown, not an instant zero",
       "passed": true,
@@ -185,10 +221,22 @@
       "details": "maxMismatch=0.00e+0MPa"
     },
     {
+      "caseId": "rcp-trip",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=3.80e+1kg steam=9.07e-13kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
       "caseId": "relief-open",
       "description": "relief valve produces relief flow",
       "passed": true,
-      "details": "maxRelief=69.99kg/s"
+      "details": "maxRelief=67.18kg/s"
     },
     {
       "caseId": "relief-open",
@@ -225,6 +273,18 @@
       "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
       "passed": true,
       "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=1.57e+1kg steam=1.82e-12kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=2.42e+0kg"
     },
     {
       "caseId": "load-reduction",
@@ -287,10 +347,22 @@
       "details": "maxMismatch=0.00e+0MPa"
     },
     {
+      "caseId": "load-reduction",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=2.62e+1kg steam=1.64e+1kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
       "caseId": "mixed-transient",
       "description": "mixed transient creates tube leak flow",
       "passed": true,
-      "details": "maxLeak=144.93kg/s"
+      "details": "maxLeak=132.87kg/s"
     },
     {
       "caseId": "mixed-transient",
@@ -333,6 +405,18 @@
       "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
       "passed": true,
       "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=4.50e+1kg steam=9.09e-13kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
     }
   ],
   "performanceChecks": [
@@ -340,7 +424,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=185.8x min=20.0x"
+      "details": "realtimeFactor=136.7x min=20.0x"
     }
   ],
   "artifacts": {

@@ -56,12 +56,20 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'steamFlowKgPerS') return 0
     if (localPath === 'boilingRateKgPerS') return 0
     if (localPath === 'feedwaterFlowKgPerS') return 0
+    if (localPath === 'steamOutflowKgPerS') return 0
     if (localPath === 'steamQualityFraction') return 0.99
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
     if (localPath === 'collapsedLevelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
     if (localPath === 'voidFraction') return 0
     if (localPath === 'swellLevelPercent') return 0
     if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
+    if (localPath === 'pressureTargetMPa') return parameterNumber(component, 'nominalPressureMPa')
+    if (localPath === 'steamMassPressureBiasMPa') return 0
+    if (localPath === 'temperaturePressureBiasMPa') return 0
+    if (localPath === 'inventoryPressureBiasMPa') return 0
+    if (localPath === 'secondaryInventoryBalanceResidualKg') return 0
+    if (localPath === 'steamMassBalanceResidualKg') return 0
+    if (localPath === 'boilingEnergyResidualMw') return 0
     if (localPath === 'tubeLeakFraction') return 0
     if (localPath === 'primaryToSecondaryLeakKgPerS') return 0
     if (localPath === 'secondaryRadiationMSvPerH') return 0.02
@@ -90,6 +98,15 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'waterInventoryKg') return parameterNumber(component, 'nominalWaterInventoryKg')
     if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 1_800)
     if (localPath === 'steamMassFlowKgPerS') return 0
+    if (localPath === 'steamVolumeM3') {
+      const density = optionalParameterNumber(component, 'nominalWaterDensityKgPerM3', 700)
+      const fullInventory = parameterNumber(component, 'nominalWaterInventoryKg') / Math.max(0.01, nominalLevelFraction)
+      return Math.max(0.1, (fullInventory - parameterNumber(component, 'nominalWaterInventoryKg')) / density)
+    }
+    if (localPath === 'steamPressureMPa') return nominalPressure
+    if (localPath === 'pressureTargetMPa') return nominalPressure
+    if (localPath === 'waterInventoryBalanceResidualKg') return 0
+    if (localPath === 'steamMassBalanceResidualKg') return 0
     if (localPath === 'waterTemperatureC') return optionalParameterNumber(component, 'initialWaterTemperatureC', 345)
     if (localPath === 'steamTemperatureC') return optionalParameterNumber(component, 'initialSteamTemperatureC', saturationTemperatureCFromPressureMPa(nominalPressure))
     if (localPath === 'heaterPowerMw') return 0

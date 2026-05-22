@@ -93,12 +93,14 @@ export const processQuantitySchema = z.enum([
   'mass',
   'massDelta',
   'power',
+  'powerDelta',
   'pressure',
   'pressureDelta',
   'radiationDoseRate',
   'ratio',
   'reactivity',
   'temperature',
+  'volume',
 ])
 export type ProcessQuantity = z.infer<typeof processQuantitySchema>
 
@@ -112,6 +114,7 @@ export const processUnitSchema = z.enum([
   'MJ',
   'MPa',
   'mSv/h',
+  'm3',
   'MW',
   'Pa',
   'pcm',
@@ -129,12 +132,14 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   mass: new Set(['kg']),
   massDelta: new Set(['kg']),
   power: new Set(['MW']),
+  powerDelta: new Set(['MW']),
   pressure: new Set(['MPa', 'Pa']),
   pressureDelta: new Set(['MPa', 'Pa']),
   radiationDoseRate: new Set(['mSv/h']),
   ratio: new Set(['fraction', 'percent']),
   reactivity: new Set(['pcm']),
   temperature: new Set(['degC']),
+  volume: new Set(['m3']),
 }
 
 export const processVariableValueSchema = z.union([z.number().finite(), z.boolean()])
