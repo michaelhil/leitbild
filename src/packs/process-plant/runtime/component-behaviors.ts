@@ -1,11 +1,9 @@
-import type { CompiledComponent, VariablePath } from '../graph/index.ts'
 import { primaryLoopIdForPump } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import type { ProcessPlantSolverPhase, ProcessPlantValue } from './model.ts'
+import type { ProcessPlantSolverPhase } from './model.ts'
 import {
   componentVariablePath,
   createBehaviorContext,
-  processLinkVariablePath,
   type ComponentBehaviorDefinition,
   type ComponentInitialReconciliationDefinition,
 } from './behavior-contract.ts'
@@ -23,8 +21,25 @@ import {
   pumpHeadResistanceFlowTarget,
 } from './physics.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
+import {
+  averageFor,
+  clamp,
+  findFirstComponentByKind,
+  hasComponentVariable,
+  optionalParameterNumber,
+  parameterNumber,
+  sumComponentValueByKind,
+} from './component-helpers.ts'
+import {
+  averageIncomingComponentLinkValue as averageIncomingLinkValue,
+  averageOutgoingComponentLinkValue as averageOutgoingLinkValue,
+  sumIncomingComponentLinkValue as sumIncomingLinkValue,
+  sumOutgoingComponentLinkValue as sumOutgoingLinkValue,
+  sumProcessLinkValueByService as sumLinkValueByService,
+} from './component-link-helpers.ts'
 
-export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
+export { averageFor, clamp, parameterNumber } from './component-helpers.ts'
+export { initialComponentValueFor } from './component-initial-values.ts'
 
 export const approach = (current: number, target: number, maxDelta: number): number =>
   boundedApproach({ current, target, maxDelta })
@@ -32,280 +47,6 @@ export const approach = (current: number, target: number, maxDelta: number): num
 export const relaxToward = (current: number, target: number, dtSeconds: number, timeConstantSeconds: number): number =>
   firstOrderLag({ current, target, dtSeconds, timeConstantSeconds })
 
-export const parameterNumber = (component: CompiledComponent, key: string): number => {
-  const parameters = component.parameters
-  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
-  const value = (parameters as Record<string, unknown>)[key]
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`component ${component.id} missing numeric parameter ${key}`)
-  return value
-}
-
-const optionalParameterNumber = (component: CompiledComponent, key: string, defaultValue: number): number => {
-  const parameters = component.parameters
-  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
-  const value = (parameters as Record<string, unknown>)[key]
-  if (value === undefined) return defaultValue
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`component ${component.id} parameter ${key} must be numeric`)
-  return value
-}
-
-const optionalParameterBoolean = (component: CompiledComponent, key: string, defaultValue: boolean): boolean => {
-  const parameters = component.parameters
-  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
-  const value = (parameters as Record<string, unknown>)[key]
-  if (value === undefined) return defaultValue
-  if (typeof value !== 'boolean') throw new Error(`component ${component.id} parameter ${key} must be boolean`)
-  return value
-}
-
-const hasComponentVariable = (component: CompiledComponent, localPath: string): boolean =>
-  component.variables.some(variable => variable.path === componentVariablePath(component, localPath))
-
-export const averageFor = (
-  components: ReadonlyArray<CompiledComponent>,
-  valueFor: (component: CompiledComponent) => number | null,
-): number | null => {
-  let total = 0
-  let count = 0
-  for (const component of components) {
-    const value = valueFor(component)
-    if (value === null) continue
-    total += value
-    count += 1
-  }
-  return count === 0 ? null : total / count
-}
-
-const averageIncomingLinkValue = (
-  system: CompiledProcessPlantSystem,
-  component: CompiledComponent,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
-): number | null => {
-  let total = 0
-  let count = 0
-  for (const linkIndex of system.graph.incomingLinksByComponent[component.index] ?? []) {
-    const link = system.graph.links[linkIndex]
-    if (!link) continue
-    if (!linkMatches(link)) continue
-    const path = processLinkVariablePath(link, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-    count += 1
-  }
-  return count === 0 ? null : total / count
-}
-
-const averageOutgoingLinkValue = (
-  system: CompiledProcessPlantSystem,
-  component: CompiledComponent,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
-): number | null => {
-  let total = 0
-  let count = 0
-  for (const linkIndex of system.graph.outgoingLinksByComponent[component.index] ?? []) {
-    const link = system.graph.links[linkIndex]
-    if (!link) continue
-    if (!linkMatches(link)) continue
-    const path = processLinkVariablePath(link, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-    count += 1
-  }
-  return count === 0 ? null : total / count
-}
-
-const sumIncomingLinkValue = (
-  system: CompiledProcessPlantSystem,
-  component: CompiledComponent,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
-): number => {
-  let total = 0
-  for (const linkIndex of system.graph.incomingLinksByComponent[component.index] ?? []) {
-    const link = system.graph.links[linkIndex]
-    if (!link) continue
-    if (!linkMatches(link)) continue
-    const path = processLinkVariablePath(link, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-  }
-  return total
-}
-
-const sumOutgoingLinkValue = (
-  system: CompiledProcessPlantSystem,
-  component: CompiledComponent,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
-): number => {
-  let total = 0
-  for (const linkIndex of system.graph.outgoingLinksByComponent[component.index] ?? []) {
-    const link = system.graph.links[linkIndex]
-    if (!link) continue
-    if (!linkMatches(link)) continue
-    const path = processLinkVariablePath(link, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-  }
-  return total
-}
-
-const sumLinkValueByService = (
-  system: CompiledProcessPlantSystem,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-  service: string,
-  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
-): number => {
-  let total = 0
-  for (const link of system.graph.links) {
-    if (link.service !== service) continue
-    if (!linkMatches(link)) continue
-    const path = processLinkVariablePath(link, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-  }
-  return total
-}
-
-const findFirstComponentByKind = (
-  system: CompiledProcessPlantSystem,
-  kind: string,
-): CompiledComponent | null =>
-  system.graph.components.find(component => String(component.kind) === kind) ?? null
-
-const sumComponentValueByKind = (
-  system: CompiledProcessPlantSystem,
-  kind: string,
-  localPath: string,
-  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
-): number => {
-  let total = 0
-  for (const component of system.graph.components) {
-    if (String(component.kind) !== kind) continue
-    const path = componentVariablePath(component, localPath)
-    if (!context.has(path)) continue
-    total += context.readNumber(path)
-  }
-  return total
-}
-
-export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
-  const localPath = String(path).slice(String(component.id).length + 1)
-  if (component.kind === 'reactorCore') {
-    const ratedPowerMw = parameterNumber(component, 'ratedPowerMw')
-    const initialPowerFraction = parameterNumber(component, 'initialPowerFraction')
-    if (localPath === 'powerMw') return ratedPowerMw * initialPowerFraction
-    if (localPath === 'reactivityPcm') return 0
-    if (localPath === 'rodInsertionFraction') return clamp(1 - initialPowerFraction, 0, 1)
-    if (localPath === 'coolantInletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290)
-    if (localPath === 'coolantOutletTemperatureC') return optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290) + 32
-    if (localPath === 'fuelTemperatureC') {
-      const coolantOutlet = optionalParameterNumber(component, 'initialCoolantInletTemperatureC', 290) + 32
-      return coolantOutlet + optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140) * initialPowerFraction
-    }
-    if (localPath === 'decayHeatMw') return ratedPowerMw * initialPowerFraction * optionalParameterNumber(component, 'decayHeatFractionAtPower', 0.06)
-    if (localPath === 'heatToCoolantMw') return ratedPowerMw * initialPowerFraction
-  }
-  if (component.kind === 'steamGenerator') {
-    if (localPath === 'levelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
-    if (localPath === 'pressureMPa') return parameterNumber(component, 'nominalPressureMPa')
-    if (localPath === 'heatTransferMw') return 0
-    if (localPath === 'primaryInletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322)
-    if (localPath === 'primaryOutletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322) - 32
-    if (localPath === 'tubeMetalTemperatureC') {
-      const primary = optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322)
-      const secondary = optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285)
-      return optionalParameterNumber(component, 'tubeMetalInitialTemperatureC', (primary + secondary) / 2)
-    }
-    if (localPath === 'secondaryTemperatureC') return optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285)
-    if (localPath === 'steamFlowKgPerS') return 0
-    if (localPath === 'boilingRateKgPerS') return 0
-    if (localPath === 'feedwaterFlowKgPerS') return 0
-    if (localPath === 'steamQualityFraction') return 0.99
-    if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
-    if (localPath === 'collapsedLevelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
-    if (localPath === 'voidFraction') return 0
-    if (localPath === 'swellLevelPercent') return 0
-    if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
-    if (localPath === 'tubeLeakFraction') return 0
-    if (localPath === 'primaryToSecondaryLeakKgPerS') return 0
-    if (localPath === 'secondaryRadiationMSvPerH') return 0.02
-  }
-  if (component.kind === 'reactorVessel') {
-    const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
-    const initialFraction = parameterNumber(component, 'initialPrimaryCoolantInventoryFraction')
-    if (localPath === 'primaryCoolantInventoryKg') return nominalInventory * initialFraction
-    if (localPath === 'primaryCoolantInventoryDeviationKg') return nominalInventory * (initialFraction - 1)
-    if (localPath === 'primaryPressureBiasMPa') return optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0) * nominalInventory * (initialFraction - 1)
-    if (localPath === 'chargingFlowKgPerS') return 0
-    if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
-    if (localPath === 'reliefOutflowKgPerS') return 0
-    if (localPath === 'primaryLeakFlowKgPerS') return 0
-    if (localPath === 'tubeLeakFlowKgPerS') return 0
-    if (localPath === 'netInventoryFlowKgPerS') return -optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
-  }
-  if (component.kind === 'pressurizer') {
-    const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
-    const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
-    if (localPath === 'pressureMPa') return nominalPressure
-    if (localPath === 'levelPercent') return nominalLevelFraction * 100
-    if (localPath === 'waterInventoryKg') return parameterNumber(component, 'nominalWaterInventoryKg')
-    if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 1_800)
-    if (localPath === 'steamMassFlowKgPerS') return 0
-    if (localPath === 'waterTemperatureC') return optionalParameterNumber(component, 'initialWaterTemperatureC', 345)
-    if (localPath === 'steamTemperatureC') return optionalParameterNumber(component, 'initialSteamTemperatureC', saturationTemperatureCFromPressureMPa(nominalPressure))
-    if (localPath === 'heaterPowerMw') return 0
-    if (localPath === 'sprayFlowKgPerS') return 0
-    if (localPath === 'reliefValvePositionFraction') return 0
-    if (localPath === 'reliefFlowKgPerS') return 0
-  }
-  if (component.kind === 'centrifugalPump') {
-    const running = optionalParameterBoolean(component, 'initialRunning', true)
-    const primaryLoopId = primaryLoopIdForPump(component)
-    if (localPath === 'running') return optionalParameterBoolean(component, 'initialRunning', true)
-    if (localPath === 'speedFraction') return 1
-    if (localPath === 'flowKgPerS') return running ? parameterNumber(component, 'nominalFlowKgPerS') : 0
-    if (localPath === 'developedHeadPa') return running ? parameterNumber(component, 'nominalHeadPa') : 0
-    if (localPath === 'loopFlowTargetKgPerS') return primaryLoopId === null ? 0 : running ? parameterNumber(component, 'nominalFlowKgPerS') : optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
-    if (localPath === 'loopFlowKgPerS') return primaryLoopId === null ? 0 : running ? parameterNumber(component, 'nominalFlowKgPerS') : optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
-  }
-  if (component.kind === 'processTank') {
-    const nominalInventory = parameterNumber(component, 'nominalInventoryKg')
-    const initialFraction = parameterNumber(component, 'initialInventoryFraction')
-    if (localPath === 'inventoryKg') return nominalInventory * initialFraction
-    if (localPath === 'levelPercent') return initialFraction * 100
-    if (localPath === 'temperatureC') return parameterNumber(component, 'initialTemperatureC')
-    if (localPath === 'makeupFlowKgPerS') return parameterNumber(component, 'makeupFlowKgPerS')
-    if (localPath === 'availableOutletFlowKgPerS') return parameterNumber(component, 'maxOutletFlowKgPerS')
-  }
-  if (component.kind === 'feedwaterSource') {
-    if (localPath === 'flowKgPerS') return parameterNumber(component, 'nominalFlowKgPerS')
-    if (localPath === 'temperatureC') return parameterNumber(component, 'temperatureC')
-  }
-  if (component.kind === 'turbineLoadSink') {
-    const initialLoadFraction = parameterNumber(component, 'initialLoadFraction')
-    if (localPath === 'electricMw') return parameterNumber(component, 'nominalElectricMw') * initialLoadFraction
-    if (localPath === 'loadFraction') return initialLoadFraction
-    if (localPath === 'steamFlowKgPerS') return parameterNumber(component, 'nominalSteamFlowKgPerS') * initialLoadFraction
-  }
-  if (component.kind === 'condenserSink') {
-    if (localPath === 'steamFlowKgPerS') return 0
-    if (localPath === 'condensateProductionKgPerS') return 0
-    if (localPath === 'condensateInventoryKg') return parameterNumber(component, 'nominalCondensateInventoryKg') * parameterNumber(component, 'initialCondensateInventoryFraction')
-    if (localPath === 'condensateLevelPercent') return parameterNumber(component, 'initialCondensateInventoryFraction') * 100
-    if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
-    if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
-    if (localPath === 'backPressurePa') return 8_000
-  }
-  throw new Error(`component ${component.id} has no runtime initializer for variable ${path}`)
-}
 
 export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {

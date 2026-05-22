@@ -124,6 +124,7 @@ export const compilePlantGraph = (
   const spec = plantGraphSpecSchema.parse(input)
   assertUnique(spec.components, component => component.id, 'component id')
   assertUnique(spec.connections, connection => connection.id, 'connection id')
+  assertUnique(spec.publishedVariables, path => path, 'published variable')
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()

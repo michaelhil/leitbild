@@ -79,6 +79,19 @@ const assertExpectedVariable = (
   if (!localPaths.has(String(path))) throw new Error(`fluid connection ${link.id} with solverModel ${link.solverModel} must declare variable ${path}`)
 }
 
+const assertOnlyContractVariables = (
+  link: CompiledProcessLink,
+  localPaths: ReadonlySet<string>,
+  contract: FluidLinkContract,
+): void => {
+  const allowedPaths = new Set([...contract.requiredVariables, ...contract.optionalVariables])
+  for (const path of localPaths) {
+    if (!allowedPaths.has(path)) {
+      throw new Error(`fluid connection ${link.id} with solverModel ${link.solverModel} cannot declare unsupported variable ${path}`)
+    }
+  }
+}
+
 export const validateProcessLinkContract = (link: CompiledProcessLink): void => {
   if (link.kind !== 'fluidFlow') {
     if (link.solverModel !== undefined || link.nominalFluid !== undefined || link.designPhase !== undefined) {
@@ -107,6 +120,7 @@ export const validateProcessLinkContract = (link: CompiledProcessLink): void => 
   for (const requiredVariable of contract.requiredVariables) {
     assertExpectedVariable(link, localPaths, requiredVariable)
   }
+  assertOnlyContractVariables(link, localPaths, contract)
 
   if (link.service === 'primaryCoolant') {
     assertExpectedVariable(link, localPaths, 'pressureMPa')

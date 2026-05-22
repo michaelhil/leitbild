@@ -430,6 +430,18 @@ describe('process plant graph foundation', () => {
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('published variable does not exist')
   })
 
+  test('rejects duplicate published variables before compilation hides them in a set', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      publishedVariables: [
+        ...pressurizedWaterReactorPlantSpec.publishedVariables,
+        pressurizedWaterReactorPlantSpec.publishedVariables[0],
+      ],
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate published variable')
+  })
+
   test('rejects unsupported initial state instead of validating it as parameters', () => {
     const invalid = plantGraph({
       id: 'process-plant.unsupported-initial-state.v1',
@@ -658,6 +670,33 @@ describe('process plant graph foundation', () => {
     }
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection rcs-hot-leg-a with solverModel incompressibleLiquid must declare variable pressureMPa')
+  })
+
+  test('rejects link variables outside the declared solver model contract', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'main-feedwater-pump-a-to-header'
+        ? {
+            ...connection,
+            variables: [
+              ...connection.variables,
+              {
+                path: 'qualityFraction',
+                label: 'Invalid liquid quality',
+                kind: 'derived',
+                domain: 'hydraulic',
+                writable: false,
+                publish: 'telemetry',
+                quantity: 'ratio',
+                unit: 'fraction',
+                initialValue: 0,
+              },
+            ],
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection main-feedwater-pump-a-to-header with solverModel incompressibleLiquid cannot declare unsupported variable qualityFraction')
   })
 
   test('generates Mermaid documentation from compiled topology', () => {

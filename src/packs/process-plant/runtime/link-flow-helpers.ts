@@ -1,7 +1,7 @@
 import type { CompiledProcessLink } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { clamp } from './component-behaviors.ts'
 import { processLinkVariablePath } from './behavior-contract.ts'
+import { clamp } from './component-helpers.ts'
 
 export type LinkBehaviorReadContext = {
   readonly has: (path: ReturnType<typeof processLinkVariablePath>) => boolean
@@ -159,4 +159,3 @@ export const sourceLimitedPumpFlow = (
   if (incomingFlow.valuedLinks === 0) return 0
   return Math.min(pumpFlow, incomingFlow.total)
 }
-

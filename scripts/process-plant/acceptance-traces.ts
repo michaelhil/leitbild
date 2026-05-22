@@ -17,6 +17,11 @@ const artifactRoot = process.env.PROCESS_PLANT_ACCEPTANCE_ARTIFACT_ROOT ?? 'docs
 const traceSvgPath = `${artifactRoot}/process-plant-acceptance-traces.svg`
 const traceCsvPath = `${artifactRoot}/process-plant-acceptance-traces.csv`
 const summaryJsonPath = `${artifactRoot}/process-plant-acceptance-summary.json`
+const minRealtimeFactor = Number(process.env.PROCESS_PLANT_ACCEPTANCE_MIN_REALTIME_FACTOR ?? 20)
+
+if (!Number.isFinite(minRealtimeFactor) || minRealtimeFactor <= 0) {
+  throw new Error('PROCESS_PLANT_ACCEPTANCE_MIN_REALTIME_FACTOR must be a positive number when provided')
+}
 
 const variablePath = (value: string): VariablePath => value as VariablePath
 
@@ -397,6 +402,11 @@ const main = async (): Promise<void> => {
     return evaluateCase(trace.systemId as CaseId, trace.telemetry)
   })
   const failed = checks.filter(candidate => !candidate.passed)
+  const realtimeFactor = durationMs / wallMs
+  const performanceChecks = [
+    check('baseline', 'multi-case acceptance run remains comfortably faster than realtime', realtimeFactor >= minRealtimeFactor, `realtimeFactor=${realtimeFactor.toFixed(1)}x min=${minRealtimeFactor.toFixed(1)}x`),
+  ] satisfies ReadonlyArray<AcceptanceCheck>
+  const failedPerformanceChecks = performanceChecks.filter(candidate => !candidate.passed)
   await mkdir(dirname(traceSvgPath), { recursive: true })
   await writeFile(traceSvgPath, renderSvg(traces, checks))
   await writeFile(traceCsvPath, `${csvRowsFor(traces).join('\n')}\n`)
@@ -409,8 +419,10 @@ const main = async (): Promise<void> => {
     checkCount: checks.length,
     failedCheckCount: failed.length,
     wallMs,
-    realtimeFactor: durationMs / wallMs,
+    realtimeFactor,
+    minRealtimeFactor,
     checks,
+    performanceChecks,
     artifacts: {
       traceSvgPath,
       traceCsvPath,
@@ -421,11 +433,15 @@ const main = async (): Promise<void> => {
     const details = failed.map(item => `${item.caseId}: ${item.description} (${item.details})`).join('; ')
     throw new Error(`process plant acceptance failed: ${details}`)
   }
+  if (failedPerformanceChecks.length > 0) {
+    const details = failedPerformanceChecks.map(item => `${item.description} (${item.details})`).join('; ')
+    throw new Error(`process plant acceptance performance failed: ${details}`)
+  }
   console.log(`process plant acceptance passed ${checks.length}/${checks.length} checks`)
   console.log(`trace: ${traceSvgPath}`)
   console.log(`csv: ${traceCsvPath}`)
   console.log(`summary: ${summaryJsonPath}`)
-  console.log(`realtime factor: ${(durationMs / wallMs).toFixed(1)}x`)
+  console.log(`realtime factor: ${realtimeFactor.toFixed(1)}x`)
 }
 
 await main()

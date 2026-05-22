@@ -6,8 +6,9 @@
   "caseCount": 6,
   "checkCount": 13,
   "failedCheckCount": 0,
-  "wallMs": 1219.812375,
-  "realtimeFactor": 196.75157009290055,
+  "wallMs": 1112.368542,
+  "realtimeFactor": 215.75583175742128,
+  "minRealtimeFactor": 20,
   "checks": [
     {
       "caseId": "baseline",
@@ -86,6 +87,14 @@
       "description": "load reduction keeps output nonnegative",
       "passed": true,
       "details": "min=222.8MW"
+    }
+  ],
+  "performanceChecks": [
+    {
+      "caseId": "baseline",
+      "description": "multi-case acceptance run remains comfortably faster than realtime",
+      "passed": true,
+      "details": "realtimeFactor=215.8x min=20.0x"
     }
   ],
   "artifacts": {
