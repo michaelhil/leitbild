@@ -1,6 +1,7 @@
 import type { CompiledComponent, VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { componentVariablePath } from './behavior-contract.ts'
+import { boundedApproach, firstOrderLag } from './physics.ts'
 
 export type ComponentNumericReadContext = {
   readonly has: (path: VariablePath) => boolean
@@ -8,6 +9,12 @@ export type ComponentNumericReadContext = {
 }
 
 export const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
+
+export const approach = (current: number, target: number, maxDelta: number): number =>
+  boundedApproach({ current, target, maxDelta })
+
+export const relaxToward = (current: number, target: number, dtSeconds: number, timeConstantSeconds: number): number =>
+  firstOrderLag({ current, target, dtSeconds, timeConstantSeconds })
 
 export const parameterNumber = (component: CompiledComponent, key: string): number => {
   const parameters = component.parameters

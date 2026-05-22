@@ -1,7 +1,7 @@
 import type { CompiledProcessLink } from '../graph/index.ts'
 import { primaryLoopPumpForLink } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { approach, averageFor, clamp, parameterNumber, relaxToward } from './component-behaviors.ts'
+import { approach, averageFor, clamp, parameterNumber, relaxToward } from './component-helpers.ts'
 import {
   averageIncomingLinkValue,
   distributeFlowFromComponent,
@@ -51,6 +51,9 @@ const physicalNumber = (
   const value = link.physical?.[key]
   return value === undefined ? defaultValue : value
 }
+
+const physicalFlowCapacityKgPerS = (link: CompiledProcessLink): number =>
+  physicalNumber(link, 'nominalFlowKgPerS', Number.POSITIVE_INFINITY)
 
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {
@@ -109,7 +112,8 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
       if (primaryLoopPump === null && toComponent.kind === 'centrifugalPump') {
         flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
       }
-      context.write(processLinkVariablePath(link, 'flowKgPerS'), flowSource * valveFactor * (1 - leakFraction))
+      const capacity = physicalFlowCapacityKgPerS(link)
+      context.write(processLinkVariablePath(link, 'flowKgPerS'), Math.min(flowSource, capacity) * valveFactor * (1 - leakFraction))
     },
   },
   {

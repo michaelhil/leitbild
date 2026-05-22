@@ -40,6 +40,21 @@ const compiledSystemWithInitialState = (initialState: Record<string, unknown>) =
   initialState,
 })
 
+const compiledSystemWithConnectionPhysical = (
+  connectionId: string,
+  physical: Record<string, unknown>,
+) => compileProcessPlantSystem({
+  id: 'plant',
+  pack: 'process-plant',
+  componentLibrary: 'process-plant',
+  graph: {
+    ...pressurizedWaterReactorPlantSpec,
+    connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === connectionId
+      ? { ...connection, physical: { ...connection.physical, ...physical } }
+      : connection),
+  },
+})
+
 const valueOf = (path: string): VariablePath => path as VariablePath
 
 describe('process plant runtime', () => {
@@ -483,6 +498,17 @@ describe('process plant runtime', () => {
       path: valueOf('sg-a-steam-to-msiv-a.pressureMPa'),
       value: 1,
     })).toThrow('not writable')
+  })
+
+  test('process link physical capacity limits fluid flow without adding hidden components', () => {
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithConnectionPhysical('feedwater-control-valve-a-to-sg-a', { nominalFlowKgPerS: 25 }),
+    })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS'))))
+      .toBeLessThanOrEqual(25)
   })
 
   test('couples reactor heat, primary flow, steam generation, turbine load, and condenser sink', () => {

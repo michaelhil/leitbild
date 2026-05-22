@@ -573,6 +573,34 @@ describe('process plant graph foundation', () => {
     expect(result.success).toBe(false)
   })
 
+  test('rejects duplicate process sensor and actuator ids before runtime', () => {
+    const invalidSensorId = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'turbine-stop-valve-to-turbine'
+        ? {
+            ...connection,
+            variables: connection.variables.map(variable => variable.path === 'flowKgPerS'
+              ? { ...variable, sensorId: 'PT-SG-A-001' }
+              : variable),
+          }
+        : connection),
+    }
+    const invalidActuatorId = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'main-steam-header-to-turbine-stop-valve'
+        ? {
+            ...connection,
+            variables: connection.variables.map(variable => variable.path === 'valve.positionFraction'
+              ? { ...variable, actuatorId: 'MSIV-A' }
+              : variable),
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalidSensorId, processPlantComponentRegistry)).toThrow('duplicate process sensor id: PT-SG-A-001')
+    expect(() => compilePlantGraph(invalidActuatorId, processPlantComponentRegistry)).toThrow('duplicate process actuator id: MSIV-A')
+  })
+
   test('rejects link initial values that do not match quantity type', () => {
     const numericResult = processLinkVariableDescriptorSchema.safeParse({
       path: 'flowKgPerS',

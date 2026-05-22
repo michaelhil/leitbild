@@ -3,11 +3,11 @@
   "durationMs": 240000,
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
-  "caseCount": 6,
-  "checkCount": 13,
+  "caseCount": 7,
+  "checkCount": 30,
   "failedCheckCount": 0,
-  "wallMs": 1112.368542,
-  "realtimeFactor": 215.75583175742128,
+  "wallMs": 1214.499708,
+  "realtimeFactor": 197.61223359635423,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -29,6 +29,18 @@
       "details": "start=3001.7 end=2977.1MW"
     },
     {
+      "caseId": "baseline",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "baseline",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
       "caseId": "sgtr",
       "description": "SGTR creates primary-to-secondary leak flow",
       "passed": true,
@@ -39,6 +51,18 @@
       "description": "SGTR raises secondary radiation indication",
       "passed": true,
       "details": "maxRadiation=135.736mSv/h"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
     },
     {
       "caseId": "loss-feedwater",
@@ -53,6 +77,18 @@
       "details": "maxFeedAfter120s=0.0kg/s"
     },
     {
+      "caseId": "loss-feedwater",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
       "caseId": "rcp-trip",
       "description": "RCP trip begins a coastdown, not an instant zero",
       "passed": true,
@@ -63,6 +99,18 @@
       "description": "RCP trip materially lowers loop flow",
       "passed": true,
       "details": "before=4250 end=0kg/s"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
     },
     {
       "caseId": "relief-open",
@@ -77,6 +125,18 @@
       "details": "before=1800.0 end=90.0kg"
     },
     {
+      "caseId": "relief-open",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
       "caseId": "load-reduction",
       "description": "load reduction lowers turbine output",
       "passed": true,
@@ -87,6 +147,48 @@
       "description": "load reduction keeps output nonnegative",
       "passed": true,
       "details": "min=222.8MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "mixed transient creates tube leak flow",
+      "passed": true,
+      "details": "maxLeak=145.37kg/s"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "mixed transient lowers the tripped loop flow",
+      "passed": true,
+      "details": "before=4250 end=0kg/s"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "mixed transient lowers turbine output after load reduction",
+      "passed": true,
+      "details": "before=709.5 end=206.3MW"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
     }
   ],
   "performanceChecks": [
@@ -94,7 +196,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=215.8x min=20.0x"
+      "details": "realtimeFactor=197.6x min=20.0x"
     }
   ],
   "artifacts": {

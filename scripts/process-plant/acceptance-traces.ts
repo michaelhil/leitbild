@@ -42,7 +42,7 @@ const telemetryVariables = [
   'turbine.electricMw',
 ] as const satisfies ReadonlyArray<string>
 
-type CaseId = 'baseline' | 'sgtr' | 'loss-feedwater' | 'rcp-trip' | 'relief-open' | 'load-reduction'
+type CaseId = 'baseline' | 'sgtr' | 'loss-feedwater' | 'rcp-trip' | 'relief-open' | 'load-reduction' | 'mixed-transient'
 
 interface AcceptanceCase {
   readonly id: CaseId
@@ -142,6 +142,33 @@ const cases: ReadonlyArray<AcceptanceCase> = [
       value: 0.45,
     }],
   },
+  {
+    id: 'mixed-transient',
+    title: 'Mixed Transient',
+    description: 'A combined SGTR, RCP trip, and load reduction checks multi-unit scenario behavior.',
+    actions: [
+      {
+        id: 'mixed-open-tube-leak',
+        atMs: 45_000,
+        type: 'setVariable',
+        path: variablePath('sgA.tubeLeakFraction'),
+        value: 0.25,
+      },
+      {
+        id: 'mixed-trip-rcp-a',
+        atMs: 75_000,
+        type: 'tripComponent',
+        componentId: 'rcpA' as never,
+      },
+      {
+        id: 'mixed-reduce-turbine-load',
+        atMs: 120_000,
+        type: 'setVariable',
+        path: variablePath('turbine.loadFraction'),
+        value: 0.5,
+      },
+    ],
+  },
 ]
 
 const compiledSystem = (id: string) => compileProcessPlantSystem({
@@ -228,6 +255,52 @@ const check = (
   details: string,
 ): AcceptanceCheck => ({ caseId, description, passed, details })
 
+const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
+  'core.powerMw',
+  'vessel.primaryCoolantInventoryKg',
+  'pressurizer.pressureMPa',
+  'pressurizer.steamMassKg',
+  'pressurizer.reliefFlowKgPerS',
+  'sgA.levelPercent',
+  'sgA.pressureMPa',
+  'sgA.steamMassKg',
+  'sgA.feedwaterFlowKgPerS',
+  'sgA.primaryToSecondaryLeakKgPerS',
+  'sgA.secondaryRadiationMSvPerH',
+  'rcpA.loopFlowKgPerS',
+  'turbine.electricMw',
+])
+
+const evaluateTelemetryIntegrity = (
+  caseId: CaseId,
+  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
+): ReadonlyArray<AcceptanceCheck> => {
+  const numericValues = telemetry.flatMap(series => series.points.map(point => ({
+    path: series.path,
+    value: point.value,
+  })))
+  const invalidFinite = numericValues.find(point => typeof point.value !== 'number' || !Number.isFinite(point.value))
+  const invalidNegative = numericValues.find(point =>
+    typeof point.value === 'number'
+    && nonnegativeTelemetryPaths.has(point.path)
+    && point.value < -1e-9,
+  )
+  return [
+    check(
+      caseId,
+      'all acceptance telemetry samples are finite numbers',
+      invalidFinite === undefined,
+      invalidFinite === undefined ? 'all finite' : `${invalidFinite.path}=${String(invalidFinite.value)}`,
+    ),
+    check(
+      caseId,
+      'nonnegative physical telemetry remains nonnegative',
+      invalidNegative === undefined,
+      invalidNegative === undefined ? 'all nonnegative' : `${invalidNegative.path}=${String(invalidNegative.value)}`,
+    ),
+  ]
+}
+
 const evaluateCase = (
   caseId: CaseId,
   telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
@@ -277,12 +350,24 @@ const evaluateCase = (
       check(caseId, 'relief valve reduces pressurizer steam mass tendency', afterSteam < beforeSteam, `before=${beforeSteam.toFixed(1)} end=${afterSteam.toFixed(1)}kg`),
     ]
   }
-  const beforeElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', 55_000)
+  if (caseId === 'load-reduction') {
+    const beforeElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', 55_000)
+    const afterElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
+    const minElectric = minAfter(telemetry, 'turbine.electricMw', 120_000)
+    return [
+      check(caseId, 'load reduction lowers turbine output', afterElectric < beforeElectric * 0.7, `before=${beforeElectric.toFixed(1)} end=${afterElectric.toFixed(1)}MW`),
+      check(caseId, 'load reduction keeps output nonnegative', minElectric >= 0, `min=${minElectric.toFixed(1)}MW`),
+    ]
+  }
+  const leak = maxAfter(telemetry, 'sgA.primaryToSecondaryLeakKgPerS', 55_000)
+  const beforeFlow = valueAtOrAfter(telemetry, 'rcpA.loopFlowKgPerS', 70_000)
+  const afterFlow = valueAtOrAfter(telemetry, 'rcpA.loopFlowKgPerS', durationMs)
+  const beforeElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', 110_000)
   const afterElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
-  const minElectric = minAfter(telemetry, 'turbine.electricMw', 120_000)
   return [
-    check(caseId, 'load reduction lowers turbine output', afterElectric < beforeElectric * 0.7, `before=${beforeElectric.toFixed(1)} end=${afterElectric.toFixed(1)}MW`),
-    check(caseId, 'load reduction keeps output nonnegative', minElectric >= 0, `min=${minElectric.toFixed(1)}MW`),
+    check(caseId, 'mixed transient creates tube leak flow', leak > 0.1, `maxLeak=${leak.toFixed(2)}kg/s`),
+    check(caseId, 'mixed transient lowers the tripped loop flow', afterFlow < beforeFlow * 0.8, `before=${beforeFlow.toFixed(0)} end=${afterFlow.toFixed(0)}kg/s`),
+    check(caseId, 'mixed transient lowers turbine output after load reduction', afterElectric < beforeElectric * 0.75, `before=${beforeElectric.toFixed(1)} end=${afterElectric.toFixed(1)}MW`),
   ]
 }
 
@@ -364,16 +449,19 @@ const renderSvg = (
   traces: ReadonlyArray<{ readonly systemId: string; readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries> }>,
   checks: ReadonlyArray<AcceptanceCheck>,
 ): string => {
+  const columns = 3
+  const panelRows = Math.ceil(cases.length / columns)
+  const svgHeight = 92 + panelRows * 268 + 72
   const panels = cases.map((testCase, index) => {
     const trace = traces.find(candidate => candidate.systemId === testCase.id)
     if (!trace?.telemetry) throw new Error(`acceptance trace missing telemetry for ${testCase.id}`)
-    return renderPanel(testCase, trace.telemetry, 50 + (index % 3) * 380, 92 + Math.floor(index / 3) * 268)
+    return renderPanel(testCase, trace.telemetry, 50 + (index % columns) * 380, 92 + Math.floor(index / columns) * 268)
   }).join('')
   const failed = checks.filter(candidate => !candidate.passed)
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
-  <rect width="1200" height="700" fill="#f8fafc"/>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${svgHeight}" viewBox="0 0 1200 ${svgHeight}">
+  <rect width="1200" height="${svgHeight}" fill="#f8fafc"/>
   <text x="50" y="42" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#111827">Process Plant Acceptance Traces</text>
-  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">Six representative transients from the real graphRef/runtime. Checks: ${checks.length - failed.length}/${checks.length} passed.</text>
+  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">${cases.length} representative transients from the real graphRef/runtime. Checks: ${checks.length - failed.length}/${checks.length} passed.</text>
   ${panels}
 </svg>`
 }
@@ -399,7 +487,10 @@ const main = async (): Promise<void> => {
   const wallMs = performance.now() - started
   const checks = traces.flatMap(trace => {
     if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.systemId}`)
-    return evaluateCase(trace.systemId as CaseId, trace.telemetry)
+    return [
+      ...evaluateCase(trace.systemId as CaseId, trace.telemetry),
+      ...evaluateTelemetryIntegrity(trace.systemId as CaseId, trace.telemetry),
+    ]
   })
   const failed = checks.filter(candidate => !candidate.passed)
   const realtimeFactor = durationMs / wallMs

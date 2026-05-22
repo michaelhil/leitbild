@@ -51,6 +51,16 @@ const assertUnique = <T>(items: ReadonlyArray<T>, keyFor: (item: T) => string, l
   }
 }
 
+const assertUniqueDefined = <T>(items: ReadonlyArray<T>, keyFor: (item: T) => string | undefined, label: string): void => {
+  const seen = new Set<string>()
+  for (const item of items) {
+    const key = keyFor(item)
+    if (key === undefined) continue
+    if (seen.has(key)) throw new Error(`duplicate ${label}: ${key}`)
+    seen.add(key)
+  }
+}
+
 const parseWithContext = <T>(schema: z.ZodType<T>, input: unknown, context: string): T => {
   const result = schema.safeParse(input)
   if (result.success) return result.data
@@ -125,6 +135,9 @@ export const compilePlantGraph = (
   assertUnique(spec.components, component => component.id, 'component id')
   assertUnique(spec.connections, connection => connection.id, 'connection id')
   assertUnique(spec.publishedVariables, path => path, 'published variable')
+  const declaredLinkVariables = spec.connections.flatMap(connection => connection.variables)
+  assertUniqueDefined(declaredLinkVariables, variable => variable.sensorId, 'process sensor id')
+  assertUniqueDefined(declaredLinkVariables, variable => variable.actuatorId, 'process actuator id')
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()
