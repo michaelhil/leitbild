@@ -65,11 +65,26 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'heatToCoolantMw', label: 'Heat to coolant', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
     ],
   }),
-  topologyComponent('reactorVessel', 'Reactor Vessel', {
-    coreThermal: { kind: 'thermal', direction: 'in' },
-    lowerPlenum: { kind: 'hydraulicThermal', direction: 'out' },
-    upperPlenum: { kind: 'hydraulicThermal', direction: 'in' },
-    pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional' },
+  defineComponent({
+    kind: 'reactorVessel' as ComponentKind,
+    label: 'Reactor Vessel',
+    ports: {
+      coreThermal: { kind: 'thermal', direction: 'in' },
+      lowerPlenum: { kind: 'hydraulicThermal', direction: 'out' },
+      upperPlenum: { kind: 'hydraulicThermal', direction: 'in' },
+      pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional' },
+    },
+    parametersSchema: z.object({
+      nominalPrimaryCoolantInventoryKg: z.number().finite().positive(),
+      initialPrimaryCoolantInventoryFraction: normalized,
+      primaryInventoryPressureGainMPaPerKg: z.number().finite().nonnegative().optional(),
+      normalLetdownFlowKgPerS: z.number().finite().nonnegative().optional(),
+    }),
+    variables: [
+      variable({ path: 'primaryCoolantInventoryKg', label: 'Primary coolant inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
+      variable({ path: 'primaryCoolantInventoryDeviationKg', label: 'Primary coolant inventory deviation', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'massDelta', unit: 'kg' }),
+      variable({ path: 'primaryPressureBiasMPa', label: 'Primary pressure inventory bias', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),
+    ],
   }),
   topologyComponent('processHeader', 'Process Header', {
     inletA: { kind: 'hydraulicThermal', direction: 'in' },
@@ -193,6 +208,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       steamPressureGainMPaPerKgS: z.number().finite().nonnegative().optional(),
       tubeMetalThermalCapacityMjPerK: z.number().finite().positive().optional(),
       tubeMetalInitialTemperatureC: z.number().finite().optional(),
+      tubeLeakFlowCoefficientKgPerSPerSqrtMPa: z.number().finite().nonnegative().optional(),
+      tubeLeakRadiationGainMSvPerHPerKgS: z.number().finite().nonnegative().optional(),
+      tubeLeakRadiationTimeConstantS: z.number().finite().positive().optional(),
     }),
     variables: [
       variable({ path: 'levelPercent', label: 'Steam generator level', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'percent' }),
@@ -207,6 +225,9 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'feedwaterFlowKgPerS', label: 'Feedwater inflow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'steamQualityFraction', label: 'Steam quality', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
       variable({ path: 'secondaryInventoryKg', label: 'Secondary inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
+      variable({ path: 'tubeLeakFraction', label: 'Tube leak fraction', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'primaryToSecondaryLeakKgPerS', label: 'Primary-to-secondary leak flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'secondaryRadiationMSvPerH', label: 'Secondary radiation', kind: 'derived', domain: 'radiological', writable: false, publish: 'telemetry', quantity: 'radiationDoseRate', unit: 'mSv/h' }),
     ],
   }),
   defineComponent({

@@ -249,6 +249,10 @@ These names avoid temporary fidelity labels. Some components are topology compon
 
 Reactor coolant pumps may declare a `primaryLoopId`. That marks the pump as the authoritative flow state owner for one primary loop. The process-system compiler validates that each declared primary loop has one pump inlet, one pump outlet, one core-to-steam-generator hot leg, and one pump-to-core cold leg before runtime starts. Primary-coolant links on that loop then read the pump's loop-flow state instead of independently inventing flow. This is intentionally still a lumped loop model, not a pressure-network solver, but pump trips now coast loop flow down over time instead of collapsing it instantly.
 
+Primary pressure and primary inventory are deliberately separated but coupled. The pressurizer remains the canonical owner of RCS pressure in the current PWR graph; the reactor vessel owns total primary coolant inventory, inventory deviation, and the resulting pressure bias. Charging, normal letdown balance, relief flow, and steam-generator tube leakage change the vessel inventory. The pressurizer then reads the vessel pressure bias when it updates `pressurizer.pressureMPa`. This avoids two competing primary pressure truths while still allowing loss-of-inventory transients to depress pressure.
+
+Steam generators now expose explicit tube-leak state. `tubeLeakFraction` is a writable fault/control variable; `primaryToSecondaryLeakKgPerS` is computed from the primary-to-secondary pressure difference; `secondaryRadiationMSvPerH` tracks the radiological indication on the affected secondary side. Main-steam radiation links read the source steam generator radiation, so an SGTR-like fault raises the affected steam-line radiation without contaminating unaffected steam generators.
+
 ## Graph Compiler
 
 Raw specs compile once before runtime.
@@ -434,16 +438,18 @@ Current runtime behavior is deliberately minimal but functional:
 - pump flow follows running state and speed demand; pumps can optionally declare bounded response time/ramp limits without changing pumps that intentionally remain instantaneous,
 - reactor coolant pumps can own `primaryLoopId` loop state with `loopFlowTargetKgPerS`, `loopFlowKgPerS`, and `developedHeadPa`; primary-coolant loop links read that loop state, so RCP trips produce loop-specific coastdown instead of instant global flow collapse,
 - process links propagate simple flow and temperature values through primary coolant, feedwater, auxiliary feedwater, main steam, condensate, charging, letdown, and turbine-exhaust services,
+- primary-coolant links may publish `pressureMPa`, which is propagated from the canonical pressurizer pressure rather than recomputed independently,
 - steam generator heat transfer depends on `primaryCoolant` flow, tube-metal temperature, secondary temperature, level, and recirculation ratio,
 - steam generator boiling rate and steam production are derived from heat transfer using a simple latent-heat approximation,
 - steam generator secondary inventory is a bounded mass-balance state driven by feedwater and outgoing steam flow,
+- steam generator tube leakage transfers primary coolant into secondary inventory and raises affected secondary/main-steam radiation,
 - steam generator level, pressure, primary outlet temperature, tube-metal temperature, secondary temperature, feedwater inflow, boiling rate, and steam quality trend in response to feedwater, generated steam, turbine steam use, and primary-side heat input,
 - turbine electrical output follows load, inlet steam flow, and available steam pressure,
 - process tanks now carry inventory, level, temperature, makeup, and available outlet flow, so source tanks can be depleted or replenished instead of acting as infinite sources,
 - condenser sink receives turbine exhaust steam and trends condensate temperature, back pressure, condensate production, condensate inventory, condensate level, and available condensate outlet flow,
 - pump suction links are demand-limited by the destination pump flow, so stopped pumps do not drain source tanks or condenser inventory through passive link flow,
 - pressurizer pressure, level, water inventory, water temperature, steam temperature, heater demand, spray demand, relief valve position, and relief flow are now explicit component variables,
-- pressurizer heaters, spray, and relief flow change pressure and inventory through the same fixed-step behavior contract as the rest of the runtime,
+- pressurizer heaters, spray, relief flow, and primary-inventory pressure bias change pressure and inventory through the same fixed-step behavior contract as the rest of the runtime,
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
@@ -458,11 +464,20 @@ V1 should prove the architecture against three scenario families.
 
 Steam generator tube rupture-like transient:
 
-- primary-to-secondary leak path,
-- primary pressure/inventory effect,
-- secondary indications,
+- primary-to-secondary leak path through `steamGenerator.tubeLeakFraction`,
+- primary pressure/inventory effect through vessel inventory and canonical pressurizer pressure,
+- secondary inventory and radiation indications on the affected steam generator/main steam line,
 - alarm/trip behavior,
 - operator response variables.
+
+The current headless SGTR trace sets `sgA.tubeLeakFraction` to `0.25` at T+20s and records the coupled response. The trace shows the intended V1 relationship: primary inventory falls, canonical pressurizer pressure trends below the no-leak baseline, and affected SG/main-steam radiation rises.
+
+![Steam-generator tube leak trace](./assets/process-plant-sgtr-trace.svg)
+
+Generated SGTR artifacts:
+
+- [process-plant-sgtr-trace.svg](./assets/process-plant-sgtr-trace.svg)
+- [process-plant-sgtr-trace.csv](./assets/process-plant-sgtr-trace.csv)
 
 Loss of feedwater:
 
@@ -600,7 +615,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.14 seconds and five minutes of six systems in roughly 0.84 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 6.1x wall-clock penalty for 6x the plant count, and roughly 357x faster than real time for the six-system case at the current fidelity. The current graph has 44 components, 58 links, and 313 variables per system. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, and primary-loop inertia behavior added declared variables and arithmetic, not extra runtime graph scans or new orchestration layers.
+Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.22 seconds and five minutes of six systems in roughly 0.90 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 4.1x wall-clock penalty for 6x the plant count, and roughly 332x faster than real time for the six-system case at the current fidelity. The current graph has 44 components, 58 links, and 341 variables per system after adding primary inventory, primary pressure publication, and steam-generator tube-leak variables. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not extra runtime graph scans or new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 

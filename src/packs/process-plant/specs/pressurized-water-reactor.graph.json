@@ -25,7 +25,12 @@
       "id": "vessel",
       "kind": "reactorVessel",
       "label": "Reactor Vessel",
-      "parameters": {}
+      "parameters": {
+        "nominalPrimaryCoolantInventoryKg": 285000,
+        "initialPrimaryCoolantInventoryFraction": 1,
+        "primaryInventoryPressureGainMPaPerKg": 0.000035,
+        "normalLetdownFlowKgPerS": 90
+      }
     },
     {
       "id": "pressurizer",
@@ -89,7 +94,10 @@
         "inventoryTimeConstantS": 20,
         "steamQualityTimeConstantS": 8,
         "steamPressureGainMPaPerKgS": 0.006,
-        "tubeMetalThermalCapacityMjPerK": 8000
+        "tubeMetalThermalCapacityMjPerK": 8000,
+        "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
+        "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
+        "tubeLeakRadiationTimeConstantS": 5
       }
     },
     {
@@ -110,7 +118,10 @@
         "inventoryTimeConstantS": 20,
         "steamQualityTimeConstantS": 8,
         "steamPressureGainMPaPerKgS": 0.006,
-        "tubeMetalThermalCapacityMjPerK": 8000
+        "tubeMetalThermalCapacityMjPerK": 8000,
+        "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
+        "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
+        "tubeLeakRadiationTimeConstantS": 5
       }
     },
     {
@@ -131,7 +142,10 @@
         "inventoryTimeConstantS": 20,
         "steamQualityTimeConstantS": 8,
         "steamPressureGainMPaPerKgS": 0.006,
-        "tubeMetalThermalCapacityMjPerK": 8000
+        "tubeMetalThermalCapacityMjPerK": 8000,
+        "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
+        "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
+        "tubeLeakRadiationTimeConstantS": 5
       }
     },
     {
@@ -152,7 +166,10 @@
         "inventoryTimeConstantS": 20,
         "steamQualityTimeConstantS": 8,
         "steamPressureGainMPaPerKgS": 0.006,
-        "tubeMetalThermalCapacityMjPerK": 8000
+        "tubeMetalThermalCapacityMjPerK": 8000,
+        "tubeLeakFlowCoefficientKgPerSPerSqrtMPa": 220,
+        "tubeLeakRadiationGainMSvPerHPerKgS": 0.7,
+        "tubeLeakRadiationTimeConstantS": 5
       }
     },
     {
@@ -500,6 +517,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 322
+        },
+        {
+          "path": "pressureMPa",
+          "label": "pressurizer-surge-line primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -574,6 +602,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 322
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-hot-leg-a primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -614,6 +653,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-cold-leg-a primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -648,6 +698,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcp-a-to-core primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -688,6 +749,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 322
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-hot-leg-b primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -728,6 +800,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-cold-leg-b primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -762,6 +845,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcp-b-to-core primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -802,6 +896,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 322
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-hot-leg-c primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -842,6 +947,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-cold-leg-c primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -876,6 +992,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcp-c-to-core primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -916,6 +1043,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 322
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-hot-leg-d primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -956,6 +1094,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcs-cold-leg-d primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -990,6 +1139,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "pressureMPa",
+          "label": "rcp-d-to-core primary coolant pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
         }
       ]
     },
@@ -3083,6 +3243,34 @@
     "turbine-stop-valve-to-turbine.flowKgPerS",
     "turbine-stop-valve-to-turbine.pressureMPa",
     "turbine-exhaust-to-condenser.flowKgPerS",
-    "turbine-exhaust-to-condenser.temperatureC"
+    "turbine-exhaust-to-condenser.temperatureC",
+    "vessel.primaryCoolantInventoryKg",
+    "vessel.primaryCoolantInventoryDeviationKg",
+    "vessel.primaryPressureBiasMPa",
+    "sgA.tubeLeakFraction",
+    "sgA.primaryToSecondaryLeakKgPerS",
+    "sgA.secondaryRadiationMSvPerH",
+    "sgB.tubeLeakFraction",
+    "sgB.primaryToSecondaryLeakKgPerS",
+    "sgB.secondaryRadiationMSvPerH",
+    "sgC.tubeLeakFraction",
+    "sgC.primaryToSecondaryLeakKgPerS",
+    "sgC.secondaryRadiationMSvPerH",
+    "sgD.tubeLeakFraction",
+    "sgD.primaryToSecondaryLeakKgPerS",
+    "sgD.secondaryRadiationMSvPerH",
+    "pressurizer-surge-line.pressureMPa",
+    "rcs-hot-leg-a.pressureMPa",
+    "rcs-cold-leg-a.pressureMPa",
+    "rcp-a-to-core.pressureMPa",
+    "rcs-hot-leg-b.pressureMPa",
+    "rcs-cold-leg-b.pressureMPa",
+    "rcp-b-to-core.pressureMPa",
+    "rcs-hot-leg-c.pressureMPa",
+    "rcs-cold-leg-c.pressureMPa",
+    "rcp-c-to-core.pressureMPa",
+    "rcs-hot-leg-d.pressureMPa",
+    "rcs-cold-leg-d.pressureMPa",
+    "rcp-d-to-core.pressureMPa"
   ]
 }

@@ -153,6 +153,46 @@ const sumOutgoingLinkValue = (
   return total
 }
 
+const sumLinkValueByService = (
+  system: CompiledProcessPlantSystem,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+  service: string,
+  linkMatches: (link: CompiledProcessPlantSystem['graph']['links'][number]) => boolean = () => true,
+): number => {
+  let total = 0
+  for (const link of system.graph.links) {
+    if (link.service !== service) continue
+    if (!linkMatches(link)) continue
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+  }
+  return total
+}
+
+const findFirstComponentByKind = (
+  system: CompiledProcessPlantSystem,
+  kind: string,
+): CompiledComponent | null =>
+  system.graph.components.find(component => String(component.kind) === kind) ?? null
+
+const sumComponentValueByKind = (
+  system: CompiledProcessPlantSystem,
+  kind: string,
+  localPath: string,
+  context: { readonly has: (path: VariablePath) => boolean; readonly readNumber: (path: VariablePath) => number },
+): number => {
+  let total = 0
+  for (const component of system.graph.components) {
+    if (String(component.kind) !== kind) continue
+    const path = componentVariablePath(component, localPath)
+    if (!context.has(path)) continue
+    total += context.readNumber(path)
+  }
+  return total
+}
+
 export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
   const localPath = String(path).slice(String(component.id).length + 1)
   if (component.kind === 'reactorCore') {
@@ -187,6 +227,16 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'feedwaterFlowKgPerS') return 0
     if (localPath === 'steamQualityFraction') return 0.99
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
+    if (localPath === 'tubeLeakFraction') return 0
+    if (localPath === 'primaryToSecondaryLeakKgPerS') return 0
+    if (localPath === 'secondaryRadiationMSvPerH') return 0.02
+  }
+  if (component.kind === 'reactorVessel') {
+    const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
+    const initialFraction = parameterNumber(component, 'initialPrimaryCoolantInventoryFraction')
+    if (localPath === 'primaryCoolantInventoryKg') return nominalInventory * initialFraction
+    if (localPath === 'primaryCoolantInventoryDeviationKg') return nominalInventory * (initialFraction - 1)
+    if (localPath === 'primaryPressureBiasMPa') return optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0) * nominalInventory * (initialFraction - 1)
   }
   if (component.kind === 'pressurizer') {
     const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
@@ -373,6 +423,33 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     },
   },
   {
+    id: 'steam-generator-tube-leak-transfer',
+    phase: 'solveThermalTransfer',
+    componentKind: 'steamGenerator',
+    reads: ['tubeLeakFraction', 'pressureMPa', 'secondaryRadiationMSvPerH', 'primary pressure source'],
+    writes: ['primaryToSecondaryLeakKgPerS', 'secondaryRadiationMSvPerH'],
+    update: ({ system, component, context }): void => {
+      const leakFraction = clamp(context.readNumber(componentVariablePath(component, 'tubeLeakFraction')), 0, 1)
+      const pressurizer = findFirstComponentByKind(system, 'pressurizer')
+      const primaryPressure = pressurizer === null ? 0 : context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
+      const secondaryPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
+      const pressureDelta = Math.max(0, primaryPressure - secondaryPressure)
+      const leakCoefficient = optionalParameterNumber(component, 'tubeLeakFlowCoefficientKgPerSPerSqrtMPa', 0)
+      const leakFlow = leakFraction * leakCoefficient * Math.sqrt(pressureDelta)
+      const radiationTarget = 0.02 + leakFlow * optionalParameterNumber(component, 'tubeLeakRadiationGainMSvPerHPerKgS', 0.7)
+      context.write(componentVariablePath(component, 'primaryToSecondaryLeakKgPerS'), leakFlow)
+      context.write(
+        componentVariablePath(component, 'secondaryRadiationMSvPerH'),
+        relaxToward(
+          context.readNumber(componentVariablePath(component, 'secondaryRadiationMSvPerH')),
+          radiationTarget,
+          context.dtSeconds,
+          optionalParameterNumber(component, 'tubeLeakRadiationTimeConstantS', 5),
+        ),
+      )
+    },
+  },
+  {
     id: 'reactor-core-power-state',
     phase: 'updateComponentState',
     componentKind: 'reactorCore',
@@ -416,6 +493,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       'sprayFlowKgPerS',
       'reliefValvePositionFraction',
       'incoming:primaryCoolant.temperatureC',
+      'reactor vessel primaryPressureBiasMPa',
     ],
     writes: [
       'pressureMPa',
@@ -463,7 +541,11 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         heaterPower * optionalParameterNumber(component, 'heaterPressureRampMPaPerMwS', 0.0009)
         - sprayFlow * optionalParameterNumber(component, 'sprayPressureRampMPaPerKgS', 0.00012)
         - reliefFlow * optionalParameterNumber(component, 'reliefPressureRampMPaPerKgS', 0.0012)
-      const pressureTarget = clamp(nominalPressure + thermalPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
+      const reactorVessel = findFirstComponentByKind(system, 'reactorVessel')
+      const inventoryPressureBias = reactorVessel === null || !context.has(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
+        ? 0
+        : context.readNumber(componentVariablePath(reactorVessel, 'primaryPressureBiasMPa'))
+      const pressureTarget = clamp(nominalPressure + thermalPressureBias + inventoryPressureBias + pressureRate * optionalParameterNumber(component, 'pressureTimeConstantS', 12), 0.2, 18)
       const nextPressure = relaxToward(
         currentPressure + pressureRate * context.dtSeconds,
         pressureTarget,
@@ -477,6 +559,32 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       context.write(componentVariablePath(component, 'waterInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'levelPercent'), clamp((nextInventory / fullInventory) * 100, 0, 100))
       context.write(componentVariablePath(component, 'pressureMPa'), clamp(nextPressure, 0.2, 18))
+    },
+  },
+  {
+    id: 'reactor-vessel-primary-inventory-state',
+    phase: 'updateComponentState',
+    componentKind: 'reactorVessel',
+    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
+    writes: ['primaryCoolantInventoryKg', 'primaryCoolantInventoryDeviationKg', 'primaryPressureBiasMPa'],
+    update: ({ system, component, context }): void => {
+      const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
+      const currentInventory = context.readNumber(componentVariablePath(component, 'primaryCoolantInventoryKg'))
+      const chargingFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'charging', link => {
+        const toComponent = system.graph.components[link.toComponentIndex]
+        return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
+      })
+      const letdownFlow = Math.max(
+        sumLinkValueByService(system, 'flowKgPerS', context, 'letdown'),
+        optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0),
+      )
+      const reliefFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'primaryRelief')
+      const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
+      const nextInventory = clamp(currentInventory + (chargingFlow - letdownFlow - reliefFlow - tubeLeakFlow) * context.dtSeconds, 0, nominalInventory * 1.15)
+      const deviation = nextInventory - nominalInventory
+      context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
+      context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)
+      context.write(componentVariablePath(component, 'primaryPressureBiasMPa'), deviation * optionalParameterNumber(component, 'primaryInventoryPressureGainMPaPerKg', 0))
     },
   },
   {
@@ -572,6 +680,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
     update: ({ system, component, context }): void => {
       const feedwaterFlow = (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'feedwater') ?? 0)
         + (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'auxFeedwater') ?? 0)
+      const tubeLeakFlow = context.readNumber(componentVariablePath(component, 'primaryToSecondaryLeakKgPerS'))
       context.write(componentVariablePath(component, 'feedwaterFlowKgPerS'), feedwaterFlow)
       const turbineSteamFlow = averageOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'mainSteam') ?? 0
       const pressurePath = componentVariablePath(component, 'pressureMPa')
@@ -623,7 +732,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
       )
       const nominalInventory = optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000)
       const currentInventory = context.readNumber(componentVariablePath(component, 'secondaryInventoryKg'))
-      const nextInventory = clamp(currentInventory + (feedwaterFlow - turbineSteamFlow) * context.dtSeconds, 0, nominalInventory)
+      const nextInventory = clamp(currentInventory + (feedwaterFlow + tubeLeakFlow - turbineSteamFlow) * context.dtSeconds, 0, nominalInventory)
       const inventoryTimeConstant = optionalParameterNumber(component, 'inventoryTimeConstantS', 20)
       const relaxedInventory = relaxToward(currentInventory, nextInventory, context.dtSeconds, inventoryTimeConstant)
       context.write(componentVariablePath(component, 'secondaryInventoryKg'), relaxedInventory)

@@ -141,7 +141,7 @@ The weather pack's materialized subset of the global H3 spatial field. It stores
 _Avoid_: computing weather truth only for the viewport, making weather cells canonical Leitbild operational objects, or exposing weather internals through generic UI code
 
 **Process Plant Runtime**:
-The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, rejects physically invalid writable values before they enter the command queue, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, primary coolant flow/temperature, steam-generator heat transfer and steam production, turbine output, and condenser sink behavior.
+The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, rejects physically invalid writable values before they enter the command queue, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, primary coolant flow/temperature and loop inertia, primary inventory/pressurizer pressure coupling, steam-generator heat transfer and steam production, SGTR-like primary-to-secondary leakage, turbine output, and condenser sink behavior.
 _Avoid_: modeling continuous process physics as object-to-object events, process-specific HTTP endpoint families, or treating process variables as operational objects
 
 **Process Variable Table**:
@@ -159,6 +159,10 @@ _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped var
 **Process Link**:
 A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
 _Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection
+
+**Canonical RCS Pressure**:
+In the current built-in PWR graph, `pressurizer.pressureMPa` is the canonical reactor coolant system pressure. Reactor-vessel primary inventory can bias this pressure, and primary-coolant links can publish propagated `pressureMPa`, but those link pressures are read-outs, not independent pressure truths.
+_Avoid_: adding a second canonical primary pressure variable without an explicit ADR
 
 **Solver Phase**:
 One ordered pass in a continuous process simulation tick, such as applying commands, solving electrical behavior, solving component/link fluid flow, solving heat transfer, or updating component and link state.

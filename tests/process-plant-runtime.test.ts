@@ -70,6 +70,9 @@ describe('process plant runtime', () => {
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
       'core.heatToCoolantMw',
+      'vessel.primaryCoolantInventoryKg',
+      'vessel.primaryCoolantInventoryDeviationKg',
+      'vessel.primaryPressureBiasMPa',
       'pressurizer.pressureMPa',
       'pressurizer.levelPercent',
       'pressurizer.reliefFlowKgPerS',
@@ -90,6 +93,9 @@ describe('process plant runtime', () => {
       'sgA.feedwaterFlowKgPerS',
       'sgA.steamQualityFraction',
       'sgA.secondaryInventoryKg',
+      'sgA.tubeLeakFraction',
+      'sgA.primaryToSecondaryLeakKgPerS',
+      'sgA.secondaryRadiationMSvPerH',
       'sgB.steamFlowKgPerS',
       'sgC.steamFlowKgPerS',
       'sgD.steamFlowKgPerS',
@@ -116,8 +122,10 @@ describe('process plant runtime', () => {
       'condenser.backPressurePa',
       'rcs-hot-leg-a.flowKgPerS',
       'rcs-hot-leg-a.temperatureC',
+      'rcs-hot-leg-a.pressureMPa',
       'rcs-cold-leg-a.flowKgPerS',
       'rcs-cold-leg-a.temperatureC',
+      'rcs-cold-leg-a.pressureMPa',
       'feedwater-control-valve-a-to-sg-a.flowKgPerS',
       'sg-a-steam-to-msiv-a.flowKgPerS',
       'sg-a-steam-to-msiv-a.pressureMPa',
@@ -383,6 +391,49 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('pressurizer.reliefFlowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(heatedPressure)
     expect(Number(runtime.readVariable(valueOf('pressurizer-relief-to-tank.flowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('primary coolant inventory feeds the canonical pressurizer pressure response', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    const initialInventory = Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))
+    const initialPressure = Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.reliefValvePositionFraction'), value: 1 })
+    for (let index = 0; index < 300; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('pressurizer.reliefFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialInventory)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryDeviationKg')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(initialPressure)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.pressureMPa')))).toBeCloseTo(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))), 6)
+  })
+
+  test('steam generator tube leak transfers primary coolant to secondary inventory and radiation', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 40; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+    const initialPrimaryInventory = Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))
+    const initialSecondaryInventory = Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('sgA.tubeLeakFraction'), value: 0.25 })
+    for (let index = 0; index < 600; index += 1) {
+      runtime.tick(100)
+      baseline.tick(100)
+    }
+
+    expect(Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialPrimaryInventory)
+    expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeGreaterThan(initialSecondaryInventory)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('pressurizer.pressureMPa'))))
+    expect(Number(runtime.readVariable(valueOf('sgA.secondaryRadiationMSvPerH')))).toBeGreaterThan(1)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.radiationMSvPerH')))).toBeGreaterThan(1)
+    expect(Number(runtime.readVariable(valueOf('sgB.secondaryRadiationMSvPerH')))).toBeCloseTo(0.02, 6)
   })
 
   test('loss of feedwater trends steam generator inventory downward', () => {

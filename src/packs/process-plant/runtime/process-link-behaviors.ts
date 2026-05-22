@@ -83,6 +83,11 @@ const mainSteamSourceCount = (system: CompiledProcessPlantSystem): number => {
 
 const mainSteamSourceCountCache = new WeakMap<CompiledProcessPlantSystem, number>()
 
+const findFirstComponentByKind = (
+  system: CompiledProcessPlantSystem,
+  kind: string,
+) => system.graph.components.find(component => String(component.kind) === kind) ?? null
+
 const passiveFlowFromIncomingService = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,
@@ -209,6 +214,13 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
     update: ({ system, link, context }): void => {
       const fromComponent = system.graph.components[link.fromComponentIndex]
       if (!fromComponent) throw new Error(`process link ${link.id} references missing source component`)
+      if (link.service === 'primaryCoolant') {
+        const pressurizer = findFirstComponentByKind(system, 'pressurizer')
+        if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
+          context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')))
+          return
+        }
+      }
       if (fromComponent.kind === 'steamGenerator') {
         context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(fromComponent, 'pressureMPa')))
         return
@@ -233,13 +245,17 @@ export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDe
   {
     id: 'process-link-radiation-from-leak',
     phase: 'updateProcessLinkState',
-    reads: ['radiationMSvPerH', 'leak.areaFraction?'],
+    reads: ['radiationMSvPerH', 'leak.areaFraction?', 'source steam generator secondaryRadiationMSvPerH?'],
     writes: ['radiationMSvPerH'],
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'radiationMSvPerH'),
-    update: ({ link, context }): void => {
+    update: ({ system, link, context }): void => {
+      const fromComponent = system.graph.components[link.fromComponentIndex]
+      if (!fromComponent) throw new Error(`process link ${link.id} references missing source component`)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const currentRadiation = context.readNumber(processLinkVariablePath(link, 'radiationMSvPerH'))
-      context.write(processLinkVariablePath(link, 'radiationMSvPerH'), approach(currentRadiation, 0.02 + leakFraction * 25, 2 * context.dtSeconds))
+      const sourceRadiationPath = componentVariablePath(fromComponent, 'secondaryRadiationMSvPerH')
+      const sourceRadiation = context.has(sourceRadiationPath) ? context.readNumber(sourceRadiationPath) : 0.02
+      context.write(processLinkVariablePath(link, 'radiationMSvPerH'), approach(currentRadiation, Math.max(0.02, sourceRadiation) + leakFraction * 25, 2 * context.dtSeconds))
     },
   },
 ]
