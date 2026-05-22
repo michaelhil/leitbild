@@ -678,6 +678,30 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeGreaterThan(initialCondenserInventory)
   })
 
+  test('feedwater headers distribute available flow through open downstream valves', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-b-to-sg-b.valve.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-c-to-sg-c.valve.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwater-control-valve-d-to-sg-d.valve.positionFraction'), value: 0 })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    const pumpDischargeFlow =
+      Number(runtime.readVariable(valueOf('main-feedwater-pump-a-to-header.flowKgPerS')))
+      + Number(runtime.readVariable(valueOf('main-feedwater-pump-b-to-header.flowKgPerS')))
+    const openHeaderBranchFlow = Number(runtime.readVariable(valueOf('feedwater-header-to-control-valve-a.flowKgPerS')))
+    const openValveFlow = Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS')))
+
+    expect(Number(runtime.readVariable(valueOf('feedwater-header-to-control-valve-b.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-header-to-control-valve-c.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-header-to-control-valve-d.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(openHeaderBranchFlow).toBeCloseTo(pumpDischargeFlow, 6)
+    expect(openValveFlow).toBeCloseTo(openHeaderBranchFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))).toBeCloseTo(openValveFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('sgB.feedwaterFlowKgPerS')))).toBeCloseTo(0, 6)
+  })
+
   test('main feedwater pumps cannot deliver flow after the feedwater tank is depleted', () => {
     const runtime = createProcessPlantRuntime({
       system: compiledSystemWithInitialState({
