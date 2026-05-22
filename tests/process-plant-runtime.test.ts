@@ -886,6 +886,23 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgB.feedwaterFlowKgPerS')))).toBeCloseTo(0, 6)
   })
 
+  test('feedwater source flow follows reachable downstream demand', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveA.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveB.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveC.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveD.positionFraction'), value: 0 })
+    for (let index = 0; index < 30; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('feedwater-tank-to-main-feedwater-pump-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwater-tank-to-main-feedwater-pump-b.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('main-feedwater-pump-a-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('main-feedwater-pump-b-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('feedwaterHeader.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
+  })
+
   test('feedwater and auxiliary feedwater header branch flows conserve incoming service flow', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })
@@ -975,6 +992,32 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('aux-feedwater-valve-a-to-sg-a.flowKgPerS')))).toBeGreaterThan(0)
   })
 
+  test('auxiliary feedwater demand is scoped to open downstream branches', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpMotor.running'), value: true })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterPumpTurbine.running'), value: true })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveA.positionFraction'), value: 1 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveB.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveC.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveD.positionFraction'), value: 0 })
+    for (let index = 0; index < 80; index += 1) runtime.tick(100)
+
+    const openBranchFlow = Number(runtime.readVariable(valueOf('aux-feedwater-header-to-valve-a.flowKgPerS')))
+    expect(openBranchFlow).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('aux-feedwater-valve-a-to-sg-a.flowKgPerS')))).toBeCloseTo(openBranchFlow, 6)
+    expect(Number(runtime.readVariable(valueOf('aux-feedwater-header-to-valve-b.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('auxFeedwaterHeader.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('auxFeedwaterValveA.positionFraction'), value: 0 })
+    for (let index = 0; index < 40; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('motor-afw-pump-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('turbine-afw-pump-to-header.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('auxFeedwaterHeader.flowBalanceResidualKgPerS')))).toBeCloseTo(0, 6)
+  })
+
   test('reactor coolant pump trip coasts down primary loop flow and heat transfer', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
@@ -1021,6 +1064,26 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowTargetKgPerS')))).toBeLessThan(initialTarget * 0.7)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.85)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('primary loop link resistance contributes to reactor coolant pump flow target', () => {
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+    const restricted = createProcessPlantRuntime({
+      system: compiledSystemWithConnectionPhysical('rcs-hot-leg-a', { nominalResistance: 0.4 }),
+    })
+
+    for (let index = 0; index < 160; index += 1) {
+      baseline.tick(100)
+      restricted.tick(100)
+    }
+
+    expect(Number(restricted.readVariable(valueOf('rcpA.loopFlowTargetKgPerS'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('rcpA.loopFlowTargetKgPerS'))))
+    expect(Number(restricted.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS'))))
+    const baselineLoopB = Number(baseline.readVariable(valueOf('rcs-hot-leg-b.flowKgPerS')))
+    const restrictedLoopB = Number(restricted.readVariable(valueOf('rcs-hot-leg-b.flowKgPerS')))
+    expect(Math.abs(restrictedLoopB - baselineLoopB)).toBeLessThan(baselineLoopB * 0.02)
   })
 
   test('primary and secondary network flows remain coherent across pump and header links', () => {
@@ -1133,6 +1196,27 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('turbine.steamAvailabilityFraction')))).toBeLessThanOrEqual(1)
     expect(Number(runtime.readVariable(valueOf('turbine.exhaustTemperatureC')))).toBeGreaterThan(100)
     expect(Number(runtime.readVariable(valueOf('condenser.heatRejectedMw')))).toBeLessThan(loadedHeatRejected)
+  })
+
+  test('turbine demand responds to condenser backpressure', () => {
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+    const hotCondenser = createProcessPlantRuntime({
+      system: compiledSystemWithParameters({
+        condenser: { coolingWaterTemperatureC: 95 },
+      }),
+    })
+
+    for (let index = 0; index < 240; index += 1) {
+      baseline.tick(100)
+      hotCondenser.tick(100)
+    }
+
+    expect(Number(hotCondenser.readVariable(valueOf('condenser.backPressurePa'))))
+      .toBeGreaterThan(Number(baseline.readVariable(valueOf('condenser.backPressurePa'))))
+    expect(Number(hotCondenser.readVariable(valueOf('turbine.steamDemandKgPerS'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('turbine.steamDemandKgPerS'))))
+    expect(Number(hotCondenser.readVariable(valueOf('turbine.electricMw'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('turbine.electricMw'))))
   })
 
   test('steam generator secondary pressure responds to steam mass imbalance', () => {

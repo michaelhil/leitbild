@@ -1,4 +1,5 @@
-import { primaryLoopIdForPump } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph } from '../../graph/index.ts'
+import { primaryLoopIdForLink, primaryLoopIdForPump } from '../../graph/index.ts'
 import {
   componentVariablePath,
   type ComponentBehaviorDefinition,
@@ -6,6 +7,21 @@ import {
 } from '../behavior-contract.ts'
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward } from '../component-helpers.ts'
 import { pumpHeadResistanceFlowTarget } from '../physics.ts'
+import { physicalNumber } from '../process-link-physical.ts'
+
+const primaryLoopLinkResistanceCoefficient = (
+  component: CompiledComponent,
+  graph: CompiledPlantGraph,
+): number => {
+  const loopId = primaryLoopIdForPump(component)
+  if (loopId === null) return 0
+  let nominalPressureDropMPa = 0
+  for (const link of graph.links) {
+    if (primaryLoopIdForLink(graph, link) !== loopId) continue
+    nominalPressureDropMPa += Math.max(0, physicalNumber(link, 'nominalResistance', 0))
+  }
+  return nominalPressureDropMPa / 0.5
+}
 
 export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
@@ -33,7 +49,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction', 'flowKgPerS', 'loopFlowKgPerS'],
     writes: ['developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
-    update: ({ component, context }): void => {
+    update: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
       const nominalHead = parameterNumber(component, 'nominalHeadPa')
@@ -49,6 +65,7 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
 
       const pumpFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
       const resistance = optionalParameterNumber(component, 'loopResistanceCoefficient', 0)
+        + primaryLoopLinkResistanceCoefficient(component, system.graph)
       const naturalCirculationFlow = optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)
       const nominalFlow = parameterNumber(component, 'nominalFlowKgPerS')
       const hydraulicTargetFlow = pumpHeadResistanceFlowTarget({
@@ -77,7 +94,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction'],
     writes: ['flowKgPerS', 'developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
-    reconcile: ({ component, context }): void => {
+    reconcile: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
       const nominalFlow = parameterNumber(component, 'nominalFlowKgPerS')
@@ -101,7 +118,8 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
               developedHeadPa: developedHead,
               nominalHeadPa: nominalHead,
               nominalFlowKgPerS: nominalFlow,
-              resistanceCoefficient: optionalParameterNumber(component, 'loopResistanceCoefficient', 0),
+              resistanceCoefficient: optionalParameterNumber(component, 'loopResistanceCoefficient', 0)
+                + primaryLoopLinkResistanceCoefficient(component, system.graph),
               minimumFlowKgPerS: naturalCirculationFlow,
             }),
             componentFlow,

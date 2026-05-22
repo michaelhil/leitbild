@@ -16,7 +16,11 @@ const mainSteamSourceLinks = (system: CompiledProcessPlantSystem): ReadonlyArray
 const turbineSteamDemandKgPerS = (
   turbine: CompiledComponent,
   context: LinkBehaviorReadContext,
-): number => context.readNumber(componentVariablePath(turbine, 'loadFraction')) * parameterNumber(turbine, 'nominalSteamFlowKgPerS')
+): number => {
+  const demandPath = componentVariablePath(turbine, 'steamDemandKgPerS')
+  if (context.has(demandPath)) return context.readNumber(demandPath)
+  return context.readNumber(componentVariablePath(turbine, 'loadFraction')) * parameterNumber(turbine, 'nominalSteamFlowKgPerS')
+}
 
 const pathAvailabilityToComponent = (
   system: CompiledProcessPlantSystem,

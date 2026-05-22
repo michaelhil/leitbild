@@ -65,15 +65,33 @@ const telemetryVariables = [
   'turbine.steamDemandKgPerS',
   'turbine.steamAvailabilityFraction',
   'turbine.exhaustTemperatureC',
+  'feedwaterHeader.flowBalanceResidualKgPerS',
+  'auxFeedwaterHeader.flowBalanceResidualKgPerS',
+  'main-feedwater-pump-a-to-header.flowKgPerS',
+  'main-feedwater-pump-b-to-header.flowKgPerS',
+  'motor-afw-pump-to-header.flowKgPerS',
+  'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
   'condenser.heatRejectedMw',
+  'condenser.backPressurePa',
+  'condenser.condensateInventoryKg',
 ] as const satisfies ReadonlyArray<string>
 
-type CaseId = 'baseline' | 'sgtr' | 'loss-feedwater' | 'rcp-trip' | 'relief-open' | 'load-reduction' | 'mixed-transient'
+type CaseId =
+  | 'baseline'
+  | 'sgtr'
+  | 'loss-feedwater'
+  | 'aux-feedwater-recovery'
+  | 'rcp-trip'
+  | 'relief-open'
+  | 'load-reduction'
+  | 'condenser-backpressure'
+  | 'mixed-transient'
 
 interface AcceptanceCase {
   readonly id: CaseId
   readonly title: string
   readonly description: string
+  readonly parameters?: Record<string, Record<string, unknown>>
   readonly actions: ReadonlyArray<ProcessPlantScheduledAction>
 }
 
@@ -134,6 +152,39 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     ],
   },
   {
+    id: 'aux-feedwater-recovery',
+    title: 'Aux Feed Recovery',
+    description: 'Main feedwater trips, one auxiliary branch is opened, and header balance should remain coherent.',
+    actions: [
+      {
+        id: 'trip-main-feedwater-a',
+        atMs: 45_000,
+        type: 'tripComponent',
+        componentId: 'mainFeedwaterPumpA' as never,
+      },
+      {
+        id: 'trip-main-feedwater-b',
+        atMs: 45_000,
+        type: 'tripComponent',
+        componentId: 'mainFeedwaterPumpB' as never,
+      },
+      {
+        id: 'start-motor-aux-feed',
+        atMs: 90_000,
+        type: 'setVariable',
+        path: variablePath('auxFeedwaterPumpMotor.running'),
+        value: true,
+      },
+      {
+        id: 'open-aux-feed-a',
+        atMs: 90_000,
+        type: 'setVariable',
+        path: variablePath('auxFeedwaterValveA.positionFraction'),
+        value: 1,
+      },
+    ],
+  },
+  {
     id: 'rcp-trip',
     title: 'RCP A Trip',
     description: 'One reactor coolant pump coasts down and loop flow should decline without instantly collapsing.',
@@ -169,6 +220,15 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     }],
   },
   {
+    id: 'condenser-backpressure',
+    title: 'Condenser Backpressure',
+    description: 'Hot cooling water raises condenser backpressure and derates turbine demand/output.',
+    parameters: {
+      condenser: { coolingWaterTemperatureC: 95 },
+    },
+    actions: [],
+  },
+  {
     id: 'mixed-transient',
     title: 'Mixed Transient',
     description: 'A combined SGTR, RCP trip, and load reduction checks multi-unit scenario behavior.',
@@ -197,16 +257,20 @@ const cases: ReadonlyArray<AcceptanceCase> = [
   },
 ]
 
-const compiledSystem = (id: string) => compileProcessPlantSystem({
+const compiledSystem = (
+  id: string,
+  parameters?: Record<string, Record<string, unknown>>,
+) => compileProcessPlantSystem({
   id,
   pack: 'process-plant',
   componentLibrary: 'process-plant',
   graphRef: processPlantPressurizedWaterReactorGraphRef,
+  ...(parameters === undefined ? {} : { parameters }),
 })
 
 const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
   cases.map(testCase => ({
-    system: compiledSystem(testCase.id),
+    system: compiledSystem(testCase.id, testCase.parameters),
     schedule: { actions: testCase.actions },
     telemetry: {
       sampleIntervalMs,
@@ -361,7 +425,13 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'turbine.steamDemandKgPerS',
   'turbine.steamAvailabilityFraction',
   'turbine.exhaustTemperatureC',
+  'main-feedwater-pump-a-to-header.flowKgPerS',
+  'main-feedwater-pump-b-to-header.flowKgPerS',
+  'motor-afw-pump-to-header.flowKgPerS',
+  'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
   'condenser.heatRejectedMw',
+  'condenser.backPressurePa',
+  'condenser.condensateInventoryKg',
 ])
 
 const evaluateTelemetryIntegrity = (
@@ -394,6 +464,8 @@ const evaluateTelemetryIntegrity = (
   const maxSgBoilingEnergyResidual = maxAbsoluteValue(telemetry, 'sgA.boilingEnergyResidualMw')
   const maxPressurizerWaterResidual = maxAbsoluteValue(telemetry, 'pressurizer.waterInventoryBalanceResidualKg')
   const maxPressurizerSteamResidual = maxAbsoluteValue(telemetry, 'pressurizer.steamMassBalanceResidualKg')
+  const maxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'feedwaterHeader.flowBalanceResidualKgPerS')
+  const maxAuxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'auxFeedwaterHeader.flowBalanceResidualKgPerS')
   return [
     check(
       caseId,
@@ -437,6 +509,12 @@ const evaluateTelemetryIntegrity = (
       maxPressurizerWaterResidual < 5 && maxPressurizerSteamResidual < 5,
       `water=${maxPressurizerWaterResidual.toExponential(2)}kg steam=${maxPressurizerSteamResidual.toExponential(2)}kg`,
     ),
+    check(
+      caseId,
+      'feedwater and aux feedwater headers conserve reachable flow',
+      maxFeedwaterHeaderResidual < 1e-6 && maxAuxFeedwaterHeaderResidual < 1e-6,
+      `feed=${maxFeedwaterHeaderResidual.toExponential(2)}kg/s aux=${maxAuxFeedwaterHeaderResidual.toExponential(2)}kg/s`,
+    ),
   ]
 }
 
@@ -469,6 +547,17 @@ const evaluateCase = (
     return [
       check(caseId, 'loss of feedwater lowers SG level', afterLevel < beforeLevel - 3, `before=${beforeLevel.toFixed(1)} after=${afterLevel.toFixed(1)}%`),
       check(caseId, 'loss of feedwater removes main feed contribution', feed < 150, `maxFeedAfter120s=${feed.toFixed(1)}kg/s`),
+    ]
+  }
+  if (caseId === 'aux-feedwater-recovery') {
+    const mainFeedAfter = maxAfter(telemetry, 'main-feedwater-pump-a-to-header.flowKgPerS', 90_000)
+      + maxAfter(telemetry, 'main-feedwater-pump-b-to-header.flowKgPerS', 90_000)
+    const auxFeedAfter = maxAfter(telemetry, 'aux-feedwater-valve-a-to-sg-a.flowKgPerS', 120_000)
+    const afterLevel = valueAtOrAfter(telemetry, 'sgA.levelPercent', durationMs)
+    return [
+      check(caseId, 'main feedwater remains isolated after trip', mainFeedAfter < 50, `maxMainFeedAfter90s=${mainFeedAfter.toFixed(1)}kg/s`),
+      check(caseId, 'auxiliary feedwater reaches the open SG branch', auxFeedAfter > 20, `maxAuxFeedA=${auxFeedAfter.toFixed(1)}kg/s`),
+      check(caseId, 'auxiliary feedwater keeps SG level bounded above dryout', afterLevel > 15, `endLevel=${afterLevel.toFixed(1)}%`),
     ]
   }
   if (caseId === 'rcp-trip') {
@@ -505,6 +594,16 @@ const evaluateCase = (
       check(caseId, 'load reduction lowers turbine steam demand', afterDemand < beforeDemand * 0.6, `before=${beforeDemand.toFixed(1)} end=${afterDemand.toFixed(1)}kg/s`),
       check(caseId, 'load reduction lowers condenser heat rejection', afterHeatRejected < beforeHeatRejected * 0.75, `before=${beforeHeatRejected.toFixed(1)} end=${afterHeatRejected.toFixed(1)}MW`),
       check(caseId, 'turbine steam availability remains a bounded ratio', minAvailability >= 0 && maxAvailability <= 1, `min=${minAvailability.toFixed(2)} max=${maxAvailability.toFixed(2)}`),
+    ]
+  }
+  if (caseId === 'condenser-backpressure') {
+    const backPressure = valueAtOrAfter(telemetry, 'condenser.backPressurePa', durationMs)
+    const electric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
+    const steamDemand = valueAtOrAfter(telemetry, 'turbine.steamDemandKgPerS', durationMs)
+    return [
+      check(caseId, 'hot condenser raises backpressure', backPressure > 20_000, `backPressure=${backPressure.toFixed(0)}Pa`),
+      check(caseId, 'condenser backpressure derates turbine output', electric < 900, `electric=${electric.toFixed(1)}MW`),
+      check(caseId, 'condenser backpressure derates turbine steam demand', steamDemand < 1_350, `steamDemand=${steamDemand.toFixed(1)}kg/s`),
     ]
   }
   const leak = maxAfter(telemetry, 'sgA.primaryToSecondaryLeakKgPerS', 55_000)

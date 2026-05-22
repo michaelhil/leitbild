@@ -3,6 +3,7 @@ import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehavio
 import { clamp } from './component-helpers.ts'
 import {
   combinedValveFactorForLink,
+  downstreamServiceDemandFraction,
   distributeFlowFromComponent,
   hasProcessLinkVariable,
   passiveFlowFromIncomingService,
@@ -36,19 +37,23 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
       } else if (fromComponent.kind === 'centrifugalPump') {
         flowSource = sourceLimitedPumpFlow(system, link, context, context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS')))
       } else if (fromComponent.kind === 'processTank') {
-        flowSource = distributeFlowFromComponent(
+        const sourceFlow = distributeFlowFromComponent(
           system,
           link,
           context,
           context.readNumber(componentVariablePath(fromComponent, 'availableOutletFlowKgPerS')),
         )
+        const demandFraction = link.service === 'feedwater' || link.service === 'auxFeedwater' || link.service === 'condensate'
+          ? downstreamServiceDemandFraction(system, link, context)
+          : 1
+        flowSource = sourceFlow * demandFraction
       } else if (fromComponent.kind === 'condenserSink' && link.service === 'condensate') {
         flowSource = distributeFlowFromComponent(
           system,
           link,
           context,
           context.readNumber(componentVariablePath(fromComponent, 'availableCondensateOutletFlowKgPerS')),
-        )
+        ) * downstreamServiceDemandFraction(system, link, context)
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'reliefFlowKgPerS'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
