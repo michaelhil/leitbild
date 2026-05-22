@@ -23,6 +23,7 @@ const telemetryVariables = [
   'feedwater-tank-to-main-feedwater-pump-a.flowKgPerS',
   'feedwater-tank-to-main-feedwater-pump-b.flowKgPerS',
   'sgA.secondaryInventoryKg',
+  'sgA.steamMassKg',
   'sgA.feedwaterFlowKgPerS',
   'sgA.steamFlowKgPerS',
   'sg-a-steam-to-msiv-a.flowKgPerS',
@@ -173,6 +174,11 @@ const renderSvg = (telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>): strin
           label: 'inventory / 100',
           color: '#0f766e',
           points: numericPoints(telemetry, 'sgA.secondaryInventoryKg', 1 / 100),
+        },
+        {
+          label: 'steam mass / 20',
+          color: '#f59e0b',
+          points: numericPoints(telemetry, 'sgA.steamMassKg', 1 / 20),
         },
         {
           label: 'feedwater',

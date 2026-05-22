@@ -217,7 +217,6 @@ const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       voidFractionTimeConstantS: z.number().finite().positive().optional(),
       swellLevelGainPercent: z.number().finite().nonnegative().optional(),
       pressureInventoryGainMPaPerFraction: z.number().finite().nonnegative().optional(),
-      steamMassTimeConstantS: z.number().finite().positive().optional(),
       tubeMetalThermalCapacityMjPerK: z.number().finite().positive().optional(),
       tubeMetalInitialTemperatureC: z.number().finite().optional(),
       tubeLeakFlowCoefficientKgPerSPerSqrtMPa: z.number().finite().nonnegative().optional(),

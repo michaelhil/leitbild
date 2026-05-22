@@ -102,8 +102,7 @@
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6,
-        "steamMassTimeConstantS": 4
+        "pressureInventoryGainMPaPerFraction": 0.6
       }
     },
     {
@@ -131,8 +130,7 @@
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6,
-        "steamMassTimeConstantS": 4
+        "pressureInventoryGainMPaPerFraction": 0.6
       }
     },
     {
@@ -160,8 +158,7 @@
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6,
-        "steamMassTimeConstantS": 4
+        "pressureInventoryGainMPaPerFraction": 0.6
       }
     },
     {
@@ -189,8 +186,7 @@
         "voidFractionAtNominalBoiling": 0.16,
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
-        "pressureInventoryGainMPaPerFraction": 0.6,
-        "steamMassTimeConstantS": 4
+        "pressureInventoryGainMPaPerFraction": 0.6
       }
     },
     {

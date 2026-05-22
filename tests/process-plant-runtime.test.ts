@@ -405,6 +405,23 @@ describe('process plant runtime', () => {
     }
   })
 
+  test('steam generator steam-space mass is conservative across fixed steps', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const dtSeconds = 0.1
+
+    for (let index = 0; index < 80; index += 1) runtime.tick(100)
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('turbine.loadFraction'), value: 0.35 })
+    for (let index = 0; index < 80; index += 1) {
+      const steamMassBefore = Number(runtime.readVariable(valueOf('sgA.steamMassKg')))
+      runtime.tick(100)
+      const steamMassAfter = Number(runtime.readVariable(valueOf('sgA.steamMassKg')))
+      const boilingRate = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
+      const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
+
+      expect(steamMassAfter - steamMassBefore).toBeCloseTo((boilingRate - steamOutflow) * dtSeconds, 6)
+    }
+  })
+
   test('steam generator boiling rate remains energy-consistent with heat transfer', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 

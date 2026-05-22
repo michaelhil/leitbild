@@ -786,12 +786,7 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
         minInventory: nominalSteamMass * 0.15,
         maxInventory: nominalSteamMass * 2.5,
       })
-      const nextSteamMass = relaxToward(
-        currentSteamMass,
-        steamMassTarget,
-        context.dtSeconds,
-        optionalParameterNumber(component, 'steamMassTimeConstantS', 4),
-      )
+      const nextSteamMass = steamMassTarget
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       const steamQualityTarget = turbineSteamFlow <= 0
         ? 1
