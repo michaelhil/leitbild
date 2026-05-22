@@ -18,7 +18,11 @@
         "fuelThermalTimeConstantS": 20,
         "fuelTemperatureRiseAtRatedPowerC": 140,
         "decayHeatFractionAtPower": 0.06,
-        "decayHeatTimeConstantS": 900
+        "decayHeatTimeConstantS": 900,
+        "referenceCoolantOutletTemperatureC": 322,
+        "referenceFuelTemperatureC": 441,
+        "coolantTemperatureFeedbackPcmPerC": -3,
+        "fuelTemperatureFeedbackPcmPerC": -1.2
       }
     },
     {
@@ -40,6 +44,7 @@
         "nominalPressureMPa": 15.5,
         "nominalLevelPercent": 0.55,
         "nominalWaterInventoryKg": 42000,
+        "nominalSteamMassKg": 1800,
         "initialWaterTemperatureC": 345,
         "initialSteamTemperatureC": 345,
         "pressureTimeConstantS": 12,
@@ -49,7 +54,9 @@
         "heaterPressureRampMPaPerMwS": 0.0009,
         "sprayPressureRampMPaPerKgS": 0.00012,
         "reliefPressureRampMPaPerKgS": 0.0012,
-        "levelPressureGainMPaPerFraction": 1.4
+        "levelPressureGainMPaPerFraction": 1.4,
+        "steamMassPressureGainMPaPerFraction": 10.8,
+        "sprayCondensationKgPerKg": 0.08
       }
     },
     {
@@ -3571,6 +3578,8 @@
     "pressurizer.pressureMPa",
     "pressurizer.levelPercent",
     "pressurizer.waterInventoryKg",
+    "pressurizer.steamMassKg",
+    "pressurizer.steamMassFlowKgPerS",
     "pressurizer.waterTemperatureC",
     "pressurizer.steamTemperatureC",
     "pressurizer.heaterPowerMw",

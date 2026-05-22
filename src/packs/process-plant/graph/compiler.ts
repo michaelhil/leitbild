@@ -18,6 +18,7 @@ import type {
   PortRef,
   VariablePath,
 } from './model.ts'
+import { validateProcessLinkContracts } from './link-contracts.ts'
 import { connectionKindSchema, plantGraphSpecSchema } from './model.ts'
 
 interface ResolvedPortRef {
@@ -203,7 +204,6 @@ export const compilePlantGraph = (
     }
     return compiled
   })
-
   const published = new Set(spec.publishedVariables)
   const componentVariables: CompiledVariable[] = components.flatMap(component =>
     component.variables.map(descriptor => ({
@@ -228,6 +228,7 @@ export const compilePlantGraph = (
   )
   const variables = [...componentVariables, ...linkVariables]
   assertUnique(variables, variable => variable.path, 'variable path')
+  validateProcessLinkContracts(links)
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)

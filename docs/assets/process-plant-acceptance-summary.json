@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "durationMs": 240000,
+  "stepMs": 1000,
+  "sampleIntervalMs": 1000,
+  "caseCount": 6,
+  "checkCount": 13,
+  "failedCheckCount": 0,
+  "wallMs": 1219.812375,
+  "realtimeFactor": 196.75157009290055,
+  "checks": [
+    {
+      "caseId": "baseline",
+      "description": "baseline power stays bounded",
+      "passed": true,
+      "details": "endPower=2977.1MW"
+    },
+    {
+      "caseId": "baseline",
+      "description": "baseline pressure stays plausible",
+      "passed": true,
+      "details": "endPressure=16.02MPa"
+    },
+    {
+      "caseId": "baseline",
+      "description": "baseline does not drift violently",
+      "passed": true,
+      "details": "start=3001.7 end=2977.1MW"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "SGTR creates primary-to-secondary leak flow",
+      "passed": true,
+      "details": "maxLeak=198.80kg/s"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "SGTR raises secondary radiation indication",
+      "passed": true,
+      "details": "maxRadiation=135.736mSv/h"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "loss of feedwater lowers SG level",
+      "passed": true,
+      "details": "before=72.9 after=20.1%"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "loss of feedwater removes main feed contribution",
+      "passed": true,
+      "details": "maxFeedAfter120s=0.0kg/s"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "RCP trip begins a coastdown, not an instant zero",
+      "passed": true,
+      "details": "before=4250 shortAfter=3042kg/s"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "RCP trip materially lowers loop flow",
+      "passed": true,
+      "details": "before=4250 end=0kg/s"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "relief valve produces relief flow",
+      "passed": true,
+      "details": "maxRelief=69.37kg/s"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "relief valve reduces pressurizer steam mass tendency",
+      "passed": true,
+      "details": "before=1800.0 end=90.0kg"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "load reduction lowers turbine output",
+      "passed": true,
+      "details": "before=794.7 end=222.8MW"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "load reduction keeps output nonnegative",
+      "passed": true,
+      "details": "min=222.8MW"
+    }
+  ],
+  "artifacts": {
+    "traceSvgPath": "docs/assets/process-plant-acceptance-traces.svg",
+    "traceCsvPath": "docs/assets/process-plant-acceptance-traces.csv",
+    "summaryJsonPath": "docs/assets/process-plant-acceptance-summary.json"
+  }
+}

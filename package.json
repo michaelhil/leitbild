@@ -17,6 +17,7 @@
     "maps:promote": "bun run scripts/maps/promote-vector-tiles.ts",
     "maps:status": "bun run scripts/maps/map-status.ts",
     "process-plant:benchmark": "bun run scripts/process-plant/six-unit-benchmark.ts",
+    "process-plant:acceptance": "bun run scripts/process-plant/acceptance-traces.ts",
     "process-plant:balance": "bun run scripts/process-plant/feedwater-balance-trace.ts",
     "test": "bun test",
     "health": "bun run check && bun test && bun run build:ui"

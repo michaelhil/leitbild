@@ -65,6 +65,7 @@ describe('process plant runtime', () => {
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.voidFraction'))?.value)).toBeCloseTo(0, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.steamMassKg'))?.value)).toBeCloseTo(12_000, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.levelPercent'))?.value)).toBeCloseTo(55, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.steamMassKg'))?.value)).toBeCloseTo(1_800, 6)
   })
 
   test('runs the declared solver phases and publishes telemetry', () => {
@@ -520,6 +521,23 @@ describe('process plant runtime', () => {
     expect(heatToCoolant).toBeGreaterThan(trippedFissionPower)
   })
 
+  test('reactor temperature feedback suppresses fission power when fuel starts hot', () => {
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+    const hotFuel = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'core.fuelTemperatureC': 540,
+      }),
+    })
+
+    for (let index = 0; index < 30; index += 1) {
+      baseline.tick(100)
+      hotFuel.tick(100)
+    }
+
+    expect(Number(hotFuel.readVariable(valueOf('core.powerMw'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('core.powerMw'))))
+  })
+
   test('pressurizer heaters and relief valve change pressure through component behavior', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
 
@@ -537,6 +555,26 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('pressurizer.reliefFlowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(heatedPressure)
     expect(Number(runtime.readVariable(valueOf('pressurizer-relief-to-tank.flowKgPerS')))).toBeGreaterThan(0)
+  })
+
+  test('pressurizer steam mass follows conservative generation, spray, and relief balance', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const dtSeconds = 0.1
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.heaterPowerMw'), value: 15 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.sprayFlowKgPerS'), value: 80 })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    const steamMassBefore = Number(runtime.readVariable(valueOf('pressurizer.steamMassKg')))
+    runtime.tick(100)
+    const steamMassAfter = Number(runtime.readVariable(valueOf('pressurizer.steamMassKg')))
+    const netSteamMassFlow = Number(runtime.readVariable(valueOf('pressurizer.steamMassFlowKgPerS')))
+
+    expect(steamMassAfter - steamMassBefore).toBeCloseTo(netSteamMassFlow * dtSeconds, 6)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('pressurizer.reliefValvePositionFraction'), value: 1 })
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+    expect(Number(runtime.readVariable(valueOf('pressurizer.steamMassFlowKgPerS')))).toBeLessThan(0)
   })
 
   test('pressurizer pressure responds to pressurizer inventory as well as primary inventory', () => {

@@ -618,6 +618,48 @@ describe('process plant graph foundation', () => {
     expect(invalidFlow.success).toBe(false)
   })
 
+  test('rejects fluid links that omit explicit solver model metadata', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'main-feedwater-pump-a-to-header'
+        ? {
+            ...connection,
+            solverModel: undefined,
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection main-feedwater-pump-a-to-header must declare solverModel')
+  })
+
+  test('rejects fluid solver models with incompatible design phase', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'main-feedwater-pump-a-to-header'
+        ? {
+            ...connection,
+            designPhase: 'steam',
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection main-feedwater-pump-a-to-header solverModel incompressibleLiquid requires designPhase liquid')
+  })
+
+  test('rejects primary coolant links without pressure variables', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'rcs-hot-leg-a'
+        ? {
+            ...connection,
+            variables: connection.variables.filter(variable => variable.path !== 'pressureMPa'),
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection rcs-hot-leg-a with solverModel incompressibleLiquid must declare variable pressureMPa')
+  })
+
   test('generates Mermaid documentation from compiled topology', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const mermaid = plantGraphToMermaid(compiled)

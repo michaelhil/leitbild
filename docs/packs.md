@@ -33,6 +33,7 @@ A pack may contain:
 - object-attached contextual fields contributed to other packs' objects, such as weather-at-location or communications state
 - pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather H3 cells and influence shapes projected from the weather pack's sparse field model
 - pack queries for read-only provider-owned computations, such as weather-at-point, H3 map features, traffic conditions intersecting a route, or ambulance dispatch state
+- process graph definitions and validated process-link solver contracts when the pack owns a process simulation runtime
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules

@@ -22,6 +22,8 @@ The graph uses typed component ports and typed links. Raw component/port referen
 
 Connections are also process links. They may remain pure topology, or they may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area. Link variables join the same process variable registry as component variables and can be published, read, or controlled using stable variable paths.
 
+Fluid process links declare a validated solver contract through `nominalFluid`, `designPhase`, and `solverModel`. The graph compiler checks this contract after duplicate variable detection and before runtime creation. A fluid link that omits its solver model, uses an incompatible design phase, or lacks variables required by that solver model fails during graph compilation. Primary-coolant links are additionally required to expose pressure and pressure-drop variables because the current graph treats pressurizer pressure as the canonical RCS pressure and primary-coolant link pressure as a propagated read-out.
+
 Continuous physics stays inside the process plant pack runtime. Leitbild events are used for discrete operational transitions such as commands, trips, alarms, scenario injections, and threshold crossings. Pack queries expose selected read-only process state through the generic pack query surface; process-plant does not add a process-specific HTTP endpoint family.
 
 Process variables use structured quantity/unit metadata instead of free-text units. The runtime is headless and fixed-step: commands are applied at the start of a tick, ordered solver phases update continuous state, and snapshots expose current variable values for tests, provider persistence, and queries.
@@ -34,7 +36,7 @@ The process-plant simulation provider owns provider-private runtime state. It pe
 
 The provider also owns process-specific schedules and telemetry buffers. Scenario `providerConfigs["process-plant"]` can configure timed variable writes and selected trend sampling per process system. This keeps pump trips, valve operations, rod moves, and process trends inside the process-plant pack instead of turning core scenario scripting into a process-control language.
 
-The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, decay heat, fuel temperature, primary coolant flow/temperature, primary loop-flow inertia, steam-generator tube-metal heat transfer, secondary-side mass balance, steam production, turbine steam use/electrical output, condenser sink, pressurizer pressure/inventory control, and a first primary inventory/SGTR-like leakage path. Pressurizer pressure remains the canonical RCS pressure in the current graph. Reactor vessel inventory changes create an explicit pressure bias that the pressurizer behavior reads; this avoids duplicating primary pressure state while allowing relief and tube-leak losses to affect pressure. Shared thermophysical helpers hold the approximate constants and formulas used by these behaviors. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop or a solved primary pressure field.
+The first process slice is a lumped-parameter directional model, not analysis-grade thermal hydraulics. It couples reactor heat generation, decay heat, fuel temperature, simplified negative temperature feedback, primary coolant flow/temperature, primary loop-flow inertia, steam-generator tube-metal heat transfer, secondary-side mass balance, steam production, turbine steam use/electrical output, condenser sink, pressurizer pressure/inventory control, conservative pressurizer steam-mass accounting, and a first primary inventory/SGTR-like leakage path. Pressurizer pressure remains the canonical RCS pressure in the current graph. Reactor vessel inventory changes create an explicit pressure bias that the pressurizer behavior reads; this avoids duplicating primary pressure state while allowing relief and tube-leak losses to affect pressure. Pressurizer steam mass is separate from pressure display effects: heaters add steam mass, spray condenses it, and relief removes it before pressure response is calculated. Shared thermophysical helpers hold the approximate constants and formulas used by these behaviors. This proves that the graph/variable/solver architecture can carry a coherent primary-to-secondary energy path while keeping continuous physics inside the pack runtime. It does not yet claim a fully closed condensate/feedwater loop, full two-phase pressurizer model, or a solved primary pressure field.
 
 ## Consequences
 
@@ -45,6 +47,7 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Control-room surfaces and AI agents can use stable variable paths rather than ad hoc object fields.
 - Process-link terminology is used in compiled/runtime code. Scenario authors define `connections` with an explicit `connectionKind`; fluid links must also declare a `service` such as `primaryCoolant`, `mainSteam`, `feedwater`, `auxFeedwater`, or `condensate`.
 - `nominalFluid`, `designPhase`, and `solverModel` describe design intent for a fluid connection without making phase or fluid identity a brittle hard-coded label.
+- `solverModel` is now a compilation contract for fluid links, not a comment. It determines required link-local variables and design-phase compatibility before the runtime starts.
 - Simple conduit-local sensors, valves, and leaks can be modeled without exploding the graph into many tiny components.
 - The built-in graph now exercises a four-loop plant skeleton with four steam generators, four reactor coolant pumps, main and auxiliary feedwater paths, main steam/header/turbine/condenser paths, charging/letdown, and pressurizer topology.
 - Steam generators expose explicit tube-leak variables. A tube leak transfers mass from primary inventory to secondary inventory and raises the affected secondary/main-steam radiation indication.
@@ -62,6 +65,7 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - The current built-in graph can now exercise the first primary/secondary energy path in headless tests.
 - Multi-unit process scenarios do not need a separate cluster runtime. A scenario can instantiate multiple process systems, each with the same graph and different schedules/telemetry config. The current six-unit benchmark runs six expanded plant graphs independently in one provider.
 - Physics-deepening work must preserve the optimized execution model: compile once, use the variable table as the only authoritative state, reuse compiled adjacency indexes, and avoid per-tick graph parsing or new shadow state.
+- Acceptance traces are now part of the process-plant engineering loop. Physics changes should be exercised through representative headless cases such as baseline, SGTR-like leak, loss of feedwater, RCP coastdown, relief opening, and turbine load reduction, using the real graphRef/runtime rather than a second diagnostic model.
 
 ## Guardrails
 
@@ -74,8 +78,10 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - Do not add placeholder component behavior. Component graph metadata is allowed because it is used by validation and compilation; solver behavior must be real when added.
 - Do not use free-text variable units.
 - Do not put unrelated behavior into process links. A link variable should observe or modify that one connection; multi-port or standalone behavior belongs in a component.
+- Do not add a new fluid `solverModel` without defining and testing its graph contract.
 - Do not expose process variables through object snapshots or object updates.
 - Do not persist queued commands only in memory; accepted commands must survive provider close/reopen until the solver applies them.
 - Do not give behavior modules unrestricted access to mutate the variable table.
 - Do not add a dynamic behavior/plugin loader until there is a concrete second implementation pressure; scenario data instantiates graphs, but solver behavior remains reviewed TypeScript code in V1.
 - Do not duplicate thermophysical constants in individual behaviors; add reviewed helper functions when a formula becomes shared across components or links.
+- Do not deepen physics without a trend-level acceptance check or plot when the change is meant to alter transient behavior.

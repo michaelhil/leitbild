@@ -194,6 +194,21 @@ Compiled link variables use stable paths just like component variables:
 
 Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
 
+## Fluid Link Solver Contracts
+
+Fluid process links must declare `nominalFluid`, `designPhase`, and `solverModel`. These fields are not decorative labels. The graph compiler validates them as a contract before runtime starts.
+
+Current solver models:
+
+- `sourceSink`: a bounded source/sink conduit for simple supply or drain paths. It currently requires `designPhase: "liquid"` and link-local `flowKgPerS` and `temperatureC`.
+- `incompressibleLiquid`: a liquid process link for feedwater, condensate, charging, letdown, auxiliary feedwater, and primary-coolant paths. It requires `designPhase: "liquid"` and `flowKgPerS` plus `temperatureC`. Primary-coolant links additionally require `pressureMPa` and `pressureDropMPa`, because they publish propagated RCS pressure read-outs.
+- `compressibleSteam`: a steam process link for main steam and exhaust steam paths. It requires `designPhase: "steam"` and `flowKgPerS` plus `temperatureC`. Pressure, quality, void fraction, enthalpy, radiation, valve position, and leak area are optional link-local variables when that connection needs them.
+- `twoPhaseApprox`: a limited transitional model for paths that are intentionally represented as mixed-phase in V1, such as pressurizer relief. It requires `designPhase: "twoPhase"` and `flowKgPerS` plus `temperatureC`.
+
+The purpose of the contract is to stop accidental graph drift as the component library grows. If a scenario or graph file declares a fluid connection without the variables needed by its solver model, compilation fails before a runtime exists. The runtime therefore does not need silent fallbacks such as "if pressure is missing, invent one".
+
+`solverModel` is intentionally still a lumped-model contract, not a full numerical method declaration. For example, `incompressibleLiquid` does not mean Leitbild is solving a full hydraulic network. It means the link participates in the current liquid flow/temperature/pressure-drop behavior and must provide the state surfaces that behavior expects.
+
 ## Typed Ports And Process Links
 
 Component definitions declare named ports with a kind and direction.
@@ -321,8 +336,11 @@ Units are structured metadata, not free text. Current quantities and units are i
 - `reactivity`: `pcm`
 - `ratio`: `fraction` or `percent`
 - `pressure`: `MPa` or `Pa`
+- `pressureDelta`: `MPa`
 - `flowRate`: `kg/s`
+- `flowRateDelta`: `kg/s`
 - `mass`: `kg`
+- `massDelta`: `kg`
 - `temperature`: `degC`
 - `head`: `Pa`
 - `boolean`: `boolean`
@@ -432,6 +450,7 @@ This follows the same broad lesson as serious simulator integrations such as Fly
 Current runtime behavior is deliberately minimal but functional:
 
 - reactor power responds gradually to rod insertion demand,
+- reactor power now includes a simple negative temperature-feedback term from core outlet coolant temperature and fuel temperature. This is still point-reactor-like and simplified, but it prevents fission power from being purely rod-position driven.
 - reactor heat is transferred into a primary coolant temperature rise using a shared lumped `Q = m * cp * dT` helper,
 - core fuel temperature and decay heat are now explicit state variables, so reactor trips can leave residual heat removal demand after fission power falls,
 - core coolant, steam generator primary/secondary temperatures, SG tube-metal temperature, SG level, turbine output, and condenser temperature now use explicit time constants rather than purely instantaneous jumps,
@@ -449,7 +468,7 @@ Current runtime behavior is deliberately minimal but functional:
 - condenser sink receives turbine exhaust steam and trends condensate temperature, back pressure, condensate production, condensate inventory, condensate level, and available condensate outlet flow,
 - pump suction links are demand-limited by the destination pump flow, so stopped pumps do not drain source tanks or condenser inventory through passive link flow,
 - pressurizer pressure, level, water inventory, water temperature, steam temperature, heater demand, spray demand, relief valve position, and relief flow are now explicit component variables,
-- pressurizer heaters, spray, relief flow, and primary-inventory pressure bias change pressure and inventory through the same fixed-step behavior contract as the rest of the runtime,
+- pressurizer steam mass is now explicit state rather than only a pressure display effect. Heaters create steam mass, spray condenses steam back into the water inventory, relief flow removes steam mass, and steam-mass deviation contributes to pressure response alongside level and primary-inventory pressure bias. This keeps mass accounting conservative while remaining a lumped two-region proxy rather than a full two-phase pressurizer model,
 - link flow variables can be modified by link-local valve position and leak area,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
@@ -618,6 +637,37 @@ Generated artifacts:
 Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.22 seconds and five minutes of six systems in roughly 0.90 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 4.1x wall-clock penalty for 6x the plant count, and roughly 332x faster than real time for the six-system case at the current fidelity. The current graph has 44 components, 58 links, and 341 variables per system after adding primary inventory, primary pressure publication, and steam-generator tube-leak variables. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not extra runtime graph scans or new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
+
+## Acceptance Evidence
+
+The process-plant pack now has a compact acceptance trace harness:
+
+```sh
+bun run process-plant:acceptance
+```
+
+The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs six representative headless cases, records selected published variables, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, component behaviors, and process-link behaviors that provider-backed simulations use.
+
+Current acceptance cases:
+
+- baseline steady run,
+- steam-generator tube rupture-like fault,
+- loss of main feedwater,
+- reactor coolant pump A trip/coastdown,
+- pressurizer relief valve open,
+- turbine/load reduction.
+
+The checks are trend-level guardrails, not licensing-grade validation. They catch regressions such as missing SGTR leak/radiation coupling, feedwater loss not lowering steam-generator level, RCP trips collapsing instantly instead of coasting down, relief flow not removing pressurizer steam mass, or load reduction not lowering turbine output.
+
+![Process plant acceptance traces](./assets/process-plant-acceptance-traces.svg)
+
+Generated artifacts:
+
+- [process-plant-acceptance-traces.svg](./assets/process-plant-acceptance-traces.svg)
+- [process-plant-acceptance-traces.csv](./assets/process-plant-acceptance-traces.csv)
+- [process-plant-acceptance-summary.json](./assets/process-plant-acceptance-summary.json)
+
+Acceptance plots are now part of the engineering loop for physics changes. When deepening a component or link behavior, add or adjust trend checks so the expected physical direction is visible and tested. Do not rely only on isolated variable assertions.
 
 ## Implementation Phases
 
