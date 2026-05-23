@@ -62,7 +62,39 @@
         "reliefCapacityKgPerS": 85,
         "sprayCondensationKgPerKg": 0.08,
         "nominalWaterDensityKgPerM3": 700
-      }
+      },
+      "variables": [
+        {
+          "path": "pressureMPa",
+          "tagId": "PT-455",
+          "equipmentId": "pressurizer",
+          "description": "Pressurizer pressure"
+        },
+        {
+          "path": "levelPercent",
+          "tagId": "PZR-LVL",
+          "equipmentId": "pressurizer",
+          "description": "Pressurizer level"
+        },
+        {
+          "path": "heaterPowerMw",
+          "tagId": "PZR-HTR",
+          "equipmentId": "pressurizer",
+          "description": "Pressurizer heater power"
+        },
+        {
+          "path": "sprayFlowKgPerS",
+          "tagId": "PZR-SPRAY",
+          "equipmentId": "pressurizer",
+          "description": "Pressurizer spray flow"
+        },
+        {
+          "path": "reliefValvePositionFraction",
+          "tagId": "PORV-456A",
+          "equipmentId": "pressurizerReliefValve",
+          "description": "Pressurizer relief valve position"
+        }
+      ]
     },
     {
       "id": "pressurizerReliefValve",
@@ -109,7 +141,33 @@
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
         "pressureInventoryGainMPaPerFraction": 0.6
-      }
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "SG-A-LVL-NR",
+          "equipmentId": "sgA",
+          "description": "Steam generator A narrow-range level"
+        },
+        {
+          "path": "pressureMPa",
+          "tagId": "SG-A-PRESS",
+          "equipmentId": "sgA",
+          "description": "Steam generator A pressure"
+        },
+        {
+          "path": "secondaryRadiationMSvPerH",
+          "tagId": "SG-A-N16",
+          "equipmentId": "sgA",
+          "description": "Steam generator A secondary radiation indication"
+        },
+        {
+          "path": "tubeLeakFraction",
+          "tagId": "SG-A-TUBE-LEAK",
+          "equipmentId": "sgA",
+          "description": "Steam generator A tube leak fraction"
+        }
+      ]
     },
     {
       "id": "sgB",
@@ -137,7 +195,33 @@
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
         "pressureInventoryGainMPaPerFraction": 0.6
-      }
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "SG-B-LVL-NR",
+          "equipmentId": "sgB",
+          "description": "Steam generator B narrow-range level"
+        },
+        {
+          "path": "pressureMPa",
+          "tagId": "SG-B-PRESS",
+          "equipmentId": "sgB",
+          "description": "Steam generator B pressure"
+        },
+        {
+          "path": "secondaryRadiationMSvPerH",
+          "tagId": "SG-B-N16",
+          "equipmentId": "sgB",
+          "description": "Steam generator B secondary radiation indication"
+        },
+        {
+          "path": "tubeLeakFraction",
+          "tagId": "SG-B-TUBE-LEAK",
+          "equipmentId": "sgB",
+          "description": "Steam generator B tube leak fraction"
+        }
+      ]
     },
     {
       "id": "sgC",
@@ -165,7 +249,33 @@
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
         "pressureInventoryGainMPaPerFraction": 0.6
-      }
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "SG-C-LVL-NR",
+          "equipmentId": "sgC",
+          "description": "Steam generator C narrow-range level"
+        },
+        {
+          "path": "pressureMPa",
+          "tagId": "SG-C-PRESS",
+          "equipmentId": "sgC",
+          "description": "Steam generator C pressure"
+        },
+        {
+          "path": "secondaryRadiationMSvPerH",
+          "tagId": "SG-C-N16",
+          "equipmentId": "sgC",
+          "description": "Steam generator C secondary radiation indication"
+        },
+        {
+          "path": "tubeLeakFraction",
+          "tagId": "SG-C-TUBE-LEAK",
+          "equipmentId": "sgC",
+          "description": "Steam generator C tube leak fraction"
+        }
+      ]
     },
     {
       "id": "sgD",
@@ -193,7 +303,33 @@
         "voidFractionTimeConstantS": 6,
         "swellLevelGainPercent": 26,
         "pressureInventoryGainMPaPerFraction": 0.6
-      }
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "SG-D-LVL-NR",
+          "equipmentId": "sgD",
+          "description": "Steam generator D narrow-range level"
+        },
+        {
+          "path": "pressureMPa",
+          "tagId": "SG-D-PRESS",
+          "equipmentId": "sgD",
+          "description": "Steam generator D pressure"
+        },
+        {
+          "path": "secondaryRadiationMSvPerH",
+          "tagId": "SG-D-N16",
+          "equipmentId": "sgD",
+          "description": "Steam generator D secondary radiation indication"
+        },
+        {
+          "path": "tubeLeakFraction",
+          "tagId": "SG-D-TUBE-LEAK",
+          "equipmentId": "sgD",
+          "description": "Steam generator D tube leak fraction"
+        }
+      ]
     },
     {
       "id": "rcpA",
@@ -207,7 +343,27 @@
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
         "minimumNaturalCirculationFlowKgPerS": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RCP-A-RUN",
+          "equipmentId": "rcpA",
+          "description": "Reactor coolant pump A running command/status"
+        },
+        {
+          "path": "speedFraction",
+          "tagId": "RCP-A-SPD",
+          "equipmentId": "rcpA",
+          "description": "Reactor coolant pump A speed fraction"
+        },
+        {
+          "path": "loopFlowKgPerS",
+          "tagId": "RCP-A-FLOW",
+          "equipmentId": "rcpA",
+          "description": "Reactor coolant pump A loop flow"
+        }
+      ]
     },
     {
       "id": "rcpB",
@@ -221,7 +377,27 @@
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
         "minimumNaturalCirculationFlowKgPerS": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RCP-B-RUN",
+          "equipmentId": "rcpB",
+          "description": "Reactor coolant pump B running command/status"
+        },
+        {
+          "path": "speedFraction",
+          "tagId": "RCP-B-SPD",
+          "equipmentId": "rcpB",
+          "description": "Reactor coolant pump B speed fraction"
+        },
+        {
+          "path": "loopFlowKgPerS",
+          "tagId": "RCP-B-FLOW",
+          "equipmentId": "rcpB",
+          "description": "Reactor coolant pump B loop flow"
+        }
+      ]
     },
     {
       "id": "rcpC",
@@ -235,7 +411,27 @@
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
         "minimumNaturalCirculationFlowKgPerS": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RCP-C-RUN",
+          "equipmentId": "rcpC",
+          "description": "Reactor coolant pump C running command/status"
+        },
+        {
+          "path": "speedFraction",
+          "tagId": "RCP-C-SPD",
+          "equipmentId": "rcpC",
+          "description": "Reactor coolant pump C speed fraction"
+        },
+        {
+          "path": "loopFlowKgPerS",
+          "tagId": "RCP-C-FLOW",
+          "equipmentId": "rcpC",
+          "description": "Reactor coolant pump C loop flow"
+        }
+      ]
     },
     {
       "id": "rcpD",
@@ -249,7 +445,27 @@
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
         "minimumNaturalCirculationFlowKgPerS": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RCP-D-RUN",
+          "equipmentId": "rcpD",
+          "description": "Reactor coolant pump D running command/status"
+        },
+        {
+          "path": "speedFraction",
+          "tagId": "RCP-D-SPD",
+          "equipmentId": "rcpD",
+          "description": "Reactor coolant pump D speed fraction"
+        },
+        {
+          "path": "loopFlowKgPerS",
+          "tagId": "RCP-D-FLOW",
+          "equipmentId": "rcpD",
+          "description": "Reactor coolant pump D loop flow"
+        }
+      ]
     },
     {
       "id": "mainFeedwaterPumpA",
@@ -260,7 +476,15 @@
         "nominalHeadPa": 1100000,
         "flowTimeConstantS": 6,
         "maxFlowRampKgPerS2": 220
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "MFW-PUMP-A-RUN",
+          "equipmentId": "mainFeedwaterPumpA",
+          "description": "Main feedwater pump A running command/status"
+        }
+      ]
     },
     {
       "id": "mainFeedwaterPumpB",
@@ -271,7 +495,15 @@
         "nominalHeadPa": 1100000,
         "flowTimeConstantS": 6,
         "maxFlowRampKgPerS2": 220
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "MFW-PUMP-B-RUN",
+          "equipmentId": "mainFeedwaterPumpB",
+          "description": "Main feedwater pump B running command/status"
+        }
+      ]
     },
     {
       "id": "feedwaterTank",
@@ -454,7 +686,21 @@
         "initialLoadFraction": 0.85,
         "nominalSteamFlowKgPerS": 1050,
         "electricalTimeConstantS": 5
-      }
+      },
+      "variables": [
+        {
+          "path": "loadFraction",
+          "tagId": "TURB-LOAD",
+          "equipmentId": "turbine",
+          "description": "Turbine load demand"
+        },
+        {
+          "path": "electricMw",
+          "tagId": "GEN-MW",
+          "equipmentId": "turbine",
+          "description": "Generator electrical output"
+        }
+      ]
     },
     {
       "id": "condenser",
@@ -2031,7 +2277,7 @@
           "quantity": "flowRate",
           "unit": "kg/s",
           "initialValue": 0,
-          "sensorId": "FT-SG-A-001"
+          "tagId": "FT-SG-A-001"
         },
         {
           "path": "temperatureC",
@@ -2054,7 +2300,7 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 6.9,
-          "sensorId": "PT-SG-A-001"
+          "tagId": "PT-SG-A-001"
         },
         {
           "path": "qualityFraction",
@@ -2099,7 +2345,7 @@
           "quantity": "radiationDoseRate",
           "unit": "mSv/h",
           "initialValue": 0.02,
-          "sensorId": "RT-SG-A-001"
+          "tagId": "RT-SG-A-001"
         },
         {
           "path": "leak.areaFraction",
@@ -2253,7 +2499,7 @@
           "quantity": "flowRate",
           "unit": "kg/s",
           "initialValue": 0,
-          "sensorId": "FT-SG-B-001"
+          "tagId": "FT-SG-B-001"
         },
         {
           "path": "temperatureC",
@@ -2276,7 +2522,7 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 6.9,
-          "sensorId": "PT-SG-B-001"
+          "tagId": "PT-SG-B-001"
         },
         {
           "path": "qualityFraction",
@@ -2321,7 +2567,7 @@
           "quantity": "radiationDoseRate",
           "unit": "mSv/h",
           "initialValue": 0.02,
-          "sensorId": "RT-SG-B-001"
+          "tagId": "RT-SG-B-001"
         },
         {
           "path": "leak.areaFraction",
@@ -2475,7 +2721,7 @@
           "quantity": "flowRate",
           "unit": "kg/s",
           "initialValue": 0,
-          "sensorId": "FT-SG-C-001"
+          "tagId": "FT-SG-C-001"
         },
         {
           "path": "temperatureC",
@@ -2498,7 +2744,7 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 6.9,
-          "sensorId": "PT-SG-C-001"
+          "tagId": "PT-SG-C-001"
         },
         {
           "path": "qualityFraction",
@@ -2543,7 +2789,7 @@
           "quantity": "radiationDoseRate",
           "unit": "mSv/h",
           "initialValue": 0.02,
-          "sensorId": "RT-SG-C-001"
+          "tagId": "RT-SG-C-001"
         },
         {
           "path": "leak.areaFraction",
@@ -2697,7 +2943,7 @@
           "quantity": "flowRate",
           "unit": "kg/s",
           "initialValue": 0,
-          "sensorId": "FT-SG-D-001"
+          "tagId": "FT-SG-D-001"
         },
         {
           "path": "temperatureC",
@@ -2720,7 +2966,7 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 6.9,
-          "sensorId": "PT-SG-D-001"
+          "tagId": "PT-SG-D-001"
         },
         {
           "path": "qualityFraction",
@@ -2765,7 +3011,7 @@
           "quantity": "radiationDoseRate",
           "unit": "mSv/h",
           "initialValue": 0.02,
-          "sensorId": "RT-SG-D-001"
+          "tagId": "RT-SG-D-001"
         },
         {
           "path": "leak.areaFraction",

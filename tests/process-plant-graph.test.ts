@@ -12,6 +12,7 @@ import {
   processPlantPressurizedWaterReactorGraphRef,
   processPlantComponentRegistry,
   processLinkVariableDescriptorSchema,
+  tagIdForLookup,
   variableDescriptorSchema,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
@@ -591,67 +592,63 @@ describe('process plant graph foundation', () => {
     expect(() => compilePlantGraph(invalidReliefValve, processPlantComponentRegistry)).toThrow('requires setpointMPa')
   })
 
-  test('rejects link actuators on non-writable variables', () => {
-    const result = processLinkVariableDescriptorSchema.safeParse({
-      path: 'valve.positionFraction',
-      label: 'Valve position',
-      kind: 'control',
-      domain: 'control',
-      writable: false,
-      publish: 'telemetry',
-      quantity: 'ratio',
-      unit: 'fraction',
-      initialValue: 1,
-      actuatorId: 'MSIV-A',
-    })
-
-    expect(result.success).toBe(false)
+  test('compiles graph-owned signal bindings for component and link variables', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    expect(String(graph.signalBindingByTagId.get(tagIdForLookup('PT-455'))?.path)).toBe('pressurizer.pressureMPa')
+    expect(String(graph.signalBindingByTagId.get(tagIdForLookup('FT-SG-A-001'))?.path)).toBe('sg-a-steam-to-msiv-a.flowKgPerS')
   })
 
-  test('rejects link variables that declare both sensor and actuator ids', () => {
-    const result = processLinkVariableDescriptorSchema.safeParse({
-      path: 'pressureMPa',
-      label: 'Main steam pressure',
-      kind: 'control',
-      domain: 'control',
-      writable: true,
-      publish: 'telemetry',
-      quantity: 'pressure',
-      unit: 'MPa',
-      initialValue: 6.9,
-      sensorId: 'PT-SG-A-001',
-      actuatorId: 'PT-SG-A-SETPOINT',
-    })
-
-    expect(result.success).toBe(false)
-  })
-
-  test('rejects duplicate process sensor and actuator ids before runtime', () => {
-    const invalidSensorId = {
+  test('rejects duplicate process signal tag ids before runtime', () => {
+    const invalidComponentTagId = {
+      ...pressurizedWaterReactorPlantSpec,
+      components: pressurizedWaterReactorPlantSpec.components.map(component => component.id === 'sgB'
+        ? {
+            ...component,
+            variables: component.variables.map(variable => variable.path === 'levelPercent'
+              ? {
+                  ...variable,
+                  tagId: 'PT-455',
+                  equipmentId: 'sgB',
+                  description: 'Duplicate tag for test',
+                }
+              : variable),
+          }
+        : component),
+    }
+    const invalidLinkTagId = {
       ...pressurizedWaterReactorPlantSpec,
       connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'turbine-stop-valve-to-turbine'
         ? {
             ...connection,
             variables: connection.variables.map(variable => variable.path === 'flowKgPerS'
-              ? { ...variable, sensorId: 'PT-SG-A-001' }
-              : variable),
-          }
-        : connection),
-    }
-    const invalidActuatorId = {
-      ...pressurizedWaterReactorPlantSpec,
-      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-msiv-a' || connection.id === 'sg-b-steam-to-msiv-b'
-        ? {
-            ...connection,
-            variables: connection.variables.map(variable => variable.path === 'leak.areaFraction'
-              ? { ...variable, actuatorId: 'DUPLICATE-LEAK-ACTUATOR' }
+              ? { ...variable, tagId: 'PT-455' }
               : variable),
           }
         : connection),
     }
 
-    expect(() => compilePlantGraph(invalidSensorId, processPlantComponentRegistry)).toThrow('duplicate process sensor id: PT-SG-A-001')
-    expect(() => compilePlantGraph(invalidActuatorId, processPlantComponentRegistry)).toThrow('duplicate process actuator id: DUPLICATE-LEAK-ACTUATOR')
+    expect(() => compilePlantGraph(invalidComponentTagId, processPlantComponentRegistry)).toThrow('duplicate process signal tag id: PT-455')
+    expect(() => compilePlantGraph(invalidLinkTagId, processPlantComponentRegistry)).toThrow('duplicate process signal tag id: PT-455')
+  })
+
+  test('rejects component signal metadata for unknown local variable paths', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      components: pressurizedWaterReactorPlantSpec.components.map(component => component.id === 'pressurizer'
+        ? {
+            ...component,
+            variables: [
+              ...component.variables,
+              {
+                path: 'notARealVariable',
+                tagId: 'BAD-TAG',
+              },
+            ],
+          }
+        : component),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('component pressurizer variable metadata references unknown local variable')
   })
 
   test('rejects link initial values that do not match quantity type', () => {
@@ -693,7 +690,7 @@ describe('process plant graph foundation', () => {
       quantity: 'ratio',
       unit: 'fraction',
       initialValue: 1.5,
-      actuatorId: 'MSIV-A',
+      tagId: 'MSIV-A',
     })
     const invalidFlow = processLinkVariableDescriptorSchema.safeParse({
       path: 'flowKgPerS',

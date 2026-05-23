@@ -11,6 +11,8 @@ export type PortRef = Brand<string, 'ProcessPlantPortRef'>
 export type LocalVariablePath = Brand<string, 'ProcessPlantLocalVariablePath'>
 export type VariablePath = Brand<string, 'ProcessPlantVariablePath'>
 export type ConnectionService = Brand<string, 'ProcessPlantConnectionService'>
+export type ProcessSignalTagId = Brand<string, 'ProcessPlantSignalTagId'>
+export type ProcessEquipmentId = Brand<string, 'ProcessPlantEquipmentId'>
 export type ProcessVariableValue = number | boolean
 
 export const plantGraphIdSchema = idSchema.transform(value => value as PlantGraphId)
@@ -33,6 +35,8 @@ export const localVariablePathSchema = z.string()
   .max(128)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/)
   .transform(value => value as LocalVariablePath)
+export const processSignalTagIdSchema = idSchema.transform(value => value as ProcessSignalTagId)
+export const processEquipmentIdSchema = idSchema.transform(value => value as ProcessEquipmentId)
 
 export const portKindSchema = z.enum([
   'hydraulic',
@@ -231,9 +235,22 @@ const variableDescriptorBaseSchema = z.object({
   publish: variablePublishPolicySchema,
   quantity: processQuantitySchema,
   unit: processUnitSchema,
+  tagId: processSignalTagIdSchema.optional(),
+  equipmentId: processEquipmentIdSchema.optional(),
+  description: z.string().min(1).optional(),
+  externalRefs: z.array(z.string().min(1)).optional(),
 })
 export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
+
+export const componentVariableBindingOverrideSchema = z.object({
+  path: localVariablePathSchema,
+  tagId: processSignalTagIdSchema.optional(),
+  equipmentId: processEquipmentIdSchema.optional(),
+  description: z.string().min(1).optional(),
+  externalRefs: z.array(z.string().min(1)).optional(),
+}).strict()
+export type ComponentVariableBindingOverride = z.infer<typeof componentVariableBindingOverrideSchema>
 
 export const componentVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
   path: localVariablePathSchema,
@@ -254,26 +271,10 @@ export type ConnectionPhysicalSpec = z.infer<typeof connectionPhysicalSpecSchema
 export const processLinkVariableDescriptorSchema = variableDescriptorBaseSchema.extend({
   path: localVariablePathSchema,
   initialValue: processVariableValueSchema,
-  sensorId: idSchema.optional(),
-  actuatorId: idSchema.optional(),
 }).superRefine((descriptor, ctx) => {
   validateQuantityUnit(descriptor, ctx)
   validateInitialValueType(descriptor, ctx)
   validateInitialValueBounds(descriptor, ctx)
-  if (descriptor.sensorId !== undefined && descriptor.actuatorId !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['actuatorId'],
-      message: 'process link variable cannot declare both sensorId and actuatorId',
-    })
-  }
-  if (!descriptor.writable && descriptor.actuatorId !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['actuatorId'],
-      message: 'actuatorId requires a writable process link variable',
-    })
-  }
 })
 export type ProcessLinkVariableDescriptor = z.infer<typeof processLinkVariableDescriptorSchema>
 
@@ -288,6 +289,7 @@ export const componentInstanceSpecSchema = z.object({
   label: z.string().min(1),
   parameters: z.unknown(),
   initialState: z.unknown().optional(),
+  variables: z.array(componentVariableBindingOverrideSchema).default([]),
 })
 export type ComponentInstanceSpec = z.infer<typeof componentInstanceSpecSchema>
 
@@ -390,6 +392,24 @@ export interface CompiledVariable {
   readonly initialValue?: ProcessVariableValue
 }
 
+export interface ProcessSignalBinding {
+  readonly path: VariablePath
+  readonly tagId?: ProcessSignalTagId
+  readonly equipmentId?: ProcessEquipmentId
+  readonly description?: string
+  readonly externalRefs?: ReadonlyArray<string>
+  readonly label: string
+  readonly kind: VariableKind
+  readonly domain: VariableDomain
+  readonly quantity: ProcessQuantity
+  readonly unit: ProcessUnit
+  readonly writable: boolean
+  readonly published: boolean
+  readonly owner:
+    | { readonly type: 'component'; readonly componentIndex: number }
+    | { readonly type: 'link'; readonly linkIndex: number }
+}
+
 export interface CompiledPlantGraph {
   readonly specId: PlantGraphId
   readonly title: string
@@ -402,4 +422,7 @@ export interface CompiledPlantGraph {
   readonly outgoingLinksByComponent: ReadonlyArray<ReadonlyArray<number>>
   readonly linksByService: ReadonlyMap<ConnectionService, ReadonlyArray<number>>
   readonly variables: ReadonlyArray<CompiledVariable>
+  readonly signalBindings: ReadonlyArray<ProcessSignalBinding>
+  readonly signalBindingByPath: ReadonlyMap<VariablePath, ProcessSignalBinding>
+  readonly signalBindingByTagId: ReadonlyMap<ProcessSignalTagId, ProcessSignalBinding>
 }

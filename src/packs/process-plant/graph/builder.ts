@@ -1,6 +1,7 @@
 import type {
   ComponentId,
   ComponentKind,
+  ComponentVariableBindingOverride,
   ComponentInstanceSpec,
   ConnectionId,
   ConnectionKind,
@@ -22,11 +23,13 @@ export const component = (
   kind: string,
   label: string,
   parameters: unknown,
+  variables: ReadonlyArray<ComponentVariableBindingOverride> = [],
 ): ComponentInstanceSpec => ({
   id: id as ComponentId,
   kind: kind as ComponentKind,
   label,
   parameters,
+  variables: [...variables],
 })
 
 export const connect = (

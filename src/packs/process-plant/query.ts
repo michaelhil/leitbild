@@ -3,16 +3,18 @@ import type { IsoTimestamp } from '../../core/model/index.ts'
 import { idSchema } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
 import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
-import { processQuantitySchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
+import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
-import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
+import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
+import { processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
 
 export interface ProcessPlantSystemRuntime {
   readonly system: CompiledProcessPlantSystem
   readonly runtime: ProcessPlantRuntime
   readonly schedule: ProcessPlantScheduleRunner
   readonly telemetry?: ProcessPlantTelemetryRecorder
+  readonly protection?: ProcessPlantProtectionRunner
 }
 
 const systemQuerySchema = z.object({
@@ -29,6 +31,24 @@ const variablesSearchQuerySchema = z.object({
   text: z.string().min(1).optional(),
   domain: variableDomainSchema.optional(),
   quantity: processQuantitySchema.optional(),
+  publishedOnly: z.boolean().default(false),
+})
+
+const signalsResolveQuerySchema = z.object({
+  systemId: idSchema,
+  signals: z.array(processPlantSignalReferenceSchema).min(1),
+})
+
+const signalsReadQuerySchema = signalsResolveQuerySchema
+
+const signalsSearchQuerySchema = z.object({
+  systemId: idSchema.optional(),
+  text: z.string().min(1).optional(),
+  tagId: processSignalTagIdSchema.optional(),
+  equipmentId: idSchema.optional(),
+  domain: variableDomainSchema.optional(),
+  quantity: processQuantitySchema.optional(),
+  writable: z.boolean().optional(),
   publishedOnly: z.boolean().default(false),
 })
 
@@ -97,8 +117,31 @@ const matchesSearch = (
   if (config.text !== undefined) {
     const text = config.text.toLowerCase()
     return String(variable.path).toLowerCase().includes(text)
+      || variable.label.toLowerCase().includes(text)
       || variable.quantity.toLowerCase().includes(text)
       || variable.unit.toLowerCase().includes(text)
+      || (variable.tagId?.toLowerCase().includes(text) ?? false)
+      || (variable.equipmentId?.toLowerCase().includes(text) ?? false)
+      || (variable.description?.toLowerCase().includes(text) ?? false)
+  }
+  return true
+}
+
+const matchesSignalSearch = (
+  binding: ReturnType<typeof processPlantSignalView>,
+  config: z.infer<typeof signalsSearchQuerySchema>,
+): boolean => {
+  if (config.publishedOnly && binding.published !== true) return false
+  if (config.domain !== undefined && binding.domain !== config.domain) return false
+  if (config.quantity !== undefined && binding.quantity !== config.quantity) return false
+  if (config.writable !== undefined && binding.writable !== config.writable) return false
+  if (config.tagId !== undefined && binding.tagId !== config.tagId) return false
+  if (config.equipmentId !== undefined && binding.equipmentId !== config.equipmentId) return false
+  if (config.text !== undefined) {
+    const text = config.text.toLowerCase()
+    return Object.values(binding).some(value =>
+      typeof value === 'string' && value.toLowerCase().includes(text),
+    )
   }
   return true
 }
@@ -144,6 +187,42 @@ export const answerProcessPlantQuery = (config: {
         })),
       }, config.at)
     }
+    if (config.request.kind === 'process-plant.signals.resolve') {
+      const payload = signalsResolveQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      return success(config.request, {
+        systemId: payload.systemId,
+        signals: payload.signals.map(signal => processPlantSignalView(resolveProcessPlantSignalBinding(system.system.graph, signal))),
+      }, config.at)
+    }
+    if (config.request.kind === 'process-plant.signals.read') {
+      const payload = signalsReadQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      return success(config.request, {
+        systemId: payload.systemId,
+        signals: payload.signals.map(signal => {
+          const binding = resolveProcessPlantSignalBinding(system.system.graph, signal)
+          return {
+            signal: processPlantSignalView(binding),
+            variable: system.runtime.readVariableSnapshot(binding.path),
+          }
+        }),
+      }, config.at)
+    }
+    if (config.request.kind === 'process-plant.signals.search') {
+      const payload = signalsSearchQuerySchema.parse(config.request.payload)
+      const systems = payload.systemId === undefined
+        ? [...config.systems.values()]
+        : [requireSystem(config.systems, payload.systemId)]
+      return success(config.request, {
+        systems: systems.map(system => ({
+          systemId: system.system.id,
+          signals: system.system.graph.signalBindings
+            .map(processPlantSignalView)
+            .filter(binding => matchesSignalSearch(binding, payload)),
+        })),
+      }, config.at)
+    }
     if (config.request.kind === 'process-plant.runtime.status') {
       return success(config.request, {
         active: config.systems.size > 0,
@@ -174,6 +253,15 @@ export const answerProcessPlantQuery = (config: {
       return success(config.request, {
         systemId: payload.systemId,
         series: system.telemetry.series(payload.paths),
+      }, config.at)
+    }
+    if (config.request.kind === 'process-plant.protection.status') {
+      const payload = systemQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      if (!system.protection) return failure(config.request, `process plant protection is not configured for system: ${payload.systemId}`, config.at)
+      return success(config.request, {
+        systemId: payload.systemId,
+        protection: system.protection.snapshot(),
       }, config.at)
     }
     return failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)

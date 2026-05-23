@@ -99,8 +99,11 @@ interface ComponentInstanceSpec {
   readonly label: string
   readonly parameters: unknown
   readonly initialState?: unknown
+  readonly variables?: ReadonlyArray<ComponentVariableBindingOverride>
 }
 ```
+
+`variables` is a per-instance metadata overlay for component variables declared by the component kind. It is the right place for plant-specific procedure tags such as `PT-455` on `pressurizer.pressureMPa` or `SG-A-LVL-NR` on `sgA.levelPercent`. Component definitions remain reusable and do not hardcode plant-specific tag names.
 
 Connection:
 
@@ -166,7 +169,9 @@ Example:
       "quantity": "flowRate",
       "unit": "kg/s",
       "initialValue": 0,
-      "sensorId": "FT-SG-A-001"
+      "tagId": "FT-SG-A-001",
+      "equipmentId": "sgA",
+      "description": "Main steam flow from steam generator A"
     },
     {
       "path": "valve.positionFraction",
@@ -178,7 +183,9 @@ Example:
       "quantity": "ratio",
       "unit": "fraction",
       "initialValue": 1,
-      "actuatorId": "MSIV-A"
+      "tagId": "MSIV-A",
+      "equipmentId": "mainSteamIsolationValveA",
+      "description": "Main steam isolation valve A position"
     }
   ]
 }
@@ -193,6 +200,146 @@ Compiled link variables use stable paths just like component variables:
 - `sg-a-steam-to-msiv-a.leak.areaFraction`
 
 Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
+
+## Process Signal Bindings
+
+Process signal bindings are the bridge between compiled process variables and procedure/operator/AI language. They are graph-owned metadata, not a second data store.
+
+Every process signal resolves to:
+
+```text
+{ controlRunId, systemId, variablePath }
+```
+
+`systemId` is always explicit. Leitbild does not assume a current unit or a fleet of identical plants. A tag such as `PT-455` can exist in several independent systems; API calls disambiguate by `systemId`.
+
+Variable descriptors may declare:
+
+```ts
+interface ProcessSignalMetadata {
+  readonly tagId?: string
+  readonly equipmentId?: string
+  readonly description?: string
+  readonly externalRefs?: ReadonlyArray<string>
+}
+```
+
+`tagId` replaces the old `sensorId`/`actuatorId` split. A signal is readable or writable according to the variable's `writable` flag. This prevents two parallel naming systems from drifting apart.
+
+Component variable tags are declared as per-component-instance metadata:
+
+```json
+{
+  "id": "pressurizer",
+  "kind": "pressurizer",
+  "label": "Pressurizer",
+  "parameters": {},
+  "variables": [
+    {
+      "path": "pressureMPa",
+      "tagId": "PT-455",
+      "equipmentId": "pressurizer",
+      "description": "Pressurizer pressure"
+    }
+  ]
+}
+```
+
+Link variable tags are declared directly on the link variable because link variables are already graph-instance state:
+
+```json
+{
+  "path": "pressureMPa",
+  "tagId": "PT-SG-A-001",
+  "equipmentId": "sgA",
+  "description": "Main steam line A pressure"
+}
+```
+
+The compiler validates:
+
+- tag ids are unique inside one compiled process system
+- component variable overlays reference real local variable paths
+- writable commands only target variables whose descriptor declares `writable: true`
+- API requests supply exactly one signal reference form, either `path` or `tagId`
+
+External procedure systems may use a URI-like reference:
+
+```text
+process-plant://unit-1/pressurizer.pressureMPa
+```
+
+This is a stable external reference, not the primary runtime key. The runtime still resolves through `systemId` and `variablePath`.
+
+## Pack Query And Command Surface
+
+Process-plant exposes signal-aware read-only queries through the generic pack query endpoint.
+
+Current process-plant signal query kinds:
+
+- `process-plant.signals.resolve`: resolve signal references to metadata
+- `process-plant.signals.read`: resolve signal references and return current variable snapshots
+- `process-plant.signals.search`: search by text, tag, equipment, domain, quantity, writability, and publish policy
+
+Example procedure-agent read:
+
+```json
+{
+  "packId": "process-plant",
+  "kind": "process-plant.signals.read",
+  "payload": {
+    "systemId": "unit-1",
+    "signals": [
+      { "tagId": "PT-455" },
+      { "tagId": "SG-A-LVL-NR" }
+    ]
+  }
+}
+```
+
+Writable controls use the same signal reference shape through `process-plant.control.write`:
+
+```json
+{
+  "kind": "process-plant.control.write",
+  "payload": {
+    "systemId": "unit-1",
+    "tagId": "PORV-456A",
+    "value": 1
+  }
+}
+```
+
+No process-specific HTTP endpoint family is introduced. The Control Instance API routes generic pack queries and command envelopes to the active process-plant provider.
+
+## Control And Protection Substrate
+
+Control/protection logic is deterministic pack-owned behavior, not scenario-authored code.
+
+V1 rules read process signal snapshots, evaluate typed conditions, and produce constrained effects:
+
+- alarm interaction signal
+- trip interaction signal
+- validated variable write queued for the next solver tick
+
+The rule language supports:
+
+- numeric/boolean comparison against a signal value
+- `all`, `any`, and `not`
+- simple voting
+- delay before actuation
+- latching and reset-on-clear behavior
+
+Runtime ordering is:
+
+1. apply queued commands
+2. run continuous physics solver phases
+3. evaluate protection rules against the completed tick snapshot
+4. queue any rule writes for the next tick
+5. emit alarm/trip interaction signals
+6. record telemetry
+
+This keeps the process variable table as the only continuous-state truth. The interaction event bus is used for discrete operational awareness, not for continuous process physics.
 
 ## Fluid Link Solver Contracts
 

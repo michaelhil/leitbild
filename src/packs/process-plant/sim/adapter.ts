@@ -5,6 +5,7 @@ import type {
   SimulationAdapter,
   SimulationConnection,
   SimulationConnectionConfig,
+  SimulationEvent,
   SimulationEventHandler,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
@@ -14,19 +15,26 @@ import { createProcessPlantRuntime } from '../runtime/index.ts'
 import {
   createProcessPlantScheduleRunner,
   createProcessPlantTelemetryRecorder,
+  createProcessPlantProtectionRunner,
   processPlantScheduleConfigSchema,
   processPlantScheduleSnapshotSchema,
   processPlantTelemetryConfigSchema,
   processPlantTelemetrySnapshotSchema,
+  processPlantProtectionConfigSchema,
+  processPlantProtectionSnapshotSchema,
   type ProcessPlantRuntimeSnapshot,
   type ProcessPlantScheduleConfig,
   type ProcessPlantScheduleSnapshot,
   type ProcessPlantTelemetryConfig,
   type ProcessPlantTelemetryRecorder,
   type ProcessPlantTelemetrySnapshot,
+  type ProcessPlantProtectionConfig,
+  type ProcessPlantProtectionSnapshot,
 } from '../runtime/index.ts'
 import {
   processQuantitySchema,
+  processEquipmentIdSchema,
+  processSignalTagIdSchema,
   processUnitSchema,
   processVariableValueSchema,
   variableKindSchema,
@@ -34,10 +42,12 @@ import {
   variableDomainSchema,
 } from '../graph/index.ts'
 import { answerProcessPlantQuery, type ProcessPlantSystemRuntime } from '../query.ts'
+import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
 
 const processPlantVariableSnapshotSchema = z.object({
   path: variablePathSchema,
+  label: z.string().min(1),
   value: processVariableValueSchema,
   canonicalValue: processVariableValueSchema,
   quantity: processQuantitySchema,
@@ -46,6 +56,10 @@ const processPlantVariableSnapshotSchema = z.object({
   kind: variableKindSchema,
   writable: z.boolean(),
   published: z.boolean(),
+  tagId: processSignalTagIdSchema.optional(),
+  equipmentId: processEquipmentIdSchema.optional(),
+  description: z.string().min(1).optional(),
+  externalRefs: z.array(z.string().min(1)).optional(),
 })
 
 const processPlantRuntimeSnapshotSchema = z.object({
@@ -68,6 +82,7 @@ const processPlantProviderStateSchema = z.object({
     runtime: processPlantRuntimeSnapshotSchema,
     schedule: processPlantScheduleSnapshotSchema.optional(),
     telemetry: processPlantTelemetrySnapshotSchema.optional(),
+    protection: processPlantProtectionSnapshotSchema.optional(),
   })),
 })
 
@@ -78,12 +93,14 @@ interface ProcessPlantProviderState {
     readonly runtime: ProcessPlantRuntimeSnapshot
     readonly schedule?: ProcessPlantScheduleSnapshot
     readonly telemetry?: ProcessPlantTelemetrySnapshot
+    readonly protection?: ProcessPlantProtectionSnapshot
   }>
 }
 
 const processPlantProviderSystemConfigSchema = z.object({
   schedule: processPlantScheduleConfigSchema.optional(),
   telemetry: processPlantTelemetryConfigSchema.optional(),
+  protection: processPlantProtectionConfigSchema.optional(),
 }).strict()
 
 const processPlantProviderConfigSchema = z.object({
@@ -106,11 +123,12 @@ const providerStateFor = (
   systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
 ): ProcessPlantProviderState => ({
   schemaVersion: 1,
-  systems: [...systems.values()].map(({ system, runtime, schedule, telemetry }) => ({
+  systems: [...systems.values()].map(({ system, runtime, schedule, telemetry, protection }) => ({
     systemId: system.id,
     runtime: runtime.snapshot(),
     schedule: schedule.snapshot(),
     ...(telemetry === undefined ? {} : { telemetry: telemetry.snapshot() }),
+    ...(protection === undefined ? {} : { protection: protection.snapshot() }),
   })),
 })
 
@@ -136,6 +154,14 @@ const restoredTelemetryFor = (
 ): ProcessPlantTelemetrySnapshot | undefined => {
   const restored = providerState?.systems.find(system => system.systemId === systemId)
   return restored?.telemetry
+}
+
+const restoredProtectionFor = (
+  providerState: ProcessPlantProviderState | null,
+  systemId: string,
+): ProcessPlantProtectionSnapshot | undefined => {
+  const restored = providerState?.systems.find(system => system.systemId === systemId)
+  return restored?.protection
 }
 
 const processPlantProviderConfigFor = (config: SimulationConnectionConfig): ProcessPlantProviderConfig => {
@@ -170,6 +196,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const systemConfig = providerConfig.systems[system.id]
         const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
         const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
+        const protectionConfig: ProcessPlantProtectionConfig | undefined = systemConfig?.protection
         const runtime = createProcessPlantRuntime({
           system,
           ...(restoredSnapshotFor(providerState, system.id) === undefined
@@ -187,6 +214,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
             })
         telemetry?.recordDueSamples(runtime)
         const restoredSchedule = restoredScheduleFor(providerState, system.id)
+        const protection = protectionConfig === undefined
+          ? undefined
+          : createProcessPlantProtectionRunner({
+              system,
+              protection: protectionConfig,
+              ...(restoredProtectionFor(providerState, system.id) === undefined
+                ? {}
+                : { restoredSnapshot: restoredProtectionFor(providerState, system.id)! }),
+            })
         return {
           system,
           runtime,
@@ -196,6 +232,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
             ...(restoredSchedule === undefined ? {} : { restoredSnapshot: restoredSchedule }),
           }),
           ...(telemetry === undefined ? {} : { telemetry }),
+          ...(protection === undefined ? {} : { protection }),
         }
       })(),
     ]))
@@ -214,10 +251,28 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
-      for (const { runtime, schedule, telemetry } of systems.values()) {
+      const events: SimulationEvent[] = []
+      for (const { runtime, schedule, telemetry, protection } of systems.values()) {
         schedule.applyDueActions(runtime, runtime.elapsedMs() + elapsedMs)
         runtime.tick(elapsedMs)
+        events.push(...(protection?.evaluate({
+          runtime,
+          elapsedMs: runtime.elapsedMs(),
+          controlInstanceId: config.controlInstanceId,
+          sourceProviderId: processPlantSimProviderId,
+        }) ?? []))
         telemetry?.recordDueSamples(runtime)
+      }
+      if (events.length > 0) {
+        const emittedAt = nowIso()
+        for (const handler of handlers) {
+          handler({
+            type: 'event.emission',
+            events,
+            emittedAt,
+            providerId: processPlantSimProviderId,
+          })
+        }
       }
       await saveProviderState(config, systems)
     }
@@ -255,9 +310,10 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const system = systems.get(payload.data.systemId)
         if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
         try {
+          const binding = resolveProcessPlantSignalBinding(system.system.graph, payload.data)
           system.runtime.writeCommand({
             type: 'setVariable',
-            path: payload.data.path,
+            path: binding.path,
             value: payload.data.value,
           })
           await saveProviderState(config, systems)

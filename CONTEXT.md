@@ -156,6 +156,18 @@ _Avoid_: hiding current operational objects in provider-private state, duplicati
 A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, and publish policy.
 _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
 
+**Process Signal Binding**:
+Graph-owned metadata that makes a process variable discoverable and usable by operators, procedures, AI agents, and control-room surfaces. A binding may declare `tagId`, `equipmentId`, `description`, and `externalRefs`, but the authoritative identity remains `{controlRunId, systemId, variablePath}`.
+_Avoid_: separate simulator binding catalogs, duplicate sensor/actuator ids, or tag lookup without an explicit process system id
+
+**Process Tag Id**:
+A procedure-facing identifier such as `PT-455` or `SG-A-LVL-NR` attached to exactly one process variable inside one compiled process system. Tags are allowed to repeat across different process systems because every query and command includes `systemId`.
+_Avoid_: fleet-wide tag assumptions, implicit current-unit lookup, or treating tags as separate runtime variables
+
+**Process Control/Protection Rule**:
+A typed, declarative, deterministic rule owned by the `process-plant` pack. It reads process signal values, applies comparison/logical/voting/delay/latch logic, and emits alarm/trip signals or queues validated variable writes at solver phase boundaries.
+_Avoid_: arbitrary expression languages, generated code, mid-solver mutation, or continuous physics over the interaction event bus
+
 **Process Link**:
 A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
 _Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection

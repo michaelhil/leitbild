@@ -47,6 +47,8 @@
 - Provider-owned read models must be exposed through the generic pack query surface. Do not add domain-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
 - Pack queries must be read-only. They must not issue commands, mutate provider state, emit events, or commit canonical changes.
 - Process-control packs such as `process-plant` must keep continuous physics inside the pack-owned runtime. Use validated component graphs, typed ports, compiled runtime indices, pack queries, and discrete domain events; do not turn internal process variables into `OperationalObject`s or use event messages as the continuous physics solver.
+- Process-plant signal bindings are graph-owned metadata. Use `tagId` plus explicit `systemId`; do not reintroduce `sensorId`, `actuatorId`, implicit current-unit lookup, fleet-wide aliases, or separate binding catalogs without an ADR.
+- Process-plant control/protection rules must be typed declarative data evaluated by the pack runtime. Do not add arbitrary expression languages, generated procedure code, or mid-solver mutation.
 - Process system topology is scenario-owned config/data. Keep reusable component definitions and solver behavior in code, but do not make hardcoded TypeScript plant graphs the canonical runtime source of truth.
 - Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.

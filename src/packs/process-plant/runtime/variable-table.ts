@@ -31,6 +31,7 @@ const snapshotVariable = (
   if (value === undefined) throw new Error(`variable ${variable.path} has no runtime value`)
   return {
     path: variable.path,
+    label: variable.descriptor.label,
     value,
     canonicalValue: toCanonicalProcessValue(value, variable.descriptor.unit),
     quantity: variable.descriptor.quantity,
@@ -39,6 +40,10 @@ const snapshotVariable = (
     kind: variable.descriptor.kind,
     writable: variable.descriptor.writable,
     published: variable.published,
+    ...(variable.descriptor.tagId === undefined ? {} : { tagId: variable.descriptor.tagId }),
+    ...(variable.descriptor.equipmentId === undefined ? {} : { equipmentId: variable.descriptor.equipmentId }),
+    ...(variable.descriptor.description === undefined ? {} : { description: variable.descriptor.description }),
+    ...(variable.descriptor.externalRefs === undefined ? {} : { externalRefs: variable.descriptor.externalRefs }),
   }
 }
 

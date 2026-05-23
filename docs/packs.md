@@ -34,6 +34,8 @@ A pack may contain:
 - pack-level map area features when a pack owns derived spatial truth that should be rendered but should not become canonical core geometry, such as weather H3 cells and influence shapes projected from the weather pack's sparse field model
 - pack queries for read-only provider-owned computations, such as weather-at-point, H3 map features, traffic conditions intersecting a route, or ambulance dispatch state
 - process graph definitions and validated process-link solver contracts when the pack owns a process simulation runtime
+- process signal bindings for procedure/operator/AI access, including graph-owned tag ids, equipment ids, descriptions, and external refs
+- typed control/protection rules for pack-owned alarms, trips, and validated process writes
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -265,11 +267,17 @@ Current built-in query kinds:
 - `process-plant.graph.read`
 - `process-plant.variables.read`
 - `process-plant.variables.search`
+- `process-plant.signals.resolve`
+- `process-plant.signals.read`
+- `process-plant.signals.search`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
+- `process-plant.protection.status`
 
-Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, a writable variable path, and a typed value. The provider validates the write and queues it for the next solver phase; it does not mutate variables through the query route.
+Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, exactly one signal reference (`path` or `tagId`), and a typed value. The provider resolves tag ids inside that explicit system, validates writability/type, and queues the write for the next solver phase; it does not mutate variables through the query route.
+
+Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate simulator binding catalog.
 
 Process-plant graph queries now expose compiled connection metadata as `connectionKind`, optional fluid `service`, `nominalFluid`, `designPhase`, `solverModel`, and indexed incoming/outgoing adjacency. Consumers should use the pack query surface rather than parsing scenario files directly when they need the runtime topology.
 

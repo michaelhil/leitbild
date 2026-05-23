@@ -5,6 +5,7 @@ import type {
   CompiledPlantGraph,
   CompiledPort,
   CompiledVariable,
+  ComponentVariableBindingOverride,
   ComponentDefinition,
   ComponentId,
   ComponentKind,
@@ -16,6 +17,9 @@ import type {
   PortDefinition,
   PortName,
   PortRef,
+  ProcessSignalBinding,
+  ProcessSignalTagId,
+  VariableDescriptor,
   VariablePath,
 } from './model.ts'
 import { validateProcessLinkContracts } from './link-contracts.ts'
@@ -116,6 +120,48 @@ const variablePathFor = (componentId: ComponentId, localPath: LocalVariablePath)
 const processLinkVariablePathFor = (connectionId: ConnectionId, localPath: LocalVariablePath): VariablePath =>
   `${connectionId}.${localPath}` as VariablePath
 
+const assertComponentVariableOverridesValid = (
+  componentId: ComponentId,
+  definition: ComponentDefinition,
+  overrides: ReadonlyArray<ComponentVariableBindingOverride>,
+): void => {
+  assertUnique(overrides, override => override.path, `component ${componentId} variable metadata path`)
+  const definitionPaths = new Set(definition.variables.map(variable => variable.path))
+  for (const override of overrides) {
+    if (!definitionPaths.has(override.path)) {
+      throw new Error(`component ${componentId} variable metadata references unknown local variable: ${override.path}`)
+    }
+  }
+}
+
+const applyComponentVariableOverride = (
+  variable: VariableDescriptor,
+  override: ComponentVariableBindingOverride | undefined,
+): VariableDescriptor => {
+  if (override === undefined) return variable
+  const { path: _path, ...metadata } = override
+  return {
+    ...variable,
+    ...metadata,
+  }
+}
+
+const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => ({
+  path: variable.path,
+  ...(variable.descriptor.tagId === undefined ? {} : { tagId: variable.descriptor.tagId }),
+  ...(variable.descriptor.equipmentId === undefined ? {} : { equipmentId: variable.descriptor.equipmentId }),
+  ...(variable.descriptor.description === undefined ? {} : { description: variable.descriptor.description }),
+  ...(variable.descriptor.externalRefs === undefined ? {} : { externalRefs: variable.descriptor.externalRefs }),
+  label: variable.descriptor.label,
+  kind: variable.descriptor.kind,
+  domain: variable.descriptor.domain,
+  quantity: variable.descriptor.quantity,
+  unit: variable.descriptor.unit,
+  writable: variable.descriptor.writable,
+  published: variable.published,
+  owner: variable.owner,
+})
+
 const parseInitialState = (
   definition: ComponentDefinition,
   initialState: unknown,
@@ -209,14 +255,13 @@ export const compilePlantGraph = (
   assertUnique(spec.components, component => component.id, 'component id')
   assertUnique(spec.connections, connection => connection.id, 'connection id')
   assertUnique(spec.publishedVariables, path => path, 'published variable')
-  const declaredLinkVariables = spec.connections.flatMap(connection => connection.variables)
-  assertUniqueDefined(declaredLinkVariables, variable => variable.sensorId, 'process sensor id')
-  assertUniqueDefined(declaredLinkVariables, variable => variable.actuatorId, 'process actuator id')
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()
   const components: CompiledComponent[] = spec.components.map((component, index) => {
     const definition = resolveDefinition(registry, component.kind)
+    assertComponentVariableOverridesValid(component.id, definition, component.variables)
+    const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
     componentIndexById.set(component.id, index)
     definitions.set(component.id, definition)
     const compiled: CompiledComponent = {
@@ -229,10 +274,10 @@ export const compilePlantGraph = (
         initialState: parseInitialState(definition, component.initialState, component.id),
       }),
       ports: compilePorts(definition),
-      variables: definition.variables.map(variable => ({
+      variables: definition.variables.map(variable => applyComponentVariableOverride({
         ...variable,
         path: variablePathFor(component.id, variable.path),
-      })),
+      }, overrideByPath.get(variable.path))),
     }
     return compiled
   })
@@ -316,11 +361,19 @@ export const compilePlantGraph = (
   )
   const variables = [...componentVariables, ...linkVariables]
   assertUnique(variables, variable => variable.path, 'variable path')
+  assertUniqueDefined(variables, variable => variable.descriptor.tagId, 'process signal tag id')
   validateProcessLinkContracts(links)
   validateStrongComponentContracts(components, links)
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)
+  }
+
+  const signalBindings = variables.map(signalBindingFor)
+  const signalBindingByPath = new Map(signalBindings.map(binding => [binding.path, binding]))
+  const signalBindingByTagId = new Map<ProcessSignalTagId, ProcessSignalBinding>()
+  for (const binding of signalBindings) {
+    if (binding.tagId !== undefined) signalBindingByTagId.set(binding.tagId, binding)
   }
 
   return {
@@ -335,5 +388,8 @@ export const compilePlantGraph = (
     outgoingLinksByComponent,
     linksByService: new Map([...mutableLinksByService.entries()].map(([service, indexes]) => [service, [...indexes]])),
     variables,
+    signalBindings,
+    signalBindingByPath,
+    signalBindingByTagId,
   }
 }

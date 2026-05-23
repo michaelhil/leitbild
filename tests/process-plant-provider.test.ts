@@ -110,6 +110,44 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
+  test('resolves process signal tags and accepts tag-addressed writes', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const resolved = await connection.query(query('process-plant.signals.resolve', {
+      systemId: 'plant',
+      signals: [{ tagId: 'RCP-A-RUN' }, { tagId: 'PT-455' }],
+    }))
+    expect(resolved.ok).toBe(true)
+    if (!resolved.ok) throw new Error(resolved.reason)
+    expect((resolved.result as { signals: ReadonlyArray<{ readonly path: string }> }).signals.map(signal => signal.path)).toEqual([
+      'rcpA.running',
+      'pressurizer.pressureMPa',
+    ])
+
+    const accepted = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'RCP-A-RUN',
+      value: false,
+    }))
+    expect(accepted.ok).toBe(true)
+
+    await Bun.sleep(1_100)
+
+    const read = await connection.query(query('process-plant.signals.read', {
+      systemId: 'plant',
+      signals: [{ tagId: 'RCP-A-RUN' }],
+    }))
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    expect((read.result as { signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }).signals[0]?.variable.value).toBe(false)
+
+    await connection.close()
+  })
+
   test('restores queued commands from provider-private state', async () => {
     const stateStore = createMemoryStateStore()
     const firstConnection = await createLocalProcessPlantSimulationAdapter().connect({
@@ -204,6 +242,116 @@ describe('process plant simulation provider', () => {
     expect(rejected.ok).toBe(false)
     if (rejected.ok) throw new Error('expected command rejection')
     expect(rejected.reason).toContain('not writable')
+
+    await connection.close()
+  })
+
+  test('emits protection signals and queues protection writes at tick boundaries', async () => {
+    const received: unknown[] = []
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'heater-trip-test',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [
+                  {
+                    type: 'alarm',
+                    id: 'heater-trip-alarm',
+                    title: 'Protection test alarm',
+                    message: 'Protection test condition is active.',
+                    severity: 'warning',
+                  },
+                  {
+                    type: 'write',
+                    id: 'trip-rcp-a',
+                    signal: { tagId: 'RCP-A-RUN' },
+                    value: false,
+                  },
+                ],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+    connection.subscribe(emission => {
+      received.push(...emission.events)
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(2_100)
+    const read = await connection.query(query('process-plant.signals.read', {
+      systemId: 'plant',
+      signals: [{ tagId: 'RCP-A-RUN' }],
+    }))
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    expect((read.result as { signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }).signals[0]?.variable.value).toBe(false)
+    expect(received.some(event => (event as { readonly type?: string }).type === 'interaction.signal')).toBe(true)
+
+    await connection.close()
+  })
+
+  test('emits non-latched protection effects once per active condition entry', async () => {
+    const received: unknown[] = []
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'heater-non-latched-test',
+                latch: false,
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm',
+                  id: 'heater-non-latched-alarm',
+                  title: 'Non-latched test alarm',
+                  message: 'Non-latched condition is active.',
+                  severity: 'warning',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+    connection.subscribe(emission => {
+      received.push(...emission.events)
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(3_100)
+
+    const signals = received.filter(event => (event as { readonly type?: string }).type === 'interaction.signal')
+    expect(signals).toHaveLength(1)
 
     await connection.close()
   })
