@@ -81,16 +81,31 @@ Commands use the same explicit signal reference shape:
 
 Exactly one of `path` or `tagId` must be supplied. Unknown or non-writable signals fail explicitly.
 
-Control/protection logic is pack-owned and deterministic. It reads process variable snapshots, evaluates typed declarative rules, queues validated writes for the next solver tick, and emits interaction signals for alarm/trip transitions. It does not mutate continuous physics through the event bus.
+Control/protection logic is pack-owned and deterministic. It is Leitbild's simplified process-plant I&C substrate, not a second physics solver and not an embedded emergency procedure engine. It reads process variable snapshots through signal bindings, evaluates typed declarative logic, queues validated writes for the next solver tick, and emits interaction signals for alarm/trip transitions. It does not mutate continuous physics through the event bus.
+
+The substrate is layered:
+
+1. **Instrumentation signals**: resolved process variables used as indications, controller inputs, alarm inputs, procedure inputs, and AI-visible observations.
+2. **Normal controllers**: routine automatic control behavior such as level, pressure, flow, pump speed, valve position, turbine/load, or heater/spray control. Controllers may request writes only through the validated queued-write path.
+3. **Protection functions**: safety-like automatic behavior such as reactor trip, isolation, relief, engineered safeguard actuation, or equipment trip. Protection functions may latch and may have reset requirements, but they still use the same signal reference and write machinery.
+4. **Alarm/annunciator state**: persistent operator/AI-facing current state plus transition events. Alarms can be active, acknowledged, cleared, latched, resettable, or suppressed. Acknowledgement records that a human or agent has seen the alarm; it does not by itself make the condition false.
+5. **Permissives and interlocks**: command/action constraints. A permissive must be true before an action may proceed. An interlock prevents, forces, or constrains an equipment state. Both are I&C semantics above physics, not hidden component behavior.
+6. **Validated actions**: constrained effects such as alarm state transitions, trip state transitions, and queued writes to process signals.
+
+External procedures remain outside the process-plant pack for now. A procedure runner, human operator, or AI agent can ask "what is this signal value?" and "is this named condition true?", then issue a command through the normal command path. The process-plant pack exposes the facts and condition evaluation surface needed for procedures, but it does not own the procedure document, procedure branching state, or human/AI procedure execution policy.
 
 The V1 control/protection rule language supports only typed primitives:
 
 - variable comparison/equality
+- named condition evaluation over signal references
 - `all`, `any`, `not`, and voting conditions
 - delay and latch behavior
-- effects: alarm signal, trip signal, and validated variable write
+- reset conditions
+- effects: alarm state transition, trip state transition, and validated variable write
 
 Arbitrary expressions, user-authored code, and hidden procedure engines are out of scope for V1.
+
+Definitions may be provided by graphRef defaults, process-system configuration, or scenario provider configuration. Reusable graphRefs may ship default I&C definitions for their plant model; a scenario may enable, disable, add, or parameterize rules for one explicit `systemId`. There is no fleet-wide I&C definition and no cross-system defaulting.
 
 ## Runtime Ordering
 
@@ -105,6 +120,8 @@ Each provider tick uses this order:
 
 This keeps continuous physics single-sourced in the variable table and prevents mid-solver mutation.
 
+Automatic actions from normal controllers and protection functions intentionally share the same validation path as operator, scenario, and AI writes. The actor may be internal, such as `actor:process-plant-protection`, but the effect still resolves a signal, checks writability, validates type and hard limits, and enters the next tick through the runtime write queue. This avoids a privileged mutation path that can disagree with operator/API semantics.
+
 ## Consequences
 
 - AI agents can resolve procedure tags directly through the process-plant pack query surface.
@@ -114,6 +131,8 @@ This keeps continuous physics single-sourced in the variable table and prevents 
 - Writable controls and read-only indications use the same signal shape and differ only by `writable`.
 - Control/protection behavior is deterministic, replayable, and testable without adding a general scripting engine.
 - Interaction signals are used for alarms/trips and operator-facing notifications, not for continuous physics.
+- The same substrate can support future process-control surfaces, alarm boards, AI monitors, and external procedure runners without making those systems rewrite plant physics.
+- The distinction between normal control, protection, alarm, permissive, and interlock gives future code a vocabulary for behavior without hardcoding plant-specific assumptions.
 
 ## Guardrails
 
@@ -125,3 +144,7 @@ This keeps continuous physics single-sourced in the variable table and prevents 
 - Do not let control/protection rules write variables directly during a solver phase.
 - Do not add arbitrary expression evaluation, JavaScript snippets, or generated runtime code to scenario-authored protection rules.
 - Do not hide API failures behind fallbacks from tag to path or path to tag.
+- Do not embed emergency procedure execution, procedure branching state, or procedure document parsing inside process-plant without a new ADR.
+- Do not model normal controllers, protection functions, alarms, permissives, and interlocks as unrelated mechanisms. They are one I&C substrate with distinct semantics.
+- Do not model alarms only as transient events. Current alarm state is authoritative pack-owned state and transition events are history.
+- Do not add fleet-wide protection, alarm, or condition state. Every I&C definition and state belongs to one explicit process system.

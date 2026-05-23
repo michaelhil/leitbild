@@ -176,6 +176,34 @@ _Avoid_: fleet-wide tag assumptions, implicit current-unit lookup, or treating t
 A typed, declarative, deterministic rule owned by the `process-plant` pack. It reads process signal values, applies comparison/logical/voting/delay/latch logic, and emits alarm/trip signals or queues validated variable writes at solver phase boundaries.
 _Avoid_: arbitrary expression languages, generated code, mid-solver mutation, or continuous physics over the interaction event bus
 
+**Process I&C Substrate**:
+The pack-owned instrumentation-and-control layer that sits above continuous physics. It reads the authoritative variable table through signal bindings, evaluates normal controllers, protection functions, alarms, permissives, and interlocks, and emits validated actions. It is not a second solver and not an emergency procedure engine.
+_Avoid_: hiding physics inside alarms, embedding procedure logic inside process-plant, or letting I&C code mutate variables outside the validated write path
+
+**Instrumentation Signal**:
+A process signal used as an indication, control input, alarm input, procedure input, or AI-visible observation. Signals resolve to variables; they do not own state separate from the variable table.
+_Avoid_: separate sensor stores, duplicate tag mappings, or treating tags as globally unique
+
+**Normal Controller**:
+Automatic routine control logic such as pressure control, level control, pump speed control, or valve positioning. Controllers may write only through the validated queued-write mechanism and should be overrideable/observable where the graph exposes the relevant writable signals.
+_Avoid_: mixing normal control with protection trips, mid-solver writes, or hidden actuator state
+
+**Protection Function**:
+Safety-like automatic logic that detects a protective condition and requests constrained actions such as trip, isolation, relief, or safeguard actuation. Protection functions may latch and may be harder to reset than normal controllers, but they still use the same signal references and validated write path.
+_Avoid_: arbitrary scripts, fleet-wide assumptions, or direct variable mutation
+
+**Alarm State**:
+Persistent operator/AI-facing state derived from a condition. Alarm events record transitions, while alarm state records current truth such as active, acknowledged, cleared, latched, severity, first-active time, and source rule.
+_Avoid_: representing alarms only as transient events, clearing alarms by acknowledgement alone, or duplicating alarm truth in UI-local state
+
+**Permissive**:
+A condition that must be true before a command or automatic action is allowed to proceed. A failed permissive blocks the action and should explain why.
+_Avoid_: silent command rejection or burying command preconditions inside component behavior
+
+**Interlock**:
+A condition that prevents, forces, or constrains an equipment state to protect the modeled system or preserve operating logic. Interlocks are part of I&C semantics, not component physics.
+_Avoid_: making interlocks invisible side effects inside pump, valve, or breaker components
+
 **Process Link**:
 A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
 _Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection

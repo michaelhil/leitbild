@@ -353,7 +353,18 @@ No process-specific HTTP endpoint family is introduced. The Control Instance API
 
 ## Control And Protection Substrate
 
-Control/protection logic is deterministic pack-owned behavior, not scenario-authored code.
+Control/protection logic is deterministic pack-owned behavior, not scenario-authored code. It is the process-plant pack's simplified instrumentation-and-control substrate. The substrate sits above continuous physics: it observes the authoritative process variable table through signal bindings, interprets plant conditions, and emits constrained actions. It must not become a second physics solver, a hidden state store, or an embedded emergency procedure engine.
+
+The substrate has six semantic layers:
+
+- **Instrumentation signals**: process variables made visible through graph-owned signal bindings. Signals are the common read surface for displays, alarms, controllers, procedures, AI agents, and control-room surfaces.
+- **Normal controllers**: routine automation such as pressure control, level control, flow control, pump speed control, valve positioning, heater/spray control, and turbine/load control. Controllers are observable and can only request writes through the runtime write queue.
+- **Protection functions**: safety-like automatic logic such as trip, isolation, relief, safeguard actuation, or equipment trip. Protection functions may latch and may require explicit reset conditions.
+- **Alarm/annunciator state**: persistent current state plus transition events. Alarm state answers "what alarms are active, acknowledged, cleared, latched, suppressed, or resettable right now?" Transition events answer "what changed?"
+- **Permissives and interlocks**: command/action constraints. A permissive must be true before an action can proceed. An interlock prevents, forces, or constrains an equipment state.
+- **Validated actions**: alarm state transitions, trip state transitions, and queued writes to process signals.
+
+External procedure runners remain outside process-plant for now. A procedure runner, operator, or AI agent can query signal values, search procedure-relevant signals, ask whether named conditions are true, and issue validated commands. The process-plant pack provides the signal and condition truth surface; the procedure system owns procedure documents, procedure branching, and procedure execution policy.
 
 V1 rules read process signal snapshots, evaluate typed conditions, and produce constrained effects:
 
@@ -364,10 +375,13 @@ V1 rules read process signal snapshots, evaluate typed conditions, and produce c
 The rule language supports:
 
 - numeric/boolean comparison against a signal value
+- named condition evaluation
 - `all`, `any`, and `not`
 - simple voting
 - delay before actuation
 - latching and reset-on-clear behavior
+
+Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or provider config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
 
 Runtime ordering is:
 
@@ -379,6 +393,8 @@ Runtime ordering is:
 6. record telemetry
 
 This keeps the process variable table as the only continuous-state truth. The interaction event bus is used for discrete operational awareness, not for continuous process physics.
+
+Automatic actions from normal controllers and protection functions use the same validation semantics as operator, scenario, and AI commands: resolve a signal, check writability, validate type and hard limits, queue the write at a phase boundary, and make failure visible. An internal actor such as `actor:process-plant-protection` may request the action, but it does not get a private mutation path.
 
 ## Fluid Link Solver Contracts
 
