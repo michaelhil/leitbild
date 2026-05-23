@@ -1,7 +1,12 @@
 import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.ts'
 import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import { processLinkVariablePath } from '../behavior-contract.ts'
-import { clamp, optionalParameterNumber, relaxToward } from '../component-helpers.ts'
+import { clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../component-helpers.ts'
+import { inventoryBalanceStep } from '../physics.ts'
+
+type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle'
+
+const valveModes: ReadonlySet<ValveMode> = new Set(['control', 'isolation', 'check', 'relief', 'safety', 'throttle'])
 
 const serviceLinksForComponent = (
   component: CompiledComponent,
@@ -43,6 +48,36 @@ const sumLinkFlow = (
   return total
 }
 
+const maxLinkValue = (
+  links: ReadonlyArray<CompiledProcessLink>,
+  localPath: string,
+  context: Parameters<ComponentBehaviorDefinition['update']>[0]['context'],
+): number | null => {
+  let value: number | null = null
+  for (const link of links) {
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    const current = context.readNumber(path)
+    value = value === null ? current : Math.max(value, current)
+  }
+  return value
+}
+
+const minLinkValue = (
+  links: ReadonlyArray<CompiledProcessLink>,
+  localPath: string,
+  context: Parameters<ComponentBehaviorDefinition['update']>[0]['context'],
+): number | null => {
+  let value: number | null = null
+  for (const link of links) {
+    const path = processLinkVariablePath(link, localPath)
+    if (!context.has(path)) continue
+    const current = context.readNumber(path)
+    value = value === null ? current : Math.min(value, current)
+  }
+  return value
+}
+
 const linkService = (
   links: ReadonlyArray<CompiledProcessLink>,
 ): CompiledProcessLink['service'] | undefined => links.find(link => link.kind === 'fluidFlow')?.service
@@ -62,9 +97,26 @@ const updateValveFlowDiagnostics = (
   const service = linkService([...incomingLinks, ...outgoingLinks])
   const inletFlow = sumLinkFlow(matchingLinks(incomingLinks, service), context)
   const outletFlow = sumLinkFlow(matchingLinks(outgoingLinks, service), context)
+  const matchingIncoming = matchingLinks(incomingLinks, service)
+  const matchingOutgoing = matchingLinks(outgoingLinks, service)
+  const upstreamPressure = maxLinkValue(matchingIncoming, 'pressureMPa', context) ?? optionalParameterNumber(component, 'initialPressureMPa', component.kind === 'steamValve' ? 6.9 : 1)
+  const downstreamPressure = minLinkValue(matchingOutgoing, 'pressureMPa', context) ?? upstreamPressure
+  const pressureDrop = Math.max(0, upstreamPressure - downstreamPressure)
+  const effectivePosition = clamp(context.readNumber(componentVariablePath(component, 'effectivePositionFraction')), 0, 1)
+  const cv = optionalParameterNumber(component, 'cvKgPerSPerSqrtMPa', Number.POSITIVE_INFINITY)
+  const capacityLimitedFlow = Number.isFinite(cv) ? cv * Math.sqrt(pressureDrop) * effectivePosition : outletFlow
+  const leakageFraction = optionalParameterNumber(component, 'leakageFractionClosed', 0)
+  const leakageFlow = inletFlow * leakageFraction * (1 - effectivePosition)
+  const reverseFlowAllowed = optionalParameterString(component, 'valveMode', 'control', valveModes) !== 'check'
+    && Boolean((component.parameters as Record<string, unknown>).reverseFlowAllowed ?? true)
+  const reverseFlow = reverseFlowAllowed ? Math.max(0, outletFlow - inletFlow) : 0
   context.write(componentVariablePath(component, 'inletFlowKgPerS'), inletFlow)
   context.write(componentVariablePath(component, 'outletFlowKgPerS'), outletFlow)
   context.write(componentVariablePath(component, 'flowBalanceResidualKgPerS'), inletFlow - outletFlow)
+  context.write(componentVariablePath(component, 'availablePressureDropMPa'), pressureDrop)
+  context.write(componentVariablePath(component, 'capacityLimitedFlowKgPerS'), capacityLimitedFlow)
+  context.write(componentVariablePath(component, 'leakageFlowKgPerS'), leakageFlow)
+  context.write(componentVariablePath(component, 'reverseFlowKgPerS'), reverseFlow)
 }
 
 const updateHeaderDiagnostics = (
@@ -81,32 +133,75 @@ const updateHeaderDiagnostics = (
   )
   const inletFlow = sumLinkFlow(incomingLinks, context)
   const outletFlow = sumLinkFlow(outgoingLinks, context)
-  const mixedTemperature = weightedAverageLinkValue(incomingLinks, 'temperatureC', context)
+  const previousMixedTemperature = context.readNumber(componentVariablePath(component, 'mixedTemperatureC'))
+  const incomingMixedTemperature = weightedAverageLinkValue(incomingLinks, 'temperatureC', context)
     ?? weightedAverageLinkValue(outgoingLinks, 'temperatureC', context)
     ?? optionalParameterNumber(component, 'initialTemperatureC', 220)
-  const mixedPressure = weightedAverageLinkValue(incomingLinks, 'pressureMPa', context)
+  const mixedTemperature = relaxToward(
+    previousMixedTemperature,
+    incomingMixedTemperature,
+    context.dtSeconds,
+    optionalParameterNumber(component, 'mixingTimeConstantS', 1),
+  )
+  const previousPressure = context.readNumber(componentVariablePath(component, 'pressureNodeMPa'))
+  const incomingMixedPressure = weightedAverageLinkValue(incomingLinks, 'pressureMPa', context)
     ?? weightedAverageLinkValue(outgoingLinks, 'pressureMPa', context)
     ?? optionalParameterNumber(component, 'initialPressureMPa', 1)
+  const mixedPressure = relaxToward(
+    previousPressure,
+    incomingMixedPressure,
+    context.dtSeconds,
+    optionalParameterNumber(component, 'pressureTimeConstantS', 1),
+  )
+  const density = optionalParameterNumber(component, 'nominalDensityKgPerM3', component.kind === 'steamHeader' ? 35 : 950)
+  const maxInventory = optionalParameterNumber(component, 'headerVolumeM3', 1) * density * 1.25
+  const inventory = inventoryBalanceStep({
+    currentInventory: context.readNumber(componentVariablePath(component, 'inventoryKg')),
+    inflowKgPerS: inletFlow,
+    outflowKgPerS: outletFlow,
+    dtSeconds: context.dtSeconds,
+    minInventory: 0,
+    maxInventory,
+  })
   context.write(componentVariablePath(component, 'inletFlowKgPerS'), inletFlow)
   context.write(componentVariablePath(component, 'outletFlowKgPerS'), outletFlow)
   context.write(componentVariablePath(component, 'flowBalanceResidualKgPerS'), inletFlow - outletFlow)
   context.write(componentVariablePath(component, 'mixedTemperatureC'), mixedTemperature)
   context.write(componentVariablePath(component, 'mixedPressureMPa'), mixedPressure)
+  context.write(componentVariablePath(component, 'pressureNodeMPa'), mixedPressure)
+  context.write(componentVariablePath(component, 'inventoryKg'), inventory)
+  context.write(componentVariablePath(component, 'unmetDemandKgPerS'), Math.max(0, outletFlow - inletFlow))
 }
 
 const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): ComponentBehaviorDefinition => ({
   id: `${componentKind}-effective-position`,
   phase: 'solveFluidFlowComponents',
   componentKind,
-  reads: ['positionFraction'],
-  writes: ['effectivePositionFraction'],
+  reads: ['positionFraction', 'availablePressureDropMPa', 'autoOpenActive'],
+  writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive'],
   update: ({ component, context }): void => {
-    const target = clamp(context.readNumber(componentVariablePath(component, 'positionFraction')), 0, 1)
+    const manualTarget = clamp(context.readNumber(componentVariablePath(component, 'positionFraction')), 0, 1)
+    const mode = optionalParameterString(component, 'valveMode', 'control', valveModes)
+    const pressureDrop = context.has(componentVariablePath(component, 'availablePressureDropMPa'))
+      ? context.readNumber(componentVariablePath(component, 'availablePressureDropMPa'))
+      : 0
+    const setpoint = optionalParameterNumber(component, 'setpointMPa', Number.POSITIVE_INFINITY)
+    const reseat = optionalParameterNumber(component, 'reseatMPa', setpoint * 0.98)
+    const wasAutoOpen = context.readBoolean(componentVariablePath(component, 'autoOpenActive'))
+    const autoOpen = (mode === 'relief' || mode === 'safety') && (pressureDrop >= setpoint || (wasAutoOpen && pressureDrop > reseat))
+    const target = autoOpen ? 1 : manualTarget
     const current = context.readNumber(componentVariablePath(component, 'effectivePositionFraction'))
+    const timeConstant = target >= current
+      ? optionalParameterNumber(component, 'strokeOpenTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
+      : optionalParameterNumber(component, 'strokeCloseTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))
+    const nextPosition = relaxToward(current, target, context.dtSeconds, timeConstant)
+    const minimumPosition = optionalParameterNumber(component, 'leakageFractionClosed', 0)
     context.write(
       componentVariablePath(component, 'effectivePositionFraction'),
-      relaxToward(current, target, context.dtSeconds, optionalParameterNumber(component, 'strokeTimeConstantS', 0.1)),
+      clamp(Math.max(nextPosition, minimumPosition), 0, 1),
     )
+    context.write(componentVariablePath(component, 'demandPositionFraction'), target)
+    context.write(componentVariablePath(component, 'autoOpenActive'), autoOpen)
   },
 })
 
@@ -114,8 +209,8 @@ const valveDiagnosticsBehavior = (componentKind: 'processValve' | 'steamValve'):
   id: `${componentKind}-flow-diagnostics`,
   phase: 'updateComponentState',
   componentKind,
-  reads: ['incoming:flowKgPerS', 'outgoing:flowKgPerS'],
-  writes: ['inletFlowKgPerS', 'outletFlowKgPerS', 'flowBalanceResidualKgPerS'],
+  reads: ['incoming:flowKgPerS', 'outgoing:flowKgPerS', 'incoming:pressureMPa', 'outgoing:pressureMPa', 'effectivePositionFraction'],
+  writes: ['inletFlowKgPerS', 'outletFlowKgPerS', 'flowBalanceResidualKgPerS', 'availablePressureDropMPa', 'capacityLimitedFlowKgPerS', 'reverseFlowKgPerS', 'leakageFlowKgPerS'],
   update: updateValveFlowDiagnostics,
 })
 
@@ -123,8 +218,8 @@ const headerDiagnosticsBehavior = (componentKind: 'processHeader' | 'steamHeader
   id: `${componentKind}-mixing-diagnostics`,
   phase: 'updateComponentState',
   componentKind,
-  reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:pressureMPa', 'outgoing:flowKgPerS'],
-  writes: ['inletFlowKgPerS', 'outletFlowKgPerS', 'flowBalanceResidualKgPerS', 'mixedTemperatureC', 'mixedPressureMPa'],
+  reads: ['incoming:flowKgPerS', 'incoming:temperatureC', 'incoming:pressureMPa', 'outgoing:flowKgPerS', 'mixedTemperatureC', 'pressureNodeMPa', 'inventoryKg'],
+  writes: ['inventoryKg', 'inletFlowKgPerS', 'outletFlowKgPerS', 'flowBalanceResidualKgPerS', 'mixedTemperatureC', 'mixedPressureMPa', 'pressureNodeMPa', 'unmetDemandKgPerS'],
   update: updateHeaderDiagnostics,
 })
 

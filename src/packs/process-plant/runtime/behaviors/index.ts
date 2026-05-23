@@ -2,7 +2,10 @@ import type {
   ComponentBehaviorDefinition,
   ComponentInitialReconciliationDefinition,
 } from '../behavior-contract.ts'
+import { accumulatorBehaviorDefinitions } from './accumulator-behaviors.ts'
 import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.ts'
+import { containmentBehaviorDefinitions } from './containment-behaviors.ts'
+import { heatExchangerBehaviorDefinitions } from './heat-exchanger-behaviors.ts'
 import { junctionBehaviorDefinitions } from './junction-behaviors.ts'
 import { pressurizerBehaviorDefinitions } from './pressurizer-behaviors.ts'
 import { pumpBehaviorDefinitions, pumpInitialReconciliationDefinitions } from './pump-behaviors.ts'
@@ -12,6 +15,9 @@ import { steamGeneratorBehaviorDefinitions } from './steam-generator-behaviors.t
 const behaviorDefinitionsByFamily: ReadonlyArray<ComponentBehaviorDefinition> = [
   ...reactorBehaviorDefinitions,
   ...balanceOfPlantBehaviorDefinitions,
+  ...heatExchangerBehaviorDefinitions,
+  ...containmentBehaviorDefinitions,
+  ...accumulatorBehaviorDefinitions,
   ...junctionBehaviorDefinitions,
   ...pumpBehaviorDefinitions,
   ...steamGeneratorBehaviorDefinitions,
@@ -41,6 +47,9 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
   behaviorDefinitionById('reactor-core-coolant-temperature-state'),
   behaviorDefinitionById('steam-generator-inventory-pressure-state'),
   behaviorDefinitionById('condenser-steam-sink-state'),
+  behaviorDefinitionById('heat-exchanger-thermal-transfer'),
+  behaviorDefinitionById('containment-lumped-atmosphere-sump'),
+  behaviorDefinitionById('accumulator-pressure-driven-discharge'),
   behaviorDefinitionById('processValve-flow-diagnostics'),
   behaviorDefinitionById('steamValve-flow-diagnostics'),
   behaviorDefinitionById('processHeader-mixing-diagnostics'),

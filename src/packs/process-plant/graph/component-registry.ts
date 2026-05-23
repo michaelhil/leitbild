@@ -1,5 +1,8 @@
 import type { ComponentDefinition, ComponentKind } from './model.ts'
+import { accumulatorComponentDefinitions } from './accumulator-component-definitions.ts'
 import { balanceOfPlantComponentDefinitions } from './balance-of-plant-component-definitions.ts'
+import { containmentComponentDefinitions } from './containment-component-definitions.ts'
+import { heatExchangerComponentDefinitions } from './heat-exchanger-component-definitions.ts'
 import { junctionComponentDefinitions } from './junction-component-definitions.ts'
 import { pressurizerComponentDefinitions } from './pressurizer-component-definitions.ts'
 import { pumpComponentDefinitions } from './pump-component-definitions.ts'
@@ -13,6 +16,9 @@ export const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition
   ...steamGeneratorComponentDefinitions,
   ...pumpComponentDefinitions,
   ...balanceOfPlantComponentDefinitions,
+  ...heatExchangerComponentDefinitions,
+  ...containmentComponentDefinitions,
+  ...accumulatorComponentDefinitions,
 ]
 
 export const processPlantComponentRegistry: ReadonlyMap<ComponentKind, ComponentDefinition> = new Map(

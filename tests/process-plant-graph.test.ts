@@ -544,6 +544,53 @@ describe('process plant graph foundation', () => {
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate variable path: core.powerMw')
   })
 
+  test('rejects stronger component contracts that are structurally incomplete', () => {
+    const disconnectedHeatExchanger = plantGraph({
+      id: 'process-plant.invalid-heat-exchanger.v1',
+      title: 'Invalid Heat Exchanger Graph',
+      fixedStepMs: 100,
+      components: [
+        component('hx', 'heatExchanger', 'Residual Heat Exchanger', {
+          uaMwPerC: 3,
+          hotSideDesignFlowKgPerS: 100,
+          coldSideDesignFlowKgPerS: 100,
+        }),
+      ],
+      connections: [],
+    })
+    const invalidAccumulator = plantGraph({
+      id: 'process-plant.invalid-accumulator.v1',
+      title: 'Invalid Accumulator Graph',
+      fixedStepMs: 100,
+      components: [
+        component('acc', 'accumulator', 'Safety Injection Accumulator', {
+          totalVolumeM3: 1,
+          initialLiquidInventoryKg: 1_100,
+          initialGasPressureMPa: 4,
+          injectionSetpointMPa: 3,
+          outletCvKgPerSPerSqrtMPa: 10,
+        }),
+      ],
+      connections: [],
+    })
+    const invalidReliefValve = plantGraph({
+      id: 'process-plant.invalid-relief-valve.v1',
+      title: 'Invalid Relief Valve Graph',
+      fixedStepMs: 100,
+      components: [
+        component('relief', 'steamValve', 'Relief Valve', {
+          valveMode: 'relief',
+          initialPositionFraction: 0,
+        }),
+      ],
+      connections: [],
+    })
+
+    expect(() => compilePlantGraph(disconnectedHeatExchanger, processPlantComponentRegistry)).toThrow('requires incoming connection on port hotIn')
+    expect(() => compilePlantGraph(invalidAccumulator, processPlantComponentRegistry)).toThrow('must leave gas volume')
+    expect(() => compilePlantGraph(invalidReliefValve, processPlantComponentRegistry)).toThrow('requires setpointMPa')
+  })
+
   test('rejects link actuators on non-writable variables', () => {
     const result = processLinkVariableDescriptorSchema.safeParse({
       path: 'valve.positionFraction',

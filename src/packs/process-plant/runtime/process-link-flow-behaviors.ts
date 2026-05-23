@@ -3,6 +3,7 @@ import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehavio
 import { clamp } from './component-helpers.ts'
 import {
   combinedValveFactorForLink,
+  componentValveCapacityForInboundLink,
   downstreamServiceDemandFraction,
   distributeFlowFromComponent,
   hasProcessLinkVariable,
@@ -61,6 +62,12 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
         flowSource = Math.min(topologyAwareMainSteamDemandForSourceLink(system, link, context), sourceSteamFlow ?? 0)
       } else if (fromComponent.kind === 'turbineLoadSink') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
+      } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'sumpOutflowKgPerS'))
+      } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'ventOut') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'releaseFlowKgPerS'))
+      } else if (fromComponent.kind === 'accumulator' && String(link.fromPortName) === 'outlet') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'outletFlowKgPerS'))
       } else {
         flowSource = passiveFlowFromIncomingService(system, link, context)
       }
@@ -68,8 +75,9 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
         flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
       }
       const capacity = physicalFlowCapacityKgPerS(link)
+      const componentValveCapacity = componentValveCapacityForInboundLink(system, link, context)
       const effectiveValveFactor = sourceAlreadyIncludesValveFactor ? 1 : valveFactor
-      context.write(processLinkVariablePath(link, 'flowKgPerS'), Math.min(flowSource, capacity) * effectiveValveFactor * (1 - leakFraction))
+      context.write(processLinkVariablePath(link, 'flowKgPerS'), Math.min(flowSource, capacity, componentValveCapacity) * effectiveValveFactor * (1 - leakFraction))
     },
   },
   {

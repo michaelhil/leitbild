@@ -127,6 +127,80 @@ const parseInitialState = (
   return parseWithContext(definition.initialStateSchema, initialState, `component ${componentId} initialState`)
 }
 
+const parameterRecord = (component: CompiledComponent): Record<string, unknown> => {
+  if (!component.parameters || typeof component.parameters !== 'object' || Array.isArray(component.parameters)) {
+    throw new Error(`component ${component.id} parameters are not an object`)
+  }
+  return component.parameters as Record<string, unknown>
+}
+
+const assertPortConnected = (
+  component: CompiledComponent,
+  links: ReadonlyArray<CompiledProcessLink>,
+  portName: string,
+  direction: 'incoming' | 'outgoing',
+): void => {
+  const connected = links.some(link =>
+    direction === 'incoming'
+      ? link.toComponentIndex === component.index && String(link.toPortName) === portName
+      : link.fromComponentIndex === component.index && String(link.fromPortName) === portName,
+  )
+  if (!connected) throw new Error(`component ${component.id} ${component.kind} requires ${direction} connection on port ${portName}`)
+}
+
+const validateValveComponent = (component: CompiledComponent): void => {
+  if (component.kind !== 'processValve' && component.kind !== 'steamValve') return
+  const parameters = parameterRecord(component)
+  const mode = parameters.valveMode
+  if ((mode === 'relief' || mode === 'safety') && parameters.setpointMPa === undefined) {
+    throw new Error(`component ${component.id} ${mode} valve requires setpointMPa`)
+  }
+  if (typeof parameters.reseatMPa === 'number' && typeof parameters.setpointMPa === 'number' && parameters.reseatMPa > parameters.setpointMPa) {
+    throw new Error(`component ${component.id} valve reseatMPa cannot exceed setpointMPa`)
+  }
+}
+
+const validateHeatExchangerComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
+  if (component.kind !== 'heatExchanger') return
+  assertPortConnected(component, links, 'hotIn', 'incoming')
+  assertPortConnected(component, links, 'hotOut', 'outgoing')
+  assertPortConnected(component, links, 'coldIn', 'incoming')
+  assertPortConnected(component, links, 'coldOut', 'outgoing')
+}
+
+const validateAccumulatorComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
+  if (component.kind !== 'accumulator') return
+  const parameters = parameterRecord(component)
+  const totalVolume = parameters.totalVolumeM3
+  const initialInventory = parameters.initialLiquidInventoryKg
+  const density = parameters.liquidDensityKgPerM3 ?? 950
+  if (typeof totalVolume !== 'number' || typeof initialInventory !== 'number' || typeof density !== 'number') {
+    throw new Error(`component ${component.id} accumulator parameters failed numeric validation`)
+  }
+  if (initialInventory / density >= totalVolume) throw new Error(`component ${component.id} accumulator initial liquid inventory must leave gas volume`)
+  if (typeof parameters.minimumUsableInventoryKg === 'number' && parameters.minimumUsableInventoryKg > initialInventory) {
+    throw new Error(`component ${component.id} accumulator minimumUsableInventoryKg cannot exceed initialLiquidInventoryKg`)
+  }
+  assertPortConnected(component, links, 'outlet', 'outgoing')
+}
+
+const validateContainmentComponent = (component: CompiledComponent, links: ReadonlyArray<CompiledProcessLink>): void => {
+  if (component.kind !== 'containmentVolume') return
+  assertPortConnected(component, links, 'massEnergyIn', 'incoming')
+}
+
+const validateStrongComponentContracts = (
+  components: ReadonlyArray<CompiledComponent>,
+  links: ReadonlyArray<CompiledProcessLink>,
+): void => {
+  for (const component of components) {
+    validateValveComponent(component)
+    validateHeatExchangerComponent(component, links)
+    validateAccumulatorComponent(component, links)
+    validateContainmentComponent(component, links)
+  }
+}
+
 export const compilePlantGraph = (
   input: unknown,
   registry: ReadonlyMap<ComponentKind, ComponentDefinition>,
@@ -243,6 +317,7 @@ export const compilePlantGraph = (
   const variables = [...componentVariables, ...linkVariables]
   assertUnique(variables, variable => variable.path, 'variable path')
   validateProcessLinkContracts(links)
+  validateStrongComponentContracts(components, links)
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)

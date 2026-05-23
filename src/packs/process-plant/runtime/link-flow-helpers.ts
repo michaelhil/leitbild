@@ -44,6 +44,23 @@ export const componentValveFactorForInboundLink = (
   return context.has(positionPath) ? clamp(context.readNumber(positionPath), 0, 1) : 1
 }
 
+export const componentValveCapacityForInboundLink = (
+  system: CompiledProcessPlantSystem,
+  link: CompiledProcessLink,
+  context: LinkBehaviorReadContext,
+): number => {
+  const toComponent = system.graph.components[link.toComponentIndex]
+  if (toComponent?.kind !== 'processValve' && toComponent?.kind !== 'steamValve') return Number.POSITIVE_INFINITY
+  const parameters = toComponent.parameters
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) return Number.POSITIVE_INFINITY
+  const cv = (parameters as Record<string, unknown>).cvKgPerSPerSqrtMPa
+  if (cv === undefined) return Number.POSITIVE_INFINITY
+  if (typeof cv !== 'number' || !Number.isFinite(cv) || cv < 0) throw new Error(`component ${toComponent.id} parameter cvKgPerSPerSqrtMPa must be nonnegative`)
+  const upstreamPressurePath = processLinkVariablePath(link, 'pressureMPa')
+  const upstreamPressure = context.has(upstreamPressurePath) ? context.readNumber(upstreamPressurePath) : 0
+  return cv * Math.sqrt(Math.max(0, upstreamPressure))
+}
+
 export const linkValveFactor = (
   link: CompiledProcessLink,
   context: Pick<LinkBehaviorReadContext, 'readOptionalNumber'>,

@@ -42,6 +42,15 @@ export const optionalParameterBoolean = (component: CompiledComponent, key: stri
   return value
 }
 
+export const optionalParameterString = <T extends string>(component: CompiledComponent, key: string, defaultValue: T, allowedValues: ReadonlySet<T>): T => {
+  const parameters = component.parameters
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`component ${component.id} parameters are not an object`)
+  const value = (parameters as Record<string, unknown>)[key]
+  if (value === undefined) return defaultValue
+  if (typeof value !== 'string' || !allowedValues.has(value as T)) throw new Error(`component ${component.id} parameter ${key} must be one of ${Array.from(allowedValues).join(', ')}`)
+  return value as T
+}
+
 export const hasComponentVariable = (component: CompiledComponent, localPath: string): boolean =>
   component.variables.some(variable => variable.path === componentVariablePath(component, localPath))
 

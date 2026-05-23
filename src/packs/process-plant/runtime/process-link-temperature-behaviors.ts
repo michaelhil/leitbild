@@ -28,6 +28,16 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {
         target = context.readNumber(componentVariablePath(fromComponent, 'exhaustTemperatureC'))
+      } else if (fromComponent.kind === 'heatExchanger' && String(link.fromPortName) === 'hotOut') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'hotOutletTemperatureC'))
+      } else if (fromComponent.kind === 'heatExchanger' && String(link.fromPortName) === 'coldOut') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'coldOutletTemperatureC'))
+      } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+      } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'ventOut') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
+      } else if (fromComponent.kind === 'accumulator' && String(link.fromPortName) === 'outlet') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else {
         target = flowWeightedIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
           ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))

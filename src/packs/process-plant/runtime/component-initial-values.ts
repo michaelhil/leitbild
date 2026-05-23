@@ -134,16 +134,28 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'availableOutletFlowKgPerS') return parameterNumber(component, 'maxOutletFlowKgPerS')
   }
   if (component.kind === 'processHeader' || component.kind === 'steamHeader') {
+    if (localPath === 'inventoryKg') {
+      const density = optionalParameterNumber(component, 'nominalDensityKgPerM3', component.kind === 'steamHeader' ? 35 : 950)
+      return optionalParameterNumber(component, 'headerVolumeM3', 1) * density
+    }
     if (localPath === 'inletFlowKgPerS') return 0
     if (localPath === 'outletFlowKgPerS') return 0
     if (localPath === 'flowBalanceResidualKgPerS') return 0
     if (localPath === 'mixedTemperatureC') return optionalParameterNumber(component, 'initialTemperatureC', component.kind === 'steamHeader' ? 285 : 220)
     if (localPath === 'mixedPressureMPa') return optionalParameterNumber(component, 'initialPressureMPa', component.kind === 'steamHeader' ? 6.9 : 1)
+    if (localPath === 'pressureNodeMPa') return optionalParameterNumber(component, 'initialPressureMPa', component.kind === 'steamHeader' ? 6.9 : 1)
+    if (localPath === 'unmetDemandKgPerS') return 0
   }
   if (component.kind === 'processValve' || component.kind === 'steamValve') {
     const initialPosition = optionalParameterNumber(component, 'initialPositionFraction', 1)
     if (localPath === 'positionFraction') return initialPosition
+    if (localPath === 'demandPositionFraction') return initialPosition
     if (localPath === 'effectivePositionFraction') return initialPosition
+    if (localPath === 'availablePressureDropMPa') return 0
+    if (localPath === 'capacityLimitedFlowKgPerS') return 0
+    if (localPath === 'reverseFlowKgPerS') return 0
+    if (localPath === 'leakageFlowKgPerS') return 0
+    if (localPath === 'autoOpenActive') return false
     if (localPath === 'inletFlowKgPerS') return 0
     if (localPath === 'outletFlowKgPerS') return 0
     if (localPath === 'flowBalanceResidualKgPerS') return 0
@@ -170,6 +182,60 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
     if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
     if (localPath === 'backPressurePa') return 8_000
+  }
+  if (component.kind === 'heatExchanger') {
+    const hot = optionalParameterNumber(component, 'initialHotTemperatureC', 120)
+    const cold = optionalParameterNumber(component, 'initialColdTemperatureC', 35)
+    if (localPath === 'hotInletTemperatureC') return hot
+    if (localPath === 'hotOutletTemperatureC') return hot
+    if (localPath === 'coldInletTemperatureC') return cold
+    if (localPath === 'coldOutletTemperatureC') return cold
+    if (localPath === 'hotSideFlowKgPerS') return 0
+    if (localPath === 'coldSideFlowKgPerS') return 0
+    if (localPath === 'heatTransferMw') return 0
+    if (localPath === 'approachTemperatureC') return Math.max(0, hot - cold)
+    if (localPath === 'effectivenessFraction') return 0
+    if (localPath === 'hotSidePressureDropMPa') return 0
+    if (localPath === 'coldSidePressureDropMPa') return 0
+    if (localPath === 'heatBalanceResidualMw') return 0
+  }
+  if (component.kind === 'containmentVolume') {
+    const pressure = optionalParameterNumber(component, 'initialPressureMPa', 0.101325)
+    const temperatureC = optionalParameterNumber(component, 'initialTemperatureC', 30)
+    const freeVolume = parameterNumber(component, 'freeVolumeM3')
+    const temperatureK = temperatureC + 273.15
+    const airMass = pressure * 1_000_000 * freeVolume / (287.05 * temperatureK)
+    const steamMass = airMass * optionalParameterNumber(component, 'initialHumidityFraction', 0.35) * 0.03
+    if (localPath === 'atmosphereMassKg') return airMass + steamMass
+    if (localPath === 'airMassKg') return airMass
+    if (localPath === 'steamMassKg') return steamMass
+    if (localPath === 'sumpInventoryKg') return optionalParameterNumber(component, 'initialSumpInventoryKg', 0)
+    if (localPath === 'pressureMPa') return pressure
+    if (localPath === 'temperatureC') return temperatureC
+    if (localPath === 'humidityFraction') return optionalParameterNumber(component, 'initialHumidityFraction', 0.35)
+    if (localPath === 'incomingMassKgPerS') return 0
+    if (localPath === 'sprayFlowKgPerS') return 0
+    if (localPath === 'releaseFlowKgPerS') return 0
+    if (localPath === 'sumpOutflowKgPerS') return 0
+    if (localPath === 'heatRemovalMw') return 0
+    if (localPath === 'radiationSourceTermMSvPerH') return 0.02
+    if (localPath === 'contaminationInventory') return 0
+  }
+  if (component.kind === 'accumulator') {
+    const liquidInventory = parameterNumber(component, 'initialLiquidInventoryKg')
+    const density = optionalParameterNumber(component, 'liquidDensityKgPerM3', 950)
+    const totalVolume = parameterNumber(component, 'totalVolumeM3')
+    const liquidVolume = liquidInventory / density
+    const gasVolume = Math.max(0.001, totalVolume - liquidVolume)
+    if (localPath === 'liquidInventoryKg') return liquidInventory
+    if (localPath === 'gasVolumeM3') return gasVolume
+    if (localPath === 'gasPressureMPa') return parameterNumber(component, 'initialGasPressureMPa')
+    if (localPath === 'outletFlowKgPerS') return 0
+    if (localPath === 'fillFlowKgPerS') return 0
+    if (localPath === 'availableInjectionHeadMPa') return 0
+    if (localPath === 'depletedFraction') return 0
+    if (localPath === 'checkValveOpenFraction') return 0
+    if (localPath === 'temperatureC') return optionalParameterNumber(component, 'initialTemperatureC', 35)
   }
   throw new Error(`component ${component.id} has no runtime initializer for variable ${path}`)
 }

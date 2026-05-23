@@ -3,11 +3,15 @@ import {
   componentVariablePath,
   compileProcessPlantExecutionPlan,
   compileProcessPlantSystem,
+  component,
+  connect,
   createBehaviorContext,
   createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
+  plantGraph,
   pressurizedWaterReactorPlantSpec,
+  processLinkVariableDescriptorSchema,
   processPlantSolverPhases,
   processPlantComponentRegistry,
   type ConnectionService,
@@ -59,6 +63,32 @@ const compiledSystemWithConnectionPhysical = (
 })
 
 const valueOf = (path: string): VariablePath => path as VariablePath
+
+const fluidVariable = (input: {
+  readonly path: string
+  readonly label?: string
+  readonly domain: 'hydraulic' | 'thermal' | 'control' | 'radiological'
+  readonly quantity: 'flowRate' | 'temperature' | 'pressure' | 'pressureDelta' | 'ratio' | 'radiationDoseRate'
+  readonly unit: 'kg/s' | 'degC' | 'MPa' | 'fraction' | 'mSv/h'
+  readonly initialValue: number
+  readonly writable?: boolean
+}) => processLinkVariableDescriptorSchema.parse({
+  path: input.path,
+  label: input.label ?? input.path,
+  kind: input.writable === true ? 'control' : 'derived',
+  domain: input.domain,
+  writable: input.writable ?? false,
+  publish: 'telemetry',
+  quantity: input.quantity,
+  unit: input.unit,
+  initialValue: input.initialValue,
+})
+
+const liquidVariables = (temperatureC: number, pressureMPa = 1) => [
+  fluidVariable({ path: 'flowKgPerS', domain: 'hydraulic', quantity: 'flowRate', unit: 'kg/s', initialValue: 0 }),
+  fluidVariable({ path: 'temperatureC', domain: 'thermal', quantity: 'temperature', unit: 'degC', initialValue: temperatureC }),
+  fluidVariable({ path: 'pressureMPa', domain: 'hydraulic', quantity: 'pressure', unit: 'MPa', initialValue: pressureMPa }),
+]
 
 describe('process plant runtime', () => {
   test('initializes a headless runtime from scenario-owned graph data', () => {
@@ -550,6 +580,101 @@ describe('process plant runtime', () => {
 
     expect(Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS'))))
       .toBeLessThanOrEqual(25)
+  })
+
+  test('heat exchanger conservatively transfers heat between two fluid sides', () => {
+    const graph = plantGraph({
+      id: 'process-plant.heat-exchanger-acceptance.v1',
+      title: 'Heat Exchanger Acceptance',
+      fixedStepMs: 100,
+      components: [
+        component('hotTank', 'processTank', 'Hot Tank', {
+          nominalInventoryKg: 100_000,
+          initialInventoryFraction: 0.9,
+          initialTemperatureC: 180,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 80,
+        }),
+        component('coldTank', 'processTank', 'Cold Tank', {
+          nominalInventoryKg: 100_000,
+          initialInventoryFraction: 0.9,
+          initialTemperatureC: 30,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 80,
+        }),
+        component('hx', 'heatExchanger', 'Component Cooling Heat Exchanger', {
+          uaMwPerC: 0.8,
+          hotSideDesignFlowKgPerS: 80,
+          coldSideDesignFlowKgPerS: 80,
+          effectivenessLimit: 0.85,
+          thermalMassMJPerC: 0,
+          initialHotTemperatureC: 180,
+          initialColdTemperatureC: 30,
+        }),
+        component('hotReturn', 'processHeader', 'Hot Return Header', {}),
+        component('coldReturn', 'processHeader', 'Cold Return Header', {}),
+      ],
+      connections: [
+        connect('hot-tank-to-hx', 'hotTank.outlet', 'hx.hotIn', { connectionKind: 'fluidFlow', service: 'hotLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(180, 1) }),
+        connect('hx-to-hot-return', 'hx.hotOut', 'hotReturn.inletA', { connectionKind: 'fluidFlow', service: 'hotLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(180, 1) }),
+        connect('cold-tank-to-hx', 'coldTank.outlet', 'hx.coldIn', { connectionKind: 'fluidFlow', service: 'coldLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(30, 1) }),
+        connect('hx-to-cold-return', 'hx.coldOut', 'coldReturn.inletA', { connectionKind: 'fluidFlow', service: 'coldLoop', nominalFluid: 'water', designPhase: 'liquid', solverModel: 'incompressibleLiquid', variables: liquidVariables(30, 1) }),
+      ],
+    })
+    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'hx', pack: 'process-plant', componentLibrary: 'process-plant', graph }) })
+
+    for (let index = 0; index < 20; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('hx.hotOutletTemperatureC')))).toBeLessThan(Number(runtime.readVariable(valueOf('hx.hotInletTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('hx.coldOutletTemperatureC')))).toBeGreaterThan(Number(runtime.readVariable(valueOf('hx.coldInletTemperatureC'))))
+    expect(Number(runtime.readVariable(valueOf('hx.heatTransferMw')))).toBeGreaterThan(0)
+    expect(Math.abs(Number(runtime.readVariable(valueOf('hx.heatBalanceResidualMw'))))).toBeLessThan(1)
+  })
+
+  test('accumulator injects into containment and containment accumulates released mass', () => {
+    const graph = plantGraph({
+      id: 'process-plant.accumulator-containment-acceptance.v1',
+      title: 'Accumulator And Containment Acceptance',
+      fixedStepMs: 100,
+      components: [
+        component('acc', 'accumulator', 'Safety Injection Accumulator', {
+          totalVolumeM3: 60,
+          initialLiquidInventoryKg: 35_000,
+          initialGasPressureMPa: 4.5,
+          injectionSetpointMPa: 2.5,
+          outletCvKgPerSPerSqrtMPa: 40,
+          minimumUsableInventoryKg: 1_000,
+          initialTemperatureC: 35,
+        }),
+        component('containment', 'containmentVolume', 'Containment', {
+          freeVolumeM3: 60_000,
+          initialPressureMPa: 0.101325,
+          initialTemperatureC: 35,
+          initialHumidityFraction: 0.45,
+          heatLossMwPerC: 0.02,
+        }),
+      ],
+      connections: [
+        connect('acc-to-containment', 'acc.outlet', 'containment.massEnergyIn', {
+          connectionKind: 'fluidFlow',
+          service: 'safetyInjection',
+          nominalFluid: 'water',
+          designPhase: 'liquid',
+          solverModel: 'incompressibleLiquid',
+          variables: liquidVariables(35, 0.101325),
+        }),
+      ],
+    })
+    const runtime = createProcessPlantRuntime({ system: compileProcessPlantSystem({ id: 'acc-containment', pack: 'process-plant', componentLibrary: 'process-plant', graph }) })
+    const initialInventory = Number(runtime.readVariable(valueOf('acc.liquidInventoryKg')))
+    const initialSump = Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))
+
+    for (let index = 0; index < 30; index += 1) runtime.tick(100)
+
+    expect(Number(runtime.readVariable(valueOf('acc.outletFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('acc.liquidInventoryKg')))).toBeLessThan(initialInventory)
+    expect(Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))).toBeGreaterThan(initialSump)
+    expect(Number(runtime.readVariable(valueOf('containment.incomingMassKgPerS')))).toBeGreaterThan(0)
   })
 
   test('couples reactor heat, primary flow, steam generation, turbine load, and condenser sink', () => {
