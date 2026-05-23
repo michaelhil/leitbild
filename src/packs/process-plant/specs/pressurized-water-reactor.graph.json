@@ -467,7 +467,46 @@
         "nominalCondensateInventoryKg": 250000,
         "initialCondensateInventoryFraction": 0.55,
         "maxCondensateOutletFlowKgPerS": 1600,
-        "condenserThermalTimeConstantS": 12
+        "condenserThermalTimeConstantS": 12,
+        "nominalCoolingWaterFlowKgPerS": 43000,
+        "coolingWaterDesignDeltaTK": 14
+      }
+    },
+    {
+      "id": "ultimateHeatSink",
+      "kind": "processTank",
+      "label": "Ultimate Heat Sink",
+      "parameters": {
+        "nominalInventoryKg": 100000000,
+        "initialInventoryFraction": 0.95,
+        "initialTemperatureC": 18,
+        "makeupFlowKgPerS": 43000,
+        "maxOutletFlowKgPerS": 50000,
+        "thermalTimeConstantS": 600
+      }
+    },
+    {
+      "id": "circulatingWaterPump",
+      "kind": "centrifugalPump",
+      "label": "Circulating Water Pump",
+      "parameters": {
+        "nominalFlowKgPerS": 43000,
+        "nominalHeadPa": 250000,
+        "flowTimeConstantS": 10,
+        "maxFlowRampKgPerS2": 6000
+      }
+    },
+    {
+      "id": "coolingWaterDischarge",
+      "kind": "processTank",
+      "label": "Cooling Water Discharge",
+      "parameters": {
+        "nominalInventoryKg": 100000000,
+        "initialInventoryFraction": 0.5,
+        "initialTemperatureC": 28,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 0,
+        "thermalTimeConstantS": 600
       }
     },
     {
@@ -520,6 +559,105 @@
       "label": "Letdown Valve",
       "parameters": {
         "initialPositionFraction": 0.5
+      }
+    },
+    {
+      "id": "containment",
+      "kind": "containmentVolume",
+      "label": "Containment",
+      "parameters": {
+        "freeVolumeM3": 70000,
+        "initialPressureMPa": 0.101325,
+        "initialTemperatureC": 35,
+        "initialHumidityFraction": 0.45,
+        "initialSumpInventoryKg": 0,
+        "heatLossMwPerC": 0.04,
+        "designPressureMPa": 0.42,
+        "ventSetpointMPa": 0.5,
+        "ventCapacityKgPerS": 0
+      }
+    },
+    {
+      "id": "safetyAccumulatorA",
+      "kind": "accumulator",
+      "label": "Safety Injection Accumulator A",
+      "parameters": {
+        "totalVolumeM3": 60,
+        "initialLiquidInventoryKg": 35000,
+        "liquidDensityKgPerM3": 950,
+        "initialGasPressureMPa": 4.4,
+        "gasPolytropicExponent": 1.2,
+        "injectionSetpointMPa": 3.8,
+        "outletCvKgPerSPerSqrtMPa": 70,
+        "minimumUsableInventoryKg": 1500,
+        "checkValveEnabled": true,
+        "initialTemperatureC": 35
+      }
+    },
+    {
+      "id": "safetyAccumulatorB",
+      "kind": "accumulator",
+      "label": "Safety Injection Accumulator B",
+      "parameters": {
+        "totalVolumeM3": 60,
+        "initialLiquidInventoryKg": 35000,
+        "liquidDensityKgPerM3": 950,
+        "initialGasPressureMPa": 4.4,
+        "gasPolytropicExponent": 1.2,
+        "injectionSetpointMPa": 3.8,
+        "outletCvKgPerSPerSqrtMPa": 70,
+        "minimumUsableInventoryKg": 1500,
+        "checkValveEnabled": true,
+        "initialTemperatureC": 35
+      }
+    },
+    {
+      "id": "safetyAccumulatorC",
+      "kind": "accumulator",
+      "label": "Safety Injection Accumulator C",
+      "parameters": {
+        "totalVolumeM3": 60,
+        "initialLiquidInventoryKg": 35000,
+        "liquidDensityKgPerM3": 950,
+        "initialGasPressureMPa": 4.4,
+        "gasPolytropicExponent": 1.2,
+        "injectionSetpointMPa": 3.8,
+        "outletCvKgPerSPerSqrtMPa": 70,
+        "minimumUsableInventoryKg": 1500,
+        "checkValveEnabled": true,
+        "initialTemperatureC": 35
+      }
+    },
+    {
+      "id": "safetyAccumulatorD",
+      "kind": "accumulator",
+      "label": "Safety Injection Accumulator D",
+      "parameters": {
+        "totalVolumeM3": 60,
+        "initialLiquidInventoryKg": 35000,
+        "liquidDensityKgPerM3": 950,
+        "initialGasPressureMPa": 4.4,
+        "gasPolytropicExponent": 1.2,
+        "injectionSetpointMPa": 3.8,
+        "outletCvKgPerSPerSqrtMPa": 70,
+        "minimumUsableInventoryKg": 1500,
+        "checkValveEnabled": true,
+        "initialTemperatureC": 35
+      }
+    },
+    {
+      "id": "mainSteamSafetyValve",
+      "kind": "steamValve",
+      "label": "Main Steam Safety Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "safety",
+        "setpointMPa": 9,
+        "reseatMPa": 8.4,
+        "cvKgPerSPerSqrtMPa": 900,
+        "strokeOpenTimeS": 0.25,
+        "strokeCloseTimeS": 1.5,
+        "reverseFlowAllowed": false
       }
     }
   ],
@@ -2007,6 +2145,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam header inlet A pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
         }
       ]
     },
@@ -2218,6 +2367,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam header inlet B pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
         }
       ]
     },
@@ -2429,6 +2589,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam header inlet C pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
         }
       ]
     },
@@ -2640,6 +2811,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam header inlet D pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
         }
       ]
     },
@@ -3412,6 +3594,533 @@
           "initialValue": 290
         }
       ]
+    },
+    {
+      "id": "vessel-release-to-containment",
+      "from": "vessel.releaseOutlet",
+      "to": "containment.massEnergyIn",
+      "connectionKind": "fluidFlow",
+      "service": "primaryRelease",
+      "nominalFluid": "generic",
+      "designPhase": "twoPhase",
+      "solverModel": "twoPhaseApprox",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Primary boundary release to containment flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Primary boundary release temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 306
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Primary release radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "safety-accumulator-a-to-cold-leg-a",
+      "from": "safetyAccumulatorA.outlet",
+      "to": "core.coldLegA",
+      "connectionKind": "fluidFlow",
+      "service": "primaryInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety accumulator A injection flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety accumulator A injection temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Safety accumulator A injection downstream pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
+        }
+      ]
+    },
+    {
+      "id": "safety-accumulator-b-to-cold-leg-b",
+      "from": "safetyAccumulatorB.outlet",
+      "to": "core.coldLegB",
+      "connectionKind": "fluidFlow",
+      "service": "primaryInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety accumulator B injection flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety accumulator B injection temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Safety accumulator B injection downstream pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
+        }
+      ]
+    },
+    {
+      "id": "safety-accumulator-c-to-cold-leg-c",
+      "from": "safetyAccumulatorC.outlet",
+      "to": "core.coldLegC",
+      "connectionKind": "fluidFlow",
+      "service": "primaryInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety accumulator C injection flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety accumulator C injection temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Safety accumulator C injection downstream pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
+        }
+      ]
+    },
+    {
+      "id": "safety-accumulator-d-to-cold-leg-d",
+      "from": "safetyAccumulatorD.outlet",
+      "to": "core.coldLegD",
+      "connectionKind": "fluidFlow",
+      "service": "primaryInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety accumulator D injection flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety accumulator D injection temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Safety accumulator D injection downstream pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 15.5
+        }
+      ]
+    },
+    {
+      "id": "main-steam-header-to-safety-valve",
+      "from": "mainSteamHeader.outletB",
+      "to": "mainSteamSafetyValve.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam safety valve inlet flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam safety valve inlet temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam safety valve inlet pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        },
+        {
+          "path": "qualityFraction",
+          "label": "Main steam safety valve inlet quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam safety valve inlet void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam safety valve inlet enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam safety valve inlet radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "main-steam-safety-valve-to-containment",
+      "from": "mainSteamSafetyValve.outlet",
+      "to": "containment.steamIn",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam safety release to containment flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam safety release temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Main steam safety release downstream pressure",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.101325
+        },
+        {
+          "path": "qualityFraction",
+          "label": "Main steam safety release quality",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.995
+        },
+        {
+          "path": "voidFraction",
+          "label": "Main steam safety release void fraction",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "ratio",
+          "unit": "fraction",
+          "initialValue": 0.98
+        },
+        {
+          "path": "enthalpyKJPerKg",
+          "label": "Main steam safety release enthalpy",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "energyPerMass",
+          "unit": "kJ/kg",
+          "initialValue": 2770
+        },
+        {
+          "path": "radiationMSvPerH",
+          "label": "Main steam safety release radiation",
+          "kind": "derived",
+          "domain": "radiological",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "radiationDoseRate",
+          "unit": "mSv/h",
+          "initialValue": 0.02
+        }
+      ]
+    },
+    {
+      "id": "ultimate-heat-sink-to-circulating-water-pump",
+      "from": "ultimateHeatSink.outlet",
+      "to": "circulatingWaterPump.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "coolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Circulating water pump suction flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Circulating water pump suction temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        }
+      ]
+    },
+    {
+      "id": "circulating-water-pump-to-condenser",
+      "from": "circulatingWaterPump.outlet",
+      "to": "condenser.coolingWater",
+      "connectionKind": "fluidFlow",
+      "service": "coolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condenser cooling-water inlet flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condenser cooling-water inlet temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Condenser cooling-water inlet pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.2
+        }
+      ]
+    },
+    {
+      "id": "condenser-to-cooling-water-discharge",
+      "from": "condenser.coolingWaterOutlet",
+      "to": "coolingWaterDischarge.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "coolingWater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Condenser cooling-water discharge flow",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Condenser cooling-water discharge temperature",
+          "kind": "derived",
+          "domain": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 18
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Condenser cooling-water discharge pressure",
+          "kind": "derived",
+          "domain": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 0.2
+        }
+      ]
     }
   ],
   "publishedVariables": [
@@ -3809,6 +4518,81 @@
     "letdownValve.effectivePositionFraction",
     "letdownValve.inletFlowKgPerS",
     "letdownValve.outletFlowKgPerS",
-    "letdownValve.flowBalanceResidualKgPerS"
+    "letdownValve.flowBalanceResidualKgPerS",
+    "vessel.safetyInjectionFlowKgPerS",
+    "vessel.primaryReleaseRadiationMSvPerH",
+    "containment.pressureMPa",
+    "containment.temperatureC",
+    "containment.steamMassKg",
+    "containment.sumpInventoryKg",
+    "containment.incomingMassKgPerS",
+    "containment.radiationSourceTermMSvPerH",
+    "containment.contaminationInventory",
+    "vessel-release-to-containment.flowKgPerS",
+    "vessel-release-to-containment.temperatureC",
+    "vessel-release-to-containment.radiationMSvPerH",
+    "safetyAccumulatorA.liquidInventoryKg",
+    "safetyAccumulatorA.gasPressureMPa",
+    "safetyAccumulatorA.outletFlowKgPerS",
+    "safetyAccumulatorA.availableInjectionHeadMPa",
+    "safetyAccumulatorA.depletedFraction",
+    "safety-accumulator-a-to-cold-leg-a.flowKgPerS",
+    "safety-accumulator-a-to-cold-leg-a.pressureMPa",
+    "safetyAccumulatorB.liquidInventoryKg",
+    "safetyAccumulatorB.gasPressureMPa",
+    "safetyAccumulatorB.outletFlowKgPerS",
+    "safetyAccumulatorB.availableInjectionHeadMPa",
+    "safetyAccumulatorB.depletedFraction",
+    "safety-accumulator-b-to-cold-leg-b.flowKgPerS",
+    "safety-accumulator-b-to-cold-leg-b.pressureMPa",
+    "safetyAccumulatorC.liquidInventoryKg",
+    "safetyAccumulatorC.gasPressureMPa",
+    "safetyAccumulatorC.outletFlowKgPerS",
+    "safetyAccumulatorC.availableInjectionHeadMPa",
+    "safetyAccumulatorC.depletedFraction",
+    "safety-accumulator-c-to-cold-leg-c.flowKgPerS",
+    "safety-accumulator-c-to-cold-leg-c.pressureMPa",
+    "safetyAccumulatorD.liquidInventoryKg",
+    "safetyAccumulatorD.gasPressureMPa",
+    "safetyAccumulatorD.outletFlowKgPerS",
+    "safetyAccumulatorD.availableInjectionHeadMPa",
+    "safetyAccumulatorD.depletedFraction",
+    "safety-accumulator-d-to-cold-leg-d.flowKgPerS",
+    "safety-accumulator-d-to-cold-leg-d.pressureMPa",
+    "mainSteamSafetyValve.positionFraction",
+    "mainSteamSafetyValve.effectivePositionFraction",
+    "mainSteamSafetyValve.autoOpenActive",
+    "mainSteamSafetyValve.inletFlowKgPerS",
+    "mainSteamSafetyValve.outletFlowKgPerS",
+    "mainSteamSafetyValve.availablePressureDropMPa",
+    "mainSteamSafetyValve.flowBalanceResidualKgPerS",
+    "main-steam-header-to-safety-valve.flowKgPerS",
+    "main-steam-header-to-safety-valve.pressureMPa",
+    "main-steam-safety-valve-to-containment.flowKgPerS",
+    "main-steam-safety-valve-to-containment.pressureMPa",
+    "main-steam-safety-valve-to-containment.radiationMSvPerH",
+    "msiv-a-to-main-steam-header.pressureMPa",
+    "msiv-b-to-main-steam-header.pressureMPa",
+    "msiv-c-to-main-steam-header.pressureMPa",
+    "msiv-d-to-main-steam-header.pressureMPa",
+    "ultimateHeatSink.inventoryKg",
+    "ultimateHeatSink.levelPercent",
+    "ultimateHeatSink.temperatureC",
+    "ultimateHeatSink.availableOutletFlowKgPerS",
+    "circulatingWaterPump.running",
+    "circulatingWaterPump.flowKgPerS",
+    "circulatingWaterPump.developedHeadPa",
+    "condenser.coolingWaterFlowKgPerS",
+    "condenser.coolingWaterInletTemperatureC",
+    "condenser.coolingWaterOutletTemperatureC",
+    "condenser.coolingWaterHeatCapacityMw",
+    "condenser.coolingWaterAvailabilityFraction",
+    "coolingWaterDischarge.inventoryKg",
+    "coolingWaterDischarge.temperatureC",
+    "ultimate-heat-sink-to-circulating-water-pump.flowKgPerS",
+    "circulating-water-pump-to-condenser.flowKgPerS",
+    "circulating-water-pump-to-condenser.temperatureC",
+    "condenser-to-cooling-water-discharge.flowKgPerS",
+    "condenser-to-cooling-water-discharge.temperatureC"
   ]
 }

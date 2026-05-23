@@ -8,6 +8,7 @@ export const containmentComponentDefinitions: ReadonlyArray<ComponentDefinition>
     label: 'Containment Volume',
     ports: {
       massEnergyIn: { kind: 'hydraulicThermal', direction: 'in' },
+      steamIn: { kind: 'steam', direction: 'in' },
       sprayIn: { kind: 'hydraulicThermal', direction: 'in' },
       sumpOut: { kind: 'hydraulicThermal', direction: 'out' },
       ventOut: { kind: 'steam', direction: 'out' },

@@ -145,7 +145,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     id: 'reactor-vessel-primary-inventory-state',
     phase: 'updateComponentState',
     componentKind: 'reactorVessel',
-    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
+    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'primaryInjection:flowKgPerS', 'safetyInjection:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
     writes: [
       'primaryCoolantInventoryKg',
       'primaryCoolantInventoryDeviationKg',
@@ -154,11 +154,13 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'thermalExpansionPressureBiasMPa',
       'primaryPressureBiasMPa',
       'chargingFlowKgPerS',
+      'safetyInjectionFlowKgPerS',
       'letdownFlowKgPerS',
       'reliefOutflowKgPerS',
       'primaryLeakFlowKgPerS',
       'tubeLeakFlowKgPerS',
       'netInventoryFlowKgPerS',
+      'primaryReleaseRadiationMSvPerH',
     ],
     update: ({ system, component, context }): void => {
       const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
@@ -167,6 +169,10 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         const toComponent = system.graph.components[link.toComponentIndex]
         return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
       })
+      const primaryInjectionFlow = (
+        sumLinkValueByService(system, 'flowKgPerS', context, 'primaryInjection')
+        + sumLinkValueByService(system, 'flowKgPerS', context, 'safetyInjection')
+      )
       const letdownFlow = Math.max(
         sumLinkValueByService(system, 'flowKgPerS', context, 'letdown'),
         optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0),
@@ -174,10 +180,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const reliefFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'primaryRelief')
       const primaryLeakFlow = sumLinkValueByService(system, 'leakFlowKgPerS', context, 'primaryCoolant')
       const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
-      const netInventoryFlow = chargingFlow - letdownFlow - reliefFlow - primaryLeakFlow - tubeLeakFlow
+      const totalInflow = chargingFlow + primaryInjectionFlow
+      const netInventoryFlow = totalInflow - letdownFlow - reliefFlow - primaryLeakFlow - tubeLeakFlow
       const nextInventory = inventoryBalanceStep({
         currentInventory,
-        inflowKgPerS: chargingFlow,
+        inflowKgPerS: totalInflow,
         outflowKgPerS: letdownFlow + reliefFlow + primaryLeakFlow + tubeLeakFlow,
         dtSeconds: context.dtSeconds,
         minInventory: 0,
@@ -203,7 +210,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         thermalExpansionCoefficientPerC: parameterNumber(component, 'thermalExpansionCoefficientPerC'),
         effectiveBulkModulusMPa: parameterNumber(component, 'effectiveBulkModulusMPa'),
       })
+      const primaryReleaseRadiation = primaryLeakFlow <= 0
+        ? 0.02
+        : optionalParameterNumber(component, 'primaryReleaseRadiationMSvPerH', 4)
       context.write(componentVariablePath(component, 'chargingFlowKgPerS'), chargingFlow)
+      context.write(componentVariablePath(component, 'safetyInjectionFlowKgPerS'), primaryInjectionFlow)
       context.write(componentVariablePath(component, 'letdownFlowKgPerS'), letdownFlow)
       context.write(componentVariablePath(component, 'reliefOutflowKgPerS'), reliefFlow)
       context.write(componentVariablePath(component, 'primaryLeakFlowKgPerS'), primaryLeakFlow)
@@ -215,6 +226,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'compressibilityPressureBiasMPa'), compressibilityPressureBias)
       context.write(componentVariablePath(component, 'thermalExpansionPressureBiasMPa'), thermalExpansionPressureBias)
       context.write(componentVariablePath(component, 'primaryPressureBiasMPa'), compressibilityPressureBias + thermalExpansionPressureBias)
+      context.write(componentVariablePath(component, 'primaryReleaseRadiationMSvPerH'), primaryReleaseRadiation)
     },
   },
 ]

@@ -84,11 +84,13 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'thermalExpansionPressureBiasMPa') return 0
     if (localPath === 'primaryPressureBiasMPa') return 0
     if (localPath === 'chargingFlowKgPerS') return 0
+    if (localPath === 'safetyInjectionFlowKgPerS') return 0
     if (localPath === 'letdownFlowKgPerS') return optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
     if (localPath === 'reliefOutflowKgPerS') return 0
     if (localPath === 'primaryLeakFlowKgPerS') return 0
     if (localPath === 'tubeLeakFlowKgPerS') return 0
     if (localPath === 'netInventoryFlowKgPerS') return -optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
+    if (localPath === 'primaryReleaseRadiationMSvPerH') return optionalParameterNumber(component, 'primaryReleaseRadiationMSvPerH', 0.02)
   }
   if (component.kind === 'pressurizer') {
     const nominalPressure = parameterNumber(component, 'nominalPressureMPa')
@@ -182,6 +184,13 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'availableCondensateOutletFlowKgPerS') return parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
     if (localPath === 'condensateTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK')
     if (localPath === 'backPressurePa') return 8_000
+    if (localPath === 'coolingWaterFlowKgPerS') return parameterNumber(component, 'nominalCoolingWaterFlowKgPerS')
+    if (localPath === 'coolingWaterInletTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC')
+    if (localPath === 'coolingWaterOutletTemperatureC') return parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'coolingWaterDesignDeltaTK')
+    if (localPath === 'coolingWaterHeatCapacityMw') {
+      return parameterNumber(component, 'nominalCoolingWaterFlowKgPerS') * 4.186 * parameterNumber(component, 'coolingWaterDesignDeltaTK') / 1_000
+    }
+    if (localPath === 'coolingWaterAvailabilityFraction') return 1
   }
   if (component.kind === 'heatExchanger') {
     const hot = optionalParameterNumber(component, 'initialHotTemperatureC', 120)

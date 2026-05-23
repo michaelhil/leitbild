@@ -10,7 +10,7 @@ import {
   passiveFlowFromIncomingService,
   sourceLimitedPumpFlow,
 } from './link-flow-helpers.ts'
-import { topologyAwareMainSteamDemandForSourceLink } from './main-steam-demand.ts'
+import { topologyAwareMainSteamDemandForSourceLink, topologyAwareMainSteamReleaseAvailabilityForSourceLink } from './main-steam-demand.ts'
 import { pressureDrivenLeakFlowKgPerS } from './physics.ts'
 import { physicalFlowCapacityKgPerS, physicalNumber } from './process-link-physical.ts'
 
@@ -55,11 +55,20 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
           context,
           context.readNumber(componentVariablePath(fromComponent, 'availableCondensateOutletFlowKgPerS')),
         ) * downstreamServiceDemandFraction(system, link, context)
+      } else if (fromComponent.kind === 'condenserSink' && link.service === 'coolingWater') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'coolingWaterFlowKgPerS'))
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'reliefFlowKgPerS'))
+      } else if (fromComponent.kind === 'reactorVessel' && link.service === 'primaryRelease') {
+        flowSource = context.readNumber(componentVariablePath(fromComponent, 'primaryLeakFlowKgPerS'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         sourceAlreadyIncludesValveFactor = true
-        flowSource = Math.min(topologyAwareMainSteamDemandForSourceLink(system, link, context), sourceSteamFlow ?? 0)
+        const availableSteamFlow = sourceSteamFlow ?? 0
+        flowSource = Math.min(
+          topologyAwareMainSteamDemandForSourceLink(system, link, context)
+          + availableSteamFlow * topologyAwareMainSteamReleaseAvailabilityForSourceLink(system, link, context),
+          availableSteamFlow,
+        )
       } else if (fromComponent.kind === 'turbineLoadSink') {
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
       } else if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {

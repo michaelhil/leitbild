@@ -20,10 +20,14 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
         target = context.readNumber(componentVariablePath(fromComponent, 'primaryOutletTemperatureC'))
       } else if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
         target = context.readNumber(componentVariablePath(fromComponent, 'steamTemperatureC'))
+      } else if (fromComponent.kind === 'reactorVessel' && link.service === 'primaryRelease') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'meanPrimaryCoolantTemperatureC'))
       } else if (fromComponent.kind === 'processTank') {
         target = context.readNumber(componentVariablePath(fromComponent, 'temperatureC'))
       } else if (fromComponent.kind === 'condenserSink' && link.service === 'condensate') {
         target = context.readNumber(componentVariablePath(fromComponent, 'condensateTemperatureC'))
+      } else if (fromComponent.kind === 'condenserSink' && link.service === 'coolingWater') {
+        target = context.readNumber(componentVariablePath(fromComponent, 'coolingWaterOutletTemperatureC'))
       } else if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
         target = context.readNumber(componentVariablePath(fromComponent, 'secondaryTemperatureC'))
       } else if (fromComponent.kind === 'turbineLoadSink') {

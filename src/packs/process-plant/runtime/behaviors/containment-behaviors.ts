@@ -36,11 +36,11 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'contaminationInventory',
     ],
     update: ({ system, component, context }): void => {
-      const incomingMass = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => String(link.toPortName) === 'massEnergyIn')
+      const incomingMass = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')
       const sprayFlow = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => String(link.toPortName) === 'sprayIn')
-      const incomingTemperature = averageIncomingLinkValue(system, component.index, 'temperatureC', context, link => String(link.toPortName) === 'massEnergyIn')
+      const incomingTemperature = averageIncomingLinkValue(system, component.index, 'temperatureC', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')
         ?? context.readNumber(componentVariablePath(component, 'temperatureC'))
-      const incomingRadiation = averageIncomingLinkValue(system, component.index, 'radiationMSvPerH', context, link => String(link.toPortName) === 'massEnergyIn') ?? 0.02
+      const incomingRadiation = averageIncomingLinkValue(system, component.index, 'radiationMSvPerH', context, link => String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn') ?? 0.02
       const currentPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
       const currentTemperature = context.readNumber(componentVariablePath(component, 'temperatureC'))
       const heatLoss = Math.max(0, currentTemperature - optionalParameterNumber(component, 'initialTemperatureC', 30)) * optionalParameterNumber(component, 'heatLossMwPerC', 0)

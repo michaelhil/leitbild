@@ -41,6 +41,18 @@ const telemetryVariables = [
   'vessel.thermalExpansionPressureBiasMPa',
   'vessel.meanPrimaryCoolantTemperatureC',
   'vessel.primaryCoolantInventoryKg',
+  'vessel.safetyInjectionFlowKgPerS',
+  'vessel.primaryLeakFlowKgPerS',
+  'vessel.primaryReleaseRadiationMSvPerH',
+  'vessel-release-to-containment.flowKgPerS',
+  'containment.pressureMPa',
+  'containment.temperatureC',
+  'containment.sumpInventoryKg',
+  'containment.incomingMassKgPerS',
+  'containment.radiationSourceTermMSvPerH',
+  'safetyAccumulatorA.liquidInventoryKg',
+  'safetyAccumulatorA.outletFlowKgPerS',
+  'safetyAccumulatorA.gasPressureMPa',
   'pressurizer.pressureMPa',
   'pressurizer.steamPressureMPa',
   'pressurizer.pressureTargetMPa',
@@ -71,18 +83,28 @@ const telemetryVariables = [
   'main-feedwater-pump-b-to-header.flowKgPerS',
   'motor-afw-pump-to-header.flowKgPerS',
   'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
+  'mainSteamSafetyValve.effectivePositionFraction',
+  'main-steam-header-to-safety-valve.flowKgPerS',
+  'main-steam-safety-valve-to-containment.flowKgPerS',
   'condenser.heatRejectedMw',
   'condenser.backPressurePa',
   'condenser.condensateInventoryKg',
+  'condenser.coolingWaterFlowKgPerS',
+  'condenser.coolingWaterInletTemperatureC',
+  'condenser.coolingWaterOutletTemperatureC',
+  'condenser.coolingWaterHeatCapacityMw',
+  'condenser.coolingWaterAvailabilityFraction',
 ] as const satisfies ReadonlyArray<string>
 
 type CaseId =
   | 'baseline'
   | 'sgtr'
   | 'loss-feedwater'
+  | 'loca-safety-injection'
   | 'aux-feedwater-recovery'
   | 'rcp-trip'
   | 'relief-open'
+  | 'main-steam-safety-release'
   | 'load-reduction'
   | 'condenser-backpressure'
   | 'mixed-transient'
@@ -152,6 +174,18 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     ],
   },
   {
+    id: 'loca-safety-injection',
+    title: 'LOCA / Safety Injection',
+    description: 'A primary boundary leak releases mass to containment and depressurization starts accumulator injection.',
+    actions: [{
+      id: 'open-primary-boundary-leak',
+      atMs: 60_000,
+      type: 'setVariable',
+      path: variablePath('rcs-hot-leg-a.leak.areaFraction'),
+      value: 0.65,
+    }],
+  },
+  {
     id: 'aux-feedwater-recovery',
     title: 'Aux Feed Recovery',
     description: 'Main feedwater trips, one auxiliary branch is opened, and header balance should remain coherent.',
@@ -208,6 +242,18 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     }],
   },
   {
+    id: 'main-steam-safety-release',
+    title: 'Main Steam Safety Release',
+    description: 'Closing the turbine stop valve raises steam pressure and routes steam through a safety valve to containment.',
+    actions: [{
+      id: 'close-turbine-stop-valve',
+      atMs: 60_000,
+      type: 'setVariable',
+      path: variablePath('turbineStopValve.positionFraction'),
+      value: 0,
+    }],
+  },
+  {
     id: 'load-reduction',
     title: 'Load Reduction',
     description: 'Turbine load demand reduces electric output and steam demand.',
@@ -224,6 +270,7 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     title: 'Condenser Backpressure',
     description: 'Hot cooling water raises condenser backpressure and derates turbine demand/output.',
     parameters: {
+      ultimateHeatSink: { initialTemperatureC: 95 },
       condenser: { coolingWaterTemperatureC: 95 },
     },
     actions: [],
@@ -407,6 +454,17 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'core.totalThermalPowerMw',
   'core.fuelStoredEnergyMj',
   'vessel.primaryCoolantInventoryKg',
+  'vessel.safetyInjectionFlowKgPerS',
+  'vessel.primaryLeakFlowKgPerS',
+  'vessel-release-to-containment.flowKgPerS',
+  'containment.pressureMPa',
+  'containment.temperatureC',
+  'containment.sumpInventoryKg',
+  'containment.incomingMassKgPerS',
+  'containment.radiationSourceTermMSvPerH',
+  'safetyAccumulatorA.liquidInventoryKg',
+  'safetyAccumulatorA.outletFlowKgPerS',
+  'safetyAccumulatorA.gasPressureMPa',
   'pressurizer.pressureMPa',
   'pressurizer.steamPressureMPa',
   'pressurizer.pressureTargetMPa',
@@ -429,9 +487,17 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'main-feedwater-pump-b-to-header.flowKgPerS',
   'motor-afw-pump-to-header.flowKgPerS',
   'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
+  'mainSteamSafetyValve.effectivePositionFraction',
+  'main-steam-header-to-safety-valve.flowKgPerS',
+  'main-steam-safety-valve-to-containment.flowKgPerS',
   'condenser.heatRejectedMw',
   'condenser.backPressurePa',
   'condenser.condensateInventoryKg',
+  'condenser.coolingWaterFlowKgPerS',
+  'condenser.coolingWaterInletTemperatureC',
+  'condenser.coolingWaterOutletTemperatureC',
+  'condenser.coolingWaterHeatCapacityMw',
+  'condenser.coolingWaterAvailabilityFraction',
 ])
 
 const evaluateTelemetryIntegrity = (
@@ -549,6 +615,27 @@ const evaluateCase = (
       check(caseId, 'loss of feedwater removes main feed contribution', feed < 150, `maxFeedAfter120s=${feed.toFixed(1)}kg/s`),
     ]
   }
+  if (caseId === 'loca-safety-injection') {
+    const initialInventory = valueAtOrAfter(telemetry, 'vessel.primaryCoolantInventoryKg', 55_000)
+    const endInventory = valueAtOrAfter(telemetry, 'vessel.primaryCoolantInventoryKg', durationMs)
+    const release = maxAfter(telemetry, 'vessel-release-to-containment.flowKgPerS', 70_000)
+    const containmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', durationMs)
+    const initialContainmentPressure = valueAtOrAfter(telemetry, 'containment.pressureMPa', 55_000)
+    const peakContainmentPressure = maxAfter(telemetry, 'containment.pressureMPa', 70_000)
+    const injection = maxAfter(telemetry, 'safetyAccumulatorA.outletFlowKgPerS', 70_000)
+    const accumulatorStart = valueAtOrAfter(telemetry, 'safetyAccumulatorA.liquidInventoryKg', 55_000)
+    const accumulatorEnd = valueAtOrAfter(telemetry, 'safetyAccumulatorA.liquidInventoryKg', durationMs)
+    const radiation = maxAfter(telemetry, 'containment.radiationSourceTermMSvPerH', 70_000)
+    return [
+      check(caseId, 'primary boundary leak releases mass to containment', release > 10, `maxRelease=${release.toFixed(1)}kg/s`),
+      check(caseId, 'LOCA lowers primary inventory despite injection', endInventory < initialInventory - 20_000, `start=${initialInventory.toFixed(0)} end=${endInventory.toFixed(0)}kg`),
+      check(caseId, 'containment sump accumulates released coolant', containmentSump > 5_000, `sump=${containmentSump.toFixed(0)}kg`),
+      check(caseId, 'containment pressure rises after release', peakContainmentPressure > initialContainmentPressure, `initial=${initialContainmentPressure.toFixed(3)} peak=${peakContainmentPressure.toFixed(3)}MPa`),
+      check(caseId, 'accumulator injects after depressurization', injection > 1, `maxInjection=${injection.toFixed(1)}kg/s`),
+      check(caseId, 'accumulator inventory depletes during injection', accumulatorEnd < accumulatorStart, `start=${accumulatorStart.toFixed(0)} end=${accumulatorEnd.toFixed(0)}kg`),
+      check(caseId, 'containment radiation source term rises after primary release', radiation > 0.02, `maxRadiation=${radiation.toFixed(3)}mSv/h`),
+    ]
+  }
   if (caseId === 'aux-feedwater-recovery') {
     const mainFeedAfter = maxAfter(telemetry, 'main-feedwater-pump-a-to-header.flowKgPerS', 90_000)
       + maxAfter(telemetry, 'main-feedwater-pump-b-to-header.flowKgPerS', 90_000)
@@ -578,6 +665,22 @@ const evaluateCase = (
       check(caseId, 'relief valve reduces pressurizer steam mass tendency', afterSteam < beforeSteam, `before=${beforeSteam.toFixed(1)} end=${afterSteam.toFixed(1)}kg`),
     ]
   }
+  if (caseId === 'main-steam-safety-release') {
+    const safetyPosition = maxAfter(telemetry, 'mainSteamSafetyValve.effectivePositionFraction', 70_000)
+    const headerFlow = maxAfter(telemetry, 'main-steam-header-to-safety-valve.flowKgPerS', 70_000)
+    const containmentFlow = maxAfter(telemetry, 'main-steam-safety-valve-to-containment.flowKgPerS', 70_000)
+    const initialContainmentPressure = valueAtOrAfter(telemetry, 'containment.pressureMPa', 55_000)
+    const peakContainmentPressure = maxAfter(telemetry, 'containment.pressureMPa', 70_000)
+    const initialContainmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', 55_000)
+    const endContainmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', durationMs)
+    return [
+      check(caseId, 'main steam safety valve opens on isolated turbine path pressure', safetyPosition > 0.9, `maxPosition=${safetyPosition.toFixed(2)}`),
+      check(caseId, 'main steam safety path carries header flow', headerFlow > 100, `maxHeaderFlow=${headerFlow.toFixed(1)}kg/s`),
+      check(caseId, 'main steam safety valve routes steam to containment', containmentFlow > 100, `maxContainmentFlow=${containmentFlow.toFixed(1)}kg/s`),
+      check(caseId, 'containment pressure rises from steam release', peakContainmentPressure > initialContainmentPressure, `initial=${initialContainmentPressure.toFixed(3)} peak=${peakContainmentPressure.toFixed(3)}MPa`),
+      check(caseId, 'containment inventory increases from steam release', endContainmentSump > initialContainmentSump, `initial=${initialContainmentSump.toFixed(0)} end=${endContainmentSump.toFixed(0)}kg`),
+    ]
+  }
   if (caseId === 'load-reduction') {
     const beforeElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', 55_000)
     const afterElectric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
@@ -600,10 +703,12 @@ const evaluateCase = (
     const backPressure = valueAtOrAfter(telemetry, 'condenser.backPressurePa', durationMs)
     const electric = valueAtOrAfter(telemetry, 'turbine.electricMw', durationMs)
     const steamDemand = valueAtOrAfter(telemetry, 'turbine.steamDemandKgPerS', durationMs)
+    const coolingWaterTemperature = valueAtOrAfter(telemetry, 'condenser.coolingWaterInletTemperatureC', durationMs)
     return [
       check(caseId, 'hot condenser raises backpressure', backPressure > 20_000, `backPressure=${backPressure.toFixed(0)}Pa`),
       check(caseId, 'condenser backpressure derates turbine output', electric < 900, `electric=${electric.toFixed(1)}MW`),
       check(caseId, 'condenser backpressure derates turbine steam demand', steamDemand < 1_350, `steamDemand=${steamDemand.toFixed(1)}kg/s`),
+      check(caseId, 'condenser reads hot cooling water from the heat-sink path', coolingWaterTemperature > 60, `coolingWaterInlet=${coolingWaterTemperature.toFixed(1)}C`),
     ]
   }
   const leak = maxAfter(telemetry, 'sgA.primaryToSecondaryLeakKgPerS', 55_000)

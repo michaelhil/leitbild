@@ -66,6 +66,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       lowerPlenum: { kind: 'hydraulicThermal', direction: 'out' },
       upperPlenum: { kind: 'hydraulicThermal', direction: 'in' },
       pressurizerSurge: { kind: 'hydraulicThermal', direction: 'bidirectional' },
+      releaseOutlet: { kind: 'hydraulicThermal', direction: 'out' },
     },
     parametersSchema: z.object({
       nominalPrimaryCoolantInventoryKg: z.number().finite().positive(),
@@ -76,6 +77,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       thermalExpansionCoefficientPerC: z.number().finite().nonnegative(),
       referencePrimaryCoolantTemperatureC: z.number().finite(),
       normalLetdownFlowKgPerS: z.number().finite().nonnegative().optional(),
+      primaryReleaseRadiationMSvPerH: z.number().finite().nonnegative().optional(),
     }),
     variables: [
       variable({ path: 'primaryCoolantInventoryKg', label: 'Primary coolant inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
@@ -85,11 +87,13 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'thermalExpansionPressureBiasMPa', label: 'Primary thermal expansion pressure bias', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),
       variable({ path: 'primaryPressureBiasMPa', label: 'Primary pressure inventory bias', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),
       variable({ path: 'chargingFlowKgPerS', label: 'Primary charging flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'safetyInjectionFlowKgPerS', label: 'Primary safety injection flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'letdownFlowKgPerS', label: 'Primary letdown flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'reliefOutflowKgPerS', label: 'Primary relief outflow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'primaryLeakFlowKgPerS', label: 'Primary coolant boundary leak flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'tubeLeakFlowKgPerS', label: 'Primary-to-secondary tube leak flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'netInventoryFlowKgPerS', label: 'Primary inventory net flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
+      variable({ path: 'primaryReleaseRadiationMSvPerH', label: 'Primary release radiation source term', kind: 'derived', domain: 'radiological', writable: false, publish: 'telemetry', quantity: 'radiationDoseRate', unit: 'mSv/h' }),
     ],
   }),
 ]

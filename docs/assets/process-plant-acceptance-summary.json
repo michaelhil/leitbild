@@ -3,11 +3,11 @@
   "durationMs": 240000,
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
-  "caseCount": 9,
-  "checkCount": 97,
+  "caseCount": 11,
+  "checkCount": 126,
   "failedCheckCount": 0,
-  "wallMs": 2691.716375,
-  "realtimeFactor": 89.16244008063443,
+  "wallMs": 4391.648833,
+  "realtimeFactor": 54.64917827595347,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -20,7 +20,7 @@
       "caseId": "baseline",
       "description": "baseline pressure stays plausible",
       "passed": true,
-      "details": "endPressure=15.08MPa"
+      "details": "endPressure=13.50MPa"
     },
     {
       "caseId": "baseline",
@@ -62,7 +62,7 @@
       "caseId": "baseline",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=1.58e+1kg steam=1.79e-12kg energy=1.14e-13MW"
+      "details": "inventory=1.07e+1kg steam=9.04e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "baseline",
@@ -80,13 +80,13 @@
       "caseId": "sgtr",
       "description": "SGTR creates primary-to-secondary leak flow",
       "passed": true,
-      "details": "maxLeak=178.15kg/s"
+      "details": "maxLeak=156.25kg/s"
     },
     {
       "caseId": "sgtr",
       "description": "SGTR raises secondary radiation indication",
       "passed": true,
-      "details": "maxRadiation=119.608mSv/h"
+      "details": "maxRadiation=106.558mSv/h"
     },
     {
       "caseId": "sgtr",
@@ -122,7 +122,7 @@
       "caseId": "sgtr",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=3.00e+1kg steam=1.80e-12kg energy=1.14e-13MW"
+      "details": "inventory=2.38e+1kg steam=9.07e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "sgtr",
@@ -140,7 +140,7 @@
       "caseId": "loss-feedwater",
       "description": "loss of feedwater lowers SG level",
       "passed": true,
-      "details": "before=73.0 after=20.7%"
+      "details": "before=73.0 after=17.8%"
     },
     {
       "caseId": "loss-feedwater",
@@ -182,7 +182,7 @@
       "caseId": "loss-feedwater",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=3.59e-12kg steam=9.09e-13kg energy=1.14e-13MW"
+      "details": "inventory=3.59e-12kg steam=9.04e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "loss-feedwater",
@@ -192,6 +192,96 @@
     },
     {
       "caseId": "loss-feedwater",
+      "description": "feedwater and aux feedwater headers conserve reachable flow",
+      "passed": true,
+      "details": "feed=0.00e+0kg/s aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "primary boundary leak releases mass to containment",
+      "passed": true,
+      "details": "maxRelease=1170.9kg/s"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "LOCA lowers primary inventory despite injection",
+      "passed": true,
+      "details": "start=285000 end=229010kg"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "containment sump accumulates released coolant",
+      "passed": true,
+      "details": "sump=14934kg"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "containment pressure rises after release",
+      "passed": true,
+      "details": "initial=0.103 peak=0.465MPa"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "accumulator injects after depressurization",
+      "passed": true,
+      "details": "maxInjection=53.1kg/s"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "accumulator inventory depletes during injection",
+      "passed": true,
+      "details": "start=35000 end=32141kg"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "containment radiation source term rises after primary release",
+      "passed": true,
+      "details": "maxRadiation=0.593mSv/h"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=1.82e+1kg steam=9.04e-13kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
+      "caseId": "loca-safety-injection",
       "description": "feedwater and aux feedwater headers conserve reachable flow",
       "passed": true,
       "details": "feed=0.00e+0kg/s aux=0.00e+0kg/s"
@@ -308,7 +398,7 @@
       "caseId": "rcp-trip",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=3.80e+1kg steam=9.03e-13kg energy=1.14e-13MW"
+      "details": "inventory=3.80e+1kg steam=9.09e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "rcp-trip",
@@ -326,7 +416,7 @@
       "caseId": "relief-open",
       "description": "relief valve produces relief flow",
       "passed": true,
-      "details": "maxRelief=67.09kg/s"
+      "details": "maxRelief=61.15kg/s"
     },
     {
       "caseId": "relief-open",
@@ -368,13 +458,13 @@
       "caseId": "relief-open",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=1.58e+1kg steam=1.79e-12kg energy=1.14e-13MW"
+      "details": "inventory=1.07e+1kg steam=9.04e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "relief-open",
       "description": "pressurizer water and steam balances remain conservative",
       "passed": true,
-      "details": "water=0.00e+0kg steam=2.41e+0kg"
+      "details": "water=0.00e+0kg steam=1.23e+0kg"
     },
     {
       "caseId": "relief-open",
@@ -383,16 +473,94 @@
       "details": "feed=0.00e+0kg/s aux=0.00e+0kg/s"
     },
     {
+      "caseId": "main-steam-safety-release",
+      "description": "main steam safety valve opens on isolated turbine path pressure",
+      "passed": true,
+      "details": "maxPosition=1.00"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "main steam safety path carries header flow",
+      "passed": true,
+      "details": "maxHeaderFlow=1082.4kg/s"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "main steam safety valve routes steam to containment",
+      "passed": true,
+      "details": "maxContainmentFlow=1082.4kg/s"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "containment pressure rises from steam release",
+      "passed": true,
+      "details": "initial=0.103 peak=0.532MPa"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "containment inventory increases from steam release",
+      "passed": true,
+      "details": "initial=0 end=17851kg"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=1.28e+1kg steam=9.09e-13kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "feedwater and aux feedwater headers conserve reachable flow",
+      "passed": true,
+      "details": "feed=0.00e+0kg/s aux=0.00e+0kg/s"
+    },
+    {
       "caseId": "load-reduction",
       "description": "load reduction lowers turbine output",
       "passed": true,
-      "details": "before=789.6 end=222.8MW"
+      "details": "before=789.6 end=262.6MW"
     },
     {
       "caseId": "load-reduction",
       "description": "load reduction keeps output nonnegative",
       "passed": true,
-      "details": "min=222.8MW"
+      "details": "min=242.5MW"
     },
     {
       "caseId": "load-reduction",
@@ -404,7 +572,7 @@
       "caseId": "load-reduction",
       "description": "load reduction lowers condenser heat rejection",
       "passed": true,
-      "details": "before=2343.2 end=1234.9MW"
+      "details": "before=2343.2 end=1457.6MW"
     },
     {
       "caseId": "load-reduction",
@@ -446,7 +614,7 @@
       "caseId": "load-reduction",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=2.62e+1kg steam=1.53e+1kg energy=1.14e-13MW"
+      "details": "inventory=1.12e+1kg steam=9.04e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "load-reduction",
@@ -464,19 +632,25 @@
       "caseId": "condenser-backpressure",
       "description": "hot condenser raises backpressure",
       "passed": true,
-      "details": "backPressure=42817Pa"
+      "details": "backPressure=44049Pa"
     },
     {
       "caseId": "condenser-backpressure",
       "description": "condenser backpressure derates turbine output",
       "passed": true,
-      "details": "electric=349.4MW"
+      "details": "electric=390.3MW"
     },
     {
       "caseId": "condenser-backpressure",
       "description": "condenser backpressure derates turbine steam demand",
       "passed": true,
-      "details": "steamDemand=392.4kg/s"
+      "details": "steamDemand=372.4kg/s"
+    },
+    {
+      "caseId": "condenser-backpressure",
+      "description": "condenser reads hot cooling water from the heat-sink path",
+      "passed": true,
+      "details": "coolingWaterInlet=95.0C"
     },
     {
       "caseId": "condenser-backpressure",
@@ -512,7 +686,7 @@
       "caseId": "condenser-backpressure",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=2.82e+1kg steam=1.75e+1kg energy=1.14e-13MW"
+      "details": "inventory=8.96e+0kg steam=9.09e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "condenser-backpressure",
@@ -530,7 +704,7 @@
       "caseId": "mixed-transient",
       "description": "mixed transient creates tube leak flow",
       "passed": true,
-      "details": "maxLeak=132.59kg/s"
+      "details": "maxLeak=118.18kg/s"
     },
     {
       "caseId": "mixed-transient",
@@ -542,7 +716,7 @@
       "caseId": "mixed-transient",
       "description": "mixed transient lowers turbine output after load reduction",
       "passed": true,
-      "details": "before=702.0 end=206.3MW"
+      "details": "before=401.6 end=222.1MW"
     },
     {
       "caseId": "mixed-transient",
@@ -578,7 +752,7 @@
       "caseId": "mixed-transient",
       "description": "steam generator liquid and steam balances remain conservative",
       "passed": true,
-      "details": "inventory=4.51e+1kg steam=9.09e-13kg energy=1.14e-13MW"
+      "details": "inventory=4.37e+1kg steam=9.06e-13kg energy=1.14e-13MW"
     },
     {
       "caseId": "mixed-transient",
@@ -598,7 +772,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=89.2x min=20.0x"
+      "details": "realtimeFactor=54.6x min=20.0x"
     }
   ],
   "artifacts": {

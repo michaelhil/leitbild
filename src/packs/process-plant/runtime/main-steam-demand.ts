@@ -5,6 +5,8 @@ import { parameterNumber } from './component-helpers.ts'
 import { combinedValveFactorForLink, type LinkBehaviorReadContext } from './link-flow-helpers.ts'
 import { mainSteamTopologyForSystem, type ProcessLinkPath } from './topology-cache.ts'
 
+const sourceLinkService = 'mainSteam' as CompiledProcessLink['service']
+
 const turbineSteamDemandKgPerS = (
   turbine: CompiledComponent,
   context: LinkBehaviorReadContext,
@@ -62,4 +64,45 @@ export const topologyAwareMainSteamDemandForSourceLink = (
     demand += turbineSteamDemandKgPerS(turbine, context) * sourceAvailability / totalAvailability
   }
   return demand
+}
+
+const isReliefOrSafetyValve = (component: CompiledComponent | undefined): boolean => {
+  if (component?.kind !== 'steamValve') return false
+  const mode = (component.parameters as Record<string, unknown>).valveMode
+  return mode === 'relief' || mode === 'safety'
+}
+
+const collectReleasePaths = (
+  system: CompiledProcessPlantSystem,
+  fromComponentIndex: number,
+  visited: ReadonlySet<number>,
+  hasReleaseValve: boolean,
+): ReadonlyArray<ProcessLinkPath> => {
+  if (visited.has(fromComponentIndex)) return []
+  const component = system.graph.components[fromComponentIndex]
+  if (component?.kind === 'containmentVolume' && hasReleaseValve) return [[]]
+
+  const nextVisited = new Set(visited)
+  nextVisited.add(fromComponentIndex)
+  const paths: ProcessLinkPath[] = []
+  for (const linkIndex of system.graph.outgoingLinksByComponent[fromComponentIndex] ?? []) {
+    const link = system.graph.links[linkIndex]
+    if (!link || link.kind !== 'fluidFlow' || link.service !== sourceLinkService) continue
+    const toComponent = system.graph.components[link.toComponentIndex]
+    const nextHasReleaseValve = hasReleaseValve || isReliefOrSafetyValve(toComponent)
+    for (const downstreamPath of collectReleasePaths(system, link.toComponentIndex, nextVisited, nextHasReleaseValve)) {
+      paths.push([link, ...downstreamPath])
+    }
+  }
+  return paths
+}
+
+export const topologyAwareMainSteamReleaseAvailabilityForSourceLink = (
+  system: CompiledProcessPlantSystem,
+  sourceLink: CompiledProcessLink,
+  context: LinkBehaviorReadContext,
+): number => {
+  const paths = collectReleasePaths(system, sourceLink.toComponentIndex, new Set(), false)
+  if (paths.length === 0) return 0
+  return combinedValveFactorForLink(system, sourceLink, context) * pathAvailability(system, paths, context)
 }

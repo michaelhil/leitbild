@@ -124,13 +124,32 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'availableCondensateOutletFlowKgPerS',
       'condensateTemperatureC',
       'backPressurePa',
+      'coolingWaterFlowKgPerS',
+      'coolingWaterInletTemperatureC',
+      'coolingWaterOutletTemperatureC',
+      'coolingWaterHeatCapacityMw',
+      'coolingWaterAvailabilityFraction',
     ],
     update: ({ system, component, context }): void => {
-      const steamFlow = averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 0
-      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+      const steamFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'exhaustSteam')
+      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'exhaustSteam')
         ?? optionalParameterNumber(component, 'exhaustCondensationTemperatureC', 120)
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
-      const condensateProduction = steamFlow
+      const coolingWaterFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'coolingWater')
+      const coolingWaterInletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'coolingWater')
+        ?? parameterNumber(component, 'coolingWaterTemperatureC')
+      const coolingWaterDesignDeltaT = parameterNumber(component, 'coolingWaterDesignDeltaTK')
+      const coolingWaterHeatCapacity = coolingWaterFlow * 4.186 * coolingWaterDesignDeltaT / 1_000
+      const unconstrainedTargetCondensateTemperature = coolingWaterInletTemperature
+        + parameterNumber(component, 'condensateApproachTemperatureK')
+        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
+        + clamp((steamTemperature - 120) / 80, 0, 1) * 8
+      const unconstrainedSensibleHeatMw = heatMwFromWaterFlowAndDeltaT(steamFlow, Math.max(0, steamTemperature - unconstrainedTargetCondensateTemperature))
+      const unconstrainedLatentHeatMw = steamFlow * latentHeatSteamMjPerKg
+      const requiredHeatRemoval = unconstrainedLatentHeatMw + unconstrainedSensibleHeatMw
+      const heatSinkAvailability = requiredHeatRemoval > 0 ? clamp(coolingWaterHeatCapacity / requiredHeatRemoval, 0, 1.2) : 1
+      const condensingAvailability = clamp(heatSinkAvailability, 0.05, 1)
+      const condensateProduction = steamFlow * condensingAvailability
       const outgoingCondensateFlow = sumOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'condensate')
       const nominalInventory = parameterNumber(component, 'nominalCondensateInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'condensateInventoryKg'))
@@ -144,17 +163,19 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       })
       const maxOutletFlow = parameterNumber(component, 'maxCondensateOutletFlowKgPerS')
       const inventoryLimitedOutlet = context.dtSeconds > 0 ? nextInventory / context.dtSeconds : maxOutletFlow
-      const targetCondensateTemperature = parameterNumber(component, 'coolingWaterTemperatureC')
-        + parameterNumber(component, 'condensateApproachTemperatureK')
-        + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 18
-        + clamp((steamTemperature - 120) / 80, 0, 1) * 8
-      const sensibleHeatMw = heatMwFromWaterFlowAndDeltaT(steamFlow, Math.max(0, steamTemperature - targetCondensateTemperature))
-      const latentHeatMw = steamFlow * latentHeatSteamMjPerKg
+      const targetCondensateTemperature = unconstrainedTargetCondensateTemperature
+        + (1 - condensingAvailability) * 45
+      const sensibleHeatMw = heatMwFromWaterFlowAndDeltaT(condensateProduction, Math.max(0, steamTemperature - targetCondensateTemperature))
+      const latentHeatMw = condensateProduction * latentHeatSteamMjPerKg
       const heatRejected = latentHeatMw + sensibleHeatMw
+      const coolingWaterOutletTemperature = coolingWaterFlow > 0
+        ? coolingWaterInletTemperature + (heatRejected * 1_000) / (coolingWaterFlow * 4.186)
+        : coolingWaterInletTemperature
       const targetBackPressure = 7_000
         + clamp(steamFlow / nominalSteamFlow, 0, 1.5) * 5_000
-        + clamp((parameterNumber(component, 'coolingWaterTemperatureC') - 28) / 70, 0, 1) * 35_000
-        + clamp((targetCondensateTemperature - (parameterNumber(component, 'coolingWaterTemperatureC') + parameterNumber(component, 'condensateApproachTemperatureK'))) / 30, 0, 1) * 2_000
+        + clamp((coolingWaterInletTemperature - 28) / 70, 0, 1) * 35_000
+        + (1 - condensingAvailability) * 65_000
+        + clamp((targetCondensateTemperature - (coolingWaterInletTemperature + parameterNumber(component, 'condensateApproachTemperatureK'))) / 30, 0, 1) * 2_000
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), steamFlow)
       context.write(componentVariablePath(component, 'condensateProductionKgPerS'), condensateProduction)
       context.write(componentVariablePath(component, 'heatRejectedMw'), heatRejected)
@@ -163,6 +184,11 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       context.write(componentVariablePath(component, 'availableCondensateOutletFlowKgPerS'), Math.min(maxOutletFlow, inventoryLimitedOutlet))
       context.write(componentVariablePath(component, 'condensateTemperatureC'), relaxToward(context.readNumber(componentVariablePath(component, 'condensateTemperatureC')), targetCondensateTemperature, context.dtSeconds, optionalParameterNumber(component, 'condenserThermalTimeConstantS', 12)))
       context.write(componentVariablePath(component, 'backPressurePa'), approach(context.readNumber(componentVariablePath(component, 'backPressurePa')), targetBackPressure, 500 * context.dtSeconds))
+      context.write(componentVariablePath(component, 'coolingWaterFlowKgPerS'), coolingWaterFlow)
+      context.write(componentVariablePath(component, 'coolingWaterInletTemperatureC'), coolingWaterInletTemperature)
+      context.write(componentVariablePath(component, 'coolingWaterOutletTemperatureC'), coolingWaterOutletTemperature)
+      context.write(componentVariablePath(component, 'coolingWaterHeatCapacityMw'), coolingWaterHeatCapacity)
+      context.write(componentVariablePath(component, 'coolingWaterAvailabilityFraction'), condensingAvailability)
     },
   },
 ]

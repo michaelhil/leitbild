@@ -39,12 +39,24 @@ export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBe
     appliesTo: (link): boolean => hasProcessLinkVariable(link, 'pressureMPa'),
     update: ({ system, link, context }): void => {
       const fromComponent = system.graph.components[link.fromComponentIndex]
+      const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent) throw new Error(`process link ${link.id} references missing source component`)
+      if (toComponent?.kind === 'containmentVolume' && (String(link.toPortName) === 'massEnergyIn' || String(link.toPortName) === 'steamIn')) {
+        context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(toComponent, 'pressureMPa')))
+        return
+      }
       if (link.service === 'primaryCoolant') {
         const pressurizer = primarySystemPressurizer(system)
         if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
           const pressureDrop = context.readOptionalNumber(processLinkVariablePath(link, 'pressureDropMPa'), 0)
           context.write(processLinkVariablePath(link, 'pressureMPa'), Math.max(0.2, context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')) - pressureDrop))
+          return
+        }
+      }
+      if (link.service === 'primaryInjection') {
+        const pressurizer = primarySystemPressurizer(system)
+        if (pressurizer !== null && context.has(componentVariablePath(pressurizer, 'pressureMPa'))) {
+          context.write(processLinkVariablePath(link, 'pressureMPa'), context.readNumber(componentVariablePath(pressurizer, 'pressureMPa')))
           return
         }
       }
