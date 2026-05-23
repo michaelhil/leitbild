@@ -270,16 +270,19 @@ Current built-in query kinds:
 - `process-plant.signals.resolve`
 - `process-plant.signals.read`
 - `process-plant.signals.search`
+- `process-plant.conditions.evaluate`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
-- `process-plant.protection.status`
+- `process-plant.ic.status`
 
 Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, exactly one signal reference (`path` or `tagId`), and a typed value. The provider resolves tag ids inside that explicit system, validates writability/type, and queues the write for the next solver phase; it does not mutate variables through the query route.
 
+Process-plant also accepts `process-plant.ic.acknowledge`. The payload identifies a process system and an I&C lifecycle id such as `alarm:high-pressure:pzr-high-pressure`. Acknowledgement updates alarm/trip lifecycle state only; it does not clear the underlying process condition or mutate plant physics.
+
 Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate simulator binding catalog.
 
-Process-plant control/protection is the pack's simplified I&C substrate. It is not embedded procedure execution and not continuous physics. It reads instrumentation signals, evaluates normal controller logic, protection functions, alarms, permissives, and interlocks for one explicit process system, then emits persistent alarm/trip state transitions or validated queued writes. External procedure runners and AI agents should query signal and condition truth through the pack query surface and issue commands through the generic command path.
+Process-plant I&C is the pack's simplified instrumentation-and-control substrate. It is not embedded procedure execution and not continuous physics. It reads instrumentation signals, evaluates normal controller logic, protection functions, alarms, permissives, and interlocks for one explicit process system, then emits persistent alarm/trip state transitions or validated queued writes. External procedure runners and AI agents should query signal and condition truth through the pack query surface and issue commands through the generic command path. `process-plant.conditions.evaluate` evaluates the same typed condition language used by rules and returns both the truth value and the signals read, which makes procedure/AI reasoning auditable without adding a procedure engine to the pack.
 
 Process-plant graph queries now expose compiled connection metadata as `connectionKind`, optional fluid `service`, `nominalFluid`, `designPhase`, `solverModel`, and indexed incoming/outgoing adjacency. Consumers should use the pack query surface rather than parsing scenario files directly when they need the runtime topology.
 

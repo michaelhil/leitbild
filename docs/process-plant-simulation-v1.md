@@ -368,18 +368,17 @@ External procedure runners remain outside process-plant for now. A procedure run
 
 V1 rules read process signal snapshots, evaluate typed conditions, and produce constrained effects:
 
-- alarm interaction signal
-- trip interaction signal
-- validated variable write queued for the next solver tick
+- `alarm.enter`: persistent alarm lifecycle state plus an alarm transition interaction signal
+- `trip.enter`: persistent trip lifecycle state plus a trip transition interaction signal
+- `writeSignal`: validated variable write queued for the next solver tick
 
 The rule language supports:
 
 - numeric/boolean comparison against a signal value
-- named condition evaluation
 - `all`, `any`, and `not`
 - simple voting
 - delay before actuation
-- latching and reset-on-clear behavior
+- latching, reset-on-clear behavior, and explicit reset conditions
 
 Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or provider config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
 
@@ -395,6 +394,40 @@ Runtime ordering is:
 This keeps the process variable table as the only continuous-state truth. The interaction event bus is used for discrete operational awareness, not for continuous process physics.
 
 Automatic actions from normal controllers and protection functions use the same validation semantics as operator, scenario, and AI commands: resolve a signal, check writability, validate type and hard limits, queue the write at a phase boundary, and make failure visible. An internal actor such as `actor:process-plant-protection` may request the action, but it does not get a private mutation path.
+
+Implemented I&C provider config shape:
+
+```json
+{
+  "systems": {
+    "unit-1": {
+      "protection": {
+        "rules": [{
+          "id": "pzr-high-pressure",
+          "ruleClass": "protection",
+          "condition": {
+            "type": "comparison",
+            "signal": { "tagId": "PT-455" },
+            "operator": ">",
+            "value": 16.2
+          },
+          "delayMs": 1000,
+          "latch": true,
+          "effects": [{
+            "type": "alarm.enter",
+            "id": "pzr-high-pressure-alarm",
+            "title": "Pressurizer pressure high",
+            "message": "Pressurizer pressure is above the high alarm threshold.",
+            "severity": "warning"
+          }]
+        }]
+      }
+    }
+  }
+}
+```
+
+The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, and visible rule/effect failures. Acknowledgement is a command, `process-plant.ic.acknowledge`, with `systemId` and `lifecycleId`; it records operator/agent awareness and does not clear the alarm condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
 
 ## Fluid Link Solver Contracts
 
@@ -725,34 +758,41 @@ Implemented queries:
 - `process-plant.graph.read`
 - `process-plant.variables.read`
 - `process-plant.variables.search`
+- `process-plant.signals.resolve`
+- `process-plant.signals.read`
+- `process-plant.signals.search`
+- `process-plant.conditions.evaluate`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
-
-Candidate future queries:
-
-- `process-plant.alarms.list`
+- `process-plant.ic.status`
 
 Implemented commands:
 
 - `process-plant.control.write`
+- `process-plant.ic.acknowledge`
 
 Candidate future commands:
 
 - `process-plant.control.operate`
-- `process-plant.alarm.acknowledge`
 - `process-plant.scenario.injectFault`
 
-Candidate events:
+Implemented events:
 
 - `process-plant.alarm.entered`
 - `process-plant.alarm.cleared`
-- `process-plant.trip.actuated`
+- `process-plant.alarm.acknowledged`
+- `process-plant.trip.entered`
+- `process-plant.trip.cleared`
+- `process-plant.trip.acknowledged`
+
+Candidate future events:
+
 - `process-plant.operator.action`
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, and a minimal writable-variable command path. Process-control UI surfaces remain a follow-up.
+The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, persistent I&C lifecycle state, validated I&C writes, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
 
 Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 

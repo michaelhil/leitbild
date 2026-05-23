@@ -4,8 +4,12 @@ import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
 import type { SimulationProviderStateStore } from '../src/simulation/protocol.ts'
 import {
   createLocalProcessPlantSimulationAdapter,
+  compileProcessPlantSystems,
+  createProcessPlantProtectionRunner,
   pressurizedWaterReactorPlantSpec,
   processPlantControlWriteCommandKind,
+  processPlantIcAcknowledgeCommandKind,
+  variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
 
 const controlInstanceId = 'control-instance:process-plant-test' as ControlInstanceId
@@ -52,6 +56,16 @@ const command = (payload: unknown): CommandEnvelope => ({
   controlInstanceId,
   actorId: 'actor:operator' as ActorId,
   kind: processPlantControlWriteCommandKind,
+  targetObjectIds: [],
+  payload,
+  issuedAt: startsAt,
+})
+
+const acknowledgeCommand = (payload: unknown): CommandEnvelope => ({
+  id: 'command:process-plant-ack-test' as CommandId,
+  controlInstanceId,
+  actorId: 'actor:operator' as ActorId,
+  kind: processPlantIcAcknowledgeCommandKind,
   targetObjectIds: [],
   payload,
   issuedAt: startsAt,
@@ -345,14 +359,14 @@ describe('process plant simulation provider', () => {
                 },
                 effects: [
                   {
-                    type: 'alarm',
+                    type: 'alarm.enter',
                     id: 'heater-trip-alarm',
                     title: 'Protection test alarm',
                     message: 'Protection test condition is active.',
                     severity: 'warning',
                   },
                   {
-                    type: 'write',
+                    type: 'writeSignal',
                     id: 'trip-rcp-a',
                     signal: { tagId: 'RCP-A-RUN' },
                     value: false,
@@ -406,7 +420,7 @@ describe('process plant simulation provider', () => {
                   value: 0,
                 },
                 effects: [{
-                  type: 'alarm',
+                  type: 'alarm.enter',
                   id: 'heater-non-latched-alarm',
                   title: 'Non-latched test alarm',
                   message: 'Non-latched condition is active.',
@@ -435,5 +449,250 @@ describe('process plant simulation provider', () => {
     expect(signals).toHaveLength(1)
 
     await connection.close()
+  })
+
+  test('exposes I&C status with persistent alarm lifecycle state', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'persistent-alarm-test',
+                ruleClass: 'alarm',
+                latch: false,
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-high',
+                  title: 'Heater high',
+                  message: 'Pressurizer heater is energized.',
+                  severity: 'notice',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean; readonly acknowledged: boolean; readonly severity: string }> }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:persistent-alarm-test:heater-high',
+      active: true,
+      acknowledged: false,
+      severity: 'notice',
+    }))
+
+    await connection.close()
+  })
+
+  test('evaluates procedure-facing I&C conditions by tag id', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const result = await connection.query(query('process-plant.conditions.evaluate', {
+      systemId: 'plant',
+      condition: {
+        type: 'all',
+        conditions: [
+          { type: 'comparison', signal: { tagId: 'PT-455' }, operator: '>', value: 0 },
+          { type: 'not', condition: { type: 'comparison', signal: { tagId: 'RCP-A-RUN' }, operator: '==', value: false } },
+        ],
+      },
+    }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.reason)
+    const body = result.result as {
+      readonly matches: boolean
+      readonly signalsRead: ReadonlyArray<{ readonly signal: { readonly tagId?: string }; readonly variable: { readonly path: string } }>
+    }
+    expect(body.matches).toBe(true)
+    expect(body.signalsRead.map(entry => entry.signal.tagId)).toEqual(['PT-455', 'RCP-A-RUN'])
+
+    await connection.close()
+  })
+
+  test('records failed I&C writes without silently mutating runtime state', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'invalid-write-test',
+                ruleClass: 'protection',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'writeSignal',
+                  id: 'write-core-power',
+                  signal: { path: 'core.powerMw' },
+                  value: 1,
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const failures = (status.result as {
+      readonly ic: { readonly failures: ReadonlyArray<{ readonly ruleId: string; readonly effectId?: string; readonly message: string }> }
+    }).ic.failures
+    expect(failures).toContainEqual(expect.objectContaining({
+      ruleId: 'invalid-write-test',
+      effectId: 'write-core-power',
+    }))
+    expect(failures[0]?.message).toContain('not writable')
+
+    await connection.close()
+  })
+
+  test('acknowledges persistent I&C lifecycle state through an explicit command', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'acknowledge-alarm-test',
+                ruleClass: 'alarm',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-ack-alarm',
+                  title: 'Heater acknowledge alarm',
+                  message: 'Pressurizer heater is energized.',
+                  severity: 'warning',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const acknowledged = await connection.sendCommand(acknowledgeCommand({
+      systemId: 'plant',
+      lifecycleId: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+    }))
+    expect(acknowledged.ok).toBe(true)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly acknowledged: boolean }> }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+      acknowledged: true,
+    }))
+
+    await connection.close()
+  })
+
+  test('rejects restored I&C snapshots that reference unknown rule state', () => {
+    const system = compileProcessPlantSystems([{
+      id: 'plant',
+      pack: 'process-plant',
+      componentLibrary: 'process-plant',
+      graph: pressurizedWaterReactorPlantSpec,
+    }])[0]
+    if (!system) throw new Error('expected compiled process plant system')
+
+    expect(() => createProcessPlantProtectionRunner({
+      system,
+      protection: {
+        rules: [{
+          id: 'known-rule',
+          enabled: true,
+          ruleClass: 'protection',
+          condition: {
+            type: 'comparison',
+            signal: { path: variablePathSchema.parse('pressurizer.pressureMPa') },
+            operator: '>',
+            value: 0,
+          },
+          delayMs: 0,
+          latch: true,
+          resetWhenClear: false,
+          effects: [{
+            type: 'alarm.enter',
+            id: 'known-alarm',
+            title: 'Known alarm',
+            message: 'Known alarm message.',
+            severity: 'warning',
+          }],
+        }],
+      },
+      restoredSnapshot: {
+        rules: [{
+          ruleId: 'missing-rule',
+          active: false,
+          latched: false,
+          firedCount: 0,
+        }],
+        alarms: [],
+        trips: [],
+        failures: [],
+      },
+    })).toThrow('restored I&C snapshot references unknown rule')
   })
 })

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { processSignalTagIdSchema, processVariableValueSchema, variablePathSchema } from './graph/index.ts'
 
 export const processPlantControlWriteCommandKind = 'process-plant.control.write'
+export const processPlantIcAcknowledgeCommandKind = 'process-plant.ic.acknowledge'
 
 export const processPlantControlWritePayloadSchema = z.object({
   systemId: z.string().min(1),
@@ -19,3 +20,10 @@ export const processPlantControlWritePayloadSchema = z.object({
 })
 
 export type ProcessPlantControlWritePayload = z.infer<typeof processPlantControlWritePayloadSchema>
+
+export const processPlantIcAcknowledgePayloadSchema = z.object({
+  systemId: z.string().min(1),
+  lifecycleId: z.string().min(1),
+}).strict()
+
+export type ProcessPlantIcAcknowledgePayload = z.infer<typeof processPlantIcAcknowledgePayloadSchema>

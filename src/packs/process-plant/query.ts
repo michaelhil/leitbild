@@ -7,6 +7,7 @@ import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, 
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
 import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
+import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from './runtime/index.ts'
 import { processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
 
 export interface ProcessPlantSystemRuntime {
@@ -51,6 +52,11 @@ const signalsSearchQuerySchema = z.object({
   writable: z.boolean().optional(),
   procedureRelevant: z.boolean().optional(),
   publishedOnly: z.boolean().default(false),
+})
+
+const conditionsEvaluateQuerySchema = z.object({
+  systemId: idSchema,
+  condition: processPlantIcConditionSchema,
 })
 
 const trendsReadQuerySchema = z.object({
@@ -225,6 +231,20 @@ export const answerProcessPlantQuery = (config: {
         })),
       }, config.at)
     }
+    if (config.request.kind === 'process-plant.conditions.evaluate') {
+      const payload = conditionsEvaluateQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      const evaluation = evaluateProcessPlantIcCondition({
+        system: system.system,
+        runtime: system.runtime,
+        condition: payload.condition,
+      })
+      return success(config.request, {
+        systemId: payload.systemId,
+        matches: evaluation.matches,
+        signalsRead: evaluation.signalsRead,
+      }, config.at)
+    }
     if (config.request.kind === 'process-plant.runtime.status') {
       return success(config.request, {
         active: config.systems.size > 0,
@@ -257,13 +277,13 @@ export const answerProcessPlantQuery = (config: {
         series: system.telemetry.series(payload.paths),
       }, config.at)
     }
-    if (config.request.kind === 'process-plant.protection.status') {
+    if (config.request.kind === 'process-plant.ic.status') {
       const payload = systemQuerySchema.parse(config.request.payload)
       const system = requireSystem(config.systems, payload.systemId)
-      if (!system.protection) return failure(config.request, `process plant protection is not configured for system: ${payload.systemId}`, config.at)
+      if (!system.protection) return failure(config.request, `process plant I&C is not configured for system: ${payload.systemId}`, config.at)
       return success(config.request, {
         systemId: payload.systemId,
-        protection: system.protection.snapshot(),
+        ic: system.protection.snapshot(),
       }, config.at)
     }
     return failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)

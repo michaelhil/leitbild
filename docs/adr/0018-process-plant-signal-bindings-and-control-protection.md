@@ -94,14 +94,13 @@ The substrate is layered:
 
 External procedures remain outside the process-plant pack for now. A procedure runner, human operator, or AI agent can ask "what is this signal value?" and "is this named condition true?", then issue a command through the normal command path. The process-plant pack exposes the facts and condition evaluation surface needed for procedures, but it does not own the procedure document, procedure branching state, or human/AI procedure execution policy.
 
-The V1 control/protection rule language supports only typed primitives:
+The implemented V1 I&C rule language supports only typed primitives:
 
 - variable comparison/equality
-- named condition evaluation over signal references
 - `all`, `any`, `not`, and voting conditions
 - delay and latch behavior
 - reset conditions
-- effects: alarm state transition, trip state transition, and validated variable write
+- effects: `alarm.enter`, `trip.enter`, and `writeSignal`
 
 Arbitrary expressions, user-authored code, and hidden procedure engines are out of scope for V1.
 
@@ -121,6 +120,25 @@ Each provider tick uses this order:
 This keeps continuous physics single-sourced in the variable table and prevents mid-solver mutation.
 
 Automatic actions from normal controllers and protection functions intentionally share the same validation path as operator, scenario, and AI writes. The actor may be internal, such as `actor:process-plant-protection`, but the effect still resolves a signal, checks writability, validates type and hard limits, and enters the next tick through the runtime write queue. This avoids a privileged mutation path that can disagree with operator/API semantics.
+
+## Implemented Surface
+
+Pack queries:
+
+- `process-plant.signals.resolve`
+- `process-plant.signals.read`
+- `process-plant.signals.search`
+- `process-plant.conditions.evaluate`
+- `process-plant.ic.status`
+
+Pack commands:
+
+- `process-plant.control.write`
+- `process-plant.ic.acknowledge`
+
+`process-plant.conditions.evaluate` accepts one explicit `systemId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
+
+`process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, resettable, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
 
 ## Consequences
 
