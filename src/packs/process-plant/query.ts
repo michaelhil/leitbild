@@ -49,6 +49,7 @@ const signalsSearchQuerySchema = z.object({
   domain: variableDomainSchema.optional(),
   quantity: processQuantitySchema.optional(),
   writable: z.boolean().optional(),
+  procedureRelevant: z.boolean().optional(),
   publishedOnly: z.boolean().default(false),
 })
 
@@ -135,6 +136,7 @@ const matchesSignalSearch = (
   if (config.domain !== undefined && binding.domain !== config.domain) return false
   if (config.quantity !== undefined && binding.quantity !== config.quantity) return false
   if (config.writable !== undefined && binding.writable !== config.writable) return false
+  if (config.procedureRelevant !== undefined && binding.capabilities?.procedureRelevant !== config.procedureRelevant) return false
   if (config.tagId !== undefined && binding.tagId !== config.tagId) return false
   if (config.equipmentId !== undefined && binding.equipmentId !== config.equipmentId) return false
   if (config.text !== undefined) {

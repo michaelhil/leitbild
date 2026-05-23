@@ -152,6 +152,64 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
+  test('exposes procedure-relevant signal search and mixed signal reads', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const procedureSignals = await connection.query(query('process-plant.signals.search', {
+      systemId: 'plant',
+      procedureRelevant: true,
+    }))
+    expect(procedureSignals.ok).toBe(true)
+    if (!procedureSignals.ok) throw new Error(procedureSignals.reason)
+    const searched = (procedureSignals.result as {
+      readonly systems: ReadonlyArray<{
+        readonly signals: ReadonlyArray<{
+          readonly path: string
+          readonly tagId?: string
+          readonly capabilities?: { readonly procedureRelevant?: boolean; readonly aiVisible?: boolean }
+        }>
+      }>
+    }).systems[0]?.signals ?? []
+    expect(searched.map(signal => signal.tagId)).toContain('PT-455')
+    expect(searched.map(signal => signal.tagId)).toContain('RCP-A-RUN')
+    expect(searched.every(signal => signal.capabilities?.procedureRelevant === true)).toBe(true)
+    expect(searched.every(signal => signal.capabilities?.aiVisible === true)).toBe(true)
+
+    const writableSignals = await connection.query(query('process-plant.signals.search', {
+      systemId: 'plant',
+      writable: true,
+    }))
+    expect(writableSignals.ok).toBe(true)
+    if (!writableSignals.ok) throw new Error(writableSignals.reason)
+    const writable = (writableSignals.result as {
+      readonly systems: ReadonlyArray<{
+        readonly signals: ReadonlyArray<{ readonly path: string; readonly writable: boolean }>
+      }>
+    }).systems[0]?.signals ?? []
+    expect(writable.map(signal => signal.path)).toContain('pressurizer.heaterPowerMw')
+    expect(writable.map(signal => signal.path)).toContain('rcpA.running')
+    expect(writable.every(signal => signal.writable)).toBe(true)
+
+    const read = await connection.query(query('process-plant.signals.read', {
+      systemId: 'plant',
+      signals: [{ tagId: 'PT-455' }, { path: 'sgA.levelPercent' }],
+    }))
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    expect((read.result as {
+      readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string }; readonly variable: { readonly path: string } }>
+    }).signals.map(entry => [entry.signal.path, entry.variable.path])).toEqual([
+      ['pressurizer.pressureMPa', 'pressurizer.pressureMPa'],
+      ['sgA.levelPercent', 'sgA.levelPercent'],
+    ])
+
+    await connection.close()
+  })
+
   test('rejects command writes outside declared hard ranges', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,

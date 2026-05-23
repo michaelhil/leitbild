@@ -4,8 +4,12 @@ import type {
   CompiledPlantGraph,
   ProcessSignalBinding,
   ProcessSignalTagId,
+  ProcessVariableCapability,
+  ProcessVariableLimits,
+  ProcessEquipmentId,
   VariablePath,
 } from './graph/index.ts'
+import type { ProcessQuantity, ProcessUnit, VariableDomain, VariableKind } from './graph/index.ts'
 import { processSignalTagIdSchema, variablePathSchema } from './graph/index.ts'
 
 export const processPlantSignalReferenceSchema = z.object({
@@ -59,7 +63,25 @@ export const resolveProcessPlantSignalPath = (
   reference: ProcessPlantSignalReference,
 ): VariablePath => resolveProcessPlantSignalBinding(graph, reference).path
 
-export const processPlantSignalView = (binding: ProcessSignalBinding): Record<string, unknown> => ({
+export interface ProcessPlantSignalView {
+  readonly path: VariablePath
+  readonly tagId?: ProcessSignalTagId
+  readonly equipmentId?: ProcessEquipmentId
+  readonly description?: string
+  readonly externalRefs?: ReadonlyArray<string>
+  readonly capabilities?: ProcessVariableCapability
+  readonly limits?: ProcessVariableLimits
+  readonly label: string
+  readonly kind: VariableKind
+  readonly domain: VariableDomain
+  readonly quantity: ProcessQuantity
+  readonly unit: ProcessUnit
+  readonly writable: boolean
+  readonly published: boolean
+  readonly owner: ProcessSignalBinding['owner']
+}
+
+export const processPlantSignalView = (binding: ProcessSignalBinding): ProcessPlantSignalView => ({
   path: binding.path,
   ...(binding.tagId === undefined ? {} : { tagId: binding.tagId }),
   ...(binding.equipmentId === undefined ? {} : { equipmentId: binding.equipmentId }),

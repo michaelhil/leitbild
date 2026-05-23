@@ -318,7 +318,7 @@ Current process-plant signal query kinds:
 
 - `process-plant.signals.resolve`: resolve signal references to metadata
 - `process-plant.signals.read`: resolve signal references and return current variable snapshots
-- `process-plant.signals.search`: search by text, tag, equipment, domain, quantity, writability, and publish policy
+- `process-plant.signals.search`: search by text, tag, equipment, domain, quantity, writability, procedure relevance, and publish policy
 
 Example procedure-agent read:
 

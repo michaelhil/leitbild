@@ -606,6 +606,34 @@ describe('process plant graph foundation', () => {
     expect(heater?.limits?.hardRange).toEqual({ min: 0, max: 30 })
   })
 
+  test('keeps reference graph procedure tags mapped to stable process variables', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    const expectedProcedureTags = [
+      ['PT-455', 'pressurizer.pressureMPa'],
+      ['PZR-LVL', 'pressurizer.levelPercent'],
+      ['PZR-HTR', 'pressurizer.heaterPowerMw'],
+      ['PZR-SPRAY', 'pressurizer.sprayFlowKgPerS'],
+      ['PORV-456A', 'pressurizer.reliefValvePositionFraction'],
+      ['SG-A-LVL-NR', 'sgA.levelPercent'],
+      ['SG-A-PRESS', 'sgA.pressureMPa'],
+      ['SG-A-N16', 'sgA.secondaryRadiationMSvPerH'],
+      ['SG-A-TUBE-LEAK', 'sgA.tubeLeakFraction'],
+      ['RCP-A-RUN', 'rcpA.running'],
+      ['RCP-A-SPD', 'rcpA.speedFraction'],
+      ['RCP-A-FLOW', 'rcpA.loopFlowKgPerS'],
+      ['MFW-PUMP-A-RUN', 'mainFeedwaterPumpA.running'],
+      ['MFW-PUMP-B-RUN', 'mainFeedwaterPumpB.running'],
+      ['FT-SG-A-001', 'sg-a-steam-to-msiv-a.flowKgPerS'],
+    ] as const
+
+    for (const [tagId, expectedPath] of expectedProcedureTags) {
+      const binding = graph.signalBindingByTagId.get(tagIdForLookup(tagId))
+      expect(String(binding?.path)).toBe(expectedPath)
+      expect(binding?.capabilities?.procedureRelevant).toBe(true)
+      expect(binding?.capabilities?.aiVisible).toBe(true)
+    }
+  })
+
   test('rejects duplicate process signal tag ids before runtime', () => {
     const invalidComponentTagId = {
       ...pressurizedWaterReactorPlantSpec,
