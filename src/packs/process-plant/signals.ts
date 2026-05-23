@@ -65,6 +65,8 @@ export const processPlantSignalView = (binding: ProcessSignalBinding): Record<st
   ...(binding.equipmentId === undefined ? {} : { equipmentId: binding.equipmentId }),
   ...(binding.description === undefined ? {} : { description: binding.description }),
   ...(binding.externalRefs === undefined ? {} : { externalRefs: binding.externalRefs }),
+  ...(binding.capabilities === undefined ? {} : { capabilities: binding.capabilities }),
+  ...(binding.limits === undefined ? {} : { limits: binding.limits }),
   label: binding.label,
   kind: binding.kind,
   domain: binding.domain,

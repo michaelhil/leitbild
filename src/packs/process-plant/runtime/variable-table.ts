@@ -1,4 +1,5 @@
 import type { CompiledComponent, CompiledVariable, VariablePath } from '../graph/index.ts'
+import { deriveProcessVariableCapabilities } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem, ProcessPlantInitialVariableValue } from '../process-systems.ts'
 import type { ProcessPlantCommand, ProcessPlantValue, ProcessPlantVariableSnapshot } from './model.ts'
 import { toCanonicalProcessValue } from './units.ts'
@@ -44,6 +45,8 @@ const snapshotVariable = (
     ...(variable.descriptor.equipmentId === undefined ? {} : { equipmentId: variable.descriptor.equipmentId }),
     ...(variable.descriptor.description === undefined ? {} : { description: variable.descriptor.description }),
     ...(variable.descriptor.externalRefs === undefined ? {} : { externalRefs: variable.descriptor.externalRefs }),
+    capabilities: deriveProcessVariableCapabilities({ descriptor: variable.descriptor, published: variable.published }),
+    ...(variable.descriptor.limits === undefined ? {} : { limits: variable.descriptor.limits }),
   }
 }
 

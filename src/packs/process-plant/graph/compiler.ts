@@ -23,7 +23,7 @@ import type {
   VariablePath,
 } from './model.ts'
 import { validateProcessLinkContracts } from './link-contracts.ts'
-import { connectionKindSchema, plantGraphSpecSchema } from './model.ts'
+import { connectionKindSchema, deriveProcessVariableCapabilities, plantGraphSpecSchema } from './model.ts'
 
 interface ResolvedPortRef {
   readonly componentId: ComponentId
@@ -152,6 +152,8 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   ...(variable.descriptor.equipmentId === undefined ? {} : { equipmentId: variable.descriptor.equipmentId }),
   ...(variable.descriptor.description === undefined ? {} : { description: variable.descriptor.description }),
   ...(variable.descriptor.externalRefs === undefined ? {} : { externalRefs: variable.descriptor.externalRefs }),
+  capabilities: deriveProcessVariableCapabilities({ descriptor: variable.descriptor, published: variable.published }),
+  ...(variable.descriptor.limits === undefined ? {} : { limits: variable.descriptor.limits }),
   label: variable.descriptor.label,
   kind: variable.descriptor.kind,
   domain: variable.descriptor.domain,
@@ -161,6 +163,16 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   published: variable.published,
   owner: variable.owner,
 })
+
+const validateSignalMetadata = (variables: ReadonlyArray<CompiledVariable>): void => {
+  for (const variable of variables) {
+    if (variable.descriptor.tagId === undefined) continue
+    const capabilities = deriveProcessVariableCapabilities({ descriptor: variable.descriptor, published: variable.published })
+    if (!capabilities.aiVisible && !capabilities.procedureRelevant && !capabilities.operatorFacing) {
+      throw new Error(`process signal tag ${variable.descriptor.tagId} on ${variable.path} is not visible to AI, procedures, or operators`)
+    }
+  }
+}
 
 const parseInitialState = (
   definition: ComponentDefinition,
@@ -362,6 +374,7 @@ export const compilePlantGraph = (
   const variables = [...componentVariables, ...linkVariables]
   assertUnique(variables, variable => variable.path, 'variable path')
   assertUniqueDefined(variables, variable => variable.descriptor.tagId, 'process signal tag id')
+  validateSignalMetadata(variables)
   validateProcessLinkContracts(links)
   validateStrongComponentContracts(components, links)
   const availableVariablePaths = new Set(variables.map(variable => variable.path))

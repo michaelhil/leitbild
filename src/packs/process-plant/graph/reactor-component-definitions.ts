@@ -46,7 +46,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'promptReactivityPcm', label: 'Rod-programmed reactivity', kind: 'derived', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
       variable({ path: 'temperatureFeedbackPcm', label: 'Temperature feedback reactivity', kind: 'derived', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
       variable({ path: 'effectiveReactivityPcm', label: 'Effective core reactivity', kind: 'derived', domain: 'nuclear', writable: false, publish: 'telemetry', quantity: 'reactivity', unit: 'pcm' }),
-      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'rodInsertionFraction', label: 'Rod insertion', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'coolantInletTemperatureC', label: 'Core coolant inlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'coolantOutletTemperatureC', label: 'Core coolant outlet temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),
       variable({ path: 'fuelTemperatureC', label: 'Core fuel temperature', kind: 'state', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'temperature', unit: 'degC' }),

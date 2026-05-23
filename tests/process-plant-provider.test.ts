@@ -127,6 +127,10 @@ describe('process plant simulation provider', () => {
       'rcpA.running',
       'pressurizer.pressureMPa',
     ])
+    expect((resolved.result as { signals: ReadonlyArray<{ readonly capabilities: { readonly writable: boolean; readonly procedureRelevant: boolean } }> }).signals[0]?.capabilities).toMatchObject({
+      writable: true,
+      procedureRelevant: true,
+    })
 
     const accepted = await connection.sendCommand(command({
       systemId: 'plant',
@@ -144,6 +148,25 @@ describe('process plant simulation provider', () => {
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.reason)
     expect((read.result as { signals: ReadonlyArray<{ readonly variable: { readonly value: unknown } }> }).signals[0]?.variable.value).toBe(false)
+
+    await connection.close()
+  })
+
+  test('rejects command writes outside declared hard ranges', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const rejected = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 50,
+    }))
+    expect(rejected.ok).toBe(false)
+    if (rejected.ok) throw new Error('expected command rejection')
+    expect(rejected.reason).toContain('outside hard range 0..30')
 
     await connection.close()
   })

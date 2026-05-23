@@ -33,16 +33,23 @@ Component and link variable descriptors may declare:
 - `equipmentId`: the equipment or component reference associated with the signal
 - `description`: a concise human/agent description
 - `externalRefs`: optional stable external references, including `process-plant://{systemId}/{variablePath}` when useful
+- `capabilities`: optional operational visibility metadata when the derived defaults are insufficient
+- `limits`: optional normal, operating, hard, and alarm ranges
 
 `tagId` is unique only within one compiled process system. The same tag can exist in another system because API calls include `systemId`.
 
 The previous `sensorId` and `actuatorId` split is rejected. A signal is one identity. Whether it can be written is determined by the variable descriptor's `writable` flag.
+
+Capabilities are compiled from `writable`, `publish`, and `tagId` by default. Explicit capability overrides are allowed only on graph metadata and should be used sparingly. The compiler rejects tagged variables that are made invisible to operators, AI agents, and procedures.
+
+Limits have two roles. `hardRange` is enforced during runtime writes and restore validation. `normalRange`, `operatingRange`, and `alarmLimits` are interpretation metadata for procedure reasoning, UI presentation, and future alarm/protection rule authoring.
 
 The process-plant compiler builds a signal index from graph variables:
 
 - by variable path
 - by `tagId`
 - searchable by text, tag, equipment, quantity, domain, writable flag, and publication policy
+- carrying compiled capabilities and limits
 
 No separate binding table is introduced in V1.
 

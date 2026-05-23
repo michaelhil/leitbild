@@ -27,7 +27,7 @@ export const headerVariables = (labelPrefix: string): ReadonlyArray<ComponentVar
 ]
 
 export const valveVariables = (labelPrefix: string): ReadonlyArray<ComponentVariableDescriptor> => [
-  variable({ path: 'positionFraction', label: `${labelPrefix} position`, kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+  variable({ path: 'positionFraction', label: `${labelPrefix} position`, kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
   variable({ path: 'demandPositionFraction', label: `${labelPrefix} demand position`, kind: 'derived', domain: 'control', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
   variable({ path: 'effectivePositionFraction', label: `${labelPrefix} effective position`, kind: 'derived', domain: 'control', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
   variable({ path: 'availablePressureDropMPa', label: `${labelPrefix} available pressure drop`, kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'pressureDelta', unit: 'MPa' }),

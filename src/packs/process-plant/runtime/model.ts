@@ -1,4 +1,4 @@
-import type { ProcessEquipmentId, ProcessQuantity, ProcessSignalTagId, ProcessUnit, ProcessVariableValue, VariableDomain, VariableKind, VariablePath } from '../graph/index.ts'
+import type { ProcessEquipmentId, ProcessQuantity, ProcessSignalTagId, ProcessUnit, ProcessVariableCapability, ProcessVariableLimits, ProcessVariableValue, VariableDomain, VariableKind, VariablePath } from '../graph/index.ts'
 
 export type ProcessPlantValue = ProcessVariableValue
 
@@ -35,6 +35,8 @@ export interface ProcessPlantVariableSnapshot {
   readonly equipmentId?: ProcessEquipmentId
   readonly description?: string
   readonly externalRefs?: ReadonlyArray<string>
+  readonly capabilities?: ProcessVariableCapability
+  readonly limits?: ProcessVariableLimits
 }
 
 export interface ProcessPlantTickResult {

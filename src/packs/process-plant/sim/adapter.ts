@@ -35,6 +35,8 @@ import {
   processQuantitySchema,
   processEquipmentIdSchema,
   processSignalTagIdSchema,
+  processVariableCapabilitySchema,
+  processVariableLimitsSchema,
   processUnitSchema,
   processVariableValueSchema,
   variableKindSchema,
@@ -60,6 +62,8 @@ const processPlantVariableSnapshotSchema = z.object({
   equipmentId: processEquipmentIdSchema.optional(),
   description: z.string().min(1).optional(),
   externalRefs: z.array(z.string().min(1)).optional(),
+  capabilities: processVariableCapabilitySchema.optional(),
+  limits: processVariableLimitsSchema.optional(),
 })
 
 const processPlantRuntimeSnapshotSchema = z.object({

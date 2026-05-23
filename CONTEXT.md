@@ -153,12 +153,20 @@ Provider-owned durable runtime data that is not part of the Control Instance pro
 _Avoid_: hiding current operational objects in provider-private state, duplicating projected state, or storing high-frequency internals in the durable journal
 
 **Process Variable**:
-A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, and publish policy.
+A stable, unit-bearing value path inside a compiled process system, such as `core.powerMw` or `sgA.pressureMPa`. Process variables declare quantity, unit, writability, kind, domain, publish policy, derived capability metadata, and optional numeric limits.
 _Avoid_: free-text units, ad hoc telemetry object fields, or mutable untyped variable bags
 
 **Process Signal Binding**:
-Graph-owned metadata that makes a process variable discoverable and usable by operators, procedures, AI agents, and control-room surfaces. A binding may declare `tagId`, `equipmentId`, `description`, and `externalRefs`, but the authoritative identity remains `{controlRunId, systemId, variablePath}`.
+Graph-owned metadata that makes a process variable discoverable and usable by operators, procedures, AI agents, and control-room surfaces. A binding may declare `tagId`, `equipmentId`, `description`, `externalRefs`, capability overrides, and limits, but the authoritative identity remains `{controlRunId, systemId, variablePath}`.
 _Avoid_: separate simulator binding catalogs, duplicate sensor/actuator ids, or tag lookup without an explicit process system id
+
+**Process Variable Capability**:
+Compiled metadata that states whether a variable is readable, writable, trendable, alarmable, operator-facing, AI-visible, or procedure-relevant. Defaults are derived from `writable`, `publish`, and `tagId`; graph metadata may only override them when there is an operational reason.
+_Avoid_: decorative capability flags with no consumer, hidden procedure tags, or separate capability catalogs
+
+**Process Variable Limits**:
+Optional descriptor metadata for normal, operating, hard, and alarm ranges. `hardRange` is enforcement data and rejects invalid runtime writes; normal, operating, and alarm limits are interpretation data for UI, AI agents, procedures, and future alarm/protection logic.
+_Avoid_: arbitrary hard limits on generic flow or inventory variables where the component design does not define a real bound
 
 **Process Tag Id**:
 A procedure-facing identifier such as `PT-455` or `SG-A-LVL-NR` attached to exactly one process variable inside one compiled process system. Tags are allowed to repeat across different process systems because every query and command includes `systemId`.

@@ -594,8 +594,16 @@ describe('process plant graph foundation', () => {
 
   test('compiles graph-owned signal bindings for component and link variables', () => {
     const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
-    expect(String(graph.signalBindingByTagId.get(tagIdForLookup('PT-455'))?.path)).toBe('pressurizer.pressureMPa')
-    expect(String(graph.signalBindingByTagId.get(tagIdForLookup('FT-SG-A-001'))?.path)).toBe('sg-a-steam-to-msiv-a.flowKgPerS')
+    const pressure = graph.signalBindingByTagId.get(tagIdForLookup('PT-455'))
+    const flow = graph.signalBindingByTagId.get(tagIdForLookup('FT-SG-A-001'))
+    const heater = graph.signalBindingByTagId.get(tagIdForLookup('PZR-HTR'))
+    expect(String(pressure?.path)).toBe('pressurizer.pressureMPa')
+    expect(String(flow?.path)).toBe('sg-a-steam-to-msiv-a.flowKgPerS')
+    expect(pressure?.capabilities?.aiVisible).toBe(true)
+    expect(pressure?.capabilities?.procedureRelevant).toBe(true)
+    expect(pressure?.capabilities?.writable).toBe(false)
+    expect(heater?.capabilities?.writable).toBe(true)
+    expect(heater?.limits?.hardRange).toEqual({ min: 0, max: 30 })
   })
 
   test('rejects duplicate process signal tag ids before runtime', () => {
@@ -649,6 +657,30 @@ describe('process plant graph foundation', () => {
     }
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('component pressurizer variable metadata references unknown local variable')
+  })
+
+  test('rejects process signal tags that are not visible to operators, AI, or procedures', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      components: pressurizedWaterReactorPlantSpec.components.map(component => component.id === 'pressurizer'
+        ? {
+            ...component,
+            variables: component.variables.map(variable => variable.path === 'pressureMPa'
+              ? {
+                  ...variable,
+                  tagId: 'HIDDEN-TAG',
+                  capabilities: {
+                    aiVisible: false,
+                    procedureRelevant: false,
+                    operatorFacing: false,
+                  },
+                }
+              : variable),
+          }
+        : component),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('is not visible to AI, procedures, or operators')
   })
 
   test('rejects link initial values that do not match quantity type', () => {

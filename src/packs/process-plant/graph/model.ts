@@ -87,6 +87,68 @@ export type VariableDomain = z.infer<typeof variableDomainSchema>
 export const variablePublishPolicySchema = z.enum(['internal', 'telemetry', 'alarm', 'leitbild'])
 export type VariablePublishPolicy = z.infer<typeof variablePublishPolicySchema>
 
+export const processVariableCapabilitySchema = z.object({
+  readable: z.boolean().optional(),
+  writable: z.boolean().optional(),
+  trendable: z.boolean().optional(),
+  alarmable: z.boolean().optional(),
+  operatorFacing: z.boolean().optional(),
+  aiVisible: z.boolean().optional(),
+  procedureRelevant: z.boolean().optional(),
+}).strict()
+export type ProcessVariableCapability = z.infer<typeof processVariableCapabilitySchema>
+
+export const numericRangeSchema = z.object({
+  min: z.number().finite(),
+  max: z.number().finite(),
+}).strict().superRefine((range, ctx) => {
+  if (range.min > range.max) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['min'],
+      message: 'range min cannot exceed max',
+    })
+  }
+})
+export type NumericRange = z.infer<typeof numericRangeSchema>
+
+export const processVariableAlarmLimitSchema = z.object({
+  low: z.number().finite().optional(),
+  lowLow: z.number().finite().optional(),
+  high: z.number().finite().optional(),
+  highHigh: z.number().finite().optional(),
+}).strict().superRefine((limits, ctx) => {
+  const ordered = [
+    ['lowLow', limits.lowLow],
+    ['low', limits.low],
+    ['high', limits.high],
+    ['highHigh', limits.highHigh],
+  ] as const
+  const present = ordered.filter((entry): entry is readonly [typeof entry[0], number] => entry[1] !== undefined)
+  for (let index = 1; index < present.length; index += 1) {
+    const previous = present[index - 1]
+    const current = present[index]
+    if (!previous || !current) continue
+    if (previous[1] > current[1]) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [current[0]],
+        message: 'alarm limits must be ordered lowLow <= low <= high <= highHigh',
+      })
+      return
+    }
+  }
+})
+export type ProcessVariableAlarmLimit = z.infer<typeof processVariableAlarmLimitSchema>
+
+export const processVariableLimitsSchema = z.object({
+  normalRange: numericRangeSchema.optional(),
+  operatingRange: numericRangeSchema.optional(),
+  hardRange: numericRangeSchema.optional(),
+  alarmLimits: processVariableAlarmLimitSchema.optional(),
+}).strict()
+export type ProcessVariableLimits = z.infer<typeof processVariableLimitsSchema>
+
 export const processQuantitySchema = z.enum([
   'boolean',
   'energy',
@@ -239,9 +301,28 @@ const variableDescriptorBaseSchema = z.object({
   equipmentId: processEquipmentIdSchema.optional(),
   description: z.string().min(1).optional(),
   externalRefs: z.array(z.string().min(1)).optional(),
+  capabilities: processVariableCapabilitySchema.optional(),
+  limits: processVariableLimitsSchema.optional(),
 })
 export const variableDescriptorSchema = variableDescriptorBaseSchema.superRefine(validateQuantityUnit)
 export type VariableDescriptor = z.infer<typeof variableDescriptorSchema>
+
+export const deriveProcessVariableCapabilities = (config: {
+  readonly descriptor: VariableDescriptor
+  readonly published: boolean
+}): Required<ProcessVariableCapability> => {
+  const publish = config.descriptor.publish
+  return {
+    readable: true,
+    writable: config.descriptor.writable,
+    trendable: publish === 'telemetry' || publish === 'alarm' || publish === 'leitbild',
+    alarmable: publish === 'alarm',
+    operatorFacing: config.descriptor.writable || publish === 'alarm' || publish === 'leitbild',
+    aiVisible: config.descriptor.tagId !== undefined || publish !== 'internal',
+    procedureRelevant: config.descriptor.tagId !== undefined,
+    ...config.descriptor.capabilities,
+  }
+}
 
 export const componentVariableBindingOverrideSchema = z.object({
   path: localVariablePathSchema,
@@ -249,6 +330,8 @@ export const componentVariableBindingOverrideSchema = z.object({
   equipmentId: processEquipmentIdSchema.optional(),
   description: z.string().min(1).optional(),
   externalRefs: z.array(z.string().min(1)).optional(),
+  capabilities: processVariableCapabilitySchema.optional(),
+  limits: processVariableLimitsSchema.optional(),
 }).strict()
 export type ComponentVariableBindingOverride = z.infer<typeof componentVariableBindingOverrideSchema>
 
@@ -398,6 +481,8 @@ export interface ProcessSignalBinding {
   readonly equipmentId?: ProcessEquipmentId
   readonly description?: string
   readonly externalRefs?: ReadonlyArray<string>
+  readonly capabilities?: ProcessVariableCapability
+  readonly limits?: ProcessVariableLimits
   readonly label: string
   readonly kind: VariableKind
   readonly domain: VariableDomain

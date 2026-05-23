@@ -45,7 +45,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
     }),
     variables: [
       variable({ path: 'electricMw', label: 'Electrical output', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
-      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'loadFraction', label: 'Load demand', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
       variable({ path: 'steamFlowKgPerS', label: 'Turbine steam flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'steamDemandKgPerS', label: 'Turbine steam demand', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'steamAvailabilityFraction', label: 'Turbine steam availability', kind: 'derived', domain: 'thermal', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),

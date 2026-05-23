@@ -44,6 +44,10 @@ export const assertProcessPlantValueWithinPhysicalBounds = (
   ) {
     throw new Error(`process plant variable ${path} ${quantity} value must be non-negative`)
   }
+  const hardRange = variable.descriptor.limits?.hardRange
+  if (hardRange !== undefined && (value < hardRange.min || value > hardRange.max)) {
+    throw new Error(`process plant variable ${path} value ${value} is outside hard range ${hardRange.min}..${hardRange.max}`)
+  }
 }
 
 export const assertProcessPlantValueIsFinite = (

@@ -221,10 +221,46 @@ interface ProcessSignalMetadata {
   readonly equipmentId?: string
   readonly description?: string
   readonly externalRefs?: ReadonlyArray<string>
+  readonly capabilities?: ProcessVariableCapabilities
+  readonly limits?: ProcessVariableLimits
 }
 ```
 
-`tagId` replaces the old `sensorId`/`actuatorId` split. A signal is readable or writable according to the variable's `writable` flag. This prevents two parallel naming systems from drifting apart.
+`tagId` replaces the old `sensorId`/`actuatorId` split. A signal is readable or writable according to the variable's compiled capabilities, which are derived from the descriptor's `writable`, `publish`, and `tagId` fields unless explicitly overridden. This prevents two parallel naming systems from drifting apart.
+
+Compiled variable capabilities are:
+
+```ts
+interface ProcessVariableCapabilities {
+  readonly readable: boolean
+  readonly writable: boolean
+  readonly trendable: boolean
+  readonly alarmable: boolean
+  readonly operatorFacing: boolean
+  readonly aiVisible: boolean
+  readonly procedureRelevant: boolean
+}
+```
+
+Capabilities are metadata, not a second access-control system. The runtime still enforces writes through `writable` and value validation. The compiler rejects a `tagId` that is made invisible to operators, AI agents, and procedures because such a tag would be discoverable only by accident.
+
+Variable limits are optional:
+
+```ts
+interface ProcessVariableLimits {
+  readonly normalRange?: { readonly min: number; readonly max: number }
+  readonly operatingRange?: { readonly min: number; readonly max: number }
+  readonly hardRange?: { readonly min: number; readonly max: number }
+  readonly alarmLimits?: {
+    readonly lowLow?: number
+    readonly low?: number
+    readonly high?: number
+    readonly highHigh?: number
+  }
+}
+```
+
+`hardRange` is enforced by the runtime and rejects invalid commands or restored values. Normal, operating, and alarm limits are interpretation data for procedures, AI agents, UI, and future alarm/protection logic. Do not add arbitrary hard ranges to generic variables; use them only when the component design has a real bound, such as a fraction command from 0 to 1 or a declared equipment control limit.
 
 Component variable tags are declared as per-component-instance metadata:
 
@@ -260,7 +296,10 @@ The compiler validates:
 
 - tag ids are unique inside one compiled process system
 - component variable overlays reference real local variable paths
+- tagged variables remain visible to operators, AI agents, or procedures
+- numeric ranges are ordered
 - writable commands only target variables whose descriptor declares `writable: true`
+- numeric writes remain inside declared `hardRange` values
 - API requests supply exactly one signal reference form, either `path` or `tagId`
 
 External procedure systems may use a URI-like reference:
