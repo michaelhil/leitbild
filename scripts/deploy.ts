@@ -11,6 +11,14 @@ const ssh = async (command: string): Promise<void> => {
   await $`ssh -p ${port} ${target} ${command}`
 }
 
+const verifyEndpoint = async (path: string): Promise<void> => {
+  try {
+    await ssh(`status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:4177${path})" && [ "$status" = "200" ]`)
+  } catch (error) {
+    throw new Error(`Post-deploy verification failed for ${path}`, { cause: error })
+  }
+}
+
 // Fail fast before spending time on local checks when the execution environment
 // cannot open SSH. Codex sandboxed runs need escalation for this command.
 await ssh('true')
@@ -27,6 +35,8 @@ await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
 await ssh(`cd /opt/leitbild/app && ${remoteBun} run build:ui`)
 await ssh('cp /opt/leitbild/app/deploy/leitbild.service /etc/systemd/system/leitbild.service')
 await ssh('systemctl daemon-reload && systemctl enable --now leitbild && systemctl restart leitbild')
-await ssh('curl -fsS http://127.0.0.1:4177/health >/dev/null')
+await verifyEndpoint('/health')
+await verifyEndpoint('/api/scenarios')
+await verifyEndpoint('/map/capabilities.json')
 
 console.log('Leitbild deploy complete')

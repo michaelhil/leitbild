@@ -17,6 +17,13 @@ REMOTE_SHA="$(git rev-parse origin/main)"
 
 if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
   echo "Leitbild already at $LOCAL_SHA"
+  if [ "${FORCE_SERVICE_REFRESH:-0}" != "1" ]; then
+    exit 0
+  fi
+  echo "FORCE_SERVICE_REFRESH=1 set; refreshing service files"
+  cp deploy/leitbild.service /etc/systemd/system/leitbild.service
+  systemctl daemon-reload
+  systemctl restart leitbild
   exit 0
 fi
 
