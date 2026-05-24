@@ -10,6 +10,7 @@ export interface ResolvedScenarioProvider {
 
 export interface ResolvedScenarioRuntime {
   readonly scenarioId: string
+  readonly packs: ReadonlyArray<LeitbildPack>
   readonly providers: ReadonlyArray<ResolvedScenarioProvider>
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly providerConfigs: Record<string, unknown>
@@ -143,6 +144,7 @@ export const createScenarioCatalog = (config: {
       const scenario = scenarios.get(id)
       if (!scenario) return undefined
       const initialObjects = applyInitialContexts(scenario)
+      const activePacks = scenario.packs.map(packId => packs.get(packId)!)
       const providers = scenario.packs.map(packId => {
         const pack = packs.get(packId)
         if (!pack?.defaultSimulationProviderId && scenario.providerOverrides[packId] === undefined) {
@@ -158,6 +160,7 @@ export const createScenarioCatalog = (config: {
       return {
         scenarioId: scenario.id,
         scenario,
+        packs: activePacks,
         providers,
         initialObjects,
         providerConfigs: Object.fromEntries(providers.map(provider => [provider.providerId, provider.providerConfig])),

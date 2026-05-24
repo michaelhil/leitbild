@@ -86,7 +86,7 @@ export const createControlInstanceRegistry = (config: {
       activePackIds: [...scenarioRuntime.scenario.packs],
       acceptedCommandKinds: [...new Set(activeAdapters.flatMap(adapter => adapter.acceptedCommandKinds))].sort(),
       queryKinds,
-      wikiRefs: [],
+      wikiRefs: scenarioRuntime.packs.flatMap(pack => pack.wikiRefs ?? []),
     }
   }
 

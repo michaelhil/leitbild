@@ -22,6 +22,8 @@ Responses include `Cache-Control: max-age=60, must-revalidate` and a weak `ETag`
 
 Clients may send normal `User-Agent` and the planned `Leitbild-Client` header now. V1 does not enforce, persist, authorize, or rate-limit by these headers.
 
+Leitbild responses publish a narrow embedding CSP posture with `Content-Security-Policy: frame-ancestors 'self' https://samsinn.app https://*.samsinn.app`, allowing the Samsinn UI to iframe Leitbild while keeping other embedding origins out. Leitbild does not send `X-Frame-Options`, because that legacy header cannot express the required Samsinn allowlist.
+
 ## 5. Manifest Shape
 
 The manifest is grouped around deployment identity, current auth and CORS posture, link relations, actions, HTTP and WebSocket protocol facts, realtime semantics, client-identification posture, deployment-level capabilities, planned wiki reference placement, unpublished limits, and planned future surfaces.

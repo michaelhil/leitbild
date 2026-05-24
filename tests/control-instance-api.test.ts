@@ -66,7 +66,7 @@ describe('control instance API', () => {
         readonly activePackIds: readonly string[]
         readonly acceptedCommandKinds: readonly string[]
         readonly queryKinds: Record<string, readonly string[]>
-        readonly wikiRefs: readonly unknown[]
+        readonly wikiRefs: readonly { readonly name: string; readonly url: string }[]
       }>(
         registry,
         '/api/control-instances/sandbox/capabilities',
@@ -80,7 +80,9 @@ describe('control instance API', () => {
       expect(capabilities.body.queryKinds.ambulance).toContain('ambulance.dispatchState')
       expect(capabilities.body.queryKinds.traffic).toContain('traffic.conditions')
       expect(capabilities.body.queryKinds.weather).toContain('weather.sampleAtPoint')
-      expect(capabilities.body.wikiRefs).toEqual([])
+      expect(capabilities.body.wikiRefs).toEqual([
+        { name: 'Leitbild ambulance wiki', url: 'https://github.com/samsinn-wikis/leitbild-ambulance' },
+      ])
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
     }

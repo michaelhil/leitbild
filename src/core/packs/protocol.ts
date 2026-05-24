@@ -178,6 +178,11 @@ export interface PackSimulationProvider {
   readonly kind: 'local' | 'remote' | 'replay'
 }
 
+export interface PackWikiRef {
+  readonly name: string
+  readonly url: string
+}
+
 export interface PackScenarioObjectSpec {
   readonly pack: string
   readonly type: string
@@ -221,6 +226,7 @@ export interface LeitbildPack {
   readonly domain: string
   readonly simulationProviders?: ReadonlyArray<PackSimulationProvider>
   readonly defaultSimulationProviderId?: string
+  readonly wikiRefs?: ReadonlyArray<PackWikiRef>
   readonly scenario?: PackScenarioSupport
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>

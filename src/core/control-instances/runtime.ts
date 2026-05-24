@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
-import type { PackQueryRequest, PackQueryResponse } from '../packs/protocol.ts'
+import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
@@ -37,7 +37,7 @@ export interface ControlInstanceCapabilities {
   readonly activePackIds: ReadonlyArray<string>
   readonly acceptedCommandKinds: ReadonlyArray<string>
   readonly queryKinds: Readonly<Record<string, ReadonlyArray<string>>>
-  readonly wikiRefs: ReadonlyArray<never>
+  readonly wikiRefs: ReadonlyArray<PackWikiRef>
 }
 
 const eventId = (): EventId => `event:${randomUUID()}` as EventId
@@ -578,7 +578,7 @@ export const createControlInstanceRuntime = async (config: {
       activePackIds: config.capabilities?.activePackIds ?? [],
       acceptedCommandKinds: config.capabilities?.acceptedCommandKinds ?? [],
       queryKinds: config.capabilities?.queryKinds ?? {},
-      wikiRefs: [],
+      wikiRefs: config.capabilities?.wikiRefs ?? [],
     }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,

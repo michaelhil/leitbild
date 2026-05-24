@@ -18,7 +18,7 @@ import {
   type InjurySummary,
 } from './model.ts'
 import { ambulanceSimProviderId } from './sim/constants.ts'
-import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
+import { createAmbulanceArrivalInteractionHandler, createAmbulanceMedicalDemandInteractionHandler } from './sim/interactions.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
@@ -267,6 +267,9 @@ export const ambulancePack: LeitbildPack = {
     { id: ambulanceSimProviderId, label: 'Local ambulance simulator', kind: 'local' },
   ],
   defaultSimulationProviderId: ambulanceSimProviderId,
+  wikiRefs: [
+    { name: 'Leitbild ambulance wiki', url: 'https://github.com/samsinn-wikis/leitbild-ambulance' },
+  ],
   scenario: ambulanceScenarioSupport,
   categories: [
     {
@@ -294,6 +297,7 @@ export const ambulancePack: LeitbildPack = {
     { id: 'incident', label: 'Incident', categoryId: 'incidents', icon: 'crash', color: '#c7352b', placementKind: 'point' },
   ],
   interactionHandlers: [
+    createAmbulanceMedicalDemandInteractionHandler(),
     createAmbulanceArrivalInteractionHandler(),
   ],
   presentObject: (object, context): PackObjectPresentation => {

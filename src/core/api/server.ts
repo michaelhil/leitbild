@@ -15,6 +15,8 @@ import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type Realtim
 import { json } from './responses.ts'
 import { buildManifest } from './discovery.ts'
 
+const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
+
 interface ServerConfig {
   readonly registry: ControlInstanceRegistry
   readonly port?: number
@@ -112,6 +114,17 @@ const requestBaseUrl = (req: Request): string => {
 const acceptsEtag = (ifNoneMatch: string | null, etag: string): boolean =>
   ifNoneMatch?.split(',').map(candidate => candidate.trim()).includes(etag) ?? false
 
+const withSecurityHeaders = (response: Response): Response => {
+  const headers = new Headers(response.headers)
+  headers.set('Content-Security-Policy', frameAncestorsHeader)
+  headers.delete('X-Frame-Options')
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
 const discoveryResponse = async (req: Request): Promise<Response> => {
   const manifest = buildManifest(requestBaseUrl(req))
   const etag = await discoveryEtag(manifest)
@@ -148,21 +161,22 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   const server = Bun.serve<WSData>({
     port,
     async fetch(req, serverApi) {
+      const secure = (response: Response): Response => withSecurityHeaders(response)
       const url = new URL(req.url)
       if (url.pathname === '/health') {
-        return json({
+        return secure(json({
           ok: true,
           mapArtifacts: await createMapArtifactStatus(mapArtifacts),
-        })
+        }))
       }
       if (url.pathname === '/health/details') {
-        return json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts }))
+        return secure(json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts })))
       }
       const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
-      if (discoveryRouteResponse) return discoveryRouteResponse
-      if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
-      if (url.pathname === '/map/style.json') return mapStyleResponse(url.searchParams.get('theme'))
-      if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
+      if (discoveryRouteResponse) return secure(discoveryRouteResponse)
+      if (url.pathname === '/map/capabilities.json') return secure(mapCapabilitiesResponse())
+      if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
+      if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, {
         registry: config.registry,
@@ -170,21 +184,21 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       })
       if (controlInstanceApiResponse) {
         realtime.reconcile()
-        return controlInstanceApiResponse
+        return secure(controlInstanceApiResponse)
       }
 
       if (url.pathname === '/ws') {
         const rawControlInstanceId = url.searchParams.get('controlInstance')
-        if (!rawControlInstanceId) return new Response('Missing controlInstance', { status: 400 })
+        if (!rawControlInstanceId) return secure(new Response('Missing controlInstance', { status: 400 }))
         const controlInstanceId = controlInstanceIdSchema.parse(rawControlInstanceId)
-        if (!config.registry.get(controlInstanceId)) return new Response('Control instance not found', { status: 404 })
+        if (!config.registry.get(controlInstanceId)) return secure(new Response('Control instance not found', { status: 404 }))
         const upgraded = serverApi.upgrade(req, { data: { controlInstanceId } })
-        return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 400 })
+        return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 400 }))
       }
 
       const staticResponse = await serveStatic(url.pathname, uiDistPath)
-      if (staticResponse) return staticResponse
-      return new Response('Not found', { status: 404 })
+      if (staticResponse) return secure(staticResponse)
+      return secure(new Response('Not found', { status: 404 }))
     },
     websocket: {
       open(socket) {
