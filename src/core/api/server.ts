@@ -13,6 +13,7 @@ import {
 import { handleControlInstanceApi } from './control-instance-routes.ts'
 import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type RealtimeStatus } from './realtime.ts'
 import { json } from './responses.ts'
+import { buildManifest } from './discovery.ts'
 
 interface ServerConfig {
   readonly registry: ControlInstanceRegistry
@@ -86,6 +87,46 @@ const serveStatic = async (pathname: string, uiDistPath: string): Promise<Respon
   return new Response(file, { headers: { 'Content-Type': contentType } })
 }
 
+const discoveryEtag = async (manifest: ReturnType<typeof buildManifest>): Promise<string> => {
+  const stableBody = JSON.stringify({
+    ...manifest,
+    generatedAt: undefined,
+  })
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(stableBody))
+  const hash = [...new Uint8Array(digest)]
+    .map(byte => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .slice(0, 16)
+  return `W/"${hash}"`
+}
+
+const requestBaseUrl = (req: Request): string => {
+  const url = new URL(req.url)
+  return `${url.protocol}//${url.host}`
+}
+
+const acceptsEtag = (ifNoneMatch: string | null, etag: string): boolean =>
+  ifNoneMatch?.split(',').map(candidate => candidate.trim()).includes(etag) ?? false
+
+const discoveryResponse = async (req: Request): Promise<Response> => {
+  const manifest = buildManifest(requestBaseUrl(req))
+  const etag = await discoveryEtag(manifest)
+  const headers = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'max-age=60, must-revalidate',
+    ETag: etag,
+  }
+  if (acceptsEtag(req.headers.get('if-none-match'), etag)) {
+    return new Response(null, { status: 304, headers })
+  }
+  return json(manifest, { headers })
+}
+
+export const handleDiscoveryRoute = async (req: Request, url: URL): Promise<Response | null> => {
+  if (url.pathname === '/.well-known/leitbild' && req.method === 'GET') return discoveryResponse(req)
+  return null
+}
+
 export const createServer = (config: ServerConfig): { readonly stop: () => void; readonly port: number } => {
   const port = config.port ?? Number(process.env.PORT ?? 3000)
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
@@ -113,6 +154,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (url.pathname === '/health/details') {
         return json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts }))
       }
+      const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
+      if (discoveryRouteResponse) return discoveryRouteResponse
       if (url.pathname === '/map/capabilities.json') return mapCapabilitiesResponse()
       if (url.pathname === '/map/style.json') return mapStyleResponse(url.searchParams.get('theme'))
       if (url.pathname === '/map/tiles/current.pmtiles') return currentPmtilesResponse(req, mapArtifacts)
