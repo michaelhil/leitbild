@@ -226,7 +226,7 @@
           "icRef": "process-plant.pressurized-water-reactor.ic.v1",
           "schedule": {
             "actions": [
-              { "id": "a2-sgtr-start", "atMs": 60000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.004 },
+              { "id": "a2-sgtr-start", "atMs": 45000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.004 },
               { "id": "a2-sgtr-escalate", "atMs": 180000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.018 }
             ]
           }
@@ -336,7 +336,7 @@
       },
       {
         "id": "a2-sgtr-guidance",
-        "at": { "kind": "after_scenario_start", "seconds": 70 },
+        "at": { "kind": "after_scenario_start", "seconds": 55 },
         "actions": [
           {
             "type": "show_guidance",

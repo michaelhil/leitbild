@@ -13,6 +13,7 @@ import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
+import { flowWeightedIncomingLinkValue } from '../link-flow-helpers.ts'
 import {
   inventoryBalanceStep,
   primaryCoolantCompressibilityPressureBiasMPa,
@@ -130,9 +131,15 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     reads: ['coolantInletTemperatureC', 'coolantOutletTemperatureC', 'heatToCoolantMw', 'incoming:temperatureC', 'incoming:flowKgPerS'],
     writes: ['coolantInletTemperatureC', 'coolantOutletTemperatureC'],
     update: ({ system, component, context }): void => {
-      const inletTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
+      const primaryInletLink = (link: { readonly service?: unknown }): boolean =>
+        link.service === 'primaryCoolant'
+        || link.service === 'charging'
+        || link.service === 'primaryInjection'
+        || link.service === 'safetyInjection'
+      const inletTemperature = flowWeightedIncomingLinkValue(system, component.index, 'temperatureC', context, primaryInletLink)
+        ?? averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'coolantInletTemperatureC'))
-      const flow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context) ?? 1)
+      const flow = Math.max(1, averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'primaryCoolant') ?? 1)
       const heatToCoolant = context.readNumber(componentVariablePath(component, 'heatToCoolantMw'))
       const outletTarget = clamp(inletTemperature + waterDeltaTFromHeatMw(heatToCoolant, flow), 220, 360)
       const currentOutlet = context.readNumber(componentVariablePath(component, 'coolantOutletTemperatureC'))

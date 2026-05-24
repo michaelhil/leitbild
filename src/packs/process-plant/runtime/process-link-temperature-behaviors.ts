@@ -47,7 +47,12 @@ export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLin
           ?? averageIncomingLinkValue(system, link.fromComponentIndex, 'temperatureC', context, candidate => serviceMatches(candidate, link.service))
           ?? context.readNumber(processLinkVariablePath(link, 'temperatureC'))
       }
-      context.write(processLinkVariablePath(link, 'temperatureC'), relaxToward(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, context.dtSeconds, 10))
+      context.write(
+        processLinkVariablePath(link, 'temperatureC'),
+        context.dtSeconds === 0
+          ? target
+          : relaxToward(context.readNumber(processLinkVariablePath(link, 'temperatureC')), target, context.dtSeconds, 10),
+      )
     },
   },
 ]

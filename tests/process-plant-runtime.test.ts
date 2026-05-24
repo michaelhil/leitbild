@@ -161,13 +161,26 @@ describe('process plant runtime', () => {
   test('keeps the reference plant normal under reference I&C during a no-fault run', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })
-    const snapshot = runWithReferenceProtection({
+    const protection = createProcessPlantProtectionRunner({
       system,
-      runtime,
-      durationMs: 600_000,
+      protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
     })
 
-    expect(activeLifecycleIds(snapshot)).toEqual({
+    for (let elapsedMs = 1_000; elapsedMs <= 600_000; elapsedMs += 1_000) {
+      runtime.tick(1_000)
+      protection.evaluate({
+        runtime,
+        elapsedMs: runtime.elapsedMs(),
+        controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
+        sourceProviderId: 'process-plant-local',
+      })
+      expect(activeLifecycleIds(protection.snapshot())).toEqual({
+        alarms: [],
+        trips: [],
+      })
+    }
+
+    expect(activeLifecycleIds(protection.snapshot())).toEqual({
       alarms: [],
       trips: [],
     })
@@ -940,7 +953,7 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('pressurizer.reliefFlowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))).toBeLessThan(initialInventory)
     expect(Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryDeviationKg')))).toBeLessThan(0)
-    expect(Number(runtime.readVariable(valueOf('vessel.primaryPressureBiasMPa')))).toBeLessThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.compressibilityPressureBiasMPa')))).toBeLessThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.reliefOutflowKgPerS')))).toBeGreaterThan(0)
     expect(Number(runtime.readVariable(valueOf('vessel.safetyInjectionFlowKgPerS')))).toBeGreaterThanOrEqual(0)
     expect(Number(runtime.readVariable(valueOf('pressurizer.pressureMPa')))).toBeLessThan(initialPressure)
