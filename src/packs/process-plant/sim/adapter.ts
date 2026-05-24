@@ -49,7 +49,8 @@ import {
   variableDomainSchema,
 } from '../graph/index.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { answerProcessPlantQuery, type ProcessPlantSystemRuntime } from '../query.ts'
+import { answerProcessPlantQuery } from '../query.ts'
+import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 

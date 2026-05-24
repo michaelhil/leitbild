@@ -7,19 +7,10 @@ import { validateProcessPlantControlWrite } from './control-write-validation.ts'
 import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
 import { answerProcessPlantIcQuery } from './ic-query.ts'
-import type { CompiledProcessPlantSystem } from './process-systems.ts'
-import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
-import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
+import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from './runtime/index.ts'
 import { processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
-
-export interface ProcessPlantSystemRuntime {
-  readonly system: CompiledProcessPlantSystem
-  readonly runtime: ProcessPlantRuntime
-  readonly schedule: ProcessPlantScheduleRunner
-  readonly telemetry?: ProcessPlantTelemetryRecorder
-  readonly protection?: ProcessPlantProtectionRunner
-}
+import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 
 const systemQuerySchema = z.object({
   systemId: idSchema,

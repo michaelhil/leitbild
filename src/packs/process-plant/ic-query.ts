@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../core/model/index.ts'
 import { idSchema } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import type { ProcessPlantSystemRuntime } from './query.ts'
+import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 
 const systemQuerySchema = z.object({
   systemId: idSchema,
