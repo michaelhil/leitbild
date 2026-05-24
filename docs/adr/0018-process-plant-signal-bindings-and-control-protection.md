@@ -101,8 +101,13 @@ The implemented V1 I&C rule language supports only typed primitives:
 - delay and latch behavior
 - reset conditions
 - effects: `alarm.enter`, `trip.enter`, and `writeSignal`
+- command gates for permissives and interlocks
 
 Arbitrary expressions, user-authored code, and hidden procedure engines are out of scope for V1.
+
+The runtime now performs semantic validation before a process system starts. `alarm` rules may only emit alarm lifecycle effects. `normalControl` rules may only request validated writes. `protection` rules may only emit trip lifecycle effects and/or request validated writes. `permissive` and `interlock` rules must use `commandGates` and must not emit lifecycle effects. This keeps the I&C vocabulary small but real, and prevents a rule from pretending to be one kind of automation while behaving like another.
+
+Command gates use the same signal-reference shape as reads and writes. A permissive gate must evaluate true before the target write is accepted. An interlock gate blocks the target write when its condition evaluates true. Gates apply to external operator, AI, scenario, and internal I&C write requests through the same queued write path; there is no privileged bypass. Gate conditions are evaluated against the current fixed-step runtime snapshot, not against un-applied queued commands.
 
 Definitions may be provided by graphRef defaults, process-system configuration, or scenario provider configuration. Reusable graphRefs may ship default I&C definitions for their plant model; a scenario may enable, disable, add, or parameterize rules for one explicit `systemId`. There is no fleet-wide I&C definition and no cross-system defaulting.
 
@@ -133,6 +138,7 @@ Pack queries:
 - `process-plant.signals.read`
 - `process-plant.signals.search`
 - `process-plant.conditions.evaluate`
+- `process-plant.procedure-tags.validate`
 - `process-plant.ic.status`
 
 Pack commands:
@@ -141,6 +147,8 @@ Pack commands:
 - `process-plant.ic.acknowledge`
 
 `process-plant.conditions.evaluate` accepts one explicit `systemId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
+
+`process-plant.procedure-tags.validate` accepts extracted procedure tag appendix rows and resolves them against the same graph-owned signal bindings. It reports missing tags and metadata mismatches for optional `simPath`, `units`, and `equipment` fields. It does not parse procedure documents, decide procedure branches, or create a second simulator-binding table.
 
 `process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, resettable, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
 

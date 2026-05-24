@@ -395,6 +395,10 @@ This keeps the process variable table as the only continuous-state truth. The in
 
 Automatic actions from normal controllers and protection functions use the same validation semantics as operator, scenario, and AI commands: resolve a signal, check writability, validate type and hard limits, queue the write at a phase boundary, and make failure visible. An internal actor such as `actor:process-plant-protection` may request the action, but it does not get a private mutation path.
 
+I&C definitions are semantically validated before the runtime starts. The provider rejects rule classes that do not match their effects: alarm rules may only enter alarms, protection rules may only enter trips or request validated writes, normal-control rules may only request validated writes, and permissive/interlock rules must declare command gates rather than lifecycle effects. Write effects and command gates are resolved against graph-owned signals during startup, and non-writable targets, impossible value types, or hard-range violations fail visibly.
+
+Permissives and interlocks constrain the same command/write path used by operators, scenarios, AI agents, and automatic I&C writes. A command gate names the target signal it governs. A permissive blocks the write when its condition is false; an interlock blocks the write when its condition is true. Gates evaluate against the authoritative runtime snapshot at the current solver boundary, so recently accepted commands do not become visible until the fixed-step runtime applies them.
+
 Implemented I&C provider config shape:
 
 ```json
@@ -428,6 +432,8 @@ Implemented I&C provider config shape:
 ```
 
 The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, and visible rule/effect failures. Acknowledgement is a command, `process-plant.ic.acknowledge`, with `systemId` and `lifecycleId`; it records operator/agent awareness and does not clear the alarm condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
+
+Procedure runners can also validate a procedure tag appendix through `process-plant.procedure-tags.validate`. The query accepts extracted tag records such as `{ id, simPath, units, equipment }`, resolves each tag against the compiled graph-owned signal bindings for one `systemId`, and reports `resolved`, `resolved-with-warnings`, or `missing`. It is deliberately read-only compatibility checking for external procedure documents; it does not parse procmd, execute procedure steps, own branch state, or create a second simulator-binding catalog.
 
 ## Fluid Link Solver Contracts
 
@@ -762,6 +768,7 @@ Implemented queries:
 - `process-plant.signals.read`
 - `process-plant.signals.search`
 - `process-plant.conditions.evaluate`
+- `process-plant.procedure-tags.validate`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
@@ -792,11 +799,11 @@ Candidate future events:
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, persistent I&C lifecycle state, validated I&C writes, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
+The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, procedure tag compatibility validation, persistent I&C lifecycle state, validated I&C writes, command gates, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
 
 Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
-Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
+Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It is implemented as a small catalog assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
 
 `icRef` is not a procedure package. It must not encode emergency operating procedure steps, branching, diagnosis, or operator instructions. It only represents plant automation and annunciation: what automatic logic observes, what it actuates, and what alarm/trip state it exposes. External humans, control-room surfaces, procedure runners, and AI agents still own procedure execution by querying signal/condition truth and issuing explicit commands.
 

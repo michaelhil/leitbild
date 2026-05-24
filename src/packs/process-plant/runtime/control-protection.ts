@@ -3,8 +3,10 @@ import { nowIso } from '../../../core/model/index.ts'
 import type { SimulationEvent } from '../../../simulation/protocol.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
+import type { ProcessPlantSignalReference } from '../signals.ts'
 import type { ProcessPlantRuntime } from './model.ts'
 import { evaluateProcessPlantIcCondition } from './control-protection-conditions.ts'
+import { assertProcessPlantIcRulesValid } from './control-protection-validation.ts'
 import {
   processPlantIcConfigSchema,
   processPlantIcRuleSchema,
@@ -29,6 +31,11 @@ export interface ProcessPlantProtectionRunner {
   }) => ReadonlyArray<SimulationEvent>
   readonly snapshot: () => ProcessPlantIcSnapshot
   readonly acknowledge: (id: string, elapsedMs: number) => void
+  readonly evaluateWrite: (config: {
+    readonly runtime: ProcessPlantRuntime
+    readonly signal: ProcessPlantSignalReference
+    readonly elapsedMs: number
+  }) => { readonly ok: true } | { readonly ok: false; readonly reason: string }
 }
 
 interface MutableRuleState {
@@ -165,11 +172,19 @@ const failureFor = (config: {
   message: config.error instanceof Error ? config.error.message : String(config.error),
 })
 
+const writeTargetPath = (config: {
+  readonly system: CompiledProcessPlantSystem
+  readonly signal: ProcessPlantSignalReference
+}) => resolveProcessPlantSignalBinding(config.system.graph, config.signal).path
+
 const applyWriteEffect = (config: {
   readonly system: CompiledProcessPlantSystem
   readonly runtime: ProcessPlantRuntime
   readonly effect: Extract<ProcessPlantIcEffect, { readonly type: 'writeSignal' }>
+  readonly evaluateWrite: (signal: ProcessPlantSignalReference) => { readonly ok: true } | { readonly ok: false; readonly reason: string }
 }): void => {
+  const gate = config.evaluateWrite(config.effect.signal)
+  if (!gate.ok) throw new Error(gate.reason)
   const binding = resolveProcessPlantSignalBinding(config.system.graph, config.effect.signal)
   config.runtime.writeCommand({
     type: 'setVariable',
@@ -198,6 +213,7 @@ export const createProcessPlantProtectionRunner = (config: {
 }): ProcessPlantProtectionRunner => {
   const protection = processPlantIcConfigSchema.parse(config.protection)
   const rules = protection.rules.map(rule => processPlantIcRuleSchema.parse(rule))
+  assertProcessPlantIcRulesValid(config.system, rules)
   const ruleIds = new Set<string>()
   const effectIds = new Set<string>()
   for (const rule of rules) {
@@ -226,6 +242,40 @@ export const createProcessPlantProtectionRunner = (config: {
     }
   }
   const failures: ProcessPlantIcFailure[] = [...(config.restoredSnapshot?.failures ?? [])]
+
+  const evaluateWriteAgainstGates = (input: {
+    readonly runtime: ProcessPlantRuntime
+    readonly signal: ProcessPlantSignalReference
+    readonly elapsedMs: number
+  }): { readonly ok: true } | { readonly ok: false; readonly reason: string } => {
+    const targetPath = writeTargetPath({ system: config.system, signal: input.signal })
+    for (const rule of rules) {
+      if (!rule.enabled || (rule.ruleClass !== 'permissive' && rule.ruleClass !== 'interlock')) continue
+      const applies = rule.commandGates.some(gate =>
+        writeTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
+      )
+      if (!applies) continue
+      try {
+        const matches = evaluateProcessPlantIcCondition({ system: config.system, runtime: input.runtime, condition: rule.condition }).matches
+        const blocked = rule.ruleClass === 'permissive' ? !matches : matches
+        if (!blocked) continue
+        const message = rule.commandGates.find(gate =>
+          writeTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
+        )?.message
+        return {
+          ok: false,
+          reason: message ?? `process plant I&C ${rule.ruleClass} rule ${rule.id} blocks write to ${targetPath}`,
+        }
+      } catch (error) {
+        failures.push(failureFor({ ruleId: rule.id, elapsedMs: input.elapsedMs, error }))
+        return {
+          ok: false,
+          reason: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
+    return { ok: true }
+  }
 
   const enterLifecycle = (input: {
     readonly rule: ProcessPlantIcRule
@@ -331,7 +381,12 @@ export const createProcessPlantProtectionRunner = (config: {
         for (const effect of rule.effects) {
           try {
             if (effect.type === 'writeSignal') {
-              applyWriteEffect({ system: config.system, runtime, effect })
+              applyWriteEffect({
+                system: config.system,
+                runtime,
+                effect,
+                evaluateWrite: signal => evaluateWriteAgainstGates({ runtime, signal, elapsedMs }),
+              })
               continue
             }
             events.push(...enterLifecycle({ rule, effect, elapsedMs, controlInstanceId, sourceProviderId }))
@@ -369,5 +424,6 @@ export const createProcessPlantProtectionRunner = (config: {
       lifecycle.acknowledged = true
       lifecycle.lastTransitionElapsedMs = elapsedMs
     },
+    evaluateWrite: evaluateWriteAgainstGates,
   }
 }

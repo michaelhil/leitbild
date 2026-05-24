@@ -356,6 +356,12 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const system = systems.get(payload.data.systemId)
         if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
         try {
+          const gate = system.protection?.evaluateWrite({
+            runtime: system.runtime,
+            signal: payload.data,
+            elapsedMs: system.runtime.elapsedMs(),
+          })
+          if (gate && !gate.ok) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: gate.reason }
           const binding = resolveProcessPlantSignalBinding(system.system.graph, payload.data)
           system.runtime.writeCommand({
             type: 'setVariable',

@@ -1,0 +1,128 @@
+import type { ProcessPlantIcRule } from '../runtime/index.ts'
+import { alarm, all, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+
+export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => [
+  rule({
+    id: 'pzr-pressure-low',
+    label: 'Pressurizer pressure low',
+    ruleClass: 'alarm',
+    condition: comparison({ tagId: 'PT-455' }, '<', 14.8),
+    delayMs: 1_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: 'pressure-low',
+      title: 'Pressurizer pressure low',
+      message: 'Pressurizer pressure is below the reference low-pressure threshold.',
+      severity: 'warning',
+    })],
+  }),
+  rule({
+    id: 'pzr-pressure-high',
+    label: 'Pressurizer pressure high',
+    ruleClass: 'alarm',
+    condition: comparison({ tagId: 'PT-455' }, '>', 16.0),
+    delayMs: 1_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: 'pressure-high',
+      title: 'Pressurizer pressure high',
+      message: 'Pressurizer pressure is above the reference high-pressure threshold.',
+      severity: 'warning',
+    })],
+  }),
+  rule({
+    id: 'pzr-pressure-high-relief',
+    label: 'Pressurizer high pressure relief actuation',
+    ruleClass: 'protection',
+    condition: comparison({ tagId: 'PT-455' }, '>', 16.18),
+    delayMs: 1_000,
+    effects: [
+      trip({
+        id: 'relief-actuation',
+        title: 'Pressurizer relief actuation',
+        message: 'Pressurizer pressure is above the reference relief actuation threshold.',
+      }),
+      write('open-porv', { tagId: 'PORV-456A' }, 1),
+    ],
+  }),
+  rule({
+    id: 'pzr-pressure-relief-reset',
+    label: 'Pressurizer relief reset',
+    ruleClass: 'normalControl',
+    condition: comparison({ tagId: 'PT-455' }, '<', 15.85),
+    latch: false,
+    resetWhenClear: true,
+    effects: [write('close-porv', { tagId: 'PORV-456A' }, 0)],
+  }),
+  rule({
+    id: 'pzr-pressure-heater-demand',
+    label: 'Pressurizer heater demand',
+    ruleClass: 'normalControl',
+    condition: comparison({ tagId: 'PT-455' }, '<', 15.35),
+    latch: false,
+    resetWhenClear: true,
+    effects: [
+      write('energize-heaters', { tagId: 'PZR-HTR' }, 12),
+      write('stop-spray', { tagId: 'PZR-SPRAY' }, 0),
+    ],
+  }),
+  rule({
+    id: 'pzr-pressure-spray-demand',
+    label: 'Pressurizer spray demand',
+    ruleClass: 'normalControl',
+    condition: comparison({ tagId: 'PT-455' }, '>', 15.65),
+    latch: false,
+    resetWhenClear: true,
+    effects: [
+      write('deenergize-heaters', { tagId: 'PZR-HTR' }, 0),
+      write('start-spray', { tagId: 'PZR-SPRAY' }, 120),
+    ],
+  }),
+  rule({
+    id: 'pzr-pressure-normal-band',
+    label: 'Pressurizer normal pressure band',
+    ruleClass: 'normalControl',
+    condition: all([
+      comparison({ tagId: 'PT-455' }, '>=', 15.4),
+      comparison({ tagId: 'PT-455' }, '<=', 15.6),
+    ]),
+    latch: false,
+    resetWhenClear: true,
+    effects: [
+      write('deenergize-heaters-normal', { tagId: 'PZR-HTR' }, 0),
+      write('stop-spray-normal', { tagId: 'PZR-SPRAY' }, 0),
+    ],
+  }),
+  rule({
+    id: 'pzr-level-low',
+    label: 'Pressurizer level low',
+    ruleClass: 'alarm',
+    condition: comparison({ tagId: 'PZR-LVL' }, '<', 35),
+    delayMs: 1_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: 'level-low',
+      title: 'Pressurizer level low',
+      message: 'Pressurizer level is below the reference low-level threshold.',
+      severity: 'warning',
+    })],
+  }),
+  rule({
+    id: 'pzr-level-high',
+    label: 'Pressurizer level high',
+    ruleClass: 'alarm',
+    condition: comparison({ tagId: 'PZR-LVL' }, '>', 75),
+    delayMs: 1_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [alarm({
+      id: 'level-high',
+      title: 'Pressurizer level high',
+      message: 'Pressurizer level is above the reference high-level threshold.',
+      severity: 'warning',
+    })],
+  }),
+]

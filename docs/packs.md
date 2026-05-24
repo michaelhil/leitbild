@@ -271,6 +271,7 @@ Current built-in query kinds:
 - `process-plant.signals.read`
 - `process-plant.signals.search`
 - `process-plant.conditions.evaluate`
+- `process-plant.procedure-tags.validate`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
@@ -283,6 +284,8 @@ Process-plant also accepts `process-plant.ic.acknowledge`. The payload identifie
 Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate simulator binding catalog.
 
 Process-plant I&C is the pack's simplified instrumentation-and-control substrate. It is not embedded procedure execution and not continuous physics. It reads instrumentation signals, evaluates normal controller logic, protection functions, alarms, permissives, and interlocks for one explicit process system, then emits persistent alarm/trip state transitions or validated queued writes. External procedure runners and AI agents should query signal and condition truth through the pack query surface and issue commands through the generic command path. `process-plant.conditions.evaluate` evaluates the same typed condition language used by rules and returns both the truth value and the signals read, which makes procedure/AI reasoning auditable without adding a procedure engine to the pack.
+
+Process-plant permissives and interlocks are command gates, not hidden component side effects. They resolve target signals through graph-owned bindings and constrain the same queued write path used by operators, scenarios, AI agents, and internal I&C write effects. `process-plant.procedure-tags.validate` is a read-only compatibility helper for external procedure tag appendices; it reports missing or mismatched tags but does not parse or execute procedure documents.
 
 Process-plant may also provide reference I&C behavior through an explicit per-system `icRef`. The current built-in reference is `process-plant.pressurized-water-reactor.ic.v1` for the built-in pressurized-water-reactor graph. It supplies reference plant automation and annunciation for common transients; it does not supply procedure execution, operator guidance, or EOP branching. A system config must choose either `icRef` or inline `protection`, not both.
 

@@ -59,6 +59,17 @@ const conditionsEvaluateQuerySchema = z.object({
   condition: processPlantIcConditionSchema,
 })
 
+const procedureTagValidateQuerySchema = z.object({
+  systemId: idSchema,
+  tags: z.array(z.object({
+    id: processSignalTagIdSchema,
+    description: z.string().min(1).optional(),
+    simPath: z.string().min(1).optional(),
+    units: z.string().min(1).optional(),
+    equipment: z.string().min(1).optional(),
+  }).strict()).min(1),
+}).strict()
+
 const trendsReadQuerySchema = z.object({
   systemId: idSchema,
   paths: z.array(variablePathSchema).min(1).optional(),
@@ -154,6 +165,41 @@ const matchesSignalSearch = (
   return true
 }
 
+const validateProcedureTags = (
+  system: ProcessPlantSystemRuntime,
+  payload: z.infer<typeof procedureTagValidateQuerySchema>,
+): unknown => ({
+  systemId: payload.systemId,
+  tags: payload.tags.map(tag => {
+    const binding = system.system.graph.signalBindingByTagId.get(tag.id)
+    if (!binding) {
+      return {
+        id: tag.id,
+        status: 'missing',
+        warnings: [],
+      }
+    }
+    const view = processPlantSignalView(binding)
+    const warnings = [
+      ...(tag.simPath !== undefined && tag.simPath !== String(binding.path) && !(binding.externalRefs ?? []).includes(tag.simPath)
+        ? [`sim-path ${tag.simPath} does not match process path ${binding.path}`]
+        : []),
+      ...(tag.units !== undefined && tag.units !== binding.unit
+        ? [`units ${tag.units} do not match process unit ${binding.unit}`]
+        : []),
+      ...(tag.equipment !== undefined && binding.equipmentId !== undefined && tag.equipment !== binding.equipmentId
+        ? [`equipment ${tag.equipment} does not match process equipment ${binding.equipmentId}`]
+        : []),
+    ]
+    return {
+      id: tag.id,
+      status: warnings.length === 0 ? 'resolved' : 'resolved-with-warnings',
+      signal: view,
+      warnings,
+    }
+  }),
+})
+
 export const answerProcessPlantQuery = (config: {
   readonly request: PackQueryRequest
   readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
@@ -244,6 +290,11 @@ export const answerProcessPlantQuery = (config: {
         matches: evaluation.matches,
         signalsRead: evaluation.signalsRead,
       }, config.at)
+    }
+    if (config.request.kind === 'process-plant.procedure-tags.validate') {
+      const payload = procedureTagValidateQuerySchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      return success(config.request, validateProcedureTags(system, payload), config.at)
     }
     if (config.request.kind === 'process-plant.runtime.status') {
       return success(config.request, {

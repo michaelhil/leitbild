@@ -364,11 +364,11 @@ describe('process plant simulation provider', () => {
                 },
                 effects: [
                   {
-                    type: 'alarm.enter',
-                    id: 'heater-trip-alarm',
-                    title: 'Protection test alarm',
+                    type: 'trip.enter',
+                    id: 'heater-trip',
+                    title: 'Protection test trip',
                     message: 'Protection test condition is active.',
-                    severity: 'warning',
+                    severity: 'critical',
                   },
                   {
                     type: 'writeSignal',
@@ -417,6 +417,7 @@ describe('process plant simulation provider', () => {
             protection: {
               rules: [{
                 id: 'heater-non-latched-test',
+                ruleClass: 'alarm',
                 latch: false,
                 condition: {
                   type: 'comparison',
@@ -541,8 +542,155 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
-  test('records failed I&C writes without silently mutating runtime state', async () => {
+  test('blocks process writes through explicit I&C permissives and interlocks', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [
+                {
+                  id: 'heater-permissive-test',
+                  ruleClass: 'permissive',
+                  condition: {
+                    type: 'comparison',
+                    signal: { tagId: 'RCP-A-RUN' },
+                    operator: '==',
+                    value: true,
+                  },
+                  commandGates: [{
+                    signal: { tagId: 'PZR-HTR' },
+                    message: 'heater requires RCP A running',
+                  }],
+                },
+                {
+                  id: 'spray-interlock-test',
+                  ruleClass: 'interlock',
+                  condition: {
+                    type: 'comparison',
+                    signal: { tagId: 'RCP-A-RUN' },
+                    operator: '==',
+                    value: false,
+                  },
+                  commandGates: [{
+                    signal: { tagId: 'PZR-SPRAY' },
+                    message: 'spray is blocked while RCP A is stopped',
+                  }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const stopRcp = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'RCP-A-RUN',
+      value: false,
+    }))
+    expect(stopRcp.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(false)
+    if (heater.ok) throw new Error('expected heater command rejection')
+    expect(heater.reason).toContain('heater requires RCP A running')
+
+    const spray = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-SPRAY',
+      value: 10,
+    }))
+    expect(spray.ok).toBe(false)
+    if (spray.ok) throw new Error('expected spray command rejection')
+    expect(spray.reason).toContain('spray is blocked')
+
+    await connection.close()
+  })
+
+  test('rejects invalid I&C rule class and effect combinations before runtime starts', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'alarm-with-write-test',
+                ruleClass: 'alarm',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'writeSignal',
+                  id: 'write-spray',
+                  signal: { tagId: 'PZR-SPRAY' },
+                  value: 1,
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('alarm rule alarm-with-write-test must only define alarm.enter effects')
+  })
+
+  test('validates procedure tag appendices against graph-owned process signal bindings', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const validation = await connection.query(query('process-plant.procedure-tags.validate', {
+      systemId: 'plant',
+      tags: [
+        {
+          id: 'PT-455',
+          simPath: 'pressurizer.pressureMPa',
+          units: 'MPa',
+          equipment: 'pressurizer',
+        },
+        {
+          id: 'SG-A-N16',
+          simPath: 'wrong.path',
+          units: 'psig',
+          equipment: 'sg-a',
+        },
+        {
+          id: 'NO-SUCH-TAG',
+          simPath: 'missing.signal',
+          units: 'MPa',
+          equipment: 'missing',
+        },
+      ],
+    }))
+    expect(validation.ok).toBe(true)
+    if (!validation.ok) throw new Error(validation.reason)
+    const tags = (validation.result as {
+      readonly tags: ReadonlyArray<{ readonly id: string; readonly status: string; readonly warnings: ReadonlyArray<string> }>
+    }).tags
+    expect(tags.find(tag => tag.id === 'PT-455')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'SG-A-N16')?.status).toBe('resolved-with-warnings')
+    expect(tags.find(tag => tag.id === 'SG-A-N16')?.warnings.join(' ')).toContain('sim-path wrong.path')
+    expect(tags.find(tag => tag.id === 'NO-SUCH-TAG')?.status).toBe('missing')
+
+    await connection.close()
+  })
+
+  test('rejects invalid I&C write targets before runtime starts', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -569,29 +717,7 @@ describe('process plant simulation provider', () => {
         },
       }),
       providerStateStore: createMemoryStateStore(),
-    })
-
-    const heater = await connection.sendCommand(command({
-      systemId: 'plant',
-      tagId: 'PZR-HTR',
-      value: 1,
-    }))
-    expect(heater.ok).toBe(true)
-    await Bun.sleep(1_100)
-
-    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
-    expect(status.ok).toBe(true)
-    if (!status.ok) throw new Error(status.reason)
-    const failures = (status.result as {
-      readonly ic: { readonly failures: ReadonlyArray<{ readonly ruleId: string; readonly effectId?: string; readonly message: string }> }
-    }).ic.failures
-    expect(failures).toContainEqual(expect.objectContaining({
-      ruleId: 'invalid-write-test',
-      effectId: 'write-core-power',
-    }))
-    expect(failures[0]?.message).toContain('not writable')
-
-    await connection.close()
+    })).rejects.toThrow('writes non-writable signal core.powerMw')
   })
 
   test('acknowledges persistent I&C lifecycle state through an explicit command', async () => {
@@ -896,7 +1022,7 @@ describe('process plant simulation provider', () => {
         rules: [{
           id: 'known-rule',
           enabled: true,
-          ruleClass: 'protection',
+          ruleClass: 'alarm',
           condition: {
             type: 'comparison',
             signal: { path: variablePathSchema.parse('pressurizer.pressureMPa') },
@@ -913,6 +1039,7 @@ describe('process plant simulation provider', () => {
             message: 'Known alarm message.',
             severity: 'warning',
           }],
+          commandGates: [],
         }],
       },
       restoredSnapshot: {

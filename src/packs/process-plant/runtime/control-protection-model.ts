@@ -99,6 +99,11 @@ export type ProcessPlantIcEffect =
       readonly value: number | boolean
     }
 
+export interface ProcessPlantIcCommandGate {
+  readonly signal: ProcessPlantSignalReference
+  readonly message?: string
+}
+
 export const processPlantIcEffectSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('alarm.enter'),
@@ -122,6 +127,11 @@ export const processPlantIcEffectSchema = z.discriminatedUnion('type', [
   }).strict(),
 ])
 
+export const processPlantIcCommandGateSchema = z.object({
+  signal: processPlantSignalReferenceSchema,
+  message: z.string().min(1).optional(),
+}).strict()
+
 export const processPlantIcRuleSchema = z.object({
   id: idSchema,
   label: z.string().min(1).optional(),
@@ -132,7 +142,8 @@ export const processPlantIcRuleSchema = z.object({
   latch: z.boolean().default(true),
   resetWhenClear: z.boolean().default(false),
   resetCondition: processPlantIcConditionSchema.optional(),
-  effects: z.array(processPlantIcEffectSchema).min(1),
+  effects: z.array(processPlantIcEffectSchema).default([]),
+  commandGates: z.array(processPlantIcCommandGateSchema).default([]),
 }).strict()
 export type ProcessPlantIcRule = z.infer<typeof processPlantIcRuleSchema>
 
