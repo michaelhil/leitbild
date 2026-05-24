@@ -211,12 +211,114 @@
   ],
   "initialContexts": [],
   "processSystems": [
-    { "id": "halden-unit-a1", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" },
-    { "id": "halden-unit-a2", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" },
-    { "id": "halden-unit-a3", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" },
-    { "id": "halden-unit-b1", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" },
-    { "id": "halden-unit-b2", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" },
-    { "id": "halden-unit-b3", "pack": "process-plant", "componentLibrary": "process-plant", "graphRef": "process-plant.pressurized-water-reactor.v1" }
+    {
+      "id": "halden-unit-a1",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 0.992 },
+        "turbine": { "initialLoadFraction": 0.992 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.47,
+        "sgA.levelPercent": 54.8,
+        "sgA.collapsedLevelPercent": 53.0,
+        "sgA.secondaryInventoryKg": 29680,
+        "sgA.steamMassKg": 11940,
+        "feedwaterControlValveA.positionFraction": 0.905
+      }
+    },
+    {
+      "id": "halden-unit-a2",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 1.0 },
+        "turbine": { "initialLoadFraction": 1.0 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.53,
+        "sgA.levelPercent": 55.3,
+        "sgA.collapsedLevelPercent": 53.5,
+        "sgA.secondaryInventoryKg": 29960,
+        "sgA.steamMassKg": 12060,
+        "feedwaterControlValveA.positionFraction": 0.914
+      }
+    },
+    {
+      "id": "halden-unit-a3",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 0.986 },
+        "turbine": { "initialLoadFraction": 0.986 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.49,
+        "sgA.levelPercent": 54.5,
+        "sgA.collapsedLevelPercent": 52.8,
+        "sgA.secondaryInventoryKg": 29570,
+        "sgA.steamMassKg": 11920,
+        "feedwaterControlValveA.positionFraction": 0.901
+      }
+    },
+    {
+      "id": "halden-unit-b1",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 0.997 },
+        "turbine": { "initialLoadFraction": 0.997 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.51,
+        "sgA.levelPercent": 55.6,
+        "sgA.collapsedLevelPercent": 53.7,
+        "sgA.secondaryInventoryKg": 30070,
+        "sgA.steamMassKg": 12030,
+        "feedwaterControlValveA.positionFraction": 0.916
+      }
+    },
+    {
+      "id": "halden-unit-b2",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 0.989 },
+        "turbine": { "initialLoadFraction": 0.989 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.46,
+        "sgA.levelPercent": 54.9,
+        "sgA.collapsedLevelPercent": 53.1,
+        "sgA.secondaryInventoryKg": 29740,
+        "sgA.steamMassKg": 11960,
+        "feedwaterControlValveA.positionFraction": 0.907
+      }
+    },
+    {
+      "id": "halden-unit-b3",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 0.994 },
+        "turbine": { "initialLoadFraction": 0.994 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.52,
+        "sgA.levelPercent": 55.1,
+        "sgA.collapsedLevelPercent": 53.3,
+        "sgA.secondaryInventoryKg": 29850,
+        "sgA.steamMassKg": 12020,
+        "feedwaterControlValveA.positionFraction": 0.911
+      }
+    }
   ],
   "providerConfigs": {
     "process-plant": {

@@ -16,6 +16,7 @@ import {
   variableDescriptorSchema,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
+import { scenarios } from '../src/scenarios/index.ts'
 
 describe('process plant graph foundation', () => {
   test('compiles the pressurized water reactor graph into indexed components, links, and variables', () => {
@@ -127,6 +128,35 @@ describe('process plant graph foundation', () => {
     expect(systems).toHaveLength(1)
     expect(systems[0]?.id).toBe('unit-1')
     expect(String(systems[0]?.graph.specId)).toBe(processPlantPressurizedWaterReactorGraphRef)
+  })
+
+  test('Halden process-plant demo declares per-unit initial variation in scenario config', () => {
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-process-plant-demo')
+    if (!scenario) throw new Error('expected Halden process-plant demo scenario')
+
+    const systems = compileProcessPlantSystems(scenario.processSystems)
+    const powerFractions = scenario.processSystems.map(system => {
+      const parameters = system.parameters?.core
+      if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`missing core variation for ${system.id}`)
+      const initialPowerFraction = (parameters as Record<string, unknown>).initialPowerFraction
+      if (typeof initialPowerFraction !== 'number') throw new Error(`missing numeric core initialPowerFraction for ${system.id}`)
+      return initialPowerFraction
+    })
+    const pzrPressures = systems.map(system => {
+      const pressure = system.initialState.find(initial => initial.path === 'pressurizer.pressureMPa')
+      if (!pressure || typeof pressure.value !== 'number') throw new Error(`missing pressurizer pressure initialState for ${system.id}`)
+      return pressure.value
+    })
+    const sgAInventories = systems.map(system => {
+      const inventory = system.initialState.find(initial => initial.path === 'sgA.secondaryInventoryKg')
+      if (!inventory || typeof inventory.value !== 'number') throw new Error(`missing SG A inventory initialState for ${system.id}`)
+      return inventory.value
+    })
+
+    expect(systems).toHaveLength(6)
+    expect(new Set(powerFractions).size).toBeGreaterThan(3)
+    expect(new Set(pzrPressures).size).toBeGreaterThan(3)
+    expect(new Set(sgAInventories).size).toBeGreaterThan(3)
   })
 
   test('rejects duplicate primary loop pump ownership before runtime', () => {
