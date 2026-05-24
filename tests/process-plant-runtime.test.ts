@@ -45,6 +45,13 @@ const compiledSystemWithParameters = (parameters: Record<string, Record<string, 
   parameters,
 })
 
+const compiledSystemWithStaticFeedwaterValves = () => compiledSystemWithParameters({
+  feedwaterControlValveA: { initialPositionFraction: 1, controller: undefined },
+  feedwaterControlValveB: { initialPositionFraction: 1, controller: undefined },
+  feedwaterControlValveC: { initialPositionFraction: 1, controller: undefined },
+  feedwaterControlValveD: { initialPositionFraction: 1, controller: undefined },
+})
+
 const compiledSystemWithInitialState = (initialState: Record<string, unknown>) => compileProcessPlantSystem({
   id: 'plant',
   pack: 'process-plant',
@@ -184,6 +191,9 @@ describe('process plant runtime', () => {
       alarms: [],
       trips: [],
     })
+    expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeGreaterThan(50)
+    expect(Number(runtime.readVariable(valueOf('sgA.levelPercent')))).toBeLessThan(60)
+    expect(Number(runtime.readVariable(valueOf('feedwaterControlValveA.positionFraction')))).toBeLessThan(1)
   })
 
   test('lets the Halden demo feedwater and RCP fault path reach real protection trips', () => {
@@ -1123,7 +1133,7 @@ describe('process plant runtime', () => {
   })
 
   test('feedwater headers distribute available flow through open downstream valves', () => {
-    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const runtime = createProcessPlantRuntime({ system: compiledSystemWithStaticFeedwaterValves() })
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
     runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveB.positionFraction'), value: 0 })
@@ -1149,7 +1159,7 @@ describe('process plant runtime', () => {
   })
 
   test('feedwater source flow follows reachable downstream demand', () => {
-    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+    const runtime = createProcessPlantRuntime({ system: compiledSystemWithStaticFeedwaterValves() })
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
     runtime.writeCommand({ type: 'setVariable', path: valueOf('feedwaterControlValveA.positionFraction'), value: 0 })
@@ -1166,7 +1176,7 @@ describe('process plant runtime', () => {
   })
 
   test('feedwater and auxiliary feedwater header branch flows conserve incoming service flow', () => {
-    const system = compiledSystem()
+    const system = compiledSystemWithStaticFeedwaterValves()
     const runtime = createProcessPlantRuntime({ system })
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
@@ -1349,7 +1359,7 @@ describe('process plant runtime', () => {
   })
 
   test('primary and secondary network flows remain coherent across pump and header links', () => {
-    const system = compiledSystem()
+    const system = compiledSystemWithStaticFeedwaterValves()
     const runtime = createProcessPlantRuntime({ system })
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)

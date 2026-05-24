@@ -32,6 +32,8 @@ const behaviorDefinitionById = (id: string): ComponentBehaviorDefinition => {
 
 export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   behaviorDefinitionById('reactor-core-reactivity-control'),
+  behaviorDefinitionById('processValve-position-controller'),
+  behaviorDefinitionById('steamValve-position-controller'),
   behaviorDefinitionById('processValve-effective-position'),
   behaviorDefinitionById('steamValve-effective-position'),
   behaviorDefinitionById('turbine-electrical-output'),

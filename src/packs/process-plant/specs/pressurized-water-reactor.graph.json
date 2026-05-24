@@ -537,7 +537,19 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve A",
       "parameters": {
-        "initialPositionFraction": 1
+        "initialPositionFraction": 0.91,
+        "controller": {
+          "kind": "proportionalPosition",
+          "measuredPath": "sgA.levelPercent",
+          "setpoint": 55,
+          "biasPositionFraction": 0.91,
+          "gainPerUnit": 0.018,
+          "direction": "reverse",
+          "deadband": 0.5,
+          "minPositionFraction": 0.05,
+          "maxPositionFraction": 1,
+          "timeConstantS": 6
+        }
       }
     },
     {
@@ -545,7 +557,19 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve B",
       "parameters": {
-        "initialPositionFraction": 1
+        "initialPositionFraction": 0.91,
+        "controller": {
+          "kind": "proportionalPosition",
+          "measuredPath": "sgB.levelPercent",
+          "setpoint": 55,
+          "biasPositionFraction": 0.91,
+          "gainPerUnit": 0.018,
+          "direction": "reverse",
+          "deadband": 0.5,
+          "minPositionFraction": 0.05,
+          "maxPositionFraction": 1,
+          "timeConstantS": 6
+        }
       }
     },
     {
@@ -553,7 +577,19 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve C",
       "parameters": {
-        "initialPositionFraction": 1
+        "initialPositionFraction": 0.91,
+        "controller": {
+          "kind": "proportionalPosition",
+          "measuredPath": "sgC.levelPercent",
+          "setpoint": 55,
+          "biasPositionFraction": 0.91,
+          "gainPerUnit": 0.018,
+          "direction": "reverse",
+          "deadband": 0.5,
+          "minPositionFraction": 0.05,
+          "maxPositionFraction": 1,
+          "timeConstantS": 6
+        }
       }
     },
     {
@@ -561,7 +597,19 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve D",
       "parameters": {
-        "initialPositionFraction": 1
+        "initialPositionFraction": 0.91,
+        "controller": {
+          "kind": "proportionalPosition",
+          "measuredPath": "sgD.levelPercent",
+          "setpoint": 55,
+          "biasPositionFraction": 0.91,
+          "gainPerUnit": 0.018,
+          "direction": "reverse",
+          "deadband": 0.5,
+          "minPositionFraction": 0.05,
+          "maxPositionFraction": 1,
+          "timeConstantS": 6
+        }
       }
     },
     {

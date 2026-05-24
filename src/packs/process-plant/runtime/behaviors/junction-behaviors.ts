@@ -1,12 +1,65 @@
-import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledComponent, CompiledProcessLink, VariablePath } from '../../graph/index.ts'
 import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import { processLinkVariablePath } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../component-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
 
 type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle'
+type ValvePositionControllerDirection = 'direct' | 'reverse'
+
+interface ValvePositionController {
+  readonly kind: 'proportionalPosition'
+  readonly measuredPath: VariablePath
+  readonly setpoint: number
+  readonly biasPositionFraction: number
+  readonly gainPerUnit: number
+  readonly direction: ValvePositionControllerDirection
+  readonly deadband: number
+  readonly minPositionFraction: number
+  readonly maxPositionFraction: number
+  readonly timeConstantS: number
+}
 
 const valveModes: ReadonlySet<ValveMode> = new Set(['control', 'isolation', 'check', 'relief', 'safety', 'throttle'])
+
+const valvePositionControllerFor = (component: CompiledComponent): ValvePositionController | null => {
+  const parameters = component.parameters
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) return null
+  const controller = (parameters as Record<string, unknown>).controller
+  if (controller === undefined) return null
+  if (!controller || typeof controller !== 'object' || Array.isArray(controller)) {
+    throw new Error(`component ${component.id} valve controller must be an object`)
+  }
+  const config = controller as Record<string, unknown>
+  if (config.kind !== 'proportionalPosition') {
+    throw new Error(`component ${component.id} valve controller kind must be proportionalPosition`)
+  }
+  if (typeof config.measuredPath !== 'string') throw new Error(`component ${component.id} valve controller measuredPath must be a variable path`)
+  if (typeof config.setpoint !== 'number' || !Number.isFinite(config.setpoint)) throw new Error(`component ${component.id} valve controller setpoint must be numeric`)
+  if (typeof config.biasPositionFraction !== 'number' || !Number.isFinite(config.biasPositionFraction)) throw new Error(`component ${component.id} valve controller biasPositionFraction must be numeric`)
+  if (typeof config.gainPerUnit !== 'number' || !Number.isFinite(config.gainPerUnit)) throw new Error(`component ${component.id} valve controller gainPerUnit must be numeric`)
+  const direction = config.direction ?? 'reverse'
+  if (direction !== 'direct' && direction !== 'reverse') throw new Error(`component ${component.id} valve controller direction must be direct or reverse`)
+  const minPositionFraction = typeof config.minPositionFraction === 'number' ? config.minPositionFraction : 0
+  const maxPositionFraction = typeof config.maxPositionFraction === 'number' ? config.maxPositionFraction : 1
+  return {
+    kind: 'proportionalPosition',
+    measuredPath: config.measuredPath as VariablePath,
+    setpoint: config.setpoint,
+    biasPositionFraction: clamp(config.biasPositionFraction, 0, 1),
+    gainPerUnit: Math.max(0, config.gainPerUnit),
+    direction,
+    deadband: typeof config.deadband === 'number' && Number.isFinite(config.deadband) ? Math.max(0, config.deadband) : 0,
+    minPositionFraction: clamp(minPositionFraction, 0, 1),
+    maxPositionFraction: clamp(maxPositionFraction, 0, 1),
+    timeConstantS: typeof config.timeConstantS === 'number' && Number.isFinite(config.timeConstantS) ? Math.max(1e-9, config.timeConstantS) : 1,
+  }
+}
+
+const deadbandedError = (error: number, deadband: number): number => {
+  if (Math.abs(error) <= deadband) return 0
+  return error - Math.sign(error) * deadband
+}
 
 const serviceLinksForComponent = (
   component: CompiledComponent,
@@ -119,6 +172,30 @@ const updateValveFlowDiagnostics = (
   context.write(componentVariablePath(component, 'reverseFlowKgPerS'), reverseFlow)
 }
 
+const updateValvePositionController = (
+  input: Parameters<ComponentBehaviorDefinition['update']>[0],
+): void => {
+  const { component, context } = input
+  const controller = valvePositionControllerFor(component)
+  if (controller === null) return
+  if (!context.has(controller.measuredPath)) {
+    throw new Error(`component ${component.id} valve controller references unknown measuredPath ${controller.measuredPath}`)
+  }
+  const measured = context.readNumber(controller.measuredPath)
+  const error = deadbandedError(measured - controller.setpoint, controller.deadband)
+  const action = controller.direction === 'direct' ? error : -error
+  const target = clamp(
+    controller.biasPositionFraction + controller.gainPerUnit * action,
+    controller.minPositionFraction,
+    controller.maxPositionFraction,
+  )
+  const positionPath = componentVariablePath(component, 'positionFraction')
+  context.write(
+    positionPath,
+    relaxToward(context.readNumber(positionPath), target, context.dtSeconds, controller.timeConstantS),
+  )
+}
+
 const updateHeaderDiagnostics = (
   input: Parameters<ComponentBehaviorDefinition['update']>[0],
 ): void => {
@@ -212,6 +289,15 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
   },
 })
 
+const valvePositionControllerBehavior = (componentKind: 'processValve' | 'steamValve'): ComponentBehaviorDefinition => ({
+  id: `${componentKind}-position-controller`,
+  phase: 'updateControlLogic',
+  componentKind,
+  reads: ['positionFraction', 'controller.measuredPath'],
+  writes: ['positionFraction'],
+  update: updateValvePositionController,
+})
+
 const valveDiagnosticsBehavior = (componentKind: 'processValve' | 'steamValve'): ComponentBehaviorDefinition => ({
   id: `${componentKind}-flow-diagnostics`,
   phase: 'updateComponentState',
@@ -231,6 +317,8 @@ const headerDiagnosticsBehavior = (componentKind: 'processHeader' | 'steamHeader
 })
 
 export const junctionBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
+  valvePositionControllerBehavior('processValve'),
+  valvePositionControllerBehavior('steamValve'),
   valveControlBehavior('processValve'),
   valveControlBehavior('steamValve'),
   valveDiagnosticsBehavior('processValve'),

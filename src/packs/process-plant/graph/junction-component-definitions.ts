@@ -1,6 +1,31 @@
 import { z } from 'zod'
-import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, headerVariables, valveVariables } from './component-definition-helpers.ts'
+import { type ComponentDefinition, type ComponentKind, variablePathSchema } from './model.ts'
+
+const valvePositionControllerSchema = z.object({
+  kind: z.literal('proportionalPosition'),
+  measuredPath: variablePathSchema,
+  setpoint: z.number().finite(),
+  biasPositionFraction: z.number().finite().min(0).max(1),
+  gainPerUnit: z.number().finite().nonnegative(),
+  direction: z.enum(['direct', 'reverse']).default('reverse'),
+  deadband: z.number().finite().nonnegative().optional(),
+  minPositionFraction: z.number().finite().min(0).max(1).optional(),
+  maxPositionFraction: z.number().finite().min(0).max(1).optional(),
+  timeConstantS: z.number().finite().positive().optional(),
+}).strict().superRefine((controller, ctx) => {
+  if (
+    controller.minPositionFraction !== undefined
+    && controller.maxPositionFraction !== undefined
+    && controller.minPositionFraction > controller.maxPositionFraction
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['minPositionFraction'],
+      message: 'valve controller minPositionFraction cannot exceed maxPositionFraction',
+    })
+  }
+})
 
 export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
@@ -47,6 +72,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       reverseFlowAllowed: z.boolean().optional(),
       setpointMPa: z.number().finite().positive().optional(),
       reseatMPa: z.number().finite().positive().optional(),
+      controller: valvePositionControllerSchema.optional(),
     }).strict(),
     variables: valveVariables('Process valve'),
   }),
@@ -94,6 +120,7 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       reverseFlowAllowed: z.boolean().optional(),
       setpointMPa: z.number().finite().positive().optional(),
       reseatMPa: z.number().finite().positive().optional(),
+      controller: valvePositionControllerSchema.optional(),
     }).strict(),
     variables: valveVariables('Steam valve'),
   }),
