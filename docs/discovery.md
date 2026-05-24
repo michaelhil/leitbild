@@ -24,7 +24,9 @@ Clients may send normal `User-Agent` and the planned `Leitbild-Client` header no
 
 ## 5. Manifest Shape
 
-The manifest is grouped around deployment identity, current auth and CORS posture, link relations, HTTP and WebSocket protocol facts, realtime semantics, client-identification posture, deployment-level capabilities, planned wiki reference placement, unpublished limits, and planned future surfaces.
+The manifest is grouped around deployment identity, current auth and CORS posture, link relations, actions, HTTP and WebSocket protocol facts, realtime semantics, client-identification posture, deployment-level capabilities, planned wiki reference placement, unpublished limits, and planned future surfaces.
+
+Deployment-level capabilities include flags for scenario catalog discovery, Control Instance registry and lifecycle actions, clock control, map capabilities, durable event catch-up, live change feed, pack queries, commands, and interaction signals.
 
 For exact field names, literals, and validation rules, use `discoveryManifestSchema` in `src/core/api/discovery.ts`.
 
@@ -43,30 +45,44 @@ Only currently callable relations are listed under `links`. Planned hooks stay u
 | `controlInstancePackQueries` | Read-only pack query endpoint by id. |
 | `controlInstanceCommands` | Validated command endpoint by id. |
 | `controlInstanceSignals` | Interaction signal endpoint by id. |
+| `controlInstanceReset` | Control Instance reset endpoint by id. |
+| `controlInstanceClock` | Control Instance clock-control endpoint by id. |
 | `realtime` | WebSocket transport. |
 | `mapCapabilities` | Vector map capability manifest. |
 | `mapStyle` | Vector map style. |
 | `docs` | This prose document in the repository. |
 
-## 7. CORS Posture
+## 7. Actions
+
+`actions` separates method semantics from URL navigation in `links`. The manifest does not enumerate request body schemas; those remain with the route definitions and API documentation. Runtime state is also not encoded in the manifest: for example, `controlInstanceDelete` uses `DELETE` but returns `409` when clients are connected.
+
+| Action | Link Rel | Method | Description |
+| --- | --- | --- | --- |
+| `controlInstanceCreate` | `controlInstances` | `POST` | Create a Control Instance from an optional scenario id. |
+| `controlInstanceEnsure` | `controlInstance` | `POST` | Ensure a named Control Instance exists, optionally with a scenario id. |
+| `controlInstanceDelete` | `controlInstance` | `DELETE` | Delete an idle Control Instance. The server rejects deletion while clients are connected. |
+| `controlInstanceReset` | `controlInstanceReset` | `POST` | Reset a Control Instance to a scenario baseline. |
+| `controlInstanceClockUpdate` | `controlInstanceClock` | `POST` | Update pause state, speed, or current time for a Control Instance. |
+
+## 8. CORS Posture
 
 The V1 manifest reports CORS as not configured. Browser-direct cross-origin access is not a published contract yet; deployment-specific reverse proxy behavior should not be treated as a manifest guarantee.
 
-## 8. Realtime Semantics
+## 9. Realtime Semantics
 
 V1 exposes one mixed WebSocket stream per Control Instance. When a client joins an existing stream, Leitbild sends `realtime.ready`. Live Control Instance Domain Events are then delivered as `events` batches.
 
 Durable catch-up is through the `controlInstanceEvents` relation. Realtime channel filtering is explicitly planned, not supported in V1.
 
-## 9. Per-Control-Instance Capabilities
+## 10. Per-Control-Instance Capabilities
 
 Per-Control-Instance capability manifests are planned, not currently callable, so they are not in `links`. They belong under each Control Instance because active packs, scenario id, accepted command kinds, pack query kinds, realtime support, and recommended wiki references vary by Control Instance.
 
-## 10. Auth Posture
+## 11. Auth Posture
 
 V1 discovery reports unauthenticated access with `modes: ["none"]`. Bearer auth is listed only as planned.
 
-## 11. Examples
+## 12. Examples
 
 Full V1 response, serialized from `buildManifest("https://leitbild.example")` and valid against `discoveryManifestSchema`:
 
@@ -101,6 +117,8 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
     "controlInstancePackQueries": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/queries" },
     "controlInstanceCommands": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/commands" },
     "controlInstanceSignals": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/signals" },
+    "controlInstanceReset": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/reset" },
+    "controlInstanceClock": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/clock" },
     "realtime": {
       "href": "wss://leitbild.example/ws",
       "hrefTemplate": "wss://leitbild.example/ws?controlInstance={id}"
@@ -108,6 +126,38 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
     "mapCapabilities": { "href": "https://leitbild.example/map/capabilities.json" },
     "mapStyle": { "href": "https://leitbild.example/map/style.json" },
     "docs": { "href": "https://github.com/michaelhil/leitbild/blob/main/docs/discovery.md" }
+  },
+  "actions": {
+    "controlInstanceCreate": {
+      "status": "implemented",
+      "linkRel": "controlInstances",
+      "method": "POST",
+      "description": "Create a Control Instance from an optional scenario id."
+    },
+    "controlInstanceEnsure": {
+      "status": "implemented",
+      "linkRel": "controlInstance",
+      "method": "POST",
+      "description": "Ensure a named Control Instance exists, optionally with a scenario id."
+    },
+    "controlInstanceDelete": {
+      "status": "implemented",
+      "linkRel": "controlInstance",
+      "method": "DELETE",
+      "description": "Delete an idle Control Instance. The server rejects deletion while clients are connected."
+    },
+    "controlInstanceReset": {
+      "status": "implemented",
+      "linkRel": "controlInstanceReset",
+      "method": "POST",
+      "description": "Reset a Control Instance to a scenario baseline."
+    },
+    "controlInstanceClockUpdate": {
+      "status": "implemented",
+      "linkRel": "controlInstanceClock",
+      "method": "POST",
+      "description": "Update pause state, speed, or current time for a Control Instance."
+    }
   },
   "protocols": {
     "http": {
@@ -155,6 +205,8 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
     "deploymentLevel": {
       "scenarioCatalog": true,
       "controlInstanceRegistry": true,
+      "controlInstanceLifecycle": true,
+      "clockControl": true,
       "mapCapabilityManifest": true,
       "durableEventCatchup": true,
       "liveChangeFeed": true,
@@ -224,7 +276,7 @@ const eventsResponse = await fetch(eventsUrl)
 const events = await eventsResponse.json()
 ```
 
-## 12. Schema Source of Truth + Change Process
+## 13. Schema Source of Truth + Change Process
 
 `src/core/api/discovery.ts` is normative. JSON Schema, generated examples, and compatibility checks should derive from its Zod schema. This document explains intent and client expectations; it must not redefine constraints independently.
 

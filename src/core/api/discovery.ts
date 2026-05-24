@@ -44,10 +44,44 @@ export const discoveryManifestSchema = z.object({
     controlInstancePackQueries: hrefTemplateSchema,
     controlInstanceCommands: hrefTemplateSchema,
     controlInstanceSignals: hrefTemplateSchema,
+    controlInstanceReset: hrefTemplateSchema,
+    controlInstanceClock: hrefTemplateSchema,
     realtime: hrefSchema.merge(hrefTemplateSchema),
     mapCapabilities: hrefSchema,
     mapStyle: hrefSchema,
     docs: hrefSchema,
+  }),
+  actions: z.object({
+    controlInstanceCreate: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstances'),
+      method: z.literal('POST'),
+      description: z.string().min(1),
+    }),
+    controlInstanceEnsure: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstance'),
+      method: z.literal('POST'),
+      description: z.string().min(1),
+    }),
+    controlInstanceDelete: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstance'),
+      method: z.literal('DELETE'),
+      description: z.string().min(1),
+    }),
+    controlInstanceReset: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstanceReset'),
+      method: z.literal('POST'),
+      description: z.string().min(1),
+    }),
+    controlInstanceClockUpdate: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstanceClock'),
+      method: z.literal('POST'),
+      description: z.string().min(1),
+    }),
   }),
   protocols: z.object({
     http: z.object({
@@ -89,6 +123,8 @@ export const discoveryManifestSchema = z.object({
     deploymentLevel: z.object({
       scenarioCatalog: z.literal(true),
       controlInstanceRegistry: z.literal(true),
+      controlInstanceLifecycle: z.literal(true),
+      clockControl: z.literal(true),
       mapCapabilityManifest: z.literal(true),
       durableEventCatchup: z.literal(true),
       liveChangeFeed: z.literal(true),
@@ -178,6 +214,8 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
       controlInstancePackQueries: { hrefTemplate: `${controlInstanceBase}/queries` },
       controlInstanceCommands: { hrefTemplate: `${controlInstanceBase}/commands` },
       controlInstanceSignals: { hrefTemplate: `${controlInstanceBase}/signals` },
+      controlInstanceReset: { hrefTemplate: `${controlInstanceBase}/reset` },
+      controlInstanceClock: { hrefTemplate: `${controlInstanceBase}/clock` },
       realtime: {
         href: joinUrl(wsBaseUrl, '/ws'),
         hrefTemplate: `${joinUrl(wsBaseUrl, '/ws')}?controlInstance={id}`,
@@ -185,6 +223,38 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
       mapCapabilities: { href: joinUrl(normalizedBaseUrl, '/map/capabilities.json') },
       mapStyle: { href: joinUrl(normalizedBaseUrl, '/map/style.json') },
       docs: { href: 'https://github.com/michaelhil/leitbild/blob/main/docs/discovery.md' },
+    },
+    actions: {
+      controlInstanceCreate: {
+        status: 'implemented',
+        linkRel: 'controlInstances',
+        method: 'POST',
+        description: 'Create a Control Instance from an optional scenario id.',
+      },
+      controlInstanceEnsure: {
+        status: 'implemented',
+        linkRel: 'controlInstance',
+        method: 'POST',
+        description: 'Ensure a named Control Instance exists, optionally with a scenario id.',
+      },
+      controlInstanceDelete: {
+        status: 'implemented',
+        linkRel: 'controlInstance',
+        method: 'DELETE',
+        description: 'Delete an idle Control Instance. The server rejects deletion while clients are connected.',
+      },
+      controlInstanceReset: {
+        status: 'implemented',
+        linkRel: 'controlInstanceReset',
+        method: 'POST',
+        description: 'Reset a Control Instance to a scenario baseline.',
+      },
+      controlInstanceClockUpdate: {
+        status: 'implemented',
+        linkRel: 'controlInstanceClock',
+        method: 'POST',
+        description: 'Update pause state, speed, or current time for a Control Instance.',
+      },
     },
     protocols: {
       http: {
@@ -232,6 +302,8 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
       deploymentLevel: {
         scenarioCatalog: true,
         controlInstanceRegistry: true,
+        controlInstanceLifecycle: true,
+        clockControl: true,
         mapCapabilityManifest: true,
         durableEventCatchup: true,
         liveChangeFeed: true,

@@ -2,6 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import { buildManifest, discoveryManifestSchema, type DiscoveryManifest } from '../src/core/api/discovery.ts'
 import { handleDiscoveryRoute } from '../src/core/api/server.ts'
 
+const omitKey = <T extends object, K extends keyof T>(object: T, key: K): Omit<T, K> => {
+  const { [key]: omitted, ...remaining } = object
+  void omitted
+  return remaining
+}
+
 const withEnv = async <T>(
   values: { readonly LEITBILD_OPERATOR?: string; readonly LEITBILD_DEPLOYMENT_ID?: string },
   run: () => Promise<T>,
@@ -58,6 +64,8 @@ describe('discovery manifest', () => {
       expect(manifest.links.self.href).toBe('https://leitbild.example/.well-known/leitbild')
       expect(manifest.links.controlInstance.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}')
       expect(manifest.links.controlInstanceEvents.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/events{?afterSeq}')
+      expect(manifest.links.controlInstanceReset.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/reset')
+      expect(manifest.links.controlInstanceClock.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/clock')
       expect(manifest.links.realtime.href).toBe('wss://leitbild.example/ws')
       expect(manifest.links.realtime.hrefTemplate).toBe('wss://leitbild.example/ws?controlInstance={id}')
       expect(manifest.protocols.http.baseUrl).toBe('https://leitbild.example')
@@ -69,6 +77,85 @@ describe('discovery manifest', () => {
       expect(manifest.identity.deploymentId).toBe('sandbox-a')
       expect(manifest.links.realtime.href).toBe('ws://localhost:3000/ws')
     })
+  })
+
+  test('publishes lifecycle and clock actions as method semantics over links', () => {
+    const manifest = buildManifest('https://leitbild.example')
+
+    expect(manifest.actions.controlInstanceCreate.linkRel).toBe('controlInstances')
+    expect(manifest.actions.controlInstanceCreate.method).toBe('POST')
+    expect(manifest.actions.controlInstanceEnsure.linkRel).toBe('controlInstance')
+    expect(manifest.actions.controlInstanceEnsure.method).toBe('POST')
+    expect(manifest.actions.controlInstanceDelete.linkRel).toBe('controlInstance')
+    expect(manifest.actions.controlInstanceDelete.method).toBe('DELETE')
+    expect(manifest.actions.controlInstanceReset.linkRel).toBe('controlInstanceReset')
+    expect(manifest.actions.controlInstanceReset.method).toBe('POST')
+    expect(manifest.actions.controlInstanceClockUpdate.linkRel).toBe('controlInstanceClock')
+    expect(manifest.actions.controlInstanceClockUpdate.method).toBe('POST')
+    expect(manifest.capabilities.deploymentLevel.controlInstanceLifecycle).toBe(true)
+    expect(manifest.capabilities.deploymentLevel.clockControl).toBe(true)
+  })
+
+  test('requires lifecycle and clock discovery fields', () => {
+    const manifest = buildManifest('https://leitbild.example')
+    const requiredFieldCases: readonly { readonly name: string; readonly malformed: unknown }[] = [
+      {
+        name: 'controlInstanceReset link',
+        malformed: { ...manifest, links: omitKey(manifest.links, 'controlInstanceReset') },
+      },
+      {
+        name: 'controlInstanceClock link',
+        malformed: { ...manifest, links: omitKey(manifest.links, 'controlInstanceClock') },
+      },
+      {
+        name: 'actions block',
+        malformed: omitKey(manifest, 'actions'),
+      },
+      {
+        name: 'controlInstanceCreate action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceCreate') },
+      },
+      {
+        name: 'controlInstanceEnsure action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceEnsure') },
+      },
+      {
+        name: 'controlInstanceDelete action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceDelete') },
+      },
+      {
+        name: 'controlInstanceReset action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceReset') },
+      },
+      {
+        name: 'controlInstanceClockUpdate action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceClockUpdate') },
+      },
+      {
+        name: 'controlInstanceLifecycle capability',
+        malformed: {
+          ...manifest,
+          capabilities: {
+            ...manifest.capabilities,
+            deploymentLevel: omitKey(manifest.capabilities.deploymentLevel, 'controlInstanceLifecycle'),
+          },
+        },
+      },
+      {
+        name: 'clockControl capability',
+        malformed: {
+          ...manifest,
+          capabilities: {
+            ...manifest.capabilities,
+            deploymentLevel: omitKey(manifest.capabilities.deploymentLevel, 'clockControl'),
+          },
+        },
+      },
+    ]
+
+    for (const { name, malformed } of requiredFieldCases) {
+      expect(discoveryManifestSchema.safeParse(malformed).success, name).toBe(false)
+    }
   })
 
   test('serves the well-known endpoint with validation and conditional caching', async () => {
