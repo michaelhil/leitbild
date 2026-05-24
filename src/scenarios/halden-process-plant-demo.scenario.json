@@ -375,7 +375,7 @@
         "config": {
           "width": 390,
           "sections": [
-            { "categoryId": "process-plants", "visible": true, "collapsed": false, "visibleFields": ["thermal-power", "electric-output", "pzr-pressure", "sg-a-level", "active-alarms", "active-trips"] },
+            { "categoryId": "process-plants", "visible": true, "collapsed": false, "visibleFields": ["thermal-power", "electric-output", "pzr-pressure", "sg-a-level", "active-alarms", "active-trips", "runtime-performance"] },
             { "categoryId": "hospitals", "visible": true, "collapsed": false, "visibleFields": ["trauma-beds"] },
             { "categoryId": "ambulances", "visible": true, "collapsed": false, "visibleFields": [] },
             { "categoryId": "incidents", "visible": true, "collapsed": false, "visibleFields": ["victims", "assigned-capacity"] },

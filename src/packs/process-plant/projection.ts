@@ -40,6 +40,12 @@ const formatValue = (value: unknown, unit: string, digits = 1): string => {
   return `${String(value)} ${unit}`.trim()
 }
 
+const formatRuntimePerformance = (system: ProcessPlantSystemRuntime): string => {
+  const sample = system.performance.snapshot()
+  if (sample === null || sample.simulatedMs <= 0) return 'pending'
+  return `RT x${sample.realtimeFactor.toFixed(0)} (${sample.wallMs.toFixed(1)} ms)`
+}
+
 const readField = (
   variables: ReturnType<ProcessPlantRuntime['snapshot']>['variables'],
   config: typeof selectedVariables[number],
@@ -98,6 +104,7 @@ export const projectedProcessPlantUnit = (config: {
     ...selectedVariables.map(variable => readField(runtimeSnapshot.variables, variable)),
     processPlantField('active-alarms', 'Active alarms', String(lifecycles.filter(lifecycle => lifecycle.kind === 'alarm').length)),
     processPlantField('active-trips', 'Active trips', String(activeTripCount)),
+    processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(config.system)),
   ]
   const power = fields.find(field => field.key === 'thermal-power')?.value ?? 'unknown'
   const electric = fields.find(field => field.key === 'electric-output')?.value ?? 'unknown'

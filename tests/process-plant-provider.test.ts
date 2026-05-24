@@ -115,7 +115,14 @@ describe('process plant simulation provider', () => {
     const data = processPlantUnitDomainDataSchema.parse(snapshot.objects[0]?.domainData)
     expect(data.systemId).toBe('plant')
     expect(data.projection?.fields.map(field => field.key)).toContain('thermal-power')
+    expect(data.projection?.fields.find(field => field.key === 'runtime-performance')?.value).toBe('pending')
     expect(snapshot.objects[0]?.operational.status).toBe('normal')
+
+    await Bun.sleep(1_100)
+
+    const advancedSnapshot = await connection.getSnapshot()
+    const advancedData = processPlantUnitDomainDataSchema.parse(advancedSnapshot.objects[0]?.domainData)
+    expect(advancedData.projection?.fields.find(field => field.key === 'runtime-performance')?.value).toMatch(/^RT x\d+ \(\d+\.\d ms\)$/)
 
     await connection.close()
   })

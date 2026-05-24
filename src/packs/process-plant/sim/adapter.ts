@@ -52,7 +52,7 @@ import { validateProcessPlantControlWrite } from '../control-write-validation.ts
 import { processPlantDomainId, processPlantUnitDomainDataSchema } from '../model.ts'
 import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
-import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import { createProcessPlantRuntimePerformance, type ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { processPlantSimAdapterId, processPlantSimProviderId } from './constants.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 
@@ -333,6 +333,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           }),
           ...(telemetry === undefined ? {} : { telemetry }),
           ...(protection === undefined ? {} : { protection }),
+          performance: createProcessPlantRuntimePerformance(),
         }
       })(),
     ]))
@@ -359,9 +360,10 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
       const events: SimulationEvent[] = []
-      for (const { runtime, schedule, telemetry, protection } of systems.values()) {
+      for (const { runtime, schedule, telemetry, protection, performance: runtimePerformance } of systems.values()) {
+        const startedAt = performance.now()
         schedule.applyDueActions(runtime, runtime.elapsedMs() + elapsedMs)
-        runtime.tick(elapsedMs)
+        const tick = runtime.tick(elapsedMs)
         events.push(...(protection?.evaluate({
           runtime,
           elapsedMs: runtime.elapsedMs(),
@@ -369,6 +371,10 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           sourceProviderId: processPlantSimProviderId,
         }) ?? []))
         telemetry?.recordDueSamples(runtime)
+        runtimePerformance.record({
+          wallMs: performance.now() - startedAt,
+          simulatedMs: tick.simulatedMs,
+        })
       }
       events.push(...projectionEvents({
         objectsById,
