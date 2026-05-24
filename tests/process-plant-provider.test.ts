@@ -8,7 +8,7 @@ import {
   createProcessPlantProtectionRunner,
   pressurizedWaterReactorPlantSpec,
   processPlantControlWriteCommandKind,
-  processPlantIcAcknowledgeCommandKind,
+  processPlantIcLifecycleCommandKind,
   processPlantPressurizedWaterReactorIcRef,
   variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
@@ -66,11 +66,11 @@ const command = (payload: unknown): CommandEnvelope => ({
   issuedAt: startsAt,
 })
 
-const acknowledgeCommand = (payload: unknown): CommandEnvelope => ({
+const lifecycleCommand = (payload: unknown): CommandEnvelope => ({
   id: 'command:process-plant-ack-test' as CommandId,
   controlInstanceId,
   actorId: 'actor:operator' as ActorId,
-  kind: processPlantIcAcknowledgeCommandKind,
+  kind: processPlantIcLifecycleCommandKind,
   targetObjectIds: [],
   payload,
   issuedAt: startsAt,
@@ -885,7 +885,7 @@ describe('process plant simulation provider', () => {
     })).rejects.toThrow('writes non-writable signal core.powerMw')
   })
 
-  test('acknowledges persistent I&C lifecycle state through an explicit command', async () => {
+  test('applies explicit I&C lifecycle actions through one command surface', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
@@ -924,22 +924,46 @@ describe('process plant simulation provider', () => {
     expect(heater.ok).toBe(true)
     await Bun.sleep(1_100)
 
-    const acknowledged = await connection.sendCommand(acknowledgeCommand({
+    const acknowledged = await connection.sendCommand(lifecycleCommand({
       systemId: 'plant',
       lifecycleId: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+      action: 'acknowledge',
     }))
     expect(acknowledged.ok).toBe(true)
+
+    const suppressed = await connection.sendCommand(lifecycleCommand({
+      systemId: 'plant',
+      lifecycleId: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+      action: 'suppress',
+    }))
+    expect(suppressed.ok).toBe(true)
+
+    const shelved = await connection.sendCommand(lifecycleCommand({
+      systemId: 'plant',
+      lifecycleId: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+      action: 'shelve',
+    }))
+    expect(shelved.ok).toBe(true)
 
     const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
     expect(status.ok).toBe(true)
     if (!status.ok) throw new Error(status.reason)
     const alarms = (status.result as {
-      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly acknowledged: boolean }> }
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly acknowledged: boolean; readonly suppressed: boolean; readonly shelved: boolean }> }
     }).ic.alarms
     expect(alarms).toContainEqual(expect.objectContaining({
       id: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
       acknowledged: true,
+      suppressed: true,
+      shelved: true,
     }))
+
+    const reset = await connection.sendCommand(lifecycleCommand({
+      systemId: 'plant',
+      lifecycleId: 'alarm:acknowledge-alarm-test:heater-ack-alarm',
+      action: 'reset',
+    }))
+    expect(reset.ok).toBe(true)
 
     await connection.close()
   })
@@ -971,7 +995,46 @@ describe('process plant simulation provider', () => {
     }).ic
     expect(ic.rules.map(rule => rule.ruleId)).toContain('sg-a-tube-leak-indication')
     expect(ic.rules.map(rule => rule.ruleId)).toContain('pzr-pressure-high-relief')
+    expect(ic.rules.map(rule => rule.ruleId)).toContain('reactor-high-power-trip')
+    expect(ic.rules.map(rule => rule.ruleId)).toContain('containment-pressure-high')
+    expect(ic.rules.map(rule => rule.ruleId)).toContain('accumulator-a-injecting')
     expect(ic.failures).toEqual([])
+
+    await connection.close()
+  })
+
+  test('exposes I&C catalog for UI and AI introspection', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const catalog = await connection.query(query('process-plant.ic.catalog', { systemId: 'plant' }))
+    expect(catalog.ok).toBe(true)
+    if (!catalog.ok) throw new Error(catalog.reason)
+    const ic = (catalog.result as {
+      readonly ic: {
+        readonly ruleCount: number
+        readonly rules: ReadonlyArray<{
+          readonly id: string
+          readonly ruleClass: string
+          readonly watchedSignals: ReadonlyArray<{ readonly path: string; readonly tagId?: string }>
+          readonly effects: ReadonlyArray<{ readonly type: string; readonly signal?: { readonly path: string } }>
+        }>
+      }
+    }).ic
+    expect(ic.ruleCount).toBeGreaterThan(20)
+    const relief = ic.rules.find(rule => rule.id === 'pzr-pressure-high-relief')
+    expect(relief?.ruleClass).toBe('protection')
+    expect(relief?.watchedSignals.map(signal => signal.tagId)).toContain('PT-455')
+    expect(relief?.effects.some(effect => effect.type === 'writeSignal' && effect.signal?.path === 'pressurizer.reliefValvePositionFraction')).toBe(true)
 
     await connection.close()
   })

@@ -6,6 +6,7 @@ import { processPlantControlWritePayloadSchema } from './commands.ts'
 import { validateProcessPlantControlWrite } from './control-write-validation.ts'
 import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
+import { answerProcessPlantIcQuery } from './ic-query.ts'
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
 import type { ProcessPlantProtectionRunner, ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import type { ProcessPlantScheduleRunner, ProcessPlantTelemetryRecorder } from './runtime/index.ts'
@@ -207,6 +208,8 @@ export const answerProcessPlantQuery = (config: {
   readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
   readonly at: IsoTimestamp
 }): PackQueryResponse => {
+  const icResponse = answerProcessPlantIcQuery(config)
+  if (icResponse !== undefined) return icResponse
   try {
     if (config.request.kind === 'process-plant.systems.list') {
       return success(config.request, {
@@ -338,15 +341,6 @@ export const answerProcessPlantQuery = (config: {
       return success(config.request, {
         systemId: payload.systemId,
         series: system.telemetry.series(payload.paths),
-      }, config.at)
-    }
-    if (config.request.kind === 'process-plant.ic.status') {
-      const payload = systemQuerySchema.parse(config.request.payload)
-      const system = requireSystem(config.systems, payload.systemId)
-      if (!system.protection) return failure(config.request, `process plant I&C is not configured for system: ${payload.systemId}`, config.at)
-      return success(config.request, {
-        systemId: payload.systemId,
-        ic: system.protection.snapshot(),
       }, config.at)
     }
     return failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)

@@ -277,10 +277,11 @@ Current built-in query kinds:
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
 - `process-plant.ic.status`
+- `process-plant.ic.catalog`
 
 Process-plant also accepts `process-plant.control.write` through the generic Control Instance command endpoint. The payload identifies a process system, exactly one signal reference (`path` or `tagId`), and a typed value. The provider resolves tag ids inside that explicit system, validates writability/type, and queues the write for the next solver phase; it does not mutate variables through the query route. `process-plant.control.validate` uses the same validation and permissive/interlock gate path as a read-only dry run, so UI and AI clients can explain whether a control write would be accepted before issuing it.
 
-Process-plant also accepts `process-plant.ic.acknowledge`. The payload identifies a process system and an I&C lifecycle id such as `alarm:high-pressure:pzr-high-pressure`. Acknowledgement updates alarm/trip lifecycle state only; it does not clear the underlying process condition or mutate plant physics.
+Process-plant also accepts `process-plant.ic.lifecycle`. The payload identifies a process system, an I&C lifecycle id such as `alarm:high-pressure:pzr-high-pressure`, and one lifecycle action: `acknowledge`, `reset`, `suppress`, `unsuppress`, `shelve`, or `unshelve`. These actions update alarm/trip lifecycle state only; they do not clear the underlying process condition, execute procedures, or mutate plant physics.
 
 Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate simulator binding catalog.
 

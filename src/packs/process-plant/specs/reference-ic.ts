@@ -1,6 +1,10 @@
 import type { ProcessPlantIcConfig } from '../runtime/index.ts'
+import { processPlantIcConfigSchema } from '../runtime/index.ts'
+import { accumulatorReferenceIcRules } from './reference-ic-accumulator.ts'
 import { balanceOfPlantReferenceIcRules } from './reference-ic-balance-of-plant.ts'
+import { containmentReferenceIcRules } from './reference-ic-containment.ts'
 import { pressurizerReferenceIcRules } from './reference-ic-pressurizer.ts'
+import { reactorReferenceIcRules } from './reference-ic-reactor.ts'
 import { reactorCoolantPumpReferenceIcRules } from './reference-ic-rcp.ts'
 import { steamGeneratorReferenceIcRules } from './reference-ic-steam-generator.ts'
 
@@ -8,6 +12,7 @@ export const processPlantPressurizedWaterReactorIcRef = 'process-plant.pressuriz
 
 export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = {
   rules: [
+    ...reactorReferenceIcRules(),
     ...pressurizerReferenceIcRules(),
     ...steamGeneratorReferenceIcRules('A'),
     ...steamGeneratorReferenceIcRules('B'),
@@ -17,6 +22,11 @@ export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = {
     ...reactorCoolantPumpReferenceIcRules('B'),
     ...reactorCoolantPumpReferenceIcRules('C'),
     ...reactorCoolantPumpReferenceIcRules('D'),
+    ...accumulatorReferenceIcRules('A'),
+    ...accumulatorReferenceIcRules('B'),
+    ...accumulatorReferenceIcRules('C'),
+    ...accumulatorReferenceIcRules('D'),
+    ...containmentReferenceIcRules(),
     ...balanceOfPlantReferenceIcRules(),
   ],
 }
@@ -28,7 +38,7 @@ const builtInProcessPlantIcConfigs = new Map<string, ProcessPlantIcConfig>([
 export const resolveProcessPlantIcConfig = (icRef: string): ProcessPlantIcConfig => {
   const config = builtInProcessPlantIcConfigs.get(icRef)
   if (!config) throw new Error(`unknown process plant icRef: ${icRef}`)
-  return config
+  return processPlantIcConfigSchema.parse(structuredClone(config))
 }
 
 export const listProcessPlantIcRefs = (): ReadonlyArray<string> =>

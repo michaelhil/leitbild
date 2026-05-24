@@ -12,8 +12,8 @@ import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/pr
 import {
   processPlantControlWriteCommandKind,
   processPlantControlWritePayloadSchema,
-  processPlantIcAcknowledgeCommandKind,
-  processPlantIcAcknowledgePayloadSchema,
+  processPlantIcLifecycleCommandKind,
+  processPlantIcLifecyclePayloadSchema,
 } from '../commands.ts'
 import { compileProcessPlantSystems } from '../process-systems.ts'
 import { createProcessPlantRuntime } from '../runtime/index.ts'
@@ -208,7 +208,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
   id: processPlantSimProviderId,
   packId: 'process-plant',
   domain: processPlantDomainId,
-  acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcAcknowledgeCommandKind],
+  acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcLifecycleCommandKind],
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const handlers = new Set<SimulationEventHandler>()
     const rawProviderState = await config.providerStateStore?.load()
@@ -324,14 +324,14 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       },
       sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
         const acceptedAt = nowIso()
-        if (command.kind === processPlantIcAcknowledgeCommandKind) {
-          const payload = processPlantIcAcknowledgePayloadSchema.safeParse(command.payload)
+        if (command.kind === processPlantIcLifecycleCommandKind) {
+          const payload = processPlantIcLifecyclePayloadSchema.safeParse(command.payload)
           if (!payload.success) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: payload.error.message }
           const system = systems.get(payload.data.systemId)
           if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
           if (!system.protection) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant I&C is not configured for system: ${payload.data.systemId}` }
           try {
-            system.protection.acknowledge(payload.data.lifecycleId, system.runtime.elapsedMs())
+            system.protection.applyLifecycleAction(payload.data.lifecycleId, payload.data.action, system.runtime.elapsedMs())
             await saveProviderState(config, systems)
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {

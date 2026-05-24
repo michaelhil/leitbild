@@ -197,6 +197,7 @@ export const processPlantIcLifecycleStateSchema = z.object({
   acknowledged: z.boolean(),
   latched: z.boolean(),
   suppressed: z.boolean(),
+  shelved: z.boolean().default(false),
   resettable: z.boolean(),
   firstActiveElapsedMs: z.number().finite().nonnegative().optional(),
   lastActiveElapsedMs: z.number().finite().nonnegative().optional(),
@@ -205,6 +206,16 @@ export const processPlantIcLifecycleStateSchema = z.object({
   transitionCount: z.number().int().nonnegative(),
 })
 export type ProcessPlantIcLifecycleState = z.infer<typeof processPlantIcLifecycleStateSchema>
+
+export const processPlantIcLifecycleActionSchema = z.enum([
+  'acknowledge',
+  'reset',
+  'suppress',
+  'unsuppress',
+  'shelve',
+  'unshelve',
+])
+export type ProcessPlantIcLifecycleAction = z.infer<typeof processPlantIcLifecycleActionSchema>
 
 export const processPlantIcFailureSchema = z.object({
   ruleId: idSchema,

@@ -1,5 +1,4 @@
-import type { AdapterId, ControlInstanceId, InteractionSignal, SignalId } from '../../../core/model/index.ts'
-import { nowIso } from '../../../core/model/index.ts'
+import type { ControlInstanceId } from '../../../core/model/index.ts'
 import type { SimulationEvent } from '../../../simulation/protocol.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
@@ -8,19 +7,38 @@ import type { ProcessPlantRuntime } from './model.ts'
 import { evaluateProcessPlantIcCondition } from './control-protection-conditions.ts'
 import { assertProcessPlantIcRulesValid } from './control-protection-validation.ts'
 import {
+  catalogForProcessPlantIcRules,
+  type ProcessPlantIcCatalog,
+  type ProcessPlantIcRuleCatalogEntry,
+  type ProcessPlantIcEffectCatalogEntry,
+  type ProcessPlantIcCommandGateCatalogEntry,
+} from './control-protection-catalog.ts'
+import {
   processPlantIcConfigSchema,
   processPlantIcRuleSchema,
   type ProcessPlantIcCondition,
   type ProcessPlantIcConfig,
   type ProcessPlantIcEffect,
   type ProcessPlantIcFailure,
-  type ProcessPlantIcLifecycleState,
+  type ProcessPlantIcLifecycleAction,
   type ProcessPlantIcRule,
   type ProcessPlantIcRuleSnapshot,
   type ProcessPlantIcSnapshot,
 } from './control-protection-model.ts'
+import {
+  eventForProcessPlantIcLifecycleTransition,
+  mutableLifecycleFor,
+  processPlantIcLifecycleIdFor,
+  type MutableLifecycleState,
+} from './control-protection-lifecycle.ts'
 export * from './control-protection-model.ts'
 export * from './control-protection-conditions.ts'
+export type {
+  ProcessPlantIcCatalog,
+  ProcessPlantIcRuleCatalogEntry,
+  ProcessPlantIcEffectCatalogEntry,
+  ProcessPlantIcCommandGateCatalogEntry,
+} from './control-protection-catalog.ts'
 
 export interface ProcessPlantProtectionRunner {
   readonly evaluate: (config: {
@@ -30,7 +48,8 @@ export interface ProcessPlantProtectionRunner {
     readonly sourceProviderId: string
   }) => ReadonlyArray<SimulationEvent>
   readonly snapshot: () => ProcessPlantIcSnapshot
-  readonly acknowledge: (id: string, elapsedMs: number) => void
+  readonly catalog: () => ProcessPlantIcCatalog
+  readonly applyLifecycleAction: (id: string, action: ProcessPlantIcLifecycleAction, elapsedMs: number) => void
   readonly evaluateWrite: (config: {
     readonly runtime: ProcessPlantRuntime
     readonly signal: ProcessPlantSignalReference
@@ -44,91 +63,6 @@ interface MutableRuleState {
   activeSinceElapsedMs?: number
   lastTransitionElapsedMs?: number
   firedCount: number
-}
-
-type MutableLifecycleState = {
-  -readonly [Key in keyof ProcessPlantIcLifecycleState]: ProcessPlantIcLifecycleState[Key]
-}
-
-const signalIdFor = (
-  systemId: string,
-  ruleId: string,
-  effectId: string,
-  phase: string,
-  elapsedMs: number,
-): SignalId => `process-plant:${systemId}:${ruleId}:${effectId}:${phase}:${Math.trunc(elapsedMs)}` as SignalId
-
-const lifecycleIdFor = (kind: 'alarm' | 'trip', ruleId: string, effectId: string): string =>
-  `${kind}:${ruleId}:${effectId}`
-
-const lifecycleFor = (
-  effect: Extract<ProcessPlantIcEffect, { readonly type: 'alarm.enter' | 'trip.enter' }>,
-  rule: ProcessPlantIcRule,
-  restored: ReadonlyMap<string, ProcessPlantIcLifecycleState>,
-): MutableLifecycleState => {
-  const kind = effect.type === 'alarm.enter' ? 'alarm' : 'trip'
-  const id = lifecycleIdFor(kind, rule.id, effect.id)
-  const snapshot = restored.get(id)
-  return {
-    id,
-    ruleId: rule.id,
-    effectId: effect.id,
-    kind,
-    title: effect.title,
-    message: effect.message,
-    severity: effect.severity ?? (kind === 'trip' ? 'critical' : 'warning'),
-    ...(effect.annunciator === undefined
-      ? snapshot?.annunciator === undefined ? {} : { annunciator: snapshot.annunciator }
-      : { annunciator: effect.annunciator }),
-    active: snapshot?.active ?? false,
-    acknowledged: snapshot?.acknowledged ?? false,
-    latched: snapshot?.latched ?? false,
-    suppressed: snapshot?.suppressed ?? false,
-    resettable: snapshot?.resettable ?? false,
-    ...(snapshot?.firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs: snapshot.firstActiveElapsedMs }),
-    ...(snapshot?.lastActiveElapsedMs === undefined ? {} : { lastActiveElapsedMs: snapshot.lastActiveElapsedMs }),
-    ...(snapshot?.lastClearedElapsedMs === undefined ? {} : { lastClearedElapsedMs: snapshot.lastClearedElapsedMs }),
-    ...(snapshot?.lastTransitionElapsedMs === undefined ? {} : { lastTransitionElapsedMs: snapshot.lastTransitionElapsedMs }),
-    transitionCount: snapshot?.transitionCount ?? 0,
-  }
-}
-
-const eventForLifecycleTransition = (config: {
-  readonly controlInstanceId: ControlInstanceId
-  readonly sourceProviderId: string
-  readonly systemId: string
-  readonly rule: ProcessPlantIcRule
-  readonly lifecycle: ProcessPlantIcLifecycleState
-  readonly transition: 'entered' | 'cleared' | 'acknowledged'
-  readonly elapsedMs: number
-}): SimulationEvent => {
-  const at = nowIso()
-  const signal: InteractionSignal = {
-    id: signalIdFor(config.systemId, config.rule.id, config.lifecycle.effectId, config.transition, config.elapsedMs),
-    controlInstanceId: config.controlInstanceId,
-    at,
-    source: { kind: 'simulation', id: config.sourceProviderId },
-    targets: [{ kind: 'broadcast' }],
-    type: `process-plant.${config.lifecycle.kind}.${config.transition}`,
-    severity: config.lifecycle.severity,
-    payload: {
-      systemId: config.systemId,
-      ruleId: config.rule.id,
-      ruleClass: config.rule.ruleClass,
-      effectId: config.lifecycle.effectId,
-      lifecycleId: config.lifecycle.id,
-      title: config.lifecycle.title,
-      message: config.lifecycle.message,
-      ...(config.lifecycle.annunciator === undefined ? {} : { annunciator: config.lifecycle.annunciator }),
-      elapsedMs: config.elapsedMs,
-    },
-  }
-  return {
-    type: 'interaction.signal',
-    signal,
-    at,
-    provenance: { source: 'simulator', adapterId: config.sourceProviderId as AdapterId },
-  }
 }
 
 const stateFor = (
@@ -157,7 +91,7 @@ const assertRestoredSnapshotMatchesRules = (
   const lifecycleIds = new Set(rules.flatMap(rule => rule.effects.flatMap(effect => {
     if (effect.type === 'writeSignal') return []
     const kind = effect.type === 'alarm.enter' ? 'alarm' : 'trip'
-    return [lifecycleIdFor(kind, rule.id, effect.id)]
+    return [processPlantIcLifecycleIdFor(kind, rule.id, effect.id)]
   })))
   for (const lifecycle of [...restoredSnapshot.alarms, ...restoredSnapshot.trips]) {
     if (!lifecycleIds.has(lifecycle.id)) throw new Error(`restored I&C snapshot references unknown lifecycle state: ${lifecycle.id}`)
@@ -261,7 +195,7 @@ export const createProcessPlantProtectionRunner = (config: {
   for (const rule of rules) {
     for (const effect of rule.effects) {
       if (effect.type === 'writeSignal') continue
-      const lifecycle = lifecycleFor(effect, rule, restoredLifecycles)
+      const lifecycle = mutableLifecycleFor(effect, rule, restoredLifecycles)
       lifecycles.set(lifecycle.id, lifecycle)
     }
   }
@@ -309,7 +243,7 @@ export const createProcessPlantProtectionRunner = (config: {
     readonly sourceProviderId: string
   }): ReadonlyArray<SimulationEvent> => {
     const kind = input.effect.type === 'alarm.enter' ? 'alarm' : 'trip'
-    const lifecycle = lifecycles.get(lifecycleIdFor(kind, input.rule.id, input.effect.id))
+    const lifecycle = lifecycles.get(processPlantIcLifecycleIdFor(kind, input.rule.id, input.effect.id))
     if (!lifecycle) throw new Error(`process plant I&C lifecycle state missing for effect: ${input.rule.id}/${input.effect.id}`)
     if (lifecycle.active && lifecycle.latched) return []
     if (lifecycle.active) return []
@@ -321,7 +255,8 @@ export const createProcessPlantProtectionRunner = (config: {
     lifecycle.lastActiveElapsedMs = input.elapsedMs
     lifecycle.lastTransitionElapsedMs = input.elapsedMs
     lifecycle.transitionCount += 1
-    return [eventForLifecycleTransition({
+    if (lifecycle.suppressed || lifecycle.shelved) return []
+    return [eventForProcessPlantIcLifecycleTransition({
       controlInstanceId: input.controlInstanceId,
       sourceProviderId: input.sourceProviderId,
       systemId: config.system.id,
@@ -342,7 +277,7 @@ export const createProcessPlantProtectionRunner = (config: {
     for (const effect of input.rule.effects) {
       if (effect.type === 'writeSignal') continue
       const kind = effect.type === 'alarm.enter' ? 'alarm' : 'trip'
-      const lifecycle = lifecycles.get(lifecycleIdFor(kind, input.rule.id, effect.id))
+      const lifecycle = lifecycles.get(processPlantIcLifecycleIdFor(kind, input.rule.id, effect.id))
       if (!lifecycle || !lifecycle.active) continue
       if (lifecycle.latched && !input.rule.resetWhenClear) {
         lifecycle.resettable = true
@@ -353,7 +288,7 @@ export const createProcessPlantProtectionRunner = (config: {
       lifecycle.lastClearedElapsedMs = input.elapsedMs
       lifecycle.lastTransitionElapsedMs = input.elapsedMs
       lifecycle.transitionCount += 1
-      events.push(eventForLifecycleTransition({
+      events.push(eventForProcessPlantIcLifecycleTransition({
         controlInstanceId: input.controlInstanceId,
         sourceProviderId: input.sourceProviderId,
         systemId: config.system.id,
@@ -442,10 +377,33 @@ export const createProcessPlantProtectionRunner = (config: {
       trips: [...lifecycles.values()].filter(lifecycle => lifecycle.kind === 'trip'),
       failures: [...failures],
     }),
-    acknowledge: (id: string, elapsedMs: number): void => {
+    catalog: (): ProcessPlantIcCatalog => catalogForProcessPlantIcRules(config.system, rules),
+    applyLifecycleAction: (id: string, action: ProcessPlantIcLifecycleAction, elapsedMs: number): void => {
       const lifecycle = lifecycles.get(id)
       if (!lifecycle) throw new Error(`unknown process plant I&C lifecycle id: ${id}`)
-      lifecycle.acknowledged = true
+      if (action === 'acknowledge') {
+        lifecycle.acknowledged = true
+      } else if (action === 'reset') {
+        const state = states.get(lifecycle.ruleId)
+        if (!state) throw new Error(`process plant I&C state missing for rule: ${lifecycle.ruleId}`)
+        lifecycle.active = false
+        lifecycle.latched = false
+        lifecycle.resettable = false
+        lifecycle.acknowledged = false
+        lifecycle.lastClearedElapsedMs = elapsedMs
+        state.active = false
+        state.latched = false
+        delete state.activeSinceElapsedMs
+      } else if (action === 'suppress') {
+        lifecycle.suppressed = true
+      } else if (action === 'unsuppress') {
+        lifecycle.suppressed = false
+      } else if (action === 'shelve') {
+        lifecycle.shelved = true
+        lifecycle.acknowledged = true
+      } else {
+        lifecycle.shelved = false
+      }
       lifecycle.lastTransitionElapsedMs = elapsedMs
     },
     evaluateWrite: evaluateWriteAgainstGates,

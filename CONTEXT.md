@@ -204,6 +204,10 @@ _Avoid_: arbitrary scripts, fleet-wide assumptions, or direct variable mutation
 Persistent operator/AI-facing state derived from a condition. Alarm events record transitions, while alarm state records current truth such as active, acknowledged, cleared, latched, severity, first-active time, and source rule.
 _Avoid_: representing alarms only as transient events, clearing alarms by acknowledgement alone, or duplicating alarm truth in UI-local state
 
+**I&C Lifecycle Action**:
+An explicit command-side action on alarm/trip lifecycle state: acknowledge, reset, suppress, unsuppress, shelve, or unshelve. Lifecycle actions affect operator/AI-facing lifecycle state only; they do not change process variables, execute procedures, or bypass I&C rule evaluation.
+_Avoid_: using lifecycle actions as procedure steps, physics commands, or hidden alarm-condition overrides
+
 **Permissive**:
 A condition that must be true before a command or automatic action is allowed to proceed. A failed permissive blocks the action and should explain why.
 _Avoid_: silent command rejection or burying command preconditions inside component behavior

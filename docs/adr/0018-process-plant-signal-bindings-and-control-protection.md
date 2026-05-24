@@ -142,17 +142,22 @@ Pack queries:
 - `process-plant.procedure-tags.validate`
 - `process-plant.control.validate`
 - `process-plant.ic.status`
+- `process-plant.ic.catalog`
 
 Pack commands:
 
 - `process-plant.control.write`
-- `process-plant.ic.acknowledge`
+- `process-plant.ic.lifecycle`
 
 `process-plant.conditions.evaluate` accepts one explicit `systemId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
 
 `process-plant.procedure-tags.validate` accepts extracted procedure tag appendix rows and resolves them against the same graph-owned signal bindings. It reports missing tags and metadata mismatches for optional `simPath`, `units`, and `equipment` fields. It does not parse procedure documents, decide procedure branches, or create a second simulator-binding table.
 
 `process-plant.control.validate` accepts the same payload shape as `process-plant.control.write` and dry-runs the same validation path: signal resolution, writable-signal check, type and hard-range validation, and permissive/interlock evaluation. It is read-only and exists so operator surfaces, scenario tooling, and AI agents can explain whether an action is currently allowed before issuing it.
+
+`process-plant.ic.catalog` exposes configured rule metadata for one explicit process system: rule class, mode label, watched signals, write effects, command gates, and annunciator metadata. It is an inspection surface, not an execution path.
+
+`process-plant.ic.lifecycle` accepts one explicit lifecycle action for one alarm/trip lifecycle id. Lifecycle actions affect acknowledgement, reset, suppression, and shelving state only; they do not alter process variables and do not execute procedure logic.
 
 `process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, resettable, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
 

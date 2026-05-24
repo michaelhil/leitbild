@@ -447,7 +447,7 @@ Implemented I&C provider config shape:
 }
 ```
 
-The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, structured annunciator metadata, and visible rule/effect failures. Acknowledgement is a command, `process-plant.ic.acknowledge`, with `systemId` and `lifecycleId`; it records operator/agent awareness and does not clear the alarm condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
+The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, structured annunciator metadata, and visible rule/effect failures. `process-plant.ic.catalog` exposes the configured rules, watched signals, effects, command gates, mode labels, and annunciator metadata so control-room surfaces and AI agents can inspect what I&C behavior is installed. Lifecycle updates use the command `process-plant.ic.lifecycle`, with `systemId`, `lifecycleId`, and an `action` of `acknowledge`, `reset`, `suppress`, `unsuppress`, `shelve`, or `unshelve`; these actions update lifecycle state only and do not clear the underlying process condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
 
 Control-room surfaces, scenario tooling, and AI agents can dry-run an actuator write through `process-plant.control.validate`. It accepts the same payload shape as `process-plant.control.write`, resolves the same signal reference, checks writability, validates type and hard range, and evaluates the same permissive/interlock gates. It returns whether the write would be accepted at the current runtime snapshot and does not mutate plant state.
 
@@ -791,11 +791,12 @@ Implemented queries:
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
 - `process-plant.ic.status`
+- `process-plant.ic.catalog`
 
 Implemented commands:
 
 - `process-plant.control.write`
-- `process-plant.ic.acknowledge`
+- `process-plant.ic.lifecycle`
 
 Candidate future commands:
 
