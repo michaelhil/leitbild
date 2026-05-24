@@ -18,6 +18,22 @@ export type ProcessPlantIcComparisonOperator = z.infer<typeof processPlantIcComp
 export const processPlantIcSeveritySchema = z.enum(['info', 'notice', 'warning', 'critical'])
 export type ProcessPlantIcSeverity = z.infer<typeof processPlantIcSeveritySchema>
 
+export const processPlantIcAnnunciatorPrioritySchema = z.enum(['low', 'medium', 'high', 'urgent'])
+export type ProcessPlantIcAnnunciatorPriority = z.infer<typeof processPlantIcAnnunciatorPrioritySchema>
+
+export const processPlantIcAnnunciatorRoleSchema = z.enum(['symptom', 'cause', 'automaticAction', 'status'])
+export type ProcessPlantIcAnnunciatorRole = z.infer<typeof processPlantIcAnnunciatorRoleSchema>
+
+export const processPlantIcAnnunciatorSchema = z.object({
+  system: z.string().min(1).optional(),
+  equipmentId: idSchema.optional(),
+  group: z.string().min(1).optional(),
+  firstOutGroup: z.string().min(1).optional(),
+  priority: processPlantIcAnnunciatorPrioritySchema.default('medium'),
+  role: processPlantIcAnnunciatorRoleSchema.default('symptom'),
+}).strict()
+export type ProcessPlantIcAnnunciator = z.infer<typeof processPlantIcAnnunciatorSchema>
+
 export type ProcessPlantIcCondition =
   | {
       readonly type: 'comparison'
@@ -84,6 +100,7 @@ export type ProcessPlantIcEffect =
       readonly title: string
       readonly message: string
       readonly severity?: ProcessPlantIcSeverity
+      readonly annunciator?: ProcessPlantIcAnnunciator | undefined
     }
   | {
       readonly type: 'trip.enter'
@@ -91,6 +108,7 @@ export type ProcessPlantIcEffect =
       readonly title: string
       readonly message: string
       readonly severity?: ProcessPlantIcSeverity
+      readonly annunciator?: ProcessPlantIcAnnunciator | undefined
     }
   | {
       readonly type: 'writeSignal'
@@ -111,6 +129,7 @@ export const processPlantIcEffectSchema = z.discriminatedUnion('type', [
     title: z.string().min(1),
     message: z.string().min(1),
     severity: processPlantIcSeveritySchema.default('warning'),
+    annunciator: processPlantIcAnnunciatorSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('trip.enter'),
@@ -118,6 +137,7 @@ export const processPlantIcEffectSchema = z.discriminatedUnion('type', [
     title: z.string().min(1),
     message: z.string().min(1),
     severity: processPlantIcSeveritySchema.default('critical'),
+    annunciator: processPlantIcAnnunciatorSchema.optional(),
   }).strict(),
   z.object({
     type: z.literal('writeSignal'),
@@ -137,6 +157,8 @@ export const processPlantIcRuleSchema = z.object({
   label: z.string().min(1).optional(),
   enabled: z.boolean().default(true),
   ruleClass: processPlantIcRuleClassSchema.default('protection'),
+  modeLabel: z.string().min(1).optional(),
+  modeCondition: processPlantIcConditionSchema.optional(),
   condition: processPlantIcConditionSchema,
   delayMs: z.number().finite().nonnegative().default(0),
   latch: z.boolean().default(true),
@@ -170,6 +192,7 @@ export const processPlantIcLifecycleStateSchema = z.object({
   title: z.string().min(1),
   message: z.string().min(1),
   severity: processPlantIcSeveritySchema,
+  annunciator: processPlantIcAnnunciatorSchema.optional(),
   active: z.boolean(),
   acknowledged: z.boolean(),
   latched: z.boolean(),

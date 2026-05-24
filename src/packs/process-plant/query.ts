@@ -2,6 +2,8 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../core/model/index.ts'
 import { idSchema } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import { processPlantControlWritePayloadSchema } from './commands.ts'
+import { validateProcessPlantControlWrite } from './control-write-validation.ts'
 import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
 import type { CompiledProcessPlantSystem } from './process-systems.ts'
@@ -295,6 +297,16 @@ export const answerProcessPlantQuery = (config: {
       const payload = procedureTagValidateQuerySchema.parse(config.request.payload)
       const system = requireSystem(config.systems, payload.systemId)
       return success(config.request, validateProcedureTags(system, payload), config.at)
+    }
+    if (config.request.kind === 'process-plant.control.validate') {
+      const payload = processPlantControlWritePayloadSchema.parse(config.request.payload)
+      const system = requireSystem(config.systems, payload.systemId)
+      return success(config.request, validateProcessPlantControlWrite({
+        system: system.system,
+        runtime: system.runtime,
+        ...(system.protection === undefined ? {} : { protection: system.protection }),
+        payload,
+      }), config.at)
     }
     if (config.request.kind === 'process-plant.runtime.status') {
       return success(config.request, {

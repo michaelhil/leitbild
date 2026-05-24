@@ -513,6 +513,171 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
+  test('preserves structured annunciator metadata in I&C lifecycle state', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'annunciator-metadata-test',
+                ruleClass: 'alarm',
+                latch: false,
+                resetWhenClear: true,
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-energized',
+                  title: 'Heater energized',
+                  message: 'Pressurizer heaters are energized.',
+                  severity: 'notice',
+                  annunciator: {
+                    system: 'reactor coolant system',
+                    equipmentId: 'pressurizer',
+                    group: 'pressurizer',
+                    firstOutGroup: 'pressurizer-pressure',
+                    priority: 'medium',
+                    role: 'status',
+                  },
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: {
+        readonly alarms: ReadonlyArray<{
+          readonly id: string
+          readonly annunciator?: { readonly system?: string; readonly equipmentId?: string; readonly priority?: string; readonly role?: string }
+        }>
+      }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:annunciator-metadata-test:heater-energized',
+      annunciator: expect.objectContaining({
+        system: 'reactor coolant system',
+        equipmentId: 'pressurizer',
+        priority: 'medium',
+        role: 'status',
+      }),
+    }))
+
+    await connection.close()
+  })
+
+  test('mode conditions qualify I&C rules without a separate mode store', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'mode-qualified-alarm-test',
+                ruleClass: 'alarm',
+                latch: false,
+                resetWhenClear: true,
+                modeLabel: 'impossible test mode',
+                modeCondition: {
+                  type: 'comparison',
+                  signal: { path: 'core.powerMw' },
+                  operator: '<',
+                  value: 0,
+                },
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-high',
+                  title: 'Heater high',
+                  message: 'Heater is energized.',
+                  severity: 'notice',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean }> }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:mode-qualified-alarm-test:heater-high',
+      active: false,
+    }))
+
+    await connection.close()
+  })
+
+  test('validates control writes through the query surface without mutating state', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const accepted = await connection.query(query('process-plant.control.validate', {
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 2,
+    }))
+    expect(accepted.ok).toBe(true)
+    if (!accepted.ok) throw new Error(accepted.reason)
+    expect((accepted.result as { readonly accepted: boolean; readonly currentValue: unknown }).accepted).toBe(true)
+    expect((accepted.result as { readonly accepted: boolean; readonly currentValue: unknown }).currentValue).toBe(0)
+
+    const rejected = await connection.query(query('process-plant.control.validate', {
+      systemId: 'plant',
+      path: 'core.powerMw',
+      value: 1,
+    }))
+    expect(rejected.ok).toBe(true)
+    if (!rejected.ok) throw new Error(rejected.reason)
+    expect((rejected.result as { readonly accepted: boolean; readonly reason?: string }).accepted).toBe(false)
+    expect((rejected.result as { readonly accepted: boolean; readonly reason?: string }).reason).toContain('not writable')
+
+    await connection.close()
+  })
+
   test('evaluates procedure-facing I&C conditions by tag id', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
@@ -865,11 +1030,22 @@ describe('process plant simulation provider', () => {
     expect(status.ok).toBe(true)
     if (!status.ok) throw new Error(status.reason)
     const alarms = (status.result as {
-      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean; readonly title: string }> }
+      readonly ic: {
+        readonly alarms: ReadonlyArray<{
+          readonly id: string
+          readonly active: boolean
+          readonly title: string
+          readonly annunciator?: { readonly equipmentId?: string; readonly priority?: string }
+        }>
+      }
     }).ic.alarms
     expect(alarms).toContainEqual(expect.objectContaining({
       id: 'alarm:sg-a-tube-leak-indication:tube-leak',
       active: true,
+      annunciator: expect.objectContaining({
+        equipmentId: 'sgA',
+        priority: 'high',
+      }),
     }))
     expect(alarms.some(entry => entry.title.toLowerCase().includes('procedure'))).toBe(false)
 

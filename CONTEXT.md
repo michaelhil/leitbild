@@ -180,6 +180,14 @@ _Avoid_: arbitrary expression languages, generated code, mid-solver mutation, or
 The pack-owned instrumentation-and-control layer that sits above continuous physics. It reads the authoritative variable table through signal bindings, evaluates normal controllers, protection functions, alarms, permissives, and interlocks, and emits validated actions. It is not a second solver and not an emergency procedure engine.
 _Avoid_: hiding physics inside alarms, embedding procedure logic inside process-plant, or letting I&C code mutate variables outside the validated write path
 
+**Annunciator Metadata**:
+Structured metadata attached to alarm/trip lifecycle state: system, equipment, group, first-out group, priority, and role. It helps UI surfaces and AI agents group and explain I&C state without parsing human alarm text.
+_Avoid_: prose-only grouping, UI-local alarm catalogs, or duplicating alarm truth outside the pack lifecycle state
+
+**Mode Condition**:
+An optional I&C rule qualifier expressed with the same typed condition language as the main rule condition. It lets a rule apply only in a process state such as power operation or post-trip state without creating a separate global mode store.
+_Avoid_: hidden plant-mode variables, fleet-wide mode assumptions, or rule branches implemented as arbitrary scripts
+
 **Instrumentation Signal**:
 A process signal used as an indication, control input, alarm input, procedure input, or AI-visible observation. Signals resolve to variables; they do not own state separate from the variable table.
 _Avoid_: separate sensor stores, duplicate tag mappings, or treating tags as globally unique

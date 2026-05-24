@@ -88,7 +88,7 @@ The substrate is layered:
 1. **Instrumentation signals**: resolved process variables used as indications, controller inputs, alarm inputs, procedure inputs, and AI-visible observations.
 2. **Normal controllers**: routine automatic control behavior such as level, pressure, flow, pump speed, valve position, turbine/load, or heater/spray control. Controllers may request writes only through the validated queued-write path.
 3. **Protection functions**: safety-like automatic behavior such as reactor trip, isolation, relief, engineered safeguard actuation, or equipment trip. Protection functions may latch and may have reset requirements, but they still use the same signal reference and write machinery.
-4. **Alarm/annunciator state**: persistent operator/AI-facing current state plus transition events. Alarms can be active, acknowledged, cleared, latched, resettable, or suppressed. Acknowledgement records that a human or agent has seen the alarm; it does not by itself make the condition false.
+4. **Alarm/annunciator state**: persistent operator/AI-facing current state plus transition events. Alarms can be active, acknowledged, cleared, latched, resettable, or suppressed. Structured annunciator metadata carries stable system, equipment, group, priority, role, and first-out grouping so UI/AI consumers do not infer those semantics from message text. Acknowledgement records that a human or agent has seen the alarm; it does not by itself make the condition false.
 5. **Permissives and interlocks**: command/action constraints. A permissive must be true before an action may proceed. An interlock prevents, forces, or constrains an equipment state. Both are I&C semantics above physics, not hidden component behavior.
 6. **Validated actions**: constrained effects such as alarm state transitions, trip state transitions, and queued writes to process signals.
 
@@ -98,6 +98,7 @@ The implemented V1 I&C rule language supports only typed primitives:
 
 - variable comparison/equality
 - `all`, `any`, `not`, and voting conditions
+- optional `modeCondition` and `modeLabel` for state-qualified rules. This deliberately reuses the same condition language rather than adding a global mode store.
 - delay and latch behavior
 - reset conditions
 - effects: `alarm.enter`, `trip.enter`, and `writeSignal`
@@ -139,6 +140,7 @@ Pack queries:
 - `process-plant.signals.search`
 - `process-plant.conditions.evaluate`
 - `process-plant.procedure-tags.validate`
+- `process-plant.control.validate`
 - `process-plant.ic.status`
 
 Pack commands:
@@ -149,6 +151,8 @@ Pack commands:
 `process-plant.conditions.evaluate` accepts one explicit `systemId` and a typed condition. It returns `matches` plus the full list of signal reads used during evaluation, including compound condition children. This makes external procedure/AI reasoning inspectable without letting process-plant execute the procedure itself.
 
 `process-plant.procedure-tags.validate` accepts extracted procedure tag appendix rows and resolves them against the same graph-owned signal bindings. It reports missing tags and metadata mismatches for optional `simPath`, `units`, and `equipment` fields. It does not parse procedure documents, decide procedure branches, or create a second simulator-binding table.
+
+`process-plant.control.validate` accepts the same payload shape as `process-plant.control.write` and dry-runs the same validation path: signal resolution, writable-signal check, type and hard-range validation, and permissive/interlock evaluation. It is read-only and exists so operator surfaces, scenario tooling, and AI agents can explain whether an action is currently allowed before issuing it.
 
 `process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, resettable, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
 

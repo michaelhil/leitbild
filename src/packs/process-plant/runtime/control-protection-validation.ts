@@ -89,6 +89,7 @@ export const assertProcessPlantIcRulesValid = (
 ): void => {
   for (const rule of rules) {
     assertRuleShapeValid(rule)
+    if (rule.modeCondition !== undefined) assertConditionSignalsValid(system, rule, rule.modeCondition)
     assertConditionSignalsValid(system, rule, rule.condition)
     if (rule.resetCondition !== undefined) assertConditionSignalsValid(system, rule, rule.resetCondition)
     for (const gate of rule.commandGates) {

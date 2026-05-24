@@ -360,7 +360,7 @@ The substrate has six semantic layers:
 - **Instrumentation signals**: process variables made visible through graph-owned signal bindings. Signals are the common read surface for displays, alarms, controllers, procedures, AI agents, and control-room surfaces.
 - **Normal controllers**: routine automation such as pressure control, level control, flow control, pump speed control, valve positioning, heater/spray control, and turbine/load control. Controllers are observable and can only request writes through the runtime write queue.
 - **Protection functions**: safety-like automatic logic such as trip, isolation, relief, safeguard actuation, or equipment trip. Protection functions may latch and may require explicit reset conditions.
-- **Alarm/annunciator state**: persistent current state plus transition events. Alarm state answers "what alarms are active, acknowledged, cleared, latched, suppressed, or resettable right now?" Transition events answer "what changed?"
+- **Alarm/annunciator state**: persistent current state plus transition events. Alarm state answers "what alarms are active, acknowledged, cleared, latched, suppressed, or resettable right now?" Annunciator metadata gives UI/AI consumers stable grouping, equipment, priority, role, and first-out handles without parsing alarm prose. Transition events answer "what changed?"
 - **Permissives and interlocks**: command/action constraints. A permissive must be true before an action can proceed. An interlock prevents, forces, or constrains an equipment state.
 - **Validated actions**: alarm state transitions, trip state transitions, and queued writes to process signals.
 
@@ -377,6 +377,7 @@ The rule language supports:
 - numeric/boolean comparison against a signal value
 - `all`, `any`, and `not`
 - simple voting
+- optional `modeCondition`, which qualifies a rule against process state such as power operation, shutdown, post-trip state, or equipment availability without creating a separate mode store
 - delay before actuation
 - latching, reset-on-clear behavior, and explicit reset conditions
 
@@ -415,14 +416,29 @@ Implemented I&C provider config shape:
             "operator": ">",
             "value": 16.2
           },
+          "modeLabel": "power operation",
+          "modeCondition": {
+            "type": "comparison",
+            "signal": { "path": "core.powerMw" },
+            "operator": ">",
+            "value": 100
+          },
           "delayMs": 1000,
           "latch": true,
           "effects": [{
-            "type": "alarm.enter",
+            "type": "trip.enter",
             "id": "pzr-high-pressure-alarm",
             "title": "Pressurizer pressure high",
             "message": "Pressurizer pressure is above the high alarm threshold.",
-            "severity": "warning"
+            "severity": "critical",
+            "annunciator": {
+              "system": "reactor coolant system",
+              "equipmentId": "pressurizer",
+              "group": "pressurizer",
+              "firstOutGroup": "pressurizer-pressure",
+              "priority": "urgent",
+              "role": "automaticAction"
+            }
           }]
         }]
       }
@@ -431,7 +447,9 @@ Implemented I&C provider config shape:
 }
 ```
 
-The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, and visible rule/effect failures. Acknowledgement is a command, `process-plant.ic.acknowledge`, with `systemId` and `lifecycleId`; it records operator/agent awareness and does not clear the alarm condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
+The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, structured annunciator metadata, and visible rule/effect failures. Acknowledgement is a command, `process-plant.ic.acknowledge`, with `systemId` and `lifecycleId`; it records operator/agent awareness and does not clear the alarm condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
+
+Control-room surfaces, scenario tooling, and AI agents can dry-run an actuator write through `process-plant.control.validate`. It accepts the same payload shape as `process-plant.control.write`, resolves the same signal reference, checks writability, validates type and hard range, and evaluates the same permissive/interlock gates. It returns whether the write would be accepted at the current runtime snapshot and does not mutate plant state.
 
 Procedure runners can also validate a procedure tag appendix through `process-plant.procedure-tags.validate`. The query accepts extracted tag records such as `{ id, simPath, units, equipment }`, resolves each tag against the compiled graph-owned signal bindings for one `systemId`, and reports `resolved`, `resolved-with-warnings`, or `missing`. It is deliberately read-only compatibility checking for external procedure documents; it does not parse procmd, execute procedure steps, own branch state, or create a second simulator-binding catalog.
 
@@ -804,6 +822,8 @@ The current implementation covers graph/spec validation, a headless fixed-step r
 Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
 Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It is implemented as a small catalog assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
+
+Reusable controller behavior in the reference set is expressed through authoring helpers that expand into ordinary I&C rules. For example, the pressurizer pressure controller is generated as low-demand, high-demand, and normal-band rules that write heaters and spray through the same queued write path. The runtime still sees only the typed rule language; there is no separate controller interpreter.
 
 `icRef` is not a procedure package. It must not encode emergency operating procedure steps, branching, diagnosis, or operator instructions. It only represents plant automation and annunciation: what automatic logic observes, what it actuates, and what alarm/trip state it exposes. External humans, control-room surfaces, procedure runners, and AI agents still own procedure execution by querying signal/condition truth and issuing explicit commands.
 

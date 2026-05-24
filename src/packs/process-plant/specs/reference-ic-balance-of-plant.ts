@@ -1,5 +1,21 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, any, comparison, rule } from './reference-ic-helpers.ts'
+import { alarm, annunciator, any, comparison, rule } from './reference-ic-helpers.ts'
+
+const feedwaterAlarm = annunciator({
+  system: 'feedwater',
+  equipmentId: 'mainFeedwaterHeader',
+  group: 'feedwater',
+  priority: 'high',
+  role: 'symptom',
+})
+
+const turbineAlarm = annunciator({
+  system: 'balance of plant',
+  equipmentId: 'turbine',
+  group: 'turbine-generator',
+  priority: 'medium',
+  role: 'status',
+})
 
 export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => [
   rule({
@@ -18,6 +34,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Main feedwater pump unavailable',
       message: 'At least one main feedwater pump is not running.',
       severity: 'warning',
+      annunciator: feedwaterAlarm,
     })],
   }),
   rule({
@@ -33,6 +50,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Turbine load low',
       message: 'Turbine load demand is below the reference low-load threshold.',
       severity: 'notice',
+      annunciator: turbineAlarm,
     })],
   }),
   rule({
@@ -48,6 +66,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Generator output low',
       message: 'Generator electrical output is below the reference low-output threshold.',
       severity: 'notice',
+      annunciator: turbineAlarm,
     })],
   }),
   rule({
@@ -63,6 +82,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Condenser backpressure high',
       message: 'Condenser backpressure is above the reference operating threshold.',
       severity: 'warning',
+      annunciator: annunciator({ ...turbineAlarm, equipmentId: 'condenser', priority: 'high', role: 'symptom' }),
     })],
   }),
   rule({
@@ -78,6 +98,7 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       title: 'Main steam safety valve open',
       message: 'Main steam safety valve effective position is above the reference open threshold.',
       severity: 'warning',
+      annunciator: annunciator({ system: 'main steam', equipmentId: 'mainSteamSafetyValve', group: 'main-steam', priority: 'high', role: 'status' }),
     })],
   }),
 ]

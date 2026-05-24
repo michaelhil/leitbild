@@ -48,8 +48,8 @@ import {
   variablePathSchema,
   variableDomainSchema,
 } from '../graph/index.ts'
+import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
 import { answerProcessPlantQuery, type ProcessPlantSystemRuntime } from '../query.ts'
-import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 
@@ -356,16 +356,16 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const system = systems.get(payload.data.systemId)
         if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
         try {
-          const gate = system.protection?.evaluateWrite({
+          const validation = validateProcessPlantControlWrite({
+            system: system.system,
             runtime: system.runtime,
-            signal: payload.data,
-            elapsedMs: system.runtime.elapsedMs(),
+            ...(system.protection === undefined ? {} : { protection: system.protection }),
+            payload: payload.data,
           })
-          if (gate && !gate.ok) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: gate.reason }
-          const binding = resolveProcessPlantSignalBinding(system.system.graph, payload.data)
+          if (!validation.accepted) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: validation.reason }
           system.runtime.writeCommand({
             type: 'setVariable',
-            path: binding.path,
+            path: validation.targetPath,
             value: payload.data.value,
           })
           await saveProviderState(config, systems)

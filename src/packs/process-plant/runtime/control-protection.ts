@@ -77,6 +77,9 @@ const lifecycleFor = (
     title: effect.title,
     message: effect.message,
     severity: effect.severity ?? (kind === 'trip' ? 'critical' : 'warning'),
+    ...(effect.annunciator === undefined
+      ? snapshot?.annunciator === undefined ? {} : { annunciator: snapshot.annunciator }
+      : { annunciator: effect.annunciator }),
     active: snapshot?.active ?? false,
     acknowledged: snapshot?.acknowledged ?? false,
     latched: snapshot?.latched ?? false,
@@ -116,6 +119,7 @@ const eventForLifecycleTransition = (config: {
       lifecycleId: config.lifecycle.id,
       title: config.lifecycle.title,
       message: config.lifecycle.message,
+      ...(config.lifecycle.annunciator === undefined ? {} : { annunciator: config.lifecycle.annunciator }),
       elapsedMs: config.elapsedMs,
     },
   }
@@ -203,6 +207,26 @@ const shouldResetLatchedState = (config: {
     system: config.system,
     runtime: config.runtime,
     condition: config.rule.resetCondition as ProcessPlantIcCondition,
+  }).matches
+}
+
+const evaluateRuleCondition = (config: {
+  readonly system: CompiledProcessPlantSystem
+  readonly runtime: ProcessPlantRuntime
+  readonly rule: ProcessPlantIcRule
+}): boolean => {
+  if (config.rule.modeCondition !== undefined) {
+    const modeMatches = evaluateProcessPlantIcCondition({
+      system: config.system,
+      runtime: config.runtime,
+      condition: config.rule.modeCondition,
+    }).matches
+    if (!modeMatches) return false
+  }
+  return evaluateProcessPlantIcCondition({
+    system: config.system,
+    runtime: config.runtime,
+    condition: config.rule.condition,
   }).matches
 }
 
@@ -351,7 +375,7 @@ export const createProcessPlantProtectionRunner = (config: {
         if (!rule.enabled) continue
         let matches = false
         try {
-          matches = evaluateProcessPlantIcCondition({ system: config.system, runtime, condition: rule.condition }).matches
+          matches = evaluateRuleCondition({ system: config.system, runtime, rule })
         } catch (error) {
           failures.push(failureFor({ ruleId: rule.id, elapsedMs, error }))
           continue
