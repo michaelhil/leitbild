@@ -75,6 +75,8 @@ export const rule = (config: {
   readonly modeCondition?: ProcessPlantIcCondition
   readonly condition: ProcessPlantIcCondition
   readonly delayMs?: number
+  readonly clearCondition?: ProcessPlantIcCondition
+  readonly clearDelayMs?: number
   readonly latch?: boolean
   readonly resetWhenClear?: boolean
   readonly effects: ReadonlyArray<ReferenceIcEffect>
@@ -87,6 +89,8 @@ export const rule = (config: {
   ...(config.modeCondition === undefined ? {} : { modeCondition: config.modeCondition }),
   condition: config.condition,
   delayMs: config.delayMs ?? 0,
+  ...(config.clearCondition === undefined ? {} : { clearCondition: config.clearCondition }),
+  clearDelayMs: config.clearDelayMs ?? 0,
   latch: config.latch ?? true,
   resetWhenClear: config.resetWhenClear ?? false,
   effects: [...config.effects],

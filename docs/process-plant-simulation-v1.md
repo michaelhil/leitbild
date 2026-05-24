@@ -379,6 +379,7 @@ The rule language supports:
 - simple voting
 - optional `modeCondition`, which qualifies a rule against process state such as power operation, shutdown, post-trip state, or equipment availability without creating a separate mode store
 - delay before actuation
+- optional explicit `clearCondition` and `clearDelayMs` for alarm hysteresis and chatter control
 - latching, reset-on-clear behavior, and explicit reset conditions
 
 Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or provider config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
@@ -424,6 +425,13 @@ Implemented I&C provider config shape:
             "value": 100
           },
           "delayMs": 1000,
+          "clearCondition": {
+            "type": "comparison",
+            "signal": { "tagId": "PT-455" },
+            "operator": "<",
+            "value": 15.9
+          },
+          "clearDelayMs": 1000,
           "latch": true,
           "effects": [{
             "type": "trip.enter",
@@ -447,7 +455,11 @@ Implemented I&C provider config shape:
 }
 ```
 
-The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, structured annunciator metadata, and visible rule/effect failures. `process-plant.ic.catalog` exposes the configured rules, watched signals, effects, command gates, mode labels, and annunciator metadata so control-room surfaces and AI agents can inspect what I&C behavior is installed. Lifecycle updates use the command `process-plant.ic.lifecycle`, with `systemId`, `lifecycleId`, and an `action` of `acknowledge`, `reset`, `suppress`, `unsuppress`, `shelve`, or `unshelve`; these actions update lifecycle state only and do not clear the underlying process condition. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
+The current lifecycle state is exposed by `process-plant.ic.status`. It returns rule snapshots, persistent alarm states, persistent trip states, structured annunciator metadata, and visible rule/effect failures. Alarm and trip lifecycles have an explicit `phase`: `normal`, `activeUnacknowledged`, `activeAcknowledged`, `clearedUnacknowledged`, `clearedAcknowledged`, `suppressed`, `shelved`, or `outOfService`. Lifecycle state also records occurrence, clear, acknowledgement, suppression, shelving, first-out, actor/client provenance, and transition timestamps.
+
+`process-plant.ic.catalog` exposes the configured rules, watched signals, effects, command gates, mode labels, and annunciator metadata so control-room surfaces and AI agents can inspect what I&C behavior is installed. Lifecycle updates use the command `process-plant.ic.lifecycle`, with `systemId`, `lifecycleId`, an `action` of `acknowledge`, `reset`, `suppress`, `unsuppress`, `shelve`, or `unshelve`, and optional `reason` and `shelveDurationMs`. These actions update lifecycle state only and do not clear the underlying process condition.
+
+Alarm-specific read surfaces are available through `process-plant.alarms.status`, `process-plant.alarms.summary`, and `process-plant.alarms.history`. They expose current alarm/trip state, grouped counts by severity/kind/role/group, first-out entries, and bounded lifecycle transition history. Lifecycle transitions also emit `interaction.signal` events with a `process-plant.alarm.*` or `process-plant.trip.*` signal type so live clients can update without polling. Procedure runners can ask condition truth through `process-plant.conditions.evaluate`, which uses the same typed condition schema as I&C rules and returns all signal reads used during evaluation.
 
 Control-room surfaces, scenario tooling, and AI agents can dry-run an actuator write through `process-plant.control.validate`. It accepts the same payload shape as `process-plant.control.write`, resolves the same signal reference, checks writability, validates type and hard range, and evaluates the same permissive/interlock gates. It returns whether the write would be accepted at the current runtime snapshot and does not mutate plant state.
 
@@ -792,6 +804,9 @@ Implemented queries:
 - `process-plant.trends.read`
 - `process-plant.ic.status`
 - `process-plant.ic.catalog`
+- `process-plant.alarms.status`
+- `process-plant.alarms.summary`
+- `process-plant.alarms.history`
 
 Implemented commands:
 

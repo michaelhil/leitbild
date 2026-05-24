@@ -93,6 +93,7 @@ export const catalogForProcessPlantIcRules = (
     const watchedSignals: ProcessPlantSignalReference[] = []
     collectConditionSignals(rule.condition, watchedSignals)
     if (rule.modeCondition !== undefined) collectConditionSignals(rule.modeCondition, watchedSignals)
+    if (rule.clearCondition !== undefined) collectConditionSignals(rule.clearCondition, watchedSignals)
     if (rule.resetCondition !== undefined) collectConditionSignals(rule.resetCondition, watchedSignals)
     for (const effect of rule.effects) {
       if (effect.type === 'writeSignal') watchedSignals.push(effect.signal)

@@ -34,6 +34,18 @@ export const processPlantIcAnnunciatorSchema = z.object({
 }).strict()
 export type ProcessPlantIcAnnunciator = z.infer<typeof processPlantIcAnnunciatorSchema>
 
+export const processPlantIcLifecyclePhaseSchema = z.enum([
+  'normal',
+  'activeUnacknowledged',
+  'activeAcknowledged',
+  'clearedUnacknowledged',
+  'clearedAcknowledged',
+  'suppressed',
+  'shelved',
+  'outOfService',
+])
+export type ProcessPlantIcLifecyclePhase = z.infer<typeof processPlantIcLifecyclePhaseSchema>
+
 export type ProcessPlantIcCondition =
   | {
       readonly type: 'comparison'
@@ -161,6 +173,8 @@ export const processPlantIcRuleSchema = z.object({
   modeCondition: processPlantIcConditionSchema.optional(),
   condition: processPlantIcConditionSchema,
   delayMs: z.number().finite().nonnegative().default(0),
+  clearCondition: processPlantIcConditionSchema.optional(),
+  clearDelayMs: z.number().finite().nonnegative().default(0),
   latch: z.boolean().default(true),
   resetWhenClear: z.boolean().default(false),
   resetCondition: processPlantIcConditionSchema.optional(),
@@ -179,6 +193,7 @@ export const processPlantIcRuleSnapshotSchema = z.object({
   active: z.boolean(),
   latched: z.boolean(),
   activeSinceElapsedMs: z.number().finite().nonnegative().optional(),
+  clearSinceElapsedMs: z.number().finite().nonnegative().optional(),
   lastTransitionElapsedMs: z.number().finite().nonnegative().optional(),
   firedCount: z.number().int().nonnegative(),
 })
@@ -193,17 +208,33 @@ export const processPlantIcLifecycleStateSchema = z.object({
   message: z.string().min(1),
   severity: processPlantIcSeveritySchema,
   annunciator: processPlantIcAnnunciatorSchema.optional(),
+  phase: processPlantIcLifecyclePhaseSchema.default('normal'),
   active: z.boolean(),
   acknowledged: z.boolean(),
   latched: z.boolean(),
   suppressed: z.boolean(),
   shelved: z.boolean().default(false),
+  outOfService: z.boolean().default(false),
   resettable: z.boolean(),
+  firstOut: z.boolean().default(false),
+  firstOutRank: z.number().int().positive().optional(),
+  firstOutElapsedMs: z.number().finite().nonnegative().optional(),
   firstActiveElapsedMs: z.number().finite().nonnegative().optional(),
   lastActiveElapsedMs: z.number().finite().nonnegative().optional(),
   lastClearedElapsedMs: z.number().finite().nonnegative().optional(),
+  lastAcknowledgedElapsedMs: z.number().finite().nonnegative().optional(),
+  lastResetElapsedMs: z.number().finite().nonnegative().optional(),
+  lastSuppressedElapsedMs: z.number().finite().nonnegative().optional(),
+  lastShelvedElapsedMs: z.number().finite().nonnegative().optional(),
+  shelvedUntilElapsedMs: z.number().finite().nonnegative().optional(),
   lastTransitionElapsedMs: z.number().finite().nonnegative().optional(),
+  lastActorId: idSchema.optional(),
+  lastClientId: idSchema.optional(),
+  lastReason: z.string().min(1).optional(),
   transitionCount: z.number().int().nonnegative(),
+  occurrenceCount: z.number().int().nonnegative().default(0),
+  clearCount: z.number().int().nonnegative().default(0),
+  acknowledgeCount: z.number().int().nonnegative().default(0),
 })
 export type ProcessPlantIcLifecycleState = z.infer<typeof processPlantIcLifecycleStateSchema>
 
@@ -225,11 +256,43 @@ export const processPlantIcFailureSchema = z.object({
 })
 export type ProcessPlantIcFailure = z.infer<typeof processPlantIcFailureSchema>
 
+export const processPlantIcLifecycleTransitionSchema = z.enum([
+  'entered',
+  'cleared',
+  'acknowledged',
+  'reset',
+  'suppressed',
+  'unsuppressed',
+  'shelved',
+  'unshelved',
+  'shelveExpired',
+  'firstOut',
+])
+export type ProcessPlantIcLifecycleTransition = z.infer<typeof processPlantIcLifecycleTransitionSchema>
+
+export const processPlantIcLifecycleHistoryEntrySchema = z.object({
+  id: idSchema,
+  lifecycleId: idSchema,
+  ruleId: idSchema,
+  effectId: idSchema,
+  kind: z.enum(['alarm', 'trip']),
+  transition: processPlantIcLifecycleTransitionSchema,
+  elapsedMs: z.number().finite().nonnegative(),
+  title: z.string().min(1),
+  severity: processPlantIcSeveritySchema,
+  phase: processPlantIcLifecyclePhaseSchema,
+  actorId: idSchema.optional(),
+  clientId: idSchema.optional(),
+  reason: z.string().min(1).optional(),
+})
+export type ProcessPlantIcLifecycleHistoryEntry = z.infer<typeof processPlantIcLifecycleHistoryEntrySchema>
+
 export const processPlantIcSnapshotSchema = z.object({
   rules: z.array(processPlantIcRuleSnapshotSchema),
   alarms: z.array(processPlantIcLifecycleStateSchema),
   trips: z.array(processPlantIcLifecycleStateSchema),
   failures: z.array(processPlantIcFailureSchema),
+  history: z.array(processPlantIcLifecycleHistoryEntrySchema).default([]),
 })
 export type ProcessPlantIcSnapshot = z.infer<typeof processPlantIcSnapshotSchema>
 

@@ -811,6 +811,44 @@ describe('process plant simulation provider', () => {
     })).rejects.toThrow('alarm rule alarm-with-write-test must only define alarm.enter effects')
   })
 
+  test('rejects invalid I&C clear conditions before runtime starts', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'invalid-clear-condition-test',
+                ruleClass: 'alarm',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                clearCondition: {
+                  type: 'comparison',
+                  signal: { tagId: 'RCP-A-RUN' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-high',
+                  title: 'Heater high',
+                  message: 'Heater alarm.',
+                  severity: 'warning',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('uses numeric operator > with non-numeric signal rcpA.running')
+  })
+
   test('validates procedure tag appendices against graph-owned process signal bindings', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
@@ -968,6 +1006,254 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
+  test('emits lifecycle action events and records operator provenance in alarm history', async () => {
+    const received: unknown[] = []
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'alarm-history-provenance-test',
+                ruleClass: 'alarm',
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 0,
+                },
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-alarm',
+                  title: 'Heater alarm',
+                  message: 'Pressurizer heater is energized.',
+                  severity: 'warning',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+    connection.subscribe(emission => received.push(...emission.events))
+
+    const heater = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'PZR-HTR',
+      value: 1,
+    }))
+    expect(heater.ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const acknowledged = await connection.sendCommand({
+      ...lifecycleCommand({
+        systemId: 'plant',
+        lifecycleId: 'alarm:alarm-history-provenance-test:heater-alarm',
+        action: 'acknowledge',
+        reason: 'operator verified heater alarm',
+      }),
+      clientId: 'client:alarm-board' as never,
+    })
+    expect(acknowledged.ok).toBe(true)
+
+    const actionEvents = received.filter(event =>
+      (event as { readonly type?: string }).type === 'interaction.signal'
+      && (event as { readonly signal?: { readonly type?: string } }).signal?.type === 'process-plant.alarm.acknowledged',
+    )
+    expect(actionEvents).toHaveLength(1)
+
+    const history = await connection.query(query('process-plant.alarms.history', { systemId: 'plant' }))
+    expect(history.ok).toBe(true)
+    if (!history.ok) throw new Error(history.reason)
+    const entries = (history.result as {
+      readonly history: ReadonlyArray<{ readonly lifecycleId: string; readonly transition: string; readonly actorId?: string; readonly clientId?: string; readonly reason?: string }>
+    }).history
+    expect(entries).toContainEqual(expect.objectContaining({
+      lifecycleId: 'alarm:alarm-history-provenance-test:heater-alarm',
+      transition: 'acknowledged',
+      actorId: 'actor:operator',
+      clientId: 'client:alarm-board',
+      reason: 'operator verified heater alarm',
+    }))
+
+    await connection.close()
+  })
+
+  test('uses explicit alarm clear conditions and clear delays to avoid chatter', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [{
+                id: 'clear-hysteresis-test',
+                ruleClass: 'alarm',
+                latch: false,
+                resetWhenClear: true,
+                condition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '>',
+                  value: 5,
+                },
+                clearCondition: {
+                  type: 'comparison',
+                  signal: { tagId: 'PZR-HTR' },
+                  operator: '<',
+                  value: 2,
+                },
+                clearDelayMs: 1_000,
+                effects: [{
+                  type: 'alarm.enter',
+                  id: 'heater-high',
+                  title: 'Heater high',
+                  message: 'Pressurizer heater is above the alarm threshold.',
+                  severity: 'warning',
+                }],
+              }],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 10 }))).ok).toBe(true)
+    await Bun.sleep(1_100)
+    expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 4 }))).ok).toBe(true)
+    await Bun.sleep(1_100)
+    let status = await connection.query(query('process-plant.alarms.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    let alarm = (status.result as {
+      readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean; readonly clearCount: number }>
+    }).alarms.find(candidate => candidate.id === 'alarm:clear-hysteresis-test:heater-high')
+    expect(alarm?.active).toBe(true)
+
+    expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 0 }))).ok).toBe(true)
+    await Bun.sleep(2_100)
+    status = await connection.query(query('process-plant.alarms.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    alarm = (status.result as {
+      readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean; readonly clearCount: number }>
+    }).alarms.find(candidate => candidate.id === 'alarm:clear-hysteresis-test:heater-high')
+    expect(alarm?.active).toBe(false)
+    expect(alarm?.clearCount).toBe(1)
+
+    await connection.close()
+  })
+
+  test('expires shelved alarms and exposes alarm summary first-out state', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            protection: {
+              rules: [
+                {
+                  id: 'first-out-heater-test',
+                  ruleClass: 'alarm',
+                  condition: {
+                    type: 'comparison',
+                    signal: { tagId: 'PZR-HTR' },
+                    operator: '>',
+                    value: 0,
+                  },
+                  effects: [{
+                    type: 'alarm.enter',
+                    id: 'heater',
+                    title: 'Heater alarm',
+                    message: 'Heater alarm.',
+                    severity: 'warning',
+                    annunciator: {
+                      group: 'pressurizer',
+                      firstOutGroup: 'pressurizer-test',
+                      priority: 'high',
+                      role: 'symptom',
+                    },
+                  }],
+                },
+                {
+                  id: 'first-out-spray-test',
+                  ruleClass: 'alarm',
+                  condition: {
+                    type: 'comparison',
+                    signal: { tagId: 'PZR-SPRAY' },
+                    operator: '>',
+                    value: 0,
+                  },
+                  effects: [{
+                    type: 'alarm.enter',
+                    id: 'spray',
+                    title: 'Spray alarm',
+                    message: 'Spray alarm.',
+                    severity: 'warning',
+                    annunciator: {
+                      group: 'pressurizer',
+                      firstOutGroup: 'pressurizer-test',
+                      priority: 'high',
+                      role: 'symptom',
+                    },
+                  }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 1 }))).ok).toBe(true)
+    await Bun.sleep(1_100)
+    expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-SPRAY', value: 1 }))).ok).toBe(true)
+    await Bun.sleep(1_100)
+
+    const shelved = await connection.sendCommand(lifecycleCommand({
+      systemId: 'plant',
+      lifecycleId: 'alarm:first-out-heater-test:heater',
+      action: 'shelve',
+      shelveDurationMs: 1_000,
+    }))
+    expect(shelved.ok).toBe(true)
+    await Bun.sleep(2_100)
+
+    const summary = await connection.query(query('process-plant.alarms.summary', { systemId: 'plant' }))
+    expect(summary.ok).toBe(true)
+    if (!summary.ok) throw new Error(summary.reason)
+    const alarmSummary = (summary.result as {
+      readonly summary: {
+        readonly activeCount: number
+        readonly firstOutCount: number
+        readonly firstOut: ReadonlyArray<{ readonly id: string; readonly firstOut: boolean; readonly shelved: boolean }>
+      }
+    }).summary
+    expect(alarmSummary.activeCount).toBe(2)
+    expect(alarmSummary.firstOutCount).toBe(1)
+    expect(alarmSummary.firstOut).toContainEqual(expect.objectContaining({
+      id: 'alarm:first-out-heater-test:heater',
+      firstOut: true,
+      shelved: false,
+    }))
+
+    const history = await connection.query(query('process-plant.alarms.history', { systemId: 'plant' }))
+    expect(history.ok).toBe(true)
+    if (!history.ok) throw new Error(history.reason)
+    expect((history.result as {
+      readonly history: ReadonlyArray<{ readonly lifecycleId: string; readonly transition: string }>
+    }).history).toContainEqual(expect.objectContaining({
+      lifecycleId: 'alarm:first-out-heater-test:heater',
+      transition: 'shelveExpired',
+    }))
+
+    await connection.close()
+  })
+
   test('loads reference I&C behavior through explicit icRef', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
@@ -1035,6 +1321,8 @@ describe('process plant simulation provider', () => {
     expect(relief?.ruleClass).toBe('protection')
     expect(relief?.watchedSignals.map(signal => signal.tagId)).toContain('PT-455')
     expect(relief?.effects.some(effect => effect.type === 'writeSignal' && effect.signal?.path === 'pressurizer.reliefValvePositionFraction')).toBe(true)
+    const pzrPressureLow = ic.rules.find(rule => rule.id === 'pzr-pressure-low')
+    expect(pzrPressureLow?.watchedSignals.map(signal => signal.tagId)).toContain('PT-455')
 
     await connection.close()
   })
@@ -1269,6 +1557,7 @@ describe('process plant simulation provider', () => {
             value: 0,
           },
           delayMs: 0,
+          clearDelayMs: 0,
           latch: true,
           resetWhenClear: false,
           effects: [{
@@ -1291,6 +1580,7 @@ describe('process plant simulation provider', () => {
         alarms: [],
         trips: [],
         failures: [],
+        history: [],
       },
     })).toThrow('restored I&C snapshot references unknown rule')
   })

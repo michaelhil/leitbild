@@ -91,6 +91,7 @@ export const assertProcessPlantIcRulesValid = (
     assertRuleShapeValid(rule)
     if (rule.modeCondition !== undefined) assertConditionSignalsValid(system, rule, rule.modeCondition)
     assertConditionSignalsValid(system, rule, rule.condition)
+    if (rule.clearCondition !== undefined) assertConditionSignalsValid(system, rule, rule.clearCondition)
     if (rule.resetCondition !== undefined) assertConditionSignalsValid(system, rule, rule.resetCondition)
     for (const gate of rule.commandGates) {
       variableFor(system, gate.signal)

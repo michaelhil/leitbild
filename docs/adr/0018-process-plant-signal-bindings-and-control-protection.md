@@ -143,6 +143,9 @@ Pack queries:
 - `process-plant.control.validate`
 - `process-plant.ic.status`
 - `process-plant.ic.catalog`
+- `process-plant.alarms.status`
+- `process-plant.alarms.summary`
+- `process-plant.alarms.history`
 
 Pack commands:
 
@@ -157,9 +160,11 @@ Pack commands:
 
 `process-plant.ic.catalog` exposes configured rule metadata for one explicit process system: rule class, mode label, watched signals, write effects, command gates, and annunciator metadata. It is an inspection surface, not an execution path.
 
-`process-plant.ic.lifecycle` accepts one explicit lifecycle action for one alarm/trip lifecycle id. Lifecycle actions affect acknowledgement, reset, suppression, and shelving state only; they do not alter process variables and do not execute procedure logic.
+`process-plant.ic.lifecycle` accepts one explicit lifecycle action for one alarm/trip lifecycle id. Lifecycle actions affect acknowledgement, reset, suppression, and shelving state only; they do not alter process variables and do not execute procedure logic. The payload may include operator/client provenance such as `reason` and may include `shelveDurationMs` for time-bounded shelving.
 
-`process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, resettable, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
+`process-plant.ic.status` returns current rule, alarm, trip, and failure state for one explicit process system. Alarm/trip state includes active, acknowledged, latched, suppressed, shelved, resettable, phase, first-out, transition timestamps, and transition counts. Acknowledgement is an explicit command and never clears the underlying condition.
+
+`process-plant.alarms.status`, `process-plant.alarms.summary`, and `process-plant.alarms.history` are alarm-board and AI-monitor views over the same pack-owned lifecycle state. They expose current alarms/trips, grouped summary counts, first-out entries, and bounded transition history with actor/client/reason provenance. They do not create a second alarm state store.
 
 ## Consequences
 

@@ -24,6 +24,8 @@ export const reactorReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => 
     label: 'Reactor power high',
     ruleClass: 'alarm',
     condition: comparison({ path: 'core.powerMw' }, '>', 3_600),
+    clearCondition: comparison({ path: 'core.powerMw' }, '<', 3_500),
+    clearDelayMs: 1_000,
     delayMs: 1_000,
     effects: [alarm({
       id: 'power-high',

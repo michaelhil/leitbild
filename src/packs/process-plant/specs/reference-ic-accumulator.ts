@@ -17,6 +17,8 @@ export const accumulatorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): Readon
       label: `Accumulator ${loop} injecting`,
       ruleClass: 'alarm',
       condition: comparison({ path: `${id}.outletFlowKgPerS` }, '>', 1),
+      clearCondition: comparison({ path: `${id}.outletFlowKgPerS` }, '<', 0.5),
+      clearDelayMs: 1_000,
       delayMs: 1_000,
       latch: false,
       resetWhenClear: true,

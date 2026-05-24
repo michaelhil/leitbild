@@ -1,7 +1,13 @@
 import type { AdapterId, ControlInstanceId, InteractionSignal, SignalId } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
 import type { SimulationEvent } from '../../../simulation/protocol.ts'
-import type { ProcessPlantIcEffect, ProcessPlantIcLifecycleState, ProcessPlantIcRule } from './control-protection-model.ts'
+import type {
+  ProcessPlantIcEffect,
+  ProcessPlantIcLifecyclePhase,
+  ProcessPlantIcLifecycleState,
+  ProcessPlantIcLifecycleTransition,
+  ProcessPlantIcRule,
+} from './control-protection-model.ts'
 
 export type MutableLifecycleState = {
   -readonly [Key in keyof ProcessPlantIcLifecycleState]: ProcessPlantIcLifecycleState[Key]
@@ -9,6 +15,20 @@ export type MutableLifecycleState = {
 
 export const processPlantIcLifecycleIdFor = (kind: 'alarm' | 'trip', ruleId: string, effectId: string): string =>
   `${kind}:${ruleId}:${effectId}`
+
+export const phaseForProcessPlantIcLifecycle = (
+  lifecycle: Pick<
+    ProcessPlantIcLifecycleState,
+    'active' | 'acknowledged' | 'suppressed' | 'shelved' | 'outOfService' | 'lastClearedElapsedMs'
+  >,
+): ProcessPlantIcLifecyclePhase => {
+  if (lifecycle.outOfService) return 'outOfService'
+  if (lifecycle.shelved) return 'shelved'
+  if (lifecycle.suppressed) return 'suppressed'
+  if (lifecycle.active) return lifecycle.acknowledged ? 'activeAcknowledged' : 'activeUnacknowledged'
+  if (lifecycle.lastClearedElapsedMs !== undefined) return lifecycle.acknowledged ? 'clearedAcknowledged' : 'clearedUnacknowledged'
+  return lifecycle.acknowledged ? 'clearedAcknowledged' : 'normal'
+}
 
 const signalIdFor = (
   systemId: string,
@@ -42,12 +62,35 @@ export const mutableLifecycleFor = (
     latched: snapshot?.latched ?? false,
     suppressed: snapshot?.suppressed ?? false,
     shelved: snapshot?.shelved ?? false,
+    outOfService: snapshot?.outOfService ?? false,
     resettable: snapshot?.resettable ?? false,
+    firstOut: snapshot?.firstOut ?? false,
+    ...(snapshot?.firstOutRank === undefined ? {} : { firstOutRank: snapshot.firstOutRank }),
+    ...(snapshot?.firstOutElapsedMs === undefined ? {} : { firstOutElapsedMs: snapshot.firstOutElapsedMs }),
     ...(snapshot?.firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs: snapshot.firstActiveElapsedMs }),
     ...(snapshot?.lastActiveElapsedMs === undefined ? {} : { lastActiveElapsedMs: snapshot.lastActiveElapsedMs }),
     ...(snapshot?.lastClearedElapsedMs === undefined ? {} : { lastClearedElapsedMs: snapshot.lastClearedElapsedMs }),
+    ...(snapshot?.lastAcknowledgedElapsedMs === undefined ? {} : { lastAcknowledgedElapsedMs: snapshot.lastAcknowledgedElapsedMs }),
+    ...(snapshot?.lastResetElapsedMs === undefined ? {} : { lastResetElapsedMs: snapshot.lastResetElapsedMs }),
+    ...(snapshot?.lastSuppressedElapsedMs === undefined ? {} : { lastSuppressedElapsedMs: snapshot.lastSuppressedElapsedMs }),
+    ...(snapshot?.lastShelvedElapsedMs === undefined ? {} : { lastShelvedElapsedMs: snapshot.lastShelvedElapsedMs }),
+    ...(snapshot?.shelvedUntilElapsedMs === undefined ? {} : { shelvedUntilElapsedMs: snapshot.shelvedUntilElapsedMs }),
     ...(snapshot?.lastTransitionElapsedMs === undefined ? {} : { lastTransitionElapsedMs: snapshot.lastTransitionElapsedMs }),
+    ...(snapshot?.lastActorId === undefined ? {} : { lastActorId: snapshot.lastActorId }),
+    ...(snapshot?.lastClientId === undefined ? {} : { lastClientId: snapshot.lastClientId }),
+    ...(snapshot?.lastReason === undefined ? {} : { lastReason: snapshot.lastReason }),
     transitionCount: snapshot?.transitionCount ?? 0,
+    occurrenceCount: snapshot?.occurrenceCount ?? 0,
+    clearCount: snapshot?.clearCount ?? 0,
+    acknowledgeCount: snapshot?.acknowledgeCount ?? 0,
+    phase: phaseForProcessPlantIcLifecycle(snapshot ?? {
+      active: false,
+      acknowledged: false,
+      suppressed: false,
+      shelved: false,
+      outOfService: false,
+      lastClearedElapsedMs: undefined,
+    }),
   }
 }
 
@@ -57,8 +100,11 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
   readonly systemId: string
   readonly rule: ProcessPlantIcRule
   readonly lifecycle: ProcessPlantIcLifecycleState
-  readonly transition: 'entered' | 'cleared' | 'acknowledged'
+  readonly transition: ProcessPlantIcLifecycleTransition
   readonly elapsedMs: number
+  readonly actorId?: string
+  readonly clientId?: string
+  readonly reason?: string
 }): SimulationEvent => {
   const at = nowIso()
   const signal: InteractionSignal = {
@@ -79,6 +125,10 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
       message: config.lifecycle.message,
       ...(config.lifecycle.annunciator === undefined ? {} : { annunciator: config.lifecycle.annunciator }),
       elapsedMs: config.elapsedMs,
+      phase: config.lifecycle.phase,
+      ...(config.actorId === undefined ? {} : { actorId: config.actorId }),
+      ...(config.clientId === undefined ? {} : { clientId: config.clientId }),
+      ...(config.reason === undefined ? {} : { reason: config.reason }),
     },
   }
   return {

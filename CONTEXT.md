@@ -201,8 +201,16 @@ Safety-like automatic logic that detects a protective condition and requests con
 _Avoid_: arbitrary scripts, fleet-wide assumptions, or direct variable mutation
 
 **Alarm State**:
-Persistent operator/AI-facing state derived from a condition. Alarm events record transitions, while alarm state records current truth such as active, acknowledged, cleared, latched, severity, first-active time, and source rule.
+Persistent operator/AI-facing state derived from a condition. Alarm events record transitions, while alarm state records current truth such as active, acknowledged, cleared, latched, suppressed, shelved, phase, severity, first-active time, first-out state, and source rule.
 _Avoid_: representing alarms only as transient events, clearing alarms by acknowledgement alone, or duplicating alarm truth in UI-local state
+
+**Alarm Clear Condition**:
+Optional typed I&C condition that explicitly defines when an alarm may clear. It can be paired with `clearDelayMs` so noisy values do not chatter around a threshold. If absent, non-latched alarms clear when their set condition is no longer true.
+_Avoid_: using acknowledgement as a clear condition, clearing alarms from UI state, or hardcoding alarm hysteresis outside the rule definition
+
+**I&C Lifecycle History**:
+A bounded pack-owned transition history for alarm/trip lifecycle changes such as entered, cleared, acknowledged, shelved, unshelved, reset, and first-out. Entries may carry actor, client, and reason provenance and back the alarm query/API surface.
+_Avoid_: treating history as continuous process telemetry, a procedure log, or a second source of alarm truth
 
 **I&C Lifecycle Action**:
 An explicit command-side action on alarm/trip lifecycle state: acknowledge, reset, suppress, unsuppress, shelve, or unshelve. Lifecycle actions affect operator/AI-facing lifecycle state only; they do not change process variables, execute procedures, or bypass I&C rule evaluation.

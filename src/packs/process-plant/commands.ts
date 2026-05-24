@@ -34,6 +34,8 @@ export const processPlantIcLifecyclePayloadSchema = z.object({
   systemId: z.string().min(1),
   lifecycleId: z.string().min(1),
   action: processPlantIcCommandLifecycleActionSchema,
+  reason: z.string().min(1).optional(),
+  shelveDurationMs: z.number().finite().positive().optional(),
 }).strict()
 
 export type ProcessPlantIcLifecyclePayload = z.infer<typeof processPlantIcLifecyclePayloadSchema>

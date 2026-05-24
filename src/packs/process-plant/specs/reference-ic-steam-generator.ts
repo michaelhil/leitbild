@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, rule, trip, write } from './reference-ic-helpers.ts'
 
 export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
@@ -51,6 +51,8 @@ export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): Rea
       label: `Steam generator ${loop} narrow-range level low`,
       ruleClass: 'alarm',
       condition: comparison({ tagId: `SG-${loop}-LVL-NR` }, '<', 30),
+      clearCondition: comparison({ tagId: `SG-${loop}-LVL-NR` }, '>', 35),
+      clearDelayMs: 1_000,
       delayMs: 1_000,
       latch: false,
       resetWhenClear: true,
@@ -85,6 +87,8 @@ export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): Rea
       label: `Steam generator ${loop} pressure high`,
       ruleClass: 'alarm',
       condition: comparison({ tagId: `SG-${loop}-PRESS` }, '>', 7.6),
+      clearCondition: comparison({ tagId: `SG-${loop}-PRESS` }, '<', 7.4),
+      clearDelayMs: 1_000,
       delayMs: 1_000,
       latch: false,
       resetWhenClear: true,
@@ -104,6 +108,11 @@ export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): Rea
         comparison({ path: `${sg}.levelPercent` }, '<', 40),
         comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '<', 150),
       ]),
+      clearCondition: any([
+        comparison({ path: `${sg}.levelPercent` }, '>', 45),
+        comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '>', 180),
+      ]),
+      clearDelayMs: 2_000,
       delayMs: 3_000,
       latch: false,
       resetWhenClear: true,

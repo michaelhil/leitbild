@@ -20,6 +20,7 @@ import {
   type ProcessPlantIcConfig,
   type ProcessPlantIcEffect,
   type ProcessPlantIcFailure,
+  type ProcessPlantIcLifecycleHistoryEntry,
   type ProcessPlantIcLifecycleAction,
   type ProcessPlantIcRule,
   type ProcessPlantIcRuleSnapshot,
@@ -28,6 +29,7 @@ import {
 import {
   eventForProcessPlantIcLifecycleTransition,
   mutableLifecycleFor,
+  phaseForProcessPlantIcLifecycle,
   processPlantIcLifecycleIdFor,
   type MutableLifecycleState,
 } from './control-protection-lifecycle.ts'
@@ -49,7 +51,17 @@ export interface ProcessPlantProtectionRunner {
   }) => ReadonlyArray<SimulationEvent>
   readonly snapshot: () => ProcessPlantIcSnapshot
   readonly catalog: () => ProcessPlantIcCatalog
-  readonly applyLifecycleAction: (id: string, action: ProcessPlantIcLifecycleAction, elapsedMs: number) => void
+  readonly applyLifecycleAction: (config: {
+    readonly id: string
+    readonly action: ProcessPlantIcLifecycleAction
+    readonly elapsedMs: number
+    readonly controlInstanceId: ControlInstanceId
+    readonly sourceProviderId: string
+    readonly actorId?: string
+    readonly clientId?: string
+    readonly reason?: string
+    readonly shelveDurationMs?: number
+  }) => ReadonlyArray<SimulationEvent>
   readonly evaluateWrite: (config: {
     readonly runtime: ProcessPlantRuntime
     readonly signal: ProcessPlantSignalReference
@@ -61,6 +73,7 @@ interface MutableRuleState {
   active: boolean
   latched: boolean
   activeSinceElapsedMs?: number
+  clearSinceElapsedMs?: number
   lastTransitionElapsedMs?: number
   firedCount: number
 }
@@ -74,8 +87,52 @@ const stateFor = (
     active: snapshot?.active ?? false,
     latched: snapshot?.latched ?? false,
     ...(snapshot?.activeSinceElapsedMs === undefined ? {} : { activeSinceElapsedMs: snapshot.activeSinceElapsedMs }),
+    ...(snapshot?.clearSinceElapsedMs === undefined ? {} : { clearSinceElapsedMs: snapshot.clearSinceElapsedMs }),
     ...(snapshot?.lastTransitionElapsedMs === undefined ? {} : { lastTransitionElapsedMs: snapshot.lastTransitionElapsedMs }),
     firedCount: snapshot?.firedCount ?? 0,
+  }
+}
+
+const maxLifecycleHistoryEntries = 1_000
+
+const lifecycleHistoryIdFor = (
+  lifecycleId: string,
+  transition: string,
+  elapsedMs: number,
+  count: number,
+): string => `${lifecycleId}:${transition}:${Math.trunc(elapsedMs)}:${count}`
+
+const updateLifecyclePhase = (lifecycle: MutableLifecycleState): void => {
+  lifecycle.phase = phaseForProcessPlantIcLifecycle(lifecycle)
+}
+
+const rememberLifecycleHistory = (config: {
+  readonly history: ProcessPlantIcLifecycleHistoryEntry[]
+  readonly lifecycle: MutableLifecycleState
+  readonly transition: ProcessPlantIcLifecycleHistoryEntry['transition']
+  readonly elapsedMs: number
+  readonly actorId?: string
+  readonly clientId?: string
+  readonly reason?: string
+}): void => {
+  updateLifecyclePhase(config.lifecycle)
+  config.history.push({
+    id: lifecycleHistoryIdFor(config.lifecycle.id, config.transition, config.elapsedMs, config.history.length),
+    lifecycleId: config.lifecycle.id,
+    ruleId: config.lifecycle.ruleId,
+    effectId: config.lifecycle.effectId,
+    kind: config.lifecycle.kind,
+    transition: config.transition,
+    elapsedMs: config.elapsedMs,
+    title: config.lifecycle.title,
+    severity: config.lifecycle.severity,
+    phase: config.lifecycle.phase,
+    ...(config.actorId === undefined ? {} : { actorId: config.actorId }),
+    ...(config.clientId === undefined ? {} : { clientId: config.clientId }),
+    ...(config.reason === undefined ? {} : { reason: config.reason }),
+  })
+  if (config.history.length > maxLifecycleHistoryEntries) {
+    config.history.splice(0, config.history.length - maxLifecycleHistoryEntries)
   }
 }
 
@@ -144,6 +201,26 @@ const shouldResetLatchedState = (config: {
   }).matches
 }
 
+const firstOutGroupFor = (lifecycle: MutableLifecycleState): string | undefined =>
+  lifecycle.annunciator?.firstOutGroup
+
+const assignFirstOut = (
+  lifecycle: MutableLifecycleState,
+  lifecycles: ReadonlyMap<string, MutableLifecycleState>,
+  elapsedMs: number,
+): void => {
+  const group = firstOutGroupFor(lifecycle)
+  if (group === undefined) return
+  const activeInGroup = [...lifecycles.values()].filter(candidate =>
+    candidate.id !== lifecycle.id
+    && firstOutGroupFor(candidate) === group
+    && (candidate.active || candidate.latched || candidate.resettable),
+  )
+  lifecycle.firstOutRank = activeInGroup.length + 1
+  lifecycle.firstOut = activeInGroup.length === 0
+  lifecycle.firstOutElapsedMs = elapsedMs
+}
+
 const evaluateRuleCondition = (config: {
   readonly system: CompiledProcessPlantSystem
   readonly runtime: ProcessPlantRuntime
@@ -161,6 +238,28 @@ const evaluateRuleCondition = (config: {
     system: config.system,
     runtime: config.runtime,
     condition: config.rule.condition,
+  }).matches
+}
+
+const evaluateAlarmClearCondition = (config: {
+  readonly system: CompiledProcessPlantSystem
+  readonly runtime: ProcessPlantRuntime
+  readonly rule: ProcessPlantIcRule
+  readonly setConditionMatches: boolean
+}): boolean => {
+  if (config.rule.clearCondition === undefined) return !config.setConditionMatches
+  if (config.rule.modeCondition !== undefined) {
+    const modeMatches = evaluateProcessPlantIcCondition({
+      system: config.system,
+      runtime: config.runtime,
+      condition: config.rule.modeCondition,
+    }).matches
+    if (!modeMatches) return false
+  }
+  return evaluateProcessPlantIcCondition({
+    system: config.system,
+    runtime: config.runtime,
+    condition: config.rule.clearCondition,
   }).matches
 }
 
@@ -200,6 +299,7 @@ export const createProcessPlantProtectionRunner = (config: {
     }
   }
   const failures: ProcessPlantIcFailure[] = [...(config.restoredSnapshot?.failures ?? [])]
+  const history: ProcessPlantIcLifecycleHistoryEntry[] = [...(config.restoredSnapshot?.history ?? [])]
 
   const evaluateWriteAgainstGates = (input: {
     readonly runtime: ProcessPlantRuntime
@@ -255,6 +355,23 @@ export const createProcessPlantProtectionRunner = (config: {
     lifecycle.lastActiveElapsedMs = input.elapsedMs
     lifecycle.lastTransitionElapsedMs = input.elapsedMs
     lifecycle.transitionCount += 1
+    lifecycle.occurrenceCount += 1
+    assignFirstOut(lifecycle, lifecycles, input.elapsedMs)
+    updateLifecyclePhase(lifecycle)
+    rememberLifecycleHistory({
+      history,
+      lifecycle,
+      transition: 'entered',
+      elapsedMs: input.elapsedMs,
+    })
+    if (lifecycle.firstOut) {
+      rememberLifecycleHistory({
+        history,
+        lifecycle,
+        transition: 'firstOut',
+        elapsedMs: input.elapsedMs,
+      })
+    }
     if (lifecycle.suppressed || lifecycle.shelved) return []
     return [eventForProcessPlantIcLifecycleTransition({
       controlInstanceId: input.controlInstanceId,
@@ -265,6 +382,40 @@ export const createProcessPlantProtectionRunner = (config: {
       transition: 'entered',
       elapsedMs: input.elapsedMs,
     })]
+  }
+
+  const expireShelvedLifecycles = (input: {
+    readonly elapsedMs: number
+    readonly controlInstanceId: ControlInstanceId
+    readonly sourceProviderId: string
+  }): ReadonlyArray<SimulationEvent> => {
+    const events: SimulationEvent[] = []
+    for (const lifecycle of lifecycles.values()) {
+      if (!lifecycle.shelved || lifecycle.shelvedUntilElapsedMs === undefined || lifecycle.shelvedUntilElapsedMs > input.elapsedMs) continue
+      const rule = rules.find(candidate => candidate.id === lifecycle.ruleId)
+      if (!rule) throw new Error(`process plant I&C rule missing for lifecycle: ${lifecycle.ruleId}`)
+      lifecycle.shelved = false
+      delete lifecycle.shelvedUntilElapsedMs
+      lifecycle.lastTransitionElapsedMs = input.elapsedMs
+      lifecycle.transitionCount += 1
+      updateLifecyclePhase(lifecycle)
+      rememberLifecycleHistory({
+        history,
+        lifecycle,
+        transition: 'shelveExpired',
+        elapsedMs: input.elapsedMs,
+      })
+      events.push(eventForProcessPlantIcLifecycleTransition({
+        controlInstanceId: input.controlInstanceId,
+        sourceProviderId: input.sourceProviderId,
+        systemId: config.system.id,
+        rule,
+        lifecycle,
+        transition: 'shelveExpired',
+        elapsedMs: input.elapsedMs,
+      }))
+    }
+    return events
   }
 
   const clearLifecycle = (input: {
@@ -285,9 +436,19 @@ export const createProcessPlantProtectionRunner = (config: {
       }
       lifecycle.active = false
       lifecycle.resettable = false
+      lifecycle.firstOut = false
+      delete lifecycle.firstOutRank
       lifecycle.lastClearedElapsedMs = input.elapsedMs
       lifecycle.lastTransitionElapsedMs = input.elapsedMs
       lifecycle.transitionCount += 1
+      lifecycle.clearCount += 1
+      updateLifecyclePhase(lifecycle)
+      rememberLifecycleHistory({
+        history,
+        lifecycle,
+        transition: 'cleared',
+        elapsedMs: input.elapsedMs,
+      })
       events.push(eventForProcessPlantIcLifecycleTransition({
         controlInstanceId: input.controlInstanceId,
         sourceProviderId: input.sourceProviderId,
@@ -303,7 +464,9 @@ export const createProcessPlantProtectionRunner = (config: {
 
   return {
     evaluate: ({ runtime, elapsedMs, controlInstanceId, sourceProviderId }): ReadonlyArray<SimulationEvent> => {
-      const events: SimulationEvent[] = []
+      const events: SimulationEvent[] = [
+        ...expireShelvedLifecycles({ elapsedMs, controlInstanceId, sourceProviderId }),
+      ]
       for (const rule of rules) {
         const state = states.get(rule.id)
         if (!state) throw new Error(`process plant I&C state missing for rule: ${rule.id}`)
@@ -324,17 +487,48 @@ export const createProcessPlantProtectionRunner = (config: {
             if (!matches) lifecycle.active = false
           }
         }
-        if (matches && state.activeSinceElapsedMs === undefined) state.activeSinceElapsedMs = elapsedMs
-        if (!matches) {
-          delete state.activeSinceElapsedMs
+        if (rule.ruleClass === 'alarm') {
           if (state.active) {
+            const clearMatches = evaluateAlarmClearCondition({
+              system: config.system,
+              runtime,
+              rule,
+              setConditionMatches: matches,
+            })
+            if (!clearMatches) {
+              delete state.clearSinceElapsedMs
+              continue
+            }
+            state.clearSinceElapsedMs ??= elapsedMs
+            const clearDelaySatisfied = elapsedMs - state.clearSinceElapsedMs >= rule.clearDelayMs
+            if (!clearDelaySatisfied) continue
+            delete state.activeSinceElapsedMs
+            delete state.clearSinceElapsedMs
             state.active = false
             state.lastTransitionElapsedMs = elapsedMs
+            if (rule.resetWhenClear) state.latched = false
+            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceProviderId }))
+            continue
           }
-          if (rule.resetWhenClear) state.latched = false
-          events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceProviderId }))
-          continue
+          if (!matches) {
+            delete state.activeSinceElapsedMs
+            delete state.clearSinceElapsedMs
+            continue
+          }
+        } else {
+          if (!matches) {
+            delete state.activeSinceElapsedMs
+            delete state.clearSinceElapsedMs
+            if (state.active) {
+              state.active = false
+              state.lastTransitionElapsedMs = elapsedMs
+            }
+            if (rule.resetWhenClear) state.latched = false
+            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceProviderId }))
+            continue
+          }
         }
+        if (matches && state.activeSinceElapsedMs === undefined) state.activeSinceElapsedMs = elapsedMs
         const delaySatisfied = state.activeSinceElapsedMs !== undefined && elapsedMs - state.activeSinceElapsedMs >= rule.delayMs
         if (!delaySatisfied || state.active || (rule.latch && state.latched)) continue
         for (const effect of rule.effects) {
@@ -369,6 +563,7 @@ export const createProcessPlantProtectionRunner = (config: {
           active: state.active,
           latched: state.latched,
           ...(state.activeSinceElapsedMs === undefined ? {} : { activeSinceElapsedMs: state.activeSinceElapsedMs }),
+          ...(state.clearSinceElapsedMs === undefined ? {} : { clearSinceElapsedMs: state.clearSinceElapsedMs }),
           ...(state.lastTransitionElapsedMs === undefined ? {} : { lastTransitionElapsedMs: state.lastTransitionElapsedMs }),
           firedCount: state.firedCount,
         }
@@ -376,35 +571,91 @@ export const createProcessPlantProtectionRunner = (config: {
       alarms: [...lifecycles.values()].filter(lifecycle => lifecycle.kind === 'alarm'),
       trips: [...lifecycles.values()].filter(lifecycle => lifecycle.kind === 'trip'),
       failures: [...failures],
+      history: [...history],
     }),
     catalog: (): ProcessPlantIcCatalog => catalogForProcessPlantIcRules(config.system, rules),
-    applyLifecycleAction: (id: string, action: ProcessPlantIcLifecycleAction, elapsedMs: number): void => {
-      const lifecycle = lifecycles.get(id)
-      if (!lifecycle) throw new Error(`unknown process plant I&C lifecycle id: ${id}`)
-      if (action === 'acknowledge') {
+    applyLifecycleAction: input => {
+      const lifecycle = lifecycles.get(input.id)
+      if (!lifecycle) throw new Error(`unknown process plant I&C lifecycle id: ${input.id}`)
+      const rule = rules.find(candidate => candidate.id === lifecycle.ruleId)
+      if (!rule) throw new Error(`process plant I&C rule missing for lifecycle: ${lifecycle.ruleId}`)
+      const events: SimulationEvent[] = []
+      const transition = (() => {
+        if (input.action === 'acknowledge') return 'acknowledged'
+        if (input.action === 'suppress') return 'suppressed'
+        if (input.action === 'unsuppress') return 'unsuppressed'
+        if (input.action === 'shelve') return 'shelved'
+        if (input.action === 'unshelve') return 'unshelved'
+        return 'reset'
+      })()
+      if (input.action === 'acknowledge') {
         lifecycle.acknowledged = true
-      } else if (action === 'reset') {
+        lifecycle.acknowledgeCount += 1
+        lifecycle.lastAcknowledgedElapsedMs = input.elapsedMs
+      } else if (input.action === 'reset') {
         const state = states.get(lifecycle.ruleId)
         if (!state) throw new Error(`process plant I&C state missing for rule: ${lifecycle.ruleId}`)
         lifecycle.active = false
         lifecycle.latched = false
         lifecycle.resettable = false
         lifecycle.acknowledged = false
-        lifecycle.lastClearedElapsedMs = elapsedMs
+        lifecycle.firstOut = false
+        delete lifecycle.firstOutRank
+        delete lifecycle.firstOutElapsedMs
+        lifecycle.lastClearedElapsedMs = input.elapsedMs
+        lifecycle.lastResetElapsedMs = input.elapsedMs
         state.active = false
         state.latched = false
         delete state.activeSinceElapsedMs
-      } else if (action === 'suppress') {
+        delete state.clearSinceElapsedMs
+      } else if (input.action === 'suppress') {
         lifecycle.suppressed = true
-      } else if (action === 'unsuppress') {
+        lifecycle.lastSuppressedElapsedMs = input.elapsedMs
+      } else if (input.action === 'unsuppress') {
         lifecycle.suppressed = false
-      } else if (action === 'shelve') {
+      } else if (input.action === 'shelve') {
         lifecycle.shelved = true
         lifecycle.acknowledged = true
+        lifecycle.acknowledgeCount += 1
+        lifecycle.lastShelvedElapsedMs = input.elapsedMs
+        lifecycle.lastAcknowledgedElapsedMs = input.elapsedMs
+        lifecycle.shelvedUntilElapsedMs = input.shelveDurationMs === undefined
+          ? undefined
+          : input.elapsedMs + input.shelveDurationMs
       } else {
         lifecycle.shelved = false
+        delete lifecycle.shelvedUntilElapsedMs
       }
-      lifecycle.lastTransitionElapsedMs = elapsedMs
+      lifecycle.lastTransitionElapsedMs = input.elapsedMs
+      lifecycle.lastActorId = input.actorId
+      if (input.clientId === undefined) delete lifecycle.lastClientId
+      else lifecycle.lastClientId = input.clientId
+      if (input.reason === undefined) delete lifecycle.lastReason
+      else lifecycle.lastReason = input.reason
+      lifecycle.transitionCount += 1
+      updateLifecyclePhase(lifecycle)
+      rememberLifecycleHistory({
+        history,
+        lifecycle,
+        transition,
+        elapsedMs: input.elapsedMs,
+        ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
+        ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+      })
+      events.push(eventForProcessPlantIcLifecycleTransition({
+        controlInstanceId: input.controlInstanceId,
+        sourceProviderId: input.sourceProviderId,
+        systemId: config.system.id,
+        rule,
+        lifecycle,
+        transition,
+        elapsedMs: input.elapsedMs,
+        ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
+        ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+      }))
+      return events
     },
     evaluateWrite: evaluateWriteAgainstGates,
   }

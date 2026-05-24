@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, any, comparison, rule } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, rule } from './reference-ic-helpers.ts'
 
 const feedwaterAlarm = annunciator({
   system: 'feedwater',
@@ -26,6 +26,11 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
       comparison({ tagId: 'MFW-PUMP-A-RUN' }, '==', false),
       comparison({ tagId: 'MFW-PUMP-B-RUN' }, '==', false),
     ]),
+    clearCondition: all([
+      comparison({ tagId: 'MFW-PUMP-A-RUN' }, '==', true),
+      comparison({ tagId: 'MFW-PUMP-B-RUN' }, '==', true),
+    ]),
+    clearDelayMs: 1_000,
     delayMs: 1_000,
     latch: false,
     resetWhenClear: true,
@@ -42,6 +47,8 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     label: 'Turbine load low',
     ruleClass: 'alarm',
     condition: comparison({ tagId: 'TURB-LOAD' }, '<', 0.5),
+    clearCondition: comparison({ tagId: 'TURB-LOAD' }, '>', 0.55),
+    clearDelayMs: 1_000,
     delayMs: 1_000,
     latch: false,
     resetWhenClear: true,
@@ -58,6 +65,8 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     label: 'Generator output low',
     ruleClass: 'alarm',
     condition: comparison({ tagId: 'GEN-MW' }, '<', 450),
+    clearCondition: comparison({ tagId: 'GEN-MW' }, '>', 500),
+    clearDelayMs: 2_000,
     delayMs: 5_000,
     latch: false,
     resetWhenClear: true,
@@ -74,6 +83,8 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     label: 'Condenser backpressure high',
     ruleClass: 'alarm',
     condition: comparison({ path: 'condenser.backPressurePa' }, '>', 35_000),
+    clearCondition: comparison({ path: 'condenser.backPressurePa' }, '<', 32_000),
+    clearDelayMs: 2_000,
     delayMs: 2_000,
     latch: false,
     resetWhenClear: true,
@@ -90,6 +101,8 @@ export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRu
     label: 'Main steam safety valve open',
     ruleClass: 'alarm',
     condition: comparison({ path: 'mainSteamSafetyValve.effectivePositionFraction' }, '>', 0.1),
+    clearCondition: comparison({ path: 'mainSteamSafetyValve.effectivePositionFraction' }, '<', 0.05),
+    clearDelayMs: 1_000,
     delayMs: 1_000,
     latch: false,
     resetWhenClear: true,
