@@ -102,7 +102,7 @@ export const discoveryManifestSchema = z.object({
     model: z.literal('one-mixed-stream-per-control-instance'),
     transportLinkRel: z.literal('realtime'),
     serverMessages: z.array(z.object({
-      type: z.enum(['realtime.ready', 'events']),
+      type: z.enum(['realtime.ready', 'events', 'controlInstance.reset']),
       description: z.string().min(1),
     })),
     durableCatchup: z.object({
@@ -282,6 +282,10 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
         {
           type: 'events',
           description: 'Batch of Control Instance Domain Events from the live feed.',
+        },
+        {
+          type: 'controlInstance.reset',
+          description: 'Durable boundary event sent in an events batch before a Control Instance reset wipes the current runtime.',
         },
       ],
       durableCatchup: {

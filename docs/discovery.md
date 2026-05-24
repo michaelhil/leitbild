@@ -72,6 +72,8 @@ The V1 manifest reports CORS as not configured. Browser-direct cross-origin acce
 
 V1 exposes one mixed WebSocket stream per Control Instance. When a client joins an existing stream, Leitbild sends `realtime.ready`. Live Control Instance Domain Events are then delivered as `events` batches.
 
+Before `POST /api/control-instances/{id}/reset` wipes the current runtime, Leitbild emits a durable `controlInstance.reset` Domain Event in the live feed. The event includes `previousSeq`, optional `previousScenarioId`, and optional post-reset target `scenarioId`; consumers should treat it as an explicit epoch boundary and refetch the snapshot.
+
 Durable catch-up is through the `controlInstanceEvents` relation. Realtime channel filtering is explicitly planned, not supported in V1.
 
 ## 10. Per-Control-Instance Capabilities
@@ -185,6 +187,10 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
       {
         "type": "events",
         "description": "Batch of Control Instance Domain Events from the live feed."
+      },
+      {
+        "type": "controlInstance.reset",
+        "description": "Durable boundary event sent in an events batch before a Control Instance reset wipes the current runtime."
       }
     ],
     "durableCatchup": {

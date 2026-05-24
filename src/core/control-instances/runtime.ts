@@ -23,6 +23,7 @@ export interface ControlInstanceRuntime {
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
+  readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<DomainEvent>
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
@@ -39,6 +40,7 @@ export const createControlInstanceRuntime = async (config: {
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly restoredSnapshot?: ControlInstanceStateSnapshot
   readonly restoredEvents?: ReadonlyArray<DomainEvent>
+  readonly initialSeq?: number
   readonly scenario?: {
     readonly id: string
     readonly startsAt?: IsoTimestamp
@@ -49,7 +51,7 @@ export const createControlInstanceRuntime = async (config: {
   const handlers = new Set<ControlInstanceEventHandler>()
   const durableEvents: DomainEvent[] = [...(config.restoredEvents ?? [])]
   const restoredEventSeq = durableEvents.reduce((max, event) => Math.max(max, event.seq), 0)
-  let seq = Math.max(config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
+  let seq = Math.max(config.initialSeq ?? 0, config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
@@ -540,6 +542,23 @@ export const createControlInstanceRuntime = async (config: {
   const queryPack = async (request: PackQueryRequest): Promise<PackQueryResponse> =>
     await config.simulation.query(request)
 
+  const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<DomainEvent> => {
+    const snapshot = state.snapshot()
+    const event: DomainEvent = {
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at: nowIso(),
+      provenance: { source: 'system' },
+      type: 'controlInstance.reset',
+      previousSeq: snapshot.seq,
+      ...(snapshot.scenario?.scenarioId === undefined ? {} : { previousScenarioId: snapshot.scenario.scenarioId }),
+      ...(resetConfig.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
+    }
+    await publish(event)
+    return event
+  }
+
   return {
     id: config.id,
     snapshot: () => snapshotWithCurrentClock(),
@@ -554,6 +573,7 @@ export const createControlInstanceRuntime = async (config: {
         handlers.delete(handler)
       }
     },
+    publishResetBoundary,
     issueCommand,
     queryPack,
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {

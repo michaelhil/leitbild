@@ -96,6 +96,12 @@ describe('discovery manifest', () => {
     expect(manifest.capabilities.deploymentLevel.clockControl).toBe(true)
   })
 
+  test('publishes the reset boundary realtime message type', () => {
+    const manifest = buildManifest('https://leitbild.example')
+
+    expect(manifest.realtime.serverMessages.map(message => message.type)).toContain('controlInstance.reset')
+  })
+
   test('requires lifecycle and clock discovery fields', () => {
     const manifest = buildManifest('https://leitbild.example')
     const requiredFieldCases: readonly { readonly name: string; readonly malformed: unknown }[] = [

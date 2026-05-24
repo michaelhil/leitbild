@@ -72,7 +72,7 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
-  const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
+  const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string; readonly initialSeq?: number }): Promise<ControlInstanceRuntime> => {
     const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
     if (!config.scenarioCatalog.runtimeFor(requestedScenarioId)) throw new Error(`unknown scenario: ${requestedScenarioId}`)
     const id = createConfig?.id ?? createScenarioRunControlInstanceId({
@@ -141,6 +141,7 @@ export const createControlInstanceRegistry = (config: {
       ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),
       ...(restoredSnapshot ? { restoredSnapshot } : {}),
       ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
+      ...(createConfig?.initialSeq === undefined ? {} : { initialSeq: createConfig.initialSeq }),
       ...(scenarioRuntime === undefined
         ? {}
         : {
@@ -178,11 +179,18 @@ export const createControlInstanceRegistry = (config: {
   }
 
   const reset = async (id: ControlInstanceId, resetConfig?: { readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
+    const existing = controlInstances.get(id)
+    const resetEvent = existing
+      ? await existing.publishResetBoundary({
+          scenarioId: resetConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId(),
+        })
+      : undefined
     await close(id)
     await rm(join(controlInstanceRoot, id), { recursive: true, force: true })
     return create({
       id,
       ...(resetConfig?.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
+      ...(resetEvent === undefined ? {} : { initialSeq: resetEvent.seq + 1 }),
     })
   }
 

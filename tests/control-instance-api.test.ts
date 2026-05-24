@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
+import type { ControlInstanceId, DomainEvent, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
 import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
@@ -204,7 +204,7 @@ describe('control instance API', () => {
     }
   })
 
-  test('resets a control instance from a scenario and clears previous object changes', async () => {
+  test('resets a control instance from a scenario, emits a reset boundary, and preserves monotonic sequence', async () => {
     const registry = await createTestRegistry()
     try {
       const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string }[] } }>(
@@ -212,6 +212,12 @@ describe('control instance API', () => {
         '/api/control-instances/reset-sandbox',
         { method: 'POST' },
       )
+      const runtime = registry.get('reset-sandbox' as ControlInstanceId)
+      if (!runtime) throw new Error('missing reset test runtime')
+      const notifications: DomainEvent[][] = []
+      const unsubscribe = runtime.subscribe(notification => {
+        notifications.push([...notification.events])
+      })
       const hospital = joined.body.snapshot.objects.find(object => object.kind === 'facility')
       if (!hospital) throw new Error('missing reset test hospital')
 
@@ -229,6 +235,7 @@ describe('control instance API', () => {
         },
       )
       expect(deleted.body.result.ok).toBe(true)
+      const previousSeq = runtime.snapshot().seq
 
       const reset = await callRoute<{ readonly snapshot: { readonly objects: readonly unknown[]; readonly seq: number } }>(
         registry,
@@ -239,8 +246,16 @@ describe('control instance API', () => {
           body: JSON.stringify({ scenarioId: 'oslo-ambulance' }),
         },
       )
+      unsubscribe()
+      const resetEvent = notifications.flat().find(event => event.type === 'controlInstance.reset')
       expect(reset.status).toBe(200)
-      expect(reset.body.snapshot.seq).toBeGreaterThanOrEqual(0)
+      expect(resetEvent).toMatchObject({
+        type: 'controlInstance.reset',
+        previousSeq,
+        previousScenarioId: 'oslo-ambulance',
+        scenarioId: 'oslo-ambulance',
+      })
+      expect(reset.body.snapshot.seq).toBeGreaterThan(resetEvent?.seq ?? 0)
       expect(reset.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
     } finally {
       await registry.close('reset-sandbox' as ControlInstanceId)

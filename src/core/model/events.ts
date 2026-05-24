@@ -70,6 +70,12 @@ export type DomainEvent =
       readonly type: 'scenario.highlights.cleared'
       readonly objectIds?: ReadonlyArray<ObjectId>
     })
+  | (EventEnvelopeBase & {
+      readonly type: 'controlInstance.reset'
+      readonly previousSeq: number
+      readonly previousScenarioId?: string
+      readonly scenarioId?: string
+    })
 
 const eventBaseSchema = z.object({
   id: eventIdSchema,
@@ -132,5 +138,11 @@ export const domainEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('scenario.highlights.cleared'),
     objectIds: z.array(objectIdSchema).optional(),
+  }),
+  eventBaseSchema.extend({
+    type: z.literal('controlInstance.reset'),
+    previousSeq: z.number().int().nonnegative(),
+    previousScenarioId: z.string().min(1).optional(),
+    scenarioId: z.string().min(1).optional(),
   }),
 ])

@@ -142,6 +142,12 @@ describe('server health', () => {
       expect(client.readyMessages).toContain('oslo-ambulance')
 
       await registry.reset(controlInstanceId, { scenarioId: 'halden' })
+      const resetEvent = client.events.find(event => event.type === 'controlInstance.reset')
+      expect(resetEvent).toMatchObject({
+        type: 'controlInstance.reset',
+        previousScenarioId: 'oslo-ambulance',
+        scenarioId: 'halden',
+      })
       realtime.reconcile()
       expect(client.readyMessages).toContain('halden')
 
@@ -154,7 +160,10 @@ describe('server health', () => {
       expect(result.ok).toBe(true)
 
       await waitForMovingObjectEvent(client, 'amb:halden-1')
-      expect(client.eventMessages.every(message => message.scenarioId === 'halden')).toBe(true)
+      const postResetEventMessages = client.eventMessages.filter(message =>
+        !message.events.some(event => event.type === 'controlInstance.reset'),
+      )
+      expect(postResetEventMessages.every(message => message.scenarioId === 'halden')).toBe(true)
       realtime.removeClient(controlInstanceId, client)
       expect(realtime.status().subscribedControlInstanceCount).toBe(0)
       expect(registry.get(controlInstanceId)).toBe(runtime)
