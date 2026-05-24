@@ -42,6 +42,7 @@ export const discoveryManifestSchema = z.object({
     controlInstanceSnapshot: hrefTemplateSchema,
     controlInstanceEvents: hrefTemplateSchema,
     controlInstancePackQueries: hrefTemplateSchema,
+    controlInstanceCapabilities: hrefTemplateSchema,
     controlInstanceCommands: hrefTemplateSchema,
     controlInstanceSignals: hrefTemplateSchema,
     controlInstanceReset: hrefTemplateSchema,
@@ -80,6 +81,12 @@ export const discoveryManifestSchema = z.object({
       status: z.literal('implemented'),
       linkRel: z.literal('controlInstanceClock'),
       method: z.literal('POST'),
+      description: z.string().min(1),
+    }),
+    controlInstanceCapabilitiesRead: z.object({
+      status: z.literal('implemented'),
+      linkRel: z.literal('controlInstanceCapabilities'),
+      method: z.literal('GET'),
       description: z.string().min(1),
     }),
   }),
@@ -131,6 +138,7 @@ export const discoveryManifestSchema = z.object({
       packQueries: z.literal(true),
       commands: z.literal(true),
       interactionSignals: z.literal(true),
+      perControlInstanceCapabilities: z.literal(true),
     }),
   }),
   wikiRefs: z.object({
@@ -143,10 +151,6 @@ export const discoveryManifestSchema = z.object({
     notes: z.string().min(1),
   }),
   planned: z.object({
-    controlInstanceCapabilities: z.object({
-      hrefTemplate: z.string().min(1),
-      expectedContents: z.array(z.string().min(1)),
-    }),
     authModes: z.array(z.literal('bearer')),
     cors: z.object({
       allowedOrigins: z.array(z.literal('deployment-configured')),
@@ -212,6 +216,7 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
       controlInstanceSnapshot: { hrefTemplate: `${controlInstanceBase}/snapshot` },
       controlInstanceEvents: { hrefTemplate: `${controlInstanceBase}/events{?afterSeq}` },
       controlInstancePackQueries: { hrefTemplate: `${controlInstanceBase}/queries` },
+      controlInstanceCapabilities: { hrefTemplate: `${controlInstanceBase}/capabilities` },
       controlInstanceCommands: { hrefTemplate: `${controlInstanceBase}/commands` },
       controlInstanceSignals: { hrefTemplate: `${controlInstanceBase}/signals` },
       controlInstanceReset: { hrefTemplate: `${controlInstanceBase}/reset` },
@@ -254,6 +259,12 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
         linkRel: 'controlInstanceClock',
         method: 'POST',
         description: 'Update pause state, speed, or current time for a Control Instance.',
+      },
+      controlInstanceCapabilitiesRead: {
+        status: 'implemented',
+        linkRel: 'controlInstanceCapabilities',
+        method: 'GET',
+        description: 'Read coarse runtime capabilities for an existing Control Instance.',
       },
     },
     protocols: {
@@ -314,6 +325,7 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
         packQueries: true,
         commands: true,
         interactionSignals: true,
+        perControlInstanceCapabilities: true,
       },
     },
     wikiRefs: {
@@ -326,17 +338,6 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
       notes: 'V1 does not publish rate, size, or retention limits.',
     },
     planned: {
-      controlInstanceCapabilities: {
-        hrefTemplate: `${controlInstanceBase}/capabilities`,
-        expectedContents: [
-          'active packs',
-          'scenario id',
-          'accepted command kinds',
-          'pack query kinds',
-          'realtime channel support',
-          'recommended wiki refs',
-        ],
-      },
       authModes: ['bearer'],
       cors: {
         allowedOrigins: ['deployment-configured'],

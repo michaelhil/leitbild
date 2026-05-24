@@ -13,6 +13,12 @@ const routeQuerySchema = z.object({
   toleranceM: z.number().finite().positive().max(2000).default(220),
 })
 
+export const trafficQueryKinds = [
+  'traffic.conditions',
+  'traffic.condition',
+  'traffic.conditionsForRoute',
+] as const
+
 const success = (request: PackQueryRequest, result: unknown, generatedAt: IsoTimestamp): PackQueryResponse => ({
   ok: true,
   packId: request.packId,

@@ -7,6 +7,7 @@ import { validateProcessPlantControlWrite } from './control-write-validation.ts'
 import type { CompiledPlantGraph, VariablePath } from './graph/index.ts'
 import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema, variablePathSchema } from './graph/index.ts'
 import { answerProcessPlantIcQuery } from './ic-query.ts'
+import { processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from './runtime/index.ts'
 import { processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
@@ -68,6 +69,23 @@ const trendsReadQuerySchema = z.object({
   systemId: idSchema,
   paths: z.array(variablePathSchema).min(1).optional(),
 })
+
+export const processPlantQueryKinds = [
+  'process-plant.systems.list',
+  'process-plant.graph.read',
+  'process-plant.variables.read',
+  'process-plant.variables.search',
+  'process-plant.signals.resolve',
+  'process-plant.signals.read',
+  'process-plant.signals.search',
+  'process-plant.conditions.evaluate',
+  'process-plant.procedure-tags.validate',
+  'process-plant.control.validate',
+  'process-plant.runtime.status',
+  'process-plant.telemetry.published',
+  'process-plant.trends.read',
+  ...processPlantIcQueryKinds,
+] as const
 
 const success = (
   request: PackQueryRequest,

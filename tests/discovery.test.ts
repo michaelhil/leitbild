@@ -66,6 +66,8 @@ describe('discovery manifest', () => {
       expect(manifest.links.controlInstanceEvents.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/events{?afterSeq}')
       expect(manifest.links.controlInstanceReset.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/reset')
       expect(manifest.links.controlInstanceClock.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/clock')
+      expect(manifest.links.controlInstanceCapabilities.hrefTemplate).toBe('https://leitbild.example/api/control-instances/{id}/capabilities')
+      expect(Object.hasOwn(manifest.planned, 'controlInstanceCapabilities')).toBe(false)
       expect(manifest.links.realtime.href).toBe('wss://leitbild.example/ws')
       expect(manifest.links.realtime.hrefTemplate).toBe('wss://leitbild.example/ws?controlInstance={id}')
       expect(manifest.protocols.http.baseUrl).toBe('https://leitbild.example')
@@ -92,8 +94,11 @@ describe('discovery manifest', () => {
     expect(manifest.actions.controlInstanceReset.method).toBe('POST')
     expect(manifest.actions.controlInstanceClockUpdate.linkRel).toBe('controlInstanceClock')
     expect(manifest.actions.controlInstanceClockUpdate.method).toBe('POST')
+    expect(manifest.actions.controlInstanceCapabilitiesRead.linkRel).toBe('controlInstanceCapabilities')
+    expect(manifest.actions.controlInstanceCapabilitiesRead.method).toBe('GET')
     expect(manifest.capabilities.deploymentLevel.controlInstanceLifecycle).toBe(true)
     expect(manifest.capabilities.deploymentLevel.clockControl).toBe(true)
+    expect(manifest.capabilities.deploymentLevel.perControlInstanceCapabilities).toBe(true)
   })
 
   test('publishes the reset boundary realtime message type', () => {
@@ -112,6 +117,10 @@ describe('discovery manifest', () => {
       {
         name: 'controlInstanceClock link',
         malformed: { ...manifest, links: omitKey(manifest.links, 'controlInstanceClock') },
+      },
+      {
+        name: 'controlInstanceCapabilities link',
+        malformed: { ...manifest, links: omitKey(manifest.links, 'controlInstanceCapabilities') },
       },
       {
         name: 'actions block',
@@ -138,6 +147,10 @@ describe('discovery manifest', () => {
         malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceClockUpdate') },
       },
       {
+        name: 'controlInstanceCapabilitiesRead action',
+        malformed: { ...manifest, actions: omitKey(manifest.actions, 'controlInstanceCapabilitiesRead') },
+      },
+      {
         name: 'controlInstanceLifecycle capability',
         malformed: {
           ...manifest,
@@ -154,6 +167,16 @@ describe('discovery manifest', () => {
           capabilities: {
             ...manifest.capabilities,
             deploymentLevel: omitKey(manifest.capabilities.deploymentLevel, 'clockControl'),
+          },
+        },
+      },
+      {
+        name: 'perControlInstanceCapabilities capability',
+        malformed: {
+          ...manifest,
+          capabilities: {
+            ...manifest.capabilities,
+            deploymentLevel: omitKey(manifest.capabilities.deploymentLevel, 'perControlInstanceCapabilities'),
           },
         },
       },

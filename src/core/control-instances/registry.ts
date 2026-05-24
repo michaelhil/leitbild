@@ -13,6 +13,7 @@ import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createJsonProviderStateStore } from './provider-state-store.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
+import type { ControlInstanceCapabilities } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
 import type { DomainEvent } from '../model/index.ts'
 
@@ -58,6 +59,36 @@ export const createControlInstanceRegistry = (config: {
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
   const controlInstanceRoot = join(config.dataDir, 'control-instances')
+
+  const capabilitiesFor = (scenarioRuntime: ReturnType<ScenarioCatalog['runtimeFor']>): Omit<ControlInstanceCapabilities, 'controlInstanceId'> => {
+    if (!scenarioRuntime) {
+      return {
+        scenarioId: null,
+        activePackIds: [],
+        acceptedCommandKinds: [],
+        queryKinds: {},
+        wikiRefs: [],
+      }
+    }
+    const activeProviderIds = new Set(scenarioRuntime.providers.map(provider => provider.providerId))
+    const activeAdapters = config.simulationAdapters.filter(adapter => activeProviderIds.has(adapter.id))
+    const queryKinds = Object.fromEntries(
+      scenarioRuntime.scenario.packs.map(packId => [
+        packId,
+        [...new Set(activeAdapters
+          .filter(adapter => adapter.packId === packId)
+          .flatMap(adapter => adapter.queryKinds ?? []))]
+          .sort(),
+      ]),
+    )
+    return {
+      scenarioId: scenarioRuntime.scenarioId,
+      activePackIds: [...scenarioRuntime.scenario.packs],
+      acceptedCommandKinds: [...new Set(activeAdapters.flatMap(adapter => adapter.acceptedCommandKinds))].sort(),
+      queryKinds,
+      wikiRefs: [],
+    }
+  }
 
   const validateRestoredEvents = (id: ControlInstanceId, events: ReadonlyArray<DomainEvent>): void => {
     let previousSeq = 0
@@ -151,6 +182,7 @@ export const createControlInstanceRegistry = (config: {
               ...(scenarioRuntime.scenario.script === undefined ? {} : { script: scenarioRuntime.scenario.script }),
             },
           }),
+      capabilities: capabilitiesFor(scenarioRuntime),
     })
     controlInstances.set(id, runtime)
     return runtime

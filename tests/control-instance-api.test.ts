@@ -55,6 +55,48 @@ const callRoute = async <T>(
 }
 
 describe('control instance API', () => {
+  test('exposes coarse capabilities for a loaded control instance', async () => {
+    const registry = await createTestRegistry()
+    try {
+      await callRoute(registry, '/api/control-instances/sandbox', { method: 'POST' })
+
+      const capabilities = await callRoute<{
+        readonly controlInstanceId: ControlInstanceId
+        readonly scenarioId: string | null
+        readonly activePackIds: readonly string[]
+        readonly acceptedCommandKinds: readonly string[]
+        readonly queryKinds: Record<string, readonly string[]>
+        readonly wikiRefs: readonly unknown[]
+      }>(
+        registry,
+        '/api/control-instances/sandbox/capabilities',
+      )
+
+      expect(capabilities.status).toBe(200)
+      expect(capabilities.body.controlInstanceId).toBe('sandbox' as ControlInstanceId)
+      expect(capabilities.body.scenarioId).toBe('oslo-ambulance')
+      expect(capabilities.body.activePackIds).toEqual(['ambulance', 'traffic', 'weather'])
+      expect(capabilities.body.acceptedCommandKinds).toContain(setDestinationCommandKind)
+      expect(capabilities.body.queryKinds.ambulance).toContain('ambulance.dispatchState')
+      expect(capabilities.body.queryKinds.traffic).toContain('traffic.conditions')
+      expect(capabilities.body.queryKinds.weather).toContain('weather.sampleAtPoint')
+      expect(capabilities.body.wikiRefs).toEqual([])
+    } finally {
+      await registry.close('sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('returns 404 for capabilities on an unknown control instance', async () => {
+    const registry = await createTestRegistry()
+    const missing = await callRoute<{ readonly error: { readonly code: string } }>(
+      registry,
+      '/api/control-instances/missing/capabilities',
+    )
+
+    expect(missing.status).toBe(404)
+    expect(missing.body.error.code).toBe('control_instance_not_found')
+  })
+
   test('lists and fetches scenario definitions', async () => {
     const registry = await createTestRegistry()
     const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly title: string; readonly description?: string; readonly packs?: readonly string[]; readonly requiredProviderIds?: readonly string[] }[] }>(

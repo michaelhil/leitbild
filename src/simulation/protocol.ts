@@ -64,6 +64,7 @@ export interface SimulationAdapter {
   readonly packId: string
   readonly domain: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
+  readonly queryKinds?: ReadonlyArray<string>
   readonly connect: (config: SimulationConnectionConfig) => Promise<SimulationConnection>
 }
 

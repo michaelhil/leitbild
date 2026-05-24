@@ -192,6 +192,14 @@ const handleControlInstanceApiInner = async (
     return json({ id: runtime.id, snapshot: runtime.snapshot() })
   }
 
+  const capabilitiesMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/capabilities$/)
+  if (capabilitiesMatch && req.method === 'GET') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    return json(runtime.capabilities())
+  }
+
   const resetMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/reset$/)
   if (resetMatch && req.method === 'POST') {
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(resetMatch[1] ?? ''))

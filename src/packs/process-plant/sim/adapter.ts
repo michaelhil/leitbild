@@ -49,7 +49,7 @@ import {
   variableDomainSchema,
 } from '../graph/index.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { answerProcessPlantQuery } from '../query.ts'
+import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
@@ -205,11 +205,28 @@ const saveProviderState = async (
   await config.providerStateStore.save(providerStateFor(systems))
 }
 
+const emitSimulationEvents = (
+  handlers: ReadonlySet<SimulationEventHandler>,
+  events: ReadonlyArray<SimulationEvent>,
+): void => {
+  if (events.length === 0) return
+  const emittedAt = nowIso()
+  for (const handler of handlers) {
+    handler({
+      type: 'event.emission',
+      events,
+      emittedAt,
+      providerId: processPlantSimProviderId,
+    })
+  }
+}
+
 export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter => ({
   id: processPlantSimProviderId,
   packId: 'process-plant',
   domain: processPlantDomainId,
   acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcLifecycleCommandKind],
+  queryKinds: processPlantQueryKinds,
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const handlers = new Set<SimulationEventHandler>()
     const rawProviderState = await config.providerStateStore?.load()
@@ -291,17 +308,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         }) ?? []))
         telemetry?.recordDueSamples(runtime)
       }
-      if (events.length > 0) {
-        const emittedAt = nowIso()
-        for (const handler of handlers) {
-          handler({
-            type: 'event.emission',
-            events,
-            emittedAt,
-            providerId: processPlantSimProviderId,
-          })
-        }
-      }
+      emitSimulationEvents(handlers, events)
       await saveProviderState(config, systems)
     }
 
@@ -332,7 +339,18 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           if (!system) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant system not found: ${payload.data.systemId}` }
           if (!system.protection) return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant I&C is not configured for system: ${payload.data.systemId}` }
           try {
-            system.protection.applyLifecycleAction(payload.data.lifecycleId, payload.data.action, system.runtime.elapsedMs())
+            const events = system.protection.applyLifecycleAction({
+              id: payload.data.lifecycleId,
+              action: payload.data.action,
+              elapsedMs: system.runtime.elapsedMs(),
+              controlInstanceId: config.controlInstanceId,
+              sourceProviderId: processPlantSimProviderId,
+              actorId: command.actorId,
+              ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
+              ...(payload.data.reason === undefined ? {} : { reason: payload.data.reason }),
+              ...(payload.data.shelveDurationMs === undefined ? {} : { shelveDurationMs: payload.data.shelveDurationMs }),
+            })
+            emitSimulationEvents(handlers, events)
             await saveProviderState(config, systems)
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {

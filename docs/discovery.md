@@ -26,7 +26,7 @@ Clients may send normal `User-Agent` and the planned `Leitbild-Client` header no
 
 The manifest is grouped around deployment identity, current auth and CORS posture, link relations, actions, HTTP and WebSocket protocol facts, realtime semantics, client-identification posture, deployment-level capabilities, planned wiki reference placement, unpublished limits, and planned future surfaces.
 
-Deployment-level capabilities include flags for scenario catalog discovery, Control Instance registry and lifecycle actions, clock control, map capabilities, durable event catch-up, live change feed, pack queries, commands, and interaction signals.
+Deployment-level capabilities include flags for scenario catalog discovery, Control Instance registry and lifecycle actions, clock control, map capabilities, durable event catch-up, live change feed, pack queries, commands, interaction signals, and per-Control-Instance capability manifests.
 
 For exact field names, literals, and validation rules, use `discoveryManifestSchema` in `src/core/api/discovery.ts`.
 
@@ -43,6 +43,7 @@ Only currently callable relations are listed under `links`. Planned hooks stay u
 | `controlInstanceSnapshot` | Current projected snapshot by id. |
 | `controlInstanceEvents` | Durable journal catch-up by id. |
 | `controlInstancePackQueries` | Read-only pack query endpoint by id. |
+| `controlInstanceCapabilities` | Coarse active capability manifest by id. |
 | `controlInstanceCommands` | Validated command endpoint by id. |
 | `controlInstanceSignals` | Interaction signal endpoint by id. |
 | `controlInstanceReset` | Control Instance reset endpoint by id. |
@@ -63,6 +64,7 @@ Only currently callable relations are listed under `links`. Planned hooks stay u
 | `controlInstanceDelete` | `controlInstance` | `DELETE` | Delete an idle Control Instance. The server rejects deletion while clients are connected. |
 | `controlInstanceReset` | `controlInstanceReset` | `POST` | Reset a Control Instance to a scenario baseline. |
 | `controlInstanceClockUpdate` | `controlInstanceClock` | `POST` | Update pause state, speed, or current time for a Control Instance. |
+| `controlInstanceCapabilitiesRead` | `controlInstanceCapabilities` | `GET` | Read coarse runtime capabilities for an existing Control Instance. |
 
 ## 8. CORS Posture
 
@@ -78,7 +80,26 @@ Durable catch-up is through the `controlInstanceEvents` relation. Realtime chann
 
 ## 10. Per-Control-Instance Capabilities
 
-Per-Control-Instance capability manifests are planned, not currently callable, so they are not in `links`. They belong under each Control Instance because active packs, scenario id, accepted command kinds, pack query kinds, realtime support, and recommended wiki references vary by Control Instance.
+`GET /api/control-instances/{id}/capabilities` returns the coarse callable surface for one loaded Control Instance. It returns `404` when the Control Instance does not exist or is not loaded.
+
+Response shape:
+
+```json
+{
+  "controlInstanceId": "oslo-ambulance:run-20260524-120000",
+  "scenarioId": "oslo-ambulance",
+  "activePackIds": ["ambulance", "traffic", "weather"],
+  "acceptedCommandKinds": ["ambulance.set_destination"],
+  "queryKinds": {
+    "ambulance": ["ambulance.objects", "ambulance.object", "ambulance.dispatchState"]
+  },
+  "wikiRefs": []
+}
+```
+
+This is intentionally coarse in V2.D-min. `scenarioId` and `activePackIds` come from the Control Instance scenario runtime. `acceptedCommandKinds` comes from the active simulation providers' declared command kinds. `queryKinds` lists static query kind strings where the active pack's provider declares them; it does not publish payload schemas. `wikiRefs` is reserved for later pack-declared references and is empty for now.
+
+The endpoint does not serialize Zod schemas or per-action payload contracts. Clients such as Samsinn should keep using generic command/query calls and treat this response as discovery, not typed validation metadata.
 
 ## 11. Auth Posture
 
@@ -117,6 +138,7 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
     "controlInstanceSnapshot": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/snapshot" },
     "controlInstanceEvents": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/events{?afterSeq}" },
     "controlInstancePackQueries": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/queries" },
+    "controlInstanceCapabilities": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/capabilities" },
     "controlInstanceCommands": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/commands" },
     "controlInstanceSignals": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/signals" },
     "controlInstanceReset": { "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/reset" },
@@ -159,6 +181,12 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
       "linkRel": "controlInstanceClock",
       "method": "POST",
       "description": "Update pause state, speed, or current time for a Control Instance."
+    },
+    "controlInstanceCapabilitiesRead": {
+      "status": "implemented",
+      "linkRel": "controlInstanceCapabilities",
+      "method": "GET",
+      "description": "Read coarse runtime capabilities for an existing Control Instance."
     }
   },
   "protocols": {
@@ -218,7 +246,8 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
       "liveChangeFeed": true,
       "packQueries": true,
       "commands": true,
-      "interactionSignals": true
+      "interactionSignals": true,
+      "perControlInstanceCapabilities": true
     }
   },
   "wikiRefs": {
@@ -231,17 +260,6 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
     "notes": "V1 does not publish rate, size, or retention limits."
   },
   "planned": {
-    "controlInstanceCapabilities": {
-      "hrefTemplate": "https://leitbild.example/api/control-instances/{id}/capabilities",
-      "expectedContents": [
-        "active packs",
-        "scenario id",
-        "accepted command kinds",
-        "pack query kinds",
-        "realtime channel support",
-        "recommended wiki refs"
-      ]
-    },
     "authModes": ["bearer"],
     "cors": {
       "allowedOrigins": ["deployment-configured"],

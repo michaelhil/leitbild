@@ -40,7 +40,7 @@ import {
   type WeatherState,
 } from '../model.ts'
 import { createWeatherDomainData } from '../scenario.ts'
-import { answerWeatherQuery } from '../query.ts'
+import { answerWeatherQuery, weatherQueryKinds } from '../query.ts'
 import { weatherSimAdapterId, weatherSimDomain, weatherSimProviderId } from './constants.ts'
 
 const updateIntervalMs = 5_000
@@ -250,6 +250,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
   packId: 'weather',
   domain: weatherDomainId,
   acceptedCommandKinds: [createWeatherAreaCommandKind],
+  queryKinds: weatherQueryKinds,
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const objects = new Map<string, OperationalObject>()
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])

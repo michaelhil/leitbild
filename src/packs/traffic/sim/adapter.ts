@@ -8,7 +8,7 @@ import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
 import { createTrafficConditionPayloadSchema, trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficGeometryMode } from '../model.ts'
 import { trafficConditionChangedSignalType } from '../interactions.ts'
-import { answerTrafficQuery } from '../query.ts'
+import { answerTrafficQuery, trafficQueryKinds } from '../query.ts'
 import { trafficSimAdapterId, trafficSimDomain, trafficSimProviderId } from './constants.ts'
 
 const defaultSpeedFactor = 0.55
@@ -148,6 +148,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
   packId: 'traffic',
   domain: trafficDomainId,
   acceptedCommandKinds: [createTrafficConditionCommandKind],
+  queryKinds: trafficQueryKinds,
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()

@@ -12,6 +12,12 @@ const objectsQuerySchema = z.object({
   type: z.enum(['ambulance', 'hospital', 'incident']).optional(),
 })
 
+export const ambulanceQueryKinds = [
+  'ambulance.objects',
+  'ambulance.object',
+  'ambulance.dispatchState',
+] as const
+
 const success = (request: PackQueryRequest, result: unknown, generatedAt: IsoTimestamp): PackQueryResponse => ({
   ok: true,
   packId: request.packId,

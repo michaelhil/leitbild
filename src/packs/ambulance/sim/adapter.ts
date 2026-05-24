@@ -13,7 +13,7 @@ import {
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../commands.ts'
-import { answerAmbulanceQuery } from '../query.ts'
+import { ambulanceQueryKinds, answerAmbulanceQuery } from '../query.ts'
 
 const emit = (
   handlers: ReadonlySet<SimulationEventHandler>,
@@ -129,6 +129,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
     createObjectCommandKind,
     setDestinationCommandKind,
   ],
+  queryKinds: ambulanceQueryKinds,
   connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
     const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
     const engine = createAmbulanceSimEngine({

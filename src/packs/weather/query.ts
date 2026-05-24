@@ -28,6 +28,14 @@ const weatherMapFeaturesQuerySchema = z.object({
   layers: z.array(z.enum(['baseGrid', 'affectedCells', 'influenceShapes'])).default(['baseGrid', 'affectedCells', 'influenceShapes']),
 })
 
+export const weatherQueryKinds = [
+  'weather.sampleAtPoint',
+  'weather.sampleAlongRoute',
+  'weather.summarizeArea',
+  'weather.mapFeatures',
+  'weather.fieldStats',
+] as const
+
 const success = (
   request: PackQueryRequest,
   result: unknown,

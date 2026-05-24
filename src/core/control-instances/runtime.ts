@@ -19,6 +19,7 @@ export type ControlInstanceEventHandler = (event: ControlInstanceEventNotificati
 
 export interface ControlInstanceRuntime {
   readonly id: ControlInstanceId
+  readonly capabilities: () => ControlInstanceCapabilities
   readonly snapshot: () => ControlInstanceStateSnapshot
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
   readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
@@ -28,6 +29,15 @@ export interface ControlInstanceRuntime {
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly close: () => Promise<void>
+}
+
+export interface ControlInstanceCapabilities {
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId: string | null
+  readonly activePackIds: ReadonlyArray<string>
+  readonly acceptedCommandKinds: ReadonlyArray<string>
+  readonly queryKinds: Readonly<Record<string, ReadonlyArray<string>>>
+  readonly wikiRefs: ReadonlyArray<never>
 }
 
 const eventId = (): EventId => `event:${randomUUID()}` as EventId
@@ -46,6 +56,7 @@ export const createControlInstanceRuntime = async (config: {
     readonly startsAt?: IsoTimestamp
     readonly script?: ScenarioScript
   }
+  readonly capabilities?: Omit<ControlInstanceCapabilities, 'controlInstanceId'>
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
   const handlers = new Set<ControlInstanceEventHandler>()
@@ -561,6 +572,14 @@ export const createControlInstanceRuntime = async (config: {
 
   return {
     id: config.id,
+    capabilities: (): ControlInstanceCapabilities => ({
+      controlInstanceId: config.id,
+      scenarioId: config.capabilities?.scenarioId ?? state.snapshot().scenario?.scenarioId ?? null,
+      activePackIds: config.capabilities?.activePackIds ?? [],
+      acceptedCommandKinds: config.capabilities?.acceptedCommandKinds ?? [],
+      queryKinds: config.capabilities?.queryKinds ?? {},
+      wikiRefs: [],
+    }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
     events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<DomainEvent> => {
