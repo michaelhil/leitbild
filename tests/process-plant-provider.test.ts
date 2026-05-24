@@ -9,6 +9,7 @@ import {
   pressurizedWaterReactorPlantSpec,
   processPlantControlWriteCommandKind,
   processPlantIcAcknowledgeCommandKind,
+  processPlantPressurizedWaterReactorIcRef,
   variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
 
@@ -25,7 +26,10 @@ const createMemoryStateStore = (): SimulationProviderStateStore => {
   }
 }
 
-const scenarioConfig = (processPlantConfig: unknown = {}) => ({
+const scenarioConfig = (
+  processPlantConfig: unknown = {},
+  processSystemOverrides: Record<string, unknown> = {},
+) => ({
   scenarioId: 'process-plant-test',
   providerIds: ['process-plant-local'],
   world: {
@@ -38,6 +42,7 @@ const scenarioConfig = (processPlantConfig: unknown = {}) => ({
     pack: 'process-plant',
     componentLibrary: 'process-plant',
     graph: pressurizedWaterReactorPlantSpec,
+    ...processSystemOverrides,
   }],
   providerConfigs: {
     'process-plant': processPlantConfig,
@@ -646,6 +651,234 @@ describe('process plant simulation provider', () => {
     }))
 
     await connection.close()
+  })
+
+  test('loads reference I&C behavior through explicit icRef', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    await Bun.sleep(1_100)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const ic = (status.result as {
+      readonly ic: {
+        readonly rules: ReadonlyArray<{ readonly ruleId: string }>
+        readonly alarms: ReadonlyArray<{ readonly id: string; readonly title: string }>
+        readonly failures: ReadonlyArray<unknown>
+      }
+    }).ic
+    expect(ic.rules.map(rule => rule.ruleId)).toContain('sg-a-tube-leak-indication')
+    expect(ic.rules.map(rule => rule.ruleId)).toContain('pzr-pressure-high-relief')
+    expect(ic.failures).toEqual([])
+
+    await connection.close()
+  })
+
+  test('rejects ambiguous reference and inline I&C configuration', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+            protection: { rules: [] },
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('must not define both icRef and inline protection')
+  })
+
+  test('rejects unknown process plant icRef explicitly', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: 'process-plant.no-such-ic.v1',
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('unknown process plant icRef')
+  })
+
+  test('reference I&C reports SGTR indications without encoding procedures', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const leak = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'SG-A-TUBE-LEAK',
+      value: 0.02,
+    }))
+    expect(leak.ok).toBe(true)
+    await Bun.sleep(3_200)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean; readonly title: string }> }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:sg-a-tube-leak-indication:tube-leak',
+      active: true,
+    }))
+    expect(alarms.some(entry => entry.title.toLowerCase().includes('procedure'))).toBe(false)
+
+    await connection.close()
+  })
+
+  test('reference I&C actuates auxiliary feedwater on SG low-low level', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }, {
+        initialState: {
+          'sgA.secondaryInventoryKg': 2_500,
+          'sgA.levelPercent': 5,
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    await Bun.sleep(3_200)
+
+    const read = await connection.query(query('process-plant.signals.read', {
+      systemId: 'plant',
+      signals: [
+        { path: 'auxFeedwaterPumpMotor.running' },
+        { path: 'auxFeedwaterPumpTurbine.running' },
+        { path: 'auxFeedwaterValveA.positionFraction' },
+      ],
+    }))
+    expect(read.ok).toBe(true)
+    if (!read.ok) throw new Error(read.reason)
+    const values = new Map((read.result as {
+      readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string }; readonly variable: { readonly value: unknown } }>
+    }).signals.map(entry => [entry.signal.path, entry.variable.value]))
+    expect(values.get('auxFeedwaterPumpMotor.running')).toBe(true)
+    expect(values.get('auxFeedwaterPumpTurbine.running')).toBe(true)
+    expect(values.get('auxFeedwaterValveA.positionFraction')).toBe(1)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const trips = (status.result as {
+      readonly ic: { readonly trips: ReadonlyArray<{ readonly id: string; readonly active: boolean }> }
+    }).ic.trips
+    expect(trips).toContainEqual(expect.objectContaining({
+      id: 'trip:sg-a-level-low-low-afw-actuation:afw-actuation',
+      active: true,
+    }))
+
+    await connection.close()
+  })
+
+  test('reference I&C reports RCP trip and loop low flow', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const stopped = await connection.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'RCP-A-RUN',
+      value: false,
+    }))
+    expect(stopped.ok).toBe(true)
+    await Bun.sleep(3_200)
+
+    const status = await connection.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const activeAlarmIds = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean }> }
+    }).ic.alarms.filter(alarm => alarm.active).map(alarm => alarm.id)
+    expect(activeAlarmIds).toContain('alarm:rcp-a-trip:not-running')
+
+    await connection.close()
+  })
+
+  test('reference I&C state restores per system from provider snapshots', async () => {
+    const store = createMemoryStateStore()
+    const first = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: store,
+    })
+
+    const leak = await first.sendCommand(command({
+      systemId: 'plant',
+      tagId: 'SG-A-TUBE-LEAK',
+      value: 0.02,
+    }))
+    expect(leak.ok).toBe(true)
+    await Bun.sleep(1_200)
+    await first.close()
+
+    const restored = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: store,
+    })
+    const status = await restored.query(query('process-plant.ic.status', { systemId: 'plant' }))
+    expect(status.ok).toBe(true)
+    if (!status.ok) throw new Error(status.reason)
+    const alarms = (status.result as {
+      readonly ic: { readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean }> }
+    }).ic.alarms
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:sg-a-tube-leak-indication:tube-leak',
+      active: true,
+    }))
+
+    await restored.close()
   })
 
   test('rejects restored I&C snapshots that reference unknown rule state', () => {

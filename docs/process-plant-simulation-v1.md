@@ -796,6 +796,12 @@ The current implementation covers graph/spec validation, a headless fixed-step r
 
 Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
+Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
+
+`icRef` is not a procedure package. It must not encode emergency operating procedure steps, branching, diagnosis, or operator instructions. It only represents plant automation and annunciation: what automatic logic observes, what it actuates, and what alarm/trip state it exposes. External humans, control-room surfaces, procedure runners, and AI agents still own procedure execution by querying signal/condition truth and issuing explicit commands.
+
+For now, a process system must choose either `icRef` or inline `protection`; defining both is rejected. This avoids hidden merge behavior. If a scenario needs custom I&C, either reference the built-in behavior or define the complete inline rule set for that system.
+
 Example provider config:
 
 ```json
@@ -804,6 +810,7 @@ Example provider config:
     "process-plant": {
       "systems": {
         "unit-2": {
+          "icRef": "process-plant.pressurized-water-reactor.ic.v1",
           "telemetry": {
             "sampleIntervalMs": 5000,
             "variables": ["core.powerMw", "sgA.levelPercent", "turbine.electricMw"]

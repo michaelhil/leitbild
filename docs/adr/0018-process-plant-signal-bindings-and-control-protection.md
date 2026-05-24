@@ -106,6 +106,10 @@ Arbitrary expressions, user-authored code, and hidden procedure engines are out 
 
 Definitions may be provided by graphRef defaults, process-system configuration, or scenario provider configuration. Reusable graphRefs may ship default I&C definitions for their plant model; a scenario may enable, disable, add, or parameterize rules for one explicit `systemId`. There is no fleet-wide I&C definition and no cross-system defaulting.
 
+The first reference I&C definition is explicit, not automatic: `icRef: "process-plant.pressurized-water-reactor.ic.v1"` in one process system's provider config. The reference behavior is plant automation and annunciation only. It may energize simple automatic controls, actuate protection-like reference functions, emit alarm/trip lifecycle state, and expose condition truth. It must not encode emergency procedures, diagnosis trees, operator instructions, or external procedure branch state.
+
+For V1, `icRef` and inline `protection` are mutually exclusive for one system. The pack rejects both together so scenarios cannot accidentally rely on hidden merge order.
+
 ## Runtime Ordering
 
 Each provider tick uses this order:
@@ -163,6 +167,7 @@ Pack commands:
 - Do not add arbitrary expression evaluation, JavaScript snippets, or generated runtime code to scenario-authored protection rules.
 - Do not hide API failures behind fallbacks from tag to path or path to tag.
 - Do not embed emergency procedure execution, procedure branching state, or procedure document parsing inside process-plant without a new ADR.
+- Do not turn reference I&C behavior into a second procedure system. Procedure documents and procedure execution remain external.
 - Do not model normal controllers, protection functions, alarms, permissives, and interlocks as unrelated mechanisms. They are one I&C substrate with distinct semantics.
 - Do not model alarms only as transient events. Current alarm state is authoritative pack-owned state and transition events are history.
 - Do not add fleet-wide protection, alarm, or condition state. Every I&C definition and state belongs to one explicit process system.

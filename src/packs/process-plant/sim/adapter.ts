@@ -51,6 +51,7 @@ import {
 import { answerProcessPlantQuery, type ProcessPlantSystemRuntime } from '../query.ts'
 import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
+import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 
 const processPlantVariableSnapshotSchema = z.object({
   path: variablePathSchema,
@@ -109,8 +110,17 @@ interface ProcessPlantProviderState {
 const processPlantProviderSystemConfigSchema = z.object({
   schedule: processPlantScheduleConfigSchema.optional(),
   telemetry: processPlantTelemetryConfigSchema.optional(),
+  icRef: z.string().min(1).optional(),
   protection: processPlantProtectionConfigSchema.optional(),
-}).strict()
+}).strict().superRefine((system, ctx) => {
+  if (system.icRef !== undefined && system.protection !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['protection'],
+      message: 'process plant system config must not define both icRef and inline protection',
+    })
+  }
+})
 
 const processPlantProviderConfigSchema = z.object({
   systems: z.record(processPlantProviderSystemConfigSchema).default({}),
@@ -178,6 +188,14 @@ const processPlantProviderConfigFor = (config: SimulationConnectionConfig): Proc
   return processPlantProviderConfigSchema.parse(rawConfig)
 }
 
+const protectionConfigFor = (
+  systemConfig: z.infer<typeof processPlantProviderSystemConfigSchema> | undefined,
+): ProcessPlantProtectionConfig | undefined => {
+  if (systemConfig?.protection !== undefined) return systemConfig.protection
+  if (systemConfig?.icRef !== undefined) return resolveProcessPlantIcConfig(systemConfig.icRef)
+  return undefined
+}
+
 const saveProviderState = async (
   config: SimulationConnectionConfig,
   systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
@@ -205,7 +223,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         const systemConfig = providerConfig.systems[system.id]
         const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
         const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
-        const protectionConfig: ProcessPlantProtectionConfig | undefined = systemConfig?.protection
+        const protectionConfig = protectionConfigFor(systemConfig)
         const runtime = createProcessPlantRuntime({
           system,
           ...(restoredSnapshotFor(providerState, system.id) === undefined
