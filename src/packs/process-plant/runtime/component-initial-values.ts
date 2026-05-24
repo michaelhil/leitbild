@@ -7,7 +7,7 @@ import {
   optionalParameterNumber,
   parameterNumber,
 } from './component-helpers.ts'
-import { saturationTemperatureCFromPressureMPa } from './thermophysics.ts'
+import { latentHeatSteamMjPerKg, saturationTemperatureCFromPressureMPa } from './thermophysics.ts'
 
 export const initialComponentValueFor = (component: CompiledComponent, path: VariablePath): ProcessPlantValue => {
   const localPath = String(path).slice(String(component.id).length + 1)
@@ -42,9 +42,11 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
     if (localPath === 'heatToCoolantMw') return initialFissionPower + initialDecayHeat
   }
   if (component.kind === 'steamGenerator') {
+    const initialSteamFlow = optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760)
+      * optionalParameterNumber(component, 'initialSteamFlowFraction', 0)
     if (localPath === 'levelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
     if (localPath === 'pressureMPa') return parameterNumber(component, 'nominalPressureMPa')
-    if (localPath === 'heatTransferMw') return 0
+    if (localPath === 'heatTransferMw') return initialSteamFlow * latentHeatSteamMjPerKg
     if (localPath === 'primaryInletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322)
     if (localPath === 'primaryOutletTemperatureC') return optionalParameterNumber(component, 'initialPrimaryInletTemperatureC', 322) - 32
     if (localPath === 'tubeMetalTemperatureC') {
@@ -53,10 +55,10 @@ export const initialComponentValueFor = (component: CompiledComponent, path: Var
       return optionalParameterNumber(component, 'tubeMetalInitialTemperatureC', (primary + secondary) / 2)
     }
     if (localPath === 'secondaryTemperatureC') return optionalParameterNumber(component, 'initialSecondaryTemperatureC', 285)
-    if (localPath === 'steamFlowKgPerS') return 0
-    if (localPath === 'boilingRateKgPerS') return 0
-    if (localPath === 'feedwaterFlowKgPerS') return 0
-    if (localPath === 'steamOutflowKgPerS') return 0
+    if (localPath === 'steamFlowKgPerS') return initialSteamFlow
+    if (localPath === 'boilingRateKgPerS') return initialSteamFlow
+    if (localPath === 'feedwaterFlowKgPerS') return initialSteamFlow
+    if (localPath === 'steamOutflowKgPerS') return initialSteamFlow
     if (localPath === 'steamQualityFraction') return 0.99
     if (localPath === 'secondaryInventoryKg') return optionalParameterNumber(component, 'nominalSecondaryInventoryKg', 56_000) * parameterNumber(component, 'nominalLevelPercent')
     if (localPath === 'collapsedLevelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100

@@ -227,8 +227,7 @@
           "schedule": {
             "actions": [
               { "id": "a2-sgtr-start", "atMs": 60000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.004 },
-              { "id": "a2-sgtr-escalate", "atMs": 180000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.018 },
-              { "id": "a2-operator-trip", "atMs": 420000, "type": "setVariable", "path": "core.rodInsertionFraction", "value": 1 }
+              { "id": "a2-sgtr-escalate", "atMs": 180000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.018 }
             ]
           }
         },
@@ -239,7 +238,10 @@
             "actions": [
               { "id": "b1-mfw-a-trip", "atMs": 120000, "type": "tripComponent", "componentId": "mainFeedwaterPumpA" },
               { "id": "b1-mfw-b-trip", "atMs": 180000, "type": "tripComponent", "componentId": "mainFeedwaterPumpB" },
-              { "id": "b1-rcp-b-trip", "atMs": 360000, "type": "tripComponent", "componentId": "rcpB" },
+              { "id": "b1-rcp-a-trip", "atMs": 300000, "type": "tripComponent", "componentId": "rcpA" },
+              { "id": "b1-rcp-b-trip", "atMs": 330000, "type": "tripComponent", "componentId": "rcpB" },
+              { "id": "b1-rcp-c-trip", "atMs": 360000, "type": "tripComponent", "componentId": "rcpC" },
+              { "id": "b1-rcp-d-trip", "atMs": 390000, "type": "tripComponent", "componentId": "rcpD" },
               { "id": "b1-load-reduction", "atMs": 480000, "type": "setVariable", "path": "turbine.loadFraction", "value": 0.35 }
             ]
           }

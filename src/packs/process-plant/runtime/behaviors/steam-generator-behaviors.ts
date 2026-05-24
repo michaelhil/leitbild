@@ -169,7 +169,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const boilingRate = context.readNumber(componentVariablePath(component, 'boilingRateKgPerS'))
       context.write(componentVariablePath(component, 'boilingEnergyResidualMw'), boilingRate * latentHeatSteamMjPerKg - heatTransfer)
       const secondaryTemperature = context.readNumber(componentVariablePath(component, 'secondaryTemperatureC'))
-      const temperaturePressureBias = (secondaryTemperature - saturationTemperatureCFromPressureMPa(nominalPressure)) / 100 * nominalPressure
+      const rawTemperaturePressureBias = (secondaryTemperature - saturationTemperatureCFromPressureMPa(nominalPressure)) / 100 * nominalPressure
+      const temperaturePressureBias = rawTemperaturePressureBias * optionalParameterNumber(component, 'temperaturePressureGainFraction', 0)
       const nominalSteamMass = optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
       const currentSteamMass = context.readNumber(componentVariablePath(component, 'steamMassKg'))
       const steamMassTarget = inventoryBalanceStep({
@@ -235,7 +236,9 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const swellLevel = clamp(voidFraction * optionalParameterNumber(component, 'swellLevelGainPercent', 26), 0, 35)
       context.write(componentVariablePath(component, 'swellLevelPercent'), swellLevel)
       context.write(levelPath, clamp(collapsedLevel + swellLevel, 0, 100))
-      const steamMassPressureBias = nominalPressure * (clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6) - 1)
+      const steamMassPressureBias = optionalParameterNumber(component, 'steamMassPressureGainFraction', 1)
+        * nominalPressure
+        * (clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6) - 1)
       const inventoryPressureBias = ((nextInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
       const demandPressureBias = (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
       const pressureTarget = nominalPressure + steamMassPressureBias + demandPressureBias + temperaturePressureBias + inventoryPressureBias

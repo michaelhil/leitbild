@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, rule, trip, vote, write } from './reference-ic-helpers.ts'
 
 const reactorAlarm = annunciator({
   system: 'reactor protection',
@@ -67,6 +67,29 @@ export const reactorReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => 
         annunciator: reactorAction,
       }),
       write('insert-control-rods-low-flow', { path: 'core.rodInsertionFraction' }, 1),
+    ],
+  }),
+  rule({
+    id: 'reactor-low-rcp-flow-trip',
+    label: 'Reactor low reactor coolant pump flow trip',
+    ruleClass: 'protection',
+    modeLabel: 'power operation',
+    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    condition: vote(3, [
+      comparison({ path: 'rcpA.loopFlowKgPerS' }, '<', 1_000),
+      comparison({ path: 'rcpB.loopFlowKgPerS' }, '<', 1_000),
+      comparison({ path: 'rcpC.loopFlowKgPerS' }, '<', 1_000),
+      comparison({ path: 'rcpD.loopFlowKgPerS' }, '<', 1_000),
+    ]),
+    delayMs: 2_000,
+    effects: [
+      trip({
+        id: 'low-rcp-flow-trip',
+        title: 'Reactor low RCP flow trip',
+        message: 'Three or more reactor coolant pump loops are below the reference low-flow trip threshold.',
+        annunciator: reactorAction,
+      }),
+      write('insert-control-rods-low-rcp-flow', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),
 ]

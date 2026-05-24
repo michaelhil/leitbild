@@ -28,6 +28,12 @@ export const any = (conditions: ReadonlyArray<ProcessPlantIcCondition>): Process
   conditions,
 })
 
+export const vote = (required: number, conditions: ReadonlyArray<ProcessPlantIcCondition>): ProcessPlantIcCondition => ({
+  type: 'vote',
+  required,
+  conditions,
+})
+
 export const annunciator = (config: ProcessPlantIcAnnunciator): ProcessPlantIcAnnunciator => config
 
 export const alarm = (config: {

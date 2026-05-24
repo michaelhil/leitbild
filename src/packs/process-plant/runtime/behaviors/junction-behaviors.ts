@@ -177,18 +177,25 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
   id: `${componentKind}-effective-position`,
   phase: 'solveFluidFlowComponents',
   componentKind,
-  reads: ['positionFraction', 'availablePressureDropMPa', 'autoOpenActive'],
+  reads: ['positionFraction', 'incoming:pressureMPa', 'availablePressureDropMPa', 'autoOpenActive'],
   writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive'],
-  update: ({ component, context }): void => {
+  update: ({ system, component, context }): void => {
     const manualTarget = clamp(context.readNumber(componentVariablePath(component, 'positionFraction')), 0, 1)
     const mode = optionalParameterString(component, 'valveMode', 'control', valveModes)
+    const incomingLinks = system.graph.incomingLinksByComponent[component.index]?.map(index => system.graph.links[index]).filter(link => link !== undefined) ?? []
+    const upstreamPressure = maxLinkValue(
+      matchingLinks(incomingLinks, linkService(incomingLinks)),
+      'pressureMPa',
+      context,
+    )
     const pressureDrop = context.has(componentVariablePath(component, 'availablePressureDropMPa'))
       ? context.readNumber(componentVariablePath(component, 'availablePressureDropMPa'))
       : 0
     const setpoint = optionalParameterNumber(component, 'setpointMPa', Number.POSITIVE_INFINITY)
     const reseat = optionalParameterNumber(component, 'reseatMPa', setpoint * 0.98)
     const wasAutoOpen = context.readBoolean(componentVariablePath(component, 'autoOpenActive'))
-    const autoOpen = (mode === 'relief' || mode === 'safety') && (pressureDrop >= setpoint || (wasAutoOpen && pressureDrop > reseat))
+    const automaticPressure = upstreamPressure ?? pressureDrop
+    const autoOpen = (mode === 'relief' || mode === 'safety') && (automaticPressure >= setpoint || (wasAutoOpen && automaticPressure > reseat))
     const target = autoOpen ? 1 : manualTarget
     const current = context.readNumber(componentVariablePath(component, 'effectivePositionFraction'))
     const timeConstant = target >= current

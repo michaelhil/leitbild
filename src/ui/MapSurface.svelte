@@ -403,6 +403,7 @@
       await registerObjectIconVariants(current, 'crash')
       await registerObjectIconVariants(current, 'traffic')
       await registerObjectIconVariants(current, 'weather')
+      await registerObjectIconVariants(current, 'plant')
       addOperationalMapSourcesAndLayers({
         map: current,
         objects,

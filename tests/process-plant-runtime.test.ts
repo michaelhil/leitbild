@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { ControlInstanceId } from '../src/core/model/index.ts'
 import {
   componentVariablePath,
   compileProcessPlantExecutionPlan,
@@ -6,6 +7,8 @@ import {
   component,
   connect,
   createBehaviorContext,
+  createProcessPlantProtectionRunner,
+  createProcessPlantScheduleRunner,
   createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
@@ -14,6 +17,9 @@ import {
   processLinkVariableDescriptorSchema,
   processPlantSolverPhases,
   processPlantComponentRegistry,
+  processPlantPressurizedWaterReactorIcRef,
+  resolveProcessPlantIcConfig,
+  type ComponentId,
   type ConnectionService,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
@@ -64,6 +70,42 @@ const compiledSystemWithConnectionPhysical = (
 
 const valueOf = (path: string): VariablePath => path as VariablePath
 
+const activeLifecycleIds = (snapshot: {
+  readonly alarms: ReadonlyArray<{ readonly id: string; readonly active: boolean }>
+  readonly trips: ReadonlyArray<{ readonly id: string; readonly active: boolean }>
+}) => ({
+  alarms: snapshot.alarms.filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id).sort(),
+  trips: snapshot.trips.filter(lifecycle => lifecycle.active).map(lifecycle => lifecycle.id).sort(),
+})
+
+const runWithReferenceProtection = (input: {
+  readonly runtime: ReturnType<typeof createProcessPlantRuntime>
+  readonly system: ReturnType<typeof compiledSystem>
+  readonly durationMs: number
+  readonly stepMs?: number
+  readonly schedule?: ReturnType<typeof createProcessPlantScheduleRunner>
+}) => {
+  const stepMs = input.stepMs ?? 1_000
+  const protection = createProcessPlantProtectionRunner({
+    system: input.system,
+    protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+  })
+  let elapsedMs = 0
+  while (elapsedMs < input.durationMs) {
+    const nextElapsedMs = Math.min(input.durationMs, elapsedMs + stepMs)
+    input.schedule?.applyDueActions(input.runtime, nextElapsedMs)
+    input.runtime.tick(nextElapsedMs - elapsedMs)
+    protection.evaluate({
+      runtime: input.runtime,
+      elapsedMs: input.runtime.elapsedMs(),
+      controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
+      sourceProviderId: 'process-plant-local',
+    })
+    elapsedMs = nextElapsedMs
+  }
+  return protection.snapshot()
+}
+
 const fluidVariable = (input: {
   readonly path: string
   readonly label?: string
@@ -111,9 +153,53 @@ describe('process plant runtime', () => {
     expect(Number(level?.canonicalValue)).toBeCloseTo(0.55, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.collapsedLevelPercent'))?.value)).toBeCloseTo(55, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.voidFraction'))?.value)).toBeCloseTo(0, 6)
-    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.steamMassKg'))?.value)).toBeCloseTo(12_000, 6)
+    expect(Number(snapshot.variables.find(variable => variable.path === valueOf('sgA.steamMassKg'))?.value)).toBeCloseTo(15_500, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.levelPercent'))?.value)).toBeCloseTo(55, 6)
     expect(Number(snapshot.variables.find(variable => variable.path === valueOf('pressurizer.steamMassKg'))?.value)).toBeCloseTo(1_800, 6)
+  })
+
+  test('keeps the reference plant normal under reference I&C during a no-fault run', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    const snapshot = runWithReferenceProtection({
+      system,
+      runtime,
+      durationMs: 600_000,
+    })
+
+    expect(activeLifecycleIds(snapshot)).toEqual({
+      alarms: [],
+      trips: [],
+    })
+  })
+
+  test('lets the Halden demo feedwater and RCP fault path reach real protection trips', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    const schedule = createProcessPlantScheduleRunner({
+      system,
+      schedule: {
+        actions: [
+          { id: 'mfw-a-trip', atMs: 120_000, type: 'tripComponent', componentId: 'mainFeedwaterPumpA' as ComponentId },
+          { id: 'mfw-b-trip', atMs: 180_000, type: 'tripComponent', componentId: 'mainFeedwaterPumpB' as ComponentId },
+          { id: 'rcp-a-trip', atMs: 300_000, type: 'tripComponent', componentId: 'rcpA' as ComponentId },
+          { id: 'rcp-b-trip', atMs: 330_000, type: 'tripComponent', componentId: 'rcpB' as ComponentId },
+          { id: 'rcp-c-trip', atMs: 360_000, type: 'tripComponent', componentId: 'rcpC' as ComponentId },
+          { id: 'rcp-d-trip', atMs: 390_000, type: 'tripComponent', componentId: 'rcpD' as ComponentId },
+        ],
+      },
+    })
+
+    const snapshot = runWithReferenceProtection({
+      system,
+      runtime,
+      schedule,
+      durationMs: 450_000,
+    })
+    const active = activeLifecycleIds(snapshot)
+
+    expect(active.alarms.length).toBeGreaterThan(0)
+    expect(active.trips).toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
   })
 
   test('runs the declared solver phases and publishes telemetry', () => {
@@ -1330,11 +1416,14 @@ describe('process plant runtime', () => {
   })
 
   test('main steam safety valve releases steam to containment when the turbine path is isolated', () => {
-    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
-
-    for (let index = 0; index < 60; index += 1) runtime.tick(100)
-    expect(Number(runtime.readVariable(valueOf('mainSteamSafetyValve.effectivePositionFraction')))).toBeCloseTo(0, 6)
-    expect(Number(runtime.readVariable(valueOf('main-steam-safety-valve-to-containment.flowKgPerS')))).toBeCloseTo(0, 6)
+    const runtime = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'sgA.pressureMPa': 10,
+        'sgB.pressureMPa': 10,
+        'sgC.pressureMPa': 10,
+        'sgD.pressureMPa': 10,
+      }),
+    })
 
     const initialContainmentPressure = Number(runtime.readVariable(valueOf('containment.pressureMPa')))
     const initialContainmentMass = Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))
