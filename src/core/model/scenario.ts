@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { idSchema, objectIdSchema, type ObjectId } from './ids.ts'
+import { idSchema, objectIdSchema, signalIdSchema, type ObjectId, type SignalId } from './ids.ts'
 import { geoJsonPointSchema, type GeoJsonPoint } from './geo.ts'
 import { objectContextSchema, type ObjectContext } from './context.ts'
+import { interactionEndpointSchema, type InteractionEndpoint } from './interactions.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 
@@ -127,6 +128,20 @@ export type ScenarioScriptAction =
   | {
       readonly type: 'delete_object'
       readonly objectId: ObjectId
+    }
+  | {
+      readonly type: 'emit_signal'
+      readonly signal: {
+        readonly id: SignalId
+        readonly source: InteractionEndpoint
+        readonly targets: ReadonlyArray<InteractionEndpoint>
+        readonly signalType: string
+        readonly payload: unknown
+        readonly severity?: 'info' | 'notice' | 'warning' | 'critical'
+        readonly correlationId?: string
+        readonly causationId?: string
+        readonly ttlMs?: number
+      }
     }
 
 export interface ScenarioScriptStep {
@@ -311,6 +326,20 @@ export const scenarioScriptActionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('delete_object'),
     objectId: objectIdSchema,
+  }),
+  z.object({
+    type: z.literal('emit_signal'),
+    signal: z.object({
+      id: signalIdSchema,
+      source: interactionEndpointSchema,
+      targets: z.array(interactionEndpointSchema),
+      signalType: idSchema,
+      payload: z.unknown(),
+      severity: z.enum(['info', 'notice', 'warning', 'critical']).optional(),
+      correlationId: idSchema.optional(),
+      causationId: idSchema.optional(),
+      ttlMs: z.number().finite().positive().optional(),
+    }).strict(),
   }),
 ])
 

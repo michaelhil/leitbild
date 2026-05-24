@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import type { AdapterId, ControlInstanceId, InteractionEffect, InteractionEndpoint, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../../../core/model/index.ts'
-import { confirmedFact, estimatedFact, notificationIdSchema, objectIdSchema, type KnowledgeFact } from '../../../core/model/index.ts'
+import {
+  confirmedFact,
+  estimatedFact,
+  notificationIdSchema,
+  objectIdSchema,
+  operationalDemandRequestedSignalType,
+  operationalDemandRequestSchema,
+  type KnowledgeFact,
+} from '../../../core/model/index.ts'
 import {
   ambulanceDomainDataSchema,
   hospitalDomainDataSchema,
@@ -9,6 +17,7 @@ import {
   type HospitalDomainData,
   type IncidentDomainData,
 } from '../model.ts'
+import { createScenarioIncidentObject } from './object-state.ts'
 
 export interface AmbulanceArrivalInteractionInput {
   readonly ambulance: OperationalObject
@@ -310,5 +319,56 @@ export const createAmbulanceArrivalInteractionHandler = (): InteractionHandler =
       at: signal.at,
       adapterId: provenance.adapterId ?? 'adapter:interaction-runtime' as AdapterId,
     }, result, signal.id, signal.controlInstanceId, signal.source, signal.targets)
+  },
+})
+
+const incidentIdForDemand = (demandId: string): ObjectId =>
+  objectIdSchema.parse(`incident:${demandId}`)
+
+const triageForDemandSeverity = (
+  severity: 'info' | 'notice' | 'warning' | 'critical',
+): 'green' | 'yellow' | 'red' =>
+  severity === 'critical' ? 'red' : severity === 'warning' ? 'yellow' : 'green'
+
+export const createAmbulanceMedicalDemandInteractionHandler = (): InteractionHandler => ({
+  id: 'ambulance.medical-demand-handler',
+  priority: 90,
+  accepts: signal => signal.type === operationalDemandRequestedSignalType,
+  handle: async ({ signal, snapshot }): Promise<ReadonlyArray<InteractionEffect>> => {
+    const payload = operationalDemandRequestSchema.safeParse(signal.payload)
+    if (!payload.success || payload.data.capability !== 'medical.transport') return []
+    const incidentId = incidentIdForDemand(payload.data.demandId)
+    if (snapshot.objects.some(object => object.id === incidentId)) return []
+    const incident = createScenarioIncidentObject({
+      id: incidentId,
+      label: payload.data.title,
+      point: payload.data.location,
+      triage: triageForDemandSeverity(payload.data.severity),
+      victimCount: payload.data.quantity ?? 1,
+      at: signal.at,
+    })
+    return [{
+      type: 'object.upsert',
+      object: {
+        ...incident,
+        provenance: {
+          ...incident.provenance,
+          externalId: payload.data.demandId,
+        },
+      },
+    }, {
+      type: 'notification.emit',
+      notification: {
+        id: notificationIdSchema.parse(`notification:${signal.id}`),
+        controlInstanceId: signal.controlInstanceId,
+        at: signal.at,
+        title: payload.data.title,
+        message: payload.data.description,
+        severity: payload.data.severity,
+        source: signal.source,
+        targets: signal.targets,
+        signalId: signal.id,
+      },
+    }]
   },
 })

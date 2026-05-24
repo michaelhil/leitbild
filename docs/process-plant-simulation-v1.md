@@ -27,6 +27,35 @@ Inside the pack:
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
+## Operational Projection Into Leitbild
+
+Process systems may be represented in Leitbild by a small operational object facade. The facade lets a process plant appear on the map and in the rail alongside ambulances, hospitals, incidents, traffic, and weather, without turning the process runtime into a pile of operational objects.
+
+Scenario object example:
+
+```json
+{
+  "pack": "process-plant",
+  "type": "unit",
+  "id": "plant:halden-a2",
+  "label": "Halden Unit A2",
+  "systemId": "halden-unit-a2",
+  "clusterId": "cluster-a",
+  "coolingWater": "Tista river / Halden harbor",
+  "location": [11.3744, 59.1206]
+}
+```
+
+The process-plant provider owns the runtime and I&C state for `systemId`. On each provider tick it derives a projection for the operational object:
+
+- status tone and label from active alarm/trip lifecycle state
+- active alarm and trip counts
+- summary power/output text
+- selected fields for map/rail/hover surfaces
+- updated operational status and priority for generic UI coloring
+
+The projection is intentionally narrow. It is enough for shared operational awareness and AI overview, but it is not a second process store. Detailed values remain available through process-plant pack queries such as `process-plant.signals.read`, `process-plant.ic.status`, and `process-plant.alarms.status`.
+
 ## Scenario-Owned Process Assembly
 
 The full plant run is assembled from a Leitbild Scenario Definition. The scenario declares active packs and may include one or more `processSystems`. Each process system names the owning pack, the component library, and a graph data object.
@@ -350,6 +379,58 @@ Writable controls use the same signal reference shape through `process-plant.con
 ```
 
 No process-specific HTTP endpoint family is introduced. The Control Instance API routes generic pack queries and command envelopes to the active process-plant provider.
+
+## Cross-Pack Operational Demands
+
+Process-plant does not directly call ambulance, traffic, weather, or any other pack. Cross-pack operational needs are expressed as interaction signals and committed effects.
+
+The initial generic demand signal is:
+
+```text
+operational.demand.requested
+```
+
+Payload shape:
+
+```json
+{
+  "schemaVersion": 1,
+  "demandId": "halden-a2-medical-demand",
+  "capability": "medical.transport",
+  "sourceObjectId": "plant:halden-a2",
+  "location": { "type": "Point", "coordinates": [11.3744, 59.1206] },
+  "quantity": 2,
+  "severity": "warning",
+  "title": "Medical pickup requested at Unit A2",
+  "description": "Plant Unit A2 requests medical transport for two people at the site access point."
+}
+```
+
+Responder packs interpret capabilities they understand. The ambulance pack currently handles `medical.transport` by creating an incident target at the demand location and emitting an operational notification. The handler is idempotent by `demandId`, so replay or duplicate signal delivery does not create duplicate incidents.
+
+This is the preferred V1 pattern for a plant unit needing external support. It keeps the source pack generic and lets future responder packs add capabilities without changing process-plant.
+
+## Halden Process-Plant Multi-Sim Demo
+
+`halden-process-plant-demo` is the first scenario that puts process-plant into the shared Leitbild world.
+
+The scenario activates:
+
+- `process-plant`
+- `ambulance`
+- `weather`
+
+It instantiates six independent process systems from `graphRef: "process-plant.pressurized-water-reactor.v1"` in two nearby Halden clusters. Each unit has its own `systemId`, reference I&C config, runtime state, schedule, and operational projection object. Two units have scheduled process faults: one SGTR-like transient and one feedwater/loop degradation path. Other units continue normally.
+
+The same scenario includes hospitals, incidents, ambulances already moving at startup, reserve ambulances, and a moving weather front. At 30 seconds the scenario emits `operational.demand.requested` from one plant unit. Ambulance handles that demand through the generic interaction layer by creating an incident target, not through a plant-specific ambulance hook.
+
+This scenario is a composition test:
+
+- six process runtimes run in parallel
+- process unit map/rail state comes from runtime/I&C projection
+- ambulance routing and arrivals continue independently
+- weather continues through its own provider-backed H3 field
+- scenario guidance and demand signals use runtime events, not UI-only hacks
 
 ## Control And Protection Substrate
 

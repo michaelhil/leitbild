@@ -116,6 +116,10 @@ _Avoid_: arbitrary imperative code paths that bypass event ordering, validation,
 A durable attention item emitted from interaction handling or system logic for operators, AI agents, replay, and debugging. A notification is not a substitute for canonical object state.
 _Avoid_: UI-only toasts for information that should be visible to AI agents, event history, or replay
 
+**Operational Demand Signal**:
+A generic interaction signal declaring that some capability is needed at a location, such as `medical.transport`. It carries demand id, capability, source object, point location, quantity, severity, title, and description. Responder packs decide whether they can satisfy the demand; V1 ambulance handles `medical.transport` by creating an incident target idempotently.
+_Avoid_: hardcoding cross-pack requests from one pack directly into another pack, or making every requesting object pretend to be an ambulance incident
+
 **Traffic Condition**:
 An aggregate traffic object describing congestion, closure, slowdown, or access restriction over a road segment or area.
 _Avoid_: modeling every traffic need as individual cars before aggregate traffic effects are proven insufficient
@@ -143,6 +147,10 @@ _Avoid_: computing weather truth only for the viewport, making weather cells can
 **Process Plant Runtime**:
 The `process-plant` pack's fixed-step, headless runtime for compiled process systems. It owns process variables, rejects physically invalid writable values before they enter the command queue, applies accepted commands at phase boundaries, runs deterministic solver phases, and produces snapshots for tests and provider-private persistence. The current runtime includes a first lumped-parameter process path for reactor heat, temperature feedback, primary coolant flow/temperature and loop inertia, primary inventory/pressurizer pressure coupling, conservative pressurizer steam-mass accounting, steam-generator heat transfer and steam production, SGTR-like primary-to-secondary leakage, turbine output, and condenser sink behavior.
 _Avoid_: modeling continuous process physics as object-to-object events, process-specific HTTP endpoint families, or treating process variables as operational objects
+
+**Process Plant Operational Projection**:
+The small Leitbild-facing object projection for one process system. It is an operational facility object with map position, rail category, status tone, summary, and selected fields derived from the process-plant runtime and I&C lifecycle state. The process runtime and variable table remain the source of truth; the projection is a shared operational facade for map/rail awareness.
+_Avoid_: exposing every process variable as an operational object, or treating the projection as a second process state store
 
 **Process Variable Table**:
 The single authoritative in-memory store for compiled process variables inside one process plant runtime. Component and process-link behavior modules read and write through this table; they do not maintain duplicate state maps.

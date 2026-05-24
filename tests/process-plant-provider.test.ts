@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../src/core/model/index.ts'
+import { geoPointFromLonLat, operationalDemandRequestedSignalType } from '../src/core/model/index.ts'
 import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
 import type { SimulationProviderStateStore } from '../src/simulation/protocol.ts'
 import {
@@ -10,8 +11,11 @@ import {
   processPlantControlWriteCommandKind,
   processPlantIcLifecycleCommandKind,
   processPlantPressurizedWaterReactorIcRef,
+  processPlantPack,
+  processPlantUnitDomainDataSchema,
   variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
+import { createAmbulanceMedicalDemandInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
 
 const controlInstanceId = 'control-instance:process-plant-test' as ControlInstanceId
 const startsAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
@@ -45,7 +49,7 @@ const scenarioConfig = (
     ...processSystemOverrides,
   }],
   providerConfigs: {
-    'process-plant': processPlantConfig,
+    'process-plant-local': processPlantConfig,
   },
   providerConfig: {},
 })
@@ -77,6 +81,45 @@ const lifecycleCommand = (payload: unknown): CommandEnvelope => ({
 })
 
 describe('process plant simulation provider', () => {
+  test('projects scenario-defined process units as operational objects', async () => {
+    const unit = await processPlantPack.scenario!.expandObject({
+      pack: 'process-plant',
+      type: 'unit',
+      id: 'plant:test',
+      label: 'Test Unit',
+      systemId: 'plant',
+      location: [11.37, 59.12],
+    }, {
+      at: startsAt,
+      objects: [],
+      objectById: () => undefined,
+      routing: {
+        id: 'unused-process-plant-test-routing',
+        route: async () => {
+          throw new Error('process plant unit expansion should not route')
+        },
+      },
+      providerConfigs: {},
+    }) as OperationalObject
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: {
+        ...scenarioConfig(),
+        initialObjects: [unit],
+      },
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const snapshot = await connection.getSnapshot()
+    expect(snapshot.objects.map(object => object.id)).toEqual(['plant:test' as ObjectId])
+    const data = processPlantUnitDomainDataSchema.parse(snapshot.objects[0]?.domainData)
+    expect(data.systemId).toBe('plant')
+    expect(data.projection?.fields.map(field => field.key)).toContain('thermal-power')
+    expect(snapshot.objects[0]?.operational.status).toBe('normal')
+
+    await connection.close()
+  })
+
   test('runs scenario-defined process systems without operational objects', async () => {
     const connection = await createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,
@@ -98,6 +141,49 @@ describe('process plant simulation provider', () => {
     expect((telemetry.result as { variables: ReadonlyArray<{ readonly path: string }> }).variables.map(variable => variable.path)).toContain('core.powerMw')
 
     await connection.close()
+  })
+
+  test('creates an ambulance incident once from a generic medical demand signal', async () => {
+    const handler = createAmbulanceMedicalDemandInteractionHandler()
+    const signal: InteractionSignal = {
+      id: 'signal:medical-demand-test' as SignalId,
+      controlInstanceId,
+      at: startsAt,
+      source: { kind: 'object', id: 'plant:test' as ObjectId },
+      targets: [{ kind: 'role', id: 'medical-transport' }],
+      type: operationalDemandRequestedSignalType,
+      severity: 'warning',
+      payload: {
+        schemaVersion: 1,
+        demandId: 'medical-demand-test',
+        capability: 'medical.transport',
+        sourceObjectId: 'plant:test',
+        location: geoPointFromLonLat(11.37, 59.12),
+        quantity: 2,
+        severity: 'warning',
+        title: 'Medical demand test',
+        description: 'Two people need medical transport.',
+      },
+    }
+
+    const effects = await handler.handle({
+      signal,
+      snapshot: { seq: 1, objects: [] },
+      provenance: { source: 'simulator' },
+    })
+    expect(effects.map(effect => effect.type)).toEqual(['object.upsert', 'notification.emit'])
+    if (effects[0]?.type !== 'object.upsert') throw new Error('medical demand should create an incident object')
+    expect(effects[0].object.id).toBe('incident:medical-demand-test' as ObjectId)
+
+    const repeated = await handler.handle({
+      signal,
+      snapshot: {
+        seq: 2,
+        objects: [effects[0].object],
+      },
+      provenance: { source: 'simulator' },
+    })
+    expect(repeated).toEqual([])
   })
 
   test('applies validated write commands through the runtime update loop', async () => {

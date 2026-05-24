@@ -1,4 +1,4 @@
-import type { ControlInstanceId, IsoTimestamp, ObjectId, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+import type { ControlInstanceId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
@@ -8,6 +8,7 @@ export interface ControlInstanceEventPayload {
   readonly stepId?: string
   readonly guidance?: ScenarioGuidance
   readonly guidanceId?: string
+  readonly notification?: OperationalNotification
   readonly objectIds?: ReadonlyArray<ObjectId>
   readonly result?: {
     readonly ok: boolean
@@ -85,6 +86,7 @@ const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
     ...(typeof value.stepId === 'string' ? { stepId: value.stepId } : {}),
     ...(isRecord(value.guidance) ? { guidance: value.guidance as unknown as ScenarioGuidance } : {}),
     ...(typeof value.guidanceId === 'string' ? { guidanceId: value.guidanceId } : {}),
+    ...(isRecord(value.notification) ? { notification: value.notification as unknown as OperationalNotification } : {}),
     ...(Array.isArray(value.objectIds) ? { objectIds: value.objectIds.filter((objectId): objectId is ObjectId => typeof objectId === 'string') } : {}),
     ...(isCommandResult(value.result) ? { result: value.result } : {}),
     ...(isRecord(value.clock) ? { clock: value.clock as unknown as SimulationClockState } : {}),
@@ -154,6 +156,19 @@ const applyScenarioEvents = (
       if (event.guidanceId === undefined || current.guidance?.id === event.guidanceId) {
         const { guidance: _guidance, ...withoutGuidance } = current
         nextState = withoutGuidance
+      }
+    }
+    if (event.type === 'notification.emitted' && event.notification) {
+      nextState = {
+        ...current,
+        guidance: {
+          id: event.notification.id,
+          title: event.notification.title,
+          message: event.notification.message,
+          objectIds: event.notification.targets.flatMap(target => target.kind === 'object' ? [target.id] : []),
+          dismissible: true,
+          tone: 'update',
+        },
       }
     }
     if (event.type === 'scenario.objects.highlighted' && event.objectIds) {

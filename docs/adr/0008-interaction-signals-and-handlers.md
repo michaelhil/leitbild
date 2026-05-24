@@ -18,6 +18,16 @@ Control Instance Projected State is the canonical current Leitbild truth for sha
 
 V1 will use static, trusted handler registration from built-in packs. Dynamic external handler loading is deferred. Route-impact handling may warn and update canonical route-awareness state, but automatic rerouting is deferred until explicit human, AI, or scenario policy control exists.
 
+Scenario scripts may emit interaction signals as declarative data. A scenario-emitted signal enters the same runtime handling path as a simulation-emitted or API-submitted signal: the control-instance runtime records `interaction.signal.received`, active handlers inspect the current snapshot, and only accepted effects become ordered domain events. This keeps scenario tutorials and demos from bypassing the interaction model.
+
+V1 also defines the generic operational-demand signal type:
+
+```text
+operational.demand.requested
+```
+
+Its payload declares a capability need at a point location, with demand id, capability, optional source object, quantity, severity, title, and description. The first concrete capability is `medical.transport`. The ambulance pack handles that capability by idempotently creating an incident target and emitting an operational notification. The requesting pack does not know ambulance internals, and ambulance does not need process-plant-specific code.
+
 ## Rationale
 
 Leitbild needs interactions such as ambulance-arrives-at-incident, ambulance-arrives-at-hospital, hospital-capacity-changed, drone-observation-detected, and AI-recommendation-created. These interactions may involve two objects, many objects, multiple simulation instances, operators, and AI agents.
@@ -46,6 +56,7 @@ The chosen model follows useful patterns from event-sourced systems, Redux/Elm-s
 - Handler-emitted follow-up signals and command requests are deferred until loop guards, causation tracking, and TTL semantics are implemented.
 - V1 effects should stay small: object upsert, object delete, and notification emit.
 - Traffic route-impact handlers must not silently reroute mobile assets; rerouting is a command or future declared policy.
+- Cross-pack service requests should prefer capability-based demand signals over direct pack-to-pack calls. A future responder pack can handle the same demand capability without changing the request source.
 
 ## Rejected Alternatives
 

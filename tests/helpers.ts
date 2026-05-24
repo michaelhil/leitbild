@@ -7,10 +7,12 @@ import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/ad
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
+import { processPlantPack } from '../src/packs/process-plant/pack.ts'
+import { createLocalProcessPlantSimulationAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { SimulationAdapter, SimulationScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
 
-export const testPacks = [ambulancePack, trafficPack, weatherPack] as const
+export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,
@@ -22,6 +24,7 @@ export const createTestSimulationAdapters = (): ReadonlyArray<SimulationAdapter>
   createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
   createLocalTrafficSimulationAdapter(),
   createLocalWeatherSimulationAdapter(),
+  createLocalProcessPlantSimulationAdapter(),
 ]
 
 export const testScenarioRuntimeConfig = (): SimulationScenarioRuntimeConfig => {

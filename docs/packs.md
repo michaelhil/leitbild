@@ -36,6 +36,8 @@ A pack may contain:
 - process graph definitions and validated process-link solver contracts when the pack owns a process simulation runtime
 - process signal bindings for procedure/operator/AI access, including graph-owned tag ids, equipment ids, descriptions, and external refs
 - typed control/protection rules for pack-owned alarms, trips, and validated process writes
+- operational projections for pack-internal simulations that need map/rail awareness without exposing every internal variable as an operational object
+- generic operational demand handlers for cross-pack capability requests, such as ambulance responding to `medical.transport`
 - command/action builders for UI controls
 - interaction signal schemas and interaction handlers
 - operational notification renderers and severity rules
@@ -167,6 +169,7 @@ Composition rules:
 - Packs publish events through Leitbild seams.
 - Packs issue changes to other operational domains only through declared commands, interaction signals, and committed events.
 - Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
+- Packs that need another pack's capability should emit a generic demand signal when possible. The source pack describes the need; responder packs decide whether and how to materialize target objects or notifications.
 
 Multi-pack simulation orchestration uses the Simulation Hub once more than one provider is active in a Control Instance.
 
@@ -188,6 +191,19 @@ Pack-specific presentation belongs behind `LeitbildPack`:
 The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, generic pack areas, symbols, and overlays. That vocabulary must not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
 
 Application assembly code may import built-in packs to create the active pack set. Shared UI components, map feature builders, and generic state modules should not.
+
+## Process-Plant Operational Projection
+
+The process-plant pack may expose selected process systems as ordinary Leitbild operational objects. These objects are facades, not the process simulation itself.
+
+A scenario object of type `unit` declares:
+
+- `systemId`: the process system it represents
+- `location`: map point
+- optional `clusterId`
+- optional `coolingWater`
+
+The local process-plant provider projects runtime/I&C state back onto that object at the provider tick. The projection includes status tone, status label, active alarm/trip counts, summary, and selected rail fields such as thermal power, electric output, pressurizer pressure, steam-generator level, radiation, and containment pressure. The process variable table remains the source of truth; the projection is only the shared operational picture for map, rail, AI overview, and cross-pack awareness.
 
 ## Spatial Field Contributions
 

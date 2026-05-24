@@ -149,7 +149,7 @@ export const createControlInstanceRuntime = async (config: {
   const domainEventFromScenarioAction = (
     action: ScenarioScriptAction,
     at: IsoTimestamp,
-  ): DomainEvent => {
+  ): DomainEvent | null => {
     if (action.type === 'show_guidance') {
       return { ...nextScenarioBase(at), type: 'scenario.guidance.shown', guidance: action.guidance }
     }
@@ -173,17 +173,37 @@ export const createControlInstanceRuntime = async (config: {
     if (action.type === 'upsert_object') {
       return { ...nextScenarioBase(at), type: 'object.upserted', object: action.object }
     }
+    if (action.type === 'emit_signal') return null
     return { ...nextScenarioBase(at), type: 'object.deleted', objectId: action.objectId }
   }
 
-  const domainEventsForScenarioStep = (step: ScenarioScriptStep, at: IsoTimestamp): ReadonlyArray<DomainEvent> => [
-    {
-      ...nextScenarioBase(at),
-      type: 'scenario.step.started',
-      stepId: step.id,
-    },
-    ...step.actions.map(action => domainEventFromScenarioAction(action, at)),
-  ]
+  const scenarioSignalForAction = (
+    action: Extract<ScenarioScriptAction, { readonly type: 'emit_signal' }>,
+    at: IsoTimestamp,
+  ): InteractionSignal => ({
+    id: action.signal.id,
+    controlInstanceId: config.id,
+    at,
+    source: action.signal.source,
+    targets: action.signal.targets,
+    type: action.signal.signalType,
+    payload: action.signal.payload,
+    ...(action.signal.severity === undefined ? {} : { severity: action.signal.severity }),
+    ...(action.signal.correlationId === undefined ? {} : { correlationId: action.signal.correlationId }),
+    ...(action.signal.causationId === undefined ? {} : { causationId: action.signal.causationId }),
+    ...(action.signal.ttlMs === undefined ? {} : { ttlMs: action.signal.ttlMs }),
+  })
+
+  const scenarioStepStartedEvent = (step: ScenarioScriptStep, at: IsoTimestamp): DomainEvent => ({
+    ...nextScenarioBase(at),
+    type: 'scenario.step.started',
+    stepId: step.id,
+  })
+
+  const domainEventsForScenarioActions = (actions: ReadonlyArray<ScenarioScriptAction>, at: IsoTimestamp): ReadonlyArray<DomainEvent> =>
+    actions
+      .map(action => domainEventFromScenarioAction(action, at))
+      .filter((event): event is DomainEvent => event !== null)
 
   const nextBase = (simEvent: SimulationEvent): Omit<DomainEvent, 'type'> => ({
     id: eventId(),
@@ -443,6 +463,25 @@ export const createControlInstanceRuntime = async (config: {
 
   let scenarioRunner: ScenarioScriptRunner | null = null
 
+  const publishScenarioStep = async (step: ScenarioScriptStep, at: IsoTimestamp): Promise<void> => {
+    const stepEvent = scenarioStepStartedEvent(step, at)
+    await publishMany([stepEvent])
+    await config.simulation.observeCommittedEvents([stepEvent])
+
+    for (const action of step.actions) {
+      if (action.type === 'emit_signal') {
+        await enqueuePublish(async () => {
+          await handleInteractionSignalNow(scenarioSignalForAction(action, at), { source: 'system' })
+        })
+        continue
+      }
+      const events = domainEventsForScenarioActions([action], at)
+      if (events.length === 0) continue
+      await publishMany(events)
+      await config.simulation.observeCommittedEvents(events)
+    }
+  }
+
   const runDueScenarioSteps = async (): Promise<void> => {
     if (!config.scenario?.script || !state.snapshot().scenario?.script) return
     const dueSteps = dueScenarioScriptSteps({
@@ -451,9 +490,7 @@ export const createControlInstanceRuntime = async (config: {
       nowMs: currentClockMs(),
     })
     for (const step of dueSteps) {
-      const events = domainEventsForScenarioStep(step, nowIso())
-      await publishMany(events)
-      await config.simulation.observeCommittedEvents(events)
+      await publishScenarioStep(step, nowIso())
     }
   }
 
@@ -473,9 +510,7 @@ export const createControlInstanceRuntime = async (config: {
         return Math.max(0, (dueAtMs - nowMs) / speed)
       },
       onStepDue: async (step): Promise<void> => {
-        const events = domainEventsForScenarioStep(step, nowIso())
-        await publishMany(events)
-        await config.simulation.observeCommittedEvents(events)
+        await publishScenarioStep(step, nowIso())
       },
     })
     scenarioRunner?.start()

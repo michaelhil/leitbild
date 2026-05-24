@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CommandEnvelope, CommandResult, DomainEvent, SimulationClockState } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, DomainEvent, IsoTimestamp, ObjectId, OperationalObject, Provenance, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
 import type {
   SimulationAdapter,
@@ -49,9 +49,11 @@ import {
   variableDomainSchema,
 } from '../graph/index.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
+import { processPlantDomainId, processPlantUnitDomainDataSchema } from '../model.ts'
+import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { processPlantDomainId, processPlantSimProviderId } from './constants.ts'
+import { processPlantSimAdapterId, processPlantSimProviderId } from './constants.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 
 const processPlantVariableSnapshotSchema = z.object({
@@ -185,7 +187,7 @@ const restoredProtectionFor = (
 }
 
 const processPlantProviderConfigFor = (config: SimulationConnectionConfig): ProcessPlantProviderConfig => {
-  const rawConfig = config.scenario?.providerConfigs?.['process-plant'] ?? {}
+  const rawConfig = config.scenario?.providerConfigs?.[processPlantSimProviderId] ?? config.scenario?.providerConfig ?? {}
   return processPlantProviderConfigSchema.parse(rawConfig)
 }
 
@@ -219,6 +221,59 @@ const emitSimulationEvents = (
       providerId: processPlantSimProviderId,
     })
   }
+}
+
+const initialProcessPlantObjects = (
+  config: SimulationConnectionConfig,
+): ReadonlyArray<OperationalObject> =>
+  config.initialObjects ?? config.scenario?.initialObjects ?? []
+
+const processPlantUnitSystemId = (object: OperationalObject): string | null => {
+  const parsed = processPlantUnitDomainDataSchema.safeParse(object.domainData)
+  return parsed.success ? parsed.data.systemId : null
+}
+
+const projectedInitialObjects = (config: {
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly at: IsoTimestamp
+}): ReadonlyArray<OperationalObject> =>
+  config.objects.map(object => {
+    const systemId = processPlantUnitSystemId(object)
+    return systemId === null
+      ? object
+      : projectedProcessPlantUnit({
+          object,
+          system: config.systems.get(systemId),
+          at: config.at,
+        })
+  })
+
+const projectionEvents = (config: {
+  readonly objectsById: Map<ObjectId, OperationalObject>
+  readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
+  readonly at: IsoTimestamp
+  readonly provenance: Provenance
+}): ReadonlyArray<SimulationEvent> => {
+  const events: SimulationEvent[] = []
+  for (const object of config.objectsById.values()) {
+    const systemId = processPlantUnitSystemId(object)
+    if (systemId === null) continue
+    const next = projectedProcessPlantUnit({
+      object,
+      system: config.systems.get(systemId),
+      at: config.at,
+    })
+    if (processPlantProjectionKey(object) === processPlantProjectionKey(next)) continue
+    config.objectsById.set(next.id, next)
+    events.push({
+      type: 'object.upserted',
+      object: next,
+      at: config.at,
+      provenance: config.provenance,
+    })
+  }
+  return events
 }
 
 export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter => ({
@@ -288,6 +343,13 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       speed: 1,
     }
     let lastTickWallMs = Date.now()
+    const objectsById = new Map<ObjectId, OperationalObject>(
+      projectedInitialObjects({
+        objects: initialProcessPlantObjects(config),
+        systems,
+        at: nowIso(),
+      }).map(object => [object.id, object]),
+    )
 
     await saveProviderState(config, systems)
 
@@ -308,6 +370,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         }) ?? []))
         telemetry?.recordDueSamples(runtime)
       }
+      events.push(...projectionEvents({
+        objectsById,
+        systems,
+        at: nowIso(),
+        provenance: {
+          source: 'simulator',
+          adapterId: processPlantSimAdapterId,
+        },
+      }))
       emitSimulationEvents(handlers, events)
       await saveProviderState(config, systems)
     }
@@ -321,7 +392,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
     return {
       getSnapshot: async () => ({
         controlInstanceId: config.controlInstanceId,
-        objects: [],
+        objects: [...objectsById.values()],
         capturedAt: nowIso(),
       }),
       subscribe: (handler: SimulationEventHandler): (() => void) => {
@@ -406,7 +477,14 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           at: nowIso(),
         })
       },
-      observeCommittedEvents: async (_events: ReadonlyArray<DomainEvent>): Promise<void> => {},
+      observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+        for (const event of events) {
+          if (event.type === 'object.upserted' && processPlantUnitSystemId(event.object) !== null) {
+            objectsById.set(event.object.id, event.object)
+          }
+          if (event.type === 'object.deleted') objectsById.delete(event.objectId)
+        }
+      },
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
         lastTickWallMs = Date.now()

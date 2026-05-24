@@ -1,6 +1,7 @@
 export * from './alerts.ts'
 export * from './commands.ts'
 export * from './context.ts'
+export * from './demands.ts'
 export * from './events.ts'
 export * from './geo.ts'
 export * from './ids.ts'

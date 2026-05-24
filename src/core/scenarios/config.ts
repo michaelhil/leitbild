@@ -2,8 +2,10 @@ import { z } from 'zod'
 import {
   geoPointFromLonLat,
   idSchema,
+  interactionEndpointSchema,
   objectIdSchema,
   scenarioDefinitionSchema,
+  signalIdSchema,
   type GeoJsonPoint,
   type IsoTimestamp,
   type ObjectId,
@@ -72,6 +74,20 @@ const scenarioScriptActionConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('delete_object'),
     objectId: objectIdSchema,
+  }),
+  z.object({
+    type: z.literal('emit_signal'),
+    signal: z.object({
+      id: signalIdSchema,
+      source: interactionEndpointSchema,
+      targets: z.array(interactionEndpointSchema),
+      signalType: idSchema,
+      payload: z.unknown(),
+      severity: z.enum(['info', 'notice', 'warning', 'critical']).optional(),
+      correlationId: idSchema.optional(),
+      causationId: idSchema.optional(),
+      ttlMs: z.number().finite().positive().optional(),
+    }).strict(),
   }),
 ])
 
@@ -160,7 +176,20 @@ export const scenarioConfigSchema = z.object({
     id: idSchema,
     pack: idSchema,
     componentLibrary: idSchema,
-    graph: z.custom<unknown>(value => value !== undefined, 'graph is required'),
+    graph: z.unknown().optional(),
+    graphRef: idSchema.optional(),
+    parameters: z.record(z.unknown()).optional(),
+    initialState: z.record(z.unknown()).optional(),
+  }).superRefine((definition, ctx) => {
+    const hasGraph = definition.graph !== undefined
+    const hasGraphRef = definition.graphRef !== undefined
+    if (hasGraph === hasGraphRef) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'process system must define exactly one of graph or graphRef',
+        path: hasGraph ? ['graphRef'] : ['graph'],
+      })
+    }
   })).default([]),
   providerConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
@@ -216,6 +245,9 @@ const expandScriptAction = async (
 ): Promise<ScenarioScriptAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
     return action
+  }
+  if (action.type === 'emit_signal') {
+    return action as ScenarioScriptAction
   }
   if (action.type === 'hide_guidance') {
     return action.guidanceId === undefined

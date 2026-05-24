@@ -109,6 +109,7 @@ describe('control instance API', () => {
     expect(listed.body.defaultScenarioId).toBe('oslo-ambulance')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden')
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden-process-plant-demo')
     const oslo = listed.body.scenarios.find(scenario => scenario.id === 'oslo-ambulance')
     expect(oslo?.title).toBe('Oslo ambulance tutorial')
     expect(oslo?.packs).toBeUndefined()
@@ -122,6 +123,18 @@ describe('control instance API', () => {
     expect(fetched.body.scenario.id).toBe('oslo-ambulance')
     expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
+  })
+
+  test('loads the Halden process-plant multi-pack scenario', async () => {
+    const registry = await createTestRegistry()
+    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly { readonly domain: string }[]; readonly processSystems: readonly { readonly id: string }[] } }>(
+      registry,
+      '/api/scenarios/halden-process-plant-demo',
+    )
+    expect(fetched.status).toBe(200)
+    expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
+    expect(fetched.body.scenario.initialObjects.filter(object => object.domain === 'process-plant')).toHaveLength(6)
+    expect(fetched.body.scenario.processSystems).toHaveLength(6)
   })
 
   test('joins a named control instance and exposes objects', async () => {
