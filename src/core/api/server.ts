@@ -102,7 +102,11 @@ const discoveryEtag = async (manifest: ReturnType<typeof buildManifest>): Promis
 
 const requestBaseUrl = (req: Request): string => {
   const url = new URL(req.url)
-  return `${url.protocol}//${url.host}`
+  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim()
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim()
+  const protocol = forwardedProto ? `${forwardedProto}:` : url.protocol
+  const host = forwardedHost ?? url.host
+  return `${protocol}//${host}`
 }
 
 const acceptsEtag = (ifNoneMatch: string | null, etag: string): boolean =>

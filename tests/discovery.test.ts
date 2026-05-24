@@ -191,4 +191,31 @@ describe('discovery manifest', () => {
     expect(changed.status).toBe(200)
     expect(discoveryManifestSchema.safeParse(await changed.json()).success).toBe(true)
   })
+
+  test('uses forwarded proto and host for reverse-proxied discovery URLs', async () => {
+    const request = new Request('http://127.0.0.1:3000/.well-known/leitbild', {
+      headers: {
+        'X-Forwarded-Proto': 'https',
+        'X-Forwarded-Host': 'leitbild.samsinn.app',
+      },
+    })
+    const response = await handleDiscoveryRoute(request, new URL(request.url))
+    if (!response) throw new Error('discovery route did not handle GET /.well-known/leitbild')
+
+    const manifest = await response.json() as DiscoveryManifest
+    expect(manifest.links.self.href).toBe('https://leitbild.samsinn.app/.well-known/leitbild')
+    expect(manifest.links.realtime.href).toBe('wss://leitbild.samsinn.app/ws')
+    expect(manifest.links.realtime.hrefTemplate).toBe('wss://leitbild.samsinn.app/ws?controlInstance={id}')
+  })
+
+  test('uses request URL scheme and host when forwarded headers are absent', async () => {
+    const request = new Request('http://localhost:3000/.well-known/leitbild')
+    const response = await handleDiscoveryRoute(request, new URL(request.url))
+    if (!response) throw new Error('discovery route did not handle GET /.well-known/leitbild')
+
+    const manifest = await response.json() as DiscoveryManifest
+    expect(manifest.links.self.href).toBe('http://localhost:3000/.well-known/leitbild')
+    expect(manifest.links.realtime.href).toBe('ws://localhost:3000/ws')
+    expect(manifest.links.realtime.hrefTemplate).toBe('ws://localhost:3000/ws?controlInstance={id}')
+  })
 })
