@@ -100,13 +100,17 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const targetTemperature = incomingTemperature ?? parameterNumber(component, 'initialTemperatureC')
       const currentSolute = context.readNumber(componentVariablePath(component, 'soluteConcentrationPpm'))
       const incomingSolute = averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context) ?? currentSolute
+      const makeupSolute = optionalParameterNumber(component, 'makeupSoluteConcentrationPpm', currentSolute)
       const inflow = incomingFlow + makeupFlow
+      const inflowSolute = inflow > 0
+        ? ((incomingSolute * incomingFlow) + (makeupSolute * makeupFlow)) / inflow
+        : currentSolute
       const nextSolute = nextInventory <= 0
         ? 0
         : clamp(
             (
               currentSolute * currentInventory
-              + incomingSolute * inflow * context.dtSeconds
+              + inflowSolute * inflow * context.dtSeconds
               - currentSolute * outgoingFlow * context.dtSeconds
             ) / nextInventory,
             0,

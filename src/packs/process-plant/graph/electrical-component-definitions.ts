@@ -5,9 +5,23 @@ import { defineComponent, normalized, variable } from './component-definition-he
 const positivePower = z.number().finite().positive()
 const nonnegativePower = z.number().finite().nonnegative()
 
-const energizedVariables = (labelPrefix: string) => [
+const energizedVariables = (
+  labelPrefix: string,
+  voltageConfig: { readonly kind?: 'state' | 'derived' | 'control'; readonly writable?: boolean } = {},
+) => [
   variable({ path: 'energized', label: `${labelPrefix} energized`, kind: 'state', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
   variable({ path: 'availablePowerMw', label: `${labelPrefix} available power`, kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
+  variable({
+    path: 'voltageFraction',
+    label: `${labelPrefix} voltage`,
+    kind: voltageConfig.kind ?? 'derived',
+    domain: 'electrical',
+    writable: voltageConfig.writable ?? false,
+    publish: 'telemetry',
+    quantity: 'ratio',
+    unit: 'fraction',
+    limits: { hardRange: { min: 0, max: 1.2 } },
+  }),
 ]
 
 export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
@@ -20,10 +34,11 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     parametersSchema: z.object({
       nominalPowerMw: positivePower,
       initialAvailable: z.boolean().optional(),
+      initialVoltageFraction: z.number().finite().min(0).max(1.2).optional(),
     }).strict(),
     variables: [
       variable({ path: 'available', label: 'Grid source available', kind: 'control', domain: 'electrical', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
-      ...energizedVariables('Grid source'),
+      ...energizedVariables('Grid source', { kind: 'control', writable: true }),
     ],
   }),
   defineComponent({
@@ -36,11 +51,13 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     parametersSchema: z.object({
       nominalPowerMw: positivePower,
       initialEnergized: z.boolean().optional(),
+      degradedVoltageFraction: z.number().finite().min(0).max(1.2).optional(),
     }).strict(),
     variables: [
       ...energizedVariables('Electrical bus'),
       variable({ path: 'servedLoadMw', label: 'Bus served load', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'power', unit: 'MW' }),
       variable({ path: 'marginMw', label: 'Bus power margin', kind: 'derived', domain: 'electrical', writable: false, publish: 'telemetry', quantity: 'powerDelta', unit: 'MW' }),
+      variable({ path: 'degraded', label: 'Bus degraded voltage', kind: 'derived', domain: 'electrical', writable: false, publish: 'alarm', quantity: 'boolean', unit: 'boolean' }),
     ],
   }),
   defineComponent({
@@ -55,6 +72,7 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
       nominalPowerMw: positivePower,
       initialClosed: z.boolean().optional(),
       initialTripped: z.boolean().optional(),
+      degradedVoltageTripFraction: z.number().finite().min(0).max(1.2).optional(),
     }).strict(),
     variables: [
       variable({ path: 'closed', label: 'Breaker closed', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),

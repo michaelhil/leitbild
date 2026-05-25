@@ -15,6 +15,7 @@ export const balanceOfPlantComponentDefinitions: ReadonlyArray<ComponentDefiniti
       initialInventoryFraction: normalized,
       initialTemperatureC: z.number().finite(),
       initialSoluteConcentrationPpm: z.number().finite().nonnegative().optional(),
+      makeupSoluteConcentrationPpm: z.number().finite().nonnegative().optional(),
       makeupFlowKgPerS: z.number().finite().nonnegative(),
       maxOutletFlowKgPerS: z.number().finite().nonnegative(),
       thermalTimeConstantS: z.number().finite().positive().optional(),

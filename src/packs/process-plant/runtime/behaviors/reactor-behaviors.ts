@@ -21,7 +21,7 @@ import {
   primaryCoolantThermalExpansionPressureBiasMPa,
   reactorKineticsPowerStep,
 } from '../physics.ts'
-import { primarySystemReactorCore } from '../system-topology.ts'
+import { primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
 import { waterDeltaTFromHeatMw } from '../thermophysics.ts'
 
 export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
@@ -64,12 +64,14 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'fuelMidTemperatureC',
       'fuelUpperTemperatureC',
       'decayHeatMw',
+      'reactorVessel.boronConcentrationPpm',
     ],
     writes: [
       'powerMw',
       'fissionPowerMw',
       'totalThermalPowerMw',
       'temperatureFeedbackPcm',
+      'boronFeedbackPcm',
       'effectiveReactivityPcm',
       'fuelTemperatureC',
       'fuelLowerTemperatureC',
@@ -78,7 +80,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'fuelStoredEnergyMj',
       'decayHeatMw',
     ],
-    update: ({ component, context }): void => {
+    update: ({ system, component, context }): void => {
       const ratedPower = parameterNumber(component, 'ratedPowerMw')
       const reactivity = context.readNumber(componentVariablePath(component, 'reactivityPcm'))
       const coolantOutlet = context.readNumber(componentVariablePath(component, 'coolantOutletTemperatureC'))
@@ -88,7 +90,14 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const temperatureFeedbackPcm =
         (coolantOutlet - referenceCoolantOutlet) * optionalParameterNumber(component, 'coolantTemperatureFeedbackPcmPerC', 0)
         + (currentFuelTemperature - referenceFuelTemperature) * optionalParameterNumber(component, 'fuelTemperatureFeedbackPcmPerC', 0)
-      const effectiveReactivity = reactivity + temperatureFeedbackPcm
+      const vessel = primarySystemReactorVessel(system)
+      const boronConcentration = vessel === null
+        ? optionalParameterNumber(component, 'referenceBoronConcentrationPpm', 0)
+        : context.readNumber(componentVariablePath(vessel, 'boronConcentrationPpm'))
+      const boronFeedbackPcm =
+        (boronConcentration - optionalParameterNumber(component, 'referenceBoronConcentrationPpm', boronConcentration))
+        * optionalParameterNumber(component, 'boronFeedbackPcmPerPpm', 0)
+      const effectiveReactivity = reactivity + temperatureFeedbackPcm + boronFeedbackPcm
       const currentPower = context.readNumber(componentVariablePath(component, 'powerMw'))
       const nextPower = reactorKineticsPowerStep({
         currentPowerMw: currentPower,
@@ -103,6 +112,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'powerMw'), nextPower)
       context.write(componentVariablePath(component, 'fissionPowerMw'), nextPower)
       context.write(componentVariablePath(component, 'temperatureFeedbackPcm'), temperatureFeedbackPcm)
+      context.write(componentVariablePath(component, 'boronFeedbackPcm'), boronFeedbackPcm)
       context.write(componentVariablePath(component, 'effectiveReactivityPcm'), effectiveReactivity)
 
       const decayTarget = Math.max(currentPower, nextPower) * optionalParameterNumber(component, 'decayHeatFractionAtPower', 0.06)

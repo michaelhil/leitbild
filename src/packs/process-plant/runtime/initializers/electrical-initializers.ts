@@ -6,9 +6,11 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
     componentKind: 'electricalGridSource',
     initialValueFor: (component, localPath) => {
       const available = optionalParameterBoolean(component, 'initialAvailable', true)
+      const voltageFraction = optionalParameterNumber(component, 'initialVoltageFraction', 1)
       if (localPath === 'available') return available
       if (localPath === 'energized') return available
       if (localPath === 'availablePowerMw') return available ? parameterNumber(component, 'nominalPowerMw') : 0
+      if (localPath === 'voltageFraction') return available ? voltageFraction : 0
       return undefined
     },
   },
@@ -17,8 +19,10 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
     initialValueFor: (component, localPath) => {
       if (localPath === 'energized') return optionalParameterBoolean(component, 'initialEnergized', false)
       if (localPath === 'availablePowerMw') return optionalParameterBoolean(component, 'initialEnergized', false) ? parameterNumber(component, 'nominalPowerMw') : 0
+      if (localPath === 'voltageFraction') return optionalParameterBoolean(component, 'initialEnergized', false) ? 1 : 0
       if (localPath === 'servedLoadMw') return 0
       if (localPath === 'marginMw') return optionalParameterBoolean(component, 'initialEnergized', false) ? parameterNumber(component, 'nominalPowerMw') : 0
+      if (localPath === 'degraded') return false
       return undefined
     },
   },
@@ -29,6 +33,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
       if (localPath === 'tripped') return optionalParameterBoolean(component, 'initialTripped', false)
       if (localPath === 'energized') return false
       if (localPath === 'availablePowerMw') return 0
+      if (localPath === 'voltageFraction') return 0
       return undefined
     },
   },
@@ -37,6 +42,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
     initialValueFor: (component, localPath) => {
       if (localPath === 'energized') return false
       if (localPath === 'availablePowerMw') return 0
+      if (localPath === 'voltageFraction') return 0
       if (localPath === 'loadMw') return 0
       return undefined
     },
@@ -51,6 +57,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
       if (localPath === 'startElapsedS') return running ? optionalParameterNumber(component, 'startDelayS', 10) : 0
       if (localPath === 'energized') return running
       if (localPath === 'availablePowerMw') return running ? parameterNumber(component, 'nominalPowerMw') : 0
+      if (localPath === 'voltageFraction') return running ? 1 : 0
       return undefined
     },
   },
@@ -61,6 +68,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
       if (localPath === 'stateOfChargeFraction') return charge
       if (localPath === 'energized') return charge > 0
       if (localPath === 'availablePowerMw') return charge > 0 ? parameterNumber(component, 'nominalPowerMw') : 0
+      if (localPath === 'voltageFraction') return charge > 0 ? 1 : 0
       return undefined
     },
   },
@@ -69,6 +77,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
     initialValueFor: (_component, localPath) => {
       if (localPath === 'energized') return false
       if (localPath === 'availablePowerMw') return 0
+      if (localPath === 'voltageFraction') return 0
       return undefined
     },
   },

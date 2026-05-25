@@ -71,6 +71,42 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
     ],
   }),
   rule({
+    id: 'pzr-pressure-low-reactor-trip',
+    label: 'Pressurizer pressure low reactor trip',
+    ruleClass: 'protection',
+    modeLabel: 'power operation',
+    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    condition: comparison({ tagId: 'PT-455' }, '<', 13.8),
+    delayMs: 1_000,
+    effects: [
+      trip({
+        id: 'low-pzr-pressure-reactor-trip',
+        title: 'Low pressurizer pressure reactor trip',
+        message: 'Pressurizer pressure is below the reference reactor-trip threshold.',
+        annunciator: pzrAction,
+      }),
+      write('insert-control-rods-low-pzr-pressure', { path: 'core.rodInsertionFraction' }, 1),
+    ],
+  }),
+  rule({
+    id: 'pzr-pressure-high-reactor-trip',
+    label: 'Pressurizer pressure high reactor trip',
+    ruleClass: 'protection',
+    modeLabel: 'power operation',
+    modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+    condition: comparison({ tagId: 'PT-455' }, '>', 16.35),
+    delayMs: 1_000,
+    effects: [
+      trip({
+        id: 'high-pzr-pressure-reactor-trip',
+        title: 'High pressurizer pressure reactor trip',
+        message: 'Pressurizer pressure is above the reference reactor-trip threshold.',
+        annunciator: pzrAction,
+      }),
+      write('insert-control-rods-high-pzr-pressure', { path: 'core.rodInsertionFraction' }, 1),
+    ],
+  }),
+  rule({
     id: 'pzr-pressure-relief-reset',
     label: 'Pressurizer relief reset',
     ruleClass: 'normalControl',

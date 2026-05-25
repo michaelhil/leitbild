@@ -23,6 +23,8 @@
         "referenceFuelTemperatureC": 441,
         "coolantTemperatureFeedbackPcmPerC": -3,
         "fuelTemperatureFeedbackPcmPerC": -1.2,
+        "referenceBoronConcentrationPpm": 1200,
+        "boronFeedbackPcmPerPpm": -0.08,
         "criticalRodInsertionFraction": 0.15,
         "rodWorthPcm": 1200,
         "kineticsPcmPerEfoldPerSecond": 2400,
@@ -975,7 +977,8 @@
       "label": "Offsite Grid Source",
       "parameters": {
         "nominalPowerMw": 1800,
-        "initialAvailable": true
+        "initialAvailable": true,
+        "initialVoltageFraction": 1
       },
       "variables": [
         {
@@ -989,6 +992,12 @@
           "tagId": "GRID-MW",
           "equipmentId": "offsiteGrid",
           "description": "Offsite grid available electrical power"
+        },
+        {
+          "path": "voltageFraction",
+          "tagId": "GRID-VOLTAGE",
+          "equipmentId": "offsiteGrid",
+          "description": "Offsite grid voltage fraction"
         }
       ]
     },
@@ -1007,7 +1016,8 @@
       "kind": "electricalBus",
       "label": "Safety Bus A",
       "parameters": {
-        "nominalPowerMw": 420
+        "nominalPowerMw": 420,
+        "degradedVoltageFraction": 0.9
       },
       "variables": [
         {
@@ -1021,6 +1031,18 @@
           "tagId": "BUS-A-MARGIN",
           "equipmentId": "safetyBusA",
           "description": "Safety bus A electrical power margin"
+        },
+        {
+          "path": "voltageFraction",
+          "tagId": "BUS-A-VOLTAGE",
+          "equipmentId": "safetyBusA",
+          "description": "Safety bus A voltage fraction"
+        },
+        {
+          "path": "degraded",
+          "tagId": "BUS-A-DEGRADED",
+          "equipmentId": "safetyBusA",
+          "description": "Safety bus A degraded-voltage status"
         }
       ]
     },
@@ -1029,7 +1051,8 @@
       "kind": "electricalBus",
       "label": "Safety Bus B",
       "parameters": {
-        "nominalPowerMw": 420
+        "nominalPowerMw": 420,
+        "degradedVoltageFraction": 0.9
       },
       "variables": [
         {
@@ -1043,6 +1066,18 @@
           "tagId": "BUS-B-MARGIN",
           "equipmentId": "safetyBusB",
           "description": "Safety bus B electrical power margin"
+        },
+        {
+          "path": "voltageFraction",
+          "tagId": "BUS-B-VOLTAGE",
+          "equipmentId": "safetyBusB",
+          "description": "Safety bus B voltage fraction"
+        },
+        {
+          "path": "degraded",
+          "tagId": "BUS-B-DEGRADED",
+          "equipmentId": "safetyBusB",
+          "description": "Safety bus B degraded-voltage status"
         }
       ]
     },
@@ -4914,6 +4949,12 @@
       "connectionKind": "electricalPower"
     },
     {
+      "id": "safety-bus-a-to-chargingPump",
+      "from": "safetyBusA.outlet",
+      "to": "chargingPump.power",
+      "connectionKind": "electricalPower"
+    },
+    {
       "id": "safety-bus-a-to-pressurizer-heater",
       "from": "safetyBusA.outlet",
       "to": "pressurizer.heaterPower",
@@ -5393,10 +5434,15 @@
     "condenser-to-cooling-water-discharge.temperatureC",
     "offsiteGrid.energized",
     "offsiteGrid.availablePowerMw",
+    "offsiteGrid.voltageFraction",
     "unitAuxTransformer.availablePowerMw",
     "safetyBusA.energized",
+    "safetyBusA.voltageFraction",
+    "safetyBusA.degraded",
     "safetyBusA.marginMw",
     "safetyBusB.energized",
+    "safetyBusB.voltageFraction",
+    "safetyBusB.degraded",
     "safetyBusB.marginMw",
     "dieselGeneratorA.running",
     "dieselGeneratorA.availablePowerMw",
@@ -5404,6 +5450,8 @@
     "dieselGeneratorB.availablePowerMw",
     "plantControlsLoadA.energized",
     "plantControlsLoadB.energized",
+    "chargingPump.running",
+    "chargingPump.flowKgPerS",
     "vessel.boronConcentrationPpm",
     "volumeControlTank.soluteConcentrationPpm",
     "charging-pump-to-cold-leg-a.soluteConcentrationPpm",

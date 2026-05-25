@@ -68,6 +68,33 @@ describe('process plant graph foundation', () => {
     expect(publishedVariables).toContain('safetyBusB.marginMw')
   })
 
+  test('reference graph wires safety-train electrical dependencies explicitly', () => {
+    const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    const electricallyFedComponents = [
+      ...new Set(
+      compiled.links
+        .filter(link => link.kind === 'electricalPower')
+        .map(link => String(compiled.components[link.toComponentIndex]?.id)),
+      ),
+    ]
+
+    expect(electricallyFedComponents).toEqual(expect.arrayContaining([
+      'rcpA',
+      'rcpB',
+      'rcpC',
+      'rcpD',
+      'mainFeedwaterPumpA',
+      'mainFeedwaterPumpB',
+      'auxFeedwaterPumpMotor',
+      'auxFeedwaterPumpTurbine',
+      'condensatePumpA',
+      'condensatePumpB',
+      'circulatingWaterPump',
+      'chargingPump',
+      'pressurizer',
+    ]))
+  })
+
   test('compiles a process plant system from scenario-owned graph data', () => {
     const scenario = scenarioDefinitionSchema.parse({
       id: 'reactor-tube-leak-training',

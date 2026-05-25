@@ -198,6 +198,55 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('feedwaterControlValveA.positionFraction')))).toBeLessThan(1)
   })
 
+  test('reference protection trips reactor on pressurizer pressure and containment pressure extremes', () => {
+    for (const [initialState, expectedTrip] of [
+      [{ 'pressurizer.pressureMPa': 10 }, 'trip:pzr-pressure-low-reactor-trip:low-pzr-pressure-reactor-trip'],
+      [{ 'pressurizer.pressureMPa': 18 }, 'trip:pzr-pressure-high-reactor-trip:high-pzr-pressure-reactor-trip'],
+    ] as const) {
+      const system = compiledSystemWithInitialState(initialState)
+      const runtime = createProcessPlantRuntime({ system })
+      const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 3_000 })
+      expect(activeLifecycleIds(snapshot).trips).toContain(expectedTrip)
+      expect(Number(runtime.readVariable(valueOf('core.rodInsertionFraction')))).toBe(1)
+    }
+  })
+
+  test('electrical degraded voltage is reported by reference I&C', () => {
+    const system = compiledSystemWithInitialState({ 'offsiteGrid.voltageFraction': 0.85 })
+    const runtime = createProcessPlantRuntime({ system })
+    const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 5_000 })
+
+    expect(Number(runtime.readVariable(valueOf('offsiteGrid.voltageFraction')))).toBeCloseTo(0.85, 6)
+    expect(activeLifecycleIds(snapshot).alarms).toContain('alarm:offsite-grid-degraded-voltage:offsite-grid-degraded-voltage')
+  })
+
+  test('explicit electrical links make train loss disable train-powered pumps', () => {
+    const system = compiledSystemWithInitialState({ 'offsiteBreakerA.closed': false })
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.tick(2_000)
+
+    expect(runtime.readVariable(valueOf('safetyBusA.energized'))).toBe(false)
+    expect(Number(runtime.readVariable(valueOf('rcpA.developedHeadPa')))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('rcpC.developedHeadPa')))).toBe(0)
+    expect(Number(runtime.readVariable(valueOf('chargingPump.flowKgPerS')))).toBeLessThan(90)
+    expect(Number(runtime.readVariable(valueOf('rcpB.developedHeadPa')))).toBeGreaterThan(0)
+  })
+
+  test('CVCS charging carries tank solute into primary coolant and contributes boron feedback', () => {
+    const system = compiledSystemWithParameters({
+      volumeControlTank: {
+        initialSoluteConcentrationPpm: 2500,
+        makeupFlowKgPerS: 20,
+        makeupSoluteConcentrationPpm: 2500,
+      },
+    })
+    const runtime = createProcessPlantRuntime({ system })
+    for (let elapsedMs = 0; elapsedMs < 120_000; elapsedMs += 1_000) runtime.tick(1_000)
+
+    expect(Number(runtime.readVariable(valueOf('vessel.boronConcentrationPpm')))).toBeGreaterThan(1_200)
+    expect(Number(runtime.readVariable(valueOf('core.boronFeedbackPcm')))).toBeLessThan(0)
+  })
+
   test('lets the Halden demo feedwater and RCP fault path reach real protection trips', () => {
     const system = compiledSystem()
     const runtime = createProcessPlantRuntime({ system })
