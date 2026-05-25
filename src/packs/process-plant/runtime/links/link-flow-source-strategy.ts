@@ -10,10 +10,11 @@ import {
   sourceLimitedPumpFlow,
 } from './link-flow-helpers.ts'
 import { topologyAwareMainSteamDemandForSourceLink, topologyAwareMainSteamReleaseAvailabilityForSourceLink } from './main-steam-demand.ts'
+import { processPlantServices, serviceUsesDownstreamDemand } from '../service-profiles.ts'
 
 export interface ProcessLinkFlowSource {
   readonly flowKgPerS: number
-  readonly alreadyIncludesLinkValveFactor: boolean
+  readonly alreadyIncludesPathAvailability: boolean
   readonly alreadyIncludesTargetValveDemand: boolean
   readonly bypassTargetPumpLimit: boolean
 }
@@ -30,7 +31,7 @@ export const processLinkFlowSourceFor = (config: {
   if (primaryLoopPump !== null) {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(primaryLoopPump, 'loopFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: true,
     }
@@ -38,7 +39,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'centrifugalPump') {
     return {
       flowKgPerS: sourceLimitedPumpFlow(system, link, context, context.readNumber(componentVariablePath(fromComponent, 'flowKgPerS'))),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -50,17 +51,17 @@ export const processLinkFlowSourceFor = (config: {
       context,
       context.readNumber(componentVariablePath(fromComponent, 'availableOutletFlowKgPerS')),
     )
-    const demandFraction = link.service === 'feedwater' || link.service === 'auxFeedwater' || link.service === 'condensate'
+    const demandFraction = serviceUsesDownstreamDemand(link.service)
       ? downstreamServiceDemandFraction(system, link, context)
       : 1
     return {
       flowKgPerS: sourceFlow * demandFraction,
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
   }
-  if (fromComponent.kind === 'condenserSink' && link.service === 'condensate') {
+  if (fromComponent.kind === 'condenserSink' && link.service === processPlantServices.condensate) {
     return {
       flowKgPerS: distributeFlowFromComponent(
         system,
@@ -68,7 +69,7 @@ export const processLinkFlowSourceFor = (config: {
         context,
         context.readNumber(componentVariablePath(fromComponent, 'availableCondensateOutletFlowKgPerS')),
       ) * downstreamServiceDemandFraction(system, link, context),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -76,7 +77,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'condenserSink' && link.service === 'coolingWater') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'coolingWaterFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -84,7 +85,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'pressurizer' && link.service === 'primaryRelief') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'reliefFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -92,12 +93,12 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'reactorVessel' && link.service === 'primaryRelease') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'primaryLeakFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
   }
-  if (fromComponent.kind === 'steamGenerator' && link.service === 'mainSteam') {
+  if (fromComponent.kind === 'steamGenerator' && link.service === processPlantServices.mainSteam) {
     const availableSteamFlow = context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
     return {
       flowKgPerS: Math.min(
@@ -105,7 +106,7 @@ export const processLinkFlowSourceFor = (config: {
         + availableSteamFlow * topologyAwareMainSteamReleaseAvailabilityForSourceLink(system, link, context),
         availableSteamFlow,
       ),
-      alreadyIncludesLinkValveFactor: true,
+      alreadyIncludesPathAvailability: true,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -113,7 +114,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'turbineLoadSink') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -121,7 +122,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'sumpOut') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'sumpOutflowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -129,7 +130,7 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'containmentVolume' && String(link.fromPortName) === 'ventOut') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'releaseFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
@@ -137,14 +138,14 @@ export const processLinkFlowSourceFor = (config: {
   if (fromComponent.kind === 'accumulator' && String(link.fromPortName) === 'outlet') {
     return {
       flowKgPerS: context.readNumber(componentVariablePath(fromComponent, 'outletFlowKgPerS')),
-      alreadyIncludesLinkValveFactor: false,
+      alreadyIncludesPathAvailability: false,
       alreadyIncludesTargetValveDemand: false,
       bypassTargetPumpLimit: false,
     }
   }
   return {
     flowKgPerS: passiveFlowFromIncomingService(system, link, context),
-    alreadyIncludesLinkValveFactor: false,
+    alreadyIncludesPathAvailability: false,
     alreadyIncludesTargetValveDemand: true,
     bypassTargetPumpLimit: false,
   }

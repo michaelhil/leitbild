@@ -164,10 +164,9 @@ For example, a main steam line can remain one graph connection from a steam gene
 - flow sensor value,
 - pressure sensor value,
 - radiation monitor value,
-- isolation valve position,
 - leak area.
 
-That avoids graph explosion. A simple valve or sensor does not need to become a node sandwiched between two pipe segments unless it has enough internal behavior to deserve first-class component status.
+That avoids graph explosion. A simple sensor or leak does not need to become a node sandwiched between two pipe segments when it only observes or modifies one connection. Valves are different: `processValve` and `steamValve` are first-class components because they own stroke timing, effective position, controller response, relief/safety auto-open behavior, and flow diagnostics.
 
 Example:
 
@@ -203,18 +202,17 @@ Example:
       "description": "Main steam flow from steam generator A"
     },
     {
-      "path": "valve.positionFraction",
-      "label": "Main steam isolation valve position",
+      "path": "leak.areaFraction",
+      "label": "Main steam line leak area",
       "kind": "control",
-      "domain": "control",
+      "domain": "hydraulic",
       "writable": true,
       "publish": "telemetry",
       "quantity": "ratio",
       "unit": "fraction",
-      "initialValue": 1,
-      "tagId": "MSIV-A",
-      "equipmentId": "mainSteamIsolationValveA",
-      "description": "Main steam isolation valve A position"
+      "initialValue": 0,
+      "equipmentId": "sgA",
+      "description": "Connection-local leak opening on the main steam line"
     }
   ]
 }
@@ -225,7 +223,6 @@ Compiled link variables use stable paths just like component variables:
 - `sg-a-steam-to-msiv-a.flowKgPerS`
 - `sg-a-steam-to-msiv-a.pressureMPa`
 - `sg-a-steam-to-msiv-a.radiationMSvPerH`
-- `sg-a-steam-to-msiv-a.valve.positionFraction`
 - `sg-a-steam-to-msiv-a.leak.areaFraction`
 
 Use a link variable when the state only observes or modifies one connection. Use a component when the item has multiple ports, significant internal dynamics, separate failure modes, or needs to appear as a major plant object in control-room displays.
@@ -554,7 +551,7 @@ Current solver models:
 
 - `sourceSink`: a bounded source/sink conduit for simple supply or drain paths. It currently requires `designPhase: "liquid"` and link-local `flowKgPerS` and `temperatureC`.
 - `incompressibleLiquid`: a liquid process link for feedwater, condensate, charging, letdown, auxiliary feedwater, and primary-coolant paths. It requires `designPhase: "liquid"` and `flowKgPerS` plus `temperatureC`. Primary-coolant links additionally require `pressureMPa` and `pressureDropMPa`, because they publish propagated RCS pressure read-outs.
-- `compressibleSteam`: a steam process link for main steam and exhaust steam paths. It requires `designPhase: "steam"` and `flowKgPerS` plus `temperatureC`. Pressure, quality, void fraction, enthalpy, radiation, valve position, and leak area are optional link-local variables when that connection needs them.
+- `compressibleSteam`: a steam process link for main steam and exhaust steam paths. It requires `designPhase: "steam"` and `flowKgPerS` plus `temperatureC`. Pressure, quality, void fraction, enthalpy, radiation, and leak area are optional link-local variables when that connection needs them.
 - `twoPhaseApprox`: a limited transitional model for paths that are intentionally represented as mixed-phase in V1, such as pressurizer relief. It requires `designPhase: "twoPhase"` and `flowKgPerS` plus `temperatureC`.
 
 The purpose of the contract is to stop accidental graph drift as the component library grows. If a scenario or graph file declares a fluid connection without the variables needed by its solver model, compilation fails before a runtime exists. The runtime therefore does not need silent fallbacks such as "if pressure is missing, invent one".
@@ -718,7 +715,7 @@ Example paths:
 - `condenser.condensateTemperatureC`
 - `rcs-hot-leg-a.temperatureC`
 - `sg-a-steam-to-msiv-a.flowKgPerS`
-- `sg-a-steam-to-msiv-a.valve.positionFraction`
+- `sg-a-steam-to-msiv-a.leak.areaFraction`
 
 The registry is the shared language for process surfaces, AI agents, tests, trends, scenario scripts, and pack queries.
 
@@ -758,7 +755,7 @@ Runtime code is split by responsibility:
 - `execution-plan.ts` compiles the graph and registered behavior definitions into per-phase invocation lists so the hot loop does not rediscover behavior applicability on every tick.
 - `behavior-contract.ts` defines the constrained execution context used by solver behavior.
 - `component-behaviors.ts` owns current component initialization and component solver behavior.
-- `runtime/links/` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, temperature, main-steam demand, and radiation updates.
+- `runtime/links/` owns conduit-local process-link behavior such as flow, leak modifiers, pressure, temperature, main-steam demand, radiation updates, and availability effects from downstream component valves.
 
 This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state. Public APIs remain path-based for humans, AI agents, snapshots, telemetry, and commands, but runtime storage uses compiled variable slots internally.
 
@@ -819,7 +816,7 @@ Current runtime behavior is deliberately minimal but functional:
 - pump suction links are demand-limited by the destination pump flow, so stopped pumps do not drain source tanks or condenser inventory through passive link flow,
 - pressurizer pressure, level, water inventory, water temperature, steam temperature, heater demand, spray demand, relief valve position, and relief flow are now explicit component variables,
 - pressurizer steam mass is now explicit state rather than only a pressure display effect. Heaters create steam mass, spray condenses steam back into the water inventory, relief flow removes steam mass, and steam-mass deviation contributes to pressure response alongside level and primary-inventory pressure bias. This keeps mass accounting conservative while remaining a lumped two-region proxy rather than a full two-phase pressurizer model,
-- link flow variables can be modified by link-local valve position and leak area,
+- link flow variables can be modified by link-local leak area and by downstream component valve availability,
 - link radiation variables can respond to leak state.
 - runtime invariants reject non-finite process values before they can become snapshots or telemetry.
 

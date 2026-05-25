@@ -233,11 +233,11 @@ A condition that prevents, forces, or constrains an equipment state to protect t
 _Avoid_: making interlocks invisible side effects inside pump, valve, or breaker components
 
 **Process Link**:
-A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, valve position, or leak area.
-_Avoid_: making every simple sensor, valve, or leak into a separate component when it only modifies or observes one connection
+A typed connection between process plant components. A process link may be a simple topology link, or it may own optional physical metadata and link-local process variables such as flow, pressure, radiation, or leak area.
+_Avoid_: making every simple sensor or leak into a separate component when it only modifies or observes one connection; use `processValve` or `steamValve` when the graph needs valve position, stroke timing, automatic opening, controller behavior, or valve diagnostics
 
 **Process Link Solver Model**:
-The validated fluid-link contract declared by `solverModel`, `nominalFluid`, and `designPhase`. It tells the process-plant compiler which state surfaces the link must expose before runtime starts, such as flow, temperature, pressure, pressure drop, valve position, or leak variables.
+The validated fluid-link contract declared by `solverModel`, `nominalFluid`, and `designPhase`. It tells the process-plant compiler which state surfaces the link must expose before runtime starts, such as flow, temperature, pressure, pressure drop, or leak variables.
 _Avoid_: treating `solverModel` as a prose label, adding silent fallback variables, or introducing a new solver model without graph validation and tests
 
 **Canonical RCS Pressure**:

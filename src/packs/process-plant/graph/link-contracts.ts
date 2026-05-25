@@ -11,7 +11,7 @@ interface FluidLinkContract {
 const setOf = <T extends string>(values: ReadonlyArray<T>): ReadonlySet<T> => new Set(values)
 
 const baseFluidVariables = ['flowKgPerS', 'temperatureC'] as const
-const controllableFlowVariables = ['valve.positionFraction', 'leak.areaFraction', 'leakFlowKgPerS'] as const
+const linkLossVariables = ['leak.areaFraction', 'leakFlowKgPerS'] as const
 
 const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> = {
   sourceSink: {
@@ -19,7 +19,7 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
     allowedFluids: setOf(['water', 'oil', 'generic']),
     requiredDesignPhase: 'liquid',
     requiredVariables: setOf(baseFluidVariables),
-    optionalVariables: setOf(controllableFlowVariables),
+    optionalVariables: setOf(linkLossVariables),
   },
   incompressibleLiquid: {
     solverModel: 'incompressibleLiquid',
@@ -27,7 +27,7 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
     requiredDesignPhase: 'liquid',
     requiredVariables: setOf(baseFluidVariables),
     optionalVariables: setOf([
-      ...controllableFlowVariables,
+      ...linkLossVariables,
       'pressureMPa',
       'pressureDropMPa',
     ]),
@@ -38,7 +38,7 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
     requiredDesignPhase: 'steam',
     requiredVariables: setOf(baseFluidVariables),
     optionalVariables: setOf([
-      ...controllableFlowVariables,
+      ...linkLossVariables,
       'pressureMPa',
       'qualityFraction',
       'voidFraction',
@@ -52,7 +52,7 @@ const fluidLinkContracts: Readonly<Record<FluidSolverModel, FluidLinkContract>> 
     requiredDesignPhase: 'twoPhase',
     requiredVariables: setOf(baseFluidVariables),
     optionalVariables: setOf([
-      ...controllableFlowVariables,
+      ...linkLossVariables,
       'pressureMPa',
       'qualityFraction',
       'voidFraction',

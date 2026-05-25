@@ -61,16 +61,11 @@ export const componentValveCapacityForInboundLink = (
   return cv * Math.sqrt(Math.max(0, upstreamPressure))
 }
 
-export const linkValveFactor = (
-  link: CompiledProcessLink,
-  context: Pick<LinkBehaviorReadContext, 'readOptionalNumber'>,
-): number => clamp(context.readOptionalNumber(processLinkVariablePath(link, 'valve.positionFraction'), 1), 0, 1)
-
-export const combinedValveFactorForLink = (
+export const componentValveAvailabilityForLink = (
   system: CompiledProcessPlantSystem,
   link: CompiledProcessLink,
   context: LinkBehaviorReadContext,
-): number => linkValveFactor(link, context) * componentValveFactorForInboundLink(system, link, context)
+): number => componentValveFactorForInboundLink(system, link, context)
 
 export const sumIncomingLinkValue = (
   system: CompiledProcessPlantSystem,
@@ -175,12 +170,9 @@ const downstreamValveDemandWeight = (
   for (const outgoingLinkIndex of system.graph.outgoingLinksByComponent[toComponent.index] ?? []) {
     const outgoingLink = system.graph.links[outgoingLinkIndex]
     if (!outgoingLink || outgoingLink.kind !== 'fluidFlow' || !serviceMatches(outgoingLink, link.service)) continue
-    if (!hasProcessLinkVariable(outgoingLink, 'valve.positionFraction')) {
-      demandWeight += 1
-      continue
-    }
-    hasDemandSignal = true
-    demandWeight += clamp(context.readOptionalNumber(processLinkVariablePath(outgoingLink, 'valve.positionFraction'), 1), 0, 1)
+    const downstreamComponentValveFactor = componentValveFactorForInboundLink(system, outgoingLink, context)
+    if (downstreamComponentValveFactor < 1) hasDemandSignal = true
+    demandWeight += downstreamComponentValveFactor
   }
   if (!hasDemandSignal && demandWeight === 0) return null
   return demandWeight
@@ -230,7 +222,7 @@ export const downstreamServiceDemandFraction = (
   for (const path of downstreamPaths) {
     let pathWeight = 1
     for (const pathLink of path) {
-      pathWeight *= combinedValveFactorForLink(system, pathLink, context)
+      pathWeight *= componentValveAvailabilityForLink(system, pathLink, context)
       if (pathWeight <= 0) break
     }
     liveDemandWeight += pathWeight

@@ -4,7 +4,6 @@ import {
   componentValveCapacityForInboundLink,
   componentValveFactorForInboundLink,
   hasProcessLinkVariable,
-  linkValveFactor,
 } from './link-flow-helpers.ts'
 import { processLinkFlowSourceFor } from './link-flow-source-strategy.ts'
 import { pressureDrivenLeakFlowKgPerS } from '../physics.ts'
@@ -14,14 +13,13 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
   {
     id: 'process-link-fluid-flow',
     phase: 'solveFluidFlowLinks',
-    reads: ['valve.positionFraction?', 'leak.areaFraction?', 'source component flow demand'],
+    reads: ['target component valve effective position?', 'leak.areaFraction?', 'source component flow demand'],
     writes: ['flowKgPerS'],
     appliesTo: (link): boolean => link.kind === 'fluidFlow' && hasProcessLinkVariable(link, 'flowKgPerS'),
     update: ({ system, link, context }): void => {
       const fromComponent = system.graph.components[link.fromComponentIndex]
       const toComponent = system.graph.components[link.toComponentIndex]
       if (!fromComponent || !toComponent) throw new Error(`process link ${link.id} references missing component`)
-      const currentLinkValveFactor = linkValveFactor(link, context)
       const currentComponentValveFactor = componentValveFactorForInboundLink(system, link, context)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const source = processLinkFlowSourceFor({ system, link, context })
@@ -31,9 +29,9 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
       }
       const capacity = physicalFlowCapacityKgPerS(link)
       const componentValveCapacity = componentValveCapacityForInboundLink(system, link, context)
-      const effectiveValveFactor = source.alreadyIncludesLinkValveFactor
+      const effectiveValveFactor = source.alreadyIncludesPathAvailability
         ? 1
-        : currentLinkValveFactor * (source.alreadyIncludesTargetValveDemand ? 1 : currentComponentValveFactor)
+        : source.alreadyIncludesTargetValveDemand ? 1 : currentComponentValveFactor
       context.write(processLinkVariablePath(link, 'flowKgPerS'), Math.min(flowSource, capacity, componentValveCapacity) * effectiveValveFactor * (1 - leakFraction))
     },
   },

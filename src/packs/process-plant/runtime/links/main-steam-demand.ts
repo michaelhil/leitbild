@@ -2,10 +2,9 @@ import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.t
 import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
 import { componentVariablePath } from '../behavior-contract.ts'
 import { parameterNumber } from '../component-helpers.ts'
-import { combinedValveFactorForLink, type LinkBehaviorReadContext } from './link-flow-helpers.ts'
+import { componentValveAvailabilityForLink, type LinkBehaviorReadContext } from './link-flow-helpers.ts'
 import { mainSteamTopologyForSystem, type ProcessLinkPath } from '../topology-cache.ts'
-
-const sourceLinkService = 'mainSteam' as CompiledProcessLink['service']
+import { processPlantServices } from '../service-profiles.ts'
 
 const turbineSteamDemandKgPerS = (
   turbine: CompiledComponent,
@@ -25,7 +24,7 @@ const pathAvailability = (
   for (const path of paths) {
     let availability = 1
     for (const link of path) {
-      availability *= combinedValveFactorForLink(system, link, context)
+      availability *= componentValveAvailabilityForLink(system, link, context)
       if (availability <= 0) break
     }
     best = Math.max(best, availability)
@@ -42,7 +41,7 @@ const sourceAvailabilityToTurbine = (
   const topology = mainSteamTopologyForSystem(system)
   const paths = topology.pathSets.find(pathSet => pathSet.sourceLink.index === sourceLink.index && pathSet.turbine.index === turbine.index)?.paths
   if (!paths || paths.length === 0) return 0
-  return combinedValveFactorForLink(system, sourceLink, context)
+  return componentValveAvailabilityForLink(system, sourceLink, context)
     * pathAvailability(system, paths, context)
 }
 
@@ -87,7 +86,7 @@ const collectReleasePaths = (
   const paths: ProcessLinkPath[] = []
   for (const linkIndex of system.graph.outgoingLinksByComponent[fromComponentIndex] ?? []) {
     const link = system.graph.links[linkIndex]
-    if (!link || link.kind !== 'fluidFlow' || link.service !== sourceLinkService) continue
+    if (!link || link.kind !== 'fluidFlow' || link.service !== processPlantServices.mainSteam) continue
     const toComponent = system.graph.components[link.toComponentIndex]
     const nextHasReleaseValve = hasReleaseValve || isReliefOrSafetyValve(toComponent)
     for (const downstreamPath of collectReleasePaths(system, link.toComponentIndex, nextVisited, nextHasReleaseValve)) {
@@ -104,5 +103,5 @@ export const topologyAwareMainSteamReleaseAvailabilityForSourceLink = (
 ): number => {
   const paths = collectReleasePaths(system, sourceLink.toComponentIndex, new Set(), false)
   if (paths.length === 0) return 0
-  return combinedValveFactorForLink(system, sourceLink, context) * pathAvailability(system, paths, context)
+  return componentValveAvailabilityForLink(system, sourceLink, context) * pathAvailability(system, paths, context)
 }

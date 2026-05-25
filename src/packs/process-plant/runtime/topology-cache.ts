@@ -1,7 +1,8 @@
-import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink, ConnectionService } from '../graph/index.ts'
+import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink } from '../graph/index.ts'
 import { primaryLoopIdForLink, primaryLoopIdForPump } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { physicalNumber } from './links/process-link-physical.ts'
+import { isMainSteamService, isServiceDemandTerminal, serviceMatches } from './service-profiles.ts'
 
 export type ProcessLinkPath = ReadonlyArray<CompiledProcessLink>
 
@@ -21,19 +22,13 @@ const downstreamDemandPathCache = new WeakMap<CompiledProcessPlantSystem, Map<nu
 const mainSteamTopologyCache = new WeakMap<CompiledProcessPlantSystem, MainSteamTopology>()
 const primaryLoopResistanceCache = new WeakMap<CompiledPlantGraph, ReadonlyMap<number, number>>()
 
-const serviceMatches = (link: CompiledProcessLink, service: CompiledProcessLink['service']): boolean =>
-  service !== undefined && link.service === service
-
 const isFluidDemandTerminal = (
   system: CompiledProcessPlantSystem,
   componentIndex: number,
   service: CompiledProcessLink['service'],
 ): boolean => {
   const component = system.graph.components[componentIndex]
-  if (!component) return false
-  if ((service === 'feedwater' || service === 'auxFeedwater') && component.kind === 'steamGenerator') return true
-  if (service === 'condensate' && component.kind === 'processTank') return true
-  return false
+  return isServiceDemandTerminal(component, service)
 }
 
 const collectDownstreamDemandPaths = (
@@ -75,9 +70,6 @@ export const downstreamDemandPathsForLink = (
   return paths
 }
 
-const isMainSteamFlowLink = (link: CompiledProcessLink): boolean =>
-  link.kind === 'fluidFlow' && serviceMatches(link, 'mainSteam' as ConnectionService)
-
 const collectMainSteamPaths = (
   system: CompiledProcessPlantSystem,
   fromComponentIndex: number,
@@ -92,7 +84,7 @@ const collectMainSteamPaths = (
   const paths: ProcessLinkPath[] = []
   for (const linkIndex of system.graph.outgoingLinksByComponent[fromComponentIndex] ?? []) {
     const link = system.graph.links[linkIndex]
-    if (!link || !isMainSteamFlowLink(link)) continue
+    if (!link || !isMainSteamService(link)) continue
     for (const downstreamPath of collectMainSteamPaths(system, link.toComponentIndex, targetComponentIndex, nextVisited)) {
       paths.push([link, ...downstreamPath])
     }
@@ -108,7 +100,7 @@ export const mainSteamTopologyForSystem = (
 
   const sourceLinks = system.graph.links.filter(link => {
     const fromComponent = system.graph.components[link.fromComponentIndex]
-    return fromComponent?.kind === 'steamGenerator' && isMainSteamFlowLink(link)
+    return fromComponent?.kind === 'steamGenerator' && isMainSteamService(link)
   })
   const turbines = system.graph.components.filter(component => component.kind === 'turbineLoadSink')
   const pathSets: MainSteamPathSet[] = []

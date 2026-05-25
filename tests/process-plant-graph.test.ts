@@ -771,8 +771,8 @@ describe('process plant graph foundation', () => {
 
   test('rejects physically invalid link initial values before runtime', () => {
     const invalidFraction = processLinkVariableDescriptorSchema.safeParse({
-      path: 'valve.positionFraction',
-      label: 'Valve position',
+      path: 'leak.areaFraction',
+      label: 'Leak area',
       kind: 'control',
       domain: 'control',
       writable: true,
@@ -780,7 +780,7 @@ describe('process plant graph foundation', () => {
       quantity: 'ratio',
       unit: 'fraction',
       initialValue: 1.5,
-      tagId: 'MSIV-A',
+      tagId: 'LEAK-A',
     })
     const invalidFlow = processLinkVariableDescriptorSchema.safeParse({
       path: 'flowKgPerS',
@@ -865,6 +865,33 @@ describe('process plant graph foundation', () => {
     }
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection main-feedwater-pump-a-to-header with solverModel incompressibleLiquid cannot declare unsupported variable qualityFraction')
+  })
+
+  test('rejects inline link valve position variables in favor of valve components', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      connections: pressurizedWaterReactorPlantSpec.connections.map(connection => connection.id === 'sg-a-steam-to-msiv-a'
+        ? {
+            ...connection,
+            variables: [
+              ...connection.variables,
+              {
+                path: 'valve.positionFraction',
+                label: 'Inline valve position',
+                kind: 'control',
+                domain: 'control',
+                writable: true,
+                publish: 'telemetry',
+                quantity: 'ratio',
+                unit: 'fraction',
+                initialValue: 1,
+              },
+            ],
+          }
+        : connection),
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('fluid connection sg-a-steam-to-msiv-a with solverModel compressibleSteam cannot declare unsupported variable valve.positionFraction')
   })
 
   test('generates Mermaid documentation from compiled topology', () => {
