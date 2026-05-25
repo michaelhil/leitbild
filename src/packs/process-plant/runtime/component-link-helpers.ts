@@ -7,6 +7,48 @@ export type ComponentLinkReadContext = {
   readonly readNumber: (path: VariablePath) => number
 }
 
+export const incomingComponentLinks = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  linkMatches: (link: CompiledProcessLink) => boolean = () => true,
+): ReadonlyArray<CompiledProcessLink> =>
+  (system.graph.incomingLinksByComponent[component.index] ?? [])
+    .map(linkIndex => system.graph.links[linkIndex])
+    .filter((link): link is CompiledProcessLink => link !== undefined && linkMatches(link))
+
+export const outgoingComponentLinks = (
+  system: CompiledProcessPlantSystem,
+  component: CompiledComponent,
+  linkMatches: (link: CompiledProcessLink) => boolean = () => true,
+): ReadonlyArray<CompiledProcessLink> =>
+  (system.graph.outgoingLinksByComponent[component.index] ?? [])
+    .map(linkIndex => system.graph.links[linkIndex])
+    .filter((link): link is CompiledProcessLink => link !== undefined && linkMatches(link))
+
+export const firstFluidService = (
+  links: ReadonlyArray<CompiledProcessLink>,
+): CompiledProcessLink['service'] | undefined =>
+  links.find(link => link.kind === 'fluidFlow')?.service
+
+export const fluidLinksForService = (
+  links: ReadonlyArray<CompiledProcessLink>,
+  service: CompiledProcessLink['service'],
+): ReadonlyArray<CompiledProcessLink> =>
+  links.filter(link => link.kind === 'fluidFlow' && service !== undefined && link.service === service)
+
+export const sumProcessLinkValue = (
+  links: ReadonlyArray<CompiledProcessLink>,
+  localPath: string,
+  context: ComponentLinkReadContext,
+): number => {
+  let total = 0
+  for (const link of links) {
+    const path = processLinkVariablePath(link, localPath)
+    if (context.has(path)) total += context.readNumber(path)
+  }
+  return total
+}
+
 export const averageIncomingComponentLinkValue = (
   system: CompiledProcessPlantSystem,
   component: CompiledComponent,

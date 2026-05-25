@@ -36,9 +36,15 @@ const stepMs = 1_000
 const sampleIntervalMs = 5_000
 const artifactRoot = process.env.PROCESS_PLANT_BENCHMARK_ARTIFACT_ROOT ?? 'docs/assets'
 const shouldWriteArtifacts = process.env.PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS !== 'false'
+const shouldWriteCsvTrace = process.env.PROCESS_PLANT_BENCHMARK_WRITE_CSV === '1'
+const minRealtimeFactor = Number(process.env.PROCESS_PLANT_BENCHMARK_MIN_REALTIME_FACTOR ?? 20)
 const traceSvgPath = `${artifactRoot}/process-plant-six-unit-trace.svg`
 const traceCsvPath = `${artifactRoot}/process-plant-six-unit-trace.csv`
 const performanceJsonPath = `${artifactRoot}/process-plant-six-unit-performance.json`
+
+if (!Number.isFinite(minRealtimeFactor) || minRealtimeFactor <= 0) {
+  throw new Error('PROCESS_PLANT_BENCHMARK_MIN_REALTIME_FACTOR must be a positive number when provided')
+}
 
 const telemetryVariables = [
   'core.powerMw',
@@ -334,15 +340,21 @@ const main = async (): Promise<void> => {
   if (shouldWriteArtifacts) {
     await mkdir(dirname(traceSvgPath), { recursive: true })
     await writeFile(traceSvgPath, renderSvg(sixUnit.traces, performance), 'utf8')
-    await writeFile(traceCsvPath, renderCsv(sixUnit.traces), 'utf8')
+    if (shouldWriteCsvTrace) await writeFile(traceCsvPath, renderCsv(sixUnit.traces), 'utf8')
     await writeFile(performanceJsonPath, `${JSON.stringify(performance, null, 2)}\n`, 'utf8')
+  }
+  const slowResults = performance.filter(result => result.realtimeFactor < minRealtimeFactor)
+  if (slowResults.length > 0) {
+    const details = slowResults.map(result => `${result.label}=${result.realtimeFactor.toFixed(1)}x`).join(', ')
+    throw new Error(`process plant benchmark below realtime guardrail ${minRealtimeFactor.toFixed(1)}x: ${details}`)
   }
   console.log(JSON.stringify({
     environment: benchmarkEnvironment(),
+    minRealtimeFactor,
     artifacts: shouldWriteArtifacts
       ? {
           traceSvgPath,
-          traceCsvPath,
+          ...(shouldWriteCsvTrace ? { traceCsvPath } : {}),
           performanceJsonPath,
         }
       : null,

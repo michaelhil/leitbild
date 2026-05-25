@@ -64,6 +64,48 @@ const assertDeclaredWritePathsExist = (
   }
 }
 
+const isDynamicReadDeclaration = (localPath: string): boolean =>
+  localPath.includes(':')
+  || localPath.includes(' ')
+  || localPath.includes('.')
+  || localPath.endsWith('?')
+
+const assertDeclaredComponentReadPathsExist = (
+  knownVariablePaths: ReadonlySet<VariablePath>,
+  config: {
+    readonly behaviorId: string
+    readonly componentId: string
+    readonly readablePaths: ReadonlyArray<string>
+    readonly pathFor: (localPath: string) => VariablePath
+  },
+): void => {
+  for (const localPath of config.readablePaths) {
+    if (isDynamicReadDeclaration(localPath)) continue
+    const path = config.pathFor(localPath)
+    if (!knownVariablePaths.has(path)) {
+      throw new Error(`process plant behavior ${config.behaviorId} declares read from unknown variable on component ${config.componentId}: ${localPath}`)
+    }
+  }
+}
+
+const assertDeclaredLinkReadPathsExist = (
+  knownVariablePaths: ReadonlySet<VariablePath>,
+  config: {
+    readonly behaviorId: string
+    readonly linkId: string
+    readonly readablePaths: ReadonlyArray<string>
+    readonly pathFor: (localPath: string) => VariablePath
+  },
+): void => {
+  for (const localPath of config.readablePaths) {
+    if (isDynamicReadDeclaration(localPath)) continue
+    const path = config.pathFor(localPath)
+    if (!knownVariablePaths.has(path)) {
+      throw new Error(`process plant behavior ${config.behaviorId} declares read from unknown variable on link ${config.linkId}: ${localPath}`)
+    }
+  }
+}
+
 export const compileProcessPlantExecutionPlan = (
   system: CompiledProcessPlantSystem,
 ): ProcessPlantExecutionPlan => {
@@ -76,6 +118,12 @@ export const compileProcessPlantExecutionPlan = (
     for (const component of system.graph.components) {
       if (String(component.kind) !== behavior.componentKind) continue
       const writablePaths = new Set(behavior.writes.map(localPath => componentVariablePath(component, localPath)))
+      assertDeclaredComponentReadPathsExist(knownVariablePaths, {
+        behaviorId: behavior.id,
+        componentId: String(component.id),
+        readablePaths: behavior.reads,
+        pathFor: localPath => componentVariablePath(component, localPath),
+      })
       assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
       initialReconciliationInvocations.push({
         behavior,
@@ -90,6 +138,12 @@ export const compileProcessPlantExecutionPlan = (
     for (const component of system.graph.components) {
       if (String(component.kind) !== behavior.componentKind) continue
       const writablePaths = new Set(behavior.writes.map(localPath => componentVariablePath(component, localPath)))
+      assertDeclaredComponentReadPathsExist(knownVariablePaths, {
+        behaviorId: behavior.id,
+        componentId: String(component.id),
+        readablePaths: behavior.reads,
+        pathFor: localPath => componentVariablePath(component, localPath),
+      })
       assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
       phaseInvocations(invocationsByPhase, behavior.phase).push({
         kind: 'component',
@@ -105,6 +159,12 @@ export const compileProcessPlantExecutionPlan = (
     for (const link of system.graph.links) {
       if (!behavior.appliesTo(link)) continue
       const writablePaths = new Set(behavior.writes.map(localPath => processLinkVariablePath(link, localPath)))
+      assertDeclaredLinkReadPathsExist(knownVariablePaths, {
+        behaviorId: behavior.id,
+        linkId: String(link.id),
+        readablePaths: behavior.reads,
+        pathFor: localPath => processLinkVariablePath(link, localPath),
+      })
       assertDeclaredWritePathsExist(knownVariablePaths, { behaviorId: behavior.id, writablePaths })
       phaseInvocations(invocationsByPhase, behavior.phase).push({
         kind: 'link',

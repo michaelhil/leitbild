@@ -17,6 +17,7 @@ import {
   processLinkVariableDescriptorSchema,
   processPlantSolverPhases,
   processPlantComponentRegistry,
+  processPlantServices,
   processPlantPressurizedWaterReactorIcRef,
   resolveProcessPlantIcConfig,
   type ComponentId,
@@ -24,6 +25,7 @@ import {
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
+import { componentInitialValueDefinitions } from '../src/packs/process-plant/runtime/component-initial-values.ts'
 import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/links/process-link-behaviors.ts'
 import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
@@ -1599,6 +1601,27 @@ describe('process plant runtime', () => {
       expect(
         behaviorKinds.has(kind) || initialReconciliationKinds.has(kind),
       ).toBe(true)
+    }
+  })
+
+  test('reference graph component kinds all have exactly one runtime initializer', () => {
+    const system = compiledSystem()
+    const initializerKinds = new Map<string, number>()
+    for (const definition of componentInitialValueDefinitions) {
+      initializerKinds.set(definition.componentKind, (initializerKinds.get(definition.componentKind) ?? 0) + 1)
+    }
+
+    for (const component of system.graph.components) {
+      expect(initializerKinds.get(String(component.kind))).toBe(1)
+    }
+  })
+
+  test('reference graph fluid services are named in the runtime service vocabulary', () => {
+    const system = compiledSystem()
+    const knownServices = new Set(Object.values(processPlantServices))
+    for (const link of system.graph.links) {
+      if (link.kind !== 'fluidFlow' || link.service === undefined) continue
+      expect(knownServices.has(link.service)).toBe(true)
     }
   })
 

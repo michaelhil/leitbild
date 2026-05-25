@@ -4,9 +4,17 @@ const service = (value: string): ConnectionService => value as ConnectionService
 
 export const processPlantServices = {
   auxFeedwater: service('auxFeedwater'),
+  charging: service('charging'),
   condensate: service('condensate'),
+  coolingWater: service('coolingWater'),
+  exhaustSteam: service('exhaustSteam'),
   feedwater: service('feedwater'),
+  letdown: service('letdown'),
   mainSteam: service('mainSteam'),
+  primaryCoolant: service('primaryCoolant'),
+  primaryInjection: service('primaryInjection'),
+  primaryRelease: service('primaryRelease'),
+  primaryRelief: service('primaryRelief'),
 } as const
 
 const downstreamDemandServices: ReadonlySet<ConnectionService> = new Set([

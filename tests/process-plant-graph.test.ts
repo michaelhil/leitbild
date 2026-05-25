@@ -478,8 +478,8 @@ describe('process plant graph foundation', () => {
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate published variable')
   })
 
-  test('rejects unsupported initial state instead of validating it as parameters', () => {
-    const invalid = plantGraph({
+  test('rejects component-level initial state in favor of system-level initialState', () => {
+    const invalid = {
       id: 'process-plant.unsupported-initial-state.v1',
       title: 'Unsupported Initial State Graph',
       fixedStepMs: 100,
@@ -496,9 +496,55 @@ describe('process plant graph foundation', () => {
         },
       ],
       connections: [],
+    }
+
+    expect(() => plantGraph(invalid)).toThrow('Unrecognized key')
+  })
+
+  test('rejects valve controllers that reference unknown measured paths before runtime', () => {
+    const invalid = plantGraph({
+      id: 'process-plant.invalid-valve-controller.v1',
+      title: 'Invalid Valve Controller Graph',
+      fixedStepMs: 100,
+      components: [
+        component('valve', 'processValve', 'Feedwater Control Valve', {
+          initialPositionFraction: 0.5,
+          controller: {
+            kind: 'proportionalPosition',
+            measuredPath: 'sgA.levelPercent',
+            setpoint: 70,
+            biasPositionFraction: 0.5,
+            gainPerUnit: 0.01,
+          },
+        }),
+      ],
+      connections: [],
     })
 
-    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('does not define initial state schema')
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('references unknown measuredPath')
+  })
+
+  test('rejects valve controllers that measure boolean variables', () => {
+    const invalid = plantGraph({
+      id: 'process-plant.boolean-valve-controller.v1',
+      title: 'Boolean Valve Controller Graph',
+      fixedStepMs: 100,
+      components: [
+        component('valve', 'processValve', 'Feedwater Control Valve', {
+          initialPositionFraction: 0.5,
+          controller: {
+            kind: 'proportionalPosition',
+            measuredPath: 'valve.autoOpenActive',
+            setpoint: 1,
+            biasPositionFraction: 0.5,
+            gainPerUnit: 0.01,
+          },
+        }),
+      ],
+      connections: [],
+    })
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('must reference a numeric variable')
   })
 
   test('rejects invalid quantity and unit combinations', () => {

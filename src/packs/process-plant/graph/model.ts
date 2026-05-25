@@ -371,9 +371,8 @@ export const componentInstanceSpecSchema = z.object({
   kind: componentKindSchema,
   label: z.string().min(1),
   parameters: z.unknown(),
-  initialState: z.unknown().optional(),
   variables: z.array(componentVariableBindingOverrideSchema).default([]),
-})
+}).strict()
 export type ComponentInstanceSpec = z.infer<typeof componentInstanceSpecSchema>
 
 export const connectionSpecSchema = z.object({
@@ -425,7 +424,6 @@ export interface ComponentDefinition {
   readonly label: string
   readonly ports: Readonly<Record<string, PortDefinition>>
   readonly parametersSchema: z.ZodType<unknown>
-  readonly initialStateSchema?: z.ZodType<unknown>
   readonly variables: ReadonlyArray<ComponentVariableDescriptor>
 }
 
@@ -442,7 +440,6 @@ export interface CompiledComponent {
   readonly kind: ComponentKind
   readonly label: string
   readonly parameters: unknown
-  readonly initialState?: unknown
   readonly ports: Readonly<Record<string, CompiledPort>>
   readonly variables: ReadonlyArray<VariableDescriptor>
 }

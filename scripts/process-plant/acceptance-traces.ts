@@ -847,8 +847,9 @@ const csvRowsFor = (
 }
 
 const main = async (): Promise<void> => {
+  const runConfigs = configs()
   const started = performance.now()
-  const traces = createProcessPlantMultiSystemTestbed(configs()).runFor(durationMs, stepMs)
+  const traces = createProcessPlantMultiSystemTestbed(runConfigs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
   const checks = traces.flatMap(trace => {
     if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.systemId}`)
@@ -859,6 +860,8 @@ const main = async (): Promise<void> => {
   })
   const failed = checks.filter(candidate => !candidate.passed)
   const realtimeFactor = durationMs / wallMs
+  const firstGraph = runConfigs[0]?.system.graph
+  if (!firstGraph) throw new Error('process plant acceptance requires at least one compiled system')
   const performanceChecks = [
     check('baseline', 'multi-case acceptance run remains comfortably faster than realtime', realtimeFactor >= minRealtimeFactor, `realtimeFactor=${realtimeFactor.toFixed(1)}x min=${minRealtimeFactor.toFixed(1)}x`),
   ] satisfies ReadonlyArray<AcceptanceCheck>
@@ -872,6 +875,10 @@ const main = async (): Promise<void> => {
     stepMs,
     sampleIntervalMs,
     caseCount: cases.length,
+    systemCount: cases.length,
+    componentCount: firstGraph.components.length * cases.length,
+    linkCount: firstGraph.links.length * cases.length,
+    variableCount: firstGraph.variables.length * cases.length,
     checkCount: checks.length,
     failedCheckCount: failed.length,
     wallMs,

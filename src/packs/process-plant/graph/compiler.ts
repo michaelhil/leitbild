@@ -174,17 +174,6 @@ const validateSignalMetadata = (variables: ReadonlyArray<CompiledVariable>): voi
   }
 }
 
-const parseInitialState = (
-  definition: ComponentDefinition,
-  initialState: unknown,
-  componentId: ComponentId,
-): unknown => {
-  if (!definition.initialStateSchema) {
-    throw new Error(`component ${componentId} initialState provided but kind ${definition.kind} does not define initial state schema`)
-  }
-  return parseWithContext(definition.initialStateSchema, initialState, `component ${componentId} initialState`)
-}
-
 const parameterRecord = (component: CompiledComponent): Record<string, unknown> => {
   if (!component.parameters || typeof component.parameters !== 'object' || Array.isArray(component.parameters)) {
     throw new Error(`component ${component.id} parameters are not an object`)
@@ -215,6 +204,30 @@ const validateValveComponent = (component: CompiledComponent): void => {
   }
   if (typeof parameters.reseatMPa === 'number' && typeof parameters.setpointMPa === 'number' && parameters.reseatMPa > parameters.setpointMPa) {
     throw new Error(`component ${component.id} valve reseatMPa cannot exceed setpointMPa`)
+  }
+}
+
+const validateValveControllerBindings = (
+  components: ReadonlyArray<CompiledComponent>,
+  variables: ReadonlyArray<CompiledVariable>,
+): void => {
+  const variableByPath = new Map(variables.map(variable => [variable.path, variable]))
+  for (const component of components) {
+    if (component.kind !== 'processValve' && component.kind !== 'steamValve') continue
+    const parameters = parameterRecord(component)
+    const controller = parameters.controller
+    if (controller === undefined) continue
+    const measuredPath = (controller as { readonly measuredPath?: unknown }).measuredPath
+    if (typeof measuredPath !== 'string') {
+      throw new Error(`component ${component.id} valve controller measuredPath must be a variable path`)
+    }
+    const measuredVariable = variableByPath.get(measuredPath as VariablePath)
+    if (!measuredVariable) {
+      throw new Error(`component ${component.id} valve controller references unknown measuredPath ${measuredPath}`)
+    }
+    if (measuredVariable.descriptor.quantity === 'boolean') {
+      throw new Error(`component ${component.id} valve controller measuredPath must reference a numeric variable: ${measuredPath}`)
+    }
   }
 }
 
@@ -282,9 +295,6 @@ export const compilePlantGraph = (
       kind: component.kind,
       label: component.label,
       parameters: parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`),
-      ...(component.initialState === undefined ? {} : {
-        initialState: parseInitialState(definition, component.initialState, component.id),
-      }),
       ports: compilePorts(definition),
       variables: definition.variables.map(variable => applyComponentVariableOverride({
         ...variable,
@@ -375,6 +385,7 @@ export const compilePlantGraph = (
   assertUnique(variables, variable => variable.path, 'variable path')
   assertUniqueDefined(variables, variable => variable.descriptor.tagId, 'process signal tag id')
   validateSignalMetadata(variables)
+  validateValveControllerBindings(components, variables)
   validateProcessLinkContracts(links)
   validateStrongComponentContracts(components, links)
   const availableVariablePaths = new Set(variables.map(variable => variable.path))
