@@ -141,6 +141,8 @@ export interface CompiledProcessSurfaceWidget {
 export interface CompiledProcessSurfacePath {
   readonly id: string
   readonly label?: string
+  readonly from: { readonly widgetId: string; readonly portName: string }
+  readonly to: { readonly widgetId: string; readonly portName: string }
   readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>
   readonly binds: Readonly<Record<string, ProcessSurfaceBinding>>
   readonly style: ProcessSurfacePath['style']

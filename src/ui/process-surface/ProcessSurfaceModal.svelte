@@ -5,6 +5,12 @@
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import { listProcessSurfaces, readProcessSurface, readProcessSurfaceSnapshot } from './process-surface-client.ts'
+  import {
+    readProcessSurfaceLayout,
+    storeProcessSurfaceLayout,
+    type ProcessSurfaceLayout,
+    type ProcessSurfaceWidgetPosition,
+  } from './process-surface-layout.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -18,6 +24,8 @@
   let error = $state<string | null>(null)
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
+  let widgetPositions = $state<ProcessSurfaceLayout>({})
+  let loadedSystemId = $state<string | null>(null)
 
   const systemIdFor = (candidate: OperationalObject): string => {
     const data = candidate.domainData
@@ -30,6 +38,26 @@
   const refreshSnapshot = async (systemId: string, surfaceId: string): Promise<void> => {
     const snapshot = await readProcessSurfaceSnapshot(controlInstanceId, systemId, surfaceId)
     values = new Map(snapshot.values.map(value => [value.path, value]))
+  }
+
+  const updateWidgetPosition = (
+    widgetId: string,
+    position: ProcessSurfaceWidgetPosition,
+    commit: boolean,
+  ): void => {
+    const currentSurface = surface
+    const systemId = loadedSystemId
+    if (!currentSurface || !systemId) return
+    const next = { ...widgetPositions, [widgetId]: position }
+    widgetPositions = next
+    if (commit) {
+      storeProcessSurfaceLayout({
+        controlInstanceId,
+        systemId,
+        surfaceId: currentSurface.id,
+        layout: next,
+      })
+    }
   }
 
   runOnMount(() => {
@@ -46,7 +74,13 @@
         if (!first) throw new Error(`no process displays are available for ${systemId}`)
         const nextSurface = await readProcessSurface(controlInstanceId, systemId, first.id)
         if (cancelled) return
+        loadedSystemId = systemId
         surface = nextSurface
+        widgetPositions = readProcessSurfaceLayout({
+          controlInstanceId,
+          systemId,
+          surfaceId: nextSurface.id,
+        })
         await refreshSnapshot(systemId, first.id)
         if (cancelled) return
         const refreshSafely = async (): Promise<void> => {
@@ -86,7 +120,12 @@
   {:else if error}
     <div class="process-surface-error">{error}</div>
   {:else if surface}
-    <ProcessSurfaceRenderer {surface} {values} />
+    <ProcessSurfaceRenderer
+      {surface}
+      {values}
+      {widgetPositions}
+      onWidgetPositionChange={updateWidgetPosition}
+    />
   {:else}
     <div class="process-surface-error">Process display did not load.</div>
   {/if}

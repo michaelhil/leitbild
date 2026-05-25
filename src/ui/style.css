@@ -1281,6 +1281,20 @@ body.rail-resizing {
   stroke-width: 2;
 }
 
+.process-widget {
+  cursor: grab;
+  touch-action: none;
+}
+
+.process-widget.dragging {
+  cursor: grabbing;
+}
+
+.process-widget.dragging .widget-shell {
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--text) 22%, transparent));
+  stroke-width: 3;
+}
+
 .process-widget.primary .widget-shell { stroke: #2563eb; }
 .process-widget.secondary .widget-shell { stroke: #c2410c; }
 .process-widget.support .widget-shell { stroke: #22845d; }

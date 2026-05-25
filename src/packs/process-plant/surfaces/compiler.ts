@@ -136,6 +136,15 @@ const compilePathPoints = (
   ]
 }
 
+const portRefFor = (ref: string): { readonly widgetId: string; readonly portName: string } => {
+  const separatorIndex = ref.lastIndexOf('.')
+  if (separatorIndex < 1 || separatorIndex === ref.length - 1) throw new Error(`invalid process surface port ref: ${ref}`)
+  return {
+    widgetId: ref.slice(0, separatorIndex),
+    portName: ref.slice(separatorIndex + 1),
+  }
+}
+
 const uniqueBindingPaths = (surface: ProcessSurfaceDefinition): ReadonlyArray<VariablePath> => {
   const paths = new Set<VariablePath>()
   for (const widget of surface.widgets) {
@@ -169,6 +178,8 @@ export const compileProcessSurface = (config: {
     return {
       id: path.id,
       ...(path.label === undefined ? {} : { label: path.label }),
+      from: portRefFor(path.from),
+      to: portRefFor(path.to),
       points: compilePathPoints(from, to),
       binds: path.binds,
       style: path.style,
