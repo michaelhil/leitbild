@@ -1,6 +1,6 @@
 import type { IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import type { PackObjectStatusTone } from '../../core/packs/protocol.ts'
-import type { VariablePath } from './graph/index.ts'
+import type { ProcessPlantDisplayField } from './graph/index.ts'
 import {
   emptyProcessPlantProjection,
   processPlantField,
@@ -11,21 +11,7 @@ import {
 import type { ProcessPlantIcLifecycleState, ProcessPlantRuntime } from './runtime/index.ts'
 import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 
-const selectedVariables: ReadonlyArray<{
-  readonly key: string
-  readonly label: string
-  readonly path: VariablePath
-  readonly digits?: number
-}> = [
-  { key: 'thermal-power', label: 'Thermal power', path: 'core.totalThermalPowerMw' as VariablePath, digits: 0 },
-  { key: 'electric-output', label: 'Electric output', path: 'turbine.electricMw' as VariablePath, digits: 0 },
-  { key: 'pzr-pressure', label: 'PZR pressure', path: 'pressurizer.pressureMPa' as VariablePath, digits: 2 },
-  { key: 'pzr-level', label: 'PZR level', path: 'pressurizer.levelPercent' as VariablePath, digits: 0 },
-  { key: 'sg-a-level', label: 'SG A level', path: 'sgA.levelPercent' as VariablePath, digits: 0 },
-  { key: 'sg-b-level', label: 'SG B level', path: 'sgB.levelPercent' as VariablePath, digits: 0 },
-  { key: 'sg-a-radiation', label: 'SG A radiation', path: 'sgA.secondaryRadiationMSvPerH' as VariablePath, digits: 2 },
-  { key: 'containment-pressure', label: 'Containment pressure', path: 'containment.pressureMPa' as VariablePath, digits: 3 },
-]
+const railDisplayProfileId = 'leitbild-rail'
 
 const severityRank: Readonly<Record<ProcessPlantIcLifecycleState['severity'], number>> = {
   info: 1,
@@ -48,12 +34,21 @@ const formatRuntimePerformance = (system: ProcessPlantSystemRuntime): string => 
 
 const readField = (
   variables: ReturnType<ProcessPlantRuntime['snapshot']>['variables'],
-  config: typeof selectedVariables[number],
+  field: ProcessPlantDisplayField,
 ): ReturnType<typeof processPlantField> => {
-  const variable = variables.find(candidate => candidate.path === config.path)
+  const variable = variables.find(candidate => candidate.path === field.path)
+  const label = field.label ?? variable?.label ?? String(field.path)
   return variable
-    ? processPlantField(config.key, config.label, formatValue(variable.value, variable.unit, config.digits))
-    : processPlantField(config.key, config.label, 'not in graph')
+    ? processPlantField(field.key, label, formatValue(variable.value, variable.unit, field.digits))
+    : processPlantField(field.key, label, 'not in graph')
+}
+
+const railDisplayFieldsFor = (
+  system: ProcessPlantSystemRuntime,
+): ReadonlyArray<ProcessPlantDisplayField> => {
+  const profile = system.system.graph.displayProfiles.find(candidate => candidate.id === railDisplayProfileId)
+  if (!profile) return []
+  return profile.groups.flatMap(group => group.fields)
 }
 
 const activeLifecycles = (
@@ -101,7 +96,7 @@ export const projectedProcessPlantUnit = (config: {
   const status = statusFor(lifecycles)
   const activeTripCount = lifecycles.filter(lifecycle => lifecycle.kind === 'trip').length
   const fields = [
-    ...selectedVariables.map(variable => readField(runtimeSnapshot.variables, variable)),
+    ...railDisplayFieldsFor(config.system).map(field => readField(runtimeSnapshot.variables, field)),
     processPlantField('active-alarms', 'Active alarms', String(lifecycles.filter(lifecycle => lifecycle.kind === 'alarm').length)),
     processPlantField('active-trips', 'Active trips', String(activeTripCount)),
     processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(config.system)),

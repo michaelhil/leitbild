@@ -147,6 +147,24 @@ describe('process plant simulation provider', () => {
     if (!telemetry.ok) throw new Error(telemetry.reason)
     expect((telemetry.result as { variables: ReadonlyArray<{ readonly path: string }> }).variables.map(variable => variable.path)).toContain('core.powerMw')
 
+    const railProfile = await connection.query(query('process-plant.display-profile.read', {
+      systemId: 'plant',
+      profileId: 'leitbild-rail',
+    }))
+    expect(railProfile.ok).toBe(true)
+    if (!railProfile.ok) throw new Error(railProfile.reason)
+    const profileFields = (railProfile.result as {
+      readonly groups: ReadonlyArray<{
+        readonly fields: ReadonlyArray<{
+          readonly key: string
+          readonly label: string
+          readonly variable: { readonly path: string; readonly value: unknown }
+        }>
+      }>
+    }).groups.flatMap(group => group.fields)
+    expect(profileFields.map(field => field.key)).toContain('thermal-power')
+    expect(profileFields.find(field => field.key === 'thermal-power')?.variable.path).toBe('core.totalThermalPowerMw')
+
     await connection.close()
   })
 

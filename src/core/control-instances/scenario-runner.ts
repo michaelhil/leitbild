@@ -41,6 +41,7 @@ export const createScenarioScriptRunner = (config: {
   readonly nowMs: () => number
   readonly delayMs?: (dueAtMs: number, nowMs: number) => number
   readonly onStepDue: (step: ScenarioScriptStep) => Promise<void>
+  readonly onStepFailed?: (step: ScenarioScriptStep, error: unknown) => Promise<void>
 }): ScenarioScriptRunner => {
   const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
   let closed = false
@@ -55,7 +56,7 @@ export const createScenarioScriptRunner = (config: {
     try {
       await config.onStepDue(step)
     } catch (err) {
-      console.error(err)
+      await config.onStepFailed?.(step, err)
     }
   }
 

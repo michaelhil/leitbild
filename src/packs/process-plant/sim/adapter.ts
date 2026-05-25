@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
-import { z } from 'zod'
 import { nowIso } from '../../../core/model/index.ts'
 import type {
   SimulationAdapter,
@@ -17,32 +16,13 @@ import {
   processPlantIcLifecyclePayloadSchema,
 } from '../commands.ts'
 import { compileProcessPlantSystems } from '../process-systems.ts'
-import { createProcessPlantRuntime } from '../runtime/index.ts'
-import {
-  createProcessPlantScheduleRunner,
-  createProcessPlantTelemetryRecorder,
-  createProcessPlantProtectionRunner,
-  processPlantScheduleConfigSchema,
-  processPlantTelemetryConfigSchema,
-  processPlantProtectionConfigSchema,
-  type ProcessPlantScheduleConfig,
-  type ProcessPlantTelemetryConfig,
-  type ProcessPlantTelemetryRecorder,
-  type ProcessPlantProtectionConfig,
-} from '../runtime/index.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
 import { processPlantDomainId } from '../model.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
-import { createProcessPlantRuntimePerformance, type ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { processPlantSimAdapterId, processPlantSimProviderId } from './constants.ts'
-import { resolveProcessPlantIcConfig } from '../specs/index.ts'
 import {
   processPlantProviderStateSchema,
-  providerStateForProcessPlantSystems,
-  restoredProtectionSnapshotFor,
-  restoredRuntimeSnapshotFor,
-  restoredScheduleSnapshotFor,
-  restoredTelemetrySnapshotFor,
   type ProcessPlantProviderState,
 } from './provider-state.ts'
 import {
@@ -51,27 +31,9 @@ import {
   processPlantUnitSystemId,
   projectedInitialProcessPlantObjects,
 } from './object-projection.ts'
-
-const processPlantProviderSystemConfigSchema = z.object({
-  schedule: processPlantScheduleConfigSchema.optional(),
-  telemetry: processPlantTelemetryConfigSchema.optional(),
-  icRef: z.string().min(1).optional(),
-  protection: processPlantProtectionConfigSchema.optional(),
-}).strict().superRefine((system, ctx) => {
-  if (system.icRef !== undefined && system.protection !== undefined) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ['protection'],
-      message: 'process plant system config must not define both icRef and inline protection',
-    })
-  }
-})
-
-const processPlantProviderConfigSchema = z.object({
-  systems: z.record(processPlantProviderSystemConfigSchema).default({}),
-}).strict()
-
-type ProcessPlantProviderConfig = z.infer<typeof processPlantProviderConfigSchema>
+import { assertProviderConfigMatchesCompiledSystems, processPlantProviderConfigFor } from './provider-config.ts'
+import { createProcessPlantProviderPersistence } from './persistence.ts'
+import { createProcessPlantSystemRuntimes } from './system-runtime-factory.ts'
 
 const updateIntervalMs = 1_000
 
@@ -82,38 +44,6 @@ const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => (
   reason,
   generatedAt: nowIso(),
 })
-
-const processPlantProviderConfigFor = (config: SimulationConnectionConfig): ProcessPlantProviderConfig => {
-  const rawConfig = config.scenario?.providerConfigs?.[processPlantSimProviderId] ?? config.scenario?.providerConfig ?? {}
-  return processPlantProviderConfigSchema.parse(rawConfig)
-}
-
-const protectionConfigFor = (
-  systemConfig: z.infer<typeof processPlantProviderSystemConfigSchema> | undefined,
-): ProcessPlantProtectionConfig | undefined => {
-  if (systemConfig?.protection !== undefined) return systemConfig.protection
-  if (systemConfig?.icRef !== undefined) return resolveProcessPlantIcConfig(systemConfig.icRef)
-  return undefined
-}
-
-const assertProviderConfigMatchesCompiledSystems = (config: {
-  readonly providerConfig: ProcessPlantProviderConfig
-  readonly systemIds: ReadonlySet<string>
-}): void => {
-  for (const configuredSystemId of Object.keys(config.providerConfig.systems)) {
-    if (!config.systemIds.has(configuredSystemId)) {
-      throw new Error(`process plant provider config references unknown process system: ${configuredSystemId}`)
-    }
-  }
-}
-
-const saveProviderState = async (
-  config: SimulationConnectionConfig,
-  systems: ReadonlyMap<string, ProcessPlantSystemRuntime>,
-): Promise<void> => {
-  if (!config.providerStateStore || systems.size === 0) return
-  await config.providerStateStore.save(providerStateForProcessPlantSystems(systems))
-}
 
 const emitSimulationEvents = (
   handlers: ReadonlySet<SimulationEventHandler>,
@@ -175,53 +105,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       providerConfig,
       systemIds: new Set(compiledSystems.map(system => system.id)),
     })
-    const systems = new Map<string, ProcessPlantSystemRuntime>(compiledSystems.map(system => [
-      system.id,
-      (() => {
-        const systemConfig = providerConfig.systems[system.id]
-        const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
-        const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
-        const protectionConfig = protectionConfigFor(systemConfig)
-        const runtime = createProcessPlantRuntime({
-          system,
-          ...(restoredRuntimeSnapshotFor(providerState, system.id) === undefined
-            ? {}
-            : { restoredSnapshot: restoredRuntimeSnapshotFor(providerState, system.id)! }),
-        })
-        const telemetry: ProcessPlantTelemetryRecorder | undefined = telemetryConfig === undefined
-          ? undefined
-          : createProcessPlantTelemetryRecorder({
-              systemId: system.id,
-              telemetry: telemetryConfig,
-              ...(restoredTelemetrySnapshotFor(providerState, system.id) === undefined
-                ? {}
-                : { restoredSnapshot: restoredTelemetrySnapshotFor(providerState, system.id)! }),
-            })
-        telemetry?.recordDueSamples(runtime)
-        const restoredSchedule = restoredScheduleSnapshotFor(providerState, system.id)
-        const protection = protectionConfig === undefined
-          ? undefined
-          : createProcessPlantProtectionRunner({
-              system,
-              protection: protectionConfig,
-              ...(restoredProtectionSnapshotFor(providerState, system.id) === undefined
-                ? {}
-                : { restoredSnapshot: restoredProtectionSnapshotFor(providerState, system.id)! }),
-            })
-        return {
-          system,
-          runtime,
-          schedule: createProcessPlantScheduleRunner({
-            system,
-            ...(scheduleConfig === undefined ? {} : { schedule: scheduleConfig }),
-            ...(restoredSchedule === undefined ? {} : { restoredSnapshot: restoredSchedule }),
-          }),
-          ...(telemetry === undefined ? {} : { telemetry }),
-          ...(protection === undefined ? {} : { protection }),
-          performance: createProcessPlantRuntimePerformance(),
-        }
-      })(),
-    ]))
+    const systems = createProcessPlantSystemRuntimes({
+      compiledSystems,
+      providerConfig,
+      providerState,
+    })
+    const persistence = createProcessPlantProviderPersistence({
+      connection: config,
+      systems,
+    })
     let clock: SimulationClockState = {
       currentTime: config.scenario?.world.startsAt ?? nowIso(),
       updatedAt: nowIso(),
@@ -237,7 +129,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       }).map(object => [object.id, object]),
     )
 
-    await saveProviderState(config, systems)
+    await persistence.saveNow()
     let providerFailed = false
 
     const advance = async (): Promise<void> => {
@@ -273,7 +165,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         },
       }))
       emitSimulationEvents(handlers, events)
-      await saveProviderState(config, systems)
+      await persistence.saveNow()
     }
 
     const interval = setInterval(() => {
@@ -324,7 +216,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
               ...(payload.data.shelveDurationMs === undefined ? {} : { shelveDurationMs: payload.data.shelveDurationMs }),
             })
             emitSimulationEvents(handlers, events)
-            await saveProviderState(config, systems)
+            await persistence.saveNow()
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {
             return {
@@ -360,7 +252,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
             path: validation.targetPath,
             value: payload.data.value,
           })
-          await saveProviderState(config, systems)
+          await persistence.saveNow()
           return { ok: true, commandId: command.id, acceptedAt }
         } catch (err) {
           return {
@@ -394,7 +286,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       },
       close: async (): Promise<void> => {
         clearInterval(interval)
-        await saveProviderState(config, systems)
+        await persistence.saveNow()
         handlers.clear()
       },
     }

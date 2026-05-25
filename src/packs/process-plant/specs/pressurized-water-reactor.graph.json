@@ -4961,6 +4961,64 @@
       "connectionKind": "electricalPower"
     }
   ],
+  "displayProfiles": [
+    {
+      "id": "leitbild-rail",
+      "label": "Leitbild rail summary",
+      "groups": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "fields": [
+            { "key": "thermal-power", "label": "Thermal power", "path": "core.totalThermalPowerMw", "digits": 0 },
+            { "key": "electric-output", "label": "Electric output", "path": "turbine.electricMw", "digits": 0 },
+            { "key": "pzr-pressure", "label": "PZR pressure", "path": "pressurizer.pressureMPa", "digits": 2 },
+            { "key": "pzr-level", "label": "PZR level", "path": "pressurizer.levelPercent", "digits": 0 },
+            { "key": "sg-a-level", "label": "SG A level", "path": "sgA.levelPercent", "digits": 0 },
+            { "key": "sg-b-level", "label": "SG B level", "path": "sgB.levelPercent", "digits": 0 },
+            { "key": "sg-a-radiation", "label": "SG A radiation", "path": "sgA.secondaryRadiationMSvPerH", "digits": 2 },
+            { "key": "containment-pressure", "label": "Containment pressure", "path": "containment.pressureMPa", "digits": 3 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "operator-overview",
+      "label": "Operator overview",
+      "groups": [
+        {
+          "id": "reactor",
+          "label": "Reactor and primary",
+          "fields": [
+            { "key": "core-power", "label": "Core power", "path": "core.totalThermalPowerMw", "digits": 0 },
+            { "key": "reactivity", "label": "Reactivity", "path": "core.effectiveReactivityPcm", "digits": 0 },
+            { "key": "pzr-pressure", "label": "Pressurizer pressure", "path": "pressurizer.pressureMPa", "digits": 2 },
+            { "key": "pzr-level", "label": "Pressurizer level", "path": "pressurizer.levelPercent", "digits": 0 }
+          ]
+        },
+        {
+          "id": "secondary",
+          "label": "Steam and feedwater",
+          "fields": [
+            { "key": "sg-a-level", "label": "SG A level", "path": "sgA.levelPercent", "digits": 0 },
+            { "key": "sg-b-level", "label": "SG B level", "path": "sgB.levelPercent", "digits": 0 },
+            { "key": "steam-header-pressure", "label": "Main steam pressure", "path": "main-steam-header-to-turbine-stop-valve.pressureMPa", "digits": 2 },
+            { "key": "turbine-output", "label": "Turbine output", "path": "turbine.electricMw", "digits": 0 }
+          ]
+        },
+        {
+          "id": "safety",
+          "label": "Safety status",
+          "fields": [
+            { "key": "containment-pressure", "label": "Containment pressure", "path": "containment.pressureMPa", "digits": 3 },
+            { "key": "sg-a-radiation", "label": "SG A radiation", "path": "sgA.secondaryRadiationMSvPerH", "digits": 2 },
+            { "key": "safety-bus-a", "label": "Safety bus A voltage", "path": "safetyBusA.voltageFraction", "digits": 2 },
+            { "key": "safety-bus-b", "label": "Safety bus B voltage", "path": "safetyBusB.voltageFraction", "digits": 2 }
+          ]
+        }
+      ]
+    }
+  ],
   "publishedVariables": [
     "core.powerMw",
     "core.fissionPowerMw",

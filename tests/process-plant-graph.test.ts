@@ -64,6 +64,12 @@ describe('process plant graph foundation', () => {
       type: 'link',
       linkIndex: steamLink.index,
     })
+    const railProfile = compiled.displayProfiles.find(profile => profile.id === 'leitbild-rail')
+    expect(railProfile?.groups.flatMap(group => group.fields).map(field => field.path)).toEqual(expect.arrayContaining([
+      'core.totalThermalPowerMw',
+      'turbine.electricMw',
+      'pressurizer.pressureMPa',
+    ]))
     expect(publishedVariables).toContain('safetyBusA.energized')
     expect(publishedVariables).toContain('safetyBusB.marginMw')
   })
@@ -505,6 +511,29 @@ describe('process plant graph foundation', () => {
     }
 
     expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('duplicate published variable')
+  })
+
+  test('rejects display profile fields that reference unknown variables', () => {
+    const invalid = {
+      ...pressurizedWaterReactorPlantSpec,
+      displayProfiles: [
+        {
+          id: 'bad-profile',
+          label: 'Bad Profile',
+          groups: [{
+            id: 'overview',
+            label: 'Overview',
+            fields: [{
+              key: 'missing-field',
+              label: 'Missing Field',
+              path: 'missing.variable',
+            }],
+          }],
+        },
+      ],
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('display profile bad-profile/overview references unknown variable: missing.variable')
   })
 
   test('rejects component-level initial state in favor of system-level initialState', () => {

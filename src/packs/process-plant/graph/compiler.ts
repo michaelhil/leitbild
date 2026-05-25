@@ -280,6 +280,13 @@ export const compilePlantGraph = (
   assertUnique(spec.components, component => component.id, 'component id')
   assertUnique(spec.connections, connection => connection.id, 'connection id')
   assertUnique(spec.publishedVariables, path => path, 'published variable')
+  assertUnique(spec.displayProfiles, profile => profile.id, 'display profile id')
+  for (const profile of spec.displayProfiles) {
+    assertUnique(profile.groups, group => group.id, `display profile ${profile.id} group id`)
+    for (const group of profile.groups) {
+      assertUnique(group.fields, field => field.key, `display profile ${profile.id}/${group.id} field key`)
+    }
+  }
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()
@@ -392,6 +399,15 @@ export const compilePlantGraph = (
   for (const path of published) {
     if (!availableVariablePaths.has(path)) throw new Error(`published variable does not exist: ${path}`)
   }
+  for (const profile of spec.displayProfiles) {
+    for (const group of profile.groups) {
+      for (const field of group.fields) {
+        if (!availableVariablePaths.has(field.path)) {
+          throw new Error(`display profile ${profile.id}/${group.id} references unknown variable: ${field.path}`)
+        }
+      }
+    }
+  }
 
   const signalBindings = variables.map(signalBindingFor)
   const signalBindingByPath = new Map(signalBindings.map(binding => [binding.path, binding]))
@@ -415,5 +431,6 @@ export const compilePlantGraph = (
     signalBindings,
     signalBindingByPath,
     signalBindingByTagId,
+    displayProfiles: spec.displayProfiles,
   }
 }

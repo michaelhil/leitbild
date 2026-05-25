@@ -30,6 +30,7 @@
   import { createMapAreaFeatureProvider } from './app/map-area-feature-provider.ts'
   import { installPlacementGlobalEvents } from './app/placement-global-events.ts'
   import { createRealtimeConnectionController } from './app/realtime-connection.ts'
+  import { completeControlSurfaceStartupFromSnapshot } from './app/control-surface-session.ts'
   import {
     categoryRowsFor,
     placementCursorFor,
@@ -66,7 +67,7 @@
     type StartupStep,
     type StartupStepId,
   } from './startup.ts'
-  import type { CategoryRow, ControlInstanceSummary, CreateDraft, ScenarioListItem } from './types.ts'
+  import type { CategoryRow, ControlInstanceResponse, ControlInstanceSummary, CreateDraft, ScenarioListItem } from './types.ts'
 
   const activePack: LeitbildPack = createLeitbildControlPack()
   const appVersion = __LEITBILD_VERSION__
@@ -438,6 +439,52 @@
     return activeRoute().mode === 'picker' ? 'picker' : 'control-instance'
   }
 
+  const completeStartupFromResponse = async (
+    response: ControlInstanceResponse,
+    config: {
+      readonly rememberRecentRun?: () => void
+      readonly onRememberRecentRunFailed?: (error: unknown) => void
+      readonly setActiveStartupStep: (id: StartupStepId) => void
+    },
+  ): Promise<void> => {
+    await completeControlSurfaceStartupFromSnapshot({
+      response,
+      pack: activePack,
+      startStep,
+      completeStep,
+      setActiveStartupStep: config.setActiveStartupStep,
+      setControlInstanceId: id => {
+        controlInstanceId = id
+      },
+      setObjects: nextObjects => {
+        objects = nextObjects
+      },
+      setScenarioState: nextState => {
+        scenarioState = nextState
+      },
+      setClock: nextClock => {
+        clock = nextClock
+      },
+      setExpectedRealtimeScenarioId: scenarioId => {
+        expectedRealtimeScenarioId = scenarioId
+      },
+      setSelectedControllerId: id => {
+        selectedControllerId = id
+      },
+      setSeenRevisions: nextSeen => {
+        seenRevisions = nextSeen
+      },
+      setSnapshotReady: ready => {
+        snapshotReady = ready
+      },
+      loadSurfaceForScenario,
+      completeObjectsWhenReady,
+      connectRealtime: connectWebSocket,
+      ...(config.rememberRecentRun === undefined ? {} : { rememberRecentRun: config.rememberRecentRun }),
+      ...(config.onRememberRecentRunFailed === undefined ? {} : { onRememberRecentRunFailed: config.onRememberRecentRunFailed }),
+    })
+  }
+
   const joinControlInstance = async (): Promise<void> => {
     realtimeConnection.disconnect()
     realtimeAttached = false
@@ -454,32 +501,15 @@
       if (route.mode !== 'control-instance') throw new Error('control instance route expected')
       expectedRealtimeScenarioId = route.scenarioId
       const body = await joinControlInstanceClient(id, { scenarioId: route.scenarioId })
-      completeStep('control-instance')
-      activeStartupStep = 'snapshot'
-      startStep('snapshot')
-      controlInstanceId = body.id
-      objects = [...body.snapshot.objects]
-      scenarioState = body.snapshot.scenario
-      clock = body.snapshot.clock
-      if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
-      expectedRealtimeScenarioId = scenarioState.scenarioId
-      try {
-        rememberRecentScenarioRun(route.scenarioId, route.runId)
-      } catch (err) {
-        commandStatus = err instanceof Error ? err.message : 'Unable to remember scenario run'
-      }
-      selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
-      seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
-      snapshotReady = true
-      completeStep('snapshot')
-      activeStartupStep = 'map'
-      startStep('map')
-      await loadSurfaceForScenario(scenarioState.scenarioId)
-      activeStartupStep = 'objects'
-      startStep('objects')
-      await completeObjectsWhenReady()
-      activeStartupStep = 'realtime'
-      connectWebSocket(body.id)
+      await completeStartupFromResponse(body, {
+        setActiveStartupStep: id => {
+          activeStartupStep = id
+        },
+        rememberRecentRun: () => rememberRecentScenarioRun(route.scenarioId, route.runId),
+        onRememberRecentRunFailed: err => {
+          commandStatus = err instanceof Error ? err.message : 'Unable to remember scenario run'
+        },
+      })
     } catch (err) {
       failStep(activeStartupStep, err)
     }
@@ -501,26 +531,11 @@
       expectedRealtimeScenarioId = requestedScenarioId ?? null
       startStep('realtime')
       const body = await resetControlInstance(controlInstanceId, { scenarioId: requestedScenarioId })
-      completeStep('control-instance')
-      activeStartupStep = 'snapshot'
-      startStep('snapshot')
-      objects = [...body.snapshot.objects]
-      scenarioState = body.snapshot.scenario
-      clock = body.snapshot.clock
-      if (!scenarioState?.scenarioId) throw new Error('control instance snapshot is missing scenario state')
-      expectedRealtimeScenarioId = scenarioState.scenarioId
-      selectedControllerId = objects.find(object => activePack.isController(object))?.id ?? null
-      seenRevisions = new Map(objects.map(object => [object.id, object.revision]))
-      snapshotReady = true
-      completeStep('snapshot')
-      activeStartupStep = 'map'
-      startStep('map')
-      await loadSurfaceForScenario(scenarioState.scenarioId)
-      activeStartupStep = 'objects'
-      startStep('objects')
-      await completeObjectsWhenReady()
-      activeStartupStep = 'realtime'
-      connectWebSocket(body.id)
+      await completeStartupFromResponse(body, {
+        setActiveStartupStep: id => {
+          activeStartupStep = id
+        },
+      })
       commandStatus = 'Scenario reset'
     } catch (err) {
       failStep(activeStartupStep, err)

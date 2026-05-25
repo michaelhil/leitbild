@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
-import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
+import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
@@ -206,6 +206,21 @@ export const createControlInstanceRuntime = async (config: {
     ...nextScenarioBase(at),
     type: 'scenario.step.started',
     stepId: step.id,
+  })
+
+  const scenarioStepFailedEvent = (step: ScenarioScriptStep, error: unknown, at: IsoTimestamp): DomainEvent => ({
+    ...nextScenarioBase(at),
+    type: 'notification.emitted',
+    notification: {
+      id: notificationIdSchema.parse(`notification:scenario-step-failed:${step.id}:${randomUUID()}`),
+      controlInstanceId: config.id,
+      at,
+      title: 'Scenario step failed',
+      message: `Scenario step ${step.id} failed: ${error instanceof Error ? error.message : String(error)}`,
+      severity: 'critical',
+      source: { kind: 'simulation', id: 'scenario-runner' },
+      targets: [{ kind: 'broadcast' }],
+    },
   })
 
   const domainEventsForScenarioActions = (actions: ReadonlyArray<ScenarioScriptAction>, at: IsoTimestamp): ReadonlyArray<DomainEvent> =>
@@ -516,6 +531,9 @@ export const createControlInstanceRuntime = async (config: {
       },
       onStepDue: async (step): Promise<void> => {
         await publishScenarioStep(step, nowIso())
+      },
+      onStepFailed: async (step, error): Promise<void> => {
+        await publishOneGenerated(() => scenarioStepFailedEvent(step, error, nowIso()))
       },
     })
     scenarioRunner?.start()

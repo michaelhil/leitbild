@@ -56,6 +56,14 @@ interface ParsedAllowedOrigin {
 export const dataUrlByteLength = (dataUrl: string): number =>
   new TextEncoder().encode(dataUrl).byteLength
 
+const parseUrl = (raw: string): URL | null => {
+  try {
+    return new URL(raw)
+  } catch (_err) {
+    return null
+  }
+}
+
 export const fetchSamsinnScreenshotConfig = async (): Promise<SamsinnScreenshotConfig> => {
   const response = await fetch('/api/client-config', { cache: 'no-store' })
   if (!response.ok) throw new Error(`client config fetch failed: ${response.status}`)
@@ -74,36 +82,30 @@ export const fetchSamsinnScreenshotConfig = async (): Promise<SamsinnScreenshotC
 const parseAllowedOrigin = (raw: string): ParsedAllowedOrigin | null => {
   const trimmed = raw.trim()
   if (!trimmed) return null
-  try {
-    const wildcardPrefix = 'https://*.'
-    if (trimmed.startsWith(wildcardPrefix)) {
-      const url = new URL(`https://${trimmed.slice(wildcardPrefix.length)}`)
-      return {
-        protocol: url.protocol,
-        hostname: url.hostname,
-        port: url.port,
-        wildcardSubdomains: true,
-      }
-    }
-    const url = new URL(trimmed)
+  const wildcardPrefix = 'https://*.'
+  if (trimmed.startsWith(wildcardPrefix)) {
+    const url = parseUrl(`https://${trimmed.slice(wildcardPrefix.length)}`)
+    if (!url) return null
     return {
       protocol: url.protocol,
       hostname: url.hostname,
       port: url.port,
-      wildcardSubdomains: false,
+      wildcardSubdomains: true,
     }
-  } catch {
-    return null
+  }
+  const url = parseUrl(trimmed)
+  if (!url) return null
+  return {
+    protocol: url.protocol,
+    hostname: url.hostname,
+    port: url.port,
+    wildcardSubdomains: false,
   }
 }
 
 export const isOriginAllowed = (origin: string, allowedOrigins: string): boolean => {
-  let parsedOrigin: URL
-  try {
-    parsedOrigin = new URL(origin)
-  } catch {
-    return false
-  }
+  const parsedOrigin = parseUrl(origin)
+  if (!parsedOrigin) return false
 
   return allowedOrigins
     .split(',')
