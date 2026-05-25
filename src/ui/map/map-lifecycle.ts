@@ -19,6 +19,7 @@ interface MapLifecycleConfig {
   readonly onMoveEnd: () => void
   readonly onStyleLoad: (current: MapLibreMap) => void
   readonly onLoad: (current: MapLibreMap) => void
+  readonly preserveDrawingBuffer?: boolean
 }
 
 export interface MapLifecycle {
@@ -102,7 +103,7 @@ const installMapContainerResizeObserver = (
 
 export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => {
   const cleanups: Array<Cleanup> = [installPmtilesProtocol()]
-  const current = new maplibregl.Map({
+  const mapOptions: maplibregl.MapOptions & { readonly preserveDrawingBuffer?: boolean } = {
     container: config.element,
     style: config.styleUrl,
     center: [config.center.coordinates[0], config.center.coordinates[1]],
@@ -115,7 +116,9 @@ export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => 
     touchZoomRotate: true,
     keyboard: true,
     cooperativeGestures: false,
-  })
+    preserveDrawingBuffer: config.preserveDrawingBuffer === true,
+  }
+  const current = new maplibregl.Map(mapOptions)
   assertCameraInteractionContract(current)
   cleanups.push(installMapContainerResizeObserver(config, current))
 

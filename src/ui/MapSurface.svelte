@@ -26,6 +26,14 @@
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
   import { createMapSourceController } from './map/map-source-controller.ts'
   import { objectHoverCardHtml } from './map/object-hover-card.ts'
+  import {
+    captureMapCanvasScreenshot,
+    defaultSamsinnAllowedParentOrigins,
+    defaultSamsinnScreenshotMaxDataUrlBytes,
+    fetchSamsinnScreenshotConfig,
+    installSamsinnScreenshotResponder,
+    type SamsinnScreenshotConfig,
+  } from './samsinn-screenshot.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
 
@@ -95,6 +103,7 @@
   let appliedCameraKey: string | null = null
   let mapCameraGestureActive = false
   let mapLifecycle: MapLifecycle | null = null
+  let screenshotResponderCleanup: (() => void) | null = null
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   const mapInputDebugController = createMapInputDebugController({
@@ -396,47 +405,81 @@
     }
   }
 
+  const fallbackSamsinnScreenshotConfig = (): SamsinnScreenshotConfig => ({
+    enabled: false,
+    allowedParentOrigins: defaultSamsinnAllowedParentOrigins,
+    maxDataUrlBytes: defaultSamsinnScreenshotMaxDataUrlBytes,
+  })
+
   runOnMount(() => {
     if (!mapElement) throw new Error('Map surface element was not bound before map initialization')
     if (mapInitialized) return
     mapInitialized = true
-    const lifecycle = createMapLifecycle({
-      element: mapElement,
-      styleUrl: styleUrlFor(theme),
-      center: mapConfig.center,
-      zoom: mapConfig.zoom,
-      placementActive: () => placementMode !== null,
-      recordDebug: mapInputDebugController.record,
-      onError: onMapError,
-      onPlacementPoint,
-      onMoveStart: () => {
-        mapCameraGestureActive = true
-      },
-      onMoveEnd: () => {
-        mapCameraGestureActive = false
-        void refreshPackMapAreaFeatures()
-      },
-      onStyleLoad: (styleMap) => {
-        void setupOperationalMapStyle(styleMap)
-      },
-      onLoad: (loadedMap) => {
-        if (!loaded) void setupOperationalMapStyle(loadedMap)
-      },
-    })
-    mapLifecycle = lifecycle
-    const current = lifecycle.map
-    mapInputDebugController.install(current)
-    appliedTheme = theme
-    appliedCameraKey = cameraKeyFor(mapConfig)
-    map = current
+    let cancelled = false
+
+    const initializeMap = async (): Promise<void> => {
+      let screenshotConfig = fallbackSamsinnScreenshotConfig()
+      try {
+        screenshotConfig = await fetchSamsinnScreenshotConfig()
+      } catch (err) {
+        onMapError(err instanceof Error ? err.message : String(err))
+      }
+      if (cancelled || !mapElement) return
+
+      const lifecycle = createMapLifecycle({
+        element: mapElement,
+        styleUrl: styleUrlFor(theme),
+        center: mapConfig.center,
+        zoom: mapConfig.zoom,
+        placementActive: () => placementMode !== null,
+        recordDebug: mapInputDebugController.record,
+        onError: onMapError,
+        onPlacementPoint,
+        onMoveStart: () => {
+          mapCameraGestureActive = true
+        },
+        onMoveEnd: () => {
+          mapCameraGestureActive = false
+          void refreshPackMapAreaFeatures()
+        },
+        onStyleLoad: (styleMap) => {
+          void setupOperationalMapStyle(styleMap)
+        },
+        onLoad: (loadedMap) => {
+          if (!loaded) void setupOperationalMapStyle(loadedMap)
+        },
+        preserveDrawingBuffer: screenshotConfig.enabled,
+      })
+      if (cancelled) {
+        lifecycle.destroy()
+        return
+      }
+      mapLifecycle = lifecycle
+      const current = lifecycle.map
+      screenshotResponderCleanup = installSamsinnScreenshotResponder({
+        enabled: screenshotConfig.enabled,
+        allowedParentOrigins: screenshotConfig.allowedParentOrigins,
+        maxDataUrlBytes: screenshotConfig.maxDataUrlBytes,
+        capture: async options => captureMapCanvasScreenshot(current.getCanvas(), options),
+      })
+      mapInputDebugController.install(current)
+      appliedTheme = theme
+      appliedCameraKey = cameraKeyFor(mapConfig)
+      map = current
+    }
+
+    void initializeMap()
 
     return () => {
+      cancelled = true
       mapInputDebugController.stop()
       sourceController.stop()
       stopDisplayAnimation()
       stopPackAreaFeatureAnimation()
       stopPackAreaRefresh()
       hideMarkerPopup()
+      screenshotResponderCleanup?.()
+      screenshotResponderCleanup = null
       mapLifecycle?.destroy()
       mapLifecycle = null
       map = null

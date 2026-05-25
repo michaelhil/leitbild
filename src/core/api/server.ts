@@ -14,6 +14,7 @@ import { handleControlInstanceApi } from './control-instance-routes.ts'
 import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type RealtimeStatus } from './realtime.ts'
 import { json } from './responses.ts'
 import { buildManifest } from './discovery.ts'
+import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
 
@@ -171,6 +172,9 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       }
       if (url.pathname === '/health/details') {
         return secure(json(await createHealthDetails({ registry: config.registry, realtime: realtime.status(), mapArtifacts })))
+      }
+      if (url.pathname === '/api/client-config' && req.method === 'GET') {
+        return secure(json({ samsinnScreenshot: createSamsinnScreenshotConfigFromEnv() }))
       }
       const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
       if (discoveryRouteResponse) return secure(discoveryRouteResponse)
