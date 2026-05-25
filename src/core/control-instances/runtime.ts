@@ -128,14 +128,22 @@ export const createControlInstanceRuntime = async (config: {
     await currentPublish
   }
 
-  const publishMany = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
+  const publishGenerated = async (
+    generate: () => ReadonlyArray<DomainEvent> | Promise<ReadonlyArray<DomainEvent>>,
+  ): Promise<ReadonlyArray<DomainEvent>> => {
+    let generatedEvents: ReadonlyArray<DomainEvent> = []
     await enqueuePublish(async () => {
-      await publishManyNow(domainEvents)
+      generatedEvents = await generate()
+      await publishManyNow(generatedEvents)
     })
+    return generatedEvents
   }
 
-  const publish = async (event: DomainEvent): Promise<void> => {
-    await publishMany([event])
+  const publishOneGenerated = async (generate: () => DomainEvent | Promise<DomainEvent>): Promise<DomainEvent> => {
+    const events = await publishGenerated(async () => [await generate()])
+    const event = events[0]
+    if (!event) throw new Error('internal event generation produced no event')
+    return event
   }
 
   const nextScenarioBase = (at: IsoTimestamp): Omit<DomainEvent, 'type'> => ({
@@ -338,8 +346,7 @@ export const createControlInstanceRuntime = async (config: {
     if (command.kind !== deleteObjectCommandKind) return null
     const at = nowIso()
     try {
-      const events = coreDeleteEvents(command, at)
-      await publishMany(events)
+      const events = await publishGenerated(() => coreDeleteEvents(command, at))
       await config.simulation.observeCommittedEvents(events)
       return { ok: true, commandId: command.id, acceptedAt: at }
     } catch (error) {
@@ -464,8 +471,7 @@ export const createControlInstanceRuntime = async (config: {
   let scenarioRunner: ScenarioScriptRunner | null = null
 
   const publishScenarioStep = async (step: ScenarioScriptStep, at: IsoTimestamp): Promise<void> => {
-    const stepEvent = scenarioStepStartedEvent(step, at)
-    await publishMany([stepEvent])
+    const stepEvent = await publishOneGenerated(() => scenarioStepStartedEvent(step, at))
     await config.simulation.observeCommittedEvents([stepEvent])
 
     for (const action of step.actions) {
@@ -475,9 +481,8 @@ export const createControlInstanceRuntime = async (config: {
         })
         continue
       }
-      const events = domainEventsForScenarioActions([action], at)
+      const events = await publishGenerated(() => domainEventsForScenarioActions([action], at))
       if (events.length === 0) continue
-      await publishMany(events)
       await config.simulation.observeCommittedEvents(events)
     }
   }
@@ -528,7 +533,7 @@ export const createControlInstanceRuntime = async (config: {
     if (!canIssueCommand(actor, command)) {
       return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: `role ${actor.role} may not issue command ${command.kind}` }
     }
-    await publish({
+    await publishOneGenerated(() => ({
       id: eventId(),
       controlInstanceId: config.id,
       seq: ++seq,
@@ -536,10 +541,10 @@ export const createControlInstanceRuntime = async (config: {
       provenance: { source: 'operator' },
       type: 'command.issued',
       command,
-    })
+    }))
     const result = await handleCoreCommand(command) ?? await config.simulation.sendCommand(command)
     await publishQueue
-    await publish({
+    await publishOneGenerated(() => ({
       id: eventId(),
       controlInstanceId: config.id,
       seq: ++seq,
@@ -547,7 +552,7 @@ export const createControlInstanceRuntime = async (config: {
       provenance: { source: 'simulator', causedByCommandId: command.id },
       type: 'command.result',
       result,
-    })
+    }))
     return result
   }
 
@@ -563,7 +568,7 @@ export const createControlInstanceRuntime = async (config: {
       paused: parsedUpdate.paused ?? current.paused,
       speed: parsedUpdate.speed ?? current.speed,
     }
-    await publish({
+    await publishOneGenerated(() => ({
       id: eventId(),
       controlInstanceId: config.id,
       seq: ++seq,
@@ -571,7 +576,7 @@ export const createControlInstanceRuntime = async (config: {
       provenance: { source: 'operator' },
       type: 'clock.updated',
       clock: nextClock,
-    })
+    }))
     await config.simulation.setClock(nextClock)
     if (config.scenario?.script) {
       if (nextClock.paused) {
@@ -590,7 +595,7 @@ export const createControlInstanceRuntime = async (config: {
 
   const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<DomainEvent> => {
     const snapshot = state.snapshot()
-    const event: DomainEvent = {
+    const event = await publishOneGenerated(() => ({
       id: eventId(),
       controlInstanceId: config.id,
       seq: ++seq,
@@ -600,8 +605,7 @@ export const createControlInstanceRuntime = async (config: {
       previousSeq: snapshot.seq,
       ...(snapshot.scenario?.scenarioId === undefined ? {} : { previousScenarioId: snapshot.scenario.scenarioId }),
       ...(resetConfig.scenarioId === undefined ? {} : { scenarioId: resetConfig.scenarioId }),
-    }
-    await publish(event)
+    }))
     return event
   }
 
