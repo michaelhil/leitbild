@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
-  import { createLeitbildControlPack } from '../../app-assembly.ts'
   import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../../core/packs/protocol.ts'
@@ -29,6 +28,7 @@
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
   import { createRealtimeConnectionController } from '../app/realtime-connection.ts'
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
+  import { createScenarioControlPack } from '../pack-loader.ts'
   import {
     categoryRowsFor,
     placementCursorFor,
@@ -64,8 +64,8 @@
   } from '../startup.ts'
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
-  const activePack: LeitbildPack = createLeitbildControlPack()
   const appVersion = __LEITBILD_VERSION__
+  let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
   let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
@@ -94,7 +94,7 @@
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
-    packId: activePack.id,
+    packId: 'leitbild-control',
     defaultName: (type) => defaultName(type),
     setCommandStatus: (nextStatus) => {
       commandStatus = nextStatus
@@ -103,8 +103,10 @@
   const placementMode = $derived(placement.mode)
   const placementPoints = $derived(placement.points)
   const createDraft = $derived(placement.draft)
-  const selectedControllerObject = $derived(selectedControllerObjectFor(objects, selectedControllerId, activePack))
-  const allCategoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsFor(objects, activePack))
+  const selectedControllerObject = $derived(activePack
+    ? selectedControllerObjectFor(objects, selectedControllerId, activePack)
+    : null)
+  const allCategoryRows = $derived<ReadonlyArray<CategoryRow>>(activePack ? categoryRowsFor(objects, activePack) : [])
   const surface = $derived(scenarioDefinition?.surface ?? null)
   const railConfig = $derived(surfaceObjectRailConfig(surface))
   const mapConfig = $derived(surfaceMapConfig(surface))
@@ -122,7 +124,7 @@
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
-  const placementCursor = $derived(placementCursorFor(placementMode, activePack))
+  const placementCursor = $derived(activePack ? placementCursorFor(placementMode, activePack) : null)
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
   )
@@ -143,18 +145,24 @@
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
+  const requireActivePack = (): LeitbildPack => {
+    if (!activePack) throw new Error('scenario packs are not loaded')
+    return activePack
+  }
+
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
-    activePack.presentObject(object, { objects, currentTime: currentPackTime() })
+    requireActivePack().presentObject(object, { objects, currentTime: currentPackTime() })
 
   const mapAreaFeaturesFor = createMapAreaFeatureProvider({
-    pack: activePack,
+    pack: () => activePack,
     objects: () => objects,
     controlInstanceId: () => controlInstanceId,
     currentTime: currentPackTime,
   })
 
   const hasNewInfo = (object: OperationalObject): boolean => {
-    const presentation = presentationFor(object)
+    if (!activePack) return false
+    const presentation = activePack.presentObject(object, { objects, currentTime: currentPackTime() })
     if (presentation.noteworthyUpdates !== true) return false
     return (seenRevisions.get(object.id) ?? object.revision) < object.revision
   }
@@ -208,9 +216,10 @@
   }
 
   const loadSurfaceForScenario = async (scenarioId: string): Promise<void> => {
-    const body = await fetchScenario(scenarioId)
-    scenarioDefinition = body.scenario
-    if (surfaceHasPrimitive(body.scenario.surface, 'map')) {
+    const scenario = scenarioDefinition?.id === scenarioId
+      ? scenarioDefinition
+      : await loadScenarioDefinitionAndPack(scenarioId)
+    if (surfaceHasPrimitive(scenario.surface, 'map')) {
       await loadMapSurface()
       return
     }
@@ -253,6 +262,14 @@
     scenarioOptions = body.scenarios
   }
 
+  const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<ScenarioDefinition> => {
+    const body = await fetchScenario(scenarioId)
+    const nextPack = await createScenarioControlPack(body.scenario.packs)
+    scenarioDefinition = body.scenario
+    activePack = nextPack
+    return body.scenario
+  }
+
   const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
     status = 'Creating Control Instance'
     startStep('control-instance')
@@ -274,7 +291,7 @@
   }
 
   const defaultName = (type: PackCreateObjectType): string =>
-    activePack.defaultObjectLabel(type.id, { objects })
+    requireActivePack().defaultObjectLabel(type.id, { objects })
 
   const syncControlInstanceSnapshot = async (): Promise<void> => {
     if (!controlInstanceId) return
@@ -313,7 +330,8 @@
   const createObject = async (draft: CreateDraft): Promise<void> => {
     placement.clearDraft()
     commandStatus = `Creating ${draft.objectType.label}`
-    const command = activePack.buildCreateObjectCommand(
+    const pack = requireActivePack()
+    const command = pack.buildCreateObjectCommand(
       draft.objectType.id,
       draft.label.trim() || defaultName(draft.objectType),
       draft.geometry,
@@ -329,21 +347,23 @@
       return
     }
     if (destination.id === controller.id) return
-    if (!activePack.isTarget(controller, destination, { objects })) return
+    const pack = requireActivePack()
+    if (!pack.isTarget(controller, destination, { objects })) return
     commandStatus = `Sending ${controller.label} to ${destination.label}`
-    const command = activePack.buildSetTargetCommand(controller, destination, { objects })
+    const command = pack.buildSetTargetCommand(controller, destination, { objects })
     await sendCommand(command.kind, command.payload, command.targetObjectIds)
   }
 
   const selectObject = (object: OperationalObject): void => {
     markSeen(object)
-    if (activePack.isController(object)) {
+    const pack = requireActivePack()
+    if (pack.isController(object)) {
       selectedControllerId = object.id
       commandStatus = `Selected ${object.label}; click a valid target`
       return
     }
     const controller = selectedControllerObject
-    if (controller && activePack.isTarget(controller, object, { objects })) {
+    if (controller && pack.isTarget(controller, object, { objects })) {
       void setDestination(object)
     }
   }
@@ -426,6 +446,10 @@
       readonly setActiveStartupStep: (id: StartupStepId) => void
     },
   ): Promise<void> => {
+    const scenarioId = response.snapshot.scenario?.scenarioId
+    if (!scenarioId) throw new Error('control instance snapshot is missing scenario state')
+    const packScenario = scenarioDefinition?.id === scenarioId ? scenarioDefinition : await loadScenarioDefinitionAndPack(scenarioId)
+    if (packScenario.id !== scenarioId || !activePack) throw new Error(`scenario packs failed to load for ${scenarioId}`)
     await completeControlSurfaceStartupFromSnapshot({
       response,
       pack: activePack,
@@ -471,6 +495,7 @@
     snapshotReady = false
     mapReady = false
     scenarioDefinition = null
+    activePack = null
     status = 'Starting'
     startStep('control-instance')
     let activeStartupStep: StartupStepId = 'control-instance'
@@ -501,6 +526,7 @@
     snapshotReady = false
     mapReady = false
     scenarioDefinition = null
+    activePack = null
     status = 'Resetting'
     commandStatus = 'Resetting scenario'
     startStep('control-instance')

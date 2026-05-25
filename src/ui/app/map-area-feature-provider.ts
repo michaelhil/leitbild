@@ -9,7 +9,7 @@ export interface MapAreaFeatureProviderContext {
 }
 
 export interface MapAreaFeatureProviderConfig {
-  readonly pack: LeitbildPack
+  readonly pack: () => LeitbildPack | null
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly controlInstanceId: () => ControlInstanceId | null
   readonly currentTime: () => IsoTimestamp | undefined
@@ -36,11 +36,13 @@ export const createMapAreaFeatureProvider = (
     const presentationContextWithTime = currentTime === undefined
       ? presentationContext
       : { ...presentationContext, currentTime }
-    const syncFeatures = config.pack.mapAreaFeatures?.(presentationContextWithTime) ?? []
+    const pack = config.pack()
+    if (!pack) return []
+    const syncFeatures = pack.mapAreaFeatures?.(presentationContextWithTime) ?? []
     const controlInstanceId = config.controlInstanceId()
     if (!controlInstanceId) return syncFeatures
     const queryFeatures: PackMapAreaFeature[] = []
-    for (const request of config.pack.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []) {
+    for (const request of pack.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []) {
       const body = await queryControlInstancePack(controlInstanceId, request)
       if (!body.response.ok) throw new Error(body.response.reason)
       queryFeatures.push(...mapFeaturesFromQueryResult(body.response.result))
