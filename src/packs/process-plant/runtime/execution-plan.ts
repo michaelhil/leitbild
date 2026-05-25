@@ -10,7 +10,7 @@ import {
 } from './behavior-contract.ts'
 import { componentBehaviorDefinitions, componentInitialReconciliationDefinitions } from './component-behaviors.ts'
 import type { ProcessPlantSolverPhase } from './model.ts'
-import { processLinkBehaviorDefinitions } from './process-link-behaviors.ts'
+import { processLinkBehaviorDefinitions } from './links/process-link-behaviors.ts'
 import type { ProcessPlantVariableTable } from './variable-table.ts'
 
 type ProcessPlantExecutionInvocation =

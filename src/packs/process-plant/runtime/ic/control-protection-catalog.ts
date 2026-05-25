@@ -1,6 +1,6 @@
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../signals.ts'
-import type { ProcessPlantSignalReference, ProcessPlantSignalView } from '../signals.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../../signals.ts'
+import type { ProcessPlantSignalReference, ProcessPlantSignalView } from '../../signals.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcRule } from './control-protection-model.ts'
 
 export interface ProcessPlantIcEffectCatalogEntry {

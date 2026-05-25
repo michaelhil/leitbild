@@ -1,6 +1,6 @@
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { resolveProcessPlantSignalBinding, type ProcessPlantSignalReference } from '../signals.ts'
-import type { ProcessPlantRuntime } from './model.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { resolveProcessPlantSignalBinding, type ProcessPlantSignalReference } from '../../signals.ts'
+import type { ProcessPlantRuntime } from '../model.ts'
 import type { ProcessPlantIcEffect } from './control-protection-model.ts'
 
 export const processPlantIcWriteTargetPath = (config: {

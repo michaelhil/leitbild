@@ -1,5 +1,5 @@
-import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from './behavior-contract.ts'
-import { relaxToward } from './component-helpers.ts'
+import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
+import { relaxToward } from '../component-helpers.ts'
 import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable, serviceMatches } from './link-flow-helpers.ts'
 
 export const processLinkTemperatureBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [

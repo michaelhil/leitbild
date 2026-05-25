@@ -1,5 +1,5 @@
 export * from './behavior-contract.ts'
-export * from './control-protection.ts'
+export * from './ic/control-protection.ts'
 export * from './execution-plan.ts'
 export * from './model.ts'
 export * from './runtime.ts'

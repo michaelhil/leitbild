@@ -1,7 +1,7 @@
-import { primaryLoopPumpForLink } from '../graph/index.ts'
-import type { CompiledProcessLink } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { componentVariablePath } from './behavior-contract.ts'
+import { primaryLoopPumpForLink } from '../../graph/index.ts'
+import type { CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { componentVariablePath } from '../behavior-contract.ts'
 import type { LinkBehaviorReadContext } from './link-flow-helpers.ts'
 import {
   distributeFlowFromComponent,

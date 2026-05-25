@@ -20,7 +20,7 @@ import {
   createWeatherInfluenceSymbolFeatureCollection,
   hasActivePackMapAreaFeatureAnimation,
   mapSourceIds,
-} from '../src/ui/map-features.ts'
+} from '../src/ui/map/map-features.ts'
 
 const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
 const actorId = 'actor:test-operator' as ActorId

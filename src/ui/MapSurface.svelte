@@ -9,9 +9,9 @@
     hasActivePackMapAreaFeatureAnimation,
     mapLayerIds,
     pointOf,
-  } from './map-features.ts'
+  } from './map/map-features.ts'
   import { registerObjectIconVariants } from './map-icon-registry.ts'
-  import { addOperationalMapSourcesAndLayers } from './map-layer-setup.ts'
+  import { addOperationalMapSourcesAndLayers } from './map/map-layer-setup.ts'
   import { simulationTimeAt } from './simulation-clock.ts'
   import {
     createDisplayMotionState,

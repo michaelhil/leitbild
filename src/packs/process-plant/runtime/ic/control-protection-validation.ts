@@ -1,7 +1,7 @@
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { resolveProcessPlantSignalBinding } from '../signals.ts'
-import type { ProcessPlantSignalReference } from '../signals.ts'
-import { assertProcessPlantVariableValueValid } from './variable-validation.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { resolveProcessPlantSignalBinding } from '../../signals.ts'
+import type { ProcessPlantSignalReference } from '../../signals.ts'
+import { assertProcessPlantVariableValueValid } from '../variable-validation.ts'
 import type { ProcessPlantIcCondition, ProcessPlantIcEffect, ProcessPlantIcRule } from './control-protection-model.ts'
 
 const assertConditionSignalsValid = (

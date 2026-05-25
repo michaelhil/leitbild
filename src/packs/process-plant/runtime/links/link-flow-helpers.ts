@@ -1,8 +1,8 @@
-import type { CompiledProcessLink, VariablePath } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { componentVariablePath, processLinkVariablePath } from './behavior-contract.ts'
-import { clamp } from './component-helpers.ts'
-import { downstreamDemandPathsForLink } from './topology-cache.ts'
+import type { CompiledProcessLink, VariablePath } from '../../graph/index.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { componentVariablePath, processLinkVariablePath } from '../behavior-contract.ts'
+import { clamp } from '../component-helpers.ts'
+import { downstreamDemandPathsForLink } from '../topology-cache.ts'
 
 export type LinkBehaviorReadContext = {
   readonly has: (path: VariablePath) => boolean

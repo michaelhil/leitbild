@@ -1,7 +1,7 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { GeoJSON } from 'geojson'
-import type { OperationalObject } from '../core/model/index.ts'
-import type { PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
+import type { OperationalObject } from '../../core/model/index.ts'
+import type { PackMapAreaFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import {
   createObjectFeatureCollection,
   createRouteFeatureCollection,

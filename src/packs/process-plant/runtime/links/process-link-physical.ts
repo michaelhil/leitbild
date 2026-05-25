@@ -1,4 +1,4 @@
-import type { CompiledProcessLink } from '../graph/index.ts'
+import type { CompiledProcessLink } from '../../graph/index.ts'
 
 export const physicalNumber = (
   link: CompiledProcessLink,

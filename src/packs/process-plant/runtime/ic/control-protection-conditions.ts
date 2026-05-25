@@ -1,7 +1,7 @@
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../signals.ts'
-import type { ProcessPlantSignalView } from '../signals.ts'
-import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './model.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { processPlantSignalView, resolveProcessPlantSignalBinding } from '../../signals.ts'
+import type { ProcessPlantSignalView } from '../../signals.ts'
+import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from '../model.ts'
 import type { ProcessPlantIcComparisonOperator, ProcessPlantIcCondition } from './control-protection-model.ts'
 
 export interface ProcessPlantIcSignalRead {

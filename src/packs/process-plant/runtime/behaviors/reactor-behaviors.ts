@@ -13,7 +13,7 @@ import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
-import { flowWeightedIncomingLinkValue } from '../link-flow-helpers.ts'
+import { flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
 import {
   inventoryBalanceStep,
   primaryCoolantCompressibilityPressureBiasMPa,

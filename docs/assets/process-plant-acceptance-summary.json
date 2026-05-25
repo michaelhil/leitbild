@@ -6,8 +6,8 @@
   "caseCount": 11,
   "checkCount": 126,
   "failedCheckCount": 0,
-  "wallMs": 5928.13825,
-  "realtimeFactor": 40.48488579023946,
+  "wallMs": 4771.977917,
+  "realtimeFactor": 50.293610778249544,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -772,7 +772,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=40.5x min=20.0x"
+      "details": "realtimeFactor=50.3x min=20.0x"
     }
   ],
   "artifacts": {

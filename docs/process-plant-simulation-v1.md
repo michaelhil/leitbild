@@ -758,7 +758,7 @@ Runtime code is split by responsibility:
 - `execution-plan.ts` compiles the graph and registered behavior definitions into per-phase invocation lists so the hot loop does not rediscover behavior applicability on every tick.
 - `behavior-contract.ts` defines the constrained execution context used by solver behavior.
 - `component-behaviors.ts` owns current component initialization and component solver behavior.
-- `process-link-behaviors.ts` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, and radiation updates.
+- `runtime/links/` owns conduit-local process-link behavior such as flow, valve/leak modifiers, pressure, temperature, main-steam demand, and radiation updates.
 
 This keeps the current implementation small without hiding data ownership. The runtime has one authoritative variable table; the behavior modules read and write through that table rather than carrying duplicate copies of plant state. Public APIs remain path-based for humans, AI agents, snapshots, telemetry, and commands, but runtime storage uses compiled variable slots internally.
 

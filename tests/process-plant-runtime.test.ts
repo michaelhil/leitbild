@@ -25,10 +25,10 @@ import {
 } from '../src/packs/process-plant/index.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
-import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/process-link-behaviors.ts'
+import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runtime/links/process-link-behaviors.ts'
 import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
-import { componentFlowBalanceForService } from '../src/packs/process-plant/runtime/link-flow-helpers.ts'
+import { componentFlowBalanceForService } from '../src/packs/process-plant/runtime/links/link-flow-helpers.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
   id: 'plant',

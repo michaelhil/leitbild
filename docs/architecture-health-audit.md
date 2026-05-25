@@ -52,10 +52,10 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 
 ## Concrete Crack List
 
-1. `control-protection.ts` and `process-plant/sim/adapter.ts` were too broad for safe continued feature growth. This pass splits state/schema/projection/source-flow helpers without changing public behavior.
-2. `process-link-flow-behaviors.ts` mixed source-flow strategy, valve limiting, capacity limiting, and leak limiting. This pass isolates the source-flow strategy so future topology work has a clear hook.
+1. `runtime/ic/` now owns the process-plant I&C/alarm/trip module family. The public runtime export remains stable, while model, validation, lifecycle, history, effects, catalog, and runner logic now live together.
+2. `runtime/links/` now owns process-link behavior. Source-flow strategy, link helpers, pressure, temperature, radiation, physical metadata, and main-steam demand logic are grouped so future topology work has a clear home.
 3. `docs/assets/process-plant-acceptance-traces.csv` was tracked at roughly 180k lines and churned on every acceptance run. This pass removes the tracked CSV and makes full CSV generation opt-in via `PROCESS_PLANT_ACCEPTANCE_WRITE_CSV=1`.
-4. Large UI files still need lifecycle-oriented splitting after the process-plant cleanup lands.
+4. Map source/layer helper modules now live under `src/ui/map/`. `App.svelte` remains the largest UI health target and still needs lifecycle-oriented splitting.
 5. Scenario and graph validation should be tightened only where refactors expose real ambiguity, not by adding broad speculative schema flags.
 6. Process-plant provider config previously tolerated unknown system keys. This pass rejects those keys before runtime starts.
 

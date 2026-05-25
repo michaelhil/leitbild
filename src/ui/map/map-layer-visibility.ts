@@ -1,6 +1,6 @@
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { SurfaceMapLayer } from '../../core/model/index.ts'
-import { mapLayerIds } from '../map-features.ts'
+import { mapLayerIds } from './map-features.ts'
 
 const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
   if (layer === 'objects') return [

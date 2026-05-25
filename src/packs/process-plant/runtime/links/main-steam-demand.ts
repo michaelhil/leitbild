@@ -1,9 +1,9 @@
-import type { CompiledComponent, CompiledProcessLink } from '../graph/index.ts'
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { componentVariablePath } from './behavior-contract.ts'
-import { parameterNumber } from './component-helpers.ts'
+import type { CompiledComponent, CompiledProcessLink } from '../../graph/index.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { componentVariablePath } from '../behavior-contract.ts'
+import { parameterNumber } from '../component-helpers.ts'
 import { combinedValveFactorForLink, type LinkBehaviorReadContext } from './link-flow-helpers.ts'
-import { mainSteamTopologyForSystem, type ProcessLinkPath } from './topology-cache.ts'
+import { mainSteamTopologyForSystem, type ProcessLinkPath } from '../topology-cache.ts'
 
 const sourceLinkService = 'mainSteam' as CompiledProcessLink['service']
 

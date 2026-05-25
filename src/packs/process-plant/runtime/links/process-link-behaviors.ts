@@ -1,11 +1,11 @@
-import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { createBehaviorContext, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from './behavior-contract.ts'
-import type { ProcessPlantSolverPhase } from './model.ts'
+import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
+import { createBehaviorContext, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
+import type { ProcessPlantSolverPhase } from '../model.ts'
 import { processLinkFlowBehaviorDefinitions } from './process-link-flow-behaviors.ts'
 import { processLinkPressureBehaviorDefinitions } from './process-link-pressure-behaviors.ts'
 import { processLinkRadiationBehaviorDefinitions } from './process-link-radiation-behaviors.ts'
 import { processLinkTemperatureBehaviorDefinitions } from './process-link-temperature-behaviors.ts'
-import type { ProcessPlantVariableTable } from './variable-table.ts'
+import type { ProcessPlantVariableTable } from '../variable-table.ts'
 
 export const processLinkBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   ...processLinkFlowBehaviorDefinitions,

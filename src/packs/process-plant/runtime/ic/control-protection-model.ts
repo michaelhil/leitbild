@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { idSchema } from '../../../core/model/index.ts'
-import { processVariableValueSchema } from '../graph/index.ts'
-import { processPlantSignalReferenceSchema, type ProcessPlantSignalReference } from '../signals.ts'
+import { idSchema } from '../../../../core/model/index.ts'
+import { processVariableValueSchema } from '../../graph/index.ts'
+import { processPlantSignalReferenceSchema, type ProcessPlantSignalReference } from '../../signals.ts'
 
 export const processPlantIcRuleClassSchema = z.enum([
   'normalControl',

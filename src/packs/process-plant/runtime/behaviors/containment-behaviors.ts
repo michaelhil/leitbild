@@ -1,7 +1,7 @@
 import { componentVariablePath, processLinkVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber } from '../component-helpers.ts'
 import { inventoryBalanceStep } from '../physics.ts'
-import { averageIncomingLinkValue, sumIncomingLinkValue } from '../link-flow-helpers.ts'
+import { averageIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
 
 const gasPressureMPa = (config: {
   readonly airMassKg: number

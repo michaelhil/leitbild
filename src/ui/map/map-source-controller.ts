@@ -13,7 +13,7 @@ import {
   createWeatherInfluenceSymbolFeatureCollection,
   createWeatherLineFeatureCollection,
   mapSourceIds,
-} from '../map-features.ts'
+} from './map-features.ts'
 
 export interface MapSourceDirty {
   readonly objects?: boolean

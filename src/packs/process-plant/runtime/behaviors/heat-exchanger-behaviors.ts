@@ -1,7 +1,7 @@
 import { componentVariablePath, type ComponentBehaviorDefinition } from '../behavior-contract.ts'
 import { clamp, optionalParameterNumber, relaxToward } from '../component-helpers.ts'
 import { pressureDropMPaFromFlow } from '../physics.ts'
-import { sumIncomingLinkValue, flowWeightedIncomingLinkValue } from '../link-flow-helpers.ts'
+import { sumIncomingLinkValue, flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
 
 const waterSpecificHeatMjPerKgC = 0.00418
 

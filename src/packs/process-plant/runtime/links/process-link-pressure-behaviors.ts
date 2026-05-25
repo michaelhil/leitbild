@@ -1,8 +1,8 @@
-import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from './behavior-contract.ts'
+import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
 import { averageIncomingLinkValue, flowWeightedIncomingLinkValue, hasProcessLinkVariable } from './link-flow-helpers.ts'
-import { pressureDropMPaFromFlow } from './physics.ts'
+import { pressureDropMPaFromFlow } from '../physics.ts'
 import { physicalNumber } from './process-link-physical.ts'
-import { primarySystemPressurizer } from './system-topology.ts'
+import { primarySystemPressurizer } from '../system-topology.ts'
 
 export const processLinkPressureBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
   {

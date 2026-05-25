@@ -1,7 +1,7 @@
 import type { CompiledComponent, CompiledPlantGraph, CompiledProcessLink, ConnectionService } from '../graph/index.ts'
 import { primaryLoopIdForLink, primaryLoopIdForPump } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { physicalNumber } from './process-link-physical.ts'
+import { physicalNumber } from './links/process-link-physical.ts'
 
 export type ProcessLinkPath = ReadonlyArray<CompiledProcessLink>
 

@@ -2,9 +2,9 @@
   import type { Component } from 'svelte'
   import { tick } from 'svelte'
   import { createLeitbildControlPack } from '../app-assembly.ts'
-  import type { GeoJsonPolygon, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+  import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
   import { deleteObjectCommandKind } from '../core/model/index.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import {
     createControlInstance,
     deleteControlInstance,
@@ -12,7 +12,6 @@
     joinControlInstance as joinControlInstanceClient,
     listScenarios as listScenariosClient,
     listControlInstances,
-    queryControlInstancePack,
     resetControlInstance,
     sendControlInstanceCommand,
     setControlInstanceClock,
@@ -27,8 +26,10 @@
   } from './control-instance-route.ts'
   import {
     applyControlInstanceEventBatchMessage,
-    parseControlInstanceWebSocketMessage,
   } from './control-instance-events.ts'
+  import { createMapAreaFeatureProvider } from './app/map-area-feature-provider.ts'
+  import { installPlacementGlobalEvents } from './app/placement-global-events.ts'
+  import { createRealtimeConnectionController } from './app/realtime-connection.ts'
   import {
     categoryRowsFor,
     placementCursorFor,
@@ -80,8 +81,6 @@
   let routeMode = $state<'picker' | 'control-instance'>('control-instance')
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let seenRevisions = $state(new Map<string, number>())
-  let controlInstanceSocket = $state<WebSocket | null>(null)
-  let controlInstanceSocketId = $state<ControlInstanceId | null>(null)
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
@@ -95,6 +94,7 @@
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
+  const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
     packId: activePack.id,
@@ -149,31 +149,12 @@
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     activePack.presentObject(object, { objects, currentTime: currentPackTime() })
 
-  const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaFeature> => {
-    if (typeof result !== 'object' || result === null || !('features' in result)) {
-      throw new Error('pack map feature query returned no features field')
-    }
-    const features = (result as { readonly features?: unknown }).features
-    if (!Array.isArray(features)) throw new Error('pack map feature query features field is not an array')
-    return features as ReadonlyArray<PackMapAreaFeature>
-  }
-
-  const mapAreaFeaturesFor = async (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }): Promise<ReadonlyArray<PackMapAreaFeature>> => {
-    const presentationContext = {
-      objects,
-      currentTime: context.currentTime ?? currentPackTime(),
-      map: { viewport: context.viewport, zoom: context.zoom },
-    }
-    const syncFeatures = activePack.mapAreaFeatures?.(presentationContext) ?? []
-    if (!controlInstanceId) return syncFeatures
-    const queryFeatures: PackMapAreaFeature[] = []
-    for (const request of activePack.mapAreaFeatureQueries?.(presentationContext) ?? []) {
-      const body = await queryControlInstancePack(controlInstanceId, request)
-      if (!body.response.ok) throw new Error(body.response.reason)
-      queryFeatures.push(...mapFeaturesFromQueryResult(body.response.result))
-    }
-    return [...syncFeatures, ...queryFeatures]
-  }
+  const mapAreaFeaturesFor = createMapAreaFeatureProvider({
+    pack: activePack,
+    objects: () => objects,
+    controlInstanceId: () => controlInstanceId,
+    currentTime: currentPackTime,
+  })
 
   const hasNewInfo = (object: OperationalObject): boolean => {
     const presentation = presentationFor(object)
@@ -383,50 +364,30 @@
     }
   }
 
-  const socketCanCarryControlInstance = (id: ControlInstanceId): boolean =>
-    controlInstanceSocket !== null
-    && controlInstanceSocketId === id
-    && (controlInstanceSocket.readyState === WebSocket.OPEN || controlInstanceSocket.readyState === WebSocket.CONNECTING)
-
   const connectWebSocket = (id: ControlInstanceId): void => {
     startStep('realtime')
-    if (socketCanCarryControlInstance(id)) {
-      status = controlInstanceSocket?.readyState === WebSocket.OPEN ? 'Realtime channel open' : 'Connecting'
+    if (realtimeConnection.canCarry(id)) {
+      status = realtimeConnection.statusFor(id) === 'open' ? 'Realtime channel open' : 'Connecting'
       completeReadyWhenReady()
       return
     }
     realtimeAttached = false
-    controlInstanceSocket?.close()
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const socket = new WebSocket(`${protocol}//${location.host}/ws?controlInstance=${encodeURIComponent(id)}`)
-    controlInstanceSocket = socket
-    controlInstanceSocketId = id
-    socket.onopen = () => {
-      if (controlInstanceSocket !== socket) return
-      status = 'Realtime channel open'
-    }
-    socket.onclose = () => {
-      if (controlInstanceSocket !== socket) return
-      controlInstanceSocket = null
-      controlInstanceSocketId = null
-      realtimeAttached = false
-      status = 'Disconnected'
-    }
-    socket.onerror = () => {
-      if (controlInstanceSocket !== socket) return
-      status = 'WebSocket error'
-      failStep('realtime', 'WebSocket error')
-    }
-    socket.onmessage = (message) => {
-      let parsed
-      try {
-        parsed = parseControlInstanceWebSocketMessage(message.data as string)
-      } catch (err) {
-        status = err instanceof Error ? err.message : 'Invalid WebSocket message'
-        return
-      }
-      if (!parsed) return
-      if (parsed.type === 'realtime.ready') {
+    realtimeConnection.connect(id, {
+      onOpen: () => {
+        status = 'Realtime channel open'
+      },
+      onClose: () => {
+        realtimeAttached = false
+        status = 'Disconnected'
+      },
+      onError: (message) => {
+        status = message
+        failStep('realtime', message)
+      },
+      onInvalidMessage: (message) => {
+        status = message
+      },
+      onReady: (parsed) => {
         if (parsed.controlInstanceId !== id) {
           failStep('realtime', `Realtime attached to ${parsed.controlInstanceId}, expected ${id}`)
           return
@@ -440,29 +401,30 @@
         status = 'Connected'
         completeStep('realtime')
         completeReadyWhenReady()
-        return
-      }
-      if (parsed.controlInstanceId !== id) return
-      if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
-      if (!realtimeAttached) return
-      const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
-      if (applied.objectUpdate) {
-        objects = [...applied.objectUpdate.objects]
-        selectedControllerId = applied.objectUpdate.selectedControllerId
-      }
-      if (applied.commandStatusUpdate) {
-        commandStatus = applied.commandStatusUpdate.commandStatus
-      }
-      if (applied.scenarioUpdate) {
-        scenarioState = applied.scenarioUpdate
-      }
-      if (applied.clockUpdate) {
-        clock = applied.clockUpdate
-      }
-      if (applied.routesChanged) {
-        routeRevision += 1
-      }
-    }
+      },
+      onEvent: (parsed) => {
+        if (parsed.controlInstanceId !== id) return
+        if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
+        if (!realtimeAttached) return
+        const applied = applyControlInstanceEventBatchMessage({ objects, selectedControllerId, scenarioState }, parsed)
+        if (applied.objectUpdate) {
+          objects = [...applied.objectUpdate.objects]
+          selectedControllerId = applied.objectUpdate.selectedControllerId
+        }
+        if (applied.commandStatusUpdate) {
+          commandStatus = applied.commandStatusUpdate.commandStatus
+        }
+        if (applied.scenarioUpdate) {
+          scenarioState = applied.scenarioUpdate
+        }
+        if (applied.clockUpdate) {
+          clock = applied.clockUpdate
+        }
+        if (applied.routesChanged) {
+          routeRevision += 1
+        }
+      },
+    })
   }
 
   const controlInstanceIdFromPath = (): ControlInstanceId => {
@@ -477,9 +439,7 @@
   }
 
   const joinControlInstance = async (): Promise<void> => {
-    controlInstanceSocket?.close()
-    controlInstanceSocket = null
-    controlInstanceSocketId = null
+    realtimeConnection.disconnect()
     realtimeAttached = false
     resetStartupForJoin()
     snapshotReady = false
@@ -601,25 +561,11 @@
     theme = nextTheme
     if (getTheme() !== nextTheme) document.documentElement.classList.toggle('dark', nextTheme === 'dark')
     railLayout.initialize()
-    const handleKeydown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') placement.cancel()
-      if (event.key === 'Enter' && placementMode && (placementMode.placementKind ?? 'point') === 'polygon') {
-        event.preventDefault()
-        placement.finishPolygon()
-      }
-    }
-    const handleClick = (event: MouseEvent): void => {
-      if (!placementMode) return
-      const target = event.target
-      if (!(target instanceof Element)) return
-      if (target.closest('.map-region')) return
-      placement.cancel()
-      event.stopImmediatePropagation()
-      event.stopPropagation()
-      event.preventDefault()
-    }
-    window.addEventListener('keydown', handleKeydown)
-    window.addEventListener('click', handleClick, { capture: true })
+    const removePlacementGlobalEvents = installPlacementGlobalEvents({
+      placementMode: () => placementMode,
+      cancel: placement.cancel,
+      finishPolygon: placement.finishPolygon,
+    })
     let nextRouteMode: 'picker' | 'control-instance'
     try {
       nextRouteMode = routeModeFromPath()
@@ -627,8 +573,7 @@
       routeMode = 'control-instance'
       failStep('route', err)
       return () => {
-        window.removeEventListener('keydown', handleKeydown)
-        window.removeEventListener('click', handleClick, { capture: true })
+        removePlacementGlobalEvents()
         railLayout.stopResize()
       }
     }
@@ -640,26 +585,22 @@
     if (nextRouteMode === 'picker') {
       void loadInstances()
       return () => {
-        window.removeEventListener('keydown', handleKeydown)
-        window.removeEventListener('click', handleClick, { capture: true })
+        removePlacementGlobalEvents()
         railLayout.stopResize()
       }
     }
     if (route.mode === 'new-run') {
       void createScenarioRun(route.scenarioId, 'replace')
       return () => {
-        window.removeEventListener('keydown', handleKeydown)
-        window.removeEventListener('click', handleClick, { capture: true })
+        removePlacementGlobalEvents()
         railLayout.stopResize()
       }
     }
     void joinControlInstance()
     return () => {
-      window.removeEventListener('keydown', handleKeydown)
-      window.removeEventListener('click', handleClick, { capture: true })
+      removePlacementGlobalEvents()
       railLayout.stopResize()
-      controlInstanceSocket?.close()
-      controlInstanceSocket = null
+      realtimeConnection.disconnect()
     }
   })
 </script>

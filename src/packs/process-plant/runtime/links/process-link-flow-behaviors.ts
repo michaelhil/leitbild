@@ -1,5 +1,5 @@
-import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from './behavior-contract.ts'
-import { clamp } from './component-helpers.ts'
+import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from '../behavior-contract.ts'
+import { clamp } from '../component-helpers.ts'
 import {
   componentValveCapacityForInboundLink,
   componentValveFactorForInboundLink,
@@ -7,7 +7,7 @@ import {
   linkValveFactor,
 } from './link-flow-helpers.ts'
 import { processLinkFlowSourceFor } from './link-flow-source-strategy.ts'
-import { pressureDrivenLeakFlowKgPerS } from './physics.ts'
+import { pressureDrivenLeakFlowKgPerS } from '../physics.ts'
 import { physicalFlowCapacityKgPerS, physicalNumber } from './process-link-physical.ts'
 
 export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehaviorDefinition> = [
