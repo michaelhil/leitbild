@@ -11,6 +11,7 @@ import {
 } from '../component-helpers.ts'
 import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
+  flowWeightedProcessLinkValueByService,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
 import { flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
@@ -152,7 +153,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     id: 'reactor-vessel-primary-inventory-state',
     phase: 'updateComponentState',
     componentKind: 'reactorVessel',
-    reads: ['primaryCoolantInventoryKg', 'charging:flowKgPerS', 'primaryInjection:flowKgPerS', 'safetyInjection:flowKgPerS', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
+    reads: ['primaryCoolantInventoryKg', 'boronConcentrationPpm', 'charging:flowKgPerS', 'charging:soluteConcentrationPpm', 'primaryInjection:flowKgPerS', 'primaryInjection:soluteConcentrationPpm', 'safetyInjection:flowKgPerS', 'safetyInjection:soluteConcentrationPpm', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
     writes: [
       'primaryCoolantInventoryKg',
       'primaryCoolantInventoryDeviationKg',
@@ -167,6 +168,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'primaryLeakFlowKgPerS',
       'tubeLeakFlowKgPerS',
       'netInventoryFlowKgPerS',
+      'boronConcentrationPpm',
       'primaryReleaseRadiationMSvPerH',
     ],
     update: ({ system, component, context }): void => {
@@ -176,6 +178,10 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         const toComponent = system.graph.components[link.toComponentIndex]
         return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
       })
+      const primaryBoundaryLink = (link: { readonly toComponentIndex: number }): boolean => {
+        const toComponent = system.graph.components[link.toComponentIndex]
+        return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
+      }
       const primaryInjectionFlow = (
         sumLinkValueByService(system, 'flowKgPerS', context, 'primaryInjection')
         + sumLinkValueByService(system, 'flowKgPerS', context, 'safetyInjection')
@@ -189,6 +195,14 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const tubeLeakFlow = sumComponentValueByKind(system, 'steamGenerator', 'primaryToSecondaryLeakKgPerS', context)
       const totalInflow = chargingFlow + primaryInjectionFlow
       const netInventoryFlow = totalInflow - letdownFlow - reliefFlow - primaryLeakFlow - tubeLeakFlow
+      const currentBoron = context.readNumber(componentVariablePath(component, 'boronConcentrationPpm'))
+      const chargingBoron = flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'charging', primaryBoundaryLink) ?? currentBoron
+      const injectionBoron = (
+        flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'primaryInjection', primaryBoundaryLink)
+        ?? flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'safetyInjection', primaryBoundaryLink)
+        ?? averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context, link => link.service === 'primaryInjection' || link.service === 'safetyInjection')
+        ?? currentBoron
+      )
       const nextInventory = inventoryBalanceStep({
         currentInventory,
         inflowKgPerS: totalInflow,
@@ -197,6 +211,18 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
         minInventory: 0,
         maxInventory: nominalInventory * 1.15,
       })
+      const outgoingFlow = letdownFlow + reliefFlow + primaryLeakFlow + tubeLeakFlow
+      const nextBoron = nextInventory <= 0
+        ? 0
+        : clamp(
+            (
+              currentBoron * currentInventory
+              + (chargingBoron * chargingFlow + injectionBoron * primaryInjectionFlow) * context.dtSeconds
+              - currentBoron * outgoingFlow * context.dtSeconds
+            ) / nextInventory,
+            0,
+            20_000,
+          )
       const deviation = nextInventory - nominalInventory
       const core = primarySystemReactorCore(system)
       const meanPrimaryCoolantTemperature = core === null
@@ -228,6 +254,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'tubeLeakFlowKgPerS'), tubeLeakFlow)
       context.write(componentVariablePath(component, 'netInventoryFlowKgPerS'), netInventoryFlow)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
+      context.write(componentVariablePath(component, 'boronConcentrationPpm'), nextBoron)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)
       context.write(componentVariablePath(component, 'meanPrimaryCoolantTemperatureC'), meanPrimaryCoolantTemperature)
       context.write(componentVariablePath(component, 'compressibilityPressureBiasMPa'), compressibilityPressureBias)

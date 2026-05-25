@@ -55,6 +55,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'primaryLeakFlowKgPerS') return 0
       if (localPath === 'tubeLeakFlowKgPerS') return 0
       if (localPath === 'netInventoryFlowKgPerS') return -optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0)
+      if (localPath === 'boronConcentrationPpm') return optionalParameterNumber(component, 'initialBoronConcentrationPpm', 1_200)
       if (localPath === 'primaryReleaseRadiationMSvPerH') return optionalParameterNumber(component, 'primaryReleaseRadiationMSvPerH', 0.02)
       return undefined
     },

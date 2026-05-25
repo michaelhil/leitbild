@@ -11,6 +11,7 @@ import type {
 } from './graph/index.ts'
 import type { ProcessQuantity, ProcessUnit, VariableDomain, VariableKind } from './graph/index.ts'
 import { processSignalTagIdSchema, variablePathSchema } from './graph/index.ts'
+import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
 
 export const processPlantSignalReferenceSchema = z.object({
   path: variablePathSchema.optional(),
@@ -81,6 +82,11 @@ export interface ProcessPlantSignalView {
   readonly owner: ProcessSignalBinding['owner']
 }
 
+export interface ProcessPlantSignalQuality {
+  readonly status: 'good' | 'outside-hard-range'
+  readonly reason?: string
+}
+
 export const processPlantSignalView = (binding: ProcessSignalBinding): ProcessPlantSignalView => ({
   path: binding.path,
   ...(binding.tagId === undefined ? {} : { tagId: binding.tagId }),
@@ -98,5 +104,20 @@ export const processPlantSignalView = (binding: ProcessSignalBinding): ProcessPl
   published: binding.published,
   owner: binding.owner,
 })
+
+export const processPlantSignalQuality = (
+  variable: ProcessPlantVariableSnapshot,
+): ProcessPlantSignalQuality => {
+  if (typeof variable.value !== 'number') return { status: 'good' }
+  const hardRange = variable.limits?.hardRange
+  if (hardRange === undefined) return { status: 'good' }
+  if (variable.value < hardRange.min || variable.value > hardRange.max) {
+    return {
+      status: 'outside-hard-range',
+      reason: `${variable.path} value ${variable.value} is outside hard range ${hardRange.min}..${hardRange.max} ${variable.unit}`,
+    }
+  }
+  return { status: 'good' }
+}
 
 export const tagIdForLookup = (value: string): ProcessSignalTagId => processSignalTagIdSchema.parse(value)

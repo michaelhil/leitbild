@@ -3,6 +3,7 @@ import { accumulatorComponentDefinitions } from './accumulator-component-definit
 import { balanceOfPlantComponentDefinitions } from './balance-of-plant-component-definitions.ts'
 import { containmentComponentDefinitions } from './containment-component-definitions.ts'
 import { heatExchangerComponentDefinitions } from './heat-exchanger-component-definitions.ts'
+import { electricalComponentDefinitions } from './electrical-component-definitions.ts'
 import { junctionComponentDefinitions } from './junction-component-definitions.ts'
 import { pressurizerComponentDefinitions } from './pressurizer-component-definitions.ts'
 import { pumpComponentDefinitions } from './pump-component-definitions.ts'
@@ -19,6 +20,7 @@ export const processPlantComponentDefinitions: ReadonlyArray<ComponentDefinition
   ...heatExchangerComponentDefinitions,
   ...containmentComponentDefinitions,
   ...accumulatorComponentDefinitions,
+  ...electricalComponentDefinitions,
 ]
 
 export const processPlantComponentRegistry: ReadonlyMap<ComponentKind, ComponentDefinition> = new Map(

@@ -313,11 +313,18 @@ describe('process plant simulation provider', () => {
     expect(read.ok).toBe(true)
     if (!read.ok) throw new Error(read.reason)
     expect((read.result as {
-      readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string }; readonly variable: { readonly path: string } }>
+      readonly signals: ReadonlyArray<{
+        readonly signal: { readonly path: string }
+        readonly variable: { readonly path: string }
+        readonly quality: { readonly status: string }
+      }>
     }).signals.map(entry => [entry.signal.path, entry.variable.path])).toEqual([
       ['pressurizer.pressureMPa', 'pressurizer.pressureMPa'],
       ['sgA.levelPercent', 'sgA.levelPercent'],
     ])
+    expect((read.result as {
+      readonly signals: ReadonlyArray<{ readonly quality: { readonly status: string } }>
+    }).signals.every(entry => entry.quality.status === 'good')).toBe(true)
 
     await connection.close()
   })

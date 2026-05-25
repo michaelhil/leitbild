@@ -146,3 +146,26 @@ export const sumProcessLinkValueByService = (
   }
   return total
 }
+
+export const flowWeightedProcessLinkValueByService = (
+  system: CompiledProcessPlantSystem,
+  localPath: string,
+  context: ComponentLinkReadContext,
+  service: string,
+  linkMatches: (link: CompiledProcessLink) => boolean = () => true,
+): number | null => {
+  let weightedTotal = 0
+  let flowTotal = 0
+  for (const link of system.graph.links) {
+    if (link.service !== service) continue
+    if (!linkMatches(link)) continue
+    const valuePath = processLinkVariablePath(link, localPath)
+    const flowPath = processLinkVariablePath(link, 'flowKgPerS')
+    if (!context.has(valuePath) || !context.has(flowPath)) continue
+    const flow = Math.max(0, context.readNumber(flowPath))
+    if (flow <= 0) continue
+    weightedTotal += context.readNumber(valuePath) * flow
+    flowTotal += flow
+  }
+  return flowTotal <= 0 ? null : weightedTotal / flowTotal
+}

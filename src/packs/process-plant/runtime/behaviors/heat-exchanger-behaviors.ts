@@ -19,8 +19,10 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       'hotSideFlowKgPerS',
       'coldSideFlowKgPerS',
       'heatTransferMw',
+      'heatTransferCapacityMw',
       'approachTemperatureC',
       'effectivenessFraction',
+      'coolingAvailabilityFraction',
       'hotSidePressureDropMPa',
       'coldSidePressureDropMPa',
       'heatBalanceResidualMw',
@@ -46,7 +48,9 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       const effectivenessLimit = optionalParameterNumber(component, 'effectivenessLimit', 0.92)
       const ntu = limitingCapacity > 0 ? ua * (1 - foulingFactor) / limitingCapacity : 0
       const effectiveness = clamp((1 - Math.exp(-Math.max(0, ntu))) * (1 - bypassFraction), 0, effectivenessLimit)
+      const heatTransferCapacity = limitingCapacity * temperatureDelta * effectivenessLimit
       const heatTransfer = limitingCapacity * temperatureDelta * effectiveness
+      const coolingAvailability = clamp(coldFlow / Math.max(0.001, optionalParameterNumber(component, 'coldSideDesignFlowKgPerS', 1)), 0, 1)
       const hotOutletTarget = hotCapacityMwPerC > 0 ? hotInlet - heatTransfer / hotCapacityMwPerC : hotInlet
       const coldOutletTarget = coldCapacityMwPerC > 0 ? coldInlet + heatTransfer / coldCapacityMwPerC : coldInlet
       const thermalMass = optionalParameterNumber(component, 'thermalMassMJPerC', 0)
@@ -72,8 +76,10 @@ export const heatExchangerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDe
       context.write(componentVariablePath(component, 'hotSideFlowKgPerS'), hotFlow)
       context.write(componentVariablePath(component, 'coldSideFlowKgPerS'), coldFlow)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
+      context.write(componentVariablePath(component, 'heatTransferCapacityMw'), heatTransferCapacity)
       context.write(componentVariablePath(component, 'approachTemperatureC'), Math.max(0, hotOutlet - coldOutlet))
       context.write(componentVariablePath(component, 'effectivenessFraction'), effectiveness)
+      context.write(componentVariablePath(component, 'coolingAvailabilityFraction'), coolingAvailability)
       context.write(componentVariablePath(component, 'hotSidePressureDropMPa'), hotSidePressureDrop)
       context.write(componentVariablePath(component, 'coldSidePressureDropMPa'), coldSidePressureDrop)
       context.write(componentVariablePath(component, 'heatBalanceResidualMw'), hotRemoved - coldAdded)

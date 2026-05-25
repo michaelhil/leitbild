@@ -7,16 +7,18 @@ import {
 import { approach, clamp, optionalParameterNumber, parameterNumber, relaxToward } from '../component-helpers.ts'
 import { pumpHeadResistanceFlowTarget } from '../physics.ts'
 import { primaryLoopLinkResistanceCoefficient } from '../topology-cache.ts'
+import { componentHasElectricalPower } from './electrical-behaviors.ts'
 
 export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
     id: 'centrifugal-pump-flow',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction'],
+    reads: ['running', 'speedFraction', 'incoming electrical energized?'],
     writes: ['flowKgPerS'],
-    update: ({ component, context }): void => {
+    update: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
+        && componentHasElectricalPower(system, component, context)
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
       const targetFlow = running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0
       const currentFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
@@ -32,10 +34,11 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     id: 'centrifugal-pump-primary-loop-inertia',
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
-    reads: ['running', 'speedFraction', 'flowKgPerS', 'loopFlowKgPerS'],
+    reads: ['running', 'speedFraction', 'flowKgPerS', 'loopFlowKgPerS', 'incoming electrical energized?'],
     writes: ['developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
+        && componentHasElectricalPower(system, component, context)
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
       const nominalHead = parameterNumber(component, 'nominalHeadPa')
       const developedHead = running ? nominalHead * speed * speed : 0

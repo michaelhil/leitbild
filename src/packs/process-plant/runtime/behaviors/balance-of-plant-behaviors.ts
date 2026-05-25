@@ -70,12 +70,14 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'inventoryKg',
       'levelPercent',
       'temperatureC',
+      'soluteConcentrationPpm',
       'makeupFlowKgPerS',
       'incoming:flowKgPerS',
       'incoming:temperatureC',
+      'incoming:soluteConcentrationPpm',
       'outgoing:flowKgPerS',
     ],
-    writes: ['inventoryKg', 'levelPercent', 'temperatureC', 'availableOutletFlowKgPerS'],
+    writes: ['inventoryKg', 'levelPercent', 'temperatureC', 'soluteConcentrationPpm', 'availableOutletFlowKgPerS'],
     update: ({ system, component, context }): void => {
       const nominalInventory = parameterNumber(component, 'nominalInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'inventoryKg'))
@@ -96,9 +98,24 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const nextAvailableOutletFlow = Math.min(maxOutletFlow, inventoryLimitedOutlet)
       const incomingTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context)
       const targetTemperature = incomingTemperature ?? parameterNumber(component, 'initialTemperatureC')
+      const currentSolute = context.readNumber(componentVariablePath(component, 'soluteConcentrationPpm'))
+      const incomingSolute = averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context) ?? currentSolute
+      const inflow = incomingFlow + makeupFlow
+      const nextSolute = nextInventory <= 0
+        ? 0
+        : clamp(
+            (
+              currentSolute * currentInventory
+              + incomingSolute * inflow * context.dtSeconds
+              - currentSolute * outgoingFlow * context.dtSeconds
+            ) / nextInventory,
+            0,
+            20_000,
+          )
       context.write(componentVariablePath(component, 'inventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'levelPercent'), nextLevel)
       context.write(componentVariablePath(component, 'availableOutletFlowKgPerS'), nextAvailableOutletFlow)
+      context.write(componentVariablePath(component, 'soluteConcentrationPpm'), nextSolute)
       context.write(
         componentVariablePath(component, 'temperatureC'),
         relaxToward(

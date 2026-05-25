@@ -1,6 +1,7 @@
 import type { CompiledComponent, VariablePath } from '../graph/index.ts'
 import type { ProcessPlantValue } from './model.ts'
 import { balanceOfPlantInitialValueDefinitions } from './initializers/balance-of-plant-initializers.ts'
+import { electricalInitialValueDefinitions } from './initializers/electrical-initializers.ts'
 import { junctionInitialValueDefinitions } from './initializers/junction-initializers.ts'
 import type { ComponentInitialValueDefinition } from './initializers/model.ts'
 import { pressurizerInitialValueDefinitions } from './initializers/pressurizer-initializers.ts'
@@ -15,6 +16,7 @@ export const componentInitialValueDefinitions: ReadonlyArray<ComponentInitialVal
   ...junctionInitialValueDefinitions,
   ...balanceOfPlantInitialValueDefinitions,
   ...supportSystemInitialValueDefinitions,
+  ...electricalInitialValueDefinitions,
 ]
 
 const definitionByComponentKind = new Map(componentInitialValueDefinitions.map(definition => [definition.componentKind, definition]))

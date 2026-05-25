@@ -10,6 +10,7 @@ export const balanceOfPlantInitialValueDefinitions: ReadonlyArray<ComponentIniti
       if (localPath === 'inventoryKg') return nominalInventory * initialFraction
       if (localPath === 'levelPercent') return initialFraction * 100
       if (localPath === 'temperatureC') return parameterNumber(component, 'initialTemperatureC')
+      if (localPath === 'soluteConcentrationPpm') return optionalParameterNumber(component, 'initialSoluteConcentrationPpm', 0)
       if (localPath === 'makeupFlowKgPerS') return parameterNumber(component, 'makeupFlowKgPerS')
       if (localPath === 'availableOutletFlowKgPerS') return parameterNumber(component, 'maxOutletFlowKgPerS')
       return undefined

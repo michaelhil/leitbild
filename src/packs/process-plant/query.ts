@@ -10,7 +10,7 @@ import { answerProcessPlantIcQuery } from './ic-query.ts'
 import { processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema } from './runtime/index.ts'
-import { processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
+import { processPlantSignalQuality, processPlantSignalReferenceSchema, processPlantSignalView, resolveProcessPlantSignalBinding } from './signals.ts'
 import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 
 const systemQuerySchema = z.object({
@@ -270,9 +270,11 @@ export const answerProcessPlantQuery = (config: {
         systemId: payload.systemId,
         signals: payload.signals.map(signal => {
           const binding = resolveProcessPlantSignalBinding(system.system.graph, signal)
+          const variable = system.runtime.readVariableSnapshot(binding.path)
           return {
             signal: processPlantSignalView(binding),
-            variable: system.runtime.readVariableSnapshot(binding.path),
+            variable,
+            quality: processPlantSignalQuality(variable),
           }
         }),
       }, config.at)

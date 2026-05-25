@@ -81,7 +81,7 @@ export const connectionServiceSchema = z.string()
 export const variableKindSchema = z.enum(['state', 'derived', 'control', 'parameter', 'alarm', 'discrete'])
 export type VariableKind = z.infer<typeof variableKindSchema>
 
-export const variableDomainSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator', 'radiological'])
+export const variableDomainSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator', 'radiological', 'chemical'])
 export type VariableDomain = z.infer<typeof variableDomainSchema>
 
 export const variablePublishPolicySchema = z.enum(['internal', 'telemetry', 'alarm', 'leitbild'])
@@ -151,6 +151,7 @@ export type ProcessVariableLimits = z.infer<typeof processVariableLimitsSchema>
 
 export const processQuantitySchema = z.enum([
   'boolean',
+  'concentration',
   'energy',
   'energyPerMass',
   'flowRate',
@@ -166,6 +167,7 @@ export const processQuantitySchema = z.enum([
   'ratio',
   'reactivity',
   'temperature',
+  'time',
   'volume',
 ])
 export type ProcessQuantity = z.infer<typeof processQuantitySchema>
@@ -185,11 +187,14 @@ export const processUnitSchema = z.enum([
   'Pa',
   'pcm',
   'percent',
+  'ppm',
+  's',
 ])
 export type ProcessUnit = z.infer<typeof processUnitSchema>
 
 const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<ProcessUnit>>> = {
   boolean: new Set(['boolean']),
+  concentration: new Set(['ppm']),
   energy: new Set(['MJ']),
   energyPerMass: new Set(['kJ/kg']),
   flowRate: new Set(['kg/s']),
@@ -205,6 +210,7 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   ratio: new Set(['fraction', 'percent']),
   reactivity: new Set(['pcm']),
   temperature: new Set(['degC']),
+  time: new Set(['s']),
   volume: new Set(['m3']),
 }
 
@@ -273,6 +279,7 @@ const validateInitialValueBounds = (
   }
   if (
     (descriptor.quantity === 'flowRate'
+      || descriptor.quantity === 'concentration'
       || descriptor.quantity === 'head'
       || descriptor.quantity === 'mass'
       || descriptor.quantity === 'power'

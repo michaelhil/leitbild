@@ -14,8 +14,10 @@ export const supportSystemInitialValueDefinitions: ReadonlyArray<ComponentInitia
       if (localPath === 'hotSideFlowKgPerS') return 0
       if (localPath === 'coldSideFlowKgPerS') return 0
       if (localPath === 'heatTransferMw') return 0
+      if (localPath === 'heatTransferCapacityMw') return 0
       if (localPath === 'approachTemperatureC') return Math.max(0, hot - cold)
       if (localPath === 'effectivenessFraction') return 0
+      if (localPath === 'coolingAvailabilityFraction') return 0
       if (localPath === 'hotSidePressureDropMPa') return 0
       if (localPath === 'coldSidePressureDropMPa') return 0
       if (localPath === 'heatBalanceResidualMw') return 0

@@ -42,7 +42,8 @@
         "effectiveBulkModulusMPa": 80,
         "thermalExpansionCoefficientPerC": 0.0003,
         "referencePrimaryCoolantTemperatureC": 306,
-        "normalLetdownFlowKgPerS": 90
+        "normalLetdownFlowKgPerS": 90,
+        "initialBoronConcentrationPpm": 1200
       }
     },
     {
@@ -112,7 +113,8 @@
         "initialTemperatureC": 80,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 0,
-        "thermalTimeConstantS": 120
+        "thermalTimeConstantS": 120,
+        "initialSoluteConcentrationPpm": 1200
       }
     },
     {
@@ -523,7 +525,8 @@
         "initialTemperatureC": 220,
         "makeupFlowKgPerS": 1200,
         "maxOutletFlowKgPerS": 1300,
-        "thermalTimeConstantS": 90
+        "thermalTimeConstantS": 90,
+        "initialSoluteConcentrationPpm": 0
       }
     },
     {
@@ -622,7 +625,8 @@
         "initialTemperatureC": 38,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 420,
-        "thermalTimeConstantS": 180
+        "thermalTimeConstantS": 180,
+        "initialSoluteConcentrationPpm": 0
       }
     },
     {
@@ -784,7 +788,8 @@
         "initialTemperatureC": 18,
         "makeupFlowKgPerS": 43000,
         "maxOutletFlowKgPerS": 50000,
-        "thermalTimeConstantS": 600
+        "thermalTimeConstantS": 600,
+        "initialSoluteConcentrationPpm": 0
       }
     },
     {
@@ -808,7 +813,8 @@
         "initialTemperatureC": 28,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 0,
-        "thermalTimeConstantS": 600
+        "thermalTimeConstantS": 600,
+        "initialSoluteConcentrationPpm": 0
       }
     },
     {
@@ -843,7 +849,8 @@
         "initialTemperatureC": 45,
         "makeupFlowKgPerS": 0,
         "maxOutletFlowKgPerS": 160,
-        "thermalTimeConstantS": 120
+        "thermalTimeConstantS": 120,
+        "initialSoluteConcentrationPpm": 1200
       }
     },
     {
@@ -961,6 +968,261 @@
         "strokeCloseTimeS": 1.5,
         "reverseFlowAllowed": false
       }
+    },
+    {
+      "id": "offsiteGrid",
+      "kind": "electricalGridSource",
+      "label": "Offsite Grid Source",
+      "parameters": {
+        "nominalPowerMw": 1800,
+        "initialAvailable": true
+      },
+      "variables": [
+        {
+          "path": "available",
+          "tagId": "GRID-AVAIL",
+          "equipmentId": "offsiteGrid",
+          "description": "Offsite grid availability"
+        },
+        {
+          "path": "availablePowerMw",
+          "tagId": "GRID-MW",
+          "equipmentId": "offsiteGrid",
+          "description": "Offsite grid available electrical power"
+        }
+      ]
+    },
+    {
+      "id": "unitAuxTransformer",
+      "kind": "electricalTransformer",
+      "label": "Unit Auxiliary Transformer",
+      "parameters": {
+        "nominalPowerMw": 950,
+        "efficiencyFraction": 0.99
+      },
+      "variables": []
+    },
+    {
+      "id": "safetyBusA",
+      "kind": "electricalBus",
+      "label": "Safety Bus A",
+      "parameters": {
+        "nominalPowerMw": 420
+      },
+      "variables": [
+        {
+          "path": "energized",
+          "tagId": "BUS-A-ENERGIZED",
+          "equipmentId": "safetyBusA",
+          "description": "Safety bus A energized status"
+        },
+        {
+          "path": "marginMw",
+          "tagId": "BUS-A-MARGIN",
+          "equipmentId": "safetyBusA",
+          "description": "Safety bus A electrical power margin"
+        }
+      ]
+    },
+    {
+      "id": "safetyBusB",
+      "kind": "electricalBus",
+      "label": "Safety Bus B",
+      "parameters": {
+        "nominalPowerMw": 420
+      },
+      "variables": [
+        {
+          "path": "energized",
+          "tagId": "BUS-B-ENERGIZED",
+          "equipmentId": "safetyBusB",
+          "description": "Safety bus B energized status"
+        },
+        {
+          "path": "marginMw",
+          "tagId": "BUS-B-MARGIN",
+          "equipmentId": "safetyBusB",
+          "description": "Safety bus B electrical power margin"
+        }
+      ]
+    },
+    {
+      "id": "offsiteBreakerA",
+      "kind": "electricalBreaker",
+      "label": "Offsite Breaker A",
+      "parameters": {
+        "nominalPowerMw": 420,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-OFFSITE-A-CLOSED",
+          "equipmentId": "offsiteBreakerA",
+          "description": "Offsite breaker A closed status"
+        }
+      ]
+    },
+    {
+      "id": "offsiteBreakerB",
+      "kind": "electricalBreaker",
+      "label": "Offsite Breaker B",
+      "parameters": {
+        "nominalPowerMw": 420,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "BRK-OFFSITE-B-CLOSED",
+          "equipmentId": "offsiteBreakerB",
+          "description": "Offsite breaker B closed status"
+        }
+      ]
+    },
+    {
+      "id": "dieselGeneratorA",
+      "kind": "dieselGenerator",
+      "label": "Emergency Diesel Generator A",
+      "parameters": {
+        "nominalPowerMw": 45,
+        "startDelayS": 10,
+        "initialAvailable": true,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "startCommand",
+          "tagId": "EDG-A-START",
+          "equipmentId": "dieselGeneratorA",
+          "description": "Emergency diesel generator A start command"
+        },
+        {
+          "path": "running",
+          "tagId": "EDG-A-RUN",
+          "equipmentId": "dieselGeneratorA",
+          "description": "Emergency diesel generator A running status"
+        }
+      ]
+    },
+    {
+      "id": "dieselGeneratorB",
+      "kind": "dieselGenerator",
+      "label": "Emergency Diesel Generator B",
+      "parameters": {
+        "nominalPowerMw": 45,
+        "startDelayS": 10,
+        "initialAvailable": true,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "startCommand",
+          "tagId": "EDG-B-START",
+          "equipmentId": "dieselGeneratorB",
+          "description": "Emergency diesel generator B start command"
+        },
+        {
+          "path": "running",
+          "tagId": "EDG-B-RUN",
+          "equipmentId": "dieselGeneratorB",
+          "description": "Emergency diesel generator B running status"
+        }
+      ]
+    },
+    {
+      "id": "dieselBreakerA",
+      "kind": "electricalBreaker",
+      "label": "Diesel Breaker A",
+      "parameters": {
+        "nominalPowerMw": 45,
+        "initialClosed": true
+      },
+      "variables": []
+    },
+    {
+      "id": "dieselBreakerB",
+      "kind": "electricalBreaker",
+      "label": "Diesel Breaker B",
+      "parameters": {
+        "nominalPowerMw": 45,
+        "initialClosed": true
+      },
+      "variables": []
+    },
+    {
+      "id": "vitalBatteryA",
+      "kind": "battery",
+      "label": "Vital Battery A",
+      "parameters": {
+        "nominalPowerMw": 2,
+        "dischargeTimeS": 14400,
+        "initialStateOfChargeFraction": 1
+      },
+      "variables": []
+    },
+    {
+      "id": "vitalBatteryB",
+      "kind": "battery",
+      "label": "Vital Battery B",
+      "parameters": {
+        "nominalPowerMw": 2,
+        "dischargeTimeS": 14400,
+        "initialStateOfChargeFraction": 1
+      },
+      "variables": []
+    },
+    {
+      "id": "dcInverterA",
+      "kind": "inverter",
+      "label": "DC Inverter A",
+      "parameters": {
+        "nominalPowerMw": 1.5,
+        "efficiencyFraction": 0.95
+      },
+      "variables": []
+    },
+    {
+      "id": "dcInverterB",
+      "kind": "inverter",
+      "label": "DC Inverter B",
+      "parameters": {
+        "nominalPowerMw": 1.5,
+        "efficiencyFraction": 0.95
+      },
+      "variables": []
+    },
+    {
+      "id": "plantControlsLoadA",
+      "kind": "electricalLoad",
+      "label": "Plant Controls Load A",
+      "parameters": {
+        "nominalLoadMw": 0.8
+      },
+      "variables": [
+        {
+          "path": "energized",
+          "tagId": "CTRL-A-ENERGIZED",
+          "equipmentId": "plantControlsLoadA",
+          "description": "Plant controls load A energized status"
+        }
+      ]
+    },
+    {
+      "id": "plantControlsLoadB",
+      "kind": "electricalLoad",
+      "label": "Plant Controls Load B",
+      "parameters": {
+        "nominalLoadMw": 0.8
+      },
+      "variables": [
+        {
+          "path": "energized",
+          "tagId": "CTRL-B-ENERGIZED",
+          "equipmentId": "plantControlsLoadB",
+          "description": "Plant controls load B energized status"
+        }
+      ]
     }
   ],
   "connections": [
@@ -3826,6 +4088,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 40
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "vct-to-charging-pump solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
         }
       ]
     },
@@ -3860,6 +4133,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 40
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "charging-pump-to-cold-leg-a solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
         }
       ]
     },
@@ -3894,6 +4178,17 @@
           "quantity": "temperature",
           "unit": "degC",
           "initialValue": 290
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "letdown-to-vct solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
         }
       ]
     },
@@ -3984,6 +4279,17 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "safety-accumulator-a-to-cold-leg-a solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1600
         }
       ]
     },
@@ -4029,6 +4335,17 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "safety-accumulator-b-to-cold-leg-b solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1600
         }
       ]
     },
@@ -4074,6 +4391,17 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "safety-accumulator-c-to-cold-leg-c solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1600
         }
       ]
     },
@@ -4119,6 +4447,17 @@
           "quantity": "pressure",
           "unit": "MPa",
           "initialValue": 15.5
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "safety-accumulator-d-to-cold-leg-d solute concentration",
+          "kind": "derived",
+          "domain": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1600
         }
       ]
     },
@@ -4423,6 +4762,162 @@
           "initialValue": 0.2
         }
       ]
+    },
+    {
+      "id": "turbine-generator-to-unit-aux-transformer",
+      "from": "turbine.generatorOutput",
+      "to": "unitAuxTransformer.primary",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "offsite-grid-to-unit-aux-transformer",
+      "from": "offsiteGrid.outlet",
+      "to": "unitAuxTransformer.primary",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "unit-aux-transformer-to-offsite-breaker-a",
+      "from": "unitAuxTransformer.secondary",
+      "to": "offsiteBreakerA.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "unit-aux-transformer-to-offsite-breaker-b",
+      "from": "unitAuxTransformer.secondary",
+      "to": "offsiteBreakerB.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "offsite-breaker-a-to-safety-bus-a",
+      "from": "offsiteBreakerA.outlet",
+      "to": "safetyBusA.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "offsite-breaker-b-to-safety-bus-b",
+      "from": "offsiteBreakerB.outlet",
+      "to": "safetyBusB.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "diesel-generator-a-to-breaker-a",
+      "from": "dieselGeneratorA.outlet",
+      "to": "dieselBreakerA.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "diesel-generator-b-to-breaker-b",
+      "from": "dieselGeneratorB.outlet",
+      "to": "dieselBreakerB.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "diesel-breaker-a-to-safety-bus-a",
+      "from": "dieselBreakerA.outlet",
+      "to": "safetyBusA.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "diesel-breaker-b-to-safety-bus-b",
+      "from": "dieselBreakerB.outlet",
+      "to": "safetyBusB.inlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "battery-a-to-inverter-a",
+      "from": "vitalBatteryA.outlet",
+      "to": "dcInverterA.dcInlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "battery-b-to-inverter-b",
+      "from": "vitalBatteryB.outlet",
+      "to": "dcInverterB.dcInlet",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "inverter-a-to-controls-load-a",
+      "from": "dcInverterA.acOutlet",
+      "to": "plantControlsLoadA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "inverter-b-to-controls-load-b",
+      "from": "dcInverterB.acOutlet",
+      "to": "plantControlsLoadB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-rcpA",
+      "from": "safetyBusA.outlet",
+      "to": "rcpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-rcpC",
+      "from": "safetyBusA.outlet",
+      "to": "rcpC.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-mainFeedwaterPumpA",
+      "from": "safetyBusA.outlet",
+      "to": "mainFeedwaterPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-auxFeedwaterPumpMotor",
+      "from": "safetyBusA.outlet",
+      "to": "auxFeedwaterPumpMotor.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-condensatePumpA",
+      "from": "safetyBusA.outlet",
+      "to": "condensatePumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-circulatingWaterPump",
+      "from": "safetyBusA.outlet",
+      "to": "circulatingWaterPump.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-rcpB",
+      "from": "safetyBusB.outlet",
+      "to": "rcpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-rcpD",
+      "from": "safetyBusB.outlet",
+      "to": "rcpD.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-mainFeedwaterPumpB",
+      "from": "safetyBusB.outlet",
+      "to": "mainFeedwaterPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-auxFeedwaterPumpTurbine",
+      "from": "safetyBusB.outlet",
+      "to": "auxFeedwaterPumpTurbine.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-condensatePumpB",
+      "from": "safetyBusB.outlet",
+      "to": "condensatePumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-pressurizer-heater",
+      "from": "safetyBusA.outlet",
+      "to": "pressurizer.heaterPower",
+      "connectionKind": "electricalPower"
     }
   ],
   "publishedVariables": [
@@ -4895,6 +5390,23 @@
     "circulating-water-pump-to-condenser.flowKgPerS",
     "circulating-water-pump-to-condenser.temperatureC",
     "condenser-to-cooling-water-discharge.flowKgPerS",
-    "condenser-to-cooling-water-discharge.temperatureC"
+    "condenser-to-cooling-water-discharge.temperatureC",
+    "offsiteGrid.energized",
+    "offsiteGrid.availablePowerMw",
+    "unitAuxTransformer.availablePowerMw",
+    "safetyBusA.energized",
+    "safetyBusA.marginMw",
+    "safetyBusB.energized",
+    "safetyBusB.marginMw",
+    "dieselGeneratorA.running",
+    "dieselGeneratorA.availablePowerMw",
+    "dieselGeneratorB.running",
+    "dieselGeneratorB.availablePowerMw",
+    "plantControlsLoadA.energized",
+    "plantControlsLoadB.energized",
+    "vessel.boronConcentrationPpm",
+    "volumeControlTank.soluteConcentrationPpm",
+    "charging-pump-to-cold-leg-a.soluteConcentrationPpm",
+    "letdown-to-vct.soluteConcentrationPpm"
   ]
 }

@@ -5,6 +5,7 @@ import type {
 import { accumulatorBehaviorDefinitions } from './accumulator-behaviors.ts'
 import { balanceOfPlantBehaviorDefinitions } from './balance-of-plant-behaviors.ts'
 import { containmentBehaviorDefinitions } from './containment-behaviors.ts'
+import { electricalBehaviorDefinitions, electricalInitialReconciliationDefinitions } from './electrical-behaviors.ts'
 import { heatExchangerBehaviorDefinitions } from './heat-exchanger-behaviors.ts'
 import { junctionBehaviorDefinitions } from './junction-behaviors.ts'
 import { pressurizerBehaviorDefinitions } from './pressurizer-behaviors.ts'
@@ -19,6 +20,7 @@ const behaviorDefinitionsByFamily: ReadonlyArray<ComponentBehaviorDefinition> = 
   ...containmentBehaviorDefinitions,
   ...accumulatorBehaviorDefinitions,
   ...junctionBehaviorDefinitions,
+  ...electricalBehaviorDefinitions,
   ...pumpBehaviorDefinitions,
   ...steamGeneratorBehaviorDefinitions,
   ...pressurizerBehaviorDefinitions,
@@ -36,6 +38,13 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
   behaviorDefinitionById('steamValve-position-controller'),
   behaviorDefinitionById('processValve-effective-position'),
   behaviorDefinitionById('steamValve-effective-position'),
+  behaviorDefinitionById('electrical-grid-source'),
+  behaviorDefinitionById('diesel-generator-start-and-power'),
+  behaviorDefinitionById('battery-discharge'),
+  behaviorDefinitionById('electrical-breaker-propagation'),
+  behaviorDefinitionById('electrical-transformer-propagation'),
+  behaviorDefinitionById('inverter-propagation'),
+  behaviorDefinitionById('electrical-bus-propagation'),
   behaviorDefinitionById('turbine-electrical-output'),
   behaviorDefinitionById('centrifugal-pump-flow'),
   behaviorDefinitionById('centrifugal-pump-primary-loop-inertia'),
@@ -56,8 +65,10 @@ export const componentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefini
   behaviorDefinitionById('steamValve-flow-diagnostics'),
   behaviorDefinitionById('processHeader-mixing-diagnostics'),
   behaviorDefinitionById('steamHeader-mixing-diagnostics'),
+  behaviorDefinitionById('electrical-load-service'),
 ]
 
 export const componentInitialReconciliationDefinitions: ReadonlyArray<ComponentInitialReconciliationDefinition> = [
   ...pumpInitialReconciliationDefinitions,
+  ...electricalInitialReconciliationDefinitions,
 ]

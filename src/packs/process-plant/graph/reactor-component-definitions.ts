@@ -78,6 +78,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       referencePrimaryCoolantTemperatureC: z.number().finite(),
       normalLetdownFlowKgPerS: z.number().finite().nonnegative().optional(),
       primaryReleaseRadiationMSvPerH: z.number().finite().nonnegative().optional(),
+      initialBoronConcentrationPpm: z.number().finite().nonnegative().optional(),
     }),
     variables: [
       variable({ path: 'primaryCoolantInventoryKg', label: 'Primary coolant inventory', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
@@ -93,6 +94,7 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       variable({ path: 'primaryLeakFlowKgPerS', label: 'Primary coolant boundary leak flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'tubeLeakFlowKgPerS', label: 'Primary-to-secondary tube leak flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
       variable({ path: 'netInventoryFlowKgPerS', label: 'Primary inventory net flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRateDelta', unit: 'kg/s' }),
+      variable({ path: 'boronConcentrationPpm', label: 'Primary coolant boron concentration', kind: 'state', domain: 'chemical', writable: false, publish: 'telemetry', quantity: 'concentration', unit: 'ppm' }),
       variable({ path: 'primaryReleaseRadiationMSvPerH', label: 'Primary release radiation source term', kind: 'derived', domain: 'radiological', writable: false, publish: 'telemetry', quantity: 'radiationDoseRate', unit: 'mSv/h' }),
     ],
   }),

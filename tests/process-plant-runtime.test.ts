@@ -739,6 +739,8 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('hx.hotOutletTemperatureC')))).toBeLessThan(Number(runtime.readVariable(valueOf('hx.hotInletTemperatureC'))))
     expect(Number(runtime.readVariable(valueOf('hx.coldOutletTemperatureC')))).toBeGreaterThan(Number(runtime.readVariable(valueOf('hx.coldInletTemperatureC'))))
     expect(Number(runtime.readVariable(valueOf('hx.heatTransferMw')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('hx.heatTransferCapacityMw')))).toBeGreaterThanOrEqual(Number(runtime.readVariable(valueOf('hx.heatTransferMw'))))
+    expect(Number(runtime.readVariable(valueOf('hx.coolingAvailabilityFraction')))).toBeCloseTo(1, 1)
     expect(Math.abs(Number(runtime.readVariable(valueOf('hx.heatBalanceResidualMw'))))).toBeLessThan(1)
   })
 
@@ -1660,5 +1662,86 @@ describe('process plant runtime', () => {
       path: valueOf('mainFeedwaterPumpA.speedFraction'),
       value: -1,
     })).toThrow('fraction value must be between 0 and 1')
+  })
+
+  test('CVCS concentration is carried through process links into reactor vessel inventory', () => {
+    const system = compiledSystemWithParameters({
+      volumeControlTank: { initialSoluteConcentrationPpm: 2_400 },
+      chargingPump: { initialSpeedFraction: 1 },
+    })
+    const runtime = createProcessPlantRuntime({ system })
+    const initialVesselConcentration = runtime.readVariable(valueOf('vessel.boronConcentrationPpm'))
+
+    runtime.tick(60_000)
+
+    expect(runtime.readVariable(valueOf('volumeControlTank.soluteConcentrationPpm'))).toBe(2_400)
+    const chargingConcentration = runtime.readVariable(valueOf('charging-pump-to-cold-leg-a.soluteConcentrationPpm'))
+    const vesselConcentration = runtime.readVariable(valueOf('vessel.boronConcentrationPpm'))
+    if (typeof chargingConcentration !== 'number' || typeof vesselConcentration !== 'number' || typeof initialVesselConcentration !== 'number') {
+      throw new Error('expected numeric CVCS concentration variables')
+    }
+    expect(chargingConcentration).toBeGreaterThan(2_000)
+    expect(vesselConcentration).toBeGreaterThan(initialVesselConcentration)
+  })
+
+  test('electrical bus, breaker, diesel, and load components propagate energized state', () => {
+    const graph = plantGraph({
+      id: 'process-plant.electrical-acceptance.v1',
+      title: 'Electrical Acceptance',
+      fixedStepMs: 1_000,
+      components: [
+        component('grid', 'electricalGridSource', 'Grid', { nominalPowerMw: 20, initialAvailable: true }),
+        component('gridBreaker', 'electricalBreaker', 'Grid Breaker', { nominalPowerMw: 20, initialClosed: true }),
+        component('bus', 'electricalBus', 'Bus', { nominalPowerMw: 20 }),
+        component('load', 'electricalLoad', 'Load', { nominalLoadMw: 4 }),
+        component('diesel', 'dieselGenerator', 'Diesel', { nominalPowerMw: 8, startDelayS: 2, initialAvailable: true }),
+        component('dieselBreaker', 'electricalBreaker', 'Diesel Breaker', { nominalPowerMw: 8, initialClosed: true }),
+      ],
+      connections: [
+        connect('grid-to-breaker', 'grid.outlet', 'gridBreaker.inlet', { connectionKind: 'electricalPower' }),
+        connect('breaker-to-bus', 'gridBreaker.outlet', 'bus.inlet', { connectionKind: 'electricalPower' }),
+        connect('bus-to-load', 'bus.outlet', 'load.power', { connectionKind: 'electricalPower' }),
+        connect('diesel-to-breaker', 'diesel.outlet', 'dieselBreaker.inlet', { connectionKind: 'electricalPower' }),
+        connect('diesel-breaker-to-bus', 'dieselBreaker.outlet', 'bus.inlet', { connectionKind: 'electricalPower' }),
+      ],
+    })
+    const runtime = createProcessPlantRuntime({
+      system: compileProcessPlantSystem({ id: 'electrical', pack: 'process-plant', componentLibrary: 'process-plant', graph }),
+    })
+
+    runtime.tick(1_000)
+    expect(runtime.readVariable(valueOf('bus.energized'))).toBe(true)
+    expect(runtime.readVariable(valueOf('load.energized'))).toBe(true)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('grid.available'), value: false })
+    runtime.tick(1_000)
+    expect(runtime.readVariable(valueOf('bus.energized'))).toBe(false)
+    expect(runtime.readVariable(valueOf('load.energized'))).toBe(false)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('diesel.startCommand'), value: true })
+    runtime.tick(1_000)
+    expect(runtime.readVariable(valueOf('diesel.running'))).toBe(false)
+    runtime.tick(1_000)
+    runtime.tick(1_000)
+    expect(runtime.readVariable(valueOf('diesel.running'))).toBe(true)
+    expect(runtime.readVariable(valueOf('bus.energized'))).toBe(true)
+  })
+
+  test('reference I&C starts emergency diesels after safety bus loss', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('offsiteBreakerA.closed'), value: false })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('offsiteBreakerB.closed'), value: false })
+
+    runWithReferenceProtection({
+      system,
+      runtime,
+      durationMs: 15_000,
+    })
+
+    expect(runtime.readVariable(valueOf('dieselGeneratorA.startCommand'))).toBe(true)
+    expect(runtime.readVariable(valueOf('dieselGeneratorB.startCommand'))).toBe(true)
+    expect(runtime.readVariable(valueOf('dieselGeneratorA.running'))).toBe(true)
+    expect(runtime.readVariable(valueOf('dieselGeneratorB.running'))).toBe(true)
   })
 })

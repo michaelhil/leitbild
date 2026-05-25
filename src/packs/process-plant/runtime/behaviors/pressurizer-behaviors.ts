@@ -9,6 +9,7 @@ import { averageIncomingComponentLinkValue as averageIncomingLinkValue } from '.
 import { inventoryBalanceStep } from '../physics.ts'
 import { primarySystemReactorVessel } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa, steamFlowKgPerSFromHeatMw } from '../thermophysics.ts'
+import { componentHasElectricalPower } from './electrical-behaviors.ts'
 
 export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
@@ -29,6 +30,7 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'waterTemperatureC',
       'steamTemperatureC',
       'heaterPowerMw',
+      'incoming electrical energized?',
       'sprayFlowKgPerS',
       'reliefValvePositionFraction',
       'incoming:primaryCoolant.temperatureC',
@@ -61,7 +63,9 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       const reliefSetpoint = optionalParameterNumber(component, 'reliefSetpointMPa', nominalPressure * 1.08)
       const reliefCapacity = optionalParameterNumber(component, 'reliefCapacityKgPerS', 80)
       const currentPressure = context.readNumber(componentVariablePath(component, 'pressureMPa'))
-      const heaterPower = clamp(context.readNumber(componentVariablePath(component, 'heaterPowerMw')), 0, 50)
+      const heaterPower = componentHasElectricalPower(system, component, context)
+        ? clamp(context.readNumber(componentVariablePath(component, 'heaterPowerMw')), 0, 50)
+        : 0
       const sprayFlow = clamp(context.readNumber(componentVariablePath(component, 'sprayFlowKgPerS')), 0, 500)
       const reliefValvePosition = clamp(context.readNumber(componentVariablePath(component, 'reliefValvePositionFraction')), 0, 1)
       const automaticReliefDemand = clamp((currentPressure - reliefSetpoint) / Math.max(0.1, reliefSetpoint * 0.04), 0, 1)

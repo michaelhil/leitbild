@@ -42,7 +42,7 @@ describe('process plant graph foundation', () => {
     expect(compiled.components.every(component => component.variables.length > 0)).toBe(true)
     expect(compiled.linksByKind.fluidFlow.length).toBeGreaterThan(40)
     expect(compiled.linksByKind.thermalContact).toEqual([0])
-    expect(compiled.linksByKind.electricalPower.length).toBe(0)
+    expect(compiled.linksByKind.electricalPower.length).toBeGreaterThanOrEqual(20)
     expect(compiled.linksByService.get('primaryCoolant' as never)?.length).toBeGreaterThanOrEqual(13)
     expect(compiled.linksByService.get('mainSteam' as never)?.length).toBeGreaterThanOrEqual(10)
     const coreIndex = compiled.componentIndexById.get('core' as never)
@@ -64,6 +64,8 @@ describe('process plant graph foundation', () => {
       type: 'link',
       linkIndex: steamLink.index,
     })
+    expect(publishedVariables).toContain('safetyBusA.energized')
+    expect(publishedVariables).toContain('safetyBusB.marginMw')
   })
 
   test('compiles a process plant system from scenario-owned graph data', () => {

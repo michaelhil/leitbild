@@ -3,6 +3,7 @@ import { processPlantIcConfigSchema } from '../runtime/index.ts'
 import { accumulatorReferenceIcRules } from './reference-ic-accumulator.ts'
 import { balanceOfPlantReferenceIcRules } from './reference-ic-balance-of-plant.ts'
 import { containmentReferenceIcRules } from './reference-ic-containment.ts'
+import { electricalReferenceIcRules } from './reference-ic-electrical.ts'
 import { pressurizerReferenceIcRules } from './reference-ic-pressurizer.ts'
 import { reactorReferenceIcRules } from './reference-ic-reactor.ts'
 import { reactorCoolantPumpReferenceIcRules } from './reference-ic-rcp.ts'
@@ -27,6 +28,7 @@ export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = {
     ...accumulatorReferenceIcRules('C'),
     ...accumulatorReferenceIcRules('D'),
     ...containmentReferenceIcRules(),
+    ...electricalReferenceIcRules(),
     ...balanceOfPlantReferenceIcRules(),
   ],
 }
