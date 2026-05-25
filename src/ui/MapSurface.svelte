@@ -1,6 +1,7 @@
 <script lang="ts">
   import 'maplibre-gl/dist/maplibre-gl.css'
   import { type Map as MapLibreMap } from 'maplibre-gl'
+  import { untrack } from 'svelte'
   import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -477,14 +478,18 @@
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
-    schedulePackAreaFeatureAnimation()
+    untrack(() => {
+      schedulePackAreaFeatureAnimation()
+    })
   })
 
   $effect(() => {
     clock
     if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
-    schedulePackAreaFeatureAnimation()
-    void refreshPackMapAreaFeatures()
+    untrack(() => {
+      schedulePackAreaFeatureAnimation()
+      void refreshPackMapAreaFeatures()
+    })
   })
 
   $effect(() => {
