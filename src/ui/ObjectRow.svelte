@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X } from 'lucide-svelte'
+  import { MonitorCog, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -15,6 +15,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
+    readonly openProcessSurface?: (object: OperationalObject) => void
   }
 
   let {
@@ -27,6 +28,7 @@
     markSeen,
     selectObject,
     deleteObject,
+    openProcessSurface,
   }: Props = $props()
 
   let newInfoBadge: HTMLButtonElement | null = $state(null)
@@ -59,6 +61,8 @@
     newInfoTooltipVisible = false
     markSeen(object)
   }
+
+  const processSurfaceAvailable = $derived(object.domain === 'process-plant' && openProcessSurface !== undefined)
 </script>
 
 <div
@@ -110,6 +114,16 @@
       {#each presentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
     </span>
   </button>
+  {#if processSurfaceAvailable}
+    <IconButton
+      label="Open process display for {object.label}"
+      title="Open process display"
+      icon={MonitorCog}
+      size={13}
+      variant="bare"
+      onClick={() => openProcessSurface?.(object)}
+    />
+  {/if}
   <IconButton
     label="Delete {object.label}"
     title="Delete {object.label}"

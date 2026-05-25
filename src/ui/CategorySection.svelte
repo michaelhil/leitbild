@@ -25,6 +25,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
+    readonly openProcessSurface?: (object: OperationalObject) => void
   }
 
   let {
@@ -43,6 +44,7 @@
     markSeen,
     selectObject,
     deleteObject,
+    openProcessSurface,
   }: Props = $props()
 </script>
 
@@ -98,6 +100,7 @@
         {markSeen}
         {selectObject}
         {deleteObject}
+        {openProcessSurface}
       />
     {/each}
   {/if}

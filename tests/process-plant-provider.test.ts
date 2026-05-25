@@ -168,6 +168,61 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
+  test('exposes compiled process surfaces and batched surface snapshots through pack queries', async () => {
+    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      providerStateStore: createMemoryStateStore(),
+    })
+
+    const surfaces = await connection.query(query('process-plant.surfaces.list', { systemId: 'plant' }))
+    expect(surfaces.ok).toBe(true)
+    if (!surfaces.ok) throw new Error(surfaces.reason)
+    expect((surfaces.result as {
+      readonly surfaces: ReadonlyArray<{ readonly id: string; readonly title: string }>
+    }).surfaces).toContainEqual(expect.objectContaining({
+      id: 'unit-overview',
+      title: 'Unit Overview',
+    }))
+
+    const surface = await connection.query(query('process-plant.surface.read', {
+      systemId: 'plant',
+      surfaceId: 'unit-overview',
+    }))
+    expect(surface.ok).toBe(true)
+    if (!surface.ok) throw new Error(surface.reason)
+    const compiled = (surface.result as {
+      readonly surface: {
+        readonly widgets: ReadonlyArray<{ readonly id: string }>
+        readonly paths: ReadonlyArray<{ readonly id: string }>
+        readonly bindingPaths: ReadonlyArray<string>
+      }
+    }).surface
+    expect(compiled.widgets.map(widget => widget.id)).toContain('reactor-vessel')
+    expect(compiled.paths.map(path => path.id)).toContain('main-steam-to-turbine')
+    expect(compiled.bindingPaths).toContain('core.totalThermalPowerMw')
+
+    const snapshot = await connection.query(query('process-plant.surface.snapshot', {
+      systemId: 'plant',
+      surfaceId: 'unit-overview',
+    }))
+    expect(snapshot.ok).toBe(true)
+    if (!snapshot.ok) throw new Error(snapshot.reason)
+    const values = new Map((snapshot.result as {
+      readonly values: ReadonlyArray<{
+        readonly path: string
+        readonly label: string
+        readonly value: unknown
+        readonly formatted: string
+      }>
+    }).values.map(value => [value.path, value]))
+    expect(typeof values.get('core.totalThermalPowerMw')?.value).toBe('number')
+    expect(values.get('core.totalThermalPowerMw')?.formatted).toMatch(/MW$/)
+    expect(typeof values.get('pressurizer.pressureMPa')?.value).toBe('number')
+
+    await connection.close()
+  })
+
   test('creates an ambulance incident once from a generic medical demand signal', async () => {
     const handler = createAmbulanceMedicalDemandInteractionHandler()
     const signal: InteractionSignal = {

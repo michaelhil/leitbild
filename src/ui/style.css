@@ -1170,7 +1170,7 @@ body.rail-resizing {
 }
 
 .modal-shell.large {
-  width: min(860px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
 }
 
 .modal-header {
@@ -1206,6 +1206,136 @@ body.rail-resizing {
   min-height: 0;
   overflow: auto;
   padding: 16px;
+}
+
+.process-surface-message,
+.process-surface-error {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.process-surface-error {
+  color: var(--critical);
+}
+
+.process-surface-viewport {
+  width: 100%;
+  min-height: min(640px, calc(100vh - 190px));
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
+    var(--panel-strong);
+  background-size: 40px 40px;
+}
+
+.process-surface-svg {
+  display: block;
+  width: 100%;
+  min-width: 980px;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  font-family: inherit;
+}
+
+.process-flow-casing {
+  fill: none;
+  stroke: color-mix(in srgb, var(--panel) 84%, #ffffff);
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.process-flow {
+  fill: none;
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.88;
+  animation: process-flow-dash 4s linear infinite;
+}
+
+.process-flow.primary { stroke: #2563eb; }
+.process-flow.steam { stroke: #ef4444; }
+.process-flow.feedwater,
+.process-flow.condensate { stroke: #0ea5e9; }
+.process-flow.electrical { stroke: #eab308; }
+.process-flow.cooling { stroke: #14b8a6; }
+.process-flow.support { stroke: #64748b; }
+
+.process-flow-arrow {
+  fill: currentColor;
+  color: #64748b;
+}
+
+.process-widget .widget-shell {
+  fill: color-mix(in srgb, var(--panel) 96%, transparent);
+  stroke: var(--border);
+  stroke-width: 2;
+}
+
+.process-widget.primary .widget-shell { stroke: #2563eb; }
+.process-widget.secondary .widget-shell { stroke: #c2410c; }
+.process-widget.support .widget-shell { stroke: #22845d; }
+.process-widget.warning .widget-shell { stroke: #c77d13; }
+.process-widget.critical .widget-shell { stroke: #c7352b; }
+
+.widget-level-fill {
+  fill: url("#process-vessel-fill");
+}
+
+.widget-coil,
+.widget-ring,
+.widget-impeller,
+.widget-valve {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--text);
+  opacity: 0.76;
+}
+
+.widget-ring {
+  stroke-dasharray: 0.72 0.28;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: process-widget-spin 3.5s linear infinite;
+}
+
+.widget-impeller,
+.widget-valve {
+  fill: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.widget-title {
+  fill: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.widget-readout {
+  fill: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+@keyframes process-flow-dash {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -1; }
+}
+
+@keyframes process-widget-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .modal-footer {

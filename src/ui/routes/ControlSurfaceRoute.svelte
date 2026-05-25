@@ -88,6 +88,8 @@
   let MapSurface = $state<Component | null>(null)
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
+  let ProcessSurfaceModal = $state<Component | null>(null)
+  let processSurfaceObject = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
@@ -189,6 +191,12 @@
     SettingsModal = module.default
   }
 
+  const loadProcessSurfaceModal = async (): Promise<void> => {
+    if (ProcessSurfaceModal) return
+    const module = await import('../process-surface/ProcessSurfaceModal.svelte')
+    ProcessSurfaceModal = module.default
+  }
+
   const startStep = (id: StartupStepId): void => {
     startupSteps = startStartupStep(startupSteps, id)
   }
@@ -240,6 +248,15 @@
   const openSettings = (): void => {
     settingsModalOpen = true
     void loadSettingsModal()
+  }
+
+  const openProcessSurface = (object: OperationalObject): void => {
+    processSurfaceObject = object
+    void loadProcessSurfaceModal()
+  }
+
+  const closeProcessSurface = (): void => {
+    processSurfaceObject = null
   }
 
   const closeSettings = (): void => {
@@ -646,6 +663,7 @@
         {markSeen}
         {selectObject}
         {deleteObject}
+        {openProcessSurface}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
         {openStatusModal}
@@ -703,6 +721,14 @@
     />
     {/if}
   </div>
+{/if}
+
+{#if processSurfaceObject && ProcessSurfaceModal && controlInstanceId}
+  <ProcessSurfaceModal
+    {controlInstanceId}
+    object={processSurfaceObject}
+    close={closeProcessSurface}
+  />
 {/if}
 
 {#if startupModalVisible}

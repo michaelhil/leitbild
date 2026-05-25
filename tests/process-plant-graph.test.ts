@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/model/index.ts'
 import {
   compilePlantGraph,
+  compileProcessSurface,
   compileProcessPlantSystem,
   compileProcessPlantSystems,
   component,
@@ -11,6 +12,7 @@ import {
   pressurizedWaterReactorPlantSpec,
   processPlantPressurizedWaterReactorGraphRef,
   processPlantComponentRegistry,
+  processPlantUnitOverviewSurface,
   processLinkVariableDescriptorSchema,
   tagIdForLookup,
   variableDescriptorSchema,
@@ -72,6 +74,40 @@ describe('process plant graph foundation', () => {
     ]))
     expect(publishedVariables).toContain('safetyBusA.energized')
     expect(publishedVariables).toContain('safetyBusB.marginMw')
+  })
+
+  test('compiles the reference process surface against real graph variables and topology', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    const surface = compileProcessSurface({
+      definition: processPlantUnitOverviewSurface,
+      graph,
+    })
+
+    expect(surface.id).toBe('unit-overview')
+    expect(surface.widgets.map(widget => widget.id)).toEqual(expect.arrayContaining([
+      'reactor-vessel',
+      'pressurizer',
+      'sg-a',
+      'sg-b',
+      'turbine',
+      'condenser',
+    ]))
+    expect(surface.paths.map(path => path.id)).toEqual(expect.arrayContaining([
+      'primary-hot-leg-a',
+      'main-steam-to-turbine',
+      'turbine-exhaust-to-condenser',
+      'feedwater-to-sg-a',
+    ]))
+    expect(surface.bindingPaths.map(path => String(path))).toEqual(expect.arrayContaining([
+      'core.totalThermalPowerMw',
+      'pressurizer.pressureMPa',
+      'sgA.levelPercent',
+      'sgA.pressureMPa',
+      'turbine.electricMw',
+      'main-steam-header-to-turbine-stop-valve.flowKgPerS',
+    ]))
+    expect(surface.widgets.every(widget => widget.geometry.width > 0 && widget.geometry.height > 0)).toBe(true)
+    expect(surface.paths.every(path => path.points.length >= 3)).toBe(true)
   })
 
   test('reference graph wires safety-train electrical dependencies explicitly', () => {

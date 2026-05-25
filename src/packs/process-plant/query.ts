@@ -7,6 +7,7 @@ import { answerProcessPlantControlQuery, processPlantControlQueryKinds } from '.
 import { answerProcessPlantGraphQuery, processPlantGraphQueryKinds } from './queries/graph-query.ts'
 import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from './queries/runtime-query.ts'
 import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './queries/signal-query.ts'
+import { answerProcessPlantSurfaceQuery, processPlantSurfaceQueryKinds } from './queries/surface-query.ts'
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 
 export const processPlantQueryKinds = [
@@ -16,6 +17,7 @@ export const processPlantQueryKinds = [
   ...processPlantControlQueryKinds,
   ...processPlantRuntimeQueryKinds,
   ...processPlantIcQueryKinds,
+  ...processPlantSurfaceQueryKinds,
 ] as const
 
 export const answerProcessPlantQuery = (config: {
@@ -30,6 +32,7 @@ export const answerProcessPlantQuery = (config: {
       ?? answerProcessPlantSignalQuery(config)
       ?? answerProcessPlantControlQuery(config)
       ?? answerProcessPlantRuntimeQuery(config)
+      ?? answerProcessPlantSurfaceQuery(config)
       ?? failure(config.request, `process plant pack does not support query kind: ${config.request.kind}`, config.at)
   } catch (err) {
     return failure(config.request, err instanceof Error ? err.message : String(err), config.at)

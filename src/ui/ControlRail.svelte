@@ -35,6 +35,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
+    readonly openProcessSurface?: (object: OperationalObject) => void
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
     readonly openStatusModal: () => void
@@ -58,6 +59,7 @@
     markSeen,
     selectObject,
     deleteObject,
+    openProcessSurface,
     beginPlacement,
     cancelPlacement,
     openStatusModal,
@@ -158,6 +160,7 @@
       {markSeen}
       {selectObject}
       {deleteObject}
+      {openProcessSurface}
     />
   {/each}
 
