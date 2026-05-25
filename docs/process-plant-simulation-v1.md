@@ -918,6 +918,8 @@ The current implementation covers graph/spec validation, a headless fixed-step r
 
 Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
+Every provider-configured system key must match a declared process system id. Unknown keys are rejected before runtime starts. This keeps typoed multi-unit scenarios from silently running without the intended I&C, schedule, or telemetry configuration.
+
 Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It is implemented as a small catalog assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
 
 Reusable controller behavior in the reference set is expressed through authoring helpers that expand into ordinary I&C rules. For example, the pressurizer pressure controller is generated as low-demand, high-demand, and normal-band rules that write heaters and spray through the same queued write path. The runtime still sees only the typed rule language; there is no separate controller interpreter.
@@ -1035,8 +1037,13 @@ The checks are trend-level guardrails, not licensing-grade validation. They catc
 Generated artifacts:
 
 - [process-plant-acceptance-traces.svg](./assets/process-plant-acceptance-traces.svg)
-- [process-plant-acceptance-traces.csv](./assets/process-plant-acceptance-traces.csv)
 - [process-plant-acceptance-summary.json](./assets/process-plant-acceptance-summary.json)
+
+The full per-sample CSV trace is intentionally not tracked because it is large and churns on every physics pass. Generate it locally only when a detailed trace investigation needs it:
+
+```sh
+PROCESS_PLANT_ACCEPTANCE_WRITE_CSV=1 bun run process-plant:acceptance
+```
 
 Acceptance plots are now part of the engineering loop for physics changes. When deepening a component or link behavior, add or adjust trend checks so the expected physical direction is visible and tested. Do not rely only on isolated variable assertions.
 

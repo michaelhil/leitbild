@@ -6,8 +6,8 @@
   "caseCount": 11,
   "checkCount": 126,
   "failedCheckCount": 0,
-  "wallMs": 3601.562667,
-  "realtimeFactor": 66.6377409447975,
+  "wallMs": 5928.13825,
+  "realtimeFactor": 40.48488579023946,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -772,12 +772,11 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=66.6x min=20.0x"
+      "details": "realtimeFactor=40.5x min=20.0x"
     }
   ],
   "artifacts": {
     "traceSvgPath": "docs/assets/process-plant-acceptance-traces.svg",
-    "traceCsvPath": "docs/assets/process-plant-acceptance-traces.csv",
     "summaryJsonPath": "docs/assets/process-plant-acceptance-summary.json"
   }
 }

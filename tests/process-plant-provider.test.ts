@@ -1435,6 +1435,20 @@ describe('process plant simulation provider', () => {
     })).rejects.toThrow('must not define both icRef and inline protection')
   })
 
+  test('rejects provider config for an unknown process system', async () => {
+    await expect(createLocalProcessPlantSimulationAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          missingPlant: {
+            icRef: processPlantPressurizedWaterReactorIcRef,
+          },
+        },
+      }),
+      providerStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('process plant provider config references unknown process system: missingPlant')
+  })
+
   test('rejects unknown process plant icRef explicitly', async () => {
     await expect(createLocalProcessPlantSimulationAdapter().connect({
       controlInstanceId,

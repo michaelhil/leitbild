@@ -1,11 +1,12 @@
 import type { ControlInstanceId } from '../../../core/model/index.ts'
 import type { SimulationEvent } from '../../../simulation/protocol.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
-import { resolveProcessPlantSignalBinding } from '../signals.ts'
 import type { ProcessPlantSignalReference } from '../signals.ts'
 import type { ProcessPlantRuntime } from './model.ts'
 import { evaluateProcessPlantIcCondition } from './control-protection-conditions.ts'
 import { assertProcessPlantIcRulesValid } from './control-protection-validation.ts'
+import { applyProcessPlantIcWriteEffect, processPlantIcWriteTargetPath } from './control-protection-effects.ts'
+import { rememberProcessPlantIcLifecycleHistory, updateProcessPlantIcLifecyclePhase } from './control-protection-history.ts'
 import {
   catalogForProcessPlantIcRules,
   type ProcessPlantIcCatalog,
@@ -23,16 +24,19 @@ import {
   type ProcessPlantIcLifecycleHistoryEntry,
   type ProcessPlantIcLifecycleAction,
   type ProcessPlantIcRule,
-  type ProcessPlantIcRuleSnapshot,
   type ProcessPlantIcSnapshot,
 } from './control-protection-model.ts'
 import {
   eventForProcessPlantIcLifecycleTransition,
   mutableLifecycleFor,
-  phaseForProcessPlantIcLifecycle,
   processPlantIcLifecycleIdFor,
   type MutableLifecycleState,
 } from './control-protection-lifecycle.ts'
+import {
+  assertRestoredProcessPlantIcSnapshotMatchesRules,
+  processPlantIcFailureFor,
+  stateForProcessPlantIcRule,
+} from './control-protection-rule-state.ts'
 export * from './control-protection-model.ts'
 export * from './control-protection-conditions.ts'
 export type {
@@ -67,125 +71,6 @@ export interface ProcessPlantProtectionRunner {
     readonly signal: ProcessPlantSignalReference
     readonly elapsedMs: number
   }) => { readonly ok: true } | { readonly ok: false; readonly reason: string }
-}
-
-interface MutableRuleState {
-  active: boolean
-  latched: boolean
-  activeSinceElapsedMs?: number
-  clearSinceElapsedMs?: number
-  lastTransitionElapsedMs?: number
-  firedCount: number
-}
-
-const stateFor = (
-  ruleId: string,
-  restored: ReadonlyMap<string, ProcessPlantIcRuleSnapshot>,
-): MutableRuleState => {
-  const snapshot = restored.get(ruleId)
-  return {
-    active: snapshot?.active ?? false,
-    latched: snapshot?.latched ?? false,
-    ...(snapshot?.activeSinceElapsedMs === undefined ? {} : { activeSinceElapsedMs: snapshot.activeSinceElapsedMs }),
-    ...(snapshot?.clearSinceElapsedMs === undefined ? {} : { clearSinceElapsedMs: snapshot.clearSinceElapsedMs }),
-    ...(snapshot?.lastTransitionElapsedMs === undefined ? {} : { lastTransitionElapsedMs: snapshot.lastTransitionElapsedMs }),
-    firedCount: snapshot?.firedCount ?? 0,
-  }
-}
-
-const maxLifecycleHistoryEntries = 1_000
-
-const lifecycleHistoryIdFor = (
-  lifecycleId: string,
-  transition: string,
-  elapsedMs: number,
-  count: number,
-): string => `${lifecycleId}:${transition}:${Math.trunc(elapsedMs)}:${count}`
-
-const updateLifecyclePhase = (lifecycle: MutableLifecycleState): void => {
-  lifecycle.phase = phaseForProcessPlantIcLifecycle(lifecycle)
-}
-
-const rememberLifecycleHistory = (config: {
-  readonly history: ProcessPlantIcLifecycleHistoryEntry[]
-  readonly lifecycle: MutableLifecycleState
-  readonly transition: ProcessPlantIcLifecycleHistoryEntry['transition']
-  readonly elapsedMs: number
-  readonly actorId?: string
-  readonly clientId?: string
-  readonly reason?: string
-}): void => {
-  updateLifecyclePhase(config.lifecycle)
-  config.history.push({
-    id: lifecycleHistoryIdFor(config.lifecycle.id, config.transition, config.elapsedMs, config.history.length),
-    lifecycleId: config.lifecycle.id,
-    ruleId: config.lifecycle.ruleId,
-    effectId: config.lifecycle.effectId,
-    kind: config.lifecycle.kind,
-    transition: config.transition,
-    elapsedMs: config.elapsedMs,
-    title: config.lifecycle.title,
-    severity: config.lifecycle.severity,
-    phase: config.lifecycle.phase,
-    ...(config.actorId === undefined ? {} : { actorId: config.actorId }),
-    ...(config.clientId === undefined ? {} : { clientId: config.clientId }),
-    ...(config.reason === undefined ? {} : { reason: config.reason }),
-  })
-  if (config.history.length > maxLifecycleHistoryEntries) {
-    config.history.splice(0, config.history.length - maxLifecycleHistoryEntries)
-  }
-}
-
-const assertRestoredSnapshotMatchesRules = (
-  rules: ReadonlyArray<ProcessPlantIcRule>,
-  restoredSnapshot: ProcessPlantIcSnapshot | undefined,
-): void => {
-  if (!restoredSnapshot) return
-  const ruleIds = new Set(rules.map(rule => rule.id))
-  for (const rule of restoredSnapshot.rules) {
-    if (!ruleIds.has(rule.ruleId)) throw new Error(`restored I&C snapshot references unknown rule: ${rule.ruleId}`)
-  }
-  const lifecycleIds = new Set(rules.flatMap(rule => rule.effects.flatMap(effect => {
-    if (effect.type === 'writeSignal') return []
-    const kind = effect.type === 'alarm.enter' ? 'alarm' : 'trip'
-    return [processPlantIcLifecycleIdFor(kind, rule.id, effect.id)]
-  })))
-  for (const lifecycle of [...restoredSnapshot.alarms, ...restoredSnapshot.trips]) {
-    if (!lifecycleIds.has(lifecycle.id)) throw new Error(`restored I&C snapshot references unknown lifecycle state: ${lifecycle.id}`)
-  }
-}
-
-const failureFor = (config: {
-  readonly ruleId: string
-  readonly effectId?: string
-  readonly elapsedMs: number
-  readonly error: unknown
-}): ProcessPlantIcFailure => ({
-  ruleId: config.ruleId,
-  ...(config.effectId === undefined ? {} : { effectId: config.effectId }),
-  elapsedMs: config.elapsedMs,
-  message: config.error instanceof Error ? config.error.message : String(config.error),
-})
-
-const writeTargetPath = (config: {
-  readonly system: CompiledProcessPlantSystem
-  readonly signal: ProcessPlantSignalReference
-}) => resolveProcessPlantSignalBinding(config.system.graph, config.signal).path
-
-const applyWriteEffect = (config: {
-  readonly system: CompiledProcessPlantSystem
-  readonly runtime: ProcessPlantRuntime
-  readonly effect: Extract<ProcessPlantIcEffect, { readonly type: 'writeSignal' }>
-  readonly evaluateWrite: (signal: ProcessPlantSignalReference) => { readonly ok: true } | { readonly ok: false; readonly reason: string }
-}): void => {
-  const gate = config.evaluateWrite(config.effect.signal)
-  if (!gate.ok) throw new Error(gate.reason)
-  const binding = resolveProcessPlantSignalBinding(config.system.graph, config.effect.signal)
-  config.runtime.writeCommand({
-    type: 'setVariable',
-    path: binding.path,
-    value: config.effect.value,
-  })
 }
 
 const shouldResetLatchedState = (config: {
@@ -282,14 +167,14 @@ export const createProcessPlantProtectionRunner = (config: {
       effectIds.add(scopedEffectId)
     }
   }
-  assertRestoredSnapshotMatchesRules(rules, config.restoredSnapshot)
+  assertRestoredProcessPlantIcSnapshotMatchesRules(rules, config.restoredSnapshot)
 
   const restoredRules = new Map((config.restoredSnapshot?.rules ?? []).map(rule => [rule.ruleId, rule]))
   const restoredLifecycles = new Map([
     ...(config.restoredSnapshot?.alarms ?? []),
     ...(config.restoredSnapshot?.trips ?? []),
   ].map(lifecycle => [lifecycle.id, lifecycle]))
-  const states = new Map(rules.map(rule => [rule.id, stateFor(rule.id, restoredRules)]))
+  const states = new Map(rules.map(rule => [rule.id, stateForProcessPlantIcRule(rule.id, restoredRules)]))
   const lifecycles = new Map<string, MutableLifecycleState>()
   for (const rule of rules) {
     for (const effect of rule.effects) {
@@ -306,11 +191,11 @@ export const createProcessPlantProtectionRunner = (config: {
     readonly signal: ProcessPlantSignalReference
     readonly elapsedMs: number
   }): { readonly ok: true } | { readonly ok: false; readonly reason: string } => {
-    const targetPath = writeTargetPath({ system: config.system, signal: input.signal })
+    const targetPath = processPlantIcWriteTargetPath({ system: config.system, signal: input.signal })
     for (const rule of rules) {
       if (!rule.enabled || (rule.ruleClass !== 'permissive' && rule.ruleClass !== 'interlock')) continue
       const applies = rule.commandGates.some(gate =>
-        writeTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
+        processPlantIcWriteTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
       )
       if (!applies) continue
       try {
@@ -318,14 +203,14 @@ export const createProcessPlantProtectionRunner = (config: {
         const blocked = rule.ruleClass === 'permissive' ? !matches : matches
         if (!blocked) continue
         const message = rule.commandGates.find(gate =>
-          writeTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
+          processPlantIcWriteTargetPath({ system: config.system, signal: gate.signal }) === targetPath,
         )?.message
         return {
           ok: false,
           reason: message ?? `process plant I&C ${rule.ruleClass} rule ${rule.id} blocks write to ${targetPath}`,
         }
       } catch (error) {
-        failures.push(failureFor({ ruleId: rule.id, elapsedMs: input.elapsedMs, error }))
+        failures.push(processPlantIcFailureFor({ ruleId: rule.id, elapsedMs: input.elapsedMs, error }))
         return {
           ok: false,
           reason: error instanceof Error ? error.message : String(error),
@@ -357,15 +242,15 @@ export const createProcessPlantProtectionRunner = (config: {
     lifecycle.transitionCount += 1
     lifecycle.occurrenceCount += 1
     assignFirstOut(lifecycle, lifecycles, input.elapsedMs)
-    updateLifecyclePhase(lifecycle)
-    rememberLifecycleHistory({
+    updateProcessPlantIcLifecyclePhase(lifecycle)
+    rememberProcessPlantIcLifecycleHistory({
       history,
       lifecycle,
       transition: 'entered',
       elapsedMs: input.elapsedMs,
     })
     if (lifecycle.firstOut) {
-      rememberLifecycleHistory({
+      rememberProcessPlantIcLifecycleHistory({
         history,
         lifecycle,
         transition: 'firstOut',
@@ -398,8 +283,8 @@ export const createProcessPlantProtectionRunner = (config: {
       delete lifecycle.shelvedUntilElapsedMs
       lifecycle.lastTransitionElapsedMs = input.elapsedMs
       lifecycle.transitionCount += 1
-      updateLifecyclePhase(lifecycle)
-      rememberLifecycleHistory({
+      updateProcessPlantIcLifecyclePhase(lifecycle)
+      rememberProcessPlantIcLifecycleHistory({
         history,
         lifecycle,
         transition: 'shelveExpired',
@@ -442,8 +327,8 @@ export const createProcessPlantProtectionRunner = (config: {
       lifecycle.lastTransitionElapsedMs = input.elapsedMs
       lifecycle.transitionCount += 1
       lifecycle.clearCount += 1
-      updateLifecyclePhase(lifecycle)
-      rememberLifecycleHistory({
+      updateProcessPlantIcLifecyclePhase(lifecycle)
+      rememberProcessPlantIcLifecycleHistory({
         history,
         lifecycle,
         transition: 'cleared',
@@ -475,7 +360,7 @@ export const createProcessPlantProtectionRunner = (config: {
         try {
           matches = evaluateRuleCondition({ system: config.system, runtime, rule })
         } catch (error) {
-          failures.push(failureFor({ ruleId: rule.id, elapsedMs, error }))
+          failures.push(processPlantIcFailureFor({ ruleId: rule.id, elapsedMs, error }))
           continue
         }
         if (shouldResetLatchedState({ system: config.system, runtime, rule })) {
@@ -534,7 +419,7 @@ export const createProcessPlantProtectionRunner = (config: {
         for (const effect of rule.effects) {
           try {
             if (effect.type === 'writeSignal') {
-              applyWriteEffect({
+              applyProcessPlantIcWriteEffect({
                 system: config.system,
                 runtime,
                 effect,
@@ -544,7 +429,7 @@ export const createProcessPlantProtectionRunner = (config: {
             }
             events.push(...enterLifecycle({ rule, effect, elapsedMs, controlInstanceId, sourceProviderId }))
           } catch (error) {
-            failures.push(failureFor({ ruleId: rule.id, effectId: effect.id, elapsedMs, error }))
+            failures.push(processPlantIcFailureFor({ ruleId: rule.id, effectId: effect.id, elapsedMs, error }))
           }
         }
         state.active = true
@@ -633,8 +518,8 @@ export const createProcessPlantProtectionRunner = (config: {
       if (input.reason === undefined) delete lifecycle.lastReason
       else lifecycle.lastReason = input.reason
       lifecycle.transitionCount += 1
-      updateLifecyclePhase(lifecycle)
-      rememberLifecycleHistory({
+      updateProcessPlantIcLifecyclePhase(lifecycle)
+      rememberProcessPlantIcLifecycleHistory({
         history,
         lifecycle,
         transition,

@@ -18,6 +18,7 @@ const traceSvgPath = `${artifactRoot}/process-plant-acceptance-traces.svg`
 const traceCsvPath = `${artifactRoot}/process-plant-acceptance-traces.csv`
 const summaryJsonPath = `${artifactRoot}/process-plant-acceptance-summary.json`
 const minRealtimeFactor = Number(process.env.PROCESS_PLANT_ACCEPTANCE_MIN_REALTIME_FACTOR ?? 20)
+const writeCsvTrace = process.env.PROCESS_PLANT_ACCEPTANCE_WRITE_CSV === '1'
 
 if (!Number.isFinite(minRealtimeFactor) || minRealtimeFactor <= 0) {
   throw new Error('PROCESS_PLANT_ACCEPTANCE_MIN_REALTIME_FACTOR must be a positive number when provided')
@@ -864,7 +865,7 @@ const main = async (): Promise<void> => {
   const failedPerformanceChecks = performanceChecks.filter(candidate => !candidate.passed)
   await mkdir(dirname(traceSvgPath), { recursive: true })
   await writeFile(traceSvgPath, renderSvg(traces, checks))
-  await writeFile(traceCsvPath, `${csvRowsFor(traces).join('\n')}\n`)
+  if (writeCsvTrace) await writeFile(traceCsvPath, `${csvRowsFor(traces).join('\n')}\n`)
   await writeFile(summaryJsonPath, `${JSON.stringify({
     schemaVersion: 1,
     durationMs,
@@ -880,7 +881,7 @@ const main = async (): Promise<void> => {
     performanceChecks,
     artifacts: {
       traceSvgPath,
-      traceCsvPath,
+      ...(writeCsvTrace ? { traceCsvPath } : {}),
       summaryJsonPath,
     },
   }, null, 2)}\n`)
@@ -894,7 +895,7 @@ const main = async (): Promise<void> => {
   }
   console.log(`process plant acceptance passed ${checks.length}/${checks.length} checks`)
   console.log(`trace: ${traceSvgPath}`)
-  console.log(`csv: ${traceCsvPath}`)
+  if (writeCsvTrace) console.log(`csv: ${traceCsvPath}`)
   console.log(`summary: ${summaryJsonPath}`)
   console.log(`realtime factor: ${realtimeFactor.toFixed(1)}x`)
 }

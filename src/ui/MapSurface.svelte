@@ -1,6 +1,6 @@
 <script lang="ts">
   import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl'
-  import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState, SurfaceMapLayer, SurfaceMapRegionConfig } from '../core/model/index.ts'
+  import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
   import { iconSvgDataUrl, type IconName } from './icons.ts'
@@ -22,8 +22,10 @@
   } from './display-motion.ts'
   import { assertCameraInteractionContract } from './map/map-camera.ts'
   import { createMapInputDebugController } from './map/map-input-debug.ts'
+  import { applyConfiguredMapLayerVisibility } from './map/map-layer-visibility.ts'
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
   import { createMapSourceController } from './map/map-source-controller.ts'
+  import { objectHoverCardHtml } from './map/object-hover-card.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
 
@@ -113,47 +115,10 @@
     mapLayerIds.objectNewInfo,
   ]
 
-  const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> => {
-    if (layer === 'objects') return [
-      mapLayerIds.objectHitArea,
-      mapLayerIds.objectIcons,
-      mapLayerIds.objectNewInfo,
-      mapLayerIds.placementPreview,
-    ]
-    if (layer === 'routes') return [
-      mapLayerIds.routeCasing,
-      mapLayerIds.routeLine,
-    ]
-    if (layer === 'traffic') return [
-      mapLayerIds.trafficAreaFill,
-      mapLayerIds.trafficAreaOutline,
-      mapLayerIds.trafficLineCasing,
-      mapLayerIds.trafficLine,
-    ]
-    if (layer === 'weather') return [
-      mapLayerIds.weatherBaseGridOutline,
-      mapLayerIds.weatherCellFill,
-      mapLayerIds.weatherCellOutline,
-      mapLayerIds.weatherInfluenceFill,
-      mapLayerIds.weatherInfluenceOutline,
-      mapLayerIds.weatherInfluenceSymbols,
-      mapLayerIds.weatherLineCasing,
-      mapLayerIds.weatherLine,
-    ]
-    return [mapLayerIds.objectHalos]
-  }
-
   const applyConfiguredLayerVisibility = (): void => {
     const current = map
     if (!current || !loaded) return
-    const enabledLayers = new Set<SurfaceMapLayer>(mapConfig.layers)
-    const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'weather', 'highlights']
-    for (const surfaceLayer of surfaceLayers) {
-      const visibility = enabledLayers.has(surfaceLayer) ? 'visible' : 'none'
-      for (const layerId of layerIdsForSurfaceLayer(surfaceLayer)) {
-        if (current.getLayer(layerId)) current.setLayoutProperty(layerId, 'visibility', visibility)
-      }
-    }
+    applyConfiguredMapLayerVisibility({ map: current, enabledLayers: mapConfig.layers })
   }
 
   const styleUrlFor = (mode: ThemeMode): string =>
@@ -224,9 +189,6 @@
       onMapError(err instanceof Error ? err.message : String(err))
     }
   }
-
-  const escapeHtml = (value: string): string =>
-    value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
 
   const sourceController = createMapSourceController({
     getMap: () => map,
@@ -324,11 +286,11 @@
   }
 
   const hoverCardHtml = (object: OperationalObject): string => {
-    const lines = presentationFor(object).fields
-      .map(field => `<div>${escapeHtml(field.label)}: ${escapeHtml(field.value)}</div>`)
-      .join('')
-    const newInfo = hasNewInfo(object) ? '<div class="hover-new-info">New information</div>' : ''
-    return `<strong>${escapeHtml(object.label)}</strong>${newInfo}${lines}`
+    return objectHoverCardHtml({
+      object,
+      presentation: presentationFor(object),
+      hasNewInfo: hasNewInfo(object),
+    })
   }
 
   const showMarkerPopup = (object: OperationalObject): void => {
