@@ -4,6 +4,11 @@ import type { Actor } from '../control-instances/actors.ts'
 import type { PackQueryRequest } from '../packs/protocol.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import { apiError, json, readJson } from './responses.ts'
+import {
+  commandIdempotencyConfigFromEnv,
+  commandIdempotencyStoreForRuntime,
+  issueCommandWithIdempotency,
+} from './command-idempotency.ts'
 
 export interface ControlInstanceRouteConfig {
   readonly registry: ControlInstanceRegistry
@@ -16,6 +21,7 @@ export interface ControlInstanceRouteConfig {
 const commandRequestSchema = z.object({
   actorId: actorIdSchema.default('actor:operator'),
   clientId: clientIdSchema.optional(),
+  idempotencyKey: z.string().min(1).max(256).optional(),
   kind: z.string().min(1),
   targetObjectIds: z.array(objectIdSchema),
   payload: z.unknown(),
@@ -60,6 +66,7 @@ const buildCommand = (controlInstanceId: ControlInstanceId, raw: unknown): Comma
     controlInstanceId,
     actorId: parsed.actorId,
     ...(parsed.clientId === undefined ? {} : { clientId: parsed.clientId }),
+    ...(parsed.idempotencyKey === undefined ? {} : { idempotencyKey: parsed.idempotencyKey }),
     kind: parsed.kind,
     targetObjectIds: parsed.targetObjectIds,
     payload: parsed.payload,
@@ -279,7 +286,15 @@ const handleControlInstanceApiInner = async (
     const raw = await readJson(req)
     const command = buildCommand(controlInstanceId, raw)
     const actor = buildActor(command.actorId)
-    const result = await runtime.issueCommand(actor, command)
+    const issued = await issueCommandWithIdempotency({
+      store: commandIdempotencyStoreForRuntime(controlInstanceId),
+      idempotency: commandIdempotencyConfigFromEnv(),
+      actor,
+      command,
+      issue: runtime.issueCommand,
+    })
+    if (!issued.ok) return apiError(issued.status, issued.code, issued.message)
+    const result = issued.result
     return json({ result })
   }
 

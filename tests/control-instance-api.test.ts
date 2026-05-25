@@ -487,6 +487,7 @@ describe('control instance API', () => {
           body: JSON.stringify({
             actorId: 'actor:test-api-operator',
             clientId: 'client:test-map',
+            idempotencyKey: 'api-command-attribution',
             kind: setDestinationCommandKind,
             targetObjectIds: [ambulance.id, incident.id],
             payload: {
@@ -499,13 +500,14 @@ describe('control instance API', () => {
       expect(command.status).toBe(200)
       expect(command.body.result.ok).toBe(true)
 
-      const events = await callRoute<{ readonly events: readonly { readonly seq: number; readonly type: string; readonly command?: { readonly actorId: string; readonly clientId?: string } }[] }>(
+      const events = await callRoute<{ readonly events: readonly { readonly seq: number; readonly type: string; readonly command?: { readonly actorId: string; readonly clientId?: string; readonly idempotencyKey?: string } }[] }>(
         registry,
         '/api/control-instances/sandbox/events',
       )
       const issued = events.body.events.find(event => event.type === 'command.issued')
       expect(issued?.command?.actorId).toBe('actor:test-api-operator')
       expect(issued?.command?.clientId).toBe('client:test-map')
+      expect(issued?.command?.idempotencyKey).toBe('api-command-attribution')
       if (!issued) throw new Error('missing command issued event')
 
       const afterIssued = await callRoute<{ readonly events: readonly { readonly type: string; readonly command?: { readonly clientId?: string } }[] }>(

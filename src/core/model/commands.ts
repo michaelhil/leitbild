@@ -15,6 +15,7 @@ export interface CommandEnvelope {
   readonly controlInstanceId: ControlInstanceId
   readonly actorId: ActorId
   readonly clientId?: ClientId
+  readonly idempotencyKey?: string
   readonly kind: string
   readonly targetObjectIds: ReadonlyArray<ObjectId>
   readonly payload: unknown
@@ -40,6 +41,7 @@ export const commandEnvelopeSchema = z.object({
   controlInstanceId: controlInstanceIdSchema,
   actorId: actorIdSchema,
   clientId: clientIdSchema.optional(),
+  idempotencyKey: z.string().min(1).max(256).optional(),
   kind: z.string().min(1),
   targetObjectIds: z.array(objectIdSchema),
   payload: z.custom<unknown>(value => value !== undefined, 'payload is required'),
