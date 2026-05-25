@@ -2,11 +2,12 @@ import { primaryLoopPumpForLink } from '../graph/index.ts'
 import { componentVariablePath, processLinkVariablePath, type ProcessLinkBehaviorDefinition } from './behavior-contract.ts'
 import { clamp } from './component-helpers.ts'
 import {
-  combinedValveFactorForLink,
   componentValveCapacityForInboundLink,
+  componentValveFactorForInboundLink,
   downstreamServiceDemandFraction,
   distributeFlowFromComponent,
   hasProcessLinkVariable,
+  linkValveFactor,
   passiveFlowFromIncomingService,
   sourceLimitedPumpFlow,
 } from './link-flow-helpers.ts'
@@ -28,11 +29,13 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
       const sourceSteamFlow = fromComponent.kind === 'steamGenerator'
         ? context.readNumber(componentVariablePath(fromComponent, 'steamFlowKgPerS'))
         : null
-      const valveFactor = combinedValveFactorForLink(system, link, context)
+      const currentLinkValveFactor = linkValveFactor(link, context)
+      const currentComponentValveFactor = componentValveFactorForInboundLink(system, link, context)
       const leakFraction = clamp(context.readOptionalNumber(processLinkVariablePath(link, 'leak.areaFraction'), 0), 0, 1)
       const primaryLoopPump = primaryLoopPumpForLink(system.graph, link)
       let flowSource: number
       let sourceAlreadyIncludesValveFactor = false
+      let sourceAlreadyIncludesTargetValveDemand = false
       if (primaryLoopPump !== null) {
         flowSource = context.readNumber(componentVariablePath(primaryLoopPump, 'loopFlowKgPerS'))
       } else if (fromComponent.kind === 'centrifugalPump') {
@@ -79,13 +82,16 @@ export const processLinkFlowBehaviorDefinitions: ReadonlyArray<ProcessLinkBehavi
         flowSource = context.readNumber(componentVariablePath(fromComponent, 'outletFlowKgPerS'))
       } else {
         flowSource = passiveFlowFromIncomingService(system, link, context)
+        sourceAlreadyIncludesTargetValveDemand = true
       }
       if (primaryLoopPump === null && toComponent.kind === 'centrifugalPump') {
         flowSource = Math.min(flowSource, context.readNumber(componentVariablePath(toComponent, 'flowKgPerS')))
       }
       const capacity = physicalFlowCapacityKgPerS(link)
       const componentValveCapacity = componentValveCapacityForInboundLink(system, link, context)
-      const effectiveValveFactor = sourceAlreadyIncludesValveFactor ? 1 : valveFactor
+      const effectiveValveFactor = sourceAlreadyIncludesValveFactor
+        ? 1
+        : currentLinkValveFactor * (sourceAlreadyIncludesTargetValveDemand ? 1 : currentComponentValveFactor)
       context.write(processLinkVariablePath(link, 'flowKgPerS'), Math.min(flowSource, capacity, componentValveCapacity) * effectiveValveFactor * (1 - leakFraction))
     },
   },
