@@ -1,5 +1,6 @@
 <script lang="ts">
-  import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl'
+  import 'maplibre-gl/dist/maplibre-gl.css'
+  import { type Map as MapLibreMap } from 'maplibre-gl'
   import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState, SurfaceMapRegionConfig } from '../core/model/index.ts'
   import { geoPointFromLonLat } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapAreaFeature, PackObjectPresentation } from '../core/packs/protocol.ts'
@@ -8,7 +9,6 @@
     animatePackMapAreaFeatures,
     hasActivePackMapAreaFeatureAnimation,
     mapLayerIds,
-    pointOf,
   } from './map/map-features.ts'
   import { registerObjectIconVariants } from './map-icon-registry.ts'
   import { addOperationalMapSourcesAndLayers } from './map/map-layer-setup.ts'
@@ -21,19 +21,17 @@
     type DisplayMotionState,
   } from './display-motion.ts'
   import { assertCameraInteractionContract } from './map/map-camera.ts'
-  import { createMapInputDebugController } from './map/map-input-debug.ts'
+  import type { MapInputDebugController } from './map/map-input-debug.ts'
   import { applyConfiguredMapLayerVisibility } from './map/map-layer-visibility.ts'
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
+  import { addObjectInteractions as addMapObjectInteractions } from './map/map-object-interactions.ts'
+  import { createMapPopupController } from './map/map-popup-controller.ts'
   import { createMapSourceController } from './map/map-source-controller.ts'
-  import { objectHoverCardHtml } from './map/object-hover-card.ts'
   import {
-    captureMapCanvasScreenshot,
-    defaultSamsinnAllowedParentOrigins,
-    defaultSamsinnScreenshotMaxDataUrlBytes,
     fetchSamsinnScreenshotConfig,
-    installSamsinnScreenshotResponder,
+    disabledSamsinnScreenshotConfig,
     type SamsinnScreenshotConfig,
-  } from './samsinn-screenshot.ts'
+  } from './samsinn-screenshot-config.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
 
@@ -83,8 +81,6 @@
 
   let mapElement = $state<HTMLDivElement | null>(null)
   let map = $state<MapLibreMap | null>(null)
-  let markerPopup = $state<maplibregl.Popup | null>(null)
-  let hoveredObjectId = $state<string | null>(null)
   let loaded = $state(false)
   let renderRevision = $state(0)
   let lastRouteRevision = -1
@@ -106,16 +102,34 @@
   let screenshotResponderCleanup: (() => void) | null = null
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
-  const mapInputDebugController = createMapInputDebugController({
-    enabled: () => debugMapInput,
-    getMap: () => map,
-    setSummary: (summary) => {
-      mapInputDebugSummary = summary
-    },
-    appendEntry: (entry) => {
-      mapInputDebugEntries = [...mapInputDebugEntries.slice(-17), entry]
-    },
+  const createNoopMapInputDebugController = (): MapInputDebugController => ({
+    install: () => undefined,
+    record: () => undefined,
+    stop: () => undefined,
   })
+
+  let mapInputDebugController: MapInputDebugController = createNoopMapInputDebugController()
+
+  const installMapInputDebugController = async (): Promise<void> => {
+    if (!debugMapInput) return
+    const module = await import('./map/map-input-debug.ts')
+    mapInputDebugController.stop()
+    mapInputDebugController = module.createMapInputDebugController({
+      enabled: () => debugMapInput,
+      getMap: () => map,
+      setSummary: (summary) => {
+        mapInputDebugSummary = summary
+      },
+      appendEntry: (entry) => {
+        mapInputDebugEntries = [...mapInputDebugEntries.slice(-17), entry]
+      },
+    })
+  }
+
+  const resetMapInputDebugController = (): void => {
+    mapInputDebugController.stop()
+    mapInputDebugController = createNoopMapInputDebugController()
+  }
 
   const interactiveObjectLayerIds = [
     mapLayerIds.objectHitArea,
@@ -123,6 +137,12 @@
     mapLayerIds.objectHalos,
     mapLayerIds.objectNewInfo,
   ]
+
+  const popupController = createMapPopupController({
+    getMap: () => map,
+    presentationFor: (object) => presentationFor(object),
+    hasNewInfo: (object) => hasNewInfo(object),
+  })
 
   const applyConfiguredLayerVisibility = (): void => {
     const current = map
@@ -211,18 +231,9 @@
     presentationFor: (object) => presentationFor(object),
     getPackMapAreaFeatures: () => animatePackMapAreaFeatures(cachedPackMapAreaFeatures, currentDisplayTime()),
     updateMarkerPopup: (sourceObjects) => {
-      refreshMarkerPopup(sourceObjects)
+      popupController.refresh(sourceObjects)
     },
   })
-
-  const objectById = (
-    objectId: string | null,
-    sourceObjects: ReadonlyArray<OperationalObject> = objects,
-  ): OperationalObject | null => (
-    objectId === null
-      ? null
-      : sourceObjects.find(candidate => candidate.id === objectId) ?? null
-  )
 
   const refreshSources = (): void => {
     sourceController.refreshAll()
@@ -275,7 +286,7 @@
       const nowMs = performance.now()
       const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
       sourceController.refreshObjects(displayObjects)
-      refreshMarkerPopup(displayObjects)
+      popupController.refresh(displayObjects)
       if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
         scheduleDisplayAnimation()
       }
@@ -294,73 +305,23 @@
     canvas.style.cursor = placementCursorCss()
   }
 
-  const hoverCardHtml = (object: OperationalObject): string => {
-    return objectHoverCardHtml({
-      object,
-      presentation: presentationFor(object),
-      hasNewInfo: hasNewInfo(object),
-    })
-  }
-
-  const showMarkerPopup = (object: OperationalObject): void => {
-    const current = map
-    const point = pointOf(object)
-    if (!current || !point) return
-    hoveredObjectId = object.id
-    const [lon, lat] = point.coordinates
-    markerPopup = markerPopup ?? new maplibregl.Popup({
-      closeButton: false,
-      closeOnClick: false,
-      offset: 26,
-      className: 'object-popup',
-    })
-    markerPopup
-      .setLngLat([lon, lat])
-      .setHTML(hoverCardHtml(object))
-      .addTo(current)
-  }
-
-  const hideMarkerPopup = (): void => {
-    hoveredObjectId = null
-    markerPopup?.remove()
-    markerPopup = null
-  }
-
-  const refreshMarkerPopup = (sourceObjects: ReadonlyArray<OperationalObject> = objects): void => {
-    const object = objectById(hoveredObjectId, sourceObjects)
-    const point = object ? pointOf(object) : null
-    if (!markerPopup || !object || !point) return
-    const [lon, lat] = point.coordinates
-    markerPopup
-      .setLngLat([lon, lat])
-      .setHTML(hoverCardHtml(object))
-  }
-
-  const objectFromMapEvent = (event: maplibregl.MapLayerMouseEvent): OperationalObject | null => {
-    const objectId = String(event.features?.[0]?.properties?.id ?? '')
-    return objects.find(candidate => candidate.id === objectId) ?? null
-  }
-
   const addObjectInteractions = (current: MapLibreMap): void => {
     if (objectInteractionsAdded) return
-    for (const layerId of interactiveObjectLayerIds) {
-      current.on('click', layerId, (event) => {
-        const object = objectFromMapEvent(event)
-        if (object) onObjectSelected(object)
-      })
-      current.on('mouseenter', layerId, (event) => {
-        current.getCanvas().style.cursor = placementCursor ? placementCursorCss() : 'pointer'
-        const object = objectFromMapEvent(event)
-        if (!object) return
-        onObjectSeen(object)
+    addMapObjectInteractions({
+      map: current,
+      layerIds: interactiveObjectLayerIds,
+      objects: () => objects,
+      placementCursorActive: () => placementCursor !== null,
+      placementCursorCss,
+      refreshCanvasCursor,
+      onObjectSelected,
+      onObjectSeen,
+      onRenderRevision: () => {
         renderRevision += 1
-        showMarkerPopup(object)
-      })
-      current.on('mouseleave', layerId, () => {
-        refreshCanvasCursor()
-        hideMarkerPopup()
-      })
-    }
+      },
+      showPopup: popupController.show,
+      hidePopup: popupController.hide,
+    })
     objectInteractionsAdded = true
   }
 
@@ -405,12 +366,6 @@
     }
   }
 
-  const fallbackSamsinnScreenshotConfig = (): SamsinnScreenshotConfig => ({
-    enabled: false,
-    allowedParentOrigins: defaultSamsinnAllowedParentOrigins,
-    maxDataUrlBytes: defaultSamsinnScreenshotMaxDataUrlBytes,
-  })
-
   runOnMount(() => {
     if (!mapElement) throw new Error('Map surface element was not bound before map initialization')
     if (mapInitialized) return
@@ -418,7 +373,9 @@
     let cancelled = false
 
     const initializeMap = async (): Promise<void> => {
-      let screenshotConfig = fallbackSamsinnScreenshotConfig()
+      await installMapInputDebugController()
+      if (cancelled) return
+      let screenshotConfig: SamsinnScreenshotConfig = disabledSamsinnScreenshotConfig()
       try {
         screenshotConfig = await fetchSamsinnScreenshotConfig()
       } catch (err) {
@@ -456,12 +413,19 @@
       }
       mapLifecycle = lifecycle
       const current = lifecycle.map
-      screenshotResponderCleanup = installSamsinnScreenshotResponder({
-        enabled: screenshotConfig.enabled,
-        allowedParentOrigins: screenshotConfig.allowedParentOrigins,
-        maxDataUrlBytes: screenshotConfig.maxDataUrlBytes,
-        capture: async options => captureMapCanvasScreenshot(current.getCanvas(), options),
-      })
+      if (screenshotConfig.enabled) {
+        const screenshotModule = await import('./samsinn-screenshot.ts')
+        if (cancelled) {
+          lifecycle.destroy()
+          return
+        }
+        screenshotResponderCleanup = screenshotModule.installSamsinnScreenshotResponder({
+          enabled: screenshotConfig.enabled,
+          allowedParentOrigins: screenshotConfig.allowedParentOrigins,
+          maxDataUrlBytes: screenshotConfig.maxDataUrlBytes,
+          capture: async options => screenshotModule.captureMapCanvasScreenshot(current.getCanvas(), options),
+        })
+      }
       mapInputDebugController.install(current)
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
@@ -472,12 +436,12 @@
 
     return () => {
       cancelled = true
-      mapInputDebugController.stop()
+      resetMapInputDebugController()
       sourceController.stop()
       stopDisplayAnimation()
       stopPackAreaFeatureAnimation()
       stopPackAreaRefresh()
-      hideMarkerPopup()
+      popupController.hide()
       screenshotResponderCleanup?.()
       screenshotResponderCleanup = null
       mapLifecycle?.destroy()
@@ -509,7 +473,7 @@
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
     sourceController.schedule({ objects: true, routes: routesChanged, traffic: true, weather: true })
-    refreshMarkerPopup(displayObjectsFor(objects, displayMotionState, nowMs))
+    popupController.refresh(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
     }
@@ -556,7 +520,7 @@
     if (current && appliedTheme !== null && theme !== appliedTheme) {
       appliedTheme = theme
       loaded = false
-      hideMarkerPopup()
+      popupController.hide()
       current.setStyle(styleUrlFor(theme))
     }
   })
