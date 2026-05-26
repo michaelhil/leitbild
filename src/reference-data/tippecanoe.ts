@@ -27,14 +27,25 @@ export interface BuildTilesArgs {
 }
 
 const flagArgs = (config: TilebuildConfig): string[] => {
+  // Polygon-friendly defaults:
+  //   --minimum-zoom / --maximum-zoom: fixed range from the dataset config.
+  //   --drop-densest-as-needed: thin features when a tile would otherwise
+  //     overflow the 500 KB MVT cap.
+  //   --no-feature-limit: keep all 455+ ENOR polygons in a single tile when
+  //     they fit, without artificial per-tile feature caps.
+  //   --simplification: aggressive Douglas-Peucker (10) trims jagged airspace
+  //     boundaries to keep tiles small at low zooms.
+  // We DO NOT use --no-tile-size-limit or --extend-zooms-if-still-dropping:
+  // for ENOR they pushed the PMTiles archive past 400 MB by extending zoom
+  // well beyond globalMaxZoom and refusing to drop anything.
   const args: string[] = [
     '-o', '__placeholder__',
     '--layer', config.outputLayer,
     '--minimum-zoom', String(config.globalMinZoom),
     '--maximum-zoom', String(config.globalMaxZoom),
-    '--no-tile-size-limit',
     '--drop-densest-as-needed',
-    '--extend-zooms-if-still-dropping',
+    '--no-feature-limit',
+    '--simplification', '10',
     '--force',
   ]
   return args
