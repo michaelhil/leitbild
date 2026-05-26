@@ -7,6 +7,7 @@
     readonly geometry: CompiledProcessSurfaceWidget['geometry']
     readonly values: ReadonlyMap<string, ProcessSurfaceValue>
     readonly dragging?: boolean
+    readonly renderScale?: number
     readonly onStartDrag?: (event: PointerEvent, widget: CompiledProcessSurfaceWidget) => void
     readonly onUpdateDrag?: (event: PointerEvent) => void
     readonly onFinishDrag?: (event: PointerEvent) => void
@@ -17,6 +18,7 @@
     geometry,
     values,
     dragging = false,
+    renderScale = 1,
     onStartDrag,
     onUpdateDrag,
     onFinishDrag,
@@ -55,6 +57,84 @@
   const sgLevel = $derived(sgDisplayFor('level'))
   const sgRadiation = $derived(sgDisplayFor('radiation'))
   const sgStateLabel = $derived(sgAlert ? 'CHECK' : 'NORM')
+  const sgTrendKeys = ['level', 'steam', 'feedwater', 'pressure'] as const
+  type SgTrendKey = typeof sgTrendKeys[number]
+  let trendHistory = $state<Record<SgTrendKey, ReadonlyArray<number>>>({
+    level: [],
+    steam: [],
+    feedwater: [],
+    pressure: [],
+  })
+  const sgLetters = ['A', 'B', 'C', 'D'] as const
+  type SgLetter = typeof sgLetters[number]
+  const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
+  const currentSgLetter = (): SgLetter | null => {
+    const suffix = widget.id.match(/^sg-([a-d])$/)?.[1]?.toUpperCase()
+    return sgLetters.find(letter => letter === suffix) ?? null
+  }
+  const sgPeerValuePath = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation', letter: SgLetter): string => {
+    const lower = letter.toLowerCase()
+    if (key === 'level') return `sg${letter}.levelPercent`
+    if (key === 'pressure') return `sg${letter}.pressureMPa`
+    if (key === 'radiation') return `sg${letter}.secondaryRadiationMSvPerH`
+    if (key === 'steam') return `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`
+    return `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`
+  }
+  const peerAverageFor = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation'): number | null => {
+    const currentLetter = currentSgLetter()
+    const peerValues = sgLetters
+      .filter(letter => letter !== currentLetter)
+      .map(letter => values.get(sgPeerValuePath(key, letter))?.value)
+      .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    if (peerValues.length === 0) return null
+    return peerValues.reduce((total, value) => total + value, 0) / peerValues.length
+  }
+  const trendPathFor = (
+    key: SgTrendKey,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    min: number,
+    max: number,
+  ): string => {
+    const history = trendHistory[key]
+    if (history.length === 0) return ''
+    const spread = max - min || 1
+    return history
+      .map((value, index) => {
+        const px = x + (history.length === 1 ? width : (index / (history.length - 1)) * width)
+        const py = y + height - clamp((value - min) / spread, 0, 1) * height
+        return `${index === 0 ? 'M' : 'L'} ${px.toFixed(1)} ${py.toFixed(1)}`
+      })
+      .join(' ')
+  }
+  const appendTrendSample = (key: SgTrendKey, sample: number): void => {
+    const history = trendHistory[key]
+    const last = history[history.length - 1]
+    if (last !== undefined && Math.abs(last - sample) < 0.0001) return
+    trendHistory = {
+      ...trendHistory,
+      [key]: [...history.slice(-23), sample],
+    }
+  }
+  $effect(() => {
+    for (const key of sgTrendKeys) {
+      const value = numericValue(key)
+      if (value !== null) appendTrendSample(key, value)
+    }
+  })
+  const peerLevelFraction = $derived(clamp((peerAverageFor('level') ?? 50) / 100, 0, 1))
+  const peerLevelY = $derived(260 - Math.max(0, 188 * peerLevelFraction))
+  const steamFlow = $derived(numericValue('steam') ?? 0)
+  const feedwaterFlow = $derived(numericValue('feedwater') ?? 0)
+  const flowBalance = $derived(feedwaterFlow - steamFlow)
+  const flowBalanceOffset = $derived(clamp(flowBalance / 90, -1, 1))
+  const pressureValue = $derived(numericValue('pressure') ?? 6.8)
+  const pressureFraction = $derived(clamp((pressureValue - 5.5) / 2.5, 0, 1))
+  const peerRadiationValue = $derived(peerAverageFor('radiation') ?? 0.02)
+  const sgDetailLevel = $derived(renderScale >= 1.35 ? 'detailed' : renderScale <= 0.64 ? 'compact' : 'normal')
+  const sgTubeApexY = 96
 </script>
 
 <g
@@ -79,38 +159,109 @@
     {/each}
   {:else if widget.role === 'steam-generator'}
     <rect class="sg-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="2" class:alert={sgAlert} />
-    <line class="sg-section-rule" x1="0" x2={geometry.width} y1="38" y2="38" />
-    <line class="sg-section-rule" x1="0" x2={geometry.width} y1="284" y2="284" />
+    <rect class="sg-status-rail" x="0" y="0" width="5" height={geometry.height} rx="1" class:alert={sgAlert} />
+    <line class="sg-section-rule" x1="0" x2={geometry.width} y1="42" y2="42" />
+    <line class="sg-section-rule" x1="0" x2={geometry.width} y1="296" y2="296" />
     <text class="widget-title sg-title" x="12" y="23">{shortTitle}</text>
-    <text class="sg-type-label" x="58" y="23">STEAM GENERATOR</text>
+    <text class="sg-type-label" x="58" y="23">U-TUBE SG</text>
     <rect class="sg-state-pill" x={geometry.width - 58} y="10" width="46" height="17" rx="2" class:alert={sgAlert} />
     <text class="sg-state-text" x={geometry.width - 35} y="22" text-anchor="middle">{sgStateLabel}</text>
     {#if sgRadiation}
-      <text class="sg-radiation-text" x={geometry.width - 12} y="52" text-anchor="end">RAD {sgRadiation.formatted}</text>
+      <text class="sg-radiation-text" x={geometry.width - 12} y="56" text-anchor="end">RAD {sgRadiation.formatted}</text>
     {/if}
 
-    <text class="sg-instrument-label" x="15" y="58">LEVEL</text>
-    <rect class="sg-level-track" x="16" y="72" width="32" height="188" rx="1" />
+    <text class="sg-instrument-label" x="15" y="62">LEVEL</text>
+    <rect class="sg-level-track" x="16" y="72" width="34" height="188" rx="1" />
+    <rect class="sg-peer-band" x="18" y={peerLevelY - 4} width="30" height="8" rx="1" />
     <rect class="sg-level-fill" x="19" y={sgLevelY} width="26" height={sgLevelHeight} rx="1" />
+    <path class="sg-trend-tail level" d={trendPathFor('level', 20, 84, 26, 156, 0, 100)} />
     <line class="sg-level-reference" x1="11" x2="53" y1="166" y2="166" />
     <line class="sg-level-reference low" x1="15" x2="49" y1="222" y2="222" />
     {#if sgLevel}
       <text class="sg-level-value" x="32" y="275" text-anchor="middle">{sgLevel.formatted}</text>
     {/if}
 
-    <g class="sg-vessel" transform="translate(62 54)">
-      <path class="sg-vessel-outline" d="M 32 0 H 70 C 82 0 90 9 90 21 V 191 C 90 204 81 214 68 214 H 34 C 21 214 12 204 12 191 V 21 C 12 9 20 0 32 0 Z" />
-      <path class="sg-vessel-cap" d="M 32 0 H 70 C 82 0 90 9 90 21 H 12 C 12 9 20 0 32 0 Z" />
-      <line class="sg-secondary-waterline" x1="18" x2="84" y1="78" y2="78" />
-      <path class="sg-primary-bundle" d="M 36 32 C 80 45, 80 78, 37 91 C 20 96, 20 128, 37 134 C 80 149, 80 182, 36 195" />
-      <path class="sg-primary-bundle secondary" d="M 51 31 C 94 45, 94 78, 52 91 C 35 96, 35 128, 52 134 C 94 149, 94 182, 51 195" />
-      <path class="sg-steam-riser" d="M 51 -30 V 0" />
-      <path class="sg-feedwater-line" d="M 51 214 V 248" />
-      <text class="sg-port-label steam" x="58" y="-15">STEAM</text>
-      <text class="sg-port-label feedwater" x="58" y="240">FW</text>
+    <g class="sg-vessel {sgDetailLevel}" transform="translate(60 54)">
+      <path class="sg-vessel-shadow" d="M 38 0 H 82 C 98 0 108 12 108 30 V 199 C 108 216 96 228 80 228 H 40 C 24 228 12 216 12 199 V 30 C 12 12 22 0 38 0 Z" />
+      <clipPath id="sg-vessel-clip-{widget.id}">
+        <path d="M 38 0 H 82 C 98 0 108 12 108 30 V 199 C 108 216 96 228 80 228 H 40 C 24 228 12 216 12 199 V 30 C 12 12 22 0 38 0 Z" />
+      </clipPath>
+      <g clip-path="url(#sg-vessel-clip-{widget.id})">
+        <rect class="sg-vessel-water" x="12" y={228 - levelFraction * 156} width="96" height={levelFraction * 156} />
+        <rect class="sg-peer-vessel-band" x="12" y={228 - peerLevelFraction * 156 - 3} width="96" height="6" />
+        <path class="sg-vessel-trend" d={trendPathFor('level', 20, 88, 80, 116, 0, 100)} />
+      </g>
+      <path class="sg-vessel-outline" d="M 38 0 H 82 C 98 0 108 12 108 30 V 199 C 108 216 96 228 80 228 H 40 C 24 228 12 216 12 199 V 30 C 12 12 22 0 38 0 Z" />
+      <path class="sg-vessel-cap" d="M 38 0 H 82 C 98 0 108 12 108 30 H 12 C 12 12 22 0 38 0 Z" />
+      <line class="sg-secondary-waterline" x1="21" x2="99" y1={228 - levelFraction * 156} y2={228 - levelFraction * 156} />
+      <line class="sg-uncover-threshold" x1="25" x2="95" y1={sgTubeApexY} y2={sgTubeApexY} />
+      <path class="sg-u-tube-reference" d="M 43 205 V 126 C 43 {sgTubeApexY - 20}, 77 {sgTubeApexY - 20}, 77 126 V 205" />
+      {#if sgDetailLevel !== 'compact'}
+        <path class="sg-u-tube-reference secondary" d="M 50 205 V 132 C 50 {sgTubeApexY - 10}, 70 {sgTubeApexY - 10}, 70 132 V 205" />
+        <path class="sg-u-tube-reference secondary" d="M 36 205 V 138 C 36 {sgTubeApexY - 4}, 84 {sgTubeApexY - 4}, 84 138 V 205" />
+      {/if}
+      {#if sgDetailLevel === 'detailed'}
+        <g class="sg-separator-bank">
+          <rect x="25" y="24" width="70" height="22" rx="1" />
+          <path d="M 31 43 L 35 27 L 39 43 M 43 43 L 47 27 L 51 43 M 55 43 L 59 27 L 63 43 M 67 43 L 71 27 L 75 43 M 79 43 L 83 27 L 87 43" />
+        </g>
+        <path class="sg-downcomer-annulus" d="M 27 56 C 22 92, 22 154, 33 203 M 93 56 C 98 92, 98 154, 87 203" />
+        <path class="sg-downcomer-arrow" d="M 29 82 v28 M 91 82 v28 M 31 161 v28 M 89 161 v28" />
+        <path class="sg-tube-supports" d="M 33 130 H 87 M 33 158 H 87 M 33 186 H 87" />
+      {/if}
+      <path class="sg-tube-sheet" d="M 31 205 H 90" />
+      <path class="sg-steam-riser" d="M 60 -30 V 0" />
+      <path class="sg-feedwater-line" d="M 60 228 V 258" />
+      <text class="sg-port-label steam" x="68" y="-16">STEAM</text>
+      <text class="sg-port-label feedwater" x="68" y="249">FW</text>
     </g>
 
-    <g class="sg-metrics" transform="translate(14 306)">
+    <g class="sg-pressure-gauge" transform="translate({geometry.width - 24} 72)">
+      <rect class="sg-pressure-track" x="0" y="0" width="7" height="188" rx="1" />
+      <rect class="sg-pressure-fill" x="1.5" y={188 - pressureFraction * 188} width="4" height={pressureFraction * 188} rx="1" />
+      <path class="sg-trend-tail pressure" d={trendPathFor('pressure', -52, 14, 44, 62, 5.5, 8)} />
+    </g>
+
+    <g class="sg-flow-trends" transform="translate(64 282)">
+      <text class="sg-spark-label steam" x="0" y="0">Steam</text>
+      <path class="sg-spark-baseline" d="M 44 -3 H 126" />
+      <path class="sg-trend-tail steam" d={trendPathFor('steam', 44, -24, 82, 22, 0, 420)} />
+      <text class="sg-spark-label feedwater" x="0" y="18">FW</text>
+      <path class="sg-spark-baseline" d="M 44 15 H 126" />
+      <path class="sg-trend-tail feedwater" d={trendPathFor('feedwater', 44, -6, 82, 22, 0, 420)} />
+    </g>
+
+    <g class="sg-balance" transform="translate(14 304)">
+      <text class="sg-instrument-label" x="0" y="0">FW - STEAM</text>
+      <line class="sg-balance-axis" x1="78" x2="178" y1="-3" y2="-3" />
+      <line class="sg-balance-center" x1="128" x2="128" y1="-10" y2="4" />
+      <rect
+        class="sg-balance-bar"
+        x={flowBalanceOffset < 0 ? 128 + flowBalanceOffset * 50 : 128}
+        y="-7"
+        width={Math.max(2, Math.abs(flowBalanceOffset) * 50)}
+        height="8"
+        rx="1"
+        class:negative={flowBalanceOffset < -0.12}
+        class:positive={flowBalanceOffset > 0.12}
+      />
+    </g>
+
+    <g class="sg-leak-strip" transform="translate(14 326)">
+      <text class="sg-instrument-label" x="0" y="0">TUBE LEAK</text>
+      <rect class="sg-leak-track" x="78" y="-9" width="100" height="9" rx="1" />
+      <rect
+        class="sg-leak-fill"
+        x="78"
+        y="-9"
+        width={clamp(((numericValue('radiation') ?? 0) / Math.max(peerRadiationValue * 20, 1)), 0.04, 1) * 100}
+        height="9"
+        rx="1"
+        class:alert={sgAlert}
+      />
+    </g>
+
+    <g class="sg-metrics" transform="translate(14 344)">
       {#each sgReadoutKeys as key, index (key)}
         {@const row = sgDisplayFor(key)}
         {#if row}

@@ -260,6 +260,7 @@
           geometry={widgetGeometryFor(widget, widgetPositions)}
           {values}
           dragging={dragState?.widgetId === widget.id}
+          renderScale={viewTransform.scale}
           onStartDrag={startDrag}
           onUpdateDrag={updateDrag}
           onFinishDrag={finishDrag}

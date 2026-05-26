@@ -1607,14 +1607,24 @@ body.rail-resizing {
 }
 
 .sg-shell {
-  fill: color-mix(in srgb, #24292f 86%, transparent);
-  stroke: color-mix(in srgb, #b2bac4 52%, #17191c);
+  fill: color-mix(in srgb, #20262c 92%, transparent);
+  stroke: color-mix(in srgb, #c2cbd4 46%, #17191c);
   stroke-width: 1.2;
 }
 
 .sg-shell.alert {
   stroke: #f59e0b;
   stroke-width: 2;
+}
+
+.sg-status-rail {
+  fill: #2dd38a;
+  opacity: 0.86;
+}
+
+.sg-status-rail.alert {
+  fill: #f59e0b;
+  opacity: 1;
 }
 
 .sg-section-rule {
@@ -1666,13 +1676,19 @@ body.rail-resizing {
 }
 
 .sg-level-track {
-  fill: color-mix(in srgb, #101418 74%, #40c4d6);
+  fill: color-mix(in srgb, #101418 82%, #40c4d6);
   stroke: color-mix(in srgb, #b2bac4 38%, transparent);
   stroke-width: 1;
 }
 
 .sg-level-fill {
-  fill: #40c4d6;
+  fill: color-mix(in srgb, #40c4d6 82%, #f8fafc);
+  opacity: 0.88;
+}
+
+.sg-peer-band {
+  fill: color-mix(in srgb, #f8fafc 50%, transparent);
+  opacity: 0.48;
 }
 
 .sg-level-reference {
@@ -1691,14 +1707,43 @@ body.rail-resizing {
   font-weight: 900;
 }
 
+.sg-vessel-shadow {
+  fill: color-mix(in srgb, #11161b 70%, transparent);
+  stroke: none;
+}
+
+.sg-vessel-water {
+  fill: color-mix(in srgb, #38c6da 76%, #f8fafc);
+  opacity: 0.44;
+}
+
+.sg-peer-vessel-band {
+  fill: #f8fafc;
+  opacity: 0.34;
+}
+
+.sg-vessel-trend {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 78%, #38c6da);
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  opacity: 0.82;
+}
+
+.sg-vessel.compact .sg-vessel-trend,
+.sg-vessel.compact .sg-peer-vessel-band {
+  opacity: 0;
+}
+
 .sg-vessel-outline {
-  fill: color-mix(in srgb, #15191e 88%, transparent);
-  stroke: color-mix(in srgb, #d0d7de 46%, transparent);
-  stroke-width: 1.2;
+  fill: color-mix(in srgb, #15191e 54%, transparent);
+  stroke: color-mix(in srgb, #d0d7de 58%, transparent);
+  stroke-width: 1.4;
 }
 
 .sg-vessel-cap {
-  fill: color-mix(in srgb, #343a41 78%, transparent);
+  fill: color-mix(in srgb, #343a41 62%, transparent);
   stroke: color-mix(in srgb, #d0d7de 34%, transparent);
   stroke-width: 1;
 }
@@ -1708,10 +1753,40 @@ body.rail-resizing {
   stroke-width: 2;
 }
 
+.sg-uncover-threshold {
+  stroke: color-mix(in srgb, #f59e0b 72%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.sg-u-tube-reference {
+  fill: none;
+  stroke: color-mix(in srgb, #7db5f1 72%, #f8fafc);
+  stroke-width: 4.6;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  opacity: 0.58;
+}
+
+.sg-u-tube-reference.secondary {
+  stroke-width: 1.8;
+  opacity: 0.44;
+}
+
+.sg-vessel.compact .sg-u-tube-reference {
+  stroke-width: 5.2;
+  opacity: 0.46;
+}
+
+.sg-vessel.compact .sg-u-tube-reference.secondary,
+.sg-vessel.compact .sg-uncover-threshold {
+  opacity: 0;
+}
+
 .sg-primary-bundle {
   fill: none;
   stroke: #7db5f1;
-  stroke-width: 4.4;
+  stroke-width: 4.8;
   stroke-linecap: square;
 }
 
@@ -1719,6 +1794,51 @@ body.rail-resizing {
   stroke: #9cc8f4;
   stroke-width: 2.3;
   opacity: 0.74;
+}
+
+.sg-tube-sheet {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 34%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.sg-separator-bank rect {
+  fill: color-mix(in srgb, #252d34 84%, transparent);
+  stroke: color-mix(in srgb, #f8fafc 38%, transparent);
+  stroke-width: 1;
+}
+
+.sg-separator-bank path {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 44%, transparent);
+  stroke-width: 1.2;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+}
+
+.sg-downcomer-annulus {
+  fill: none;
+  stroke: color-mix(in srgb, #38c6da 44%, #f8fafc);
+  stroke-width: 1.6;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+  opacity: 0.76;
+}
+
+.sg-downcomer-arrow {
+  fill: none;
+  stroke: color-mix(in srgb, #38c6da 48%, #f8fafc);
+  stroke-width: 1.2;
+  stroke-linecap: square;
+  marker-end: none;
+}
+
+.sg-tube-supports {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 28%, transparent);
+  stroke-width: 1.1;
+  stroke-dasharray: 4 3;
 }
 
 .sg-steam-riser {
@@ -1750,6 +1870,107 @@ body.rail-resizing {
 
 .sg-metric-cell {
   pointer-events: none;
+}
+
+.sg-flow-trends,
+.sg-pressure-gauge,
+.sg-balance,
+.sg-leak-strip {
+  pointer-events: none;
+}
+
+.sg-spark-label {
+  fill: #9ba6b2;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.sg-spark-label.steam {
+  fill: color-mix(in srgb, #e07a5f 76%, #f8fafc);
+}
+
+.sg-spark-label.feedwater {
+  fill: color-mix(in srgb, #34c4d8 76%, #f8fafc);
+}
+
+.sg-spark-baseline {
+  stroke: color-mix(in srgb, #f8fafc 24%, transparent);
+  stroke-width: 1;
+}
+
+.sg-trend-tail {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+}
+
+.sg-trend-tail.level {
+  stroke: #f8fafc;
+  opacity: 0.72;
+}
+
+.sg-trend-tail.steam {
+  stroke: #e07a5f;
+}
+
+.sg-trend-tail.feedwater {
+  stroke: #34c4d8;
+}
+
+.sg-trend-tail.pressure {
+  stroke: #f0c14b;
+  opacity: 0.86;
+}
+
+.sg-pressure-track {
+  fill: color-mix(in srgb, #101418 80%, #f0c14b);
+  stroke: color-mix(in srgb, #f8fafc 30%, transparent);
+  stroke-width: 1;
+}
+
+.sg-pressure-fill {
+  fill: #f0c14b;
+  opacity: 0.82;
+}
+
+.sg-balance-axis {
+  stroke: color-mix(in srgb, #f8fafc 32%, transparent);
+  stroke-width: 1;
+}
+
+.sg-balance-center {
+  stroke: color-mix(in srgb, #f8fafc 62%, transparent);
+  stroke-width: 1.2;
+}
+
+.sg-balance-bar {
+  fill: color-mix(in srgb, #f8fafc 72%, #38c6da);
+  opacity: 0.9;
+}
+
+.sg-balance-bar.negative {
+  fill: #e07a5f;
+}
+
+.sg-balance-bar.positive {
+  fill: #34c4d8;
+}
+
+.sg-leak-track {
+  fill: color-mix(in srgb, #101418 82%, #f59e0b);
+  stroke: color-mix(in srgb, #f8fafc 20%, transparent);
+  stroke-width: 1;
+}
+
+.sg-leak-fill {
+  fill: color-mix(in srgb, #64d28f 74%, #f8fafc);
+  opacity: 0.76;
+}
+
+.sg-leak-fill.alert {
+  fill: #f59e0b;
+  opacity: 1;
 }
 
 .sg-readout {
