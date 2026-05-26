@@ -1,14 +1,16 @@
 <script lang="ts">
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
-  import ModalShell from '../components/ModalShell.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import { listProcessSurfaces, readProcessSurface, readProcessSurfaceSnapshot } from './process-surface-client.ts'
   import {
     readProcessSurfaceLayout,
+    readProcessSurfaceWindowBounds,
     storeProcessSurfaceLayout,
+    storeProcessSurfaceWindowBounds,
     type ProcessSurfaceLayout,
+    type ProcessSurfaceWindowBounds,
     type ProcessSurfaceWidgetPosition,
   } from './process-surface-layout.ts'
 
@@ -20,12 +22,51 @@
 
   let { controlInstanceId, object, close }: Props = $props()
 
+  type WindowDragMode = 'move' | 'resize-east' | 'resize-south' | 'resize-corner'
+
+  interface WindowDragState {
+    readonly pointerId: number
+    readonly mode: WindowDragMode
+    readonly pointerStart: { readonly x: number; readonly y: number }
+    readonly origin: ProcessSurfaceWindowBounds
+  }
+
+  const minWindowWidth = 620
+  const minWindowHeight = 420
+  const viewportMargin = 12
+
   let loading = $state(true)
   let error = $state<string | null>(null)
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
   let widgetPositions = $state<ProcessSurfaceLayout>({})
   let loadedSystemId = $state<string | null>(null)
+  let windowBounds = $state<ProcessSurfaceWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
+  let windowDragState = $state<WindowDragState | null>(null)
+
+  const defaultWindowBounds = (): ProcessSurfaceWindowBounds => {
+    if (typeof window === 'undefined') return windowBounds
+    return {
+      x: Math.max(viewportMargin, Math.round((window.innerWidth - Math.min(1180, window.innerWidth - 2 * viewportMargin)) / 2)),
+      y: Math.max(viewportMargin, Math.round((window.innerHeight - Math.min(760, window.innerHeight - 2 * viewportMargin)) / 2)),
+      width: Math.max(minWindowWidth, Math.min(1180, window.innerWidth - 2 * viewportMargin)),
+      height: Math.max(minWindowHeight, Math.min(760, window.innerHeight - 2 * viewportMargin)),
+    }
+  }
+
+  const clampWindowBounds = (bounds: ProcessSurfaceWindowBounds): ProcessSurfaceWindowBounds => {
+    if (typeof window === 'undefined') return bounds
+    const maxWidth = Math.max(minWindowWidth, window.innerWidth - 2 * viewportMargin)
+    const maxHeight = Math.max(minWindowHeight, window.innerHeight - 2 * viewportMargin)
+    const width = Math.max(minWindowWidth, Math.min(maxWidth, bounds.width))
+    const height = Math.max(minWindowHeight, Math.min(maxHeight, bounds.height))
+    return {
+      x: Math.max(viewportMargin, Math.min(window.innerWidth - width - viewportMargin, bounds.x)),
+      y: Math.max(viewportMargin, Math.min(window.innerHeight - height - viewportMargin, bounds.y)),
+      width,
+      height,
+    }
+  }
 
   const systemIdFor = (candidate: OperationalObject): string => {
     const data = candidate.domainData
@@ -38,6 +79,82 @@
   const refreshSnapshot = async (systemId: string, surfaceId: string): Promise<void> => {
     const snapshot = await readProcessSurfaceSnapshot(controlInstanceId, systemId, surfaceId)
     values = new Map(snapshot.values.map(value => [value.path, value]))
+  }
+
+  const statusValue = (path: string): string =>
+    values.get(path)?.formatted ?? 'pending'
+
+  const statusItems = $derived([
+    { label: 'MWt', value: statusValue('core.totalThermalPowerMw') },
+    { label: 'MWe', value: statusValue('turbine.electricMw') },
+  ])
+
+  const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
+    const currentSurface = surface
+    const systemId = loadedSystemId
+    if (!currentSurface || !systemId) return
+    storeProcessSurfaceWindowBounds({
+      controlInstanceId,
+      systemId,
+      surfaceId: currentSurface.id,
+      bounds,
+    })
+  }
+
+  const nextBoundsForDrag = (
+    drag: WindowDragState,
+    event: PointerEvent,
+  ): ProcessSurfaceWindowBounds => {
+    const dx = event.clientX - drag.pointerStart.x
+    const dy = event.clientY - drag.pointerStart.y
+    if (drag.mode === 'move') {
+      return clampWindowBounds({
+        ...drag.origin,
+        x: drag.origin.x + dx,
+        y: drag.origin.y + dy,
+      })
+    }
+    if (drag.mode === 'resize-east') {
+      return clampWindowBounds({ ...drag.origin, width: drag.origin.width + dx })
+    }
+    if (drag.mode === 'resize-south') {
+      return clampWindowBounds({ ...drag.origin, height: drag.origin.height + dy })
+    }
+    return clampWindowBounds({
+      ...drag.origin,
+      width: drag.origin.width + dx,
+      height: drag.origin.height + dy,
+    })
+  }
+
+  const startWindowDrag = (event: PointerEvent, mode: WindowDragMode): void => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest('button')) return
+    event.preventDefault()
+    const element = event.currentTarget as Element
+    element.setPointerCapture(event.pointerId)
+    windowDragState = {
+      pointerId: event.pointerId,
+      mode,
+      pointerStart: { x: event.clientX, y: event.clientY },
+      origin: windowBounds,
+    }
+  }
+
+  const updateWindowDrag = (event: PointerEvent): void => {
+    const drag = windowDragState
+    if (!drag || drag.pointerId !== event.pointerId) return
+    windowBounds = nextBoundsForDrag(drag, event)
+  }
+
+  const finishWindowDrag = (event: PointerEvent): void => {
+    const drag = windowDragState
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const next = nextBoundsForDrag(drag, event)
+    windowBounds = next
+    windowDragState = null
+    commitWindowBounds(next)
   }
 
   const updateWidgetPosition = (
@@ -64,6 +181,8 @@
     let cancelled = false
     let interval: ReturnType<typeof setInterval> | null = null
 
+    windowBounds = clampWindowBounds(defaultWindowBounds())
+
     const load = async (): Promise<void> => {
       try {
         loading = true
@@ -81,6 +200,11 @@
           systemId,
           surfaceId: nextSurface.id,
         })
+        windowBounds = clampWindowBounds(readProcessSurfaceWindowBounds({
+          controlInstanceId,
+          systemId,
+          surfaceId: nextSurface.id,
+        }) ?? windowBounds)
         await refreshSnapshot(systemId, first.id)
         if (cancelled) return
         const refreshSafely = async (): Promise<void> => {
@@ -109,24 +233,74 @@
   })
 </script>
 
-<ModalShell
-  title="{object.label} Process Display"
-  description="Live process overview assembled from the process-plant surface definition."
-  {close}
-  size="large"
->
-  {#if loading}
-    <div class="process-surface-message">Loading process display...</div>
-  {:else if error}
-    <div class="process-surface-error">{error}</div>
-  {:else if surface}
-    <ProcessSurfaceRenderer
-      {surface}
-      {values}
-      {widgetPositions}
-      onWidgetPositionChange={updateWidgetPosition}
-    />
-  {:else}
-    <div class="process-surface-error">Process display did not load.</div>
-  {/if}
-</ModalShell>
+<div class="process-surface-window-layer">
+  <section
+    class="process-surface-window"
+    style="left: {windowBounds.x}px; top: {windowBounds.y}px; width: {windowBounds.width}px; height: {windowBounds.height}px;"
+    aria-label="{object.label} process display"
+  >
+    <header
+      class="process-surface-statusbar"
+      role="toolbar"
+      tabindex="0"
+      aria-label="Process display window controls"
+      onpointerdown={(event) => startWindowDrag(event, 'move')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    >
+      <strong>{object.label}</strong>
+      <div class="process-surface-status-items">
+        {#each statusItems as item (item.label)}
+          <span><b>{item.label}</b> {item.value}</span>
+        {/each}
+      </div>
+      <button type="button" aria-label="Close process display" onclick={close}>×</button>
+    </header>
+    <div class="process-surface-window-body">
+      {#if loading}
+        <div class="process-surface-message">Loading process display...</div>
+      {:else if error}
+        <div class="process-surface-error">{error}</div>
+      {:else if surface}
+        <ProcessSurfaceRenderer
+          {surface}
+          {values}
+          {widgetPositions}
+          onWidgetPositionChange={updateWidgetPosition}
+        />
+      {:else}
+        <div class="process-surface-error">Process display did not load.</div>
+      {/if}
+    </div>
+    <div
+      class="process-surface-resize-handle east"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize process display horizontally"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle south"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize process display vertically"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle corner"
+      role="separator"
+      aria-label="Resize process display"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-corner')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+  </section>
+</div>

@@ -23,8 +23,16 @@
     readonly origin: ProcessSurfaceWidgetPosition
   }
 
+  interface PanState {
+    readonly pointerId: number
+    readonly pointerStart: { readonly x: number; readonly y: number }
+    readonly origin: { readonly x: number; readonly y: number }
+  }
+
   let svgElement: SVGSVGElement | null = $state(null)
   let dragState = $state<DragState | null>(null)
+  let panState = $state<PanState | null>(null)
+  let viewTransform = $state({ x: 0, y: 0, scale: 1 })
 
   const valueFor = (path: string): ProcessSurfaceValue | undefined =>
     values.get(path)
@@ -99,7 +107,9 @@
   const widgetClass = (widget: CompiledProcessSurfaceWidget): string =>
     `process-widget ${widget.type} ${widget.style.tone ?? 'primary'}`
 
-  const svgPointFor = (event: PointerEvent): { readonly x: number; readonly y: number } | null => {
+  const svgPointFor = (
+    event: PointerEvent | WheelEvent,
+  ): { readonly x: number; readonly y: number } | null => {
     const svg = svgElement
     const matrix = svg?.getScreenCTM()?.inverse()
     if (!svg || !matrix) return null
@@ -108,6 +118,15 @@
     point.y = event.clientY
     const transformed = point.matrixTransform(matrix)
     return { x: transformed.x, y: transformed.y }
+  }
+
+  const contentPointFor = (event: PointerEvent): { readonly x: number; readonly y: number } | null => {
+    const point = svgPointFor(event)
+    if (!point) return null
+    return {
+      x: (point.x - viewTransform.x) / viewTransform.scale,
+      y: (point.y - viewTransform.y) / viewTransform.scale,
+    }
   }
 
   const clampPosition = (
@@ -120,10 +139,11 @@
 
   const startDrag = (event: PointerEvent, widget: CompiledProcessSurfaceWidget): void => {
     if (!onWidgetPositionChange || event.button !== 0) return
-    const point = svgPointFor(event)
+    const point = contentPointFor(event)
     if (!point) return
     event.stopPropagation()
-    ;(event.currentTarget as Element).setPointerCapture(event.pointerId)
+    const target = event.currentTarget as Element
+    target.setPointerCapture(event.pointerId)
     dragState = {
       pointerId: event.pointerId,
       widgetId: widget.id,
@@ -136,7 +156,7 @@
     const currentDrag = dragState
     if (!currentDrag || currentDrag.pointerId !== event.pointerId || !onWidgetPositionChange) return
     const widget = surface.widgets.find(candidate => candidate.id === currentDrag.widgetId)
-    const point = svgPointFor(event)
+    const point = contentPointFor(event)
     if (!widget || !point) return
     event.stopPropagation()
     onWidgetPositionChange(widget.id, clampPosition(widget, {
@@ -149,7 +169,7 @@
     const currentDrag = dragState
     if (!currentDrag || currentDrag.pointerId !== event.pointerId || !onWidgetPositionChange) return
     const widget = surface.widgets.find(candidate => candidate.id === currentDrag.widgetId)
-    const point = svgPointFor(event)
+    const point = contentPointFor(event)
     if (widget && point) {
       onWidgetPositionChange(widget.id, clampPosition(widget, {
         x: currentDrag.origin.x + point.x - currentDrag.pointerStart.x,
@@ -158,15 +178,71 @@
     }
     dragState = null
   }
+
+  const clampScale = (value: number): number =>
+    Math.max(0.35, Math.min(3.5, value))
+
+  const zoomSurface = (event: WheelEvent): void => {
+    const point = svgPointFor(event)
+    if (!point) return
+    event.preventDefault()
+    const nextScale = clampScale(viewTransform.scale * Math.exp(-event.deltaY * 0.0014))
+    if (nextScale === viewTransform.scale) return
+    const scaleRatio = nextScale / viewTransform.scale
+    viewTransform = {
+      x: point.x - (point.x - viewTransform.x) * scaleRatio,
+      y: point.y - (point.y - viewTransform.y) * scaleRatio,
+      scale: nextScale,
+    }
+  }
+
+  const startPan = (event: PointerEvent): void => {
+    if (event.button !== 0 || event.target !== svgElement) return
+    const point = svgPointFor(event)
+    if (!point) return
+    event.preventDefault()
+    const target = event.currentTarget as Element
+    target.setPointerCapture(event.pointerId)
+    panState = {
+      pointerId: event.pointerId,
+      pointerStart: point,
+      origin: { x: viewTransform.x, y: viewTransform.y },
+    }
+  }
+
+  const updatePan = (event: PointerEvent): void => {
+    const currentPan = panState
+    if (!currentPan || currentPan.pointerId !== event.pointerId) return
+    const point = svgPointFor(event)
+    if (!point) return
+    event.preventDefault()
+    viewTransform = {
+      ...viewTransform,
+      x: currentPan.origin.x + point.x - currentPan.pointerStart.x,
+      y: currentPan.origin.y + point.y - currentPan.pointerStart.y,
+    }
+  }
+
+  const finishPan = (event: PointerEvent): void => {
+    const currentPan = panState
+    if (!currentPan || currentPan.pointerId !== event.pointerId) return
+    updatePan(event)
+    panState = null
+  }
 </script>
 
 <div class="process-surface-viewport">
   <svg
     bind:this={svgElement}
-    class="process-surface-svg"
+    class="process-surface-svg {panState ? 'panning' : ''}"
     viewBox="0 0 {surface.designSize.width} {surface.designSize.height}"
     role="img"
     aria-label={surface.title}
+    onwheel={zoomSurface}
+    onpointerdown={startPan}
+    onpointermove={updatePan}
+    onpointerup={finishPan}
+    onpointercancel={finishPan}
   >
     <defs>
       <linearGradient id="process-vessel-fill" x1="0" y1="1" x2="0" y2="0">
@@ -178,60 +254,62 @@
       </marker>
     </defs>
 
-    {#each surface.paths as path (path.id)}
-      <path class="process-flow-casing" d={pathData(path)} />
-      <path
-        class={serviceClass(path)}
-        d={pathData(path)}
-        pathLength="1"
-        stroke-dasharray="{pathFlowFraction(path)} 0.18"
-        marker-end="url(#flow-arrow)"
-      />
-    {/each}
+    <g transform="translate({viewTransform.x} {viewTransform.y}) scale({viewTransform.scale})">
+      {#each surface.paths as path (path.id)}
+        <path class="process-flow-casing" d={pathData(path)} />
+        <path
+          class={serviceClass(path)}
+          d={pathData(path)}
+          pathLength="1"
+          stroke-dasharray="{pathFlowFraction(path)} 0.18"
+          marker-end="url(#flow-arrow)"
+        />
+      {/each}
 
-    {#each surface.widgets as widget (widget.id)}
-      {@const geometry = widgetGeometryFor(widget)}
-      <g
-        class="{widgetClass(widget)} {dragState?.widgetId === widget.id ? 'dragging' : ''}"
-        transform="translate({geometry.x} {geometry.y})"
-        role="button"
-        tabindex="0"
-        aria-label="Move {widget.label}"
-        onpointerdown={(event) => startDrag(event, widget)}
-        onpointermove={updateDrag}
-        onpointerup={finishDrag}
-        onpointercancel={finishDrag}
-      >
-        {#if widget.type === 'vessel' || widget.type === 'heatExchanger'}
-          <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="18" />
-          <rect
-            class="widget-level-fill"
-            x="10"
-            y={(geometry.height - 10) - (geometry.height - 20) * levelFractionFor(widget)}
-            width={geometry.width - 20}
-            height={(geometry.height - 20) * levelFractionFor(widget)}
-            rx="12"
-          />
-          {#if widget.type === 'heatExchanger'}
-            <path class="widget-coil" d="M {geometry.width * 0.28} {geometry.height * 0.18} C {geometry.width * 0.72} {geometry.height * 0.30}, {geometry.width * 0.28} {geometry.height * 0.44}, {geometry.width * 0.72} {geometry.height * 0.56} S {geometry.width * 0.28} {geometry.height * 0.78}, {geometry.width * 0.72} {geometry.height * 0.88}" />
+      {#each surface.widgets as widget (widget.id)}
+        {@const geometry = widgetGeometryFor(widget)}
+        <g
+          class="{widgetClass(widget)} {dragState?.widgetId === widget.id ? 'dragging' : ''}"
+          transform="translate({geometry.x} {geometry.y})"
+          role="button"
+          tabindex="0"
+          aria-label="Move {widget.label}"
+          onpointerdown={(event) => startDrag(event, widget)}
+          onpointermove={updateDrag}
+          onpointerup={finishDrag}
+          onpointercancel={finishDrag}
+        >
+          {#if widget.type === 'vessel' || widget.type === 'heatExchanger'}
+            <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="18" />
+            <rect
+              class="widget-level-fill"
+              x="10"
+              y={(geometry.height - 10) - (geometry.height - 20) * levelFractionFor(widget)}
+              width={geometry.width - 20}
+              height={(geometry.height - 20) * levelFractionFor(widget)}
+              rx="12"
+            />
+            {#if widget.type === 'heatExchanger'}
+              <path class="widget-coil" d="M {geometry.width * 0.28} {geometry.height * 0.18} C {geometry.width * 0.72} {geometry.height * 0.30}, {geometry.width * 0.28} {geometry.height * 0.44}, {geometry.width * 0.72} {geometry.height * 0.56} S {geometry.width * 0.28} {geometry.height * 0.78}, {geometry.width * 0.72} {geometry.height * 0.88}" />
+            {/if}
+          {:else if widget.type === 'pump'}
+            <circle class="widget-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.42} />
+            <circle class="widget-ring" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.34} />
+            <path class="widget-impeller" d="M {geometry.width / 2} {geometry.height * 0.22} L {geometry.width * 0.68} {geometry.height * 0.58} L {geometry.width * 0.32} {geometry.height * 0.58} Z" />
+          {:else if widget.type === 'valve'}
+            <rect class="widget-shell" x="8" y={geometry.height * 0.28} width={geometry.width - 16} height={geometry.height * 0.44} rx="8" />
+            <path class="widget-valve" d="M 16 {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L 16 {geometry.height * 0.68} Z M {geometry.width - 16} {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L {geometry.width - 16} {geometry.height * 0.68} Z" />
+          {:else}
+            <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="14" />
           {/if}
-        {:else if widget.type === 'pump'}
-          <circle class="widget-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.42} />
-          <circle class="widget-ring" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.34} />
-          <path class="widget-impeller" d="M {geometry.width / 2} {geometry.height * 0.22} L {geometry.width * 0.68} {geometry.height * 0.58} L {geometry.width * 0.32} {geometry.height * 0.58} Z" />
-        {:else if widget.type === 'valve'}
-          <rect class="widget-shell" x="8" y={geometry.height * 0.28} width={geometry.width - 16} height={geometry.height * 0.44} rx="8" />
-          <path class="widget-valve" d="M 16 {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L 16 {geometry.height * 0.68} Z M {geometry.width - 16} {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L {geometry.width - 16} {geometry.height * 0.68} Z" />
-        {:else}
-          <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="14" />
-        {/if}
-        <text class="widget-title" x={geometry.width / 2} y="24" text-anchor="middle">{widget.label}</text>
-        {#each bindingRows(widget).slice(0, widget.type === 'statusBanner' || widget.type === 'alarmStrip' ? 4 : 3) as row, index (row.path)}
-          <text class="widget-readout" x="16" y={geometry.height - 18 - (bindingRows(widget).slice(0, 4).length - index - 1) * 19}>
-            {row.label}: {row.formatted}
-          </text>
-        {/each}
-      </g>
-    {/each}
+          <text class="widget-title" x={geometry.width / 2} y="24" text-anchor="middle">{widget.label}</text>
+          {#each bindingRows(widget).slice(0, widget.type === 'statusBanner' || widget.type === 'alarmStrip' ? 4 : 3) as row, index (row.path)}
+            <text class="widget-readout" x="16" y={geometry.height - 18 - (bindingRows(widget).slice(0, 4).length - index - 1) * 19}>
+              {row.label}: {row.formatted}
+            </text>
+          {/each}
+        </g>
+      {/each}
+    </g>
   </svg>
 </div>

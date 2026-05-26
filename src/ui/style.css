@@ -1210,7 +1210,8 @@ body.rail-resizing {
 
 .process-surface-message,
 .process-surface-error {
-  min-height: 360px;
+  height: 100%;
+  min-height: 0;
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -1223,12 +1224,139 @@ body.rail-resizing {
   color: var(--critical);
 }
 
-.process-surface-viewport {
-  width: 100%;
-  min-height: min(640px, calc(100vh - 190px));
-  overflow: auto;
+.process-surface-window-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  pointer-events: none;
+}
+
+.process-surface-window {
+  position: fixed;
+  min-width: 620px;
+  min-height: 420px;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 60px rgba(16, 24, 40, 0.28);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.process-surface-statusbar {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 82%, var(--panel));
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.process-surface-statusbar strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.process-surface-status-items {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-surface-status-items span {
+  white-space: nowrap;
+}
+
+.process-surface-status-items b {
+  color: var(--text);
+}
+
+.process-surface-statusbar button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.process-surface-statusbar button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-surface-window-body {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.process-surface-resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+}
+
+.process-surface-resize-handle.east {
+  top: 42px;
+  right: 0;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.process-surface-resize-handle.south {
+  right: 14px;
+  bottom: 0;
+  left: 0;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.process-surface-resize-handle.corner {
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.process-surface-resize-handle.corner::after {
+  content: "";
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.process-surface-viewport {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
   background:
     linear-gradient(color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
     linear-gradient(90deg, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
@@ -1239,10 +1367,14 @@ body.rail-resizing {
 .process-surface-svg {
   display: block;
   width: 100%;
-  min-width: 980px;
-  height: auto;
-  aspect-ratio: 16 / 9;
+  height: 100%;
   font-family: inherit;
+  cursor: grab;
+  touch-action: none;
+}
+
+.process-surface-svg.panning {
+  cursor: grabbing;
 }
 
 .process-flow-casing {
@@ -1251,6 +1383,7 @@ body.rail-resizing {
   stroke-width: 14;
   stroke-linecap: round;
   stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .process-flow {
@@ -1260,6 +1393,7 @@ body.rail-resizing {
   stroke-linejoin: round;
   opacity: 0.88;
   animation: process-flow-dash 4s linear infinite;
+  pointer-events: none;
 }
 
 .process-flow.primary { stroke: #2563eb; }
