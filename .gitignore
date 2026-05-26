@@ -1,6 +1,8 @@
 node_modules/
 src/ui/dist/
-data/
+data/*
+!data/reference/
 .DS_Store
 .playwright-mcp/
 leitbild-*.png
+.claude/context/
