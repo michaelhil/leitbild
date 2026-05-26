@@ -4,6 +4,7 @@ import {
   asSourceId,
   type DatasetSource,
   type FetchCache,
+  type GeoJsonGeometry,
   type NormalizedFeature,
   type RawBytes,
   type SourceId,
@@ -278,7 +279,7 @@ const normaliseFeature = (
   return {
     type: 'Feature',
     ...(data._id ? { id: data._id } : {}),
-    geometry: data.geometry,
+    geometry: data.geometry as GeoJsonGeometry,
     properties,
   }
 }

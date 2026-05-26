@@ -37,7 +37,10 @@ const fakeFetcher = (responses: ReadonlyArray<FakeResponseConfig>): {
 } => {
   let index = 0
   const captured: FakeFetchScript['capturedRequests'] = []
-  const fetchFn: HttpFetch = async (url, init) => {
+  const fetchFn: HttpFetch = async (
+    url: string,
+    init?: { readonly method?: string; readonly headers?: Record<string, string> },
+  ): Promise<Response> => {
     const headers: Record<string, string> = {}
     if (init?.headers) for (const [k, v] of Object.entries(init.headers)) headers[k.toLowerCase()] = String(v)
     captured.push({ url, headers })
