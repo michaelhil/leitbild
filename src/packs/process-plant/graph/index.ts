@@ -1,6 +1,7 @@
 export * from './builder.ts'
 export * from './compiler.ts'
 export * from './component-registry.ts'
+export * from './lens.ts'
 export * from './mermaid.ts'
 export * from './model.ts'
 export * from './primary-loop.ts'

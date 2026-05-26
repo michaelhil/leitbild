@@ -98,6 +98,8 @@ describe('process plant graph foundation', () => {
       'turbine-exhaust-to-condenser',
       'feedwater-to-sg-a',
     ]))
+    expect(surface.widgets.find(widget => widget.id === 'reactor-vessel')?.source?.componentIds.map(String)).toEqual(['core', 'vessel'])
+    expect(String(surface.paths.find(path => path.id === 'primary-hot-leg-a')?.source?.connectionId)).toBe('rcs-hot-leg-a')
     expect(surface.bindingPaths.map(path => String(path))).toEqual(expect.arrayContaining([
       'core.totalThermalPowerMw',
       'pressurizer.pressureMPa',
@@ -108,6 +110,30 @@ describe('process plant graph foundation', () => {
     ]))
     expect(surface.widgets.every(widget => widget.geometry.width > 0 && widget.geometry.height > 0)).toBe(true)
     expect(surface.paths.every(path => path.points.length >= 3)).toBe(true)
+  })
+
+  test('process surfaces reject stale graph source references', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+
+    expect(() => compileProcessSurface({
+      definition: {
+        ...processPlantUnitOverviewSurface,
+        widgets: processPlantUnitOverviewSurface.widgets.map(widget => widget.id === 'reactor-vessel'
+          ? { ...widget, source: { componentIds: ['missing-vessel' as never] } }
+          : widget),
+      },
+      graph,
+    })).toThrow('unknown component')
+
+    expect(() => compileProcessSurface({
+      definition: {
+        ...processPlantUnitOverviewSurface,
+        paths: processPlantUnitOverviewSurface.paths.map(path => path.id === 'primary-hot-leg-a'
+          ? { ...path, source: { connectionId: 'missing-link' as never } }
+          : path),
+      },
+      graph,
+    })).toThrow('unknown connection')
   })
 
   test('reference graph wires safety-train electrical dependencies explicitly', () => {

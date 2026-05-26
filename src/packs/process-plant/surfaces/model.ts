@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { idSchema } from '../../../core/model/index.ts'
-import { variablePathSchema, type VariablePath } from '../graph/index.ts'
+import {
+  componentIdSchema,
+  connectionIdSchema,
+  variablePathSchema,
+  type ComponentId,
+  type ConnectionId,
+  type VariablePath,
+} from '../graph/index.ts'
 
 export const processSurfaceWidgetTypeSchema = z.enum([
   'alarmStrip',
@@ -41,11 +48,22 @@ export const processSurfaceRegionSchema = z.object({
 }).strict()
 export type ProcessSurfaceRegion = z.infer<typeof processSurfaceRegionSchema>
 
+export const processSurfaceWidgetSourceSchema = z.object({
+  componentIds: z.array(componentIdSchema).min(1),
+}).strict()
+export type ProcessSurfaceWidgetSource = z.infer<typeof processSurfaceWidgetSourceSchema>
+
+export const processSurfacePathSourceSchema = z.object({
+  connectionId: connectionIdSchema,
+}).strict()
+export type ProcessSurfacePathSource = z.infer<typeof processSurfacePathSourceSchema>
+
 export const processSurfaceWidgetSchema = z.object({
   id: idSchema,
   type: processSurfaceWidgetTypeSchema,
   label: z.string().min(1),
   region: idSchema,
+  source: processSurfaceWidgetSourceSchema.optional(),
   role: z.string().min(1).optional(),
   rank: z.number().int().nonnegative().default(0),
   stack: z.number().int().nonnegative().default(0),
@@ -60,6 +78,7 @@ export type ProcessSurfaceWidget = z.infer<typeof processSurfaceWidgetSchema>
 export const processSurfacePathSchema = z.object({
   id: idSchema,
   label: z.string().min(1).optional(),
+  source: processSurfacePathSourceSchema.optional(),
   from: z.string().min(1),
   to: z.string().min(1),
   binds: z.record(processSurfaceBindingSchema).default({}),
@@ -131,6 +150,7 @@ export interface CompiledProcessSurfaceWidget {
   readonly id: string
   readonly type: ProcessSurfaceWidgetType
   readonly label: string
+  readonly source?: { readonly componentIds: ReadonlyArray<ComponentId> }
   readonly role?: string
   readonly geometry: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
   readonly binds: Readonly<Record<string, ProcessSurfaceBinding>>
@@ -141,6 +161,7 @@ export interface CompiledProcessSurfaceWidget {
 export interface CompiledProcessSurfacePath {
   readonly id: string
   readonly label?: string
+  readonly source?: { readonly connectionId: ConnectionId }
   readonly from: { readonly widgetId: string; readonly portName: string }
   readonly to: { readonly widgetId: string; readonly portName: string }
   readonly points: ReadonlyArray<{ readonly x: number; readonly y: number }>

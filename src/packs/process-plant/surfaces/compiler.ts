@@ -1,4 +1,4 @@
-import type { CompiledPlantGraph, VariablePath } from '../graph/index.ts'
+import type { CompiledPlantGraph, ConnectionId, VariablePath } from '../graph/index.ts'
 import type {
   CompiledProcessSurface,
   CompiledProcessSurfacePath,
@@ -113,6 +113,7 @@ const compileWidgets = (
         id: widget.id,
         type: widget.type,
         label: widget.label,
+        ...(widget.source === undefined ? {} : { source: widget.source }),
         ...(widget.role === undefined ? {} : { role: widget.role }),
         geometry,
         binds: widget.binds,
@@ -156,6 +157,24 @@ const uniqueBindingPaths = (surface: ProcessSurfaceDefinition): ReadonlyArray<Va
   return [...paths].sort()
 }
 
+const validateGraphSources = (definition: ProcessSurfaceDefinition, graph: CompiledPlantGraph): void => {
+  const linkIndexById = new Map<ConnectionId, number>(graph.links.map(link => [link.id, link.index]))
+  for (const widget of definition.widgets) {
+    if (widget.source === undefined) continue
+    for (const componentId of widget.source.componentIds) {
+      if (!graph.componentIndexById.has(componentId)) {
+        throw new Error(`process surface ${definition.id} widget ${widget.id} references unknown component: ${componentId}`)
+      }
+    }
+  }
+  for (const path of definition.paths) {
+    if (path.source === undefined) continue
+    if (!linkIndexById.has(path.source.connectionId)) {
+      throw new Error(`process surface ${definition.id} path ${path.id} references unknown connection: ${path.source.connectionId}`)
+    }
+  }
+}
+
 export const compileProcessSurface = (config: {
   readonly definition: ProcessSurfaceDefinition
   readonly graph: CompiledPlantGraph
@@ -165,6 +184,7 @@ export const compileProcessSurface = (config: {
   for (const path of uniqueBindingPaths(definition)) {
     if (!variablePaths.has(path)) throw new Error(`process surface ${definition.id} references unknown variable path: ${path}`)
   }
+  validateGraphSources(definition, config.graph)
   const frames = regionFramesFor(definition)
   const widgets = compileWidgets(definition, frames)
   const portIndex = new Map<string, { readonly x: number; readonly y: number }>()
@@ -178,6 +198,7 @@ export const compileProcessSurface = (config: {
     return {
       id: path.id,
       ...(path.label === undefined ? {} : { label: path.label }),
+      ...(path.source === undefined ? {} : { source: path.source }),
       from: portRefFor(path.from),
       to: portRefFor(path.to),
       points: compilePathPoints(from, to),

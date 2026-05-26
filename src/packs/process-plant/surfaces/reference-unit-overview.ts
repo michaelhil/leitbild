@@ -32,6 +32,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'vessel',
       label: 'Reactor Vessel',
       region: 'primary',
+      source: { componentIds: ['core', 'vessel'] },
       role: 'reactor-vessel',
       rank: 0,
       binds: {
@@ -46,6 +47,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'vessel',
       label: 'Pressurizer',
       region: 'primary',
+      source: { componentIds: ['pressurizer'] },
       role: 'pressurizer',
       rank: 1,
       binds: {
@@ -60,6 +62,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'pump',
       label: 'RCP A',
       region: 'primary',
+      source: { componentIds: ['rcpA'] },
       role: 'reactor-coolant-pump',
       rank: 2,
       binds: {
@@ -73,6 +76,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'heatExchanger',
       label: 'Steam Generator A',
       region: 'heat-transfer',
+      source: { componentIds: ['sgA'] },
       role: 'steam-generator',
       rank: 0,
       binds: {
@@ -88,6 +92,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'heatExchanger',
       label: 'Steam Generator B',
       region: 'heat-transfer',
+      source: { componentIds: ['sgB'] },
       role: 'steam-generator',
       rank: 1,
       binds: {
@@ -103,6 +108,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'pump',
       label: 'Turbine Generator',
       region: 'secondary',
+      source: { componentIds: ['turbine'] },
       role: 'turbine-generator',
       rank: 0,
       binds: {
@@ -117,6 +123,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'vessel',
       label: 'Condenser',
       region: 'secondary',
+      source: { componentIds: ['condenser'] },
       role: 'condenser',
       rank: 1,
       binds: {
@@ -132,6 +139,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       type: 'vessel',
       label: 'Feedwater Tank',
       region: 'support',
+      source: { componentIds: ['feedwaterTank'] },
       role: 'feedwater',
       rank: 0,
       binds: {
@@ -171,6 +179,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     {
       id: 'primary-hot-leg-a',
       label: 'Primary hot leg',
+      source: { connectionId: 'rcs-hot-leg-a' },
       from: 'reactor-vessel.hotLegA',
       to: 'sg-a.primaryIn',
       binds: { flow: { label: 'Flow', path: 'rcs-hot-leg-a.flowKgPerS', digits: 0 } },
@@ -187,6 +196,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     {
       id: 'turbine-exhaust-to-condenser',
       label: 'Turbine exhaust',
+      source: { connectionId: 'turbine-exhaust-to-condenser' },
       from: 'turbine.exhaust',
       to: 'condenser.steamIn',
       binds: { flow: { label: 'Flow', path: 'turbine-exhaust-to-condenser.flowKgPerS', digits: 0 } },
