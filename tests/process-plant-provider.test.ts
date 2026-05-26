@@ -220,6 +220,33 @@ describe('process plant simulation provider', () => {
     expect(values.get('core.totalThermalPowerMw')?.formatted).toMatch(/MW$/)
     expect(typeof values.get('pressurizer.pressureMPa')?.value).toBe('number')
 
+    const projection = await connection.query(query('process-plant.surface.project', {
+      systemId: 'plant',
+      surfaceId: 'unit-overview',
+      lens: {
+        mode: 'service-layer',
+        service: 'primaryCoolant',
+      },
+    }))
+    expect(projection.ok).toBe(true)
+    if (!projection.ok) throw new Error(projection.reason)
+    const projectionResult = projection.result as {
+      readonly graphProjection: {
+        readonly componentIds: ReadonlyArray<string>
+        readonly connectionIds: ReadonlyArray<string>
+      }
+      readonly surfaceProjection: {
+        readonly visibleWidgetIds: ReadonlyArray<string>
+        readonly visiblePathIds: ReadonlyArray<string>
+        readonly hiddenWidgetIds: ReadonlyArray<string>
+      }
+    }
+    expect(projectionResult.graphProjection.connectionIds).toContain('rcs-hot-leg-a')
+    expect(projectionResult.surfaceProjection.visibleWidgetIds).toContain('reactor-vessel')
+    expect(projectionResult.surfaceProjection.visibleWidgetIds).toContain('sg-a')
+    expect(projectionResult.surfaceProjection.visiblePathIds).toContain('primary-hot-leg-a')
+    expect(projectionResult.surfaceProjection.hiddenWidgetIds).toContain('turbine')
+
     await connection.close()
   })
 

@@ -188,6 +188,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     {
       id: 'main-steam-to-turbine',
       label: 'Main steam',
+      source: { connectionId: 'main-steam-header-to-turbine-stop-valve' },
       from: 'sg-a.steamOut',
       to: 'turbine.steamIn',
       binds: { flow: { label: 'Flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 } },
@@ -205,6 +206,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     {
       id: 'feedwater-to-sg-a',
       label: 'Feedwater',
+      source: { connectionId: 'feedwater-control-valve-a-to-sg-a' },
       from: 'feedwater.outlet',
       to: 'sg-a.feedwaterIn',
       binds: { flow: { label: 'Flow', path: 'feedwater-control-valve-a-to-sg-a.flowKgPerS', digits: 0 } },

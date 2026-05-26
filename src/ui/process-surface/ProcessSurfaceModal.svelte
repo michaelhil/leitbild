@@ -1,10 +1,17 @@
 <script lang="ts">
+  import { Eye } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
-  import { listProcessSurfaces, readProcessSurface, readProcessSurfaceSnapshot } from './process-surface-client.ts'
+  import {
+    listProcessSurfaces,
+    readProcessSurface,
+    readProcessSurfaceProjection,
+    readProcessSurfaceSnapshot,
+    type ProcessSurfaceProjection,
+  } from './process-surface-client.ts'
   import {
     readProcessSurfaceLayout,
     readProcessSurfaceWindowBounds,
@@ -40,6 +47,9 @@
   let error = $state<string | null>(null)
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
+  let projection = $state<ProcessSurfaceProjection | null>(null)
+  let activeLens = $state<'all' | 'primary' | 'steam' | 'feedwater'>('all')
+  let lensMenuOpen = $state(false)
   let widgetPositions = $state<ProcessSurfaceLayout>({})
   let loadedSystemId = $state<string | null>(null)
   let windowBounds = $state<ProcessSurfaceWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
@@ -89,6 +99,21 @@
     { label: 'MWt', value: statusValue('core.totalThermalPowerMw') },
     { label: 'MWe', value: statusValue('turbine.electricMw') },
   ])
+
+  const visibleWidgetIds = $derived(projection
+    ? new Set<string>(projection.surfaceProjection.visibleWidgetIds)
+    : null)
+
+  const visiblePathIds = $derived(projection
+    ? new Set<string>(projection.surfaceProjection.visiblePathIds)
+    : null)
+
+  const lensOptions = [
+    { id: 'all', label: 'Full overview', description: 'Show the authored overview surface.' },
+    { id: 'primary', label: 'Primary coolant', description: 'Project primary coolant components and paths.' },
+    { id: 'steam', label: 'Steam path', description: 'Project main steam and exhaust paths.' },
+    { id: 'feedwater', label: 'Feedwater', description: 'Project feedwater components and paths.' },
+  ] as const
 
   const assetStatusColor = $derived(statusToneColor(
     object.operational.priority === 'critical'
@@ -188,6 +213,27 @@
     }
   }
 
+  const applyLens = async (
+    lens: typeof activeLens,
+    systemId: string,
+    surfaceId: string,
+  ): Promise<void> => {
+    activeLens = lens
+    if (lens === 'all') {
+      projection = null
+      return
+    }
+    const service = lens === 'primary'
+      ? 'primaryCoolant'
+      : lens === 'steam'
+        ? 'mainSteam'
+        : lens
+    projection = await readProcessSurfaceProjection(controlInstanceId, systemId, surfaceId, {
+      mode: 'service-layer',
+      service,
+    })
+  }
+
   runOnMount(() => {
     let cancelled = false
     let interval: ReturnType<typeof setInterval> | null = null
@@ -206,6 +252,8 @@
         if (cancelled) return
         loadedSystemId = systemId
         surface = nextSurface
+        projection = null
+        activeLens = 'all'
         widgetPositions = readProcessSurfaceLayout({
           controlInstanceId,
           systemId,
@@ -266,6 +314,38 @@
           <span><b>{item.label}</b> {item.value}</span>
         {/each}
       </div>
+      <div class="process-surface-lens-control">
+        <button
+          type="button"
+          class="process-surface-icon-button"
+          aria-label="Choose process display layer"
+          aria-expanded={lensMenuOpen}
+          onclick={() => { lensMenuOpen = !lensMenuOpen }}
+        >
+          <Eye size={18} aria-hidden="true" />
+        </button>
+        {#if lensMenuOpen && surface && loadedSystemId}
+          <div class="process-surface-lens-menu">
+            {#each lensOptions as option (option.id)}
+              <button
+                type="button"
+                class:active={activeLens === option.id}
+                onclick={async () => {
+                  lensMenuOpen = false
+                  try {
+                    await applyLens(option.id, loadedSystemId!, surface!.id)
+                  } catch (err) {
+                    error = err instanceof Error ? err.message : String(err)
+                  }
+                }}
+              >
+                <strong>{option.label}</strong>
+                <span>{option.description}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
       <button type="button" aria-label="Close process display" onclick={close}>×</button>
     </header>
     <div class="process-surface-window-body">
@@ -278,6 +358,8 @@
           {surface}
           {values}
           {widgetPositions}
+          {visibleWidgetIds}
+          {visiblePathIds}
           onWidgetPositionChange={updateWidgetPosition}
         />
       {:else}

@@ -1,11 +1,21 @@
 <script lang="ts">
-  import type { CompiledProcessSurface, CompiledProcessSurfacePath, CompiledProcessSurfaceWidget, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import type { CompiledProcessSurface, CompiledProcessSurfaceWidget, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import ProcessSurfaceWidget from './ProcessSurfaceWidget.svelte'
   import type { ProcessSurfaceLayout, ProcessSurfaceWidgetPosition } from './process-surface-layout.ts'
+  import {
+    pathDataFor,
+    pathFlowFraction,
+    pathPointsFor,
+    widgetGeometryFor,
+    widgetPositionFor,
+  } from './process-surface-rendering.ts'
 
   interface Props {
     readonly surface: CompiledProcessSurface
     readonly values: ReadonlyMap<string, ProcessSurfaceValue>
     readonly widgetPositions?: ProcessSurfaceLayout
+    readonly visibleWidgetIds?: ReadonlySet<string> | null
+    readonly visiblePathIds?: ReadonlySet<string> | null
     readonly onWidgetPositionChange?: (widgetId: string, position: ProcessSurfaceWidgetPosition, commit: boolean) => void
   }
 
@@ -13,6 +23,8 @@
     surface,
     values,
     widgetPositions = {},
+    visibleWidgetIds = null,
+    visiblePathIds = null,
     onWidgetPositionChange,
   }: Props = $props()
 
@@ -34,91 +46,16 @@
   let panState = $state<PanState | null>(null)
   let viewTransform = $state({ x: 0, y: 0, scale: 1 })
 
-  const valueFor = (path: string): ProcessSurfaceValue | undefined =>
-    values.get(path)
+  const renderedWidgets = $derived(visibleWidgetIds
+    ? surface.widgets.filter(widget => visibleWidgetIds.has(widget.id))
+    : surface.widgets)
 
-  const numericValueFor = (path: string): number | null => {
-    const value = valueFor(path)?.value
-    return typeof value === 'number' && Number.isFinite(value) ? value : null
-  }
+  const renderedPaths = $derived(visiblePathIds
+    ? surface.paths.filter(path => visiblePathIds.has(path.id))
+    : surface.paths)
 
-  const bindingRows = (widget: CompiledProcessSurfaceWidget): ReadonlyArray<ProcessSurfaceValue> =>
-    Object.values(widget.binds).map(binding => valueFor(binding.path)).filter(value => value !== undefined)
-
-  const widgetPositionFor = (widget: CompiledProcessSurfaceWidget): ProcessSurfaceWidgetPosition =>
-    widgetPositions[widget.id] ?? { x: widget.geometry.x, y: widget.geometry.y }
-
-  const widgetGeometryFor = (
-    widget: CompiledProcessSurfaceWidget,
-  ): CompiledProcessSurfaceWidget['geometry'] => ({
-    ...widget.geometry,
-    ...widgetPositionFor(widget),
-  })
-
-  const levelFractionFor = (widget: CompiledProcessSurfaceWidget): number => {
-    const levelBinding = widget.binds.level
-    if (!levelBinding) return 0.5
-    const value = numericValueFor(levelBinding.path)
-    if (value === null) return 0.5
-    return Math.max(0, Math.min(1, value > 1 ? value / 100 : value))
-  }
-
-  const portPointFor = (
-    widgetId: string,
-    portName: string,
-  ): { readonly x: number; readonly y: number } | null => {
-    const widget = surface.widgets.find(candidate => candidate.id === widgetId)
-    const original = widget?.ports[portName]
-    if (!widget || !original) return null
-    const position = widgetPositionFor(widget)
-    return {
-      x: original.x + position.x - widget.geometry.x,
-      y: original.y + position.y - widget.geometry.y,
-    }
-  }
-
-  const pathPoints = (path: CompiledProcessSurfacePath): ReadonlyArray<{ readonly x: number; readonly y: number }> => {
-    const from = portPointFor(path.from.widgetId, path.from.portName)
-    const to = portPointFor(path.to.widgetId, path.to.portName)
-    if (!from || !to) return path.points
-    return [from, to]
-  }
-
-  const curvedPathData = (
-    from: { readonly x: number; readonly y: number },
-    to: { readonly x: number; readonly y: number },
-  ): string => {
-    const dx = to.x - from.x
-    const dy = to.y - from.y
-    const horizontalBias = Math.max(80, Math.min(260, Math.abs(dx) * 0.48 + Math.abs(dy) * 0.12))
-    const direction = dx >= 0 ? 1 : -1
-    return [
-      `M ${from.x.toFixed(1)} ${from.y.toFixed(1)}`,
-      `C ${(from.x + horizontalBias * direction).toFixed(1)} ${from.y.toFixed(1)}`,
-      `${(to.x - horizontalBias * direction).toFixed(1)} ${to.y.toFixed(1)}`,
-      `${to.x.toFixed(1)} ${to.y.toFixed(1)}`,
-    ].join(' ')
-  }
-
-  const pathData = (path: CompiledProcessSurfacePath): string => {
-    const points = pathPoints(path)
-    if (points.length === 2) return curvedPathData(points[0], points[1])
-    return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
-  }
-
-  const pathFlowFraction = (path: CompiledProcessSurfacePath): number => {
-    const binding = path.binds.flow ?? Object.values(path.binds)[0]
-    if (!binding) return 0
-    const value = numericValueFor(binding.path)
-    if (value === null) return 0
-    return Math.max(0.15, Math.min(1, Math.abs(value) / 5_000))
-  }
-
-  const serviceClass = (path: CompiledProcessSurfacePath): string =>
+  const serviceClass = (path: { readonly style: { readonly service?: string } }): string =>
     `process-flow ${path.style.service ?? 'support'}`
-
-  const widgetClass = (widget: CompiledProcessSurfaceWidget): string =>
-    `process-widget ${widget.type} ${widget.style.tone ?? 'primary'}`
 
   const svgPointFor = (
     event: PointerEvent | WheelEvent,
@@ -180,7 +117,7 @@
       pointerId: event.pointerId,
       widgetId: widget.id,
       pointerStart: point,
-      origin: widgetPositionFor(widget),
+      origin: widgetPositionFor(widget, widgetPositions),
     }
   }
 
@@ -287,60 +224,29 @@
     </defs>
 
     <g transform="translate({viewTransform.x} {viewTransform.y}) scale({viewTransform.scale})">
-      {#each surface.paths as path (path.id)}
-        <path class="process-flow-casing" d={pathData(path)} />
+      {#each renderedPaths as path (path.id)}
+        {@const points = pathPointsFor({ surface, widgetPositions, path })}
+        {@const data = pathDataFor(points)}
+        <path class="process-flow-casing" d={data} />
         <path
           class={serviceClass(path)}
-          d={pathData(path)}
+          d={data}
           pathLength="1"
-          stroke-dasharray="{pathFlowFraction(path)} 0.18"
+          stroke-dasharray="{pathFlowFraction(path, values)} 0.20"
           marker-end="url(#flow-arrow)"
         />
       {/each}
 
-      {#each surface.widgets as widget (widget.id)}
-        {@const geometry = widgetGeometryFor(widget)}
-        <g
-          class="{widgetClass(widget)} {dragState?.widgetId === widget.id ? 'dragging' : ''}"
-          transform="translate({geometry.x} {geometry.y})"
-          role="button"
-          tabindex="0"
-          aria-label="Move {widget.label}"
-          onpointerdown={(event) => startDrag(event, widget)}
-          onpointermove={updateDrag}
-          onpointerup={finishDrag}
-          onpointercancel={finishDrag}
-        >
-          {#if widget.type === 'vessel' || widget.type === 'heatExchanger'}
-            <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="18" />
-            <rect
-              class="widget-level-fill"
-              x="10"
-              y={(geometry.height - 10) - (geometry.height - 20) * levelFractionFor(widget)}
-              width={geometry.width - 20}
-              height={(geometry.height - 20) * levelFractionFor(widget)}
-              rx="12"
-            />
-            {#if widget.type === 'heatExchanger'}
-              <path class="widget-coil" d="M {geometry.width * 0.28} {geometry.height * 0.18} C {geometry.width * 0.72} {geometry.height * 0.30}, {geometry.width * 0.28} {geometry.height * 0.44}, {geometry.width * 0.72} {geometry.height * 0.56} S {geometry.width * 0.28} {geometry.height * 0.78}, {geometry.width * 0.72} {geometry.height * 0.88}" />
-            {/if}
-          {:else if widget.type === 'pump'}
-            <circle class="widget-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.42} />
-            <circle class="widget-ring" cx={geometry.width / 2} cy={geometry.height / 2} r={Math.min(geometry.width, geometry.height) * 0.34} />
-            <path class="widget-impeller" d="M {geometry.width / 2} {geometry.height * 0.22} L {geometry.width * 0.68} {geometry.height * 0.58} L {geometry.width * 0.32} {geometry.height * 0.58} Z" />
-          {:else if widget.type === 'valve'}
-            <rect class="widget-shell" x="8" y={geometry.height * 0.28} width={geometry.width - 16} height={geometry.height * 0.44} rx="8" />
-            <path class="widget-valve" d="M 16 {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L 16 {geometry.height * 0.68} Z M {geometry.width - 16} {geometry.height * 0.32} L {geometry.width / 2} {geometry.height / 2} L {geometry.width - 16} {geometry.height * 0.68} Z" />
-          {:else}
-            <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="14" />
-          {/if}
-          <text class="widget-title" x={geometry.width / 2} y="24" text-anchor="middle">{widget.label}</text>
-          {#each bindingRows(widget).slice(0, widget.type === 'statusBanner' || widget.type === 'alarmStrip' ? 4 : 3) as row, index (row.path)}
-            <text class="widget-readout" x="16" y={geometry.height - 18 - (bindingRows(widget).slice(0, 4).length - index - 1) * 19}>
-              {row.label}: {row.formatted}
-            </text>
-          {/each}
-        </g>
+      {#each renderedWidgets as widget (widget.id)}
+        <ProcessSurfaceWidget
+          {widget}
+          geometry={widgetGeometryFor(widget, widgetPositions)}
+          {values}
+          dragging={dragState?.widgetId === widget.id}
+          onStartDrag={startDrag}
+          onUpdateDrag={updateDrag}
+          onFinishDrag={finishDrag}
+        />
       {/each}
     </g>
   </svg>

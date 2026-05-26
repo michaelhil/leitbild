@@ -1248,7 +1248,7 @@ body.rail-resizing {
 .process-surface-statusbar {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 14px;
   padding: 0 10px 0 14px;
@@ -1315,6 +1315,57 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--border) 45%, transparent);
 }
 
+.process-surface-lens-control {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.process-surface-statusbar .process-surface-icon-button {
+  font-size: 0;
+}
+
+.process-surface-lens-menu {
+  position: absolute;
+  z-index: 5;
+  top: 34px;
+  right: 0;
+  width: 260px;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 18px 42px rgba(16, 24, 40, 0.24);
+  cursor: default;
+}
+
+.process-surface-statusbar .process-surface-lens-menu button {
+  width: 100%;
+  height: auto;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.process-surface-lens-menu button strong {
+  font-size: 13px;
+}
+
+.process-surface-lens-menu button span {
+  color: var(--muted);
+}
+
+.process-surface-lens-menu button.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .process-surface-window-body {
   min-height: 0;
   padding: 0;
@@ -1369,8 +1420,8 @@ body.rail-resizing {
   border: 0;
   border-radius: 0;
   background:
-    linear-gradient(color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--border) 38%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--border) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--border) 28%, transparent) 1px, transparent 1px),
     var(--panel-strong);
   background-size: 40px 40px;
 }
@@ -1390,8 +1441,8 @@ body.rail-resizing {
 
 .process-flow-casing {
   fill: none;
-  stroke: color-mix(in srgb, var(--panel) 84%, #ffffff);
-  stroke-width: 14;
+  stroke: color-mix(in srgb, var(--panel) 88%, #ffffff);
+  stroke-width: 12;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
@@ -1399,20 +1450,20 @@ body.rail-resizing {
 
 .process-flow {
   fill: none;
-  stroke-width: 7;
+  stroke-width: 5;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.88;
+  opacity: 0.78;
   animation: process-flow-dash 4s linear infinite;
   pointer-events: none;
 }
 
-.process-flow.primary { stroke: #2563eb; }
-.process-flow.steam { stroke: #ef4444; }
+.process-flow.primary { stroke: #2f6fd6; }
+.process-flow.steam { stroke: #cf4d43; }
 .process-flow.feedwater,
-.process-flow.condensate { stroke: #0ea5e9; }
-.process-flow.electrical { stroke: #eab308; }
-.process-flow.cooling { stroke: #14b8a6; }
+.process-flow.condensate { stroke: #178fbe; }
+.process-flow.electrical { stroke: #d8a31a; }
+.process-flow.cooling { stroke: #159b8c; }
 .process-flow.support { stroke: #64748b; }
 
 .process-flow-arrow {
@@ -1421,9 +1472,9 @@ body.rail-resizing {
 }
 
 .process-widget .widget-shell {
-  fill: color-mix(in srgb, var(--panel) 96%, transparent);
-  stroke: var(--border);
-  stroke-width: 2;
+  fill: color-mix(in srgb, var(--panel) 94%, transparent);
+  stroke: color-mix(in srgb, var(--border) 78%, var(--text));
+  stroke-width: 1.6;
 }
 
 .process-widget {
@@ -1441,13 +1492,20 @@ body.rail-resizing {
 }
 
 .process-widget.primary .widget-shell { stroke: #2563eb; }
-.process-widget.secondary .widget-shell { stroke: #c2410c; }
+.process-widget.secondary .widget-shell { stroke: #a85623; }
 .process-widget.support .widget-shell { stroke: #22845d; }
-.process-widget.warning .widget-shell { stroke: #c77d13; }
+.process-widget.warning .widget-shell { stroke: #b97912; }
 .process-widget.critical .widget-shell { stroke: #c7352b; }
 
 .widget-level-fill {
   fill: url("#process-vessel-fill");
+  opacity: 0.82;
+}
+
+.widget-reference-line {
+  stroke: color-mix(in srgb, var(--muted) 44%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 5;
 }
 
 .widget-coil,
@@ -1456,11 +1514,11 @@ body.rail-resizing {
 .widget-valve {
   fill: none;
   stroke: currentColor;
-  stroke-width: 4;
+  stroke-width: 3.4;
   stroke-linecap: round;
   stroke-linejoin: round;
   color: var(--text);
-  opacity: 0.76;
+  opacity: 0.72;
 }
 
 .widget-ring {
@@ -1477,14 +1535,27 @@ body.rail-resizing {
 
 .widget-title {
   fill: var(--text);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
+}
+
+.widget-title.centered {
+  font-size: 12px;
 }
 
 .widget-readout {
   fill: var(--muted);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 600;
+}
+
+.widget-readout.centered {
+  font-size: 11px;
+}
+
+.widget-readout-label {
+  fill: color-mix(in srgb, var(--muted) 82%, var(--text));
+  font-weight: 700;
 }
 
 @keyframes process-flow-dash {
