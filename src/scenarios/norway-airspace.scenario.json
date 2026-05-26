@@ -7,7 +7,7 @@
   "providerOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
-    "mapCenter": [15.0, 65.0],
+    "mapCenter": [15.0, 63.0],
     "environment": {
       "city": "Norway",
       "mode": "airspace-view"
@@ -24,8 +24,8 @@
         "primitive": "map",
         "visible": true,
         "config": {
-          "center": [15.0, 65.0],
-          "zoom": 5,
+          "center": [15.0, 63.0],
+          "zoom": 6,
           "layers": ["objects", "highlights"]
         }
       },
