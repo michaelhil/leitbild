@@ -30,6 +30,11 @@ await $`bun run build:ui`
 
 await ssh('mkdir -p /opt/leitbild/app /opt/leitbild/data /opt/leitbild/osrm-data /opt/leitbild/maps/sources /opt/leitbild/maps/builds /opt/leitbild/maps/releases /opt/leitbild/maps/fonts')
 await $`rsync -az --delete --exclude node_modules --exclude .git --exclude data -e "ssh -p ${port}" ./ ${target}:/opt/leitbild/app/`
+// Repo-tracked reference-data overlays (e.g. data/reference/manual/*.geojson)
+// must accompany the deploy so reference:rebuild can find them. The broader
+// exclude `data` keeps local-only data/sources / data/builds / etc. out.
+await ssh('mkdir -p /opt/leitbild/app/data/reference')
+await $`rsync -az --delete -e "ssh -p ${port}" ./data/reference/ ${target}:/opt/leitbild/app/data/reference/`
 
 await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
 await ssh(`cd /opt/leitbild/app && ${remoteBun} run build:ui`)
