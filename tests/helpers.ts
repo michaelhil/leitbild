@@ -4,6 +4,7 @@ import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
 import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createAviationNoopSimulationAdapter } from '../src/packs/aviation/sim/noop-adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -23,6 +24,7 @@ export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCa
 
 export const createTestSimulationAdapters = (): ReadonlyArray<SimulationAdapter> => [
   createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
+  createAviationNoopSimulationAdapter(),
   createLocalTrafficSimulationAdapter(),
   createLocalWeatherSimulationAdapter(),
   createLocalProcessPlantSimulationAdapter(),
