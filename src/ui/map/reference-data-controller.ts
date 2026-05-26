@@ -63,6 +63,7 @@ const manifestEntryForLayers = (tileset: ReferenceTilesetForController): Dataset
 export interface ReferenceDatasetControllerConfig {
   readonly map: MapLibreMap
   readonly beforeLayerId?: string | null
+  readonly datasetIds?: ReadonlyArray<string>
   readonly fetchFn?: (input: string) => Promise<Response>
   readonly capabilitiesUrl?: string
   readonly logger?: (message: string) => void
@@ -173,12 +174,22 @@ export const createReferenceDataController = async (
   const fetchFn = config.fetchFn ?? ((input: string) => globalThis.fetch(input))
   const url = config.capabilitiesUrl ?? CAPABILITIES_URL
   const beforeLayerId = config.beforeLayerId ?? null
+  const allowedDatasetIds = config.datasetIds === undefined ? null : new Set(config.datasetIds)
+
+  if (allowedDatasetIds?.size === 0) {
+    return {
+      registered: [],
+      setCategoryVisibility: () => undefined,
+      setBulkVisibility: () => undefined,
+    }
+  }
 
   const manifest = await fetchManifest(url, fetchFn, log)
   const registered: RegisteredReferenceDataset[] = []
   if (manifest) {
     for (const entry of manifest.tilesets) {
       if (!isReference(entry)) continue
+      if (allowedDatasetIds && !allowedDatasetIds.has(entry.datasetId)) continue
       const style = styleModuleFor(entry.datasetId)
       if (!style) {
         log(`reference-data: no style module registered for dataset "${entry.datasetId}" — skipping`)

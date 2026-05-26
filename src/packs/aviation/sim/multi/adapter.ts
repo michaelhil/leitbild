@@ -46,6 +46,17 @@ const sourceForAdapter = (config: AviationMultiAdapterConfig, source: AviationSo
   return null
 }
 
+const firstAvailableSource = (
+  config: AviationMultiAdapterConfig,
+  preferred: AviationSourceId,
+): AviationSourceId | null => {
+  if (sourceForAdapter(config, preferred)) return preferred
+  for (const source of aviationSources) {
+    if (sourceForAdapter(config, source)) return source
+  }
+  return null
+}
+
 const readInitialSource = (
   connectionConfig: SimulationConnectionConfig,
   fallback: AviationSourceId,
@@ -76,7 +87,10 @@ export const createAviationMultiSimulationAdapter = (
       const handlers = new Set<SimulationEventHandler>()
       // Object ids currently forwarded to the rail; cleared on source switch.
       const trackedIds = new Set<string>()
-      let currentSource: AviationSourceId = readInitialSource(connectionConfig, defaultSource)
+      const requestedInitialSource = readInitialSource(connectionConfig, defaultSource)
+      const availableInitialSource = firstAvailableSource(config, requestedInitialSource)
+      if (!availableInitialSource) throw new Error('aviation.multi: no live aircraft source adapter is registered')
+      let currentSource: AviationSourceId = availableInitialSource
       let activeConnection: SimulationConnection | null = null
       let activeUnsubscribe: (() => void) | null = null
       let activeProvenanceTemplate: SimulationEvent['provenance'] | null = null

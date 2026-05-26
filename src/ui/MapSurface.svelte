@@ -68,6 +68,7 @@
     readonly controlInstanceId?: string | null
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
+    readonly referenceDatasetIds?: ReadonlyArray<string>
   }
 
   const {
@@ -93,6 +94,7 @@
     controlInstanceId = null,
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
+    referenceDatasetIds = [],
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -355,6 +357,7 @@
         registerObjectIconVariants(current, 'traffic'),
         registerObjectIconVariants(current, 'weather'),
         registerObjectIconVariants(current, 'plant'),
+        registerObjectIconVariants(current, 'aircraft'),
       ])
       addOperationalMapSourcesAndLayers({
         map: current,
@@ -378,6 +381,7 @@
         referenceController = await createReferenceDataController({
           map: current,
           beforeLayerId: mapLayerIds.weatherBaseGridOutline,
+          datasetIds: referenceDatasetIds,
         })
       } catch (err) {
         console.warn('reference-data registration failed:', err)
@@ -609,4 +613,3 @@
     </ol>
   </aside>
 {/if}
-

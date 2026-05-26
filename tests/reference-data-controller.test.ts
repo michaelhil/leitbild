@@ -155,6 +155,42 @@ describe('createReferenceDataController', () => {
     expect(controller.registered).toEqual([])
   })
 
+  test('datasetIds limits registration to active pack reference datasets', async () => {
+    const { map, sources } = makeFakeMap()
+    const controller = await createReferenceDataController({
+      map,
+      datasetIds: ['aero-norway'],
+      fetchFn: fakeFetch(200, {
+        schemaVersion: 2,
+        tilesets: [
+          referenceManifestBody({ datasetId: 'aero-norway' }).tilesets[1],
+          referenceManifestBody({ datasetId: 'other-dataset' }).tilesets[1],
+        ],
+      }),
+    })
+
+    expect(controller.registered.map(entry => entry.datasetId)).toEqual(['aero-norway'])
+    expect(sources.get('reference:aero-norway')).toBeDefined()
+    expect(sources.get('reference:other-dataset')).toBeUndefined()
+  })
+
+  test('empty datasetIds registers no reference datasets', async () => {
+    const { map, sources } = makeFakeMap()
+    let fetches = 0
+    const controller = await createReferenceDataController({
+      map,
+      datasetIds: [],
+      fetchFn: async (input: string): Promise<Response> => {
+        fetches += 1
+        return await fakeFetch(200, referenceManifestBody())(input)
+      },
+    })
+
+    expect(controller.registered).toEqual([])
+    expect(sources.get('reference:aero-norway')).toBeUndefined()
+    expect(fetches).toBe(0)
+  })
+
   test('manifest parse failure logs and returns gracefully', async () => {
     const { map } = makeFakeMap()
     const captured: string[] = []

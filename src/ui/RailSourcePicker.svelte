@@ -1,11 +1,6 @@
 <script lang="ts">
-  // Pack-rail source picker (Phase B.2 — read-only display).
-  //
-  // The pack contributes a `simulationProviders[]` catalogue; a Control
-  // Instance is currently bound to one of them via the scenario's
-  // `providerOverrides` (and from B.3 onward via the aviation.set_source
-  // command). For B.2 we render the radios disabled — picking a different
-  // source has no runtime effect yet.
+  // Pack-rail source picker. A pack can pass an onSelect callback when source
+  // switching is live; otherwise the component renders as read-only status.
 
   interface SourceOption {
     readonly id: string

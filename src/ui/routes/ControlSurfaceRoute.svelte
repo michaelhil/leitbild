@@ -147,6 +147,7 @@
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
   // toggles and writes here; MapSurface re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
+  const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetBuilders?.map(builder => String(builder.id)) ?? [])
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
   // re-triggering this effect (a new object literal every time would otherwise
@@ -790,6 +791,7 @@
           {controlInstanceId}
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
+          referenceDatasetIds={activeReferenceDatasetIds}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>

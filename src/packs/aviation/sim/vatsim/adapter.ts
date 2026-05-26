@@ -141,7 +141,7 @@ export const createVatsimSimulationAdapter = (config: VatsimAdapterConfig = {}):
     packId: 'aviation',
     domain: aviationDomain,
     acceptedCommandKinds: [],
-    queryKinds: [],
+    queryKinds: ['aviation.source_status'],
     connect: async (connectionConfig: SimulationConnectionConfig): Promise<SimulationConnection> => {
       const state = new Map<string, AircraftState>()
       const handlers = new Set<SimulationEventHandler>()

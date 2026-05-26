@@ -18,7 +18,7 @@
   "objects": [],
   "initialContexts": [],
   "providerConfigs": {
-    "aviation": { "source": "opensky" }
+    "aviation": { "source": "vatsim" }
   },
   "surface": {
     "schemaVersion": 1,

@@ -53,7 +53,11 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
     connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
       const missingProviderIds = config.scenario?.providerIds.filter(providerId => !adapterIds.has(providerId)) ?? []
       if (missingProviderIds.length > 0) throw new Error(`missing simulation providers: ${missingProviderIds.join(', ')}`)
-      const connections = await Promise.all(adapters.map(async adapter => {
+      const activeProviderIds = config.scenario ? new Set(config.scenario.providerIds) : null
+      const activeAdapters = activeProviderIds
+        ? adapters.filter(adapter => activeProviderIds.has(adapter.id))
+        : adapters
+      const connections = await Promise.all(activeAdapters.map(async adapter => {
         const initialObjects = restoredObjectsFor(adapter, config.initialObjects)
         const scenario = scenarioFor(adapter, config.scenario)
         return {

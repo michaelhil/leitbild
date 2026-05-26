@@ -215,4 +215,27 @@ describe('createAviationMultiSimulationAdapter', () => {
     if (!result.ok) expect(result.reason).toMatch(/not available/)
     await connection.close()
   })
+
+  it('falls back to the first registered source when scenario config names an unavailable source', async () => {
+    const vatsim = createStubAdapter(aviationVatsimProviderId)
+    const multi = createAviationMultiSimulationAdapter({ vatsim, defaultSource: 'opensky' })
+    const connection = await multi.connect({
+      controlInstanceId: 'control-instance:test' as ControlInstanceId,
+      scenario: {
+        scenarioId: 'scenario:aviation',
+        providerIds: ['aviation.multi'],
+        world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
+        initialObjects: [],
+        providerConfigs: {},
+        providerConfig: { source: 'opensky' },
+      },
+    })
+
+    expect(vatsim.connectCount()).toBe(1)
+    const status = await connection.query({ packId: 'aviation', kind: 'aviation.source_status', payload: {} })
+    expect(status.ok).toBe(true)
+    if (status.ok) expect((status.result as { multi?: { activeSource?: string } }).multi?.activeSource).toBe('vatsim')
+
+    await connection.close()
+  })
 })

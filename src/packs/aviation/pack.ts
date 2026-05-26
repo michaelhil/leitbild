@@ -30,9 +30,9 @@ const aeroNorwayDatasetIdValue = asDatasetId('aero-norway')
 // The aviation pack owns:
 //   - Norwegian airspace polygons + Avinor airport points (the aero-norway
 //     reference dataset). Pack-contributed via referenceDatasetBuilders.
-//   - Live aircraft (Phase B.2+): OpenSky / VATSIM simulation providers and
-//     the aviation.set_source command. Not declared in this phase.
-//   - Rail-side layer-group toggles for airspace / airports / aircraft.
+//   - Live aircraft: OpenSky / VATSIM simulation providers and the
+//     aviation.set_source command.
+//   - Rail-side layer-group toggles for reference airspace / airports.
 //
 // See ADR 0022 for the architecture and the wiki page domains/aviation.md.
 
@@ -68,15 +68,6 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
     label: 'Airports',
     defaultVisible: true,
     layerIdPattern: 'reference:aero-norway:airport:*',
-  },
-  {
-    id: 'aviation:aircraft',
-    label: 'Aircraft',
-    defaultVisible: true,
-    // Live aircraft layers are emitted by the operational-object renderer
-    // (kind='aircraft'); the controller matches them via the per-object layer
-    // ids that share the 'aircraft:' prefix.
-    layerIdPattern: 'aircraft:*',
   },
 ]
 

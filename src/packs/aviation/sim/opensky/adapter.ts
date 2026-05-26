@@ -31,9 +31,10 @@ import { normaliseOpenSkyStates } from './normalise.ts'
 //
 // Architecture:
 //   - One adapter instance per server process.
-//   - When at least one Control Instance subscribes, a single poll loop runs.
-//     The loop fetches the configured bbox, normalises rows, diffs against the
-//     last poll, and emits upsert / delete SimulationEvents to all subscribers.
+//   - Each Control Instance connection owns its own ephemeral aircraft map and
+//     starts polling only while that CI has subscribers.
+//   - The loop fetches the configured bbox, normalises rows, diffs against the
+//     last poll, and emits upsert / delete SimulationEvents to subscribers.
 //   - Aircraft are ephemeral: `initialObjects` of kind 'aircraft' is ignored;
 //     the adapter re-bootstraps from live on each connect.
 //   - Stale aircraft (no update in `staleAfterMs`) emit `object.deleted` events
@@ -192,14 +193,14 @@ export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): Si
   const url = buildStatesUrl(runtime.bbox)
 
   // Per-Control-Instance state. The adapter is normally shared across CIs at
-  // the server level, but each `connect()` gives that CI its own aircraft map
-  // + event handler set. The poll runs once and fans out.
+  // the server level, but each `connect()` gives that CI its own aircraft map,
+  // event handler set, and subscriber-gated poll loop.
   return {
     id: aviationOpenSkyProviderId,
     packId: 'aviation',
     domain: aviationDomain,
     acceptedCommandKinds: [],
-    queryKinds: [],
+    queryKinds: ['aviation.source_status'],
     connect: async (connectionConfig: SimulationConnectionConfig): Promise<SimulationConnection> => {
       const state = new Map<string, AircraftState>()
       const handlers = new Set<SimulationEventHandler>()
