@@ -1248,18 +1248,27 @@ body.rail-resizing {
 .process-surface-statusbar {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel-strong) 82%, var(--panel));
-  cursor: move;
   user-select: none;
+}
+
+.process-surface-drag-handle {
+  min-width: 0;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  cursor: move;
   touch-action: none;
 }
 
-.process-surface-statusbar strong {
+.process-surface-drag-handle strong {
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -1319,6 +1328,8 @@ body.rail-resizing {
   position: relative;
   display: grid;
   place-items: center;
+  cursor: default;
+  touch-action: auto;
 }
 
 .process-surface-statusbar .process-surface-icon-button {
@@ -1339,6 +1350,8 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--panel) 96%, transparent);
   box-shadow: 0 18px 42px rgba(16, 24, 40, 0.24);
   cursor: default;
+  pointer-events: auto;
+  user-select: auto;
 }
 
 .process-surface-statusbar .process-surface-lens-menu button {

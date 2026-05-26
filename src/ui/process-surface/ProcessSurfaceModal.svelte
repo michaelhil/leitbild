@@ -166,7 +166,7 @@
   const startWindowDrag = (event: PointerEvent, mode: WindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof HTMLElement && target.closest('button')) return
+    if (target instanceof HTMLElement && target.closest('button, .process-surface-lens-menu')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)
@@ -298,21 +298,23 @@
     style="left: {windowBounds.x}px; top: {windowBounds.y}px; width: {windowBounds.width}px; height: {windowBounds.height}px;"
     aria-label="{object.label} process display"
   >
-    <header
-      class="process-surface-statusbar"
-      role="toolbar"
-      tabindex="0"
-      aria-label="Process display window controls"
-      onpointerdown={(event) => startWindowDrag(event, 'move')}
-      onpointermove={updateWindowDrag}
-      onpointerup={finishWindowDrag}
-      onpointercancel={finishWindowDrag}
-    >
-      <strong><span class="process-surface-asset-dot" style:background={assetStatusColor}></span>{object.label}</strong>
-      <div class="process-surface-status-items">
-        {#each statusItems as item (item.label)}
-          <span><b>{item.label}</b> {item.value}</span>
-        {/each}
+    <header class="process-surface-statusbar" role="toolbar" aria-label="Process display window controls">
+      <div
+        class="process-surface-drag-handle"
+        role="button"
+        tabindex="0"
+        aria-label="Move process display"
+        onpointerdown={(event) => startWindowDrag(event, 'move')}
+        onpointermove={updateWindowDrag}
+        onpointerup={finishWindowDrag}
+        onpointercancel={finishWindowDrag}
+      >
+        <strong><span class="process-surface-asset-dot" style:background={assetStatusColor}></span>{object.label}</strong>
+        <div class="process-surface-status-items">
+          {#each statusItems as item (item.label)}
+            <span><b>{item.label}</b> {item.value}</span>
+          {/each}
+        </div>
       </div>
       <div class="process-surface-lens-control">
         <button
