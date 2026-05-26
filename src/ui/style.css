@@ -1501,7 +1501,7 @@ body.rail-resizing {
 .process-flow-casing {
   fill: none;
   stroke: color-mix(in srgb, #101418 88%, #ffffff);
-  stroke-width: 12;
+  stroke-width: 9;
   stroke-linecap: square;
   stroke-linejoin: round;
   pointer-events: none;
@@ -1509,10 +1509,10 @@ body.rail-resizing {
 
 .process-flow {
   fill: none;
-  stroke-width: 5;
+  stroke-width: 4;
   stroke-linecap: square;
   stroke-linejoin: round;
-  opacity: 0.9;
+  opacity: 0.86;
   pointer-events: none;
 }
 
@@ -1523,11 +1523,6 @@ body.rail-resizing {
 .process-flow.electrical { stroke: #f0c14b; }
 .process-flow.cooling { stroke: #44b3a4; }
 .process-flow.support { stroke: #94a3b8; }
-
-.process-flow-arrow {
-  fill: currentColor;
-  color: #64748b;
-}
 
 .process-widget .widget-shell {
   fill: color-mix(in srgb, var(--panel) 94%, transparent);
@@ -1600,6 +1595,130 @@ body.rail-resizing {
 .overview-readout .widget-readout-label {
   fill: #a7b0ba;
   font-size: 9.5px;
+}
+
+.rv-shell,
+.pz-shell,
+.tg-shell,
+.cd-shell {
+  fill: color-mix(in srgb, #20262c 92%, transparent);
+  stroke: color-mix(in srgb, #c2cbd4 46%, #17191c);
+  stroke-width: 1.2;
+}
+
+.widget-title.rv-title {
+  fill: #f8fafc;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.rv-vessel-body {
+  fill: color-mix(in srgb, #141a20 82%, transparent);
+  stroke: color-mix(in srgb, #7db5f1 58%, #f8fafc);
+  stroke-width: 1.5;
+}
+
+.rv-coolant-fill {
+  fill: color-mix(in srgb, #5ba3f0 42%, transparent);
+}
+
+.rv-core rect {
+  fill: color-mix(in srgb, #f0c14b 22%, #11161b);
+  stroke: color-mix(in srgb, #f0c14b 68%, transparent);
+  stroke-width: 1;
+}
+
+.rv-core path {
+  stroke: color-mix(in srgb, #f8fafc 48%, transparent);
+  stroke-width: 1.2;
+}
+
+.rv-flow-guide {
+  fill: none;
+  stroke-width: 2.2;
+  stroke-linecap: square;
+}
+
+.rv-flow-guide.hot {
+  stroke: #5ba3f0;
+}
+
+.rv-flow-guide.cold {
+  stroke: color-mix(in srgb, #5ba3f0 54%, #f8fafc);
+}
+
+.pz-vessel {
+  fill: color-mix(in srgb, #11161b 74%, transparent);
+  stroke: color-mix(in srgb, #7db5f1 60%, #f8fafc);
+  stroke-width: 1.4;
+}
+
+.pz-level {
+  fill: color-mix(in srgb, #5ba3f0 76%, #f8fafc);
+  opacity: 0.72;
+}
+
+.pz-target {
+  stroke: color-mix(in srgb, #f8fafc 64%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.tg-generator {
+  fill: color-mix(in srgb, #11161b 78%, transparent);
+  stroke: color-mix(in srgb, #e07a5f 70%, #f8fafc);
+  stroke-width: 2;
+}
+
+.tg-blades {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 72%, #e07a5f);
+  stroke-width: 2.5;
+  stroke-linecap: square;
+  stroke-linejoin: round;
+}
+
+.tg-output {
+  fill: #f8fafc;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.cd-hotwell {
+  fill: color-mix(in srgb, #11161b 78%, transparent);
+  stroke: color-mix(in srgb, #34c4d8 42%, #f8fafc);
+  stroke-width: 1;
+}
+
+.cd-hotwell-fill {
+  fill: color-mix(in srgb, #34c4d8 70%, #f8fafc);
+  opacity: 0.6;
+}
+
+.cd-condensate-rain {
+  fill: none;
+  stroke: color-mix(in srgb, #e07a5f 56%, #f8fafc);
+  stroke-width: 1.7;
+  stroke-dasharray: 8 5;
+}
+
+.pump-shell {
+  fill: color-mix(in srgb, #20262c 92%, transparent);
+  stroke: color-mix(in srgb, #7db5f1 72%, #17191c);
+  stroke-width: 1.6;
+}
+
+.pump-inner {
+  fill: color-mix(in srgb, #11161b 62%, transparent);
+  stroke: color-mix(in srgb, #f8fafc 42%, transparent);
+  stroke-width: 1.2;
+}
+
+.pump-impeller {
+  fill: none;
+  stroke: color-mix(in srgb, #f8fafc 72%, #7db5f1);
+  stroke-width: 3;
+  stroke-linejoin: round;
 }
 
 .process-widget.steam-generator {

@@ -99,34 +99,11 @@ export const pathPointsFor = (config: {
   })
 }
 
-export const curvedPathData = (from: Point, to: Point): string => {
-  const dx = to.x - from.x
-  const dy = to.y - from.y
-  const horizontalBias = Math.max(80, Math.min(260, Math.abs(dx) * 0.48 + Math.abs(dy) * 0.12))
-  const direction = dx >= 0 ? 1 : -1
-  return [
-    `M ${from.x.toFixed(1)} ${from.y.toFixed(1)}`,
-    `C ${(from.x + horizontalBias * direction).toFixed(1)} ${from.y.toFixed(1)}`,
-    `${(to.x - horizontalBias * direction).toFixed(1)} ${to.y.toFixed(1)}`,
-    `${to.x.toFixed(1)} ${to.y.toFixed(1)}`,
-  ].join(' ')
-}
-
 export const pathDataFor = (points: ReadonlyArray<Point>): string => {
   const first = points[0]
-  const second = points[1]
-  if (points.length === 2 && first && second) return curvedPathData(first, second)
   if (!first) return ''
   const commands = [`M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`]
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const control = points[index]
-    const next = points[index + 1]
-    if (!control || !next) continue
-    const midpoint = { x: (control.x + next.x) / 2, y: (control.y + next.y) / 2 }
-    commands.push(`Q ${control.x.toFixed(1)} ${control.y.toFixed(1)} ${midpoint.x.toFixed(1)} ${midpoint.y.toFixed(1)}`)
-  }
-  const last = points[points.length - 1]
-  if (last && points.length > 1) commands.push(`L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`)
+  for (const point of points.slice(1)) commands.push(`L ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
   return commands.join(' ')
 }
 

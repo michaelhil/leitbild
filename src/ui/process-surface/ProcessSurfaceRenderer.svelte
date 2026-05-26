@@ -4,7 +4,6 @@
   import type { ProcessSurfaceLayout, ProcessSurfaceWidgetPosition } from './process-surface-layout.ts'
   import {
     pathDataFor,
-    pathFlowFraction,
     pathPointsFor,
     widgetGeometryFor,
     widgetPositionFor,
@@ -220,9 +219,6 @@
         <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.72" />
         <stop offset="100%" stop-color="#93c5fd" stop-opacity="0.38" />
       </linearGradient>
-      <marker id="flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-        <path d="M 0 0 L 8 4 L 0 8 z" class="process-flow-arrow" />
-      </marker>
     </defs>
 
     <g transform="translate({viewTransform.x} {viewTransform.y}) scale({viewTransform.scale})">
@@ -248,9 +244,6 @@
         <path
           class={serviceClass(path)}
           d={data}
-          pathLength="1"
-          stroke-dasharray="{pathFlowFraction(path, values)} 0.20"
-          marker-end="url(#flow-arrow)"
         />
       {/each}
 

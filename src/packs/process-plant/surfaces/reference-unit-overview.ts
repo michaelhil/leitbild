@@ -56,6 +56,12 @@ const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
 const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
   const laneCenter = sgX + 82
+  const hotLegY = 366 + loopIndex(loop) * 42
+  const coldLegY = 364 + loopIndex(loop) * 42
+  const sgPrimaryInY = 336
+  const sgPrimaryOutY = 496
+  const hotRiserX = 430
+  const returnHeaderX = 142
   return [
     {
       id: `primary-hot-leg-${lower}`,
@@ -64,8 +70,8 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
       from: `reactor-vessel.hotLeg${loop}`,
       to: `sg-${lower}.primaryIn`,
       waypoints: [
-        { x: 430, y: 262 + rankOffset(loop) },
-        { x: laneCenter - 24, y: 262 + rankOffset(loop) },
+        { x: hotRiserX, y: hotLegY },
+        { x: hotRiserX, y: sgPrimaryInY },
       ],
       binds: { flow: { label: 'Hot-leg flow', path: `rcs-hot-leg-${lower}.flowKgPerS`, digits: 0 } },
       style: { service: 'primary' },
@@ -77,8 +83,8 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
       from: `sg-${lower}.primaryOut`,
       to: `rcp-${lower}.inlet`,
       waypoints: [
-        { x: laneCenter, y: 586 },
-        { x: laneCenter, y: 586 },
+        { x: sgX, y: sgPrimaryOutY + 70 },
+        { x: laneCenter, y: sgPrimaryOutY + 70 },
       ],
       binds: { flow: { label: 'Cold-leg flow', path: `rcs-cold-leg-${lower}.flowKgPerS`, digits: 0 } },
       style: { service: 'primary' },
@@ -90,8 +96,9 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
       from: `rcp-${lower}.outlet`,
       to: `reactor-vessel.coldLeg${loop}`,
       waypoints: [
-        { x: laneCenter - 18, y: 730 },
-        { x: 392, y: 730 },
+        { x: laneCenter - 18, y: 726 },
+        { x: returnHeaderX, y: 726 },
+        { x: returnHeaderX, y: coldLegY },
       ],
       binds: { flow: { label: 'Pump flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 } },
       style: { service: 'primary' },
@@ -99,11 +106,14 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
   ] as const
 }
 
-const rankOffset = (loop: LoopLetter): number => ({ A: -64, B: -22, C: 22, D: 64 })[loop]
+const loopIndex = (loop: LoopLetter): number => loopLetters.indexOf(loop)
 
 const secondaryPaths = (loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
-  const laneCenter = sgX + 82
+  const laneCenter = sgX + 113
+  const steamHeaderY = 212
+  const feedwaterHeaderY = 738
+  const feedwaterBranchY = 700
   return [
     {
       id: `steam-${lower}-to-header`,
@@ -112,8 +122,7 @@ const secondaryPaths = (loop: LoopLetter, sgX: number) => {
       from: `sg-${lower}.steamOut`,
       to: `main-steam-header.in${loop}`,
       waypoints: [
-        { x: laneCenter, y: 184 },
-        { x: laneCenter, y: 184 },
+        { x: laneCenter, y: steamHeaderY },
       ],
       binds: { flow: { label: 'Steam flow', path: `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`, digits: 0 } },
       style: { service: 'steam' },
@@ -125,8 +134,8 @@ const secondaryPaths = (loop: LoopLetter, sgX: number) => {
       from: `feedwater-header.out${loop}`,
       to: `sg-${lower}.feedwaterIn`,
       waypoints: [
-        { x: laneCenter, y: 754 },
-        { x: laneCenter, y: 596 },
+        { x: laneCenter, y: feedwaterHeaderY },
+        { x: laneCenter, y: feedwaterBranchY },
       ],
       binds: { flow: { label: 'Feedwater flow', path: `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`, digits: 0 } },
       style: { service: 'feedwater' },

@@ -32,6 +32,7 @@
   const displayRows = $derived(rows.slice(0, rowLimit))
   const widgetClass = $derived(`process-widget ${widget.type} ${widget.role ?? 'generic'} ${widget.style.tone ?? 'primary'} ${dragging ? 'dragging' : ''}`)
   const shortTitle = $derived(widget.label.length > 22 ? `${widget.label.slice(0, 20)}...` : widget.label)
+  const detailLevel = $derived(renderScale >= 1.35 ? 'detailed' : renderScale <= 0.64 ? 'compact' : 'normal')
   const pumpRadius = $derived(Math.min(geometry.width, geometry.height) * 0.36)
   const pumpValue = $derived(rows.find(row => row.label.toLowerCase().includes('speed')) ?? rows[0])
   const levelHeight = $derived(Math.max(0, (geometry.height - 34) * levelFraction))
@@ -133,7 +134,7 @@
   const pressureValue = $derived(numericValue('pressure') ?? 6.8)
   const pressureFraction = $derived(clamp((pressureValue - 5.5) / 2.5, 0, 1))
   const peerRadiationValue = $derived(peerAverageFor('radiation') ?? 0.02)
-  const sgDetailLevel = $derived(renderScale >= 1.35 ? 'detailed' : renderScale <= 0.64 ? 'compact' : 'normal')
+  const sgDetailLevel = $derived(detailLevel)
   const sgTubeApexY = 96
 </script>
 
@@ -157,6 +158,45 @@
         <text class="overview-status-value" x="0" y="50">{row.formatted}</text>
       </g>
     {/each}
+  {:else if widget.role === 'reactor-vessel'}
+    <rect class="rv-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="3" />
+    <text class="widget-title overview-readout-title rv-title" x="16" y="24">{shortTitle}</text>
+    <g class="rv-vessel {detailLevel}" transform="translate(36 42)">
+      <path class="rv-vessel-body" d="M 44 0 H 84 C 104 0 118 16 118 38 V 176 C 118 199 101 216 78 216 H 50 C 27 216 10 199 10 176 V 38 C 10 16 24 0 44 0 Z" />
+      <rect class="rv-coolant-fill" x="18" y="38" width="92" height="170" rx="2" />
+      <g class="rv-core">
+        <rect x="42" y="72" width="44" height="86" rx="2" />
+        <path d="M 50 80 V 150 M 58 80 V 150 M 66 80 V 150 M 74 80 V 150 M 82 80 V 150" />
+      </g>
+      {#if detailLevel !== 'compact'}
+        <path class="rv-flow-guide hot" d="M 118 62 H 154 M 118 104 H 154 M 118 146 H 154 M 118 188 H 154" />
+        <path class="rv-flow-guide cold" d="M 10 60 H -24 M 10 102 H -24 M 10 144 H -24 M 10 186 H -24" />
+      {/if}
+    </g>
+    <g class="overview-widget-metrics" transform="translate(16 {geometry.height - 62})">
+      {#each displayRows as row, index (row.path)}
+        <text class="widget-readout overview-readout" x="0" y={index * 17}>
+          <tspan class="widget-readout-label">{row.label}</tspan>
+          <tspan dx="5">{row.formatted}</tspan>
+        </text>
+      {/each}
+    </g>
+  {:else if widget.role === 'pressurizer'}
+    <rect class="pz-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="3" />
+    <text class="widget-title overview-readout-title" x="14" y="22">{shortTitle}</text>
+    <g transform="translate(18 36)">
+      <rect class="pz-vessel" x="0" y="0" width="44" height={geometry.height - 50} rx="18" />
+      <rect class="pz-level" x="5" y={(geometry.height - 45) * (1 - levelFraction)} width="34" height={(geometry.height - 55) * levelFraction} rx="12" />
+      <line class="pz-target" x1="-5" x2="49" y1={(geometry.height - 50) * 0.45} y2={(geometry.height - 50) * 0.45} />
+    </g>
+    <g class="overview-widget-metrics" transform="translate(74 48)">
+      {#each displayRows as row, index (row.path)}
+        <text class="widget-readout overview-readout" x="0" y={index * 18}>
+          <tspan class="widget-readout-label">{row.label}</tspan>
+          <tspan dx="5">{row.formatted}</tspan>
+        </text>
+      {/each}
+    </g>
   {:else if widget.role === 'steam-generator'}
     <rect class="sg-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="2" class:alert={sgAlert} />
     <rect class="sg-status-rail" x="0" y="0" width="5" height={geometry.height} rx="1" class:alert={sgAlert} />
@@ -272,6 +312,32 @@
         {/if}
       {/each}
     </g>
+  {:else if widget.role === 'turbine-generator'}
+    <rect class="tg-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="3" />
+    <text class="widget-title centered" x={geometry.width / 2} y="18" text-anchor="middle">{shortTitle}</text>
+    <g transform="translate({geometry.width / 2} {geometry.height / 2 + 4})">
+      <circle class="tg-generator" cx="0" cy="0" r="34" />
+      <path class="tg-blades" d="M 0 -25 L 10 -4 L 32 -4 M 0 25 L -10 4 L -32 4 M -22 -14 L -6 -8 L -18 18 M 22 14 L 6 8 L 18 -18" />
+    </g>
+    {#if displayRows[0]}
+      <text class="widget-readout centered tg-output" x={geometry.width / 2} y={geometry.height - 14} text-anchor="middle">{displayRows[0].formatted}</text>
+    {/if}
+  {:else if widget.role === 'condenser'}
+    <rect class="cd-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="3" />
+    <text class="widget-title overview-readout-title" x="14" y="22">{shortTitle}</text>
+    <g transform="translate(18 36)">
+      <rect class="cd-hotwell" x="0" y="36" width={geometry.width - 36} height="52" rx="2" />
+      <rect class="cd-hotwell-fill" x="4" y={86 - Math.max(4, levelFraction * 48)} width={geometry.width - 44} height={Math.max(4, levelFraction * 48)} rx="2" />
+      <path class="cd-condensate-rain" d="M 24 0 V 28 M 48 0 V 28 M 72 0 V 28 M 96 0 V 28 M 120 0 V 28" />
+    </g>
+    <g class="overview-widget-metrics" transform="translate(14 {geometry.height - 44})">
+      {#each displayRows as row, index (row.path)}
+        <text class="widget-readout overview-readout" x={(index % 2) * 100} y={Math.floor(index / 2) * 17}>
+          <tspan class="widget-readout-label">{row.label}</tspan>
+          <tspan dx="5">{row.formatted}</tspan>
+        </text>
+      {/each}
+    </g>
   {:else if widget.type === 'numericReadout' || widget.type === 'alarmStrip'}
     <rect class="overview-readout-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="4" />
     <text class="widget-title overview-readout-title" x="14" y="21">{shortTitle}</text>
@@ -304,9 +370,9 @@
       </text>
     {/each}
   {:else if widget.type === 'pump'}
-    <circle class="widget-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius} />
-    <circle class="widget-ring" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius * 0.78} />
-    <path class="widget-impeller" d="M {geometry.width / 2} {geometry.height * 0.24} L {geometry.width * 0.66} {geometry.height * 0.58} L {geometry.width * 0.34} {geometry.height * 0.58} Z" />
+    <circle class="pump-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius} />
+    <circle class="pump-inner" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius * 0.74} />
+    <path class="pump-impeller" d="M {geometry.width / 2} {geometry.height * 0.25} L {geometry.width * 0.66} {geometry.height * 0.60} H {geometry.width * 0.34} Z" />
     <text class="widget-title centered" x={geometry.width / 2} y={geometry.height * 0.18} text-anchor="middle">{shortTitle}</text>
     {#if pumpValue}
       <text class="widget-readout centered" x={geometry.width / 2} y={geometry.height * 0.78} text-anchor="middle">{pumpValue.formatted}</text>
