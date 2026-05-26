@@ -36,8 +36,12 @@ export interface AeroNorwayThresholds {
   readonly airport: number
 }
 
+// Production audit thresholds for ENOR. OpenAIP carries 1 FIR-equivalent
+// (Bodø OCA on type=15) for Norway as of AIRAC 2604; we treat OCA as `fir` in
+// the parser. TMA / CTR counts reflect the live data (46 / 8 respectively).
+// Airport count comes from the Avinor WFS.
 export const aeroNorwayProductionThresholds: AeroNorwayThresholds = {
-  fir: 2,
+  fir: 1,
   tma: 10,
   ctr: 8,
   airport: 40,

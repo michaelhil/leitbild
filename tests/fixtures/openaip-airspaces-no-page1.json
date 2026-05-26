@@ -1,14 +1,14 @@
 {
   "items": [
     {
-      "_id": "fixture-bodo-fir",
-      "name": "BODO FIR",
-      "type": "FIR",
-      "class": "UNCLASSIFIED",
-      "activatedByNotam": false,
+      "_id": "fixture-bodo-oca",
+      "name": "BODØ OCA",
+      "type": 15,
+      "icaoClass": 0,
+      "byNotam": false,
       "country": "NO",
-      "upperCeiling": { "value": null, "unit": null, "referenceDatum": null },
-      "lowerCeiling": { "value": 0, "unit": "FT", "referenceDatum": "GND" },
+      "upperLimit": { "value": null, "unit": null, "referenceDatum": null },
+      "lowerLimit": { "value": 0, "unit": 1, "referenceDatum": 0 },
       "geometry": {
         "type": "Polygon",
         "coordinates": [[[8, 65], [20, 65], [20, 72], [8, 72], [8, 65]]]
@@ -17,13 +17,15 @@
     {
       "_id": "fixture-oslo-tma",
       "name": "OSLO TMA",
-      "type": "TMA",
-      "class": "C",
-      "activatedByNotam": false,
+      "type": 7,
+      "icaoClass": 2,
+      "byNotam": false,
       "country": "NO",
-      "upperCeiling": { "value": 245, "unit": "FL", "referenceDatum": "STD" },
-      "lowerCeiling": { "value": 2500, "unit": "FT", "referenceDatum": "MSL" },
-      "groundService": { "callsign": "OSLO APPROACH", "frequency": "120.000" },
+      "upperLimit": { "value": 245, "unit": 6, "referenceDatum": 2 },
+      "lowerLimit": { "value": 2500, "unit": 1, "referenceDatum": 1 },
+      "frequencies": [
+        { "value": "120.000", "name": "OSLO APPROACH", "primary": true }
+      ],
       "geometry": {
         "type": "Polygon",
         "coordinates": [[[10.0, 59.5], [11.5, 59.5], [11.5, 60.5], [10.0, 60.5], [10.0, 59.5]]]
@@ -32,13 +34,15 @@
     {
       "_id": "fixture-gardermoen-ctr",
       "name": "OSLO/GARDERMOEN CTR",
-      "type": "CTR",
-      "class": "D",
-      "activatedByNotam": false,
+      "type": 4,
+      "icaoClass": 3,
+      "byNotam": false,
       "country": "NO",
-      "upperCeiling": { "value": 4500, "unit": "FT", "referenceDatum": "MSL" },
-      "lowerCeiling": { "value": 0, "unit": "FT", "referenceDatum": "GND" },
-      "groundService": { "callsign": "OSLO TOWER", "frequency": "118.300" },
+      "upperLimit": { "value": 4500, "unit": 1, "referenceDatum": 1 },
+      "lowerLimit": { "value": 0, "unit": 1, "referenceDatum": 0 },
+      "frequencies": [
+        { "value": "118.300", "name": "OSLO TOWER", "primary": true }
+      ],
       "geometry": {
         "type": "Polygon",
         "coordinates": [[[11.0, 60.1], [11.3, 60.1], [11.3, 60.3], [11.0, 60.3], [11.0, 60.1]]]
@@ -46,14 +50,14 @@
     },
     {
       "_id": "fixture-r-zone-halden",
-      "name": "ENR-100 HALDEN",
-      "type": "RESTRICTED",
-      "class": "UNCLASSIFIED",
-      "activatedByNotam": true,
+      "name": "EN R100 HALDEN",
+      "type": 1,
+      "icaoClass": 8,
+      "byNotam": true,
       "remarks": "Activated by NOTAM during exercises",
       "country": "NO",
-      "upperCeiling": { "value": 6000, "unit": "FT", "referenceDatum": "MSL" },
-      "lowerCeiling": { "value": 0, "unit": "FT", "referenceDatum": "GND" },
+      "upperLimit": { "value": 6000, "unit": 1, "referenceDatum": 1 },
+      "lowerLimit": { "value": 0, "unit": 1, "referenceDatum": 0 },
       "geometry": {
         "type": "Polygon",
         "coordinates": [[[11.30, 59.10], [11.45, 59.10], [11.45, 59.20], [11.30, 59.20], [11.30, 59.10]]]

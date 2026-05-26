@@ -125,7 +125,7 @@ describe('openAipAirspaceSource', () => {
 
     // Unknown OpenAIP type falls back to lowercased category.
     const mystery = features.find(f => f.id === 'fixture-novel-type')!
-    expect(mystery.properties.category).toBe('something_new_from_the_api')
+    expect(mystery.properties.category).toBe('unknown-999')
   })
 
   test('persists each page to the fetch cache with sha and etag', async () => {

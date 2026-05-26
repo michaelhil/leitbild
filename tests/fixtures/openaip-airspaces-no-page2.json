@@ -3,12 +3,12 @@
     {
       "_id": "fixture-stavanger-tma-multi",
       "name": "STAVANGER TMA",
-      "type": "TMA",
-      "class": "C",
-      "activatedByNotam": false,
+      "type": 7,
+      "icaoClass": 2,
+      "byNotam": false,
       "country": "NO",
-      "upperCeiling": { "value": 99999, "unit": null, "referenceDatum": null },
-      "lowerCeiling": { "value": 1500, "unit": "FT", "referenceDatum": "MSL" },
+      "upperLimit": { "value": null, "unit": null, "referenceDatum": null },
+      "lowerLimit": { "value": 1500, "unit": 1, "referenceDatum": 1 },
       "geometry": {
         "type": "MultiPolygon",
         "coordinates": [
@@ -20,11 +20,11 @@
     {
       "_id": "fixture-novel-type",
       "name": "MYSTERY CLASS",
-      "type": "SOMETHING_NEW_FROM_THE_API",
-      "activatedByNotam": false,
+      "type": 999,
+      "byNotam": false,
       "country": "NO",
-      "upperCeiling": { "value": 5000, "unit": "FT", "referenceDatum": "MSL" },
-      "lowerCeiling": { "value": 0, "unit": "FT", "referenceDatum": "GND" },
+      "upperLimit": { "value": 5000, "unit": 1, "referenceDatum": 1 },
+      "lowerLimit": { "value": 0, "unit": 1, "referenceDatum": 0 },
       "geometry": {
         "type": "Polygon",
         "coordinates": [[[10.5, 60.0], [10.6, 60.0], [10.6, 60.1], [10.5, 60.1], [10.5, 60.0]]]

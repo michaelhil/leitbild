@@ -26,51 +26,93 @@ const MAX_PAGES = 50
 const MAX_RETRIES = 5
 const PAGE_DELIM = '\n--openaip-page-delim--\n'
 
-// OpenAIP `type` enum → our canonical category.
-const TYPE_TO_CATEGORY: Readonly<Record<string, string>> = {
-  CTA: 'cta',
-  TMA: 'tma',
-  CTR: 'ctr',
-  ATZ: 'atz',
-  DANGER: 'danger',
-  PROHIBITED: 'prohibited',
-  RESTRICTED: 'restricted',
-  WARNING: 'warning',
-  RMZ: 'rmz',
-  TMZ: 'tmz',
-  MATZ: 'matz',
-  GLIDING_SECTOR: 'training',
-  AERIAL_SPORTING_RECREATIONAL: 'training',
-  FIR: 'fir',
-  UIR: 'uir',
+// OpenAIP V2 `type` is a numeric code. Mapping derived empirically from the
+// live API plus published documentation. Unknown codes fall back to
+// `unknown-<n>` so coverage gaps stay visible without crashing.
+const TYPE_CODE_TO_CATEGORY: Readonly<Record<number, string>> = {
+  0: 'other',
+  1: 'restricted',
+  2: 'danger',
+  3: 'prohibited',
+  4: 'ctr',
+  5: 'tmz',
+  6: 'rmz',
+  7: 'tma',
+  8: 'tra',
+  9: 'tsa',
+  10: 'fir',
+  11: 'uir',
+  12: 'adiz',
+  13: 'atz',
+  14: 'matz',
+  // OCA (Oceanic Control Area) — semantically a FIR over open ocean. Bodø OCA
+  // is Norway's only FIR-equivalent entry in the live V2 API.
+  15: 'fir',
+  16: 'mtr',
+  17: 'alert',
+  18: 'warning',
+  19: 'protected',
+  20: 'htz',
+  21: 'training',
+  22: 'trp',
+  23: 'tiz',
+  24: 'tia',
+  25: 'mta',
+  26: 'cta',
+  27: 'sector',
+  28: 'training',
+  29: 'overflight_restriction',
+  30: 'mrt',
+  31: 'tfr',
+  32: 'ada',
+  33: 'sua',
+}
+
+const ICAO_CLASS_CODE_TO_LETTER: Readonly<Record<number, 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G'>> = {
+  0: 'A', 1: 'B', 2: 'C', 3: 'D', 4: 'E', 5: 'F', 6: 'G',
+}
+
+const UNIT_CODE_TO_STRING: Readonly<Record<number, 'M' | 'FT' | 'FL'>> = {
+  0: 'M', 1: 'FT', 6: 'FL',
+}
+
+const REFERENCE_DATUM_CODE_TO_STRING: Readonly<Record<number, 'GND' | 'MSL' | 'STD'>> = {
+  0: 'GND', 1: 'MSL', 2: 'STD',
 }
 
 const verticalLimitJsonSchema = z.object({
   value: z.number().nullable(),
-  unit: z.enum(['FT', 'M', 'FL']).nullable(),
-  referenceDatum: z.enum(['GND', 'MSL', 'STD']).nullable(),
+  unit: z.number().int().nullable(),
+  referenceDatum: z.number().int().nullable(),
 })
 
-const groundServiceJsonSchema = z.object({
-  callsign: z.string().optional(),
-  frequency: z.string().optional(),
-}).optional()
+const frequencyEntrySchema = z.object({
+  value: z.string(),
+  unit: z.union([z.string(), z.number()]).optional(),
+  name: z.string().optional(),
+  primary: z.boolean().optional(),
+})
 
 const positionTupleSchema = z.tuple([z.number(), z.number()]).or(z.tuple([z.number(), z.number(), z.number()]))
 const ringSchema = z.array(positionTupleSchema)
 const polygonCoordsSchema = z.array(ringSchema)
 const multiPolygonCoordsSchema = z.array(polygonCoordsSchema)
 
+// Live V2 field names: `upperLimit` / `lowerLimit` (not `upperCeiling` /
+// `lowerCeiling`). `type` / `icaoClass` / `activity` are numeric codes.
+// `byNotam` is the activation flag. Frequencies are a typed array.
 const apiAirspaceFeatureSchema = z.object({
   _id: z.string().optional(),
   name: z.string().min(1),
-  type: z.string().min(1),
-  class: z.string().optional(),
-  activity: z.string().optional(),
-  upperCeiling: verticalLimitJsonSchema,
-  lowerCeiling: verticalLimitJsonSchema,
-  activatedByNotam: z.boolean().optional(),
-  groundService: groundServiceJsonSchema,
+  type: z.number().int(),
+  icaoClass: z.number().int().optional(),
+  activity: z.number().int().optional(),
+  upperLimit: verticalLimitJsonSchema,
+  lowerLimit: verticalLimitJsonSchema,
+  byNotam: z.boolean().optional(),
+  onDemand: z.boolean().optional(),
+  onRequest: z.boolean().optional(),
+  frequencies: z.array(frequencyEntrySchema).optional(),
   remarks: z.string().optional(),
   country: z.string().optional(),
   geometry: z.discriminatedUnion('type', [
@@ -227,7 +269,26 @@ const itemsInPage = (body: string): { readonly items: unknown[]; readonly return
   return { items: parsed.items, returned: parsed.items.length }
 }
 
+type ApiVerticalLimit = { readonly value: number | null; readonly unit: number | null; readonly referenceDatum: number | null }
+
+const codedToRaw = (limit: ApiVerticalLimit): RawVerticalLimit => ({
+  value: limit.value,
+  unit: limit.unit !== null ? (UNIT_CODE_TO_STRING[limit.unit] ?? null) : null,
+  referenceDatum: limit.referenceDatum !== null ? (REFERENCE_DATUM_CODE_TO_STRING[limit.referenceDatum] ?? null) : null,
+})
+
 const verticalReferenceFrom = (raw: RawVerticalLimit): VerticalReference => normaliseVerticalLimit(raw).reference
+
+interface FrequencyLike { readonly value: string; readonly primary?: boolean | undefined }
+const pickPrimaryFrequencyMhz = (
+  frequencies: ReadonlyArray<FrequencyLike> | undefined,
+): number | null => {
+  if (!frequencies || frequencies.length === 0) return null
+  const candidate = frequencies.find(f => f.primary) ?? frequencies[0]
+  if (!candidate) return null
+  const v = Number(candidate.value)
+  return Number.isFinite(v) ? v : null
+}
 
 const normaliseFeature = (
   raw: unknown,
@@ -240,37 +301,44 @@ const normaliseFeature = (
     return null
   }
   const data = parsed.data
-  const lower = normaliseVerticalLimit(data.lowerCeiling)
-  const upper = normaliseVerticalLimit(data.upperCeiling)
-  const typeUpper = data.type.toUpperCase()
-  const mapped = TYPE_TO_CATEGORY[typeUpper]
+  const lowerRaw = codedToRaw(data.lowerLimit)
+  const upperRaw = codedToRaw(data.upperLimit)
+  let lower
+  let upper
+  try {
+    lower = normaliseVerticalLimit(lowerRaw)
+    upper = normaliseVerticalLimit(upperRaw)
+  } catch (err) {
+    warnings.push(`vertical-limit conversion failed for ${data.name}: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  }
+  const mapped = TYPE_CODE_TO_CATEGORY[data.type]
   let category: string
   if (mapped) {
     category = mapped
   } else {
-    warnings.push(`unknown OpenAIP type "${data.type}"; using lowercase as category`)
-    category = data.type.toLowerCase()
+    warnings.push(`unknown OpenAIP type code ${data.type} for "${data.name}"; categorising as unknown-${data.type}`)
+    category = `unknown-${data.type}`
   }
-  const classRaw = data.class?.toUpperCase()
-  const classLetter = classRaw && classRaw !== 'UNCLASSIFIED' && /^[A-G]$/.test(classRaw)
-    ? (classRaw as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G')
+  const classLetter = data.icaoClass !== undefined
+    ? (ICAO_CLASS_CODE_TO_LETTER[data.icaoClass] ?? null)
     : null
-  const frequencyStr = data.groundService?.frequency
-  const frequencyMhz = frequencyStr && /^\d+(\.\d+)?$/.test(frequencyStr) ? Number(frequencyStr) : null
+  const frequencyMhz = pickPrimaryFrequencyMhz(data.frequencies)
+  const callsign = data.frequencies?.find(f => f.name && f.name.length > 0)?.name ?? null
   const properties: AirspaceFeatureProperties = {
     name: data.name,
     category,
     classLetter,
     floorM: lower.metres,
     ceilingM: upper.metres,
-    floorRef: verticalReferenceFrom(data.lowerCeiling),
-    ceilingRef: verticalReferenceFrom(data.upperCeiling),
+    floorRef: verticalReferenceFrom(lowerRaw),
+    ceilingRef: verticalReferenceFrom(upperRaw),
     floorLabel: lower.label,
     ceilingLabel: upper.label,
-    activity: data.activity ?? null,
-    activatedByNotam: data.activatedByNotam ?? false,
+    activity: data.activity !== undefined ? String(data.activity) : null,
+    activatedByNotam: data.byNotam ?? false,
     frequencyMhz,
-    callsign: data.groundService?.callsign ?? null,
+    callsign,
     remarks: data.remarks ?? null,
     source: 'openaip',
     sourceExternalId: data._id ?? null,
@@ -347,5 +415,8 @@ export const __internals = {
   exponentialBackoffMs,
   parseRetryAfter,
   normaliseFeature,
-  TYPE_TO_CATEGORY,
+  TYPE_CODE_TO_CATEGORY,
+  ICAO_CLASS_CODE_TO_LETTER,
+  UNIT_CODE_TO_STRING,
+  REFERENCE_DATUM_CODE_TO_STRING,
 }
