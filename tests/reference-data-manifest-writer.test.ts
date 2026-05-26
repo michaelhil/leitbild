@@ -49,9 +49,9 @@ describe('composeDatasetManifest', () => {
       sidecarRelativePath: 'test-dataset.features.geojson',
     })
     expect(manifest.datasetId).toBe('test-dataset')
-    expect(manifest.categories[0]?.featureCount).toBe(3)
+    expect(manifest.categories?.[0]?.featureCount).toBe(3)
     expect(manifest.licences.map(l => l.id).sort()).toEqual(['cc-by-nc-sa-4.0', 'repo-owned'])
-    expect(manifest.sources[0]?.id).toBe('fixture')
+    expect(manifest.sources?.[0]?.id).toBe('fixture')
     expect(manifest.airac).toBeUndefined()
   })
 
