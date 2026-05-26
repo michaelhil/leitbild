@@ -151,6 +151,21 @@ describe('control instance registry', () => {
     expect(await registry.close('sandbox' as ControlInstanceId)).toBe(true)
   })
 
+  test('coalesces concurrent create and join for the same control instance id', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const registry = createRegistry(dataDir)
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+
+    const [created, joined] = await Promise.all([
+      registry.create({ id: controlInstanceId, scenarioId: 'oslo-ambulance' }),
+      registry.ensure(controlInstanceId, { scenarioId: 'oslo-ambulance' }),
+    ])
+
+    expect(joined).toBe(created)
+    expect(registry.list()).toHaveLength(1)
+    expect(await registry.close(controlInstanceId)).toBe(true)
+  })
+
   test('resets a loaded control instance when a different scenario is explicitly requested', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const registry = createRegistry(dataDir)

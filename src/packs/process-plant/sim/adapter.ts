@@ -129,7 +129,6 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       }).map(object => [object.id, object]),
     )
 
-    await persistence.saveNow()
     let providerFailed = false
 
     const advance = async (): Promise<void> => {

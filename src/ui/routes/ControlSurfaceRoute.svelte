@@ -5,7 +5,6 @@
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../../core/packs/protocol.ts'
   import {
-    createControlInstance,
     fetchScenario,
     joinControlInstance as joinControlInstanceClient,
     listScenarios as listScenariosClient,
@@ -15,7 +14,6 @@
     syncControlInstanceSnapshot as syncControlInstanceSnapshotClient,
   } from '../control-instance-client.ts'
   import {
-    controlInstanceIdForScenarioRun,
     createGeneratedRunId,
     parseControlSurfaceRoute,
     pathForNewScenarioRun,
@@ -288,23 +286,14 @@
   }
 
   const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
-    status = 'Creating Control Instance'
-    startStep('control-instance')
-    try {
-      const runId = createGeneratedRunId()
-      const id = controlInstanceIdForScenarioRun(scenarioId, runId)
-      const body = await createControlInstance({ id, scenarioId })
-      if (body.id !== id) throw new Error(`created control instance ${body.id}, expected ${id}`)
-      const nextPath = pathForScenarioRun(scenarioId, runId)
-      if (navigation === 'replace') {
-        location.replace(nextPath)
-        return
-      }
-      location.href = nextPath
-    } catch (err) {
-      failStep('control-instance', err)
-      status = err instanceof Error ? err.message : 'control instance create failed'
+    status = 'Opening Control Instance'
+    const runId = createGeneratedRunId()
+    const nextPath = pathForScenarioRun(scenarioId, runId)
+    if (navigation === 'replace') {
+      location.replace(nextPath)
+      return
     }
+    location.href = nextPath
   }
 
   const defaultName = (type: PackCreateObjectType): string =>

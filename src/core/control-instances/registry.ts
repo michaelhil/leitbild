@@ -58,6 +58,7 @@ export const createControlInstanceRegistry = (config: {
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
+  const creatingControlInstances = new Map<ControlInstanceId, Promise<ControlInstanceRuntime>>()
   const controlInstanceRoot = join(config.dataDir, 'control-instances')
 
   const capabilitiesFor = (scenarioRuntime: ReturnType<ScenarioCatalog['runtimeFor']>): Omit<ControlInstanceCapabilities, 'controlInstanceId'> => {
@@ -103,14 +104,13 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
-  const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string; readonly initialSeq?: number }): Promise<ControlInstanceRuntime> => {
-    const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
-    if (!config.scenarioCatalog.runtimeFor(requestedScenarioId)) throw new Error(`unknown scenario: ${requestedScenarioId}`)
-    const id = createConfig?.id ?? createScenarioRunControlInstanceId({
-      scenarioId: requestedScenarioId,
-      runId: createGeneratedScenarioRunId(),
-    })
-    if (controlInstances.has(id)) throw new Error(`control instance already exists: ${id}`)
+  const createRuntime = async (createConfig: {
+    readonly id: ControlInstanceId
+    readonly scenarioId: string
+    readonly initialSeq?: number
+  }): Promise<ControlInstanceRuntime> => {
+    const requestedScenarioId = createConfig.scenarioId
+    const id = createConfig.id
     const instanceDir = join(controlInstanceRoot, id)
     const eventLog = createJsonlEventLog(join(instanceDir, 'events.jsonl'))
     const snapshotStore = createControlInstanceSnapshotStore({
@@ -188,6 +188,25 @@ export const createControlInstanceRegistry = (config: {
     return runtime
   }
 
+  const create = async (createConfig?: { readonly id?: ControlInstanceId; readonly scenarioId?: string; readonly initialSeq?: number }): Promise<ControlInstanceRuntime> => {
+    const requestedScenarioId = createConfig?.scenarioId ?? config.scenarioCatalog.defaultScenarioId()
+    if (!config.scenarioCatalog.runtimeFor(requestedScenarioId)) throw new Error(`unknown scenario: ${requestedScenarioId}`)
+    const id = createConfig?.id ?? createScenarioRunControlInstanceId({
+      scenarioId: requestedScenarioId,
+      runId: createGeneratedScenarioRunId(),
+    })
+    if (controlInstances.has(id) || creatingControlInstances.has(id)) throw new Error(`control instance already exists: ${id}`)
+    const creating = createRuntime({
+      id,
+      scenarioId: requestedScenarioId,
+      ...(createConfig?.initialSeq === undefined ? {} : { initialSeq: createConfig.initialSeq }),
+    }).finally(() => {
+      creatingControlInstances.delete(id)
+    })
+    creatingControlInstances.set(id, creating)
+    return await creating
+  }
+
   const ensure = async (id: ControlInstanceId, ensureConfig?: { readonly scenarioId?: string }): Promise<ControlInstanceRuntime> => {
     const existing = controlInstances.get(id)
     if (existing) {
@@ -195,6 +214,14 @@ export const createControlInstanceRegistry = (config: {
         return await reset(id, { scenarioId: ensureConfig.scenarioId })
       }
       return existing
+    }
+    const creating = creatingControlInstances.get(id)
+    if (creating) {
+      const runtime = await creating
+      if (ensureConfig?.scenarioId !== undefined && runtime.snapshot().scenario?.scenarioId !== ensureConfig.scenarioId) {
+        return await reset(id, { scenarioId: ensureConfig.scenarioId })
+      }
+      return runtime
     }
     return create({
       id,
