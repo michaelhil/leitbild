@@ -35,6 +35,12 @@
   } from './samsinn-screenshot-config.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
+  import MapLayersPanel from './map/MapLayersPanel.svelte'
+  import { aeroNorwayDefaultsOn } from './map/map-layers-panel-state.ts'
+  import {
+    createReferenceDataController,
+    type ReferenceDatasetController,
+  } from './map/reference-data-controller.ts'
 
   interface Props {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -56,6 +62,7 @@
     readonly onObjectSeen: (object: OperationalObject) => void
     readonly onMapReady: () => void
     readonly onMapError: (message: string) => void
+    readonly controlInstanceId?: string | null
   }
 
   const {
@@ -78,6 +85,7 @@
     onObjectSeen,
     onMapReady,
     onMapError,
+    controlInstanceId = null,
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -103,6 +111,7 @@
   let screenshotResponderCleanup: (() => void) | null = null
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
+  let referenceController = $state<ReferenceDatasetController | null>(null)
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
     record: () => undefined,
@@ -349,6 +358,26 @@
         trafficCasingColor: trafficCasingColor(),
         refreshSources,
       })
+      // Reference-data layers are inserted between the OSM base and the
+      // operational layer stack so airspace / airport context renders below
+      // routes, weather influences, and operational objects.
+      try {
+        const controller = await createReferenceDataController({
+          map: current,
+          beforeLayerId: mapLayerIds.weatherBaseGridOutline,
+        })
+        referenceController = controller
+        for (const dataset of controller.registered) {
+          const defaults: Record<string, boolean> = {}
+          const defaultsSet = new Set(aeroNorwayDefaultsOn)
+          for (const category of dataset.categories) {
+            defaults[category] = defaultsSet.has(category)
+          }
+          controller.setBulkVisibility(dataset.datasetId, defaults)
+        }
+      } catch (err) {
+        console.warn('reference-data registration failed:', err)
+      }
       addObjectInteractions(current)
       loaded = true
       lastRouteRevision = routeRevision
@@ -449,6 +478,7 @@
       mapLifecycle = null
       map = null
       loaded = false
+      referenceController = null
       objectInteractionsAdded = false
       mapReadyNotified = false
       mapInitialized = false
@@ -532,6 +562,20 @@
 </script>
 
 <div class="map" bind:this={mapElement}></div>
+{#if referenceController}
+  {#each referenceController.registered as dataset (dataset.datasetId)}
+    <div class="reference-layers-panel-anchor">
+      <MapLayersPanel
+        datasetId={dataset.datasetId}
+        categories={dataset.categories}
+        defaultsOn={aeroNorwayDefaultsOn}
+        controlInstanceId={controlInstanceId}
+        title="Airspace"
+        onVisibilityChange={(visibility) => referenceController?.setBulkVisibility(dataset.datasetId, visibility)}
+      />
+    </div>
+  {/each}
+{/if}
 {#if debugMapInput}
   <aside class="map-input-debug" aria-live="polite">
     <strong>Map Input Trace</strong>
@@ -543,3 +587,18 @@
     </ol>
   </aside>
 {/if}
+
+<style>
+  .reference-layers-panel-anchor {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 5;
+    pointer-events: auto;
+  }
+  .reference-layers-panel-anchor + .reference-layers-panel-anchor {
+    top: auto;
+    right: 12px;
+    margin-top: 8px;
+  }
+</style>

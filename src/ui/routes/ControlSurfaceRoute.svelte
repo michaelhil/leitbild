@@ -691,6 +691,7 @@
           onObjectSeen={markSeen}
           onMapReady={handleMapReady}
           onMapError={handleMapError}
+          {controlInstanceId}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>
