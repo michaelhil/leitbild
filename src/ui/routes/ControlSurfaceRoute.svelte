@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../../core/packs/protocol.ts'
@@ -148,13 +148,22 @@
   // toggles and writes here; MapSurface re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
+  // Re-seed when the group list changes. `untrack` keeps the write from
+  // re-triggering this effect (a new object literal every time would otherwise
+  // loop infinitely and block the event loop).
   $effect(() => {
-    // Re-seed defaults whenever the active pack's group list changes.
-    const next: Record<string, boolean> = {}
-    for (const group of activeMapLayerGroups) {
-      next[group.id] = mapLayerGroupVisibility[group.id] ?? group.defaultVisible
-    }
-    mapLayerGroupVisibility = next
+    const groups = activeMapLayerGroups
+    untrack(() => {
+      const current = mapLayerGroupVisibility
+      const next: Record<string, boolean> = {}
+      let changed = Object.keys(current).length !== groups.length
+      for (const group of groups) {
+        const value = current[group.id] ?? group.defaultVisible
+        next[group.id] = value
+        if (current[group.id] === undefined) changed = true
+      }
+      if (changed) mapLayerGroupVisibility = next
+    })
   })
   const toggleMapLayerGroup = (groupId: string): void => {
     mapLayerGroupVisibility = {
