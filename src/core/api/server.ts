@@ -178,7 +178,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       }
       const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
       if (discoveryRouteResponse) return secure(discoveryRouteResponse)
-      if (url.pathname === '/map/capabilities.json') return secure(mapCapabilitiesResponse())
+      if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse())
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
       if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
 

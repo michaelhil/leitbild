@@ -1,4 +1,4 @@
-import { createMapCapabilityManifest } from './capabilities.ts'
+import { createBaseTileset } from './capabilities.ts'
 
 export interface MapLibreStyle {
   readonly version: 8
@@ -80,16 +80,16 @@ const mapThemePalette = (theme: MapTheme) => {
 }
 
 export const createLeitbildMapStyle = (theme: MapTheme = 'light'): MapLibreStyle => {
-  const manifest = createMapCapabilityManifest()
+  const base = createBaseTileset()
   const palette = mapThemePalette(theme)
   return {
     version: 8,
     name: `Leitbild Vector Base ${theme}`,
-    glyphs: manifest.artifact.glyphsUrl,
+    glyphs: base.artifact.glyphsUrl,
     sources: {
       [sourceId]: {
         type: 'vector',
-        url: `pmtiles://${manifest.artifact.currentTileUrl}`,
+        url: `pmtiles://${base.artifact.currentTileUrl}`,
         attribution: '© OpenStreetMap contributors © OpenMapTiles',
       },
     },

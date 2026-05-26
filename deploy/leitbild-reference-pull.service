@@ -1,0 +1,14 @@
+[Unit]
+Description=Pull reference geospatial datasets (OpenAIP airspaces, GeoNorge airports, manual overlays)
+Wants=network-online.target
+After=network-online.target leitbild.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/leitbild/app
+EnvironmentFile=/etc/leitbild/reference.env
+Environment=LEITBILD_REFERENCE_ROOT=/opt/leitbild/reference
+ExecStart=/opt/leitbild/app/deploy/pull-reference.sh
+
+[Install]
+WantedBy=multi-user.target

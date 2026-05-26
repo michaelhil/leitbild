@@ -1,6 +1,6 @@
 import { lstat, readlink, stat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
-import { createMapCapabilityManifest } from './capabilities.ts'
+import { createBaseTileset, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
 export interface MapArtifactConfig {
@@ -47,8 +47,10 @@ export const currentPmtilesPath = (config: MapArtifactConfig): string =>
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
 
-export const mapCapabilitiesResponse = (): Response =>
-  Response.json(createMapCapabilityManifest())
+export const mapCapabilitiesResponse = async (): Promise<Response> => {
+  const manifest = await loadMapCapabilityManifest({ referenceRoot: referenceRootFromEnv() })
+  return Response.json(manifest)
+}
 
 export const mapStyleResponse = (theme: string | null = null): Response => {
   if (theme !== null && theme !== 'light' && theme !== 'dark') {
@@ -94,7 +96,7 @@ const activeBuild = async (config: MapArtifactConfig): Promise<{
 }
 
 export const createMapArtifactStatus = async (config: MapArtifactConfig): Promise<MapArtifactStatus> => {
-  const manifest = createMapCapabilityManifest()
+  const base = createBaseTileset()
   const currentPmtiles = await fileStatus(currentPmtilesPath(config))
   const glyphProbe = await fileStatus(glyphProbePath(config))
   const active = await activeBuild(config)
@@ -104,10 +106,10 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
     activeBuildId: active.id,
     ...(active.error ? { activeBuildError: active.error } : {}),
     capabilities: {
-      schemaVersion: manifest.schemaVersion,
-      tilesetId: manifest.tilesetId,
-      styleUrl: manifest.artifact.styleUrl,
-      tileUrl: manifest.artifact.currentTileUrl,
+      schemaVersion: 2,
+      tilesetId: base.id,
+      styleUrl: base.artifact.styleUrl,
+      tileUrl: base.artifact.currentTileUrl,
     },
     currentPmtiles,
     glyphProbe: {
