@@ -24,6 +24,18 @@ export type ProcessGraphProjectionReason =
   | 'service-link'
   | 'service-neighbor'
 
+export type ProcessGraphProjectionDiagnosticCode =
+  | 'no-path-to-visible-anchor'
+  | 'empty-service-layer'
+
+export interface ProcessGraphProjectionDiagnostic {
+  readonly severity: 'warning'
+  readonly code: ProcessGraphProjectionDiagnosticCode
+  readonly message: string
+  readonly componentId?: ComponentId
+  readonly service?: ConnectionService
+}
+
 export interface ProcessGraphLensConfig {
   readonly graph: CompiledPlantGraph
   readonly mode: ProcessGraphLensMode
@@ -38,6 +50,7 @@ export interface ProcessGraphProjection {
   readonly connectionIds: ReadonlyArray<ConnectionId>
   readonly componentReasons: ReadonlyMap<ComponentId, ReadonlyArray<ProcessGraphProjectionReason>>
   readonly connectionReasons: ReadonlyMap<ConnectionId, ReadonlyArray<ProcessGraphProjectionReason>>
+  readonly diagnostics: ReadonlyArray<ProcessGraphProjectionDiagnostic>
 }
 
 interface MutableProjection {
@@ -45,6 +58,7 @@ interface MutableProjection {
   readonly connectionIndexes: Set<number>
   readonly componentReasons: Map<ComponentId, ProcessGraphProjectionReason[]>
   readonly connectionReasons: Map<ConnectionId, ProcessGraphProjectionReason[]>
+  readonly diagnostics: ProcessGraphProjectionDiagnostic[]
 }
 
 interface LinkStep {
@@ -57,6 +71,7 @@ const createMutableProjection = (): MutableProjection => ({
   connectionIndexes: new Set<number>(),
   componentReasons: new Map<ComponentId, ProcessGraphProjectionReason[]>(),
   connectionReasons: new Map<ConnectionId, ProcessGraphProjectionReason[]>(),
+  diagnostics: [],
 })
 
 const addReason = <TKey>(
@@ -190,7 +205,16 @@ const addPathToVisibleAnchors = (
   for (const selectedIndex of selectedIndexes) {
     addComponent(graph, projection, selectedIndex, 'selected')
     const path = shortestPathToAnyAnchor(graph, selectedIndex, anchorIndexes)
-    if (!path) continue
+    if (!path) {
+      const component = graph.components[selectedIndex]
+      projection.diagnostics.push({
+        severity: 'warning',
+        code: 'no-path-to-visible-anchor',
+        message: `no graph path found from ${component?.id ?? selectedIndex} to visible anchors`,
+        ...(component === undefined ? {} : { componentId: component.id }),
+      })
+      continue
+    }
     for (const linkIndex of path) {
       addConnection(graph, projection, linkIndex, 'path-link', 'path-neighbor')
     }
@@ -216,6 +240,7 @@ const finalizeProjection = (
     connectionReasons: new Map(
       connectionIds.map(connectionId => [connectionId, [...(projection.connectionReasons.get(connectionId) ?? [])]]),
     ),
+    diagnostics: [...projection.diagnostics],
   }
 }
 
@@ -258,6 +283,14 @@ export const projectProcessGraph = (config: ProcessGraphLensConfig): ProcessGrap
     throw new Error('process graph service-layer lens requires a service')
   }
   const serviceLinkIndexes = graph.linksByService.get(config.service) ?? []
+  if (serviceLinkIndexes.length === 0) {
+    projection.diagnostics.push({
+      severity: 'warning',
+      code: 'empty-service-layer',
+      message: `service-layer lens found no links for ${config.service}`,
+      service: config.service,
+    })
+  }
   for (const linkIndex of serviceLinkIndexes) {
     addConnection(graph, projection, linkIndex, 'service-link', 'service-neighbor')
   }

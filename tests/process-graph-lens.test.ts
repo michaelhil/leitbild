@@ -81,6 +81,26 @@ describe('process graph lens', () => {
     expect(projection.componentIds.map(String)).toContain('core')
     expect(projection.componentIds.map(String)).toContain('rcpA')
     expect(projection.componentIds.map(String)).toContain('sgA')
+    expect(projection.diagnostics).toEqual([])
+  })
+
+  test('service layer reports empty projections without inventing components', () => {
+    const compiled = graph()
+    const projection = projectProcessGraph({
+      graph: compiled,
+      mode: 'service-layer',
+      service: 'not-used-in-this-graph' as ConnectionService,
+    })
+
+    expect(projection.componentIds).toEqual([])
+    expect(projection.connectionIds).toEqual([])
+    expect(projection.diagnostics).toEqual([
+      expect.objectContaining({
+        severity: 'warning',
+        code: 'empty-service-layer',
+        service: 'not-used-in-this-graph',
+      }),
+    ])
   })
 
   test('path-to-visible traces real shortest links to an existing visible anchor', () => {

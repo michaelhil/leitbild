@@ -211,6 +211,12 @@ export const compileProcessSurface = (config: {
     title: definition.title,
     ...(definition.description === undefined ? {} : { description: definition.description }),
     designSize: definition.designSize,
+    lenses: definition.lenses.map(lens => ({
+      id: lens.id,
+      label: lens.label,
+      ...(lens.description === undefined ? {} : { description: lens.description }),
+      ...(lens.lens === undefined ? {} : { lens: lens.lens }),
+    })),
     widgets,
     paths,
     bindingPaths: uniqueBindingPaths(definition),

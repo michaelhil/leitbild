@@ -234,6 +234,7 @@ describe('process plant simulation provider', () => {
       readonly graphProjection: {
         readonly componentIds: ReadonlyArray<string>
         readonly connectionIds: ReadonlyArray<string>
+        readonly diagnostics: ReadonlyArray<unknown>
       }
       readonly surfaceProjection: {
         readonly visibleWidgetIds: ReadonlyArray<string>
@@ -242,6 +243,7 @@ describe('process plant simulation provider', () => {
       }
     }
     expect(projectionResult.graphProjection.connectionIds).toContain('rcs-hot-leg-a')
+    expect(projectionResult.graphProjection.diagnostics).toEqual([])
     expect(projectionResult.surfaceProjection.visibleWidgetIds).toContain('reactor-vessel')
     expect(projectionResult.surfaceProjection.visibleWidgetIds).toContain('sg-a')
     expect(projectionResult.surfaceProjection.visiblePathIds).toContain('primary-hot-leg-a')

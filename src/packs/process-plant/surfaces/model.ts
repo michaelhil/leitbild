@@ -3,9 +3,11 @@ import { idSchema } from '../../../core/model/index.ts'
 import {
   componentIdSchema,
   connectionIdSchema,
+  connectionServiceSchema,
   variablePathSchema,
   type ComponentId,
   type ConnectionId,
+  type ConnectionService,
   type VariablePath,
 } from '../graph/index.ts'
 
@@ -88,6 +90,39 @@ export const processSurfacePathSchema = z.object({
 }).strict()
 export type ProcessSurfacePath = z.infer<typeof processSurfacePathSchema>
 
+export const processSurfaceGraphLensSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('selected-only'),
+    selectedComponentIds: z.array(componentIdSchema).default([]),
+    selectedConnectionIds: z.array(connectionIdSchema).default([]),
+  }).strict(),
+  z.object({
+    mode: z.literal('direct-neighborhood'),
+    selectedComponentIds: z.array(componentIdSchema).min(1),
+    selectedConnectionIds: z.array(connectionIdSchema).default([]),
+  }).strict(),
+  z.object({
+    mode: z.literal('path-to-visible'),
+    selectedComponentIds: z.array(componentIdSchema).min(1),
+    selectedConnectionIds: z.array(connectionIdSchema).default([]),
+    visibleComponentIds: z.array(componentIdSchema).min(1),
+  }).strict(),
+  z.object({
+    mode: z.literal('service-layer'),
+    service: connectionServiceSchema,
+    selectedConnectionIds: z.array(connectionIdSchema).default([]),
+  }).strict(),
+])
+export type ProcessSurfaceGraphLens = z.infer<typeof processSurfaceGraphLensSchema>
+
+export const processSurfaceLensSchema = z.object({
+  id: idSchema,
+  label: z.string().min(1),
+  description: z.string().min(1).optional(),
+  lens: processSurfaceGraphLensSchema.optional(),
+}).strict()
+export type ProcessSurfaceLens = z.infer<typeof processSurfaceLensSchema>
+
 export const processSurfaceDefinitionSchema = z.object({
   schemaVersion: z.literal(1),
   id: idSchema,
@@ -98,6 +133,7 @@ export const processSurfaceDefinitionSchema = z.object({
     height: z.number().int().positive(),
   }).strict(),
   regions: z.array(processSurfaceRegionSchema).min(1),
+  lenses: z.array(processSurfaceLensSchema).default([]),
   widgets: z.array(processSurfaceWidgetSchema).min(1),
   paths: z.array(processSurfacePathSchema).default([]),
 }).strict().superRefine((surface, ctx) => {
@@ -107,6 +143,13 @@ export const processSurfaceDefinitionSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['regions', index, 'id'], message: `duplicate process surface region id: ${region.id}` })
     }
     regionIds.add(region.id)
+  }
+  const lensIds = new Set<string>()
+  for (const [index, lens] of surface.lenses.entries()) {
+    if (lensIds.has(lens.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lenses', index, 'id'], message: `duplicate process surface lens id: ${lens.id}` })
+    }
+    lensIds.add(lens.id)
   }
   const widgetIds = new Set<string>()
   for (const [index, widget] of surface.widgets.entries()) {
@@ -174,7 +217,15 @@ export interface CompiledProcessSurface {
   readonly title: string
   readonly description?: string
   readonly designSize: ProcessSurfaceDefinition['designSize']
+  readonly lenses: ReadonlyArray<{
+    readonly id: string
+    readonly label: string
+    readonly description?: string
+    readonly lens?: ProcessSurfaceGraphLens
+  }>
   readonly widgets: ReadonlyArray<CompiledProcessSurfaceWidget>
   readonly paths: ReadonlyArray<CompiledProcessSurfacePath>
   readonly bindingPaths: ReadonlyArray<VariablePath>
 }
+
+export type { ConnectionService }

@@ -85,8 +85,18 @@ export const pathPointsFor = (config: {
     widgetId: config.path.to.widgetId,
     portName: config.path.to.portName,
   })
-  if (!from || !to) return config.path.points
-  return [from, to]
+  const authoredFirst = config.path.points[0]
+  const authoredLast = config.path.points[config.path.points.length - 1]
+  if (!from || !to || !authoredFirst || !authoredLast || config.path.points.length < 2) return config.path.points
+  const startDelta = { x: from.x - authoredFirst.x, y: from.y - authoredFirst.y }
+  const endDelta = { x: to.x - authoredLast.x, y: to.y - authoredLast.y }
+  return config.path.points.map((point, index) => {
+    const ratio = config.path.points.length === 1 ? 0 : index / (config.path.points.length - 1)
+    return {
+      x: point.x + startDelta.x * (1 - ratio) + endDelta.x * ratio,
+      y: point.y + startDelta.y * (1 - ratio) + endDelta.y * ratio,
+    }
+  })
 }
 
 export const curvedPathData = (from: Point, to: Point): string => {
@@ -106,7 +116,18 @@ export const pathDataFor = (points: ReadonlyArray<Point>): string => {
   const first = points[0]
   const second = points[1]
   if (points.length === 2 && first && second) return curvedPathData(first, second)
-  return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
+  if (!first) return ''
+  const commands = [`M ${first.x.toFixed(1)} ${first.y.toFixed(1)}`]
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const control = points[index]
+    const next = points[index + 1]
+    if (!control || !next) continue
+    const midpoint = { x: (control.x + next.x) / 2, y: (control.y + next.y) / 2 }
+    commands.push(`Q ${control.x.toFixed(1)} ${control.y.toFixed(1)} ${midpoint.x.toFixed(1)} ${midpoint.y.toFixed(1)}`)
+  }
+  const last = points[points.length - 1]
+  if (last && points.length > 1) commands.push(`L ${last.x.toFixed(1)} ${last.y.toFixed(1)}`)
+  return commands.join(' ')
 }
 
 export const pathFlowFraction = (

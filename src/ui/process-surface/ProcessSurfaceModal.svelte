@@ -3,7 +3,6 @@
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
-  import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import {
     listProcessSurfaces,
@@ -11,6 +10,7 @@
     readProcessSurfaceProjection,
     readProcessSurfaceSnapshot,
     type ProcessSurfaceProjection,
+    type ProcessSurfaceLensOption,
   } from './process-surface-client.ts'
   import {
     readProcessSurfaceLayout,
@@ -48,12 +48,13 @@
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
   let projection = $state<ProcessSurfaceProjection | null>(null)
-  let activeLens = $state<'all' | 'primary' | 'steam' | 'feedwater'>('all')
+  let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
   let widgetPositions = $state<ProcessSurfaceLayout>({})
   let loadedSystemId = $state<string | null>(null)
   let windowBounds = $state<ProcessSurfaceWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
   let windowDragState = $state<WindowDragState | null>(null)
+  let boundsInitialized = false
 
   const defaultWindowBounds = (): ProcessSurfaceWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
@@ -87,8 +88,12 @@
     return systemId
   }
 
-  const refreshSnapshot = async (systemId: string, surfaceId: string): Promise<void> => {
-    const snapshot = await readProcessSurfaceSnapshot(controlInstanceId, systemId, surfaceId)
+  const refreshSnapshot = async (
+    instanceId: ControlInstanceId,
+    systemId: string,
+    surfaceId: string,
+  ): Promise<void> => {
+    const snapshot = await readProcessSurfaceSnapshot(instanceId, systemId, surfaceId)
     values = new Map(snapshot.values.map(value => [value.path, value]))
   }
 
@@ -108,12 +113,7 @@
     ? new Set<string>(projection.surfaceProjection.visiblePathIds)
     : null)
 
-  const lensOptions = [
-    { id: 'all', label: 'Full overview', description: 'Show the authored overview surface.' },
-    { id: 'primary', label: 'Primary coolant', description: 'Project primary coolant components and paths.' },
-    { id: 'steam', label: 'Steam path', description: 'Project main steam and exhaust paths.' },
-    { id: 'feedwater', label: 'Feedwater', description: 'Project feedwater components and paths.' },
-  ] as const
+  const lensOptions = $derived<ReadonlyArray<ProcessSurfaceLensOption>>(surface?.lenses ?? [])
 
   const assetStatusColor = $derived(statusToneColor(
     object.operational.priority === 'critical'
@@ -214,68 +214,83 @@
   }
 
   const applyLens = async (
-    lens: typeof activeLens,
+    lens: ProcessSurfaceLensOption,
     systemId: string,
     surfaceId: string,
   ): Promise<void> => {
-    activeLens = lens
-    if (lens === 'all') {
+    activeLensId = lens.id
+    if (lens.lens === undefined) {
       projection = null
       return
     }
-    const service = lens === 'primary'
-      ? 'primaryCoolant'
-      : lens === 'steam'
-        ? 'mainSteam'
-        : lens
-    projection = await readProcessSurfaceProjection(controlInstanceId, systemId, surfaceId, {
-      mode: 'service-layer',
-      service,
-    })
+    projection = await readProcessSurfaceProjection(controlInstanceId, systemId, surfaceId, lens.lens)
   }
 
-  runOnMount(() => {
-    let cancelled = false
-    let interval: ReturnType<typeof setInterval> | null = null
+  const startSnapshotRefresh = (config: {
+    readonly instanceId: ControlInstanceId
+    readonly systemId: string
+    readonly surfaceId: string
+    readonly isCancelled: () => boolean
+  }): (() => void) => {
+    const refreshSafely = async (): Promise<void> => {
+      try {
+        await refreshSnapshot(config.instanceId, config.systemId, config.surfaceId)
+      } catch (err) {
+        if (!config.isCancelled()) error = err instanceof Error ? err.message : String(err)
+      }
+    }
+    const interval = setInterval(() => {
+      void refreshSafely()
+    }, 1_000)
+    return () => {
+      clearInterval(interval)
+    }
+  }
 
-    windowBounds = clampWindowBounds(defaultWindowBounds())
+  $effect(() => {
+    const selectedObject = object
+    const selectedControlInstanceId = controlInstanceId
+    let cancelled = false
+    let stopRefresh: (() => void) | null = null
+
+    if (!boundsInitialized) {
+      windowBounds = clampWindowBounds(defaultWindowBounds())
+      boundsInitialized = true
+    }
 
     const load = async (): Promise<void> => {
       try {
         loading = true
         error = null
-        const systemId = systemIdFor(object)
-        const surfaces = await listProcessSurfaces(controlInstanceId, systemId)
+        values = new Map()
+        const systemId = systemIdFor(selectedObject)
+        const surfaces = await listProcessSurfaces(selectedControlInstanceId, systemId)
         const first = surfaces[0]
         if (!first) throw new Error(`no process displays are available for ${systemId}`)
-        const nextSurface = await readProcessSurface(controlInstanceId, systemId, first.id)
+        const nextSurface = await readProcessSurface(selectedControlInstanceId, systemId, first.id)
         if (cancelled) return
         loadedSystemId = systemId
         surface = nextSurface
         projection = null
-        activeLens = 'all'
+        activeLensId = nextSurface.lenses[0]?.id ?? 'all'
         widgetPositions = readProcessSurfaceLayout({
-          controlInstanceId,
+          controlInstanceId: selectedControlInstanceId,
           systemId,
           surfaceId: nextSurface.id,
         })
         windowBounds = clampWindowBounds(readProcessSurfaceWindowBounds({
-          controlInstanceId,
+          controlInstanceId: selectedControlInstanceId,
           systemId,
           surfaceId: nextSurface.id,
         }) ?? windowBounds)
-        await refreshSnapshot(systemId, first.id)
+        await refreshSnapshot(selectedControlInstanceId, systemId, first.id)
         if (cancelled) return
-        const refreshSafely = async (): Promise<void> => {
-          try {
-            await refreshSnapshot(systemId, first.id)
-          } catch (err) {
-            error = err instanceof Error ? err.message : String(err)
-          }
-        }
-        interval = setInterval(() => {
-          void refreshSafely()
-        }, 1_000)
+        stopRefresh = startSnapshotRefresh({
+          instanceId: selectedControlInstanceId,
+          systemId,
+          surfaceId: first.id,
+          isCancelled: () => cancelled,
+        })
       } catch (err) {
         if (!cancelled) error = err instanceof Error ? err.message : String(err)
       } finally {
@@ -287,7 +302,7 @@
 
     return () => {
       cancelled = true
-      if (interval !== null) clearInterval(interval)
+      stopRefresh?.()
     }
   })
 </script>
@@ -331,11 +346,14 @@
             {#each lensOptions as option (option.id)}
               <button
                 type="button"
-                class:active={activeLens === option.id}
+                class:active={activeLensId === option.id}
                 onclick={async () => {
                   lensMenuOpen = false
                   try {
-                    await applyLens(option.id, loadedSystemId!, surface!.id)
+                    const currentSurface = surface
+                    const systemId = loadedSystemId
+                    if (!currentSurface || !systemId) throw new Error('process display is not ready')
+                    await applyLens(option, systemId, currentSurface.id)
                   } catch (err) {
                     error = err instanceof Error ? err.message : String(err)
                   }

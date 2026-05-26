@@ -1,11 +1,23 @@
 import type { ControlInstanceId } from '../../core/model/index.ts'
-import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+import type {
+  CompiledProcessSurface,
+  ProcessSurfaceGraphLens,
+  ProcessSurfaceValue,
+} from '../../packs/process-plant/surfaces/index.ts'
 import { queryControlInstancePack } from '../control-instance-client.ts'
+
+export interface ProcessSurfaceLensOption {
+  readonly id: string
+  readonly label: string
+  readonly description?: string
+  readonly lens?: ProcessSurfaceGraphLens
+}
 
 export interface ProcessSurfaceListItem {
   readonly id: string
   readonly title: string
   readonly description?: string
+  readonly lenses: ReadonlyArray<ProcessSurfaceLensOption>
 }
 
 export interface ProcessSurfaceSnapshot {
@@ -14,18 +26,13 @@ export interface ProcessSurfaceSnapshot {
   readonly values: ReadonlyArray<ProcessSurfaceValue>
 }
 
-export type ProcessSurfaceLens =
-  | { readonly mode: 'selected-only'; readonly selectedComponentIds?: ReadonlyArray<string>; readonly selectedConnectionIds?: ReadonlyArray<string> }
-  | { readonly mode: 'direct-neighborhood'; readonly selectedComponentIds: ReadonlyArray<string>; readonly selectedConnectionIds?: ReadonlyArray<string> }
-  | { readonly mode: 'path-to-visible'; readonly selectedComponentIds: ReadonlyArray<string>; readonly selectedConnectionIds?: ReadonlyArray<string>; readonly visibleComponentIds: ReadonlyArray<string> }
-  | { readonly mode: 'service-layer'; readonly service: string; readonly selectedConnectionIds?: ReadonlyArray<string> }
-
 export interface ProcessSurfaceProjection {
   readonly systemId: string
   readonly surfaceId: string
   readonly graphProjection: {
     readonly componentIds: ReadonlyArray<string>
     readonly connectionIds: ReadonlyArray<string>
+    readonly diagnostics: ReadonlyArray<Record<string, unknown>>
   }
   readonly surfaceProjection: {
     readonly visibleWidgetIds: ReadonlyArray<string>
@@ -45,10 +52,55 @@ const assertArray = (value: unknown, message: string): ReadonlyArray<unknown> =>
   return value
 }
 
+const assertString = (value: unknown, message: string): string => {
+  if (typeof value !== 'string') throw new Error(message)
+  return value
+}
+
 const requireOkResult = (value: unknown): Record<string, unknown> => {
   const envelope = assertObject(value, 'process surface query returned a malformed response')
   if (envelope.ok !== true) throw new Error(typeof envelope.reason === 'string' ? envelope.reason : 'process surface query failed')
   return assertObject(envelope.result, 'process surface query returned a malformed result')
+}
+
+const parseLensOption = (value: unknown): ProcessSurfaceLensOption => {
+  const lens = assertObject(value, 'process surface lens option is malformed')
+  return {
+    id: assertString(lens.id, 'process surface lens option requires id'),
+    label: assertString(lens.label, 'process surface lens option requires label'),
+    ...(typeof lens.description === 'string' ? { description: lens.description } : {}),
+    ...(lens.lens === undefined ? {} : { lens: assertObject(lens.lens, 'process surface lens option has malformed lens') as unknown as ProcessSurfaceGraphLens }),
+  }
+}
+
+const parseSurfaceValues = (value: unknown): ReadonlyArray<ProcessSurfaceValue> =>
+  assertArray(value, 'process surface snapshot result has no values array').map(item => {
+    const record = assertObject(item, 'process surface value is malformed')
+    return {
+      path: assertString(record.path, 'process surface value requires path') as ProcessSurfaceValue['path'],
+      label: assertString(record.label, 'process surface value requires label'),
+      unit: assertString(record.unit, 'process surface value requires unit'),
+      value: record.value,
+      formatted: assertString(record.formatted, 'process surface value requires formatted'),
+    }
+  })
+
+const parseCompiledProcessSurface = (value: unknown): CompiledProcessSurface => {
+  const surface = assertObject(value, 'process surface read result has no surface')
+  const designSize = assertObject(surface.designSize, 'process surface requires designSize')
+  if (typeof designSize.width !== 'number' || typeof designSize.height !== 'number') {
+    throw new Error('process surface designSize requires numeric width and height')
+  }
+  return {
+    id: assertString(surface.id, 'process surface requires id'),
+    title: assertString(surface.title, 'process surface requires title'),
+    ...(typeof surface.description === 'string' ? { description: surface.description } : {}),
+    designSize: { width: designSize.width, height: designSize.height },
+    lenses: assertArray(surface.lenses, 'process surface requires lenses').map(parseLensOption),
+    widgets: assertArray(surface.widgets, 'process surface requires widgets') as CompiledProcessSurface['widgets'],
+    paths: assertArray(surface.paths, 'process surface requires paths') as CompiledProcessSurface['paths'],
+    bindingPaths: assertArray(surface.bindingPaths, 'process surface requires bindingPaths') as CompiledProcessSurface['bindingPaths'],
+  }
 }
 
 export const listProcessSurfaces = async (
@@ -68,6 +120,7 @@ export const listProcessSurfaces = async (
       id: surface.id,
       title: surface.title,
       ...(typeof surface.description === 'string' ? { description: surface.description } : {}),
+      lenses: assertArray(surface.lenses, 'process surface list item requires lenses').map(parseLensOption),
     }
   })
 }
@@ -83,7 +136,7 @@ export const readProcessSurface = async (
     payload: { systemId, surfaceId },
   })
   const result = requireOkResult(body.response)
-  return assertObject(result.surface, 'process surface read result has no surface') as unknown as CompiledProcessSurface
+  return parseCompiledProcessSurface(result.surface)
 }
 
 export const readProcessSurfaceSnapshot = async (
@@ -101,7 +154,7 @@ export const readProcessSurfaceSnapshot = async (
   return {
     systemId: result.systemId,
     surfaceId: result.surfaceId,
-    values: assertArray(result.values, 'process surface snapshot result has no values array') as ReadonlyArray<ProcessSurfaceValue>,
+    values: parseSurfaceValues(result.values),
   }
 }
 
@@ -109,7 +162,7 @@ export const readProcessSurfaceProjection = async (
   controlInstanceId: ControlInstanceId,
   systemId: string,
   surfaceId: string,
-  lens: ProcessSurfaceLens,
+  lens: ProcessSurfaceGraphLens,
 ): Promise<ProcessSurfaceProjection> => {
   const body = await queryControlInstancePack(controlInstanceId, {
     packId: 'process-plant',
@@ -126,6 +179,7 @@ export const readProcessSurfaceProjection = async (
     graphProjection: {
       componentIds: assertArray(graphProjection.componentIds, 'process surface graph projection has no componentIds') as ReadonlyArray<string>,
       connectionIds: assertArray(graphProjection.connectionIds, 'process surface graph projection has no connectionIds') as ReadonlyArray<string>,
+      diagnostics: assertArray(graphProjection.diagnostics, 'process surface graph projection has no diagnostics') as ReadonlyArray<Record<string, unknown>>,
     },
     surfaceProjection: {
       visibleWidgetIds: assertArray(surfaceProjection.visibleWidgetIds, 'process surface projection has no visibleWidgetIds') as ReadonlyArray<string>,

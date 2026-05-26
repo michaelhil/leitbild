@@ -3,9 +3,6 @@ import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
-  componentIdSchema,
-  connectionIdSchema,
-  connectionServiceSchema,
   projectProcessGraph,
   type VariablePath,
 } from '../graph/index.ts'
@@ -13,7 +10,12 @@ import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success } from './common.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
 import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
-import type { CompiledProcessSurface, ProcessSurfaceBinding, ProcessSurfaceValue } from '../surfaces/model.ts'
+import {
+  processSurfaceGraphLensSchema,
+  type CompiledProcessSurface,
+  type ProcessSurfaceBinding,
+  type ProcessSurfaceValue,
+} from '../surfaces/model.ts'
 import { projectCompiledProcessSurface } from '../surfaces/projection.ts'
 
 const surfaceQuerySchema = z.object({
@@ -22,29 +24,7 @@ const surfaceQuerySchema = z.object({
 })
 
 const graphLensQuerySchema = surfaceQuerySchema.extend({
-  lens: z.discriminatedUnion('mode', [
-    z.object({
-      mode: z.literal('selected-only'),
-      selectedComponentIds: z.array(componentIdSchema).default([]),
-      selectedConnectionIds: z.array(connectionIdSchema).default([]),
-    }).strict(),
-    z.object({
-      mode: z.literal('direct-neighborhood'),
-      selectedComponentIds: z.array(componentIdSchema).min(1),
-      selectedConnectionIds: z.array(connectionIdSchema).default([]),
-    }).strict(),
-    z.object({
-      mode: z.literal('path-to-visible'),
-      selectedComponentIds: z.array(componentIdSchema).min(1),
-      selectedConnectionIds: z.array(connectionIdSchema).default([]),
-      visibleComponentIds: z.array(componentIdSchema).min(1),
-    }).strict(),
-    z.object({
-      mode: z.literal('service-layer'),
-      service: connectionServiceSchema,
-      selectedConnectionIds: z.array(connectionIdSchema).default([]),
-    }).strict(),
-  ]),
+  lens: processSurfaceGraphLensSchema,
 })
 
 export const processPlantSurfaceQueryKinds = [
@@ -60,11 +40,21 @@ const surfaceFor = (surfaceId: string) => {
   return surface
 }
 
+const compiledSurfaceCache = new WeakMap<ProcessPlantSystemRuntime, Map<string, CompiledProcessSurface>>()
+
 const compiledSurfaceFor = (
   system: ProcessPlantSystemRuntime,
   surfaceId: string,
-): CompiledProcessSurface =>
-  compileProcessSurface({ definition: surfaceFor(surfaceId), graph: system.system.graph })
+): CompiledProcessSurface => {
+  const existingCache = compiledSurfaceCache.get(system)
+  const existingSurface = existingCache?.get(surfaceId)
+  if (existingSurface) return existingSurface
+  const surface = compileProcessSurface({ definition: surfaceFor(surfaceId), graph: system.system.graph })
+  const cache = existingCache ?? new Map<string, CompiledProcessSurface>()
+  cache.set(surfaceId, surface)
+  if (!existingCache) compiledSurfaceCache.set(system, cache)
+  return surface
+}
 
 const formatValue = (value: unknown, unit: string, binding: ProcessSurfaceBinding): string => {
   if (typeof value === 'boolean') return value ? 'yes' : 'no'
@@ -118,6 +108,7 @@ export const answerProcessPlantSurfaceQuery = (config: {
         id: surface.id,
         title: surface.title,
         description: surface.description,
+        lenses: surface.lenses,
       })),
     }, config.at)
   }
@@ -143,6 +134,7 @@ export const answerProcessPlantSurfaceQuery = (config: {
       graphProjection: {
         componentIds: graphProjection.componentIds,
         connectionIds: graphProjection.connectionIds,
+        diagnostics: graphProjection.diagnostics,
       },
       surfaceProjection: {
         visibleWidgetIds: surfaceProjection.visibleWidgets.map(widget => widget.id),

@@ -6,6 +6,27 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
   title: 'Unit Overview',
   description: 'First-order process overview for one process-plant unit.',
   designSize: { width: 1600, height: 900 },
+  lenses: [
+    { id: 'all', label: 'Full overview', description: 'Show the authored overview surface.' },
+    {
+      id: 'primary',
+      label: 'Primary coolant',
+      description: 'Project primary coolant components and paths.',
+      lens: { mode: 'service-layer', service: 'primaryCoolant' },
+    },
+    {
+      id: 'steam',
+      label: 'Steam path',
+      description: 'Project main steam and exhaust paths.',
+      lens: { mode: 'service-layer', service: 'mainSteam' },
+    },
+    {
+      id: 'feedwater',
+      label: 'Feedwater',
+      description: 'Project feedwater components and paths.',
+      lens: { mode: 'service-layer', service: 'feedwater' },
+    },
+  ],
   regions: [
     { id: 'unit-status', label: 'Unit status', role: 'unit-status', order: 0 },
     { id: 'primary', label: 'Primary system', role: 'primary-system', order: 1 },
