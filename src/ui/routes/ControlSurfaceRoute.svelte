@@ -172,6 +172,38 @@
     }
   }
 
+  // Rail source picker (Phase B.2 — display-only). Hidden unless the active
+  // pack contributes at least two non-placeholder providers. For B.2 the
+  // aviation pack ships OpenSky (wired) and VATSIM (placeholder); the picker
+  // surfaces the active scenario provider so the operator knows where data is
+  // coming from. Selection becomes write-enabled in Phase B.3 via
+  // aviation.set_source.
+  const railSourcePicker = $derived.by(() => {
+    if (!activePack || !scenarioDefinition) return null
+    const providers = activePack.simulationProviders ?? []
+    // Hide the noop placeholder — it never carries real data and would just
+    // confuse operators.
+    const candidates = providers.filter(provider => !provider.id.endsWith('.noop'))
+    if (candidates.length < 2) return null
+    const activeId =
+      scenarioDefinition.providerOverrides[activePack.id] ??
+      activePack.defaultSimulationProviderId ??
+      candidates[0]?.id ??
+      null
+    const sources = candidates.map(provider => {
+      // B.2: only OpenSky is actually wired. Mark everything else disabled
+      // until B.3 lands the aviation.set_source command + VATSIM adapter.
+      const wired = provider.id === 'aviation.opensky'
+      return {
+        id: provider.id,
+        label: provider.label,
+        disabled: !wired,
+        ...(wired ? {} : { hint: 'B.3' }),
+      }
+    })
+    return { title: 'Source', sources, activeId }
+  })
+
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
@@ -701,6 +733,7 @@
         mapLayerGroups={activeMapLayerGroups}
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
+        sourcePicker={railSourcePicker}
       />
       <button
         class="rail-resize-handle"

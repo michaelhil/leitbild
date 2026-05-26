@@ -3,6 +3,7 @@
   import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
   import RailLayerGroupSection from './RailLayerGroupSection.svelte'
+  import RailSourcePicker from './RailSourcePicker.svelte'
   import { X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
@@ -45,6 +46,12 @@
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly onMapLayerGroupToggle?: (groupId: string) => void
+    readonly sourcePicker?: {
+      readonly title: string
+      readonly sources: ReadonlyArray<{ readonly id: string; readonly label: string; readonly disabled?: boolean; readonly hint?: string }>
+      readonly activeId: string | null
+      readonly onSelect?: (sourceId: string) => void
+    } | null
   }
 
   let {
@@ -72,6 +79,7 @@
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
     onMapLayerGroupToggle = () => undefined,
+    sourcePicker = null,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -176,6 +184,15 @@
     visibility={mapLayerGroupVisibility}
     onToggle={onMapLayerGroupToggle}
   />
+
+  {#if sourcePicker}
+    <RailSourcePicker
+      title={sourcePicker.title}
+      sources={sourcePicker.sources}
+      activeId={sourcePicker.activeId}
+      onSelect={sourcePicker.onSelect}
+    />
+  {/if}
 
   {#if footerVisible}
     <SystemFooter

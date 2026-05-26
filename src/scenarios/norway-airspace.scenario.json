@@ -4,7 +4,9 @@
   "title": "Norway airspace",
   "description": "Activates the aviation pack and renders Norwegian airspace polygons plus Avinor airport points. Layer-group toggles live in the control rail.",
   "packs": ["aviation"],
-  "providerOverrides": {},
+  "providerOverrides": {
+    "aviation": "aviation.opensky"
+  },
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
     "mapCenter": [15.0, 63.0],

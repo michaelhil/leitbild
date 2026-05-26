@@ -11,6 +11,11 @@ Environment=LEITBILD_DATA_DIR=/opt/leitbild/data
 Environment=LEITBILD_MAP_ROOT=/opt/leitbild/maps
 Environment=LEITBILD_ROUTING_PROVIDER=osrm
 Environment=LEITBILD_OSRM_URL=http://127.0.0.1:5000
+# Provider credentials (OPENSKY_CLIENT_ID, OPENSKY_CLIENT_SECRET, etc.) live
+# in /etc/leitbild/runtime.env (chmod 600). The leading `-` makes the file
+# optional so the service starts even before credentials are provisioned;
+# missing OpenSky creds simply disable the aviation.opensky provider.
+EnvironmentFile=-/etc/leitbild/runtime.env
 ExecStart=/root/.bun/bin/bun run src/index.ts
 Restart=on-failure
 RestartSec=5

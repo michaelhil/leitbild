@@ -3,12 +3,23 @@ import type {
   LeitbildPack,
   PackCommandRequest,
   PackCreationGeometry,
+  PackObjectField,
   PackObjectPresentation,
   PackMapLayerGroup,
   PackReferenceDatasetBuilder,
+  PackSimulationProvider,
 } from '../../core/packs/protocol.ts'
+import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { aviationNoopProvider, aviationNoopProviderId } from './sim/noop-adapter.ts'
+import { aviationOpenSkyProviderId, aviationVatsimProviderId } from './sim/constants.ts'
+import {
+  aircraftDomainDataSchema,
+  altitudeToFlightLevel,
+  isAircraftKind,
+  velocityMpsToKnots,
+  type AircraftDomainData,
+} from './model.ts'
 
 // The dataset id is declared inline (not imported from datasets/aero-norway.ts)
 // so the UI bundle does not pull in build-time-only modules (node:fs/promises,
@@ -57,8 +68,81 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
     defaultVisible: true,
     layerIdPattern: 'reference:aero-norway:airport:*',
   },
-  // 'aviation:aircraft' lands in Phase B.2 alongside the live providers.
+  {
+    id: 'aviation:aircraft',
+    label: 'Aircraft',
+    defaultVisible: true,
+    // Live aircraft layers are emitted by the operational-object renderer
+    // (kind='aircraft'); the controller matches them via the per-object layer
+    // ids that share the 'aircraft:' prefix.
+    layerIdPattern: 'aircraft:*',
+  },
 ]
+
+// Pack-level provider catalogue. Adapter registration (the actual factory
+// invocation, with env-derived credentials) happens in `src/index.ts`. The
+// scenario opts a Control Instance into a non-default provider via
+// providerOverrides — see norway-airspace.scenario.json.
+const aviationOpenSkyProvider: PackSimulationProvider = {
+  id: aviationOpenSkyProviderId,
+  label: 'OpenSky Network (live ADS-B)',
+  kind: 'remote',
+}
+
+const aviationVatsimProvider: PackSimulationProvider = {
+  id: aviationVatsimProviderId,
+  label: 'VATSIM (live flight-sim network)',
+  kind: 'remote',
+}
+
+const parseAircraft = (object: OperationalObject): AircraftDomainData | null => {
+  if (!isAircraftKind(object.kind)) return null
+  const parsed = aircraftDomainDataSchema.safeParse(object.domainData)
+  return parsed.success ? parsed.data : null
+}
+
+const formatCallsign = (data: AircraftDomainData): string =>
+  data.callsign ?? data.icao24 ?? 'unknown'
+
+const formatFlightLevel = (data: AircraftDomainData): string => {
+  const fl = altitudeToFlightLevel(data.altBaroM ?? data.altGeoM)
+  if (fl === null) return data.onGround ? 'GND' : '—'
+  return `FL${String(fl).padStart(3, '0')}`
+}
+
+const formatKnots = (data: AircraftDomainData): string => {
+  const kt = velocityMpsToKnots(data.velocityMps)
+  return kt === null ? '—' : `${kt} kt`
+}
+
+const formatHeading = (data: AircraftDomainData): string =>
+  data.headingDeg === null ? '—' : `${Math.round(data.headingDeg)}°`
+
+const formatVertRate = (data: AircraftDomainData): string => {
+  if (data.vertRateMps === null) return '—'
+  const fpm = Math.round(data.vertRateMps * 196.85) // m/s → ft/min
+  if (fpm === 0) return 'level'
+  return `${fpm > 0 ? '+' : ''}${fpm} ft/min`
+}
+
+const aircraftFields = (data: AircraftDomainData): ReadonlyArray<PackObjectField> => [
+  packField('callsign', 'Callsign', formatCallsign(data)),
+  packField('source', 'Source', data.source),
+  packField('flightLevel', 'Altitude', formatFlightLevel(data)),
+  packField('speed', 'Speed', formatKnots(data)),
+  packField('heading', 'Heading', formatHeading(data)),
+  packField('vertRate', 'Vertical rate', formatVertRate(data)),
+  packField('squawk', 'Squawk', data.squawk ?? '—'),
+  packField('origin', 'Origin country', data.originCountry ?? '—'),
+  packField('icao24', 'ICAO24', data.icao24 ?? '—'),
+]
+
+const aircraftColor = (data: AircraftDomainData): string => {
+  if (data.onGround) return '#6b7280' // slate-500
+  // Squawk emergency codes (7500 hijack, 7600 radio failure, 7700 emergency).
+  if (data.squawk === '7500' || data.squawk === '7600' || data.squawk === '7700') return '#dc2626'
+  return '#1d4ed8' // blue-700
+}
 
 export const aviationPack: LeitbildPack = {
   id: 'aviation',
@@ -67,18 +151,50 @@ export const aviationPack: LeitbildPack = {
   wikiRefs: [
     { name: 'Leitbild aviation domain wiki', url: 'https://samsinn-wikis.github.io/leitbild/domains/aviation/' },
   ],
-  simulationProviders: [aviationNoopProvider],
+  simulationProviders: [aviationNoopProvider, aviationOpenSkyProvider, aviationVatsimProvider],
   defaultSimulationProviderId: aviationNoopProviderId,
   referenceDatasetBuilders: [aeroNorwayBuilder],
   mapLayerGroups: layerGroups,
-  categories: [],
+  categories: [
+    {
+      id: 'aircraft',
+      label: 'Aircraft',
+      emptyLabel: 'No aircraft in view',
+      matches: (object: OperationalObject): boolean => parseAircraft(object) !== null,
+    },
+  ],
   createObjectTypes: [],
-  presentObject: (_object: OperationalObject): PackObjectPresentation => {
-    throw new Error('aviation pack has no operational objects in this phase')
+  presentObject: (object: OperationalObject): PackObjectPresentation => {
+    const data = parseAircraft(object)
+    if (!data) {
+      // Defensive: an unknown aviation OperationalObject — fall back to the
+      // shape `presentObject` callers expect rather than throwing.
+      return {
+        categoryId: 'aircraft',
+        icon: 'aircraft',
+        color: '#6b7280',
+        summary: object.operational.status,
+        fields: [packField('error', 'Error', 'Invalid aircraft domain data')],
+      }
+    }
+    const summary = `${formatCallsign(data)} · ${formatFlightLevel(data)} · ${formatKnots(data)}`
+    const isEmergency = data.squawk === '7500' || data.squawk === '7600' || data.squawk === '7700'
+    return {
+      categoryId: 'aircraft',
+      icon: 'aircraft',
+      color: aircraftColor(data),
+      summary,
+      status: packStatus(
+        isEmergency ? 'error' : data.onGround ? 'idle' : 'working',
+        isEmergency ? `Emergency squawk ${data.squawk}` : data.onGround ? 'On ground' : 'Airborne',
+      ),
+      fields: aircraftFields(data),
+      muted: data.onGround,
+    }
   },
   defaultObjectLabel: (typeId: string): string => typeId,
   buildCreateObjectCommand: (typeId: string, _label: string, _geometry: PackCreationGeometry): PackCommandRequest => {
-    throw new Error(`aviation pack cannot create object of type ${typeId} — no createObjectTypes in this phase`)
+    throw new Error(`aviation pack cannot create object of type ${typeId} — aircraft are observed, not created`)
   },
   isController: (_object: OperationalObject): boolean => false,
   isTarget: (_controller: OperationalObject, _candidate: OperationalObject): boolean => false,
