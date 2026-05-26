@@ -83,8 +83,10 @@ const sizeFor = (widget: ProcessSurfaceWidget): { readonly width: number; readon
 
 const portPoint = (
   geometry: CompiledProcessSurfaceWidget['geometry'],
-  side: 'left' | 'right' | 'top' | 'bottom',
+  port: ProcessSurfaceWidget['ports'][string],
 ): { readonly x: number; readonly y: number } => {
+  if (typeof port === 'object') return { x: geometry.x + port.x, y: geometry.y + port.y }
+  const side = port
   if (side === 'left') return { x: geometry.x, y: geometry.y + geometry.height / 2 }
   if (side === 'right') return { x: geometry.x + geometry.width, y: geometry.y + geometry.height / 2 }
   if (side === 'top') return { x: geometry.x + geometry.width / 2, y: geometry.y }
@@ -107,7 +109,7 @@ const compileWidgets = (
     return sorted.map(widget => {
       const size = sizeFor(widget)
       const x = frame.x + (frame.width - size.width) / 2 + (widget.stack - 1) * 44
-      const geometry = { x, y, width: size.width, height: size.height }
+      const geometry = widget.geometry ?? { x, y, width: size.width, height: size.height }
       y += size.height + gap
       return {
         id: widget.id,
@@ -117,7 +119,7 @@ const compileWidgets = (
         ...(widget.role === undefined ? {} : { role: widget.role }),
         geometry,
         binds: widget.binds,
-        ports: Object.fromEntries(Object.entries(widget.ports).map(([name, side]) => [name, portPoint(geometry, side)])),
+        ports: Object.fromEntries(Object.entries(widget.ports).map(([name, port]) => [name, portPoint(geometry, port)])),
         style: widget.style,
       } satisfies CompiledProcessSurfaceWidget
     })
@@ -201,7 +203,7 @@ export const compileProcessSurface = (config: {
       ...(path.source === undefined ? {} : { source: path.source }),
       from: portRefFor(path.from),
       to: portRefFor(path.to),
-      points: compilePathPoints(from, to),
+      points: path.waypoints.length > 0 ? [from, ...path.waypoints, to] : compilePathPoints(from, to),
       binds: path.binds,
       style: path.style,
     } satisfies CompiledProcessSurfacePath

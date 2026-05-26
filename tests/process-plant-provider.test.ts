@@ -182,7 +182,7 @@ describe('process plant simulation provider', () => {
       readonly surfaces: ReadonlyArray<{ readonly id: string; readonly title: string }>
     }).surfaces).toContainEqual(expect.objectContaining({
       id: 'unit-overview',
-      title: 'Unit Overview',
+      title: 'PWR Unit Overview',
     }))
 
     const surface = await connection.query(query('process-plant.surface.read', {

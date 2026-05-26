@@ -57,6 +57,8 @@
   const serviceClass = (path: { readonly style: { readonly service?: string } }): string =>
     `process-flow ${path.style.service ?? 'support'}`
 
+  const showUnitOverviewGuides = $derived(surface.id === 'unit-overview')
+
   const svgPointFor = (
     event: PointerEvent | WheelEvent,
   ): { readonly x: number; readonly y: number } | null => {
@@ -224,6 +226,21 @@
     </defs>
 
     <g transform="translate({viewTransform.x} {viewTransform.y}) scale({viewTransform.scale})">
+      {#if showUnitOverviewGuides}
+        <g class="process-surface-guide-layer" aria-hidden="true">
+          <rect class="process-surface-system-zone primary-zone" x="34" y="118" width="386" height="642" rx="2" />
+          <rect class="process-surface-system-zone heat-transfer-zone" x="438" y="118" width="892" height="642" rx="2" />
+          <rect class="process-surface-system-zone secondary-zone" x="1308" y="118" width="258" height="642" rx="2" />
+          <rect class="process-surface-header-lane steam-lane" x="438" y="124" width="892" height="104" rx="2" />
+          <rect class="process-surface-header-lane feedwater-lane" x="438" y="716" width="892" height="104" rx="2" />
+          <text class="process-surface-zone-label" x="54" y="138">PRIMARY SYSTEM</text>
+          <text class="process-surface-zone-label" x="458" y="138">HEAT TRANSFER / FOUR-LOOP PWR</text>
+          <text class="process-surface-zone-label" x="1328" y="138">SECONDARY SYSTEM</text>
+          <text class="process-surface-lane-label" x="458" y="150">MAIN STEAM</text>
+          <text class="process-surface-lane-label" x="458" y="742">FEEDWATER</text>
+        </g>
+      {/if}
+
       {#each renderedPaths as path (path.id)}
         {@const points = pathPointsFor({ surface, widgetPositions, path })}
         {@const data = pathDataFor(points)}

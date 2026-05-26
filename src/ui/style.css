@@ -1433,10 +1433,10 @@ body.rail-resizing {
   border: 0;
   border-radius: 0;
   background:
-    linear-gradient(color-mix(in srgb, var(--border) 28%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--border) 28%, transparent) 1px, transparent 1px),
-    var(--panel-strong);
-  background-size: 40px 40px;
+    linear-gradient(color-mix(in srgb, #8391a2 13%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, #8391a2 13%, transparent) 1px, transparent 1px),
+    #1c2024;
+  background-size: 40px 40px, 40px 40px, auto;
 }
 
 .process-surface-svg {
@@ -1452,11 +1452,57 @@ body.rail-resizing {
   cursor: grabbing;
 }
 
+.process-surface-system-zone {
+  fill: color-mix(in srgb, #252a30 52%, transparent);
+  stroke: color-mix(in srgb, #9aa5b1 20%, transparent);
+  stroke-width: 1;
+}
+
+.process-surface-system-zone.primary-zone {
+  fill: color-mix(in srgb, #24303c 56%, transparent);
+}
+
+.process-surface-system-zone.heat-transfer-zone {
+  fill: color-mix(in srgb, #252a30 62%, transparent);
+}
+
+.process-surface-system-zone.secondary-zone {
+  fill: color-mix(in srgb, #302a26 46%, transparent);
+}
+
+.process-surface-header-lane {
+  fill: color-mix(in srgb, #111418 38%, transparent);
+  stroke: color-mix(in srgb, #9aa5b1 12%, transparent);
+  stroke-width: 1;
+}
+
+.process-surface-header-lane.steam-lane {
+  stroke: color-mix(in srgb, #df846c 34%, transparent);
+}
+
+.process-surface-header-lane.feedwater-lane {
+  stroke: color-mix(in srgb, #40c4d6 34%, transparent);
+}
+
+.process-surface-zone-label {
+  fill: #9ba6b2;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.process-surface-lane-label {
+  fill: #737f8c;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
 .process-flow-casing {
   fill: none;
-  stroke: color-mix(in srgb, var(--panel) 88%, #ffffff);
+  stroke: color-mix(in srgb, #101418 88%, #ffffff);
   stroke-width: 12;
-  stroke-linecap: round;
+  stroke-linecap: square;
   stroke-linejoin: round;
   pointer-events: none;
 }
@@ -1464,20 +1510,19 @@ body.rail-resizing {
 .process-flow {
   fill: none;
   stroke-width: 5;
-  stroke-linecap: round;
+  stroke-linecap: square;
   stroke-linejoin: round;
-  opacity: 0.78;
-  animation: process-flow-dash 4s linear infinite;
+  opacity: 0.9;
   pointer-events: none;
 }
 
-.process-flow.primary { stroke: #2f6fd6; }
-.process-flow.steam { stroke: #cf4d43; }
+.process-flow.primary { stroke: #5ba3f0; }
+.process-flow.steam { stroke: #e07a5f; }
 .process-flow.feedwater,
-.process-flow.condensate { stroke: #178fbe; }
-.process-flow.electrical { stroke: #d8a31a; }
-.process-flow.cooling { stroke: #159b8c; }
-.process-flow.support { stroke: #64748b; }
+.process-flow.condensate { stroke: #34c4d8; }
+.process-flow.electrical { stroke: #f0c14b; }
+.process-flow.cooling { stroke: #44b3a4; }
+.process-flow.support { stroke: #94a3b8; }
 
 .process-flow-arrow {
   fill: currentColor;
@@ -1509,6 +1554,215 @@ body.rail-resizing {
 .process-widget.support .widget-shell { stroke: #22845d; }
 .process-widget.warning .widget-shell { stroke: #b97912; }
 .process-widget.critical .widget-shell { stroke: #c7352b; }
+
+.overview-status-shell,
+.overview-readout-shell {
+  fill: color-mix(in srgb, #23272c 94%, transparent);
+  stroke: color-mix(in srgb, #a7b0ba 54%, #17191c);
+  stroke-width: 1.4;
+}
+
+.overview-status-shell {
+  stroke: color-mix(in srgb, #7db5f1 72%, #17191c);
+}
+
+.overview-status-title,
+.overview-readout-title {
+  fill: #f6f7f9;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.widget-title.overview-readout-title,
+.widget-title.sg-title {
+  fill: #f6f7f9;
+}
+
+.overview-status-label {
+  fill: #a7b0ba;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.overview-status-value {
+  fill: #f6f7f9;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.overview-readout {
+  fill: #d7dee8;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.overview-readout .widget-readout-label {
+  fill: #a7b0ba;
+  font-size: 9.5px;
+}
+
+.process-widget.steam-generator {
+  color: #d7dee8;
+}
+
+.sg-shell {
+  fill: color-mix(in srgb, #24292f 86%, transparent);
+  stroke: color-mix(in srgb, #b2bac4 52%, #17191c);
+  stroke-width: 1.2;
+}
+
+.sg-shell.alert {
+  stroke: #f59e0b;
+  stroke-width: 2;
+}
+
+.sg-section-rule {
+  stroke: color-mix(in srgb, #b2bac4 22%, transparent);
+  stroke-width: 1;
+}
+
+.sg-title {
+  fill: #f8fafc;
+  font-size: 15px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.sg-type-label,
+.sg-instrument-label {
+  fill: #9ba6b2;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.sg-state-pill {
+  fill: color-mix(in srgb, #1f6f52 82%, #ffffff);
+  stroke: color-mix(in srgb, #54d18d 48%, transparent);
+  stroke-width: 1;
+}
+
+.sg-state-pill.alert {
+  fill: color-mix(in srgb, #6f4a0f 82%, #ffffff);
+  stroke: #f59e0b;
+}
+
+.sg-state-text {
+  fill: #f6f7f9;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.sg-radiation-text {
+  fill: #9ba6b2;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.sg-instrument-label {
+  font-size: 8px;
+}
+
+.sg-level-track {
+  fill: color-mix(in srgb, #101418 74%, #40c4d6);
+  stroke: color-mix(in srgb, #b2bac4 38%, transparent);
+  stroke-width: 1;
+}
+
+.sg-level-fill {
+  fill: #40c4d6;
+}
+
+.sg-level-reference {
+  stroke: color-mix(in srgb, #f6f7f9 76%, transparent);
+  stroke-width: 1;
+}
+
+.sg-level-reference.low {
+  stroke: #f59e0b;
+  stroke-dasharray: 4 4;
+}
+
+.sg-level-value {
+  fill: #f6f7f9;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.sg-vessel-outline {
+  fill: color-mix(in srgb, #15191e 88%, transparent);
+  stroke: color-mix(in srgb, #d0d7de 46%, transparent);
+  stroke-width: 1.2;
+}
+
+.sg-vessel-cap {
+  fill: color-mix(in srgb, #343a41 78%, transparent);
+  stroke: color-mix(in srgb, #d0d7de 34%, transparent);
+  stroke-width: 1;
+}
+
+.sg-secondary-waterline {
+  stroke: color-mix(in srgb, #40c4d6 70%, transparent);
+  stroke-width: 2;
+}
+
+.sg-primary-bundle {
+  fill: none;
+  stroke: #7db5f1;
+  stroke-width: 4.4;
+  stroke-linecap: square;
+}
+
+.sg-primary-bundle.secondary {
+  stroke: #9cc8f4;
+  stroke-width: 2.3;
+  opacity: 0.74;
+}
+
+.sg-steam-riser {
+  fill: none;
+  stroke: #e07a5f;
+  stroke-width: 4;
+  stroke-linecap: square;
+}
+
+.sg-feedwater-line {
+  stroke: #34c4d8;
+  stroke-width: 4;
+  stroke-linecap: square;
+}
+
+.sg-port-label {
+  fill: #8f9ba7;
+  font-size: 7px;
+  font-weight: 800;
+}
+
+.sg-port-label.steam {
+  fill: color-mix(in srgb, #e07a5f 74%, #f6f7f9);
+}
+
+.sg-port-label.feedwater {
+  fill: color-mix(in srgb, #34c4d8 72%, #f6f7f9);
+}
+
+.sg-metric-cell {
+  pointer-events: none;
+}
+
+.sg-readout {
+  fill: #f6f7f9;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.sg-metric-label {
+  fill: #9ba6b2;
+  font-size: 8px;
+  font-weight: 800;
+}
 
 .widget-level-fill {
   fill: url("#process-vessel-fill");

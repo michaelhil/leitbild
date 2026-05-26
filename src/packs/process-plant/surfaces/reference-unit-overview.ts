@@ -1,10 +1,146 @@
 import { processSurfaceDefinitionSchema } from './model.ts'
 
+const loopLetters = ['A', 'B', 'C', 'D'] as const
+type LoopLetter = typeof loopLetters[number]
+
+const lowerLoop = (loop: LoopLetter): Lowercase<LoopLetter> => loop.toLowerCase() as Lowercase<LoopLetter>
+
+const sgWidget = (loop: LoopLetter, x: number, rank: number) => {
+  const lower = lowerLoop(loop)
+  return {
+    id: `sg-${lower}`,
+    type: 'heatExchanger',
+    label: `SG ${loop}`,
+    region: 'heat-transfer',
+    source: { componentIds: [`sg${loop}`] },
+    role: 'steam-generator',
+    rank,
+    geometry: { x, y: 232, width: 208, height: 364 },
+    binds: {
+      level: { label: 'Level', path: `sg${loop}.levelPercent`, digits: 0, display: 'percent' },
+      pressure: { label: 'P', path: `sg${loop}.pressureMPa`, digits: 2 },
+      steam: { label: 'Steam', path: `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`, digits: 0 },
+      feedwater: { label: 'FW', path: `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`, digits: 0 },
+      heat: { label: 'Heat', path: `sg${loop}.heatTransferMw`, digits: 0 },
+      radiation: { label: 'Rad', path: `sg${loop}.secondaryRadiationMSvPerH`, digits: 2 },
+    },
+    ports: {
+      primaryIn: { x: 0, y: 104 },
+      primaryOut: { x: 0, y: 264 },
+      steamOut: { x: 113, y: 0 },
+      feedwaterIn: { x: 113, y: 364 },
+    },
+    style: { tone: 'secondary' },
+  } as const
+}
+
+const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
+  const lower = lowerLoop(loop)
+  return {
+    id: `rcp-${lower}`,
+    type: 'pump',
+    label: `RCP ${loop}`,
+    region: 'primary',
+    source: { componentIds: [`rcp${loop}`] },
+    role: 'reactor-coolant-pump',
+    rank,
+    geometry: { x, y: 606, width: 96, height: 96 },
+    binds: {
+      speed: { label: 'Speed', path: `rcp${loop}.speedFraction`, digits: 2, display: 'percent' },
+      flow: { label: 'Loop flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 },
+    },
+    ports: { inlet: { x: 48, y: 0 }, outlet: { x: 0, y: 48 } },
+  } as const
+}
+
+const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
+  const lower = lowerLoop(loop)
+  const laneCenter = sgX + 82
+  return [
+    {
+      id: `primary-hot-leg-${lower}`,
+      label: `Loop ${loop} hot leg`,
+      source: { connectionId: `rcs-hot-leg-${lower}` },
+      from: `reactor-vessel.hotLeg${loop}`,
+      to: `sg-${lower}.primaryIn`,
+      waypoints: [
+        { x: 430, y: 262 + rankOffset(loop) },
+        { x: laneCenter - 24, y: 262 + rankOffset(loop) },
+      ],
+      binds: { flow: { label: 'Hot-leg flow', path: `rcs-hot-leg-${lower}.flowKgPerS`, digits: 0 } },
+      style: { service: 'primary' },
+    },
+    {
+      id: `primary-cold-leg-${lower}`,
+      label: `Loop ${loop} cold leg`,
+      source: { connectionId: `rcs-cold-leg-${lower}` },
+      from: `sg-${lower}.primaryOut`,
+      to: `rcp-${lower}.inlet`,
+      waypoints: [
+        { x: laneCenter, y: 586 },
+        { x: laneCenter, y: 586 },
+      ],
+      binds: { flow: { label: 'Cold-leg flow', path: `rcs-cold-leg-${lower}.flowKgPerS`, digits: 0 } },
+      style: { service: 'primary' },
+    },
+    {
+      id: `rcp-${lower}-to-core`,
+      label: `Loop ${loop} pump discharge`,
+      source: { connectionId: `rcp-${lower}-to-core` },
+      from: `rcp-${lower}.outlet`,
+      to: `reactor-vessel.coldLeg${loop}`,
+      waypoints: [
+        { x: laneCenter - 18, y: 730 },
+        { x: 392, y: 730 },
+      ],
+      binds: { flow: { label: 'Pump flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 } },
+      style: { service: 'primary' },
+    },
+  ] as const
+}
+
+const rankOffset = (loop: LoopLetter): number => ({ A: -64, B: -22, C: 22, D: 64 })[loop]
+
+const secondaryPaths = (loop: LoopLetter, sgX: number) => {
+  const lower = lowerLoop(loop)
+  const laneCenter = sgX + 82
+  return [
+    {
+      id: `steam-${lower}-to-header`,
+      label: `SG ${loop} steam`,
+      source: { connectionId: `sg-${lower}-steam-to-msiv-${lower}` },
+      from: `sg-${lower}.steamOut`,
+      to: `main-steam-header.in${loop}`,
+      waypoints: [
+        { x: laneCenter, y: 184 },
+        { x: laneCenter, y: 184 },
+      ],
+      binds: { flow: { label: 'Steam flow', path: `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`, digits: 0 } },
+      style: { service: 'steam' },
+    },
+    {
+      id: `feedwater-to-sg-${lower}`,
+      label: `SG ${loop} feedwater`,
+      source: { connectionId: `feedwater-control-valve-${lower}-to-sg-${lower}` },
+      from: `feedwater-header.out${loop}`,
+      to: `sg-${lower}.feedwaterIn`,
+      waypoints: [
+        { x: laneCenter, y: 754 },
+        { x: laneCenter, y: 596 },
+      ],
+      binds: { flow: { label: 'Feedwater flow', path: `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`, digits: 0 } },
+      style: { service: 'feedwater' },
+    },
+  ] as const
+}
+
+const sgXs: Record<LoopLetter, number> = { A: 464, B: 688, C: 912, D: 1136 }
+
 export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.parse({
   schemaVersion: 1,
   id: 'unit-overview',
-  title: 'Unit Overview',
-  description: 'First-order process overview for one process-plant unit.',
+  title: 'PWR Unit Overview',
+  description: 'Information-rich overview display for one pressurized-water-reactor unit.',
   designSize: { width: 1600, height: 900 },
   lenses: [
     { id: 'all', label: 'Full overview', description: 'Show the authored overview surface.' },
@@ -39,14 +175,17 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     {
       id: 'unit-status-banner',
       type: 'statusBanner',
-      label: 'Unit status',
+      label: 'Unit Status',
       region: 'unit-status',
       rank: 0,
+      geometry: { x: 42, y: 32, width: 1516, height: 72 },
       binds: {
         thermalPower: { label: 'Thermal power', path: 'core.totalThermalPowerMw', digits: 0 },
         electricOutput: { label: 'Electric output', path: 'turbine.electricMw', digits: 0 },
         reactivity: { label: 'Reactivity', path: 'core.effectiveReactivityPcm', digits: 0 },
+        pzrPressure: { label: 'RCS pressure', path: 'pressurizer.pressureMPa', digits: 2 },
       },
+      style: { tone: 'primary' },
     },
     {
       id: 'reactor-vessel',
@@ -56,12 +195,23 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['core', 'vessel'] },
       role: 'reactor-vessel',
       rank: 0,
+      geometry: { x: 176, y: 292, width: 196, height: 272 },
       binds: {
-        level: { label: 'Inventory', path: 'vessel.primaryCoolantInventoryKg', digits: 0 },
-        pressure: { label: 'Pressure', path: 'pressurizer.pressureMPa', digits: 2 },
-        temperature: { label: 'Coolant temp', path: 'vessel.meanPrimaryCoolantTemperatureC', digits: 0 },
+        power: { label: 'Core power', path: 'core.totalThermalPowerMw', digits: 0 },
+        coolant: { label: 'Coolant temp', path: 'vessel.meanPrimaryCoolantTemperatureC', digits: 0 },
+        inventory: { label: 'Inventory', path: 'vessel.primaryCoolantInventoryKg', digits: 0 },
       },
-      ports: { hotLegA: 'right', coldLegA: 'left' },
+      ports: {
+        hotLegA: { x: 196, y: 74 },
+        hotLegB: { x: 196, y: 116 },
+        hotLegC: { x: 196, y: 158 },
+        hotLegD: { x: 196, y: 200 },
+        coldLegA: { x: 0, y: 72 },
+        coldLegB: { x: 0, y: 114 },
+        coldLegC: { x: 0, y: 156 },
+        coldLegD: { x: 0, y: 198 },
+      },
+      style: { tone: 'primary' },
     },
     {
       id: 'pressurizer',
@@ -71,58 +221,36 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['pressurizer'] },
       role: 'pressurizer',
       rank: 1,
+      geometry: { x: 196, y: 138, width: 152, height: 126 },
       binds: {
         level: { label: 'Level', path: 'pressurizer.levelPercent', digits: 0, display: 'percent' },
         pressure: { label: 'Pressure', path: 'pressurizer.pressureMPa', digits: 2 },
-        relief: { label: 'Relief flow', path: 'pressurizer.reliefFlowKgPerS', digits: 1 },
+        relief: { label: 'Relief', path: 'pressurizer.reliefFlowKgPerS', digits: 1 },
       },
-      ports: { surgeLine: 'bottom' },
+      ports: { surgeLine: { x: 76, y: 126 } },
+      style: { tone: 'primary' },
     },
+    ...loopLetters.map((loop, index) => sgWidget(loop, sgXs[loop], index)),
+    ...loopLetters.map((loop, index) => rcpWidget(loop, sgXs[loop] + 34, index + 10)),
     {
-      id: 'rcp-a',
-      type: 'pump',
-      label: 'RCP A',
-      region: 'primary',
-      source: { componentIds: ['rcpA'] },
-      role: 'reactor-coolant-pump',
-      rank: 2,
-      binds: {
-        speed: { label: 'Speed', path: 'rcpA.speedFraction', digits: 2, display: 'percent' },
-        flow: { label: 'Loop flow', path: 'rcs-hot-leg-a.flowKgPerS', digits: 0 },
-      },
-      ports: { inlet: 'left', outlet: 'right' },
-    },
-    {
-      id: 'sg-a',
-      type: 'heatExchanger',
-      label: 'Steam Generator A',
-      region: 'heat-transfer',
-      source: { componentIds: ['sgA'] },
-      role: 'steam-generator',
+      id: 'main-steam-header',
+      type: 'numericReadout',
+      label: 'Main Steam Header',
+      region: 'secondary',
+      role: 'main-steam-header',
       rank: 0,
+      geometry: { x: 544, y: 154, width: 760, height: 58 },
       binds: {
-        level: { label: 'Level', path: 'sgA.levelPercent', digits: 0, display: 'percent' },
-        pressure: { label: 'Pressure', path: 'sgA.pressureMPa', digits: 2 },
-        steam: { label: 'Steam flow', path: 'sg-a-steam-to-msiv-a.flowKgPerS', digits: 0 },
-        radiation: { label: 'Radiation', path: 'sgA.secondaryRadiationMSvPerH', digits: 2 },
+        flow: { label: 'Header flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 },
       },
-      ports: { primaryIn: 'left', primaryOut: 'left', steamOut: 'right', feedwaterIn: 'bottom' },
-    },
-    {
-      id: 'sg-b',
-      type: 'heatExchanger',
-      label: 'Steam Generator B',
-      region: 'heat-transfer',
-      source: { componentIds: ['sgB'] },
-      role: 'steam-generator',
-      rank: 1,
-      binds: {
-        level: { label: 'Level', path: 'sgB.levelPercent', digits: 0, display: 'percent' },
-        pressure: { label: 'Pressure', path: 'sgB.pressureMPa', digits: 2 },
-        steam: { label: 'Steam flow', path: 'sg-b-steam-to-msiv-b.flowKgPerS', digits: 0 },
-        radiation: { label: 'Radiation', path: 'sgB.secondaryRadiationMSvPerH', digits: 2 },
+      ports: {
+        inA: { x: 98, y: 58 },
+        inB: { x: 286, y: 58 },
+        inC: { x: 474, y: 58 },
+        inD: { x: 662, y: 58 },
+        outlet: { x: 760, y: 29 },
       },
-      ports: { primaryIn: 'left', primaryOut: 'left', steamOut: 'right', feedwaterIn: 'bottom' },
+      style: { tone: 'secondary' },
     },
     {
       id: 'turbine',
@@ -131,12 +259,13 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       region: 'secondary',
       source: { componentIds: ['turbine'] },
       role: 'turbine-generator',
-      rank: 0,
+      rank: 1,
+      geometry: { x: 1372, y: 298, width: 118, height: 118 },
       binds: {
         output: { label: 'Output', path: 'turbine.electricMw', digits: 0 },
         steam: { label: 'Steam use', path: 'turbine.steamFlowKgPerS', digits: 0 },
       },
-      ports: { steamIn: 'left', exhaust: 'bottom' },
+      ports: { steamIn: { x: 0, y: 60 }, exhaust: { x: 59, y: 118 } },
       style: { tone: 'secondary' },
     },
     {
@@ -146,73 +275,82 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       region: 'secondary',
       source: { componentIds: ['condenser'] },
       role: 'condenser',
-      rank: 1,
+      rank: 2,
+      geometry: { x: 1324, y: 566, width: 214, height: 132 },
       binds: {
         level: { label: 'Hotwell', path: 'condenser.condensateLevelPercent', digits: 0, display: 'percent' },
         backPressure: { label: 'Backpressure', path: 'condenser.backPressurePa', digits: 0 },
         heatRejected: { label: 'Heat rejected', path: 'condenser.heatRejectedMw', digits: 0 },
       },
-      ports: { steamIn: 'top', condensateOut: 'bottom' },
+      ports: { steamIn: { x: 107, y: 0 }, condensateOut: { x: 28, y: 132 } },
       style: { tone: 'secondary' },
     },
     {
-      id: 'feedwater',
-      type: 'vessel',
-      label: 'Feedwater Tank',
+      id: 'feedwater-header',
+      type: 'numericReadout',
+      label: 'Feedwater Header',
       region: 'support',
-      source: { componentIds: ['feedwaterTank'] },
-      role: 'feedwater',
+      source: { componentIds: ['feedwaterTank', 'feedwaterHeader'] },
+      role: 'feedwater-header',
       rank: 0,
+      geometry: { x: 544, y: 738, width: 760, height: 58 },
       binds: {
-        level: { label: 'Level', path: 'feedwaterTank.levelPercent', digits: 0, display: 'percent' },
-        flow: { label: 'Available flow', path: 'feedwaterTank.availableOutletFlowKgPerS', digits: 0 },
+        tankLevel: { label: 'Tank', path: 'feedwaterTank.levelPercent', digits: 0, display: 'percent' },
+        availableFlow: { label: 'Available', path: 'feedwaterTank.availableOutletFlowKgPerS', digits: 0 },
       },
-      ports: { outlet: 'top' },
+      ports: {
+        outA: { x: 98, y: 0 },
+        outB: { x: 286, y: 0 },
+        outC: { x: 474, y: 0 },
+        outD: { x: 662, y: 0 },
+      },
       style: { tone: 'support' },
     },
     {
       id: 'electrical',
       type: 'numericReadout',
-      label: 'Electrical Buses',
+      label: 'Safety Buses',
       region: 'support',
       role: 'electrical',
       rank: 1,
+      geometry: { x: 1324, y: 730, width: 214, height: 66 },
       binds: {
-        busA: { label: 'Safety Bus A', path: 'safetyBusA.voltageFraction', digits: 2, display: 'percent' },
-        busB: { label: 'Safety Bus B', path: 'safetyBusB.voltageFraction', digits: 2, display: 'percent' },
+        busA: { label: 'Bus A', path: 'safetyBusA.voltageFraction', digits: 2, display: 'percent' },
+        busB: { label: 'Bus B', path: 'safetyBusB.voltageFraction', digits: 2, display: 'percent' },
       },
       style: { tone: 'support' },
     },
     {
       id: 'alarm-strip',
       type: 'alarmStrip',
-      label: 'Alarm summary',
+      label: 'Alarm Focus',
       region: 'alarms',
       rank: 0,
+      geometry: { x: 42, y: 822, width: 1516, height: 54 },
       binds: {
         containmentPressure: { label: 'Containment', path: 'containment.pressureMPa', digits: 3 },
-        sgARadiation: { label: 'SG A radiation', path: 'sgA.secondaryRadiationMSvPerH', digits: 2 },
+        sgARadiation: { label: 'SG A rad', path: 'sgA.secondaryRadiationMSvPerH', digits: 2 },
+        sgBRadiation: { label: 'SG B rad', path: 'sgB.secondaryRadiationMSvPerH', digits: 2 },
+        sgCRadiation: { label: 'SG C rad', path: 'sgC.secondaryRadiationMSvPerH', digits: 2 },
+        sgDRadiation: { label: 'SG D rad', path: 'sgD.secondaryRadiationMSvPerH', digits: 2 },
       },
       style: { tone: 'warning' },
     },
   ],
   paths: [
-    {
-      id: 'primary-hot-leg-a',
-      label: 'Primary hot leg',
-      source: { connectionId: 'rcs-hot-leg-a' },
-      from: 'reactor-vessel.hotLegA',
-      to: 'sg-a.primaryIn',
-      binds: { flow: { label: 'Flow', path: 'rcs-hot-leg-a.flowKgPerS', digits: 0 } },
-      style: { service: 'primary' },
-    },
+    ...loopLetters.flatMap(loop => primaryLoopPaths(loop, sgXs[loop])),
+    ...loopLetters.flatMap(loop => secondaryPaths(loop, sgXs[loop])),
     {
       id: 'main-steam-to-turbine',
-      label: 'Main steam',
+      label: 'Main steam to turbine',
       source: { connectionId: 'main-steam-header-to-turbine-stop-valve' },
-      from: 'sg-a.steamOut',
+      from: 'main-steam-header.outlet',
       to: 'turbine.steamIn',
-      binds: { flow: { label: 'Flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 } },
+      waypoints: [
+        { x: 1350, y: 183 },
+        { x: 1350, y: 358 },
+      ],
+      binds: { flow: { label: 'Header flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 } },
       style: { service: 'steam' },
     },
     {
@@ -221,17 +359,12 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { connectionId: 'turbine-exhaust-to-condenser' },
       from: 'turbine.exhaust',
       to: 'condenser.steamIn',
-      binds: { flow: { label: 'Flow', path: 'turbine-exhaust-to-condenser.flowKgPerS', digits: 0 } },
+      waypoints: [
+        { x: 1431, y: 486 },
+        { x: 1431, y: 520 },
+      ],
+      binds: { flow: { label: 'Exhaust flow', path: 'turbine-exhaust-to-condenser.flowKgPerS', digits: 0 } },
       style: { service: 'steam' },
-    },
-    {
-      id: 'feedwater-to-sg-a',
-      label: 'Feedwater',
-      source: { connectionId: 'feedwater-control-valve-a-to-sg-a' },
-      from: 'feedwater.outlet',
-      to: 'sg-a.feedwaterIn',
-      binds: { flow: { label: 'Flow', path: 'feedwater-control-valve-a-to-sg-a.flowKgPerS', digits: 0 } },
-      style: { service: 'feedwater' },
     },
   ],
 })
