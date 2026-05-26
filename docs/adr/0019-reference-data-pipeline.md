@@ -35,7 +35,7 @@ Reference data is a first-class architectural primitive in Leitbild, distinct fr
 
 ### Placement
 
-The runtime library lives at `src/core/reference-data/`. This sits as a sibling of `src/core/spatial/` (the H3 wrapper), `src/core/packs/`, `src/core/scenarios/`, and `src/core/control-instances/`. It is use-case agnostic, which is the criterion `AGENTS.md` already applies to `src/core/`.
+The runtime library lives at `src/reference-data/` as a top-level peer of `src/map/`, `src/simulation/`, `src/scenarios/`, `src/routing/`, `src/core/`, `src/packs/`, and `src/ui/`. The existing codebase reserves `src/core/` for the abstract model and protocol primitives (`core/model`, `core/packs`, `core/scenarios`, `core/spatial`, `core/control-instances`, `core/api`) and places larger runtime-layer concerns at the top level as peers (`src/map/` for map artifacts, `src/simulation/` for the simulation hub). Reference data is a runtime layer in the same shape as `src/map/`: it produces and serves artifacts that the rest of the system consumes. Top-level placement matches that precedent.
 
 The build CLI lives at `scripts/reference-build.ts` and `scripts/reference-promote.ts`, mirroring the existing `scripts/maps-*` split for OSM.
 
@@ -97,7 +97,7 @@ One optional field is added to `LeitbildPack`:
 readonly referenceDatasetRefs?: ReadonlyArray<string>
 ```
 
-Packs reference datasets by string id. Datasets remain neutral (they live in `src/core/reference-data/datasets/`, not inside packs), preserving pack independence. A future drone pack and the ADSB pack can both consume `aero-norway` without depending on each other.
+Packs reference datasets by string id. Datasets remain neutral (they live in `src/reference-data/datasets/`, not inside packs), preserving pack independence. A future drone pack and the ADSB pack can both consume `aero-norway` without depending on each other.
 
 The change is backwards compatible. Existing packs ignore it.
 
@@ -109,7 +109,7 @@ Each dataset gets its own PMTiles file. We considered a single combined tileset 
 
 The promote step rewrites the full `/map/capabilities.json` atomically. Fragments are not merged at request time; that simplification removes a class of read/write coordination bugs and keeps the server hot-path read-only.
 
-Promoting to schema version 2 introduces a `tilesets: [...]` array entry replacing the single-tileset shape. All consumers of the manifest (server, UI, AI-agent context builders) are updated in lock-step in Phase A.1.
+Promoting to schema version 2 introduces a `tilesets: [...]` array entry replacing the single-tileset shape. All consumers of the manifest (server, UI, AI-agent context builders) are updated in lock-step. This migration ships in Phase A.6 alongside the first real dataset promote; earlier phases write per-dataset manifest fragments to disk without touching the live `/map/capabilities.json` response.
 
 ### Build dependency
 
@@ -132,7 +132,7 @@ The following were considered and rejected from v1. Each is recoverable if and w
 ## Consequences
 
 - **One HTTP server rule preserved.** The pipeline is a CLI and a systemd timer; serving is static; the spatial index runs in-process inside the existing `src/core/api/server.ts`.
-- **`src/core/spatial/` (H3) and `src/core/reference-data/spatial-index.ts` (rbush + turf polygon PIP) are siblings, not parent/child.** They solve different problems: H3 is for sparse field indexing (weather cells); rbush + turf is for polygon point-in-polygon over vector reference data.
+- **`src/core/spatial/` (H3) and `src/reference-data/spatial-index.ts` (rbush + turf polygon PIP) are siblings, not parent/child.** They solve different problems: H3 is for sparse field indexing (weather cells); rbush + turf is for polygon point-in-polygon over vector reference data.
 - **Disk usage** roughly doubles per dataset because of the sidecar GeoJSON. Trade-off accepted in ADR 0021.
 - **Manifest schema version bumps to 2.** Existing consumers must be updated in A.1. Wiki and `docs/map-capability-manifest.md` note the migration.
 - **New runtime dependencies**: `@turf/boolean-point-in-polygon`, `@turf/helpers`, `rbush`. All small. Tree-shakable. Added in A.1.
@@ -146,5 +146,5 @@ The following were considered and rejected from v1. Each is recoverable if and w
 ## Forward-looking caveats
 
 - Datasets exceeding ~200 MB normalized should switch to a streamed parser path and a chunked sidecar layout. Revisit when that case arises.
-- If multiple datasets begin to share large fetch infrastructure (e.g. a fleet of GeoNorge WFS endpoints), the source helper module `src/core/reference-data/sources/geonorge-wfs.ts` may be promoted to its own folder. Not a v1 concern.
+- If multiple datasets begin to share large fetch infrastructure (e.g. a fleet of GeoNorge WFS endpoints), the source helper module `src/reference-data/sources/geonorge-wfs.ts` may be promoted to its own folder. Not a v1 concern.
 - If a commercial Leitbild deployment becomes a real prospect, the OpenAIP source must be swapped for a paid licensed source. The data layer is pluggable specifically to make that swap a config change, not a code change.

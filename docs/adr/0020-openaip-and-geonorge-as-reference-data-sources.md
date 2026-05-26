@@ -34,7 +34,7 @@ Chosen because it is the only freely-licensed, structured, polygon-shaped airspa
 - We do not redistribute the dataset. We render it on a Leitbild instance we operate; we do not publish derivative GeoJSON or PMTiles downloads.
 - We attribute the source in the map's attribution control.
 
-If a commercial Leitbild deployment becomes a concrete prospect, the data layer is pluggable specifically so the OpenAIP source can be swapped for a paid licensed source (e.g. Navigraph) by changing one `DatasetConfig`. No code outside `src/core/reference-data/sources/` would change.
+If a commercial Leitbild deployment becomes a concrete prospect, the data layer is pluggable specifically so the OpenAIP source can be swapped for a paid licensed source (e.g. Navigraph) by changing one `DatasetConfig`. No code outside `src/reference-data/sources/` would change.
 
 ### GeoNorge for airports
 
