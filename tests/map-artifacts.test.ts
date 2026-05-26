@@ -2,19 +2,24 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { createMapCapabilityManifest, mapCapabilityManifestSchema } from '../src/map/capabilities.ts'
+import {
+  createMapCapabilityManifest,
+  findBaseTileset,
+  mapCapabilityManifestSchema,
+} from '../src/map/capabilities.ts'
 import { currentPmtilesResponse } from '../src/map/artifacts.ts'
 import { createLeitbildMapStyle } from '../src/map/style.ts'
 
 describe('vector map artifacts', () => {
   test('declares the canonical vector tile capabilities', () => {
     const manifest = mapCapabilityManifestSchema.parse(createMapCapabilityManifest())
-
-    expect(manifest.artifact.format).toBe('pmtiles')
-    expect(manifest.artifact.currentTileUrl).toBe('/map/tiles/current.pmtiles')
-    expect(manifest.layers.map(layer => layer.id)).toContain('transportation')
-    expect(manifest.layers.map(layer => layer.id)).toContain('poi')
-    expect(manifest.layers.map(layer => layer.id)).toContain('landuse')
+    expect(manifest.schemaVersion).toBe(2)
+    const base = findBaseTileset(manifest)
+    expect(base.artifact.format).toBe('pmtiles')
+    expect(base.artifact.currentTileUrl).toBe('/map/tiles/current.pmtiles')
+    expect(base.layers.map(layer => layer.id)).toContain('transportation')
+    expect(base.layers.map(layer => layer.id)).toContain('poi')
+    expect(base.layers.map(layer => layer.id)).toContain('landuse')
   })
 
   test('style uses only the self-hosted PMTiles vector source', () => {

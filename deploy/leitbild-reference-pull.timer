@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly reference-dataset refresh (Thursday 03:30 UTC, AIRAC-aligned)
+
+[Timer]
+OnCalendar=Thu *-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+Unit=leitbild-reference-pull.service
+
+[Install]
+WantedBy=timers.target

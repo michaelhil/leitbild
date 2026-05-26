@@ -2,6 +2,7 @@ node_modules/
 src/ui/dist/
 data/*
 !data/reference/
+data/reference/secrets.env
 .DS_Store
 .playwright-mcp/
 leitbild-*.png
