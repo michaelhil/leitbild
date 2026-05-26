@@ -143,6 +143,26 @@
     weatherLayerVisible = !weatherLayerVisible
   }
 
+  // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
+  // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
+  // toggles and writes here; MapSurface re-applies on change.
+  const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
+  let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
+  $effect(() => {
+    // Re-seed defaults whenever the active pack's group list changes.
+    const next: Record<string, boolean> = {}
+    for (const group of activeMapLayerGroups) {
+      next[group.id] = mapLayerGroupVisibility[group.id] ?? group.defaultVisible
+    }
+    mapLayerGroupVisibility = next
+  })
+  const toggleMapLayerGroup = (groupId: string): void => {
+    mapLayerGroupVisibility = {
+      ...mapLayerGroupVisibility,
+      [groupId]: !(mapLayerGroupVisibility[groupId] ?? activeMapLayerGroups.find(g => g.id === groupId)?.defaultVisible ?? true),
+    }
+  }
+
   const currentPackTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
@@ -669,6 +689,9 @@
         {openStatusModal}
         {openSettings}
         {toggleClockPaused}
+        mapLayerGroups={activeMapLayerGroups}
+        {mapLayerGroupVisibility}
+        onMapLayerGroupToggle={toggleMapLayerGroup}
       />
       <button
         class="rail-resize-handle"
@@ -703,6 +726,8 @@
           onMapReady={handleMapReady}
           onMapError={handleMapError}
           {controlInstanceId}
+          mapLayerGroups={activeMapLayerGroups}
+          {mapLayerGroupVisibility}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>

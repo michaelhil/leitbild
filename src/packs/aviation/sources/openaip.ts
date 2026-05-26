@@ -8,10 +8,10 @@ import {
   type NormalizedFeature,
   type RawBytes,
   type SourceId,
-} from '../types.ts'
-import { buildCacheEntry, conditionalGetHeaders } from '../fetch-cache.ts'
+} from '../../../reference-data/types.ts'
+import { buildCacheEntry, conditionalGetHeaders } from '../../../reference-data/fetch-cache.ts'
 import { normaliseVerticalLimit, type RawVerticalLimit, type VerticalReference } from './vertical-limits.ts'
-import type { AirspaceFeatureProperties } from '../airspace-schema.ts'
+import type { AirspaceFeatureProperties } from '../schemas/airspace.ts'
 
 // OpenAIP V2 airspace source.
 // REST: https://api.core.openaip.net/api/airspaces

@@ -1,6 +1,6 @@
-import { asSourceId, type DatasetSource, type NormalizedFeature } from '../types.ts'
-import type { AirportFeatureProperties } from '../airport-schema.ts'
-import { fetchAllWfsPages, type HttpFetch } from './geonorge-wfs.ts'
+import { asSourceId, type DatasetSource, type NormalizedFeature } from '../../../reference-data/types.ts'
+import type { AirportFeatureProperties } from '../schemas/airport.ts'
+import { fetchAllWfsPages, type HttpFetch } from '../../../reference-data/sources/geonorge-wfs.ts'
 
 // GeoNorge "Lufthavnpunkt Avinor" WFS source. Reads GML 3.2.1 responses, extracts
 // app:Lufthavn features, swaps lat/lon to GeoJSON lon/lat order, and emits canonical

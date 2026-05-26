@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { airportFeatureSchema } from '../src/reference-data/airport-schema.ts'
+import { airportFeatureSchema } from '../src/packs/aviation/schemas/airport.ts'
 import { createFetchCache } from '../src/reference-data/fetch-cache.ts'
 import {
   __internals,
   avinorAirportsSource,
   parseAvinorAirportBlock,
   parseAvinorAirportsGml,
-} from '../src/reference-data/sources/avinor-airports.ts'
+} from '../src/packs/aviation/sources/avinor-airports.ts'
 import type { HttpFetch } from '../src/reference-data/sources/geonorge-wfs.ts'
 
 const fixturePath = join(import.meta.dir, 'fixtures', 'avinor-lufthavn-sample.xml')

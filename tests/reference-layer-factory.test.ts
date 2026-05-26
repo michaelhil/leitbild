@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { aeroNorwayStyleModule } from '../src/ui/map/dataset-styles/aero-norway.ts'
+import { aeroNorwayStyleModule } from '../src/packs/aviation/ui/aero-norway-style.ts'
 import {
   buildReferenceDatasetLayers,
   __internals,

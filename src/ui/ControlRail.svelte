@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { OperationalObject, SimulationClockState } from '../core/model/index.ts'
   import type { SurfaceObjectRailRegionConfig } from '../core/model/index.ts'
-  import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackMapLayerGroup, PackObjectPresentation } from '../core/packs/protocol.ts'
+  import RailLayerGroupSection from './RailLayerGroupSection.svelte'
   import { X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
@@ -41,6 +42,9 @@
     readonly openStatusModal: () => void
     readonly openSettings: () => void
     readonly toggleClockPaused: () => Promise<void>
+    readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
+    readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
+    readonly onMapLayerGroupToggle?: (groupId: string) => void
   }
 
   let {
@@ -65,6 +69,9 @@
     openStatusModal,
     openSettings,
     toggleClockPaused,
+    mapLayerGroups = [],
+    mapLayerGroupVisibility = {},
+    onMapLayerGroupToggle = () => undefined,
   }: Props = $props()
 
   let collapsedCategoryIds = $state<Record<string, boolean>>({})
@@ -163,6 +170,12 @@
       {openProcessSurface}
     />
   {/each}
+
+  <RailLayerGroupSection
+    groups={mapLayerGroups}
+    visibility={mapLayerGroupVisibility}
+    onToggle={onMapLayerGroupToggle}
+  />
 
   {#if footerVisible}
     <SystemFooter

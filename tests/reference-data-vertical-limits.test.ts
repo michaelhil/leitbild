@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { normaliseVerticalLimit } from '../src/reference-data/sources/vertical-limits.ts'
+import { normaliseVerticalLimit } from '../src/packs/aviation/sources/vertical-limits.ts'
 
 describe('normaliseVerticalLimit', () => {
   test('GND surface: 0 ft GND -> 0m GND, label "GND"', () => {

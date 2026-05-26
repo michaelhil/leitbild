@@ -3,7 +3,7 @@
 // Restricted/prohibited/danger use dashed strokes to read distinctly even at
 // low zoom. Airports render as small circle markers with halo at high zoom.
 
-import type { DatasetStyleModule } from '../reference-layer-factory.ts'
+import type { DatasetStyleModule } from '../../../ui/map/reference-layer-factory.ts'
 
 interface CategoryStyle {
   readonly fillColor: string

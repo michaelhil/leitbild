@@ -112,5 +112,32 @@ export const createCompositePack = (config: {
     buildCancelTargetCommand: (controller, context): PackCommandRequest => {
       return packForCancelCommand(config.packs, controller).buildCancelTargetCommand(controller, context)
     },
+    // Aggregate map-layer groups across composed packs. The rail renders all of
+    // them; ids are namespaced by pack convention (`aviation:airspace`,
+    // `aviation:airports`) so collisions are unusual but flagged here.
+    mapLayerGroups: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['mapLayerGroups']>[number][] = []
+      for (const pack of config.packs) {
+        for (const group of pack.mapLayerGroups ?? []) {
+          if (seen.has(group.id)) {
+            throw new Error(`composite pack ${config.id}: duplicate mapLayerGroup id "${group.id}"`)
+          }
+          seen.add(group.id)
+          out.push(group)
+        }
+      }
+      return out
+    })(),
+    // Aggregate reference-dataset builders too so any code holding the composite
+    // pack (e.g. the registry collector in tests) sees what each constituent
+    // wanted to ship.
+    referenceDatasetBuilders: (() => {
+      const out: NonNullable<LeitbildPack['referenceDatasetBuilders']>[number][] = []
+      for (const pack of config.packs) {
+        for (const builder of pack.referenceDatasetBuilders ?? []) out.push(builder)
+      }
+      return out
+    })(),
   }
 }

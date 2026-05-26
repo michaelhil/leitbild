@@ -8,13 +8,13 @@ import {
   aeroNorwayProductionThresholds,
   createAeroNorwayDataset,
   __internals,
-} from '../src/reference-data/datasets/aero-norway.ts'
+} from '../src/packs/aviation/datasets/aero-norway.ts'
 import { buildDataset, currentBuildId, promoteBuild } from '../src/reference-data/pipeline.ts'
 import { createFetchCache } from '../src/reference-data/fetch-cache.ts'
-import type { HttpFetch } from '../src/reference-data/sources/openaip.ts'
+import type { HttpFetch } from '../src/packs/aviation/sources/openaip.ts'
 
 const fixturePath = (name: string) => join(import.meta.dir, 'fixtures', name)
-const manualOverlayPath = join(import.meta.dir, '..', 'data', 'reference', 'manual', 'halden-exclusion-zone.geojson')
+const manualOverlayPath = join(import.meta.dir, '..', 'src', 'packs', 'aviation', 'data', 'halden-exclusion-zone.geojson')
 
 const fixtureBody = (name: string): Promise<string> => readFile(fixturePath(name), 'utf8')
 

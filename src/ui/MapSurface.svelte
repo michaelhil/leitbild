@@ -35,12 +35,15 @@
   } from './samsinn-screenshot-config.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
-  import MapLayersPanel from './map/MapLayersPanel.svelte'
-  import { aeroNorwayDefaultsOn } from './map/map-layers-panel-state.ts'
+  import type { PackMapLayerGroup } from '../core/packs/protocol.ts'
   import {
     createReferenceDataController,
     type ReferenceDatasetController,
   } from './map/reference-data-controller.ts'
+  import {
+    createPackLayerGroupController,
+    type PackLayerGroupController,
+  } from './map/pack-layer-group-controller.ts'
 
   interface Props {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -63,6 +66,8 @@
     readonly onMapReady: () => void
     readonly onMapError: (message: string) => void
     readonly controlInstanceId?: string | null
+    readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
+    readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
   }
 
   const {
@@ -86,6 +91,8 @@
     onMapReady,
     onMapError,
     controlInstanceId = null,
+    mapLayerGroups = [],
+    mapLayerGroupVisibility = {},
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -112,6 +119,7 @@
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let referenceController = $state<ReferenceDatasetController | null>(null)
+  let packLayerGroupController = $state<PackLayerGroupController | null>(null)
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
     record: () => undefined,
@@ -363,22 +371,39 @@
       // Reference-data layers are inserted between the OSM base and the
       // operational layer stack so airspace / airport context renders below
       // routes, weather influences, and operational objects.
+      // Reference datasets (e.g. airspace + airports) get their source + layers
+      // registered here. Visibility now flows through the pack rail's layer-group
+      // controller — there is no free-floating panel any more.
       try {
-        const controller = await createReferenceDataController({
+        referenceController = await createReferenceDataController({
           map: current,
           beforeLayerId: mapLayerIds.weatherBaseGridOutline,
         })
-        referenceController = controller
-        for (const dataset of controller.registered) {
-          const defaults: Record<string, boolean> = {}
-          const defaultsSet = new Set(aeroNorwayDefaultsOn)
-          for (const category of dataset.categories) {
-            defaults[category] = defaultsSet.has(category)
-          }
-          controller.setBulkVisibility(dataset.datasetId, defaults)
-        }
       } catch (err) {
         console.warn('reference-data registration failed:', err)
+      }
+      if (mapLayerGroups.length > 0) {
+        packLayerGroupController = createPackLayerGroupController({
+          map: current,
+          packs: [{
+            // Wrap the supplied groups in a minimal "synthetic pack" — the
+            // controller only reads mapLayerGroups, so the rest can be stubs.
+            id: 'mapsurface-aggregate',
+            name: 'MapSurface aggregate',
+            domain: 'mapsurface-aggregate',
+            categories: [],
+            createObjectTypes: [],
+            presentObject: () => { throw new Error('not used') },
+            defaultObjectLabel: () => 'unused',
+            buildCreateObjectCommand: () => { throw new Error('not used') },
+            isController: () => false,
+            isTarget: () => false,
+            buildSetTargetCommand: () => { throw new Error('not used') },
+            buildCancelTargetCommand: () => { throw new Error('not used') },
+            mapLayerGroups,
+          }],
+        })
+        packLayerGroupController.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
       }
       addObjectInteractions(current)
       loaded = true
@@ -481,6 +506,7 @@
       map = null
       loaded = false
       referenceController = null
+      packLayerGroupController = null
       objectInteractionsAdded = false
       mapReadyNotified = false
       mapInitialized = false
@@ -561,23 +587,17 @@
       current.setStyle(styleUrlFor(theme))
     }
   })
+
+  // Pack-rail layer-group visibility. Re-applies whenever the rail-side state
+  // map changes (toggles, scenario overrides, control-instance switch).
+  $effect(() => {
+    const controller = packLayerGroupController
+    if (!controller || !loaded) return
+    controller.apply({ ...controller.defaults, ...mapLayerGroupVisibility })
+  })
 </script>
 
 <div class="map" bind:this={mapElement}></div>
-{#if referenceController}
-  {#each referenceController.registered as dataset (dataset.datasetId)}
-    <div class="reference-layers-panel-anchor">
-      <MapLayersPanel
-        datasetId={dataset.datasetId}
-        categories={dataset.categories}
-        defaultsOn={aeroNorwayDefaultsOn}
-        controlInstanceId={controlInstanceId}
-        title="Airspace"
-        onVisibilityChange={(visibility) => referenceController?.setBulkVisibility(dataset.datasetId, visibility)}
-      />
-    </div>
-  {/each}
-{/if}
 {#if debugMapInput}
   <aside class="map-input-debug" aria-live="polite">
     <strong>Map Input Trace</strong>
@@ -590,17 +610,3 @@
   </aside>
 {/if}
 
-<style>
-  .reference-layers-panel-anchor {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 5;
-    pointer-events: auto;
-  }
-  .reference-layers-panel-anchor + .reference-layers-panel-anchor {
-    top: auto;
-    right: 12px;
-    margin-top: 8px;
-  }
-</style>

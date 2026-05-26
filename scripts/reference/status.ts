@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { leitbildPacks } from '../../src/app-assembly.ts'
 import { currentBuildId, listBuildIds } from '../../src/reference-data/pipeline.ts'
-import { registeredDatasets } from '../../src/reference-data/registry.ts'
+import { collectRegisteredDatasets } from '../../src/reference-data/registry.ts'
 import { parseFlags, referenceRoot } from './config.ts'
 
 const flags = parseFlags(process.argv.slice(2))
@@ -17,7 +18,7 @@ interface DatasetStatus {
   readonly featureCount?: number
 }
 
-const datasets = registeredDatasets(process.env).filter(
+const datasets = collectRegisteredDatasets(leitbildPacks).filter(
   d => flags.dataset === null || String(d.id) === flags.dataset,
 )
 

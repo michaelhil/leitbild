@@ -1,5 +1,26 @@
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
+import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
+
+/** Builder a pack declares to contribute a reference dataset. The CLI reads `id`
+ * for filtering and listing; `build` runs only when the pipeline actually
+ * builds the dataset (so env reads happen at the right moment). */
+export interface PackReferenceDatasetBuilder {
+  readonly id: DatasetId
+  readonly build: (env: Record<string, string | undefined>) => DatasetConfig
+}
+
+/** Rail-side layer-group toggle contributed by a pack (ADR 0023). */
+export interface PackMapLayerGroup {
+  /** Stable id used in storage keys and command payloads. */
+  readonly id: string
+  /** Operator-facing label rendered in the rail. */
+  readonly label: string
+  /** Initial visibility. The rail and persistent storage may override. */
+  readonly defaultVisible: boolean
+  /** MapLibre layer-id glob. `*` matches one ':'-separated segment. */
+  readonly layerIdPattern: string
+}
 
 export interface PackObjectCategory {
   readonly id: string
@@ -228,12 +249,17 @@ export interface LeitbildPack {
   readonly defaultSimulationProviderId?: string
   readonly wikiRefs?: ReadonlyArray<PackWikiRef>
   /**
-   * Ids of reference datasets this pack consumes for contextual rendering and
-   * server-side spatial queries. Datasets are neutral (declared in
-   * src/reference-data/datasets/) and referenced by string id; packs do not
-   * import each other to share reference data. See ADR 0019.
+   * Reference dataset builders contributed by this pack. The reference-data
+   * pipeline (build CLI, manifest writer, spatial index) walks all active
+   * packs and collects their builders. See ADR 0019 (amended) and ADR 0022.
    */
-  readonly referenceDatasetRefs?: ReadonlyArray<string>
+  readonly referenceDatasetBuilders?: ReadonlyArray<PackReferenceDatasetBuilder>
+  /**
+   * Rail-side layer-group toggles. When a pack contributes mapLayerGroups,
+   * the control rail renders a section with one row per group plus an
+   * optional source-picker. See ADR 0023.
+   */
+  readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
   readonly scenario?: PackScenarioSupport
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>

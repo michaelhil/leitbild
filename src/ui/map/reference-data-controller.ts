@@ -5,7 +5,7 @@ import {
   type DatasetStyleModule,
   type ReferenceLayerSpec,
 } from './reference-layer-factory.ts'
-import { aeroNorwayStyleModule } from './dataset-styles/aero-norway.ts'
+import { aeroNorwayStyleModule } from '../../packs/aviation/ui/aero-norway-style.ts'
 
 // Imperative controller that fetches /map/capabilities.json, registers
 // reference-data vector sources + layers against an active MapLibre map, and

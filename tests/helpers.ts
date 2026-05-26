@@ -1,6 +1,7 @@
 import type { ControlInstanceId } from '../src/core/model/index.ts'
 import { createScenarioCatalog, type ScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
+import { aviationPack } from '../src/packs/aviation/pack.ts'
 import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
 import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
@@ -12,7 +13,7 @@ import { createLocalProcessPlantSimulationAdapter } from '../src/packs/process-p
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { SimulationAdapter, SimulationScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
 
-export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack] as const
+export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack, aviationPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,

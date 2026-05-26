@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
+import { leitbildPacks } from '../../src/app-assembly.ts'
 import { buildDataset } from '../../src/reference-data/pipeline.ts'
-import { registeredDatasets } from '../../src/reference-data/registry.ts'
+import { collectRegisteredDatasets } from '../../src/reference-data/registry.ts'
 import { buildEnv, exitFailure, parseFlags } from './config.ts'
 
 const flags = parseFlags(process.argv.slice(2))
 const env = buildEnv()
 
-const datasets = registeredDatasets(process.env).filter(
+const datasets = collectRegisteredDatasets(leitbildPacks).filter(
   d => flags.dataset === null || String(d.id) === flags.dataset,
 )
 
@@ -29,7 +30,7 @@ const results: PerDatasetResult[] = []
 
 for (const descriptor of datasets) {
   try {
-    const config = descriptor.build()
+    const config = descriptor.build(process.env)
     const outcome = await buildDataset(config, env)
     results.push({
       id: String(descriptor.id),

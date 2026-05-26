@@ -3,8 +3,8 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createFetchCache } from '../src/reference-data/fetch-cache.ts'
-import { __internals, openAipAirspaceSource, type HttpFetch } from '../src/reference-data/sources/openaip.ts'
-import { airspaceFeatureSchema } from '../src/reference-data/airspace-schema.ts'
+import { __internals, openAipAirspaceSource, type HttpFetch } from '../src/packs/aviation/sources/openaip.ts'
+import { airspaceFeatureSchema } from '../src/packs/aviation/schemas/airspace.ts'
 
 const fixturePath = (name: string) => join(import.meta.dir, 'fixtures', name)
 

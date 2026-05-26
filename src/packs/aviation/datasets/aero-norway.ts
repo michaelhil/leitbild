@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { join } from 'node:path'
-import { airspaceFeatureSchema } from '../airspace-schema.ts'
-import { airportFeatureSchema } from '../airport-schema.ts'
-import { manualOverlaySchema } from '../manual-overlay-schema.ts'
-import { ccByNcSa40, nlod20, repoOwned } from '../licences.ts'
-import { manualSource } from '../sources/manual.ts'
+import { airspaceFeatureSchema } from '../schemas/airspace.ts'
+import { airportFeatureSchema } from '../schemas/airport.ts'
+import { manualOverlaySchema } from '../schemas/manual-overlay.ts'
+import { ccByNcSa40, nlod20, repoOwned } from '../../../reference-data/licences.ts'
+import { manualSource } from '../../../reference-data/sources/manual.ts'
 import { avinorAirportsSource } from '../sources/avinor-airports.ts'
 import { openAipAirspaceSource } from '../sources/openaip.ts'
 import type { HttpFetch } from '../sources/openaip.ts'
@@ -13,7 +13,7 @@ import {
   type DatasetConfig,
   type NormalizedFeature,
   type TilebuildConfig,
-} from '../types.ts'
+} from '../../../reference-data/types.ts'
 
 // aero-norway: Norwegian airspace polygons (OpenAIP) + Avinor airport points (GeoNorge)
 // + repo-tracked manual overlays (Halden exclusion zone today, future scenario-specific
