@@ -81,17 +81,30 @@
     const from = portPointFor(path.from.widgetId, path.from.portName)
     const to = portPointFor(path.to.widgetId, path.to.portName)
     if (!from || !to) return path.points
-    const midX = (from.x + to.x) / 2
-    return [
-      from,
-      { x: midX, y: from.y },
-      { x: midX, y: to.y },
-      to,
-    ]
+    return [from, to]
   }
 
-  const pathData = (path: CompiledProcessSurfacePath): string =>
-    pathPoints(path).map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
+  const curvedPathData = (
+    from: { readonly x: number; readonly y: number },
+    to: { readonly x: number; readonly y: number },
+  ): string => {
+    const dx = to.x - from.x
+    const dy = to.y - from.y
+    const horizontalBias = Math.max(80, Math.min(260, Math.abs(dx) * 0.48 + Math.abs(dy) * 0.12))
+    const direction = dx >= 0 ? 1 : -1
+    return [
+      `M ${from.x.toFixed(1)} ${from.y.toFixed(1)}`,
+      `C ${(from.x + horizontalBias * direction).toFixed(1)} ${from.y.toFixed(1)}`,
+      `${(to.x - horizontalBias * direction).toFixed(1)} ${to.y.toFixed(1)}`,
+      `${to.x.toFixed(1)} ${to.y.toFixed(1)}`,
+    ].join(' ')
+  }
+
+  const pathData = (path: CompiledProcessSurfacePath): string => {
+    const points = pathPoints(path)
+    if (points.length === 2) return curvedPathData(points[0], points[1])
+    return points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ')
+  }
 
   const pathFlowFraction = (path: CompiledProcessSurfacePath): number => {
     const binding = path.binds.flow ?? Object.values(path.binds)[0]
@@ -129,13 +142,32 @@
     }
   }
 
+  const visibleContentBounds = (): {
+    readonly minX: number
+    readonly minY: number
+    readonly maxX: number
+    readonly maxY: number
+  } => ({
+    minX: (0 - viewTransform.x) / viewTransform.scale,
+    minY: (0 - viewTransform.y) / viewTransform.scale,
+    maxX: (surface.designSize.width - viewTransform.x) / viewTransform.scale,
+    maxY: (surface.designSize.height - viewTransform.y) / viewTransform.scale,
+  })
+
   const clampPosition = (
     widget: CompiledProcessSurfaceWidget,
     position: ProcessSurfaceWidgetPosition,
-  ): ProcessSurfaceWidgetPosition => ({
-    x: Math.max(0, Math.min(surface.designSize.width - widget.geometry.width, position.x)),
-    y: Math.max(0, Math.min(surface.designSize.height - widget.geometry.height, position.y)),
-  })
+  ): ProcessSurfaceWidgetPosition => {
+    const visible = visibleContentBounds()
+    const minX = Math.min(0, visible.minX)
+    const minY = Math.min(0, visible.minY)
+    const maxX = Math.max(surface.designSize.width - widget.geometry.width, visible.maxX - widget.geometry.width)
+    const maxY = Math.max(surface.designSize.height - widget.geometry.height, visible.maxY - widget.geometry.height)
+    return {
+      x: Math.max(minX, Math.min(maxX, position.x)),
+      y: Math.max(minY, Math.min(maxY, position.y)),
+    }
+  }
 
   const startDrag = (event: PointerEvent, widget: CompiledProcessSurfaceWidget): void => {
     if (!onWidgetPositionChange || event.button !== 0) return

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import { statusToneColor } from '../status-presentation.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import { listProcessSurfaces, readProcessSurface, readProcessSurfaceSnapshot } from './process-surface-client.ts'
@@ -88,6 +89,16 @@
     { label: 'MWt', value: statusValue('core.totalThermalPowerMw') },
     { label: 'MWe', value: statusValue('turbine.electricMw') },
   ])
+
+  const assetStatusColor = $derived(statusToneColor(
+    object.operational.priority === 'critical'
+      ? 'error'
+      : object.operational.priority === 'high'
+        ? 'working'
+        : object.operational.status === 'normal'
+          ? 'ready'
+          : 'idle',
+  ))
 
   const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
     const currentSurface = surface
@@ -249,7 +260,7 @@
       onpointerup={finishWindowDrag}
       onpointercancel={finishWindowDrag}
     >
-      <strong>{object.label}</strong>
+      <strong><span class="process-surface-asset-dot" style:background={assetStatusColor}></span>{object.label}</strong>
       <div class="process-surface-status-items">
         {#each statusItems as item (item.label)}
           <span><b>{item.label}</b> {item.value}</span>

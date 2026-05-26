@@ -1261,10 +1261,21 @@ body.rail-resizing {
 
 .process-surface-statusbar strong {
   min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 15px;
+}
+
+.process-surface-asset-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--panel) 80%, transparent);
 }
 
 .process-surface-status-items {
