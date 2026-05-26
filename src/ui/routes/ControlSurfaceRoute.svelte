@@ -172,36 +172,56 @@
     }
   }
 
-  // Rail source picker (Phase B.2 — display-only). Hidden unless the active
-  // pack contributes at least two non-placeholder providers. For B.2 the
-  // aviation pack ships OpenSky (wired) and VATSIM (placeholder); the picker
-  // surfaces the active scenario provider so the operator knows where data is
-  // coming from. Selection becomes write-enabled in Phase B.3 via
-  // aviation.set_source.
+  // Rail source picker (Phase B.3). Only meaningful when the scenario binds
+  // the aviation pack to aviation.multi — that provider is the only one
+  // accepting aviation.set_source, so picking a source on a single-source
+  // provider would do nothing.
+  //
+  // Active source is tracked locally because it's runtime state, not part of
+  // the scenario manifest after the first switch. We seed from the scenario's
+  // providerConfigs (the same payload the multi adapter consumes at connect
+  // time) and then update optimistically on each successful command.
+  let aviationActiveSourceId = $state<'opensky' | 'vatsim'>('opensky')
+  let pendingSourceSwitch = $state(false)
+  $effect(() => {
+    const scenario = scenarioDefinition
+    if (!scenario) return
+    // providerConfigs is keyed by pack id, not provider id — the catalog
+    // routes pack-id-keyed configs to the active provider at connect time.
+    const cfg = (scenario.providerConfigs ?? {})['aviation'] as { source?: string } | undefined
+    untrack(() => {
+      const source = cfg?.source === 'vatsim' ? 'vatsim' : 'opensky'
+      aviationActiveSourceId = source
+    })
+  })
+
+  const setAviationSource = async (sourceId: string): Promise<void> => {
+    if (sourceId !== 'opensky' && sourceId !== 'vatsim') return
+    if (sourceId === aviationActiveSourceId || pendingSourceSwitch) return
+    pendingSourceSwitch = true
+    try {
+      await sendCommand('aviation.set_source', { source: sourceId })
+      aviationActiveSourceId = sourceId
+    } finally {
+      pendingSourceSwitch = false
+    }
+  }
+
   const railSourcePicker = $derived.by(() => {
     if (!activePack || !scenarioDefinition) return null
-    const providers = activePack.simulationProviders ?? []
-    // Hide the noop placeholder — it never carries real data and would just
-    // confuse operators.
-    const candidates = providers.filter(provider => !provider.id.endsWith('.noop'))
-    if (candidates.length < 2) return null
-    const activeId =
-      scenarioDefinition.providerOverrides[activePack.id] ??
-      activePack.defaultSimulationProviderId ??
-      candidates[0]?.id ??
-      null
-    const sources = candidates.map(provider => {
-      // B.2: only OpenSky is actually wired. Mark everything else disabled
-      // until B.3 lands the aviation.set_source command + VATSIM adapter.
-      const wired = provider.id === 'aviation.opensky'
-      return {
-        id: provider.id,
-        label: provider.label,
-        disabled: !wired,
-        ...(wired ? {} : { hint: 'B.3' }),
-      }
-    })
-    return { title: 'Source', sources, activeId }
+    const activeProviderId = scenarioDefinition.providerOverrides[activePack.id]
+      ?? activePack.defaultSimulationProviderId
+    if (activeProviderId !== 'aviation.multi') return null
+    const sources = [
+      { id: 'opensky', label: 'OpenSky Network (live ADS-B)' },
+      { id: 'vatsim', label: 'VATSIM (flight-sim network)' },
+    ]
+    return {
+      title: 'Aircraft source',
+      sources,
+      activeId: aviationActiveSourceId,
+      onSelect: (sourceId: string) => { void setAviationSource(sourceId) },
+    }
   })
 
   const currentPackTime = (): IsoTimestamp | undefined =>

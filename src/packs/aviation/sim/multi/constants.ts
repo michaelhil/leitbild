@@ -1,0 +1,13 @@
+// The aviation multi-provider id and its single accepted command kind.
+// Lives in its own file so the UI can import the string without pulling the
+// adapter (and its Node-only fetch graph) into the browser bundle.
+
+export const aviationMultiProviderId = 'aviation.multi'
+export const aviationMultiAdapterId = aviationMultiProviderId
+
+/** Switches the live aircraft source for a Control Instance. Accepted only by
+ *  the aviation.multi adapter. Payload: `{ source: 'opensky' | 'vatsim' }`. */
+export const aviationSetSourceCommandKind = 'aviation.set_source'
+
+export const aviationSources = ['opensky', 'vatsim'] as const
+export type AviationSourceId = typeof aviationSources[number]

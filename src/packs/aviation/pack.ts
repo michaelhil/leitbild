@@ -13,6 +13,7 @@ import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
 import { aviationNoopProvider, aviationNoopProviderId } from './sim/noop-adapter.ts'
 import { aviationOpenSkyProviderId, aviationVatsimProviderId } from './sim/constants.ts'
+import { aviationMultiProviderId } from './sim/multi/constants.ts'
 import {
   aircraftDomainDataSchema,
   altitudeToFlightLevel,
@@ -95,6 +96,16 @@ const aviationVatsimProvider: PackSimulationProvider = {
   kind: 'remote',
 }
 
+// The multi provider exposes a single id that owns runtime source-swap. Scenarios
+// that want operator-toggleable sources reference it; scenarios that pin a
+// specific source can still reference aviation.opensky or aviation.vatsim
+// directly.
+const aviationMultiProvider: PackSimulationProvider = {
+  id: aviationMultiProviderId,
+  label: 'Aviation (multi-source: OpenSky / VATSIM)',
+  kind: 'remote',
+}
+
 const parseAircraft = (object: OperationalObject): AircraftDomainData | null => {
   if (!isAircraftKind(object.kind)) return null
   const parsed = aircraftDomainDataSchema.safeParse(object.domainData)
@@ -151,7 +162,12 @@ export const aviationPack: LeitbildPack = {
   wikiRefs: [
     { name: 'Leitbild aviation domain wiki', url: 'https://samsinn-wikis.github.io/leitbild/domains/aviation/' },
   ],
-  simulationProviders: [aviationNoopProvider, aviationOpenSkyProvider, aviationVatsimProvider],
+  simulationProviders: [
+    aviationNoopProvider,
+    aviationOpenSkyProvider,
+    aviationVatsimProvider,
+    aviationMultiProvider,
+  ],
   defaultSimulationProviderId: aviationNoopProviderId,
   referenceDatasetBuilders: [aeroNorwayBuilder],
   mapLayerGroups: layerGroups,

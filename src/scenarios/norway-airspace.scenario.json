@@ -5,7 +5,7 @@
   "description": "Activates the aviation pack and renders Norwegian airspace polygons plus Avinor airport points. Layer-group toggles live in the control rail.",
   "packs": ["aviation"],
   "providerOverrides": {
-    "aviation": "aviation.opensky"
+    "aviation": "aviation.multi"
   },
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
@@ -17,7 +17,9 @@
   },
   "objects": [],
   "initialContexts": [],
-  "providerConfigs": {},
+  "providerConfigs": {
+    "aviation": { "source": "opensky" }
+  },
   "surface": {
     "schemaVersion": 1,
     "regions": [

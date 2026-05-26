@@ -5,6 +5,8 @@ import { leitbildPacks } from './app-assembly.ts'
 import { createLocalAmbulanceSimulationAdapter } from './packs/ambulance/sim/adapter.ts'
 import { createAviationNoopSimulationAdapter } from './packs/aviation/sim/noop-adapter.ts'
 import { createOpenSkySimulationAdapter } from './packs/aviation/sim/opensky/adapter.ts'
+import { createVatsimSimulationAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
+import { createAviationMultiSimulationAdapter } from './packs/aviation/sim/multi/adapter.ts'
 import type { SimulationAdapter } from './simulation/protocol.ts'
 import { createLocalProcessPlantSimulationAdapter } from './packs/process-plant/sim/adapter.ts'
 import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
@@ -31,6 +33,21 @@ const aviationOpenSkyAdapter: SimulationAdapter | null = (() => {
   return createOpenSkySimulationAdapter({ clientId, clientSecret })
 })()
 
+// VATSIM needs no credentials — register unconditionally.
+const aviationVatsimAdapter = createVatsimSimulationAdapter()
+
+// The multi-provider stitches OpenSky and VATSIM behind one provider id so a
+// Control Instance can swap source at runtime via aviation.set_source. Only
+// expose it when at least one underlying source is available, otherwise
+// scenarios that depend on it would fail in a more confusing way at start-up.
+const aviationMultiAdapter: SimulationAdapter | null = (aviationOpenSkyAdapter || aviationVatsimAdapter)
+  ? createAviationMultiSimulationAdapter({
+      ...(aviationOpenSkyAdapter ? { opensky: aviationOpenSkyAdapter } : {}),
+      vatsim: aviationVatsimAdapter,
+      defaultSource: aviationOpenSkyAdapter ? 'opensky' : 'vatsim',
+    })
+  : null
+
 const registry = createControlInstanceRegistry({
   dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
   scenarioCatalog,
@@ -41,6 +58,8 @@ const registry = createControlInstanceRegistry({
     createLocalProcessPlantSimulationAdapter(),
     createAviationNoopSimulationAdapter(),
     ...(aviationOpenSkyAdapter ? [aviationOpenSkyAdapter] : []),
+    aviationVatsimAdapter,
+    ...(aviationMultiAdapter ? [aviationMultiAdapter] : []),
   ],
   interactionHandlers: leitbildPacks.flatMap(pack => pack.interactionHandlers ?? []),
 })
