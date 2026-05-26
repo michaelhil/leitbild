@@ -140,13 +140,15 @@ describe('control instance API', () => {
   test('joins a named control instance and exposes objects', async () => {
     const registry = await createTestRegistry()
     try {
-      const joined = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string }[] } }>(
+      const joined = await callRoute<{ readonly id: ControlInstanceId; readonly scenario?: { readonly id: string; readonly packs: readonly string[] }; readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string }[] } }>(
         registry,
         '/api/control-instances/sandbox',
         { method: 'POST' },
       )
       expect(joined.status).toBe(200)
       expect(joined.body.id).toBe('sandbox' as ControlInstanceId)
+      expect(joined.body.scenario?.id).toBe('oslo-ambulance')
+      expect(joined.body.scenario?.packs).toEqual(['ambulance', 'traffic', 'weather'])
       expect(joined.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly kind: string }[] }>(
@@ -438,7 +440,7 @@ describe('control instance API', () => {
   test('creates control instances from explicit scenario ids and rejects unknown scenarios', async () => {
     const registry = await createTestRegistry()
     try {
-      const created = await callRoute<{ readonly id: ControlInstanceId; readonly snapshot: { readonly objects: readonly unknown[] } }>(
+      const created = await callRoute<{ readonly id: ControlInstanceId; readonly scenario?: { readonly id: string }; readonly snapshot: { readonly objects: readonly unknown[] } }>(
         registry,
         '/api/control-instances',
         {
@@ -448,6 +450,7 @@ describe('control instance API', () => {
         },
       )
       expect(created.status).toBe(201)
+      expect(created.body.scenario?.id).toBe('oslo-ambulance')
       expect(created.body.snapshot.objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
 
       const rejected = await callRoute<{ readonly error: { readonly code: string } }>(

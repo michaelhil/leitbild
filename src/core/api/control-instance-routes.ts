@@ -3,6 +3,7 @@ import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceId
 import type { Actor } from '../control-instances/actors.ts'
 import type { PackQueryRequest } from '../packs/protocol.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
+import type { ControlInstanceRuntime } from '../control-instances/runtime.ts'
 import { apiError, json, readJson } from './responses.ts'
 import {
   commandIdempotencyConfigFromEnv,
@@ -109,6 +110,24 @@ const buildPackQuery = (raw: unknown): PackQueryRequest => {
   }
 }
 
+const controlInstanceResponse = (
+  registry: ControlInstanceRegistry,
+  runtime: ControlInstanceRuntime,
+): {
+  readonly id: typeof runtime.id
+  readonly snapshot: ReturnType<ControlInstanceRuntime['snapshot']>
+  readonly scenario?: NonNullable<ReturnType<ControlInstanceRegistry['scenario']>>
+} => {
+  const snapshot = runtime.snapshot()
+  const scenarioId = snapshot.scenario?.scenarioId
+  const scenario = scenarioId === undefined ? undefined : registry.scenario(scenarioId)
+  return {
+    id: runtime.id,
+    snapshot,
+    ...(scenario === undefined ? {} : { scenario }),
+  }
+}
+
 const handleControlInstanceApiInner = async (
   req: Request,
   url: URL,
@@ -156,7 +175,7 @@ const handleControlInstanceApiInner = async (
       ...(parsed.id === undefined ? {} : { id: parsed.id }),
       ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
     })
-    return json({ id: runtime.id, snapshot: runtime.snapshot() }, { status: 201 })
+    return json(controlInstanceResponse(config.registry, runtime), { status: 201 })
   }
 
   const controlInstanceMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)$/)
@@ -164,7 +183,7 @@ const handleControlInstanceApiInner = async (
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(controlInstanceMatch[1] ?? ''))
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
-    return json({ id: runtime.id, snapshot: runtime.snapshot() })
+    return json(controlInstanceResponse(config.registry, runtime))
   }
 
   if (controlInstanceMatch && req.method === 'DELETE') {
@@ -188,7 +207,7 @@ const handleControlInstanceApiInner = async (
     const runtime = await config.registry.ensure(controlInstanceId, {
       ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
     })
-    return json({ id: runtime.id, snapshot: runtime.snapshot() })
+    return json(controlInstanceResponse(config.registry, runtime))
   }
 
   const snapshotMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/snapshot$/)
@@ -196,7 +215,7 @@ const handleControlInstanceApiInner = async (
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(snapshotMatch[1] ?? ''))
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
-    return json({ id: runtime.id, snapshot: runtime.snapshot() })
+    return json(controlInstanceResponse(config.registry, runtime))
   }
 
   const capabilitiesMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/capabilities$/)
@@ -218,7 +237,7 @@ const handleControlInstanceApiInner = async (
     const runtime = await config.registry.reset(controlInstanceId, {
       ...(parsed.scenarioId === undefined ? {} : { scenarioId: parsed.scenarioId }),
     })
-    return json({ id: runtime.id, snapshot: runtime.snapshot() })
+    return json(controlInstanceResponse(config.registry, runtime))
   }
 
   const objectsMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/objects$/)

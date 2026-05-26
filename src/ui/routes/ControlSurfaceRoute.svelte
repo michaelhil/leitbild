@@ -91,6 +91,7 @@
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
+  let scenarioOptionsLoaded = $state(false)
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -246,6 +247,7 @@
   const openSettings = (): void => {
     settingsModalOpen = true
     void loadSettingsModal()
+    void loadScenarioOptions()
   }
 
   const openProcessSurface = (object: OperationalObject): void => {
@@ -273,16 +275,22 @@
     scenarioState?.scenarioId
 
   const loadScenarioOptions = async (): Promise<void> => {
+    if (scenarioOptionsLoaded) return
     const body = await listScenariosClient()
     scenarioOptions = body.scenarios
+    scenarioOptionsLoaded = true
   }
 
   const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<ScenarioDefinition> => {
     const body = await fetchScenario(scenarioId)
-    const nextPack = await createScenarioControlPack(body.scenario.packs)
-    scenarioDefinition = body.scenario
+    return await loadScenarioDefinitionAndPackFromDefinition(body.scenario)
+  }
+
+  const loadScenarioDefinitionAndPackFromDefinition = async (scenario: ScenarioDefinition): Promise<ScenarioDefinition> => {
+    const nextPack = await createScenarioControlPack(scenario.packs)
+    scenarioDefinition = scenario
     activePack = nextPack
-    return body.scenario
+    return scenario
   }
 
   const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
@@ -454,7 +462,11 @@
   ): Promise<void> => {
     const scenarioId = response.snapshot.scenario?.scenarioId
     if (!scenarioId) throw new Error('control instance snapshot is missing scenario state')
-    const packScenario = scenarioDefinition?.id === scenarioId ? scenarioDefinition : await loadScenarioDefinitionAndPack(scenarioId)
+    const packScenario = scenarioDefinition?.id === scenarioId
+      ? scenarioDefinition
+      : response.scenario?.id === scenarioId
+        ? await loadScenarioDefinitionAndPackFromDefinition(response.scenario)
+        : await loadScenarioDefinitionAndPack(scenarioId)
     if (packScenario.id !== scenarioId || !activePack) throw new Error(`scenario packs failed to load for ${scenarioId}`)
     await completeControlSurfaceStartupFromSnapshot({
       response,
@@ -605,7 +617,6 @@
     }
     completeStep('route')
     completeStep('interface')
-    void loadScenarioOptions()
     if (route.mode === 'new-run') {
       void createScenarioRun(route.scenarioId, 'replace')
       return () => {

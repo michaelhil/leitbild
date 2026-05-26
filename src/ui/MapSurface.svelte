@@ -331,12 +331,14 @@
       mapInputDebugController.record('style:setup-start')
       loaded = false
       assertCameraInteractionContract(current)
-      await registerObjectIconVariants(current, 'ambulance')
-      await registerObjectIconVariants(current, 'hospital')
-      await registerObjectIconVariants(current, 'crash')
-      await registerObjectIconVariants(current, 'traffic')
-      await registerObjectIconVariants(current, 'weather')
-      await registerObjectIconVariants(current, 'plant')
+      await Promise.all([
+        registerObjectIconVariants(current, 'ambulance'),
+        registerObjectIconVariants(current, 'hospital'),
+        registerObjectIconVariants(current, 'crash'),
+        registerObjectIconVariants(current, 'traffic'),
+        registerObjectIconVariants(current, 'weather'),
+        registerObjectIconVariants(current, 'plant'),
+      ])
       addOperationalMapSourcesAndLayers({
         map: current,
         objects,

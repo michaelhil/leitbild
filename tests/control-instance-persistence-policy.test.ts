@@ -16,6 +16,7 @@ const makeObject = (config?: {
   readonly point?: ReturnType<typeof geoPointFromLonLat>
   readonly status?: string
   readonly revision?: number
+  readonly domainData?: unknown
 }): OperationalObject => {
   const at = nowIso()
   return {
@@ -40,6 +41,7 @@ const makeObject = (config?: {
       priority: 'normal',
       mode: 'simulated',
     },
+    ...(config?.domainData === undefined ? {} : { domainData: config.domainData }),
     alerts: [],
     provenance: {
       source: 'simulator',
@@ -174,6 +176,85 @@ describe('control instance persistence policy', () => {
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
       'durable object update',
+    )
+
+    expect(runtime.events().map(event => event.type)).toEqual(['object.upserted'])
+    expect(await readEventLog(eventLogPath)).toHaveLength(1)
+    await runtime.close()
+  })
+
+  test('keeps provider projection-only domain data updates out of the durable journal', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const eventLogPath = join(dataDir, 'events.jsonl')
+    const initialObject = makeObject({
+      domainData: {
+        type: 'test-unit',
+        schemaVersion: 1,
+        systemId: 'system-a',
+        projection: {
+          summary: 'starting',
+          updatedAt: nowIso(),
+        },
+      },
+    })
+    const simulation = createControlledSimulation(initialObject)
+    const runtime = await createControlInstanceRuntime({
+      id: controlInstanceId,
+      simulation: simulation.connection,
+      eventLog: createJsonlEventLog(eventLogPath),
+      snapshotStore: createControlInstanceSnapshotStore({
+        controlInstanceId,
+        path: join(dataDir, 'snapshot.json'),
+      }),
+    })
+
+    const projectionUpdate = makeObject({
+      revision: 1,
+      domainData: {
+        type: 'test-unit',
+        schemaVersion: 1,
+        systemId: 'system-a',
+        projection: {
+          summary: 'running',
+          updatedAt: nowIso(),
+        },
+      },
+    })
+    simulation.emit([{
+      type: 'object.upserted',
+      object: projectionUpdate,
+      at: nowIso(),
+      provenance: projectionUpdate.provenance,
+    }])
+    await waitFor(
+      async () => runtime.snapshot().objects.find(object => object.id === objectId)?.revision === projectionUpdate.revision,
+      'projection-only object update',
+    )
+
+    expect(runtime.events()).toHaveLength(0)
+    expect(await readEventLog(eventLogPath)).toHaveLength(0)
+
+    const domainTruthUpdate = makeObject({
+      revision: 2,
+      domainData: {
+        type: 'test-unit',
+        schemaVersion: 1,
+        systemId: 'system-b',
+        projection: {
+          summary: 'running',
+          updatedAt: nowIso(),
+        },
+      },
+    })
+    simulation.emit([{
+      type: 'object.upserted',
+      object: domainTruthUpdate,
+      at: nowIso(),
+      provenance: domainTruthUpdate.provenance,
+    }])
+    await waitFor(
+      async () => (await readEventLog(eventLogPath)).length === 1,
+      'durable non-projection domain data update',
     )
 
     expect(runtime.events().map(event => event.type)).toEqual(['object.upserted'])

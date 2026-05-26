@@ -11,6 +11,7 @@ export interface ControlInstanceSnapshot {
 export interface ControlInstanceResponse {
   readonly id: ControlInstanceId
   readonly snapshot: ControlInstanceSnapshot
+  readonly scenario?: ScenarioDefinition
 }
 
 export interface ControlInstanceSummary {

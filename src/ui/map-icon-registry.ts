@@ -16,8 +16,10 @@ export const registerMapIcon = async (
 }
 
 export const registerObjectIconVariants = async (map: MapLibreMap, iconName: IconName): Promise<void> => {
-  await registerMapIcon(map, `object-${iconName}-ready`, iconName, statusToneColor('ready'))
-  await registerMapIcon(map, `object-${iconName}-working`, iconName, statusToneColor('working'))
-  await registerMapIcon(map, `object-${iconName}-error`, iconName, statusToneColor('error'))
-  await registerMapIcon(map, `object-${iconName}-idle`, iconName, statusToneColor('idle'))
+  await Promise.all([
+    registerMapIcon(map, `object-${iconName}-ready`, iconName, statusToneColor('ready')),
+    registerMapIcon(map, `object-${iconName}-working`, iconName, statusToneColor('working')),
+    registerMapIcon(map, `object-${iconName}-error`, iconName, statusToneColor('error')),
+    registerMapIcon(map, `object-${iconName}-idle`, iconName, statusToneColor('idle')),
+  ])
 }
