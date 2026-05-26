@@ -227,6 +227,13 @@ export interface LeitbildPack {
   readonly simulationProviders?: ReadonlyArray<PackSimulationProvider>
   readonly defaultSimulationProviderId?: string
   readonly wikiRefs?: ReadonlyArray<PackWikiRef>
+  /**
+   * Ids of reference datasets this pack consumes for contextual rendering and
+   * server-side spatial queries. Datasets are neutral (declared in
+   * src/reference-data/datasets/) and referenced by string id; packs do not
+   * import each other to share reference data. See ADR 0019.
+   */
+  readonly referenceDatasetRefs?: ReadonlyArray<string>
   readonly scenario?: PackScenarioSupport
   readonly categories: ReadonlyArray<PackObjectCategory>
   readonly createObjectTypes: ReadonlyArray<PackCreateObjectType>

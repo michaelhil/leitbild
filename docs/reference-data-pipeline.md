@@ -38,7 +38,7 @@ remote/manual sources
    promote  (atomic symlink swap; rewrite /map/capabilities.json)
 ```
 
-Every dataset is produced by one call to `buildDataset(config)` followed by one call to `promoteBuild(id, buildId)`. Both live in `src/core/reference-data/pipeline.ts`.
+Every dataset is produced by one call to `buildDataset(config)` followed by one call to `promoteBuild(id, buildId)`. Both live in `src/reference-data/pipeline.ts`.
 
 ## Disk layout on Hetzner
 
@@ -91,10 +91,10 @@ Documented also in `data/secrets.example.env`.
 
 Three files, plus one entry in the registry. No infrastructure code.
 
-1. **A `DatasetConfig`** in `src/core/reference-data/datasets/<id>.ts`. Declares sources, feature schema, tile-build config (per-category zoom and simplification), licences, and an audit function.
+1. **A `DatasetConfig`** in `src/reference-data/datasets/<id>.ts`. Declares sources, feature schema, tile-build config (per-category zoom and simplification), licences, and an audit function.
 2. **A style module** in `src/ui/map/dataset-styles/<id>.ts`. Returns the MapLibre paint/layout for each category. The UI factory applies it automatically.
-3. **A source module** in `src/core/reference-data/sources/<source-id>.ts` only if a new fetch/parse shape is needed. Existing source helpers (`geonorge-wfs.ts`, `openaip.ts`, `manual.ts`) are reused when possible.
-4. **A registration line** in `src/core/reference-data/registry.ts` importing the dataset config.
+3. **A source module** in `src/reference-data/sources/<source-id>.ts` only if a new fetch/parse shape is needed. Existing source helpers (`geonorge-wfs.ts`, `openaip.ts`, `manual.ts`) are reused when possible.
+4. **A registration line** in `src/reference-data/registry.ts` importing the dataset config.
 
 Packs opt into the dataset by adding its id to their `referenceDatasetRefs` array.
 
@@ -102,7 +102,7 @@ Packs opt into the dataset by adding its id to their `referenceDatasetRefs` arra
 
 The map's attribution control composes one line per active licence from each tileset's `licences[]` array in `/map/capabilities.json`. There are no hard-coded attribution strings anywhere in the UI.
 
-Authoring a dataset config requires declaring its `licences[]`. Build failure if a licence ref is unknown to the licence registry in `src/core/reference-data/licences.ts`.
+Authoring a dataset config requires declaring its `licences[]`. Build failure if a licence ref is unknown to the licence registry in `src/reference-data/licences.ts`.
 
 ## Rollback procedure
 
