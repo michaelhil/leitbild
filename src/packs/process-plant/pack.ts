@@ -117,7 +117,7 @@ export const processPlantPack: LeitbildPack = {
     kind: 'local',
   }],
   wikiRefs: [
-    { name: 'Leitbild PWR operations wiki', url: 'https://samsinn-wikis.github.io/leitbild/domains/pwr-ops/' },
+    { name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' },
   ],
   defaultSimulationProviderId: processPlantSimProviderId,
   scenario: {
