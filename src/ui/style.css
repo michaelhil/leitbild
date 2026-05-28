@@ -1530,6 +1530,28 @@ body.rail-resizing {
   white-space: pre;
 }
 
+.process-artifact-diagram {
+  min-width: max-content;
+  min-height: 100%;
+  padding: 18px;
+  background: #ffffff;
+}
+
+.process-artifact-diagram svg {
+  display: block;
+  max-width: none;
+}
+
+.process-artifact-render-error {
+  margin: 14px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--critical) 36%, var(--border));
+  border-radius: 6px;
+  color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, var(--panel));
+  font-size: 13px;
+}
+
 .process-surface-viewport {
   height: 100%;
   width: 100%;

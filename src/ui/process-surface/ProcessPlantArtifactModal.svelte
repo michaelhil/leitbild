@@ -20,6 +20,8 @@
   let error = $state<string | null>(null)
   let data = $state<ProcessPlantArtifact | null>(null)
   let copyStatus = $state<string | null>(null)
+  let renderedSvg = $state<string | null>(null)
+  let renderError = $state<string | null>(null)
 
   const copyContent = async (): Promise<void> => {
     const content = data?.content
@@ -44,6 +46,8 @@
         error = null
         data = null
         copyStatus = null
+        renderedSvg = null
+        renderError = null
         const next = await readProcessPlantArtifact(selectedControlInstanceId, selectedSystemId, selectedArtifact)
         if (!cancelled) data = next
       } catch (err) {
@@ -54,6 +58,50 @@
     }
 
     void load()
+
+    return () => {
+      cancelled = true
+    }
+  })
+
+  $effect(() => {
+    const artifactData = data
+    let cancelled = false
+    renderedSvg = null
+    renderError = null
+
+    if (!artifactData || artifactData.language !== 'mermaid') {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const render = async (): Promise<void> => {
+      try {
+        const mermaid = await import('mermaid')
+        mermaid.default.initialize({
+          startOnLoad: false,
+          securityLevel: 'strict',
+          theme: 'base',
+          themeVariables: {
+            fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
+            primaryColor: '#f8fafc',
+            primaryTextColor: '#101828',
+            primaryBorderColor: '#667085',
+            lineColor: '#667085',
+            secondaryColor: '#eef4ff',
+            tertiaryColor: '#ffffff',
+          },
+        })
+        const renderId = `process-plant-graph-${artifactData.systemId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}`
+        const result = await mermaid.default.render(renderId, artifactData.content)
+        if (!cancelled) renderedSvg = result.svg
+      } catch (err) {
+        if (!cancelled) renderError = err instanceof Error ? err.message : String(err)
+      }
+    }
+
+    void render()
 
     return () => {
       cancelled = true
@@ -88,7 +136,22 @@
       {:else if error}
         <div class="process-surface-error">{error}</div>
       {:else if data}
-        <pre><code>{data.content}</code></pre>
+        {#if data.language === 'mermaid'}
+          {#if renderedSvg}
+            <div class="process-artifact-diagram">
+              {@html renderedSvg}
+            </div>
+          {:else if renderError}
+            <div class="process-artifact-render-error">
+              Mermaid render failed: {renderError}
+            </div>
+            <pre><code>{data.content}</code></pre>
+          {:else}
+            <div class="process-surface-message">Rendering Mermaid graph...</div>
+          {/if}
+        {:else}
+          <pre><code>{data.content}</code></pre>
+        {/if}
       {:else}
         <div class="process-surface-error">Plant artifact did not load.</div>
       {/if}
