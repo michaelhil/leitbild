@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Copy, X } from 'lucide-svelte'
+  import { Copy, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-svelte'
   import type { ControlInstanceId } from '../../core/model/index.ts'
   import {
     readProcessPlantArtifact,
@@ -22,6 +22,20 @@
   let copyStatus = $state<string | null>(null)
   let renderedSvg = $state<string | null>(null)
   let renderError = $state<string | null>(null)
+  let graphScale = $state(1)
+  let graphOffset = $state({ x: 0, y: 0 })
+  let graphPan = $state<{
+    readonly pointerId: number
+    readonly pointerStart: { readonly x: number; readonly y: number }
+    readonly origin: { readonly x: number; readonly y: number }
+  } | null>(null)
+
+  const lineCountFor = (content: string): number => {
+    const trimmed = content.trimEnd()
+    return trimmed.length === 0 ? 0 : trimmed.split(/\r\n|\r|\n/).length
+  }
+
+  const contentLineCount = $derived(data ? lineCountFor(data.content) : null)
 
   const copyContent = async (): Promise<void> => {
     const content = data?.content
@@ -32,6 +46,48 @@
     } catch (err) {
       copyStatus = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  const resetGraphView = (): void => {
+    graphScale = 1
+    graphOffset = { x: 0, y: 0 }
+    graphPan = null
+  }
+
+  const zoomGraph = (factor: number): void => {
+    graphScale = Math.max(0.25, Math.min(3, graphScale * factor))
+  }
+
+  const startGraphPan = (event: PointerEvent): void => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    const element = event.currentTarget as Element
+    element.setPointerCapture(event.pointerId)
+    graphPan = {
+      pointerId: event.pointerId,
+      pointerStart: { x: event.clientX, y: event.clientY },
+      origin: graphOffset,
+    }
+  }
+
+  const updateGraphPan = (event: PointerEvent): void => {
+    const pan = graphPan
+    if (!pan || pan.pointerId !== event.pointerId) return
+    graphOffset = {
+      x: pan.origin.x + event.clientX - pan.pointerStart.x,
+      y: pan.origin.y + event.clientY - pan.pointerStart.y,
+    }
+  }
+
+  const finishGraphPan = (event: PointerEvent): void => {
+    if (graphPan?.pointerId !== event.pointerId) return
+    updateGraphPan(event)
+    graphPan = null
+  }
+
+  const wheelZoomGraph = (event: WheelEvent): void => {
+    event.preventDefault()
+    zoomGraph(event.deltaY < 0 ? 1.1 : 1 / 1.1)
   }
 
   $effect(() => {
@@ -48,6 +104,7 @@
         copyStatus = null
         renderedSvg = null
         renderError = null
+        resetGraphView()
         const next = await readProcessPlantArtifact(selectedControlInstanceId, selectedSystemId, selectedArtifact)
         if (!cancelled) data = next
       } catch (err) {
@@ -69,6 +126,7 @@
     let cancelled = false
     renderedSvg = null
     renderError = null
+    resetGraphView()
 
     if (!artifactData || artifactData.language !== 'mermaid') {
       return () => {
@@ -115,10 +173,21 @@
       <div>
         <strong>{data?.title ?? (artifact === 'authored-spec' ? 'Plant specification source' : 'Full component graph')}</strong>
         {#if data}
-          <span>{data.metadata.componentCount} components · {data.metadata.linkCount} links · {data.metadata.variableCount} variables</span>
+          <span>{data.metadata.componentCount} components · {data.metadata.linkCount} links · {data.metadata.variableCount} variables{#if contentLineCount !== null} · {contentLineCount} LOC{/if}</span>
         {/if}
       </div>
       <div class="process-artifact-actions">
+        {#if data?.language === 'mermaid' && renderedSvg}
+          <button type="button" aria-label="Zoom out graph" onclick={() => zoomGraph(1 / 1.2)}>
+            <ZoomOut size={16} aria-hidden="true" />
+          </button>
+          <button type="button" aria-label="Reset graph view" onclick={resetGraphView}>
+            <RotateCcw size={15} aria-hidden="true" />
+          </button>
+          <button type="button" aria-label="Zoom in graph" onclick={() => zoomGraph(1.2)}>
+            <ZoomIn size={16} aria-hidden="true" />
+          </button>
+        {/if}
         <button type="button" aria-label="Copy artifact text" onclick={copyContent} disabled={!data}>
           <Copy size={16} aria-hidden="true" />
         </button>
@@ -138,8 +207,23 @@
       {:else if data}
         {#if data.language === 'mermaid'}
           {#if renderedSvg}
-            <div class="process-artifact-diagram">
-              {@html renderedSvg}
+            <div
+              class="process-artifact-diagram"
+              class:panning={graphPan !== null}
+              role="application"
+              aria-label="Pan and zoom full component graph"
+              onwheel={wheelZoomGraph}
+              onpointerdown={startGraphPan}
+              onpointermove={updateGraphPan}
+              onpointerup={finishGraphPan}
+              onpointercancel={finishGraphPan}
+            >
+              <div
+                class="process-artifact-diagram-inner"
+                style="transform: translate({graphOffset.x}px, {graphOffset.y}px) scale({graphScale});"
+              >
+                {@html renderedSvg}
+              </div>
             </div>
           {:else if renderError}
             <div class="process-artifact-render-error">

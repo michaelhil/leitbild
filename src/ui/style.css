@@ -1531,15 +1531,30 @@ body.rail-resizing {
 }
 
 .process-artifact-diagram {
-  min-width: max-content;
+  position: relative;
   min-height: 100%;
-  padding: 18px;
+  overflow: hidden;
   background: #ffffff;
+  cursor: grab;
+  touch-action: none;
 }
 
-.process-artifact-diagram svg {
+.process-artifact-diagram.panning {
+  cursor: grabbing;
+}
+
+.process-artifact-diagram-inner {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.process-artifact-diagram-inner svg {
   display: block;
   max-width: none;
+  user-select: none;
 }
 
 .process-artifact-render-error {
