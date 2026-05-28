@@ -204,6 +204,7 @@ const gridNorwayBuilder: PackReferenceDatasetBuilder = {
     return createGridNorwayDataset({
       bbox: parseBbox(env.GRID_NORWAY_BBOX),
       ...(env.GRID_NORWAY_OVERPASS_URL !== undefined ? { overpassEndpointUrl: env.GRID_NORWAY_OVERPASS_URL } : {}),
+      ...(env.GRID_NORWAY_OVERPASS_USER_AGENT !== undefined ? { overpassUserAgent: env.GRID_NORWAY_OVERPASS_USER_AGENT } : {}),
     })
   },
 }

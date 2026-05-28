@@ -24,6 +24,7 @@ export interface GridNorwayThresholds {
 export interface GridNorwayDatasetConfig {
   readonly bbox: OverpassBbox
   readonly overpassEndpointUrl?: string
+  readonly overpassUserAgent?: string
   readonly overpassFetchFn?: HttpFetch
   readonly thresholds?: GridNorwayThresholds
 }
@@ -68,6 +69,7 @@ export const createGridNorwayDataset = (config: GridNorwayDatasetConfig): Datase
     id: 'osm:overpass-power:NO',
     bbox: config.bbox,
     ...(config.overpassEndpointUrl !== undefined ? { endpointUrl: config.overpassEndpointUrl } : {}),
+    ...(config.overpassUserAgent !== undefined ? { userAgent: config.overpassUserAgent } : {}),
     ...(config.overpassFetchFn !== undefined ? { fetchFn: config.overpassFetchFn } : {}),
   })
   return {

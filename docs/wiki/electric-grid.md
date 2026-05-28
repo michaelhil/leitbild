@@ -84,11 +84,13 @@ Optional environment:
 ```bash
 GRID_NORWAY_BBOX="57.5,4.0,71.5,31.5"
 GRID_NORWAY_OVERPASS_URL="https://overpass-api.de/api/interpreter"
+GRID_NORWAY_OVERPASS_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
 ```
 
 `GRID_NORWAY_BBOX` is `south,west,north,east`. Use a small regional bounding
 box while iterating. National extraction can be slow and dependent on public
-Overpass capacity.
+Overpass capacity. `GRID_NORWAY_OVERPASS_USER_AGENT` should identify the
+deployment; public Overpass instances may reject anonymous default clients.
 
 **What this makes credible.**
 

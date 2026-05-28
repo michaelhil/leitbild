@@ -33,10 +33,12 @@ export interface OverpassPowerSourceConfig {
   readonly endpointUrl?: string
   readonly bbox: OverpassBbox
   readonly timeoutSeconds?: number
+  readonly userAgent?: string
   readonly fetchFn?: HttpFetch
 }
 
 const DEFAULT_ENDPOINT = 'https://overpass-api.de/api/interpreter'
+const DEFAULT_USER_AGENT = 'Leitbild/0.1 (https://leitbild.samsinn.app)'
 
 const textEncoder = new TextEncoder()
 
@@ -231,6 +233,7 @@ const readCachedBody = async (cache: FetchCache, sourceId: string): Promise<RawB
 export const overpassPowerSource = (config: OverpassPowerSourceConfig): DatasetSource => {
   const id = config.id ?? 'osm:overpass-power:NO'
   const endpointUrl = config.endpointUrl ?? DEFAULT_ENDPOINT
+  const userAgent = config.userAgent ?? DEFAULT_USER_AGENT
   const query = buildOverpassPowerQuery(config)
   const fetchFn: HttpFetch = config.fetchFn ?? ((url, init) => globalThis.fetch(url, init))
   return {
@@ -242,6 +245,7 @@ export const overpassPowerSource = (config: OverpassPowerSourceConfig): DatasetS
         headers: {
           'accept': 'application/json',
           'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'user-agent': userAgent,
         },
         body: new URLSearchParams({ data: query }).toString(),
       })

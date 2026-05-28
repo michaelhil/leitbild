@@ -17,6 +17,7 @@ const overpassFixture = async (): Promise<unknown> =>
 const fixtureFetcher = (body: string): HttpFetch =>
   async (_url, init) => {
     expect(init?.method).toBe('POST')
+    expect(init?.headers?.['user-agent']).toContain('Leitbild')
     expect(decodeURIComponent(String(init?.body ?? ''))).toContain('[out:json]')
     return new Response(body, { status: 200, headers: { etag: 'fixture-etag' } })
   }
