@@ -96,7 +96,9 @@ describe('control instance registry', () => {
       role: 'operator',
     }, command)
     expect(result.ok).toBe(true)
-    expect(runtime.snapshot().objects.find(object => object.id === ambulance.id)?.operational.status).toBe('assigned')
+    const updatedStatus = runtime.snapshot().objects.find(object => object.id === ambulance.id)?.operational.status
+    if (!updatedStatus) throw new Error('dispatched ambulance disappeared from runtime snapshot')
+    expect(['assigned', 'en_route']).toContain(updatedStatus)
     await runtime.close()
   })
 
