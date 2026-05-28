@@ -11,10 +11,12 @@ import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/a
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
+import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { PackRuntimeAdapter, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
 
-export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack, aviationPack] as const
+export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack, aviationPack, electricGridPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,
@@ -28,6 +30,7 @@ export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapte
   createLocalTrafficPackRuntimeAdapter(),
   createLocalWeatherPackRuntimeAdapter(),
   createLocalProcessPlantPackRuntimeAdapter(),
+  createLocalElectricGridPackRuntimeAdapter(),
 ]
 
 export const testScenarioRuntimeConfig = (): PackScenarioRuntimeConfig => {

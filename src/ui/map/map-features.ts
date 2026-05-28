@@ -13,6 +13,7 @@ export const mapSourceIds = {
   weatherInfluenceSymbols: 'weather-influence-symbol-source',
   trafficLines: 'traffic-line-source',
   trafficAreas: 'traffic-area-source',
+  gridLines: 'grid-line-source',
   placementPreview: 'placement-preview-source',
 } as const
 
@@ -28,6 +29,8 @@ export const mapLayerIds = {
   trafficAreaFill: 'traffic-area-fill',
   trafficAreaOutline: 'traffic-area-outline',
   trafficLineCasing: 'traffic-line-casing',
+  gridLineCasing: 'operational:grid:line-casing',
+  gridLine: 'operational:grid:line',
   routeCasing: 'planned-route-casing',
   routeLine: 'planned-route-lines',
   trafficLine: 'traffic-lines',
@@ -83,7 +86,7 @@ interface ZoneFeatureProperties {
   readonly sortKey?: number
 }
 
-type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary'>
+type ZonePresentation = Pick<PackObjectPresentation, 'categoryId' | 'color' | 'summary' | 'status'>
 
 export const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
@@ -184,6 +187,30 @@ export const createTrafficAreaFeatureCollection = (
           id: object.id,
           color: presentation.color,
           summary: presentation.summary,
+        },
+      }
+    }),
+})
+
+export const createGridLineFeatureCollection = (
+  objects: ReadonlyArray<OperationalObject>,
+  presentObject: (object: OperationalObject) => ZonePresentation,
+): GeoJsonFeatureCollection<GeoJsonLineString, ZoneFeatureProperties> => ({
+  type: 'FeatureCollection',
+  features: objects
+    .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'LineString' && presentObject(object).categoryId === 'grid-branches')
+    .map(object => {
+      const presentation = presentObject(object)
+      return {
+        type: 'Feature',
+        id: object.id,
+        geometry: object.spatial.geometry as GeoJsonLineString,
+        properties: {
+          id: object.id,
+          color: presentation.color,
+          summary: presentation.summary,
+          lineWidth: presentation.status?.tone === 'error' ? 5.2 : presentation.status?.tone === 'working' ? 4.2 : 3.2,
+          lineOpacity: presentation.status?.tone === 'idle' ? 0.35 : 0.84,
         },
       }
     }),

@@ -358,6 +358,7 @@
         registerObjectIconVariants(current, 'weather'),
         registerObjectIconVariants(current, 'plant'),
         registerObjectIconVariants(current, 'aircraft'),
+        registerObjectIconVariants(current, 'grid'),
       ])
       addOperationalMapSourcesAndLayers({
         map: current,

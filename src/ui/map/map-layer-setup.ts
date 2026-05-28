@@ -4,6 +4,7 @@ import type { OperationalObject } from '../../core/model/index.ts'
 import type { PackMapAreaFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import {
   createObjectFeatureCollection,
+  createGridLineFeatureCollection,
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
@@ -66,6 +67,10 @@ export const addOperationalMapSourcesAndLayers = (config: {
   current.addSource(mapSourceIds.trafficAreas, {
     type: 'geojson',
     data: asMutableGeoJson(createTrafficAreaFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
+  })
+  current.addSource(mapSourceIds.gridLines, {
+    type: 'geojson',
+    data: asMutableGeoJson(createGridLineFeatureCollection([...config.objects], config.presentationFor) as unknown as GeoJSON),
   })
   current.addLayer({
     id: mapLayerIds.weatherBaseGridOutline,
@@ -224,6 +229,35 @@ export const addOperationalMapSourcesAndLayers = (config: {
       'line-width': 4,
       'line-opacity': 0.76,
       'line-blur': 0.15,
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.gridLineCasing,
+    type: 'line',
+    source: mapSourceIds.gridLines,
+    paint: {
+      'line-color': '#f8fafc',
+      'line-width': ['+', ['coalesce', ['get', 'lineWidth'], 3], 3],
+      'line-opacity': 0.72,
+      'line-blur': 0.25,
+    },
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+  })
+  current.addLayer({
+    id: mapLayerIds.gridLine,
+    type: 'line',
+    source: mapSourceIds.gridLines,
+    paint: {
+      'line-color': ['get', 'color'],
+      'line-width': ['coalesce', ['get', 'lineWidth'], 3],
+      'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.84],
     },
     layout: {
       'line-cap': 'round',

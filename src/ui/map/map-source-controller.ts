@@ -4,6 +4,7 @@ import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import type { PackMapAreaFeature, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import {
   createObjectFeatureCollection,
+  createGridLineFeatureCollection,
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
   createTrafficLineFeatureCollection,
@@ -19,6 +20,7 @@ export interface MapSourceDirty {
   readonly objects?: boolean
   readonly routes?: boolean
   readonly traffic?: boolean
+  readonly grid?: boolean
   readonly weather?: boolean
 }
 
@@ -27,6 +29,7 @@ export interface MapSourceController {
   readonly refreshObjects: (sourceObjects?: ReadonlyArray<OperationalObject>) => void
   readonly refreshRoutes: () => void
   readonly refreshTraffic: () => void
+  readonly refreshGrid: () => void
   readonly refreshWeather: () => void
   readonly refreshWeatherInfluences: () => void
   readonly refreshPlacementPreview: () => void
@@ -62,6 +65,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   let objectSourceDirty = false
   let routeSourceDirty = false
   let trafficSourceDirty = false
+  let gridSourceDirty = false
   let weatherSourceDirty = false
 
   const currentMapForSourceUpdate = (): MapLibreMap | null => {
@@ -108,6 +112,15 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     }
     if (areaSource) {
       areaSource.setData(asMapLibreGeoJson(createTrafficAreaFeatureCollection([...config.getObjects()], config.presentationFor)))
+    }
+  }
+
+  const refreshGrid = (): void => {
+    const current = currentMapForSourceUpdate()
+    if (!current) return
+    const lineSource = getGeoJsonSource(current, mapSourceIds.gridLines)
+    if (lineSource) {
+      lineSource.setData(asMapLibreGeoJson(createGridLineFeatureCollection([...config.getObjects()], config.presentationFor)))
     }
   }
 
@@ -164,6 +177,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     refreshObjects()
     refreshWeather()
     refreshTraffic()
+    refreshGrid()
     refreshRoutes()
     refreshPlacementPreview()
   }
@@ -172,6 +186,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     objectSourceDirty = objectSourceDirty || dirty.objects === true
     routeSourceDirty = routeSourceDirty || dirty.routes === true
     trafficSourceDirty = trafficSourceDirty || dirty.traffic === true
+    gridSourceDirty = gridSourceDirty || dirty.grid === true || dirty.objects === true
     weatherSourceDirty = weatherSourceDirty || dirty.weather === true
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(() => {
@@ -181,11 +196,13 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
       config.updateMarkerPopup(displayObjects)
       if (weatherSourceDirty) refreshWeather()
       if (trafficSourceDirty) refreshTraffic()
+      if (gridSourceDirty) refreshGrid()
       if (routeSourceDirty) refreshRoutes()
       refreshPlacementPreview()
       objectSourceDirty = false
       weatherSourceDirty = false
       trafficSourceDirty = false
+      gridSourceDirty = false
       routeSourceDirty = false
     })
   }
@@ -198,6 +215,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     objectSourceDirty = false
     routeSourceDirty = false
     trafficSourceDirty = false
+    gridSourceDirty = false
     weatherSourceDirty = false
   }
 
@@ -206,6 +224,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     refreshObjects,
     refreshRoutes,
     refreshTraffic,
+    refreshGrid,
     refreshWeather,
     refreshWeatherInfluences,
     refreshPlacementPreview,

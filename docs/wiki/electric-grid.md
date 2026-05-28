@@ -6,9 +6,48 @@ type: pack
 # Electric Grid Pack Reference
 
 !!! note "Status"
-    This page is a research and design reference for a future `electric-grid` pack.
-    It is not an implementation commitment and it is not a protection, market-settlement,
-    or grid-planning authority model.
+    This page is both the research reference and the design record for the initial
+    `electric-grid` pack. The current v1 is a credible operational demonstration
+    model, not a protection, market-settlement, or grid-planning authority model.
+
+## Implementation Status
+
+**Leitbild guidance.** The first implemented `electric-grid` pack is intentionally
+semantic rather than decorative. It ships with a Norway regional grid scenario,
+typed grid objects, a local Runtime Hub adapter, a DC-like active-power flow
+solver, aggregate frequency dynamics, simple voltage-health indicators, branch
+loading, controllable generation/load/branch commands, pack queries, native map
+line rendering, and a compact grid monitoring overview panel.
+
+**Implemented v1 scope.**
+
+- `grid_system`, `grid_substation`, `grid_branch`, `grid_generator`,
+  `grid_load`, `grid_storage`, and `grid_market_area` object data schemas
+- provenance-bearing scenario configuration for configured or defaulted grid
+  properties
+- Norway demo scenario with substations, corridors, HVDC import, hydro, wind,
+  battery storage, hospitals, airport load, industrial load, data-center load,
+  and EV charging loads
+- local runtime adapter for simulation ticks, command handling, queries, and
+  object upsert emissions
+- DC-like bus-angle branch-flow approximation for active-power routing and
+  overload detection
+- aggregate frequency response with reserve, inertia, generator ramping, storage
+  response, and under-frequency load shedding
+- voltage-health approximation derived from local load, reactive demand,
+  generation support, and branch stress
+- operator commands for generator dispatch/trip/availability, branch
+  open/close/derate, load shed/restore, and EV charging policy
+- pack queries for network summary, power-flow snapshot, frequency snapshot,
+  voltage-health snapshot, consumer-supply snapshot, and asset search
+- native MapLibre branch-line layers plus pack presentation for rail categories
+  and object details
+
+**Known v1 boundaries.** The scenario data is authored/configured demonstration
+data, not a compiled authoritative national grid dataset. The solver is suitable
+for regional/national overview behavior and demonstrations, but it is not a full
+AC power-flow solver, relay-coordination model, market-clearing engine, or
+security-constrained planning model.
 
 ## Source Legend
 

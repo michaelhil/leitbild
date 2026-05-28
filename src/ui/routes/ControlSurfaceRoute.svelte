@@ -87,6 +87,7 @@
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
   let ProcessSurfaceModal = $state<Component | null>(null)
+  let GridOverviewPanel = $state<Component | null>(null)
   let processSurfaceObject = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
@@ -95,6 +96,7 @@
   let surfaceLoadGeneration = 0
   let mapSurfaceLoadPromise: Promise<Component> | null = null
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
+  let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let postReadyPreloadStarted = false
   let startupDebugGeneration = 0
   let startupDebugReported = false
@@ -130,6 +132,7 @@
   const railVisible = $derived(railConfig !== null)
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
+  const gridOverviewVisible = $derived(scenarioDefinition?.packs.includes('electric-grid') === true)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
@@ -352,6 +355,20 @@
       ProcessSurfaceModal = await processSurfaceModalLoadPromise
     } catch (err) {
       processSurfaceModalLoadPromise = null
+      throw err
+    }
+  }
+
+  const loadGridOverviewPanel = async (): Promise<void> => {
+    if (GridOverviewPanel) return
+    gridOverviewPanelLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../grid/GridOverviewPanel.svelte')
+      return module.default
+    })()
+    try {
+      GridOverviewPanel = await gridOverviewPanelLoadPromise
+    } catch (err) {
+      gridOverviewPanelLoadPromise = null
       throw err
     }
   }
@@ -824,6 +841,10 @@
   $effect(() => {
     if (createDraft) void loadCreateObjectModal()
   })
+
+  $effect(() => {
+    if (gridOverviewVisible) void loadGridOverviewPanel()
+  })
 </script>
 
 {#if !surface}
@@ -904,6 +925,9 @@
         <div class="map-loading">Starting map...</div>
       {:else}
         <div class="surface-empty"></div>
+      {/if}
+      {#if gridOverviewVisible && GridOverviewPanel}
+        <GridOverviewPanel {objects} />
       {/if}
     </main>
 
