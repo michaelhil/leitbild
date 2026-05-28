@@ -8,7 +8,7 @@ import {
   parseScenarioRunControlInstanceId,
 } from '../model/index.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
-import { createRuntimeHub } from '../../simulation/hub.ts'
+import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import { createJsonlEventLog } from './event-log.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
@@ -53,7 +53,7 @@ export interface ControlInstanceRegistry {
 
 export const createControlInstanceRegistry = (config: {
   readonly dataDir: string
-  readonly simulationAdapters: ReadonlyArray<PackRuntimeAdapter>
+  readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly scenarioCatalog: ScenarioCatalog
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
@@ -72,7 +72,7 @@ export const createControlInstanceRegistry = (config: {
       }
     }
     const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
-    const activeAdapters = config.simulationAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
+    const activeAdapters = config.runtimeAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
     const queryKinds = Object.fromEntries(
       scenarioRuntime.scenario.packs.map(packId => [
         packId,
@@ -117,7 +117,7 @@ export const createControlInstanceRegistry = (config: {
       controlInstanceId: id,
       path: join(instanceDir, 'snapshot.json'),
     })
-    const runtimeStateStores = Object.fromEntries(config.simulationAdapters.map(adapter => [
+    const runtimeStateStores = Object.fromEntries(config.runtimeAdapters.map(adapter => [
       adapter.id,
       createJsonRuntimeStateStore({
         runtimeId: adapter.id,
@@ -146,7 +146,7 @@ export const createControlInstanceRegistry = (config: {
       : requestedScenarioId
     const scenarioRuntime = scenarioId === undefined ? undefined : config.scenarioCatalog.runtimeFor(scenarioId)
     if (scenarioId !== undefined && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
-    const simulation = await createRuntimeHub(config.simulationAdapters).connect({
+    const runtimeConnection = await createRuntimeHub(config.runtimeAdapters).connect({
       controlInstanceId: id,
       ...(scenarioRuntime
         ? {
@@ -166,7 +166,7 @@ export const createControlInstanceRegistry = (config: {
     })
     const runtime = await createControlInstanceRuntime({
       id,
-      simulation,
+      runtimeConnection,
       eventLog,
       snapshotStore,
       ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),

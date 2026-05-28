@@ -398,7 +398,7 @@
             "guidance": {
               "id": "halden-process-welcome",
               "title": "Halden process-plant demo",
-              "message": "Six process-plant units are running in two nearby clusters while ambulance and weather simulations continue around them. Watch Unit A2 and Unit B1 as scheduled faults develop. The plant rail values are projected from the process simulator; click the eye icon to choose which values stay visible.",
+              "message": "Six process-plant units are running in two nearby clusters while ambulance and weather runtimes continue around them. Watch Unit A2 and Unit B1 as scheduled faults develop. The plant rail values are projected from the process runtime; click the eye icon to choose which values stay visible.",
               "objectIds": ["plant:halden-a2", "plant:halden-b1", "amb:demo-reserve-1"],
               "dismissible": true
             }

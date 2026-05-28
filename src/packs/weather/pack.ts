@@ -120,7 +120,7 @@ export const weatherPack: LeitbildPack = {
   id: 'weather',
   name: 'Weather Conditions',
   runtimes: [
-    { id: weatherSimRuntimeId, label: 'Local weather simulator', kind: 'local' },
+    { id: weatherSimRuntimeId, label: 'Local weather runtime', kind: 'local' },
   ],
   defaultRuntimeId: weatherSimRuntimeId,
   scenario: weatherScenarioSupport,

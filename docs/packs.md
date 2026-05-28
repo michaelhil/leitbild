@@ -26,7 +26,7 @@ A pack may contain:
 - pack schemas and pack object data validators
 - object context schemas, context seed data, and agent-context renderers
 - command kinds and payload validators
-- pack runtime adapters or local simulation engines, including pack runtimes that compose with other active pack runtimes through the Simulation Hub
+- pack runtime adapters or local simulation engines, including pack runtimes that compose with other active pack runtimes through the Runtime Hub
 - pack runtime metadata, including the pack's default pack runtime
 - object icons, map symbols, and style rules
 - object categories, summaries, visible fields, hover details, noteworthy-update policy, and inspectors
@@ -112,9 +112,8 @@ Future external packs should include `leitbild.pack.json`.
   "name": "Ambulance Dispatch",
   "version": "0.1.0",
   "leitbild": ">=0.1.0",
-  "description": "Ambulance dispatch pack, local simulator, and UI.",
+  "description": "Ambulance dispatch pack, local runtime, and UI.",
   "contributes": {
-    "domains": ["ambulance_dispatch"],
     "objectTypes": ["ambulance", "hospital", "incident", "patient"],
     "commands": [
       "ambulance.create_object",
@@ -167,15 +166,15 @@ Composition rules:
 - Leitbild owns object IDs and canonical state.
 - Leitbild owns interaction signal ordering and effect commit.
 - Packs publish events through Leitbild seams.
-- Packs issue changes to other operational domains only through declared commands, interaction signals, and committed events.
+- Packs issue changes to other operational areas only through declared commands, interaction signals, and committed events.
 - Pack interaction handlers inspect signals plus current control-instance state and return constrained effects. They must not mutate shared state directly.
 - Packs that need another pack's capability should emit a generic demand signal when possible. The source pack describes the need; responder packs decide whether and how to materialize target objects or notifications.
 
-Multi-pack simulation orchestration uses the Simulation Hub once more than one pack runtime is active in a Control Instance.
+Multi-pack runtime orchestration uses the Runtime Hub once more than one pack runtime is active in a Control Instance.
 
 ## Generic UI Boundary
 
-Generic UI modules must not import pack-specific pack models, simulators, geometry helpers, or condition calculators. They consume the pack protocol.
+Generic UI modules must not import pack-specific pack models, runtimes, geometry helpers, or condition calculators. They consume the pack protocol.
 
 Pack-specific presentation belongs behind `LeitbildPack`:
 
@@ -186,7 +185,7 @@ Pack-specific presentation belongs behind `LeitbildPack`:
 - `PackMapAreaFeature.anchorPoint` and `symbol` let pack runtime-projected areas carry an attached MapLibre symbol without rendering the same concept as an ordinary operational-object marker. Weather uses this for cloud icons that follow influence ovals.
 - `PackMapAreaFeature.animation` is optional presentation metadata for smooth visual interpolation between pack runtime query refreshes. It may move rendered geometry and attached symbol anchors between two pack runtime-computed states, but it must not be treated as canonical simulation truth or used to update pack state.
 - `createObjectTypes.parameters` lets packs declare creation controls for the generic create modal. Traffic can request severity, speed factor, and reason without hardcoding traffic fields into the modal.
-- `PackQueryRequest` is the generic read-only API shape for runtime-owned computations. Core validates the envelope and routes it through the Simulation Hub; the active pack runtime validates the payload and returns a typed result or an explicit failure.
+- `PackQueryRequest` is the generic read-only API shape for runtime-owned computations. Core validates the envelope and routes it through the Runtime Hub; the active pack runtime validates the payload and returns a typed result or an explicit failure.
 
 The generic map may still have a small static V1 layer vocabulary such as routes, traffic lines, generic pack areas, symbols, and overlays. That vocabulary must not contain pack algorithms. A later surface-registry pass should let packs register layer families and ordering metadata once the built-in surface model has settled.
 
@@ -304,7 +303,7 @@ Process-plant also accepts `process-plant.ic.lifecycle`. The payload identifies 
 
 Process-plant alarm queries are convenience views over the same I&C lifecycle state, not a second alarm model. `process-plant.alarms.status` returns current alarms and trips plus a summary, `process-plant.alarms.summary` returns grouped counts and first-out state, and `process-plant.alarms.history` returns bounded transition history with operator/client provenance.
 
-Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate simulator binding catalog.
+Process-plant signal queries expose graph-owned procedure/operator bindings. A signal binding may include `tagId`, `equipmentId`, `description`, and `externalRefs`, but it still resolves to a compiled variable path. Tags are unique only within one process system. There is no implicit current-unit lookup and no separate runtime binding catalog.
 
 Process-plant I&C is the pack's simplified instrumentation-and-control substrate. It is not embedded procedure execution and not continuous physics. It reads instrumentation signals, evaluates normal controller logic, protection functions, alarms, permissives, and interlocks for one explicit process system, then emits persistent alarm/trip state transitions or validated queued writes. I&C rules may include structured annunciator metadata and optional mode conditions, but both are still declarative rule data, not procedure code. External procedure runners and AI agents should query signal and condition truth through the pack query surface and issue commands through the generic command path. `process-plant.conditions.evaluate` evaluates the same typed condition language used by rules and returns both the truth value and the signals read, which makes procedure/AI reasoning auditable without adding a procedure engine to the pack.
 
@@ -322,7 +321,7 @@ Process-plant systems may use either an inline `graph` or a pack-owned `graphRef
 
 ## Interaction Contributions
 
-Packs may contribute interaction capability for cross-object and cross-simulation behavior.
+Packs may contribute interaction capability for cross-object and cross-runtime behavior.
 
 An **Interaction Signal** is a scoped claim, observation, or interaction attempt. Examples:
 
@@ -369,7 +368,7 @@ Packs must keep boundaries clear:
 - object presentation decides whether revision changes are noteworthy for operator attention. Frequent motion updates should not become rail `new` badges; packs should enable noteworthy updates only for object types where a changed field is operationally meaningful.
 - pack helpers may construct full `OperationalObject`s, but packs must not introduce a second production seed-object model beside Scenario Definitions.
 - compact scenario files may name pack object specs, but the expanded Scenario Definition is still the runtime contract.
-- multi-pack scenarios may override a pack's default pack runtime and may provide runtime config keyed by pack id. The Scenario Catalog resolves those pack-level choices into runtime ids before the Simulation Hub starts pack runtimes.
+- multi-pack scenarios may override a pack's default pack runtime and may provide runtime config keyed by pack id. The Scenario Catalog resolves those pack-level choices into runtime ids before the Runtime Hub starts pack runtimes.
 
 ## Trust Model
 

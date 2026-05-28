@@ -7,7 +7,7 @@ import type {
   IsoTimestamp,
   SimulationClockState,
 } from '../src/core/model/index.ts'
-import { createRuntimeHub } from '../src/simulation/hub.ts'
+import { createRuntimeHub } from '../src/simulation/runtime-hub.ts'
 import type {
   PackRuntimeAdapter,
   PackRuntimeConnection,

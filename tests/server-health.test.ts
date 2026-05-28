@@ -79,7 +79,7 @@ describe('server health', () => {
     const registry = createControlInstanceRegistry({
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
-      simulationAdapters: [
+      runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
@@ -118,7 +118,7 @@ describe('server health', () => {
     const registry = createControlInstanceRegistry({
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
-      simulationAdapters: [
+      runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),
@@ -179,7 +179,7 @@ describe('server health', () => {
     const registry = createControlInstanceRegistry({
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
-      simulationAdapters: [
+      runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
         createLocalWeatherPackRuntimeAdapter(),

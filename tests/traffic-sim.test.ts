@@ -20,7 +20,7 @@ const makeCommand = (payload: unknown): CommandEnvelope => ({
   issuedAt: nowIso(),
 })
 
-describe('local traffic simulator', () => {
+describe('local traffic runtime', () => {
   test('rejects previous traffic condition data instead of migrating it silently', () => {
     expect(() => trafficPackDataSchema.parse({
       type: 'traffic_condition',

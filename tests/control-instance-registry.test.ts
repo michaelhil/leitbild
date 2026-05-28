@@ -18,7 +18,7 @@ describe('control instance registry', () => {
   const createRegistry = (dataDir: string) => createControlInstanceRegistry({
     dataDir,
     scenarioCatalog: createTestScenarioCatalog(),
-    simulationAdapters: [
+    runtimeAdapters: [
       createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficPackRuntimeAdapter(),
       createLocalWeatherPackRuntimeAdapter(),

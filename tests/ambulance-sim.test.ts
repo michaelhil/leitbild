@@ -115,7 +115,7 @@ const applyInteractionEvents = async (
   }
 }
 
-describe('local ambulance simulator', () => {
+describe('local ambulance runtime', () => {
   test('starts with the tutorial ambulance, incident, and hospital set', async () => {
     const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
@@ -220,7 +220,7 @@ describe('local ambulance simulator', () => {
     await connection.close()
   })
 
-  test('evolves incident and hospital facts through simulator events', () => {
+  test('evolves incident and hospital facts through runtime events', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId,
       objects: osloAmbulanceScenario.initialObjects,

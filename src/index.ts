@@ -51,7 +51,7 @@ const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter 
 const registry = createControlInstanceRegistry({
   dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
   scenarioCatalog,
-  simulationAdapters: [
+  runtimeAdapters: [
     createLocalAmbulancePackRuntimeAdapter({ routing }),
     createLocalTrafficPackRuntimeAdapter({ routing }),
     createLocalWeatherPackRuntimeAdapter(),

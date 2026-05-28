@@ -568,7 +568,7 @@ Alarm-specific read surfaces are available through `process-plant.alarms.status`
 
 Control-room surfaces, scenario tooling, and AI agents can dry-run an actuator write through `process-plant.control.validate`. It accepts the same payload shape as `process-plant.control.write`, resolves the same signal reference, checks writability, validates type and hard range, and evaluates the same permissive/interlock gates. It returns whether the write would be accepted at the current runtime snapshot and does not mutate plant state.
 
-Procedure runners can also validate a procedure tag appendix through `process-plant.procedure-tags.validate`. The query accepts extracted tag records such as `{ id, simPath, units, equipment }`, resolves each tag against the compiled graph-owned signal bindings for one `systemId`, and reports `resolved`, `resolved-with-warnings`, or `missing`. It is deliberately read-only compatibility checking for external procedure documents; it does not parse procmd, execute procedure steps, own branch state, or create a second simulator-binding catalog.
+Procedure runners can also validate a procedure tag appendix through `process-plant.procedure-tags.validate`. The query accepts extracted tag records such as `{ id, simPath, units, equipment }`, resolves each tag against the compiled graph-owned signal bindings for one `systemId`, and reports `resolved`, `resolved-with-warnings`, or `missing`. It is deliberately read-only compatibility checking for external procedure documents; it does not parse procmd, execute procedure steps, own branch state, or create a second runtime-binding catalog.
 
 ## Fluid Link Solver Contracts
 

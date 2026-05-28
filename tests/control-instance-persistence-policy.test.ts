@@ -55,7 +55,7 @@ const makeObject = (config?: {
   }
 }
 
-const createControlledSimulation = (initialObject: OperationalObject): {
+const createControlledRuntimeConnection = (initialObject: OperationalObject): {
   readonly connection: PackRuntimeConnection
   readonly emit: (events: ReadonlyArray<Parameters<PackRuntimeEventHandler>[0]['events'][number]>) => void
 } => {
@@ -131,10 +131,10 @@ describe('control instance persistence policy', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject()
-    const simulation = createControlledSimulation(initialObject)
+    const runtimeConnection = createControlledRuntimeConnection(initialObject)
     const runtime = await createControlInstanceRuntime({
       id: controlInstanceId,
-      simulation: simulation.connection,
+      runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createControlInstanceSnapshotStore({
         controlInstanceId,
@@ -146,7 +146,7 @@ describe('control instance persistence policy', () => {
       point: geoPointFromLonLat(10.71, 59.91),
       revision: 1,
     })
-    simulation.emit([{
+    runtimeConnection.emit([{
       type: 'object.upserted',
       object: movedObject,
       at: nowIso(),
@@ -167,7 +167,7 @@ describe('control instance persistence policy', () => {
       status: 'assigned',
       revision: 2,
     })
-    simulation.emit([{
+    runtimeConnection.emit([{
       type: 'object.upserted',
       object: assignedObject,
       at: nowIso(),
@@ -197,10 +197,10 @@ describe('control instance persistence policy', () => {
         },
       },
     })
-    const simulation = createControlledSimulation(initialObject)
+    const runtimeConnection = createControlledRuntimeConnection(initialObject)
     const runtime = await createControlInstanceRuntime({
       id: controlInstanceId,
-      simulation: simulation.connection,
+      runtimeConnection: runtimeConnection.connection,
       eventLog: createJsonlEventLog(eventLogPath),
       snapshotStore: createControlInstanceSnapshotStore({
         controlInstanceId,
@@ -220,7 +220,7 @@ describe('control instance persistence policy', () => {
         },
       },
     })
-    simulation.emit([{
+    runtimeConnection.emit([{
       type: 'object.upserted',
       object: projectionUpdate,
       at: nowIso(),
@@ -246,7 +246,7 @@ describe('control instance persistence policy', () => {
         },
       },
     })
-    simulation.emit([{
+    runtimeConnection.emit([{
       type: 'object.upserted',
       object: packTruthUpdate,
       at: nowIso(),

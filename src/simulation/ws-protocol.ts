@@ -1,12 +1,12 @@
 import { z } from 'zod'
 import { commandEnvelopeSchema, packIdSchema, controlInstanceIdSchema } from '../core/model/index.ts'
 
-export const simulationProtocolVersion = 1
+export const runtimeProtocolVersion = 1
 
-export const leitbildToSimulationMessageSchema = z.discriminatedUnion('type', [
+export const leitbildToRuntimeMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('hello'),
-    protocolVersion: z.literal(simulationProtocolVersion),
+    protocolVersion: z.literal(runtimeProtocolVersion),
     controlInstanceId: controlInstanceIdSchema,
     packId: packIdSchema,
   }),
@@ -25,13 +25,13 @@ export const leitbildToSimulationMessageSchema = z.discriminatedUnion('type', [
   }),
 ])
 
-export type LeitbildToSimulationMessage = z.infer<typeof leitbildToSimulationMessageSchema>
+export type LeitbildToRuntimeMessage = z.infer<typeof leitbildToRuntimeMessageSchema>
 
-export const simulationToLeitbildMessageSchema = z.discriminatedUnion('type', [
+export const runtimeToLeitbildMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('hello.accepted'),
-    protocolVersion: z.literal(simulationProtocolVersion),
-    simulatorId: z.string().min(1),
+    protocolVersion: z.literal(runtimeProtocolVersion),
+    runtimeId: z.string().min(1),
   }),
   z.object({
     type: z.literal('heartbeat'),
@@ -40,4 +40,4 @@ export const simulationToLeitbildMessageSchema = z.discriminatedUnion('type', [
   }),
 ])
 
-export type SimulationToLeitbildMessage = z.infer<typeof simulationToLeitbildMessageSchema>
+export type RuntimeToLeitbildMessage = z.infer<typeof runtimeToLeitbildMessageSchema>

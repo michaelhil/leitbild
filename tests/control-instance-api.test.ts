@@ -29,7 +29,7 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
   return createControlInstanceRegistry({
     dataDir,
     scenarioCatalog: createTestScenarioCatalog(),
-    simulationAdapters: [
+    runtimeAdapters: [
       createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
       createLocalTrafficPackRuntimeAdapter(),
       createLocalWeatherPackRuntimeAdapter(),

@@ -46,8 +46,8 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
   }
 
   return {
-    id: 'simulation-hub',
-    packId: 'simulation-hub',
+    id: 'runtime-hub',
+    packId: 'runtime-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const missingRuntimeIds = config.scenario?.runtimeIds.filter(runtimeId => !adapterIds.has(runtimeId)) ?? []
@@ -81,7 +81,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         const objects = snapshots.flatMap(snapshot => snapshot.objects)
         const duplicates = duplicateObjectIds(objects)
         if (duplicates.length > 0) {
-          throw new Error(`duplicate simulation object ids from runtimes: ${duplicates.join(', ')}`)
+          throw new Error(`duplicate runtime object ids from runtimes: ${duplicates.join(', ')}`)
         }
         return {
           controlInstanceId: config.controlInstanceId,

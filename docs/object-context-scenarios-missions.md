@@ -12,7 +12,7 @@ This document defines Leitbild's extended object data model and the first scenar
 
 ## Rationale
 
-Leitbild needs objects that are useful to humans, simulators, and AI agents. A hospital, ambulance, drone, ship, robotaxi, or incident all need current operational state, but agents also need a concise representation of what the object knows, has observed, has been told, and may need to remember.
+Leitbild needs objects that are useful to humans, pack runtimes, and AI agents. A hospital, ambulance, drone, ship, robotaxi, or incident all need current operational state, but agents also need a concise representation of what the object knows, has observed, has been told, and may need to remember.
 
 This must not become one untyped blob. Simulation truth, operational pack state, and object perspective have different lifecycles and failure modes:
 
@@ -99,7 +99,7 @@ A scenario initializes the world. It may include:
 - world setup: time, map center/viewport, environment values
 - initial objects
 - initial object contexts
-- pack runtime-specific simulator configuration keyed by pack id
+- pack runtime-specific runtime configuration keyed by pack id
 - optional mission id/reference
 - surface definition for initial client UI assembly
 
@@ -115,7 +115,7 @@ The expanded `ScenarioDefinition` remains the runtime contract. The Control Inst
 
 New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Pack-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
-Scenario startup is multi-pack and may become multi-pack runtime. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default pack runtime unless the scenario names an explicit pack runtime override. The Simulation Hub receives the resolved runtime ids and passes each pack runtime only the initial objects and config relevant to that pack runtime. This keeps scenario authoring centered on packs while preserving pack runtime boundaries.
+Scenario startup is multi-pack and may become multi-pack runtime. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default pack runtime unless the scenario names an explicit pack runtime override. The Runtime Hub receives the resolved runtime ids and passes each pack runtime only the initial objects and config relevant to that pack runtime. This keeps scenario authoring centered on packs while preserving pack runtime boundaries.
 
 Pack runtimes are responsible for rehydrating runtime-private runtime mechanics from canonical objects when they connect. For example, the ambulance pack runtime rebuilds active motion from an ambulance's tasking, position, target object, and route. If an active restored ambulance has tasking but no persisted route, the pack runtime derives the missing route through the same routing adapter used for commands and scenario expansion before starting motion. This does not create a second source of truth: Leitbild's projected object state remains canonical, while the pack runtime rebuilds private runtime state from it.
 
@@ -236,13 +236,13 @@ These behaviors should live inside the relevant pack. Leitbild core should not k
 V1 rule pattern:
 
 - objects carry data: capabilities, resources, load, capacity, status, context
-- the simulation detects operational conditions such as arrival, proximity, timeout, threshold crossing, or assignment changes
-- pack-local rule functions interpret object data and return explicit object upserts/deletes or other simulation events
-- the simulation instance applies the results and emits ordered `PackRuntimeEvent`s through the adapter
+- the pack runtime detects operational conditions such as arrival, proximity, timeout, threshold crossing, or assignment changes
+- pack-local rule functions interpret object data and return explicit object upserts/deletes or other runtime events
+- the pack runtime applies the results and emits ordered `PackRuntimeEvent`s through the adapter
 
 Objects should not contain executable behavior. An ambulance object should not directly mutate an incident, and a hospital object should not directly mutate an ambulance. Instead, the ambulance pack can define deterministic interaction helpers such as "empty ambulance arrived at incident" or "loaded ambulance arrived at hospital".
 
-Any object type can be the source or subject of a Control Instance event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the simulation instance emits the event with provenance that identifies the simulator, object, and cause. This keeps event ordering, replay, persistence, and remote simulator integration coherent.
+Any object type can be the source or subject of a Control Instance event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the pack runtime emits the event with provenance that identifies the runtime, object, and cause. This keeps event ordering, replay, persistence, and remote runtime integration coherent.
 
 Generalization to a core rule engine is deferred until at least two real packs need the same abstraction.
 

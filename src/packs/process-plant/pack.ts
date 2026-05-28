@@ -112,7 +112,7 @@ export const processPlantPack: LeitbildPack = {
   name: 'Process Plant',
   runtimes: [{
     id: processPlantSimRuntimeId,
-    label: 'Local process plant simulator',
+    label: 'Local process plant runtime',
     kind: 'local',
   }],
   wikiRefs: [

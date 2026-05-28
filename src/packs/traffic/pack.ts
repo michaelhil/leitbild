@@ -123,7 +123,7 @@ export const trafficPack: LeitbildPack = {
   id: 'traffic',
   name: 'Traffic Conditions',
   runtimes: [
-    { id: trafficSimRuntimeId, label: 'Local traffic simulator', kind: 'local' },
+    { id: trafficSimRuntimeId, label: 'Local traffic runtime', kind: 'local' },
   ],
   defaultRuntimeId: trafficSimRuntimeId,
   scenario: trafficScenarioSupport,

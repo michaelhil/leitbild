@@ -44,7 +44,7 @@ const eventId = (): EventId => `event:${randomUUID()}` as EventId
 
 export const createControlInstanceRuntime = async (config: {
   readonly id: ControlInstanceId
-  readonly simulation: PackRuntimeConnection
+  readonly runtimeConnection: PackRuntimeConnection
   readonly eventLog: EventLog
   readonly snapshotStore: ControlInstanceSnapshotStore
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
@@ -362,7 +362,7 @@ export const createControlInstanceRuntime = async (config: {
     const at = nowIso()
     try {
       const events = await publishGenerated(() => coreDeleteEvents(command, at))
-      await config.simulation.observeCommittedEvents(events)
+      await config.runtimeConnection.observeCommittedEvents(events)
       return { ok: true, commandId: command.id, acceptedAt: at }
     } catch (error) {
       return {
@@ -383,7 +383,7 @@ export const createControlInstanceRuntime = async (config: {
     const parsedEffects = effects.map(effect => interactionEffectSchema.parse(effect) as InteractionEffect)
     const controlInstanceEvents = parsedEffects.map(effect => controlInstanceEventFromInteractionEffect(effect, at, provenance))
     await publishManyNow(controlInstanceEvents)
-    await config.simulation.observeCommittedEvents(controlInstanceEvents)
+    await config.runtimeConnection.observeCommittedEvents(controlInstanceEvents)
   }
 
   const handleInteractionSignalNow = async (
@@ -434,7 +434,7 @@ export const createControlInstanceRuntime = async (config: {
     }
   }
 
-  const unsubscribeSimulation = config.simulation.subscribe((emission) => {
+  const unsubscribeRuntime = config.runtimeConnection.subscribe((emission) => {
     void publishPackRuntimeEmissionSafely(emission)
   })
 
@@ -465,7 +465,7 @@ export const createControlInstanceRuntime = async (config: {
       },
     })
   } else {
-    const snapshot = await config.simulation.getSnapshot()
+    const snapshot = await config.runtimeConnection.getSnapshot()
     const scenarioState = initialScenarioState()
     state.hydrate({
       objects: snapshot.objects,
@@ -481,13 +481,13 @@ export const createControlInstanceRuntime = async (config: {
     await config.snapshotStore.save(snapshotWithCurrentClock())
   }
   const hydratedClock = state.snapshot().clock
-  if (hydratedClock) await config.simulation.setClock(hydratedClock)
+  if (hydratedClock) await config.runtimeConnection.setClock(hydratedClock)
 
   let scenarioRunner: ScenarioScriptRunner | null = null
 
   const publishScenarioStep = async (step: ScenarioScriptStep, at: IsoTimestamp): Promise<void> => {
     const stepEvent = await publishOneGenerated(() => scenarioStepStartedEvent(step, at))
-    await config.simulation.observeCommittedEvents([stepEvent])
+    await config.runtimeConnection.observeCommittedEvents([stepEvent])
 
     for (const action of step.actions) {
       if (action.type === 'emit_signal') {
@@ -498,7 +498,7 @@ export const createControlInstanceRuntime = async (config: {
       }
       const events = await publishGenerated(() => controlInstanceEventsForScenarioActions([action], at))
       if (events.length === 0) continue
-      await config.simulation.observeCommittedEvents(events)
+      await config.runtimeConnection.observeCommittedEvents(events)
     }
   }
 
@@ -560,7 +560,7 @@ export const createControlInstanceRuntime = async (config: {
       type: 'command.issued',
       command,
     }))
-    const result = await handleCoreCommand(command) ?? await config.simulation.sendCommand(command)
+    const result = await handleCoreCommand(command) ?? await config.runtimeConnection.sendCommand(command)
     await publishQueue
     await publishOneGenerated(() => ({
       id: eventId(),
@@ -595,7 +595,7 @@ export const createControlInstanceRuntime = async (config: {
       type: 'clock.updated',
       clock: nextClock,
     }))
-    await config.simulation.setClock(nextClock)
+    await config.runtimeConnection.setClock(nextClock)
     if (config.scenario?.script) {
       if (nextClock.paused) {
         scenarioRunner?.close()
@@ -609,7 +609,7 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const queryPack = async (request: PackQueryRequest): Promise<PackQueryResponse> =>
-    await config.simulation.query(request)
+    await config.runtimeConnection.query(request)
 
   const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<ControlInstanceEvent> => {
     const snapshot = state.snapshot()
@@ -659,8 +659,8 @@ export const createControlInstanceRuntime = async (config: {
     },
     close: async (): Promise<void> => {
       scenarioRunner?.close()
-      unsubscribeSimulation()
-      await config.simulation.close()
+      unsubscribeRuntime()
+      await config.runtimeConnection.close()
       await publishQueue
       handlers.clear()
     },

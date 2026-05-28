@@ -263,7 +263,7 @@ export const ambulancePack: LeitbildPack = {
   id: 'ambulance',
   name: 'Ambulance Dispatch',
   runtimes: [
-    { id: ambulanceSimRuntimeId, label: 'Local ambulance simulator', kind: 'local' },
+    { id: ambulanceSimRuntimeId, label: 'Local ambulance runtime', kind: 'local' },
   ],
   defaultRuntimeId: ambulanceSimRuntimeId,
   wikiRefs: [
