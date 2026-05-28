@@ -11,9 +11,36 @@ const trendsReadQuerySchema = z.object({
   paths: z.array(variablePathSchema).min(1).optional(),
 })
 
+const icSummaryFor = (system: ProcessPlantSystemRuntime): {
+  readonly configured: boolean
+  readonly activeAlarmCount: number
+  readonly activeTripCount: number
+  readonly activeRuleCount: number
+  readonly failureCount: number
+} => {
+  const snapshot = system.protection?.snapshot()
+  if (snapshot === undefined) {
+    return {
+      configured: false,
+      activeAlarmCount: 0,
+      activeTripCount: 0,
+      activeRuleCount: 0,
+      failureCount: 0,
+    }
+  }
+  return {
+    configured: true,
+    activeAlarmCount: snapshot.alarms.filter(alarm => alarm.active).length,
+    activeTripCount: snapshot.trips.filter(trip => trip.active).length,
+    activeRuleCount: snapshot.rules.filter(rule => rule.active).length,
+    failureCount: snapshot.failures.length,
+  }
+}
+
 export const processPlantRuntimeQueryKinds = [
   'process-plant.runtime.status',
   'process-plant.telemetry.published',
+  'process-plant.transient.diagnostics',
   'process-plant.trends.read',
 ] as const
 
@@ -44,6 +71,15 @@ export const answerProcessPlantRuntimeQuery = (config: {
     const system = requireSystem(config.systems, payload.systemId)
     return success(config.request, {
       variables: system.runtime.snapshot().variables.filter(variable => variable.published),
+    }, config.at)
+  }
+  if (config.request.kind === 'process-plant.transient.diagnostics') {
+    const payload = systemQuerySchema.parse(config.request.payload)
+    const system = requireSystem(config.systems, payload.systemId)
+    return success(config.request, {
+      systemId: payload.systemId,
+      diagnostics: system.runtime.pwrTransientDiagnostics(),
+      ic: icSummaryFor(system),
     }, config.at)
   }
   const payload = trendsReadQuerySchema.parse(config.request.payload)

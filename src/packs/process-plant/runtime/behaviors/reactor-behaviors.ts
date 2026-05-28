@@ -14,7 +14,7 @@ import {
   flowWeightedProcessLinkValueByService,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
-import { flowWeightedIncomingLinkValue } from '../links/link-flow-helpers.ts'
+import { flowWeightedIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
 import {
   inventoryBalanceStep,
   primaryCoolantCompressibilityPressureBiasMPa,
@@ -64,6 +64,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'fuelMidTemperatureC',
       'fuelUpperTemperatureC',
       'decayHeatMw',
+      'incoming:flowKgPerS',
       'reactorVessel.boronConcentrationPpm',
     ],
     writes: [
@@ -78,6 +79,9 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'fuelMidTemperatureC',
       'fuelUpperTemperatureC',
       'fuelStoredEnergyMj',
+      'coreCoolingAvailabilityFraction',
+      'coreHeatRemovalDeficitMw',
+      'fuelHeatupRateCPerS',
       'decayHeatMw',
     ],
     update: ({ system, component, context }): void => {
@@ -121,8 +125,17 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'decayHeatMw'), nextDecayHeat)
       context.write(componentVariablePath(component, 'totalThermalPowerMw'), nextPower + nextDecayHeat)
 
+      const primaryFlow = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => link.service === 'primaryCoolant')
+      const nominalPrimaryFlow = optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', Math.max(1, primaryFlow))
+      const minimumCooling = optionalParameterNumber(component, 'minimumNaturalCirculationCoolingFraction', 0.08)
+      const coolingAvailability = clamp(primaryFlow / Math.max(1, nominalPrimaryFlow), minimumCooling, 1.2)
+      const creditedCooling = clamp(coolingAvailability, 0, 1)
+      const totalThermalPower = nextPower + nextDecayHeat
+      const heatRemovalDeficit = Math.max(0, totalThermalPower * (1 - creditedCooling))
       const thermalFraction = clamp((nextPower + nextDecayHeat) / ratedPower, 0, 1.25)
-      const fuelRise = optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140) * thermalFraction
+      const fuelRise = optionalParameterNumber(component, 'fuelTemperatureRiseAtRatedPowerC', 140)
+        * thermalFraction
+        / Math.sqrt(Math.max(0.05, coolingAvailability))
       const fuelTimeConstant = optionalParameterNumber(component, 'fuelThermalTimeConstantS', 20)
       const nextLower = relaxToward(context.readNumber(componentVariablePath(component, 'fuelLowerTemperatureC')), coolantOutlet + fuelRise * 0.88, context.dtSeconds, fuelTimeConstant)
       const nextMid = relaxToward(context.readNumber(componentVariablePath(component, 'fuelMidTemperatureC')), coolantOutlet + fuelRise * 1.08, context.dtSeconds, fuelTimeConstant)
@@ -133,6 +146,9 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'fuelUpperTemperatureC'), nextUpper)
       context.write(componentVariablePath(component, 'fuelTemperatureC'), nextAverageFuelTemperature)
       context.write(componentVariablePath(component, 'fuelStoredEnergyMj'), Math.max(0, nextAverageFuelTemperature - coolantOutlet) * parameterNumber(component, 'fuelThermalCapacityMjPerC'))
+      context.write(componentVariablePath(component, 'coreCoolingAvailabilityFraction'), coolingAvailability)
+      context.write(componentVariablePath(component, 'coreHeatRemovalDeficitMw'), heatRemovalDeficit)
+      context.write(componentVariablePath(component, 'fuelHeatupRateCPerS'), (nextAverageFuelTemperature - currentFuelTemperature) / Math.max(context.dtSeconds, 1e-9))
     },
   },
   {
@@ -178,6 +194,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'primaryLeakFlowKgPerS',
       'tubeLeakFlowKgPerS',
       'netInventoryFlowKgPerS',
+      'primaryInventoryBalanceResidualKg',
       'boronConcentrationPpm',
       'primaryReleaseRadiationMSvPerH',
     ],
@@ -263,6 +280,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'primaryLeakFlowKgPerS'), primaryLeakFlow)
       context.write(componentVariablePath(component, 'tubeLeakFlowKgPerS'), tubeLeakFlow)
       context.write(componentVariablePath(component, 'netInventoryFlowKgPerS'), netInventoryFlow)
+      context.write(componentVariablePath(component, 'primaryInventoryBalanceResidualKg'), nextInventory - currentInventory - netInventoryFlow * context.dtSeconds)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'boronConcentrationPpm'), nextBoron)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)

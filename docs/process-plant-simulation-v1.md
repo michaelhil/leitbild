@@ -56,6 +56,31 @@ The process-plant provider owns the runtime and I&C state for `systemId`. On eac
 
 The projection is intentionally narrow. It is enough for shared operational awareness and AI overview, but it is not a second process store. Detailed values remain available through process-plant pack queries such as `process-plant.signals.read`, `process-plant.ic.status`, and `process-plant.alarms.status`.
 
+## PWR Transient Kernel
+
+The pressurized water reactor graph now has a pack-owned transient diagnostic kernel. See [ADR 0024](./adr/0024-pwr-transient-kernel.md).
+
+The kernel is not a second solver. It is compiled from the same scenario-owned graph as the runtime and reads the canonical variable table after each fixed step. The read-only query `process-plant.transient.diagnostics` returns:
+
+- primary inventory, pressure bias, leak flow, safety injection, and tube leakage
+- secondary inventory, steam mass, SG level, tube coverage, voiding, heat transfer, steam outflow, and feedwater flow
+- containment pressure, sump inventory, incoming release, and source term
+- core fission power, decay heat, total thermal power, cooling availability, heat-removal deficit, and fuel heatup rate
+- accumulator inventory/outflow, safety bus state, and diesel running count
+- conservation residuals for primary inventory, steam generator liquid/steam inventories, boiling energy, and pressurizer inventory
+- a small I&C summary when reference protection is configured
+
+This gives overviews, procedures, AI agents, and tests a coherent PWR transient view without scraping dozens of individual variables or creating pack-specific HTTP endpoints.
+
+Typed scheduled PWR faults are available for major scenario setup:
+
+- `primaryBoundaryLeak`
+- `steamGeneratorTubeLeak`
+- `reactorCoolantPumpTrip`
+- `lossOfOffsitePower`
+
+These actions compile to normal validated runtime writes. They do not bypass writability, limits, I&C, or the fixed-step runtime.
+
 ## Scenario-Owned Process Assembly
 
 The full plant run is assembled from a Leitbild Scenario Definition. The scenario declares active packs and may include one or more `processSystems`. Each process system names the owning pack, the component library, and a graph data object.

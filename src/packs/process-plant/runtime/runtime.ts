@@ -5,6 +5,7 @@ import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
 import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, runProcessPlantInitialReconciliation, type ProcessPlantExecutionPlan } from './execution-plan.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
+import { compilePwrTransientKernel, evaluatePwrTransientKernel, type PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
 
 interface RuntimeClock {
   elapsedMs: number
@@ -67,6 +68,7 @@ export const createProcessPlantRuntime = (config: {
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
+  const pwrKernel = compilePwrTransientKernel(system)
   if (!config.restoredSnapshot) {
     runProcessPlantInitialReconciliation({ system, table, plan })
   }
@@ -75,6 +77,7 @@ export const createProcessPlantRuntime = (config: {
     elapsedMs: config.restoredSnapshot?.elapsedMs ?? 0,
     remainderMs: config.restoredSnapshot?.remainderMs ?? 0,
   }
+  let lastPwrTransientDiagnostics: PwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
 
   const snapshot = (): ProcessPlantRuntimeSnapshot => ({
     graphSpecId: String(system.graph.specId),
@@ -92,6 +95,7 @@ export const createProcessPlantRuntime = (config: {
       let simulatedMs = 0
       while (clock.remainderMs >= fixedStepMs) {
         step(system, table, plan, clock, fixedStepMs, assertInvariants)
+        lastPwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
         clock.remainderMs -= fixedStepMs
         simulatedMs += fixedStepMs
       }
@@ -108,6 +112,7 @@ export const createProcessPlantRuntime = (config: {
     writeCommand: (command: ProcessPlantCommand): void => {
       table.queueCommand(command)
     },
+    pwrTransientDiagnostics: (): PwrTransientDiagnostics => lastPwrTransientDiagnostics,
     snapshot,
   }
 }

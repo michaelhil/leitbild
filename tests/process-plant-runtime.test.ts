@@ -21,6 +21,7 @@ import {
   processPlantPressurizedWaterReactorIcRef,
   resolveProcessPlantIcConfig,
   type ComponentId,
+  type ConnectionId,
   type ConnectionService,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
@@ -145,8 +146,24 @@ describe('process plant runtime', () => {
   test('initializes a headless runtime from scenario-owned graph data', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
     const snapshot = runtime.snapshot()
+    const diagnostics = runtime.pwrTransientDiagnostics()
 
     expect(snapshot.elapsedMs).toBe(0)
+    expect(diagnostics).toMatchObject({
+      schemaVersion: 1,
+      active: true,
+      componentCounts: {
+        steamGenerators: 4,
+        accumulators: 4,
+        safetyBuses: 2,
+        diesels: 2,
+      },
+    })
+    expect(diagnostics.primary.inventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.primary.inventoryFraction).toBeCloseTo(1, 6)
+    expect(diagnostics.secondary.liquidInventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.core.totalThermalPowerMw).toBeGreaterThan(0)
+    expect(diagnostics.core.heatRemovalDeficitMw).toBeGreaterThanOrEqual(0)
     expect(snapshot.variables.find(variable => variable.path === valueOf('core.powerMw'))).toMatchObject({
       value: 2890,
       quantity: 'power',
@@ -276,6 +293,35 @@ describe('process plant runtime', () => {
     expect(active.trips).toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
   })
 
+  test('scheduled typed PWR fault actions compile to validated runtime writes', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    const schedule = createProcessPlantScheduleRunner({
+      system,
+      schedule: {
+        actions: [
+          { id: 'loop', atMs: 1_000, type: 'lossOfOffsitePower' },
+          { id: 'rcp-a', atMs: 2_000, type: 'reactorCoolantPumpTrip', componentId: 'rcpA' as ComponentId },
+          { id: 'hot-leg-leak', atMs: 3_000, type: 'primaryBoundaryLeak', connectionId: 'rcs-hot-leg-a' as ConnectionId, areaFraction: 0.2 },
+          { id: 'sgtr-a', atMs: 4_000, type: 'steamGeneratorTubeLeak', componentId: 'sgA' as ComponentId, leakFraction: 0.15 },
+        ],
+      },
+    })
+
+    for (let elapsedMs = 1_000; elapsedMs <= 5_000; elapsedMs += 1_000) {
+      schedule.applyDueActions(runtime, elapsedMs)
+      runtime.tick(1_000)
+    }
+
+    expect(runtime.readVariable(valueOf('offsiteBreakerA.closed'))).toBe(false)
+    expect(runtime.readVariable(valueOf('offsiteBreakerB.closed'))).toBe(false)
+    expect(runtime.readVariable(valueOf('rcpA.running'))).toBe(false)
+    expect(runtime.readVariable(valueOf('rcs-hot-leg-a.leak.areaFraction'))).toBe(0.2)
+    expect(runtime.readVariable(valueOf('sgA.tubeLeakFraction'))).toBe(0.15)
+    expect(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))).toBeGreaterThan(0)
+    expect(Number(runtime.readVariable(valueOf('vessel.tubeLeakFlowKgPerS')))).toBeGreaterThan(0)
+  })
+
   test('runs the declared solver phases and publishes telemetry', () => {
     const runtime = createProcessPlantRuntime({ system: compiledSystem() })
     const tick = runtime.tick(1_000)
@@ -306,6 +352,9 @@ describe('process plant runtime', () => {
       'core.fuelMidTemperatureC',
       'core.fuelUpperTemperatureC',
       'core.fuelStoredEnergyMj',
+      'core.coreCoolingAvailabilityFraction',
+      'core.coreHeatRemovalDeficitMw',
+      'core.fuelHeatupRateCPerS',
       'core.decayHeatMw',
       'core.coolantInletTemperatureC',
       'core.coolantOutletTemperatureC',
@@ -322,6 +371,7 @@ describe('process plant runtime', () => {
       'vessel.primaryLeakFlowKgPerS',
       'vessel.tubeLeakFlowKgPerS',
       'vessel.netInventoryFlowKgPerS',
+      'vessel.primaryInventoryBalanceResidualKg',
       'pressurizer.pressureMPa',
       'pressurizer.levelPercent',
       'pressurizer.steamVolumeM3',
@@ -351,6 +401,9 @@ describe('process plant runtime', () => {
       'sgA.collapsedLevelPercent',
       'sgA.voidFraction',
       'sgA.swellLevelPercent',
+      'sgA.tubeCoverageFraction',
+      'sgA.tubeUncoveredFraction',
+      'sgA.availableHeatTransferFraction',
       'sgA.steamMassKg',
       'sgA.pressureTargetMPa',
       'sgA.steamMassPressureBiasMPa',
@@ -1092,6 +1145,7 @@ describe('process plant runtime', () => {
 
     for (let index = 0; index < 40; index += 1) runtime.tick(100)
 
+    const baselineDiagnostics = runtime.pwrTransientDiagnostics()
     const initialPrimaryInventory = Number(runtime.readVariable(valueOf('vessel.primaryCoolantInventoryKg')))
     const initialContainmentPressure = Number(runtime.readVariable(valueOf('containment.pressureMPa')))
     const initialContainmentSump = Number(runtime.readVariable(valueOf('containment.sumpInventoryKg')))
@@ -1106,7 +1160,14 @@ describe('process plant runtime', () => {
       observedVesselInjection = observedVesselInjection || Number(runtime.readVariable(valueOf('vessel.safetyInjectionFlowKgPerS'))) > 0
     }
 
+    const transientDiagnostics = runtime.pwrTransientDiagnostics()
     expect(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS')))).toBeGreaterThan(0)
+    expect(transientDiagnostics.primary.leakFlowKgPerS).toBeGreaterThan(0)
+    expect(transientDiagnostics.primary.inventoryKg).toBeLessThan(baselineDiagnostics.primary.inventoryKg ?? Number.POSITIVE_INFINITY)
+    expect(transientDiagnostics.containment.incomingMassKgPerS).toBeGreaterThan(0)
+    expect(transientDiagnostics.containment.sumpInventoryKg).toBeGreaterThan(baselineDiagnostics.containment.sumpInventoryKg ?? 0)
+    expect(transientDiagnostics.containment.pressureMPa).toBeGreaterThan(baselineDiagnostics.containment.pressureMPa ?? 0)
+    expect(transientDiagnostics.safetySystems.accumulatorInventoryKg).toBeLessThan(baselineDiagnostics.safetySystems.accumulatorInventoryKg)
     expect(Number(runtime.readVariable(valueOf('vessel-release-to-containment.flowKgPerS'))))
       .toBeCloseTo(Number(runtime.readVariable(valueOf('vessel.primaryLeakFlowKgPerS'))), 6)
     expect(Number(runtime.readVariable(valueOf('containment.incomingMassKgPerS')))).toBeGreaterThan(0)
@@ -1165,6 +1226,31 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent'))))
       .toBeGreaterThan(Number(runtime.readVariable(valueOf('sgA.collapsedLevelPercent'))))
     expect(Number(runtime.readVariable(valueOf('sgA.voidFraction')))).toBeGreaterThan(0)
+  })
+
+  test('low steam generator level uncovers tube bundle and degrades heat transfer', () => {
+    const baseline = createProcessPlantRuntime({ system: compiledSystem() })
+    const uncovered = createProcessPlantRuntime({
+      system: compiledSystemWithInitialState({
+        'sgA.levelPercent': 15,
+        'sgA.collapsedLevelPercent': 15,
+        'sgA.secondaryInventoryKg': 8_400,
+      }),
+    })
+
+    baseline.tick(1_000)
+    uncovered.tick(1_000)
+
+    expect(Number(uncovered.readVariable(valueOf('sgA.tubeCoverageFraction')))).toBeLessThan(1)
+    expect(Number(uncovered.readVariable(valueOf('sgA.tubeUncoveredFraction')))).toBeGreaterThan(0)
+    expect(Number(uncovered.readVariable(valueOf('sgA.availableHeatTransferFraction')))).toBeLessThan(1)
+    expect(Number(uncovered.readVariable(valueOf('sgA.heatTransferMw'))))
+      .toBeLessThan(Number(baseline.readVariable(valueOf('sgA.heatTransferMw'))))
+
+    const diagnostics = uncovered.pwrTransientDiagnostics()
+    expect(diagnostics.secondary.minTubeCoverageFraction).toBeLessThan(1)
+    expect(diagnostics.secondary.maxTubeUncoveredFraction).toBeGreaterThan(0)
+    expect(diagnostics.secondary.tubeBundleUncoveredSteamGeneratorCount).toBeGreaterThan(0)
   })
 
   test('feedwater and condensate inventories constrain secondary-side flow sources', () => {
@@ -1349,6 +1435,7 @@ describe('process plant runtime', () => {
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
     const flowingHeatTransfer = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
     const initialFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    const initialCoolingAvailability = Number(runtime.readVariable(valueOf('core.coreCoolingAvailabilityFraction')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
@@ -1358,6 +1445,9 @@ describe('process plant runtime', () => {
     for (let index = 0; index < 400; index += 1) runtime.tick(100)
     expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.15)
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
+    expect(Number(runtime.readVariable(valueOf('core.coreCoolingAvailabilityFraction')))).toBeLessThan(initialCoolingAvailability)
+    expect(Number(runtime.readVariable(valueOf('core.coreHeatRemovalDeficitMw')))).toBeGreaterThan(0)
+    expect(runtime.pwrTransientDiagnostics().core.coolingAvailabilityFraction).toBeLessThan(initialCoolingAvailability)
     expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(100)
   })
 
@@ -1788,9 +1878,12 @@ describe('process plant runtime', () => {
       durationMs: 15_000,
     })
 
+    const diagnostics = runtime.pwrTransientDiagnostics()
     expect(runtime.readVariable(valueOf('dieselGeneratorA.startCommand'))).toBe(true)
     expect(runtime.readVariable(valueOf('dieselGeneratorB.startCommand'))).toBe(true)
     expect(runtime.readVariable(valueOf('dieselGeneratorA.running'))).toBe(true)
     expect(runtime.readVariable(valueOf('dieselGeneratorB.running'))).toBe(true)
+    expect(diagnostics.safetySystems.deenergizedSafetyBusCount).toBe(0)
+    expect(diagnostics.safetySystems.runningDieselCount).toBe(2)
   })
 })

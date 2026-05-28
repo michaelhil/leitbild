@@ -26,7 +26,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
     phase: 'solveThermalTransfer',
     componentKind: 'steamGenerator',
     reads: ['tubeMetalTemperatureC', 'secondaryTemperatureC', 'levelPercent', 'incoming:primaryCoolant.temperatureC', 'incoming:primaryCoolant.flowKgPerS'],
-    writes: ['heatTransferMw', 'steamFlowKgPerS', 'boilingRateKgPerS'],
+    writes: ['heatTransferMw', 'steamFlowKgPerS', 'boilingRateKgPerS', 'tubeCoverageFraction', 'tubeUncoveredFraction', 'availableHeatTransferFraction'],
     update: ({ system, component, context }): void => {
       const primaryWaterTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')
         ?? context.readNumber(componentVariablePath(component, 'primaryInletTemperatureC'))
@@ -35,6 +35,12 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const tubeMetalTemperature = context.readNumber(componentVariablePath(component, 'tubeMetalTemperatureC'))
       const nominalLevelFraction = parameterNumber(component, 'nominalLevelPercent')
       const levelFraction = clamp(context.readNumber(componentVariablePath(component, 'levelPercent')) / 100, 0, 1)
+      const tubeBottomLevel = optionalParameterNumber(component, 'tubeBundleBottomLevelPercent', 0.08)
+      const tubeTopLevel = optionalParameterNumber(component, 'tubeBundleTopLevelPercent', Math.max(tubeBottomLevel + 0.01, nominalLevelFraction))
+      const tubeCoverage = clamp((levelFraction - tubeBottomLevel) / Math.max(0.01, tubeTopLevel - tubeBottomLevel), 0, 1)
+      const tubeUncovered = 1 - tubeCoverage
+      const minimumHeatTransferFraction = optionalParameterNumber(component, 'minimumUncoveredTubeHeatTransferFraction', 0.12)
+      const availableHeatTransferFraction = clamp(minimumHeatTransferFraction + (1 - minimumHeatTransferFraction) * tubeCoverage, minimumHeatTransferFraction, 1)
       const levelHeatTransferFactor = clamp(levelFraction / Math.max(0.05, nominalLevelFraction), 0.05, 1.15)
       const recirculationRatio = optionalParameterNumber(component, 'recirculationRatio', 4)
       const recirculationHeatTransferFactor = clamp(0.65 + recirculationRatio * 0.09, 0.8, 1.35)
@@ -42,11 +48,14 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
         * recirculationHeatTransferFactor
         * Math.max(0, tubeMetalTemperature - secondaryTemperature)
       const flowCapacity = heatMwFromWaterFlowAndDeltaT(primaryWaterFlow, Math.max(0, primaryWaterTemperature - secondaryTemperature))
-      const heatTransfer = Math.max(0, Math.min(transferCapacity, flowCapacity) * levelHeatTransferFactor)
+      const heatTransfer = Math.max(0, Math.min(transferCapacity, flowCapacity) * levelHeatTransferFactor * availableHeatTransferFraction)
       const boilingRate = steamFlowKgPerSFromHeatMw(heatTransfer)
       context.write(componentVariablePath(component, 'heatTransferMw'), heatTransfer)
       context.write(componentVariablePath(component, 'boilingRateKgPerS'), boilingRate)
       context.write(componentVariablePath(component, 'steamFlowKgPerS'), Math.min(boilingRate, optionalParameterNumber(component, 'nominalSteamFlowKgPerS', 760) * 1.25))
+      context.write(componentVariablePath(component, 'tubeCoverageFraction'), tubeCoverage)
+      context.write(componentVariablePath(component, 'tubeUncoveredFraction'), tubeUncovered)
+      context.write(componentVariablePath(component, 'availableHeatTransferFraction'), availableHeatTransferFraction)
     },
   },
   {

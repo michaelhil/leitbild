@@ -6,8 +6,8 @@
   "caseCount": 15,
   "checkCount": 117,
   "failedCheckCount": 0,
-  "wallMs": 14255.002917,
-  "realtimeFactor": 631.3572892550535,
+  "wallMs": 14916.063250000001,
+  "realtimeFactor": 603.37636339803,
   "minRealtimeFactor": 12,
   "checks": [
     {
@@ -44,7 +44,7 @@
       "caseId": "long-steady-state",
       "description": "long-run power remains plausible",
       "passed": true,
-      "details": "end=2707.0MW"
+      "details": "end=2701.4MW"
     },
     {
       "caseId": "long-steady-state",
@@ -56,7 +56,7 @@
       "caseId": "long-steady-state",
       "description": "long-run drift remains limited",
       "passed": true,
-      "details": "start=2725.9 end=2707.0MW"
+      "details": "start=2721.1 end=2701.4MW"
     },
     {
       "caseId": "load-follow-cycle",
@@ -80,7 +80,7 @@
       "caseId": "load-follow-cycle",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=53.5 max=67.1%"
+      "details": "min=53.4 max=67.1%"
     },
     {
       "caseId": "load-follow-cycle",
@@ -212,7 +212,7 @@
       "caseId": "loss-feedwater-no-recovery",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=0.3 max=59.8%"
+      "details": "min=6.9 max=59.8%"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -224,7 +224,7 @@
       "caseId": "loss-feedwater-no-recovery",
       "description": "loss of feedwater materially lowers SG level",
       "passed": true,
-      "details": "before=58.3 end=0.4%"
+      "details": "before=58.3 end=6.9%"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -254,7 +254,7 @@
       "caseId": "loss-feedwater-afw-recovery",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=0.3 max=59.8%"
+      "details": "min=6.9 max=59.8%"
     },
     {
       "caseId": "loss-feedwater-afw-recovery",
@@ -278,7 +278,7 @@
       "caseId": "loss-feedwater-afw-recovery",
       "description": "auxiliary feedwater prevents severe dryout in aligned SG",
       "passed": true,
-      "details": "endLevel=12.0%"
+      "details": "endLevel=25.9%"
     },
     {
       "caseId": "rcp-pair-coastdown",
@@ -296,7 +296,7 @@
       "caseId": "rcp-pair-coastdown",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=3.41e-13 aux=0.00e+0kg/s"
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "rcp-pair-coastdown",
@@ -674,7 +674,7 @@
       "caseId": "combined-stress",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=29.9 max=96.6%"
+      "details": "min=36.3 max=96.6%"
     },
     {
       "caseId": "combined-stress",
@@ -704,13 +704,13 @@
       "caseId": "combined-stress",
       "description": "combined stress lowers turbine output after load cut",
       "passed": true,
-      "details": "before=456.3 end=206.3MW"
+      "details": "before=388.1 end=206.3MW"
     },
     {
       "caseId": "long-steady-state",
       "description": "extended validation remains faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=631.4x min=12.0x"
+      "details": "realtimeFactor=603.4x min=12.0x"
     }
   ],
   "artifacts": {

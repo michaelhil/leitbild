@@ -28,6 +28,9 @@ export const steamGeneratorInitialValueDefinitions: ReadonlyArray<ComponentIniti
       if (localPath === 'collapsedLevelPercent') return parameterNumber(component, 'nominalLevelPercent') * 100
       if (localPath === 'voidFraction') return 0
       if (localPath === 'swellLevelPercent') return 0
+      if (localPath === 'tubeCoverageFraction') return 1
+      if (localPath === 'tubeUncoveredFraction') return 0
+      if (localPath === 'availableHeatTransferFraction') return 1
       if (localPath === 'steamMassKg') return optionalParameterNumber(component, 'nominalSteamMassKg', 12_000)
       if (localPath === 'pressureTargetMPa') return parameterNumber(component, 'nominalPressureMPa')
       if (localPath === 'steamMassPressureBiasMPa') return 0

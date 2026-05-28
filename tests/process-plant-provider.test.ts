@@ -147,6 +147,32 @@ describe('process plant simulation provider', () => {
     if (!telemetry.ok) throw new Error(telemetry.reason)
     expect((telemetry.result as { variables: ReadonlyArray<{ readonly path: string }> }).variables.map(variable => variable.path)).toContain('core.powerMw')
 
+    const transientDiagnostics = await connection.query(query('process-plant.transient.diagnostics', { systemId: 'plant' }))
+    expect(transientDiagnostics.ok).toBe(true)
+    if (!transientDiagnostics.ok) throw new Error(transientDiagnostics.reason)
+    expect(transientDiagnostics.result).toMatchObject({
+      systemId: 'plant',
+      diagnostics: {
+        schemaVersion: 1,
+        active: true,
+        componentCounts: {
+          steamGenerators: 4,
+          accumulators: 4,
+        },
+      },
+    })
+    expect((transientDiagnostics.result as {
+      readonly diagnostics: {
+        readonly primary: { readonly inventoryKg: number | null }
+        readonly secondary: { readonly heatTransferMw: number }
+      }
+    }).diagnostics.primary.inventoryKg).toBeGreaterThan(0)
+    expect((transientDiagnostics.result as {
+      readonly diagnostics: {
+        readonly secondary: { readonly heatTransferMw: number }
+      }
+    }).diagnostics.secondary.heatTransferMw).toBeGreaterThanOrEqual(0)
+
     const railProfile = await connection.query(query('process-plant.display-profile.read', {
       systemId: 'plant',
       profileId: 'leitbild-rail',
@@ -1487,6 +1513,18 @@ describe('process plant simulation provider', () => {
     expect(ic.rules.map(rule => rule.ruleId)).toContain('containment-pressure-high')
     expect(ic.rules.map(rule => rule.ruleId)).toContain('accumulator-a-injecting')
     expect(ic.failures).toEqual([])
+
+    const transientDiagnostics = await connection.query(query('process-plant.transient.diagnostics', { systemId: 'plant' }))
+    expect(transientDiagnostics.ok).toBe(true)
+    if (!transientDiagnostics.ok) throw new Error(transientDiagnostics.reason)
+    expect(transientDiagnostics.result).toMatchObject({
+      ic: {
+        configured: true,
+        activeAlarmCount: 0,
+        activeTripCount: 0,
+        failureCount: 0,
+      },
+    })
 
     await connection.close()
   })

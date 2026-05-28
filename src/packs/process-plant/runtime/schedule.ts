@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { componentIdSchema, processVariableValueSchema, variablePathSchema, type ComponentId, type VariablePath } from '../graph/index.ts'
+import { componentIdSchema, connectionIdSchema, processVariableValueSchema, variablePathSchema, type ComponentId, type ConnectionId, type VariablePath } from '../graph/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import type { ProcessPlantRuntime } from './model.ts'
 
@@ -16,6 +16,31 @@ export type ProcessPlantScheduledAction =
       readonly atMs: number
       readonly type: 'tripComponent'
       readonly componentId: ComponentId
+    }
+  | {
+      readonly id: string
+      readonly atMs: number
+      readonly type: 'primaryBoundaryLeak'
+      readonly connectionId: ConnectionId
+      readonly areaFraction: number
+    }
+  | {
+      readonly id: string
+      readonly atMs: number
+      readonly type: 'steamGeneratorTubeLeak'
+      readonly componentId: ComponentId
+      readonly leakFraction: number
+    }
+  | {
+      readonly id: string
+      readonly atMs: number
+      readonly type: 'reactorCoolantPumpTrip'
+      readonly componentId: ComponentId
+    }
+  | {
+      readonly id: string
+      readonly atMs: number
+      readonly type: 'lossOfOffsitePower'
     }
 
 export interface ProcessPlantScheduleConfig {
@@ -49,6 +74,27 @@ export const processPlantScheduledActionSchema = z.discriminatedUnion('type', [
     type: z.literal('tripComponent'),
     componentId: componentIdSchema,
   }).strict(),
+  z.object({
+    ...scheduledActionBaseSchema,
+    type: z.literal('primaryBoundaryLeak'),
+    connectionId: connectionIdSchema,
+    areaFraction: z.number().finite().min(0).max(1),
+  }).strict(),
+  z.object({
+    ...scheduledActionBaseSchema,
+    type: z.literal('steamGeneratorTubeLeak'),
+    componentId: componentIdSchema,
+    leakFraction: z.number().finite().min(0).max(1),
+  }).strict(),
+  z.object({
+    ...scheduledActionBaseSchema,
+    type: z.literal('reactorCoolantPumpTrip'),
+    componentId: componentIdSchema,
+  }).strict(),
+  z.object({
+    ...scheduledActionBaseSchema,
+    type: z.literal('lossOfOffsitePower'),
+  }).strict(),
 ])
 
 export const processPlantScheduleConfigSchema = z.object({
@@ -81,24 +127,41 @@ export const createProcessPlantScheduleRunner = (config: {
 
   const actions = [...schedule.actions].sort((left, right) => left.atMs - right.atMs || left.id.localeCompare(right.id))
 
-  const pathForAction = (action: ProcessPlantScheduledAction): VariablePath => {
-    if (action.type === 'setVariable') return action.path
-    const path = `${action.componentId}.running` as VariablePath
-    const variable = config.system?.graph.variables.find(candidate => candidate.path === path)
-    if (!variable) throw new Error(`process plant tripComponent action references component without running variable: ${action.componentId}`)
-    if (variable.descriptor.quantity !== 'boolean') throw new Error(`process plant tripComponent action requires boolean running variable: ${path}`)
-    return path
+  const commandsForAction = (action: ProcessPlantScheduledAction): ReadonlyArray<{ readonly path: VariablePath; readonly value: number | boolean }> => {
+    if (action.type === 'setVariable') return [{ path: action.path, value: action.value }]
+    if (action.type === 'tripComponent' || action.type === 'reactorCoolantPumpTrip') {
+      const path = `${action.componentId}.running` as VariablePath
+      const variable = config.system?.graph.variables.find(candidate => candidate.path === path)
+      if (!variable) throw new Error(`process plant ${action.type} action references component without running variable: ${action.componentId}`)
+      if (variable.descriptor.quantity !== 'boolean') throw new Error(`process plant ${action.type} action requires boolean running variable: ${path}`)
+      if (action.type === 'reactorCoolantPumpTrip') {
+        const component = config.system?.graph.components.find(candidate => candidate.id === action.componentId)
+        if (component?.kind !== 'centrifugalPump') throw new Error(`process plant reactorCoolantPumpTrip action requires centrifugalPump component: ${action.componentId}`)
+      }
+      return [{ path, value: false }]
+    }
+    if (action.type === 'primaryBoundaryLeak') {
+      return [{ path: `${action.connectionId}.leak.areaFraction` as VariablePath, value: action.areaFraction }]
+    }
+    if (action.type === 'steamGeneratorTubeLeak') {
+      const component = config.system?.graph.components.find(candidate => candidate.id === action.componentId)
+      if (component !== undefined && component.kind !== 'steamGenerator') throw new Error(`process plant steamGeneratorTubeLeak action requires steamGenerator component: ${action.componentId}`)
+      return [{ path: `${action.componentId}.tubeLeakFraction` as VariablePath, value: action.leakFraction }]
+    }
+    return [
+      { path: 'offsiteBreakerA.closed' as VariablePath, value: false },
+      { path: 'offsiteBreakerB.closed' as VariablePath, value: false },
+    ]
   }
 
   if (config.system !== undefined) {
     for (const action of actions) {
-      const path = pathForAction(action)
-      const variable = config.system.graph.variables.find(candidate => candidate.path === path)
-      if (!variable) throw new Error(`process plant scheduled action ${action.id} references unknown variable: ${path}`)
-      if (!variable.descriptor.writable) throw new Error(`process plant scheduled action ${action.id} targets non-writable variable: ${path}`)
-      if (action.type === 'setVariable') {
+      for (const command of commandsForAction(action)) {
+        const variable = config.system.graph.variables.find(candidate => candidate.path === command.path)
+        if (!variable) throw new Error(`process plant scheduled action ${action.id} references unknown variable: ${command.path}`)
+        if (!variable.descriptor.writable) throw new Error(`process plant scheduled action ${action.id} targets non-writable variable: ${command.path}`)
         const expectedType = variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number'
-        if (typeof action.value !== expectedType) throw new Error(`process plant scheduled action ${action.id} value for ${path} must be ${expectedType}`)
+        if (typeof command.value !== expectedType) throw new Error(`process plant scheduled action ${action.id} value for ${command.path} must be ${expectedType}`)
       }
     }
   }
@@ -108,9 +171,9 @@ export const createProcessPlantScheduleRunner = (config: {
       for (const action of actions) {
         if (firedActionIds.has(action.id)) continue
         if (action.atMs > nextElapsedMs) continue
-        runtime.writeCommand(action.type === 'setVariable'
-          ? { type: 'setVariable', path: action.path, value: action.value }
-          : { type: 'setVariable', path: pathForAction(action), value: false })
+        for (const command of commandsForAction(action)) {
+          runtime.writeCommand({ type: 'setVariable', path: command.path, value: command.value })
+        }
         firedActionIds.add(action.id)
       }
     },

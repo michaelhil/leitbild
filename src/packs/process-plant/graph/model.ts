@@ -167,6 +167,7 @@ export const processQuantitySchema = z.enum([
   'ratio',
   'reactivity',
   'temperature',
+  'temperatureRate',
   'time',
   'volume',
 ])
@@ -175,6 +176,7 @@ export type ProcessQuantity = z.infer<typeof processQuantitySchema>
 export const processUnitSchema = z.enum([
   'boolean',
   'degC',
+  'degC/s',
   'fraction',
   'kg',
   'kJ/kg',
@@ -210,6 +212,7 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   ratio: new Set(['fraction', 'percent']),
   reactivity: new Set(['pcm']),
   temperature: new Set(['degC']),
+  temperatureRate: new Set(['degC/s']),
   time: new Set(['s']),
   volume: new Set(['m3']),
 }
