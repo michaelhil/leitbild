@@ -46,6 +46,7 @@ const referenceManifestBody = (extra: Partial<{ datasetId: string; categories: R
   const categories = (extra.categories ?? ['tma', 'ctr', 'airport']).map(category => ({
     category, minZoom: 6, maxZoom: 14, featureCount: 5,
   }))
+  const outputLayer = datasetId === 'grid-norway' ? 'grid' : 'aero'
   return {
     schemaVersion: 2,
     tilesets: [
@@ -62,7 +63,7 @@ const referenceManifestBody = (extra: Partial<{ datasetId: string; categories: R
         artifact: {
           pmtilesPath: `${datasetId}.pmtiles`,
           sidecarGeoJsonPath: `${datasetId}.features.geojson`,
-          outputLayer: 'aero',
+          outputLayer,
         },
         categories,
         sources: [{ id: 'openaip', kind: 'remote' }],
@@ -95,6 +96,25 @@ describe('createReferenceDataController', () => {
     expect(layers.has('reference:aero-norway:airport:fill')).toBe(true)
     expect(layers.has('reference:aero-norway:airport:point')).toBe(true)
     expect(layers.has('reference:aero-norway:airport:label')).toBe(true)
+  })
+
+  test('registers grid-norway reference lines and site markers', async () => {
+    const { map, layers, sources } = makeFakeMap()
+    const controller = await createReferenceDataController({
+      map,
+      fetchFn: fakeFetch(200, referenceManifestBody({
+        datasetId: 'grid-norway',
+        categories: ['line', 'cable', 'substation', 'plant'],
+      })),
+    })
+
+    expect(controller.registered.length).toBe(1)
+    expect(controller.registered[0]!.datasetId).toBe('grid-norway')
+    expect(sources.get('reference:grid-norway')!.url).toContain('grid-norway.pmtiles')
+    expect(layers.has('reference:grid-norway:line:line')).toBe(true)
+    expect(layers.has('reference:grid-norway:cable:line')).toBe(true)
+    expect(layers.has('reference:grid-norway:substation:point')).toBe(true)
+    expect(layers.has('reference:grid-norway:plant:label')).toBe(true)
   })
 
   test('setCategoryVisibility flips all layers in a category', async () => {

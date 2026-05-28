@@ -1,6 +1,6 @@
 import type { OperationalObject } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
-import type { LeitbildPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
+import type { LeitbildPack, PackCommandRequest, PackMapLayerGroup, PackObjectField, PackObjectPresentation, PackReferenceDatasetBuilder } from '../../core/packs/protocol.ts'
 import {
   gridClearDerateCommandKind,
   gridCloseBranchCommandKind,
@@ -13,9 +13,12 @@ import {
   gridShedLoadCommandKind,
   gridTripGeneratorCommandKind,
 } from './commands.ts'
+import { asDatasetId } from '../../reference-data/types.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
 import { electricGridRuntimeId } from './sim/constants.ts'
 import { electricGridPackDataSchema, electricGridPackId, type ElectricGridPackData } from './model.ts'
+
+const gridNorwayDatasetIdValue = asDatasetId('grid-norway')
 
 const parseGridData = (object: OperationalObject): ElectricGridPackData | null => {
   const parsed = electricGridPackDataSchema.safeParse(object.packData)
@@ -145,11 +148,65 @@ const commandFor = (kind: string, object: OperationalObject, payload: unknown): 
 const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   {
     id: 'electric-grid:branches',
-    label: 'Grid lines',
+    label: 'Simulated grid lines',
     defaultVisible: true,
     layerIdPattern: 'operational:grid:*',
   },
+  {
+    id: 'electric-grid:reference-lines',
+    label: 'Reference lines',
+    defaultVisible: true,
+    layerIdPattern: 'reference:grid-norway:line:*',
+  },
+  {
+    id: 'electric-grid:reference-cables',
+    label: 'Reference cables',
+    defaultVisible: true,
+    layerIdPattern: 'reference:grid-norway:cable:*',
+  },
+  {
+    id: 'electric-grid:reference-substations',
+    label: 'Reference substations',
+    defaultVisible: true,
+    layerIdPattern: 'reference:grid-norway:substation:*',
+  },
+  {
+    id: 'electric-grid:reference-generation',
+    label: 'Reference generation',
+    defaultVisible: true,
+    layerIdPattern: 'reference:grid-norway:plant:*',
+  },
 ]
+
+const parseBbox = (value: string | undefined): { readonly south: number; readonly west: number; readonly north: number; readonly east: number } => {
+  const fallback = { south: 57.5, west: 4.0, north: 71.5, east: 31.5 }
+  if (!value) return fallback
+  const parts = value.split(',').map(part => Number(part.trim()))
+  if (parts.length !== 4) {
+    throw new Error('electric-grid pack: GRID_NORWAY_BBOX must be "south,west,north,east"')
+  }
+  const [south, west, north, east] = parts as [number, number, number, number]
+  if (!Number.isFinite(south) || !Number.isFinite(west) || !Number.isFinite(north) || !Number.isFinite(east)) {
+    throw new Error('electric-grid pack: GRID_NORWAY_BBOX must be "south,west,north,east"')
+  }
+  if (south >= north || west >= east) {
+    throw new Error('electric-grid pack: GRID_NORWAY_BBOX must have south < north and west < east')
+  }
+  return { south, west, north, east }
+}
+
+const gridNorwayBuilder: PackReferenceDatasetBuilder = {
+  id: gridNorwayDatasetIdValue,
+  build: (env) => {
+    // Keep build-only Overpass/source code out of the UI bundle.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createGridNorwayDataset } = require('./datasets/grid-norway.ts') as typeof import('./datasets/grid-norway.ts')
+    return createGridNorwayDataset({
+      bbox: parseBbox(env.GRID_NORWAY_BBOX),
+      ...(env.GRID_NORWAY_OVERPASS_URL !== undefined ? { overpassEndpointUrl: env.GRID_NORWAY_OVERPASS_URL } : {}),
+    })
+  },
+}
 
 const unsupportedCommand = (): PackCommandRequest => {
   throw new Error('electric-grid pack does not support this interaction')
@@ -165,6 +222,7 @@ export const electricGridPack: LeitbildPack = {
   wikiRefs: [
     { name: 'Leitbild electric grid pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/electric-grid/' },
   ],
+  referenceDatasetBuilders: [gridNorwayBuilder],
   mapLayerGroups: layerGroups,
   scenario: electricGridScenarioSupport,
   categories: [

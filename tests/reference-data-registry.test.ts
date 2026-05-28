@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
 import { aeroNorwayDatasetId } from '../src/packs/aviation/datasets/aero-norway.ts'
+import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { gridNorwayDatasetId } from '../src/packs/electric-grid/datasets/grid-norway.ts'
 import {
   collectRegisteredDatasets,
   findRegisteredDataset,
@@ -11,12 +13,13 @@ import type { LeitbildPack } from '../src/core/packs/protocol.ts'
 const okEnv: RegistryEnvironment = { OPENAIP_API_KEY: 'test-key' }
 const emptyEnv: RegistryEnvironment = {}
 
-const packs: ReadonlyArray<LeitbildPack> = [aviationPack]
+const packs: ReadonlyArray<LeitbildPack> = [aviationPack, electricGridPack]
 
 describe('reference-data registry (collector)', () => {
-  test('lists aero-norway as the aviation pack contribution', () => {
+  test('lists pack-owned reference dataset contributions', () => {
     const datasets = collectRegisteredDatasets(packs)
     expect(datasets.map(d => String(d.id))).toContain(String(aeroNorwayDatasetId))
+    expect(datasets.map(d => String(d.id))).toContain(String(gridNorwayDatasetId))
   })
 
   test('build() throws when OPENAIP_API_KEY is missing', () => {
@@ -31,6 +34,14 @@ describe('reference-data registry (collector)', () => {
     expect(String(config.id)).toBe(String(aeroNorwayDatasetId))
     expect(config.sources.length).toBe(3)
     expect(config.licences.length).toBe(3)
+  })
+
+  test('grid-norway build() returns a bounded Overpass dataset config by default', () => {
+    const descriptor = findRegisteredDataset(String(gridNorwayDatasetId), packs)!
+    const config = descriptor.build(emptyEnv)
+    expect(String(config.id)).toBe(String(gridNorwayDatasetId))
+    expect(config.sources.map(source => String(source.id))).toEqual(['osm:overpass-power:NO'])
+    expect(config.licences.map(licence => String(licence.id))).toEqual(['osm-odbl-1.0'])
   })
 
   test('findRegisteredDataset returns null for unknown id', () => {

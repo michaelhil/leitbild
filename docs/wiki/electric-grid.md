@@ -49,6 +49,79 @@ for regional/national overview behavior and demonstrations, but it is not a full
 AC power-flow solver, relay-coordination model, market-clearing engine, or
 security-constrained planning model.
 
+## Credible Real-Data Layout
+
+**Implemented v1.** The `electric-grid` pack contributes a `grid-norway`
+reference dataset builder. It uses OpenStreetMap power-network data via an
+Overpass query as the first real geometry backbone, normalises features into a
+Leitbild grid-reference schema, validates every feature through the shared
+reference-data pipeline, writes PMTiles/sidecar/manifest/audit artifacts, and
+registers MapLibre style layers for lines, cables, substations, plants, and
+generators.
+
+The build path is:
+
+```text
+Overpass power features
+  -> grid reference features with provenance/confidence
+  -> reference feature audit
+  -> node/branch graph audit
+  -> grid-norway.features.geojson
+  -> grid-norway.pmtiles
+  -> /map/capabilities.json reference tileset
+  -> pack-owned map layer toggles
+```
+
+Use the shared reference-data scripts:
+
+```bash
+bun run reference:build -- --dataset grid-norway
+bun run reference:promote -- --dataset grid-norway
+```
+
+Optional environment:
+
+```bash
+GRID_NORWAY_BBOX="57.5,4.0,71.5,31.5"
+GRID_NORWAY_OVERPASS_URL="https://overpass-api.de/api/interpreter"
+```
+
+`GRID_NORWAY_BBOX` is `south,west,north,east`. Use a small regional bounding
+box while iterating. National extraction can be slow and dependent on public
+Overpass capacity.
+
+**What this makes credible.**
+
+- visible line and cable corridors come from a real public map source
+- voltage, frequency, circuits, operator, names, plant source, and output are
+  preserved when OSM tags provide them
+- substations and generation sites can be toggled as reference layers
+- each feature carries `source`, `externalId`, `propertyProvenance`,
+  `confidence`, and raw tags
+- a graph audit reports node count, branch count, unresolved endpoints,
+  missing voltage tags, and low-confidence geometry
+
+**Important limitations.**
+
+- OSM/OpenInfraMap geometry is open and useful, but completeness and tagging
+  quality vary by region
+- relation-only features may be shown using a bounds centroid with low
+  confidence until richer relation geometry is available
+- exact utility busbar topology, breaker state, protection settings, dynamic
+  ratings, impedances, and secure operating limits are not public and must not
+  be invented silently
+- the current graph compiler audits topology but does not yet replace the
+  hand-authored simulation scenario with imported buses and branches
+
+**Recommended next data-source additions.**
+
+- GeoNorge/NVE transformer-station and generation infrastructure layers for
+  authoritative Norwegian asset metadata where available
+- Statnett/ENTSO-E time series for demand/generation calibration and operating
+  context
+- curated Leitbild overlays for scenario-critical substations, interconnectors,
+  PWR tie points, hospitals, airports, and industrial loads
+
 ## Source Legend
 
 This page intentionally separates three levels of confidence:

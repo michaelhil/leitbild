@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { aeroNorwayStyleModule } from '../src/packs/aviation/ui/aero-norway-style.ts'
+import { gridNorwayStyleModule } from '../src/packs/electric-grid/ui/grid-norway-style.ts'
 import {
   buildReferenceDatasetLayers,
   __internals,
@@ -149,6 +150,22 @@ describe('aero-norway style module', () => {
   test('unknown category produces a fallback paint (no throw)', () => {
     const paint = aeroNorwayStyleModule.fillFor('something-future-airac-introduces')
     expect(paint['fill-color']).toBeDefined()
+  })
+})
+
+describe('grid-norway style module', () => {
+  test('line and cable categories render as lines without point symbols', () => {
+    expect(gridNorwayStyleModule.lineFor('line')['line-color']).toBeDefined()
+    expect(gridNorwayStyleModule.lineFor('cable')['line-dasharray']).toEqual([4, 3])
+    expect(gridNorwayStyleModule.pointFor?.('line')).toBeNull()
+    expect(gridNorwayStyleModule.pointFor?.('cable')).toBeNull()
+  })
+
+  test('substations and plants render as point and label layers', () => {
+    expect(gridNorwayStyleModule.pointFor?.('substation')).not.toBeNull()
+    expect(gridNorwayStyleModule.labelFor?.('substation')).not.toBeNull()
+    expect(gridNorwayStyleModule.pointFor?.('plant')).not.toBeNull()
+    expect(gridNorwayStyleModule.labelFor?.('plant')).not.toBeNull()
   })
 })
 

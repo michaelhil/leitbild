@@ -6,6 +6,7 @@ import {
   type ReferenceLayerSpec,
 } from './reference-layer-factory.ts'
 import { aeroNorwayStyleModule } from '../../packs/aviation/ui/aero-norway-style.ts'
+import { gridNorwayStyleModule } from '../../packs/electric-grid/ui/grid-norway-style.ts'
 
 // Imperative controller that fetches /map/capabilities.json, registers
 // reference-data vector sources + layers against an active MapLibre map, and
@@ -50,6 +51,7 @@ const isReference = (entry: { readonly kind: string }): entry is ReferenceTilese
 
 const styleModuleFor = (datasetId: string): DatasetStyleModule | null => {
   if (datasetId === 'aero-norway') return aeroNorwayStyleModule
+  if (datasetId === 'grid-norway') return gridNorwayStyleModule
   return null
 }
 
