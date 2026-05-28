@@ -5,7 +5,7 @@ import { assertProcessPlantRuntimeInvariants } from './behavior-contract.ts'
 import { compileProcessPlantExecutionPlan, runProcessPlantExecutionPhase, runProcessPlantInitialReconciliation, type ProcessPlantExecutionPlan } from './execution-plan.ts'
 import { processPlantSolverPhases, type ProcessPlantCommand, type ProcessPlantRuntime, type ProcessPlantRuntimeSnapshot, type ProcessPlantTickResult, type ProcessPlantValue } from './model.ts'
 import { createProcessPlantVariableTable, type ProcessPlantVariableTable } from './variable-table.ts'
-import { compilePwrTransientKernel, evaluatePwrTransientKernel, type PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
+import { compilePwrTransientKernel, evaluatePwrTransientKernel, type PwrTransientDiagnostics, type PwrTransientKernel } from './pwr-transient-kernel.ts'
 
 interface RuntimeClock {
   elapsedMs: number
@@ -68,7 +68,6 @@ export const createProcessPlantRuntime = (config: {
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
-  const pwrKernel = compilePwrTransientKernel(system, table)
   if (!config.restoredSnapshot) {
     runProcessPlantInitialReconciliation({ system, table, plan })
   }
@@ -77,11 +76,13 @@ export const createProcessPlantRuntime = (config: {
     elapsedMs: config.restoredSnapshot?.elapsedMs ?? 0,
     remainderMs: config.restoredSnapshot?.remainderMs ?? 0,
   }
-  let lastPwrTransientDiagnostics: PwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
-  let pwrTransientDiagnosticsDirty = false
+  let pwrKernel: PwrTransientKernel | null = null
+  let lastPwrTransientDiagnostics: PwrTransientDiagnostics | null = null
+  let pwrTransientDiagnosticsDirty = true
 
   const pwrTransientDiagnostics = (): PwrTransientDiagnostics => {
-    if (pwrTransientDiagnosticsDirty) {
+    pwrKernel ??= compilePwrTransientKernel(system, table)
+    if (lastPwrTransientDiagnostics === null || pwrTransientDiagnosticsDirty) {
       lastPwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
       pwrTransientDiagnosticsDirty = false
     }

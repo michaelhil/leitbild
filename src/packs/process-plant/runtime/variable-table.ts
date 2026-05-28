@@ -132,25 +132,39 @@ export const createProcessPlantVariableTable = (
     return entry
   }
 
-  const readHandle = (handle: ProcessPlantVariableHandle): ProcessPlantValue => {
-    assertHandleMatchesTable(handle)
+  const readResolved = (handle: ProcessPlantVariableHandle): ProcessPlantValue => {
     const value = values[handle.slot]
     if (value === undefined) throw new Error(`variable ${handle.path} has no runtime value`)
     return value
   }
 
-  const read = (path: VariablePath): ProcessPlantValue => readHandle(resolve(path))
+  const readHandle = (handle: ProcessPlantVariableHandle): ProcessPlantValue => {
+    assertHandleMatchesTable(handle)
+    return readResolved(handle)
+  }
 
-  const readNumberHandle = (handle: ProcessPlantVariableHandle): number => {
-    const value = readHandle(handle)
+  const read = (path: VariablePath): ProcessPlantValue => readResolved(resolve(path))
+
+  const readResolvedNumber = (handle: ProcessPlantVariableHandle): number => {
+    const value = readResolved(handle)
     if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`variable ${handle.path} is not numeric`)
     return value
   }
 
-  const readBooleanHandle = (handle: ProcessPlantVariableHandle): boolean => {
-    const value = readHandle(handle)
+  const readResolvedBoolean = (handle: ProcessPlantVariableHandle): boolean => {
+    const value = readResolved(handle)
     if (typeof value !== 'boolean') throw new Error(`variable ${handle.path} is not boolean`)
     return value
+  }
+
+  const readNumberHandle = (handle: ProcessPlantVariableHandle): number => {
+    assertHandleMatchesTable(handle)
+    return readResolvedNumber(handle)
+  }
+
+  const readBooleanHandle = (handle: ProcessPlantVariableHandle): boolean => {
+    assertHandleMatchesTable(handle)
+    return readResolvedBoolean(handle)
   }
 
   const write = (path: VariablePath, value: ProcessPlantValue): void => {
@@ -180,9 +194,9 @@ export const createProcessPlantVariableTable = (
     has: (path: VariablePath): boolean => variableByPath.has(path),
     read,
     readHandle,
-    readNumber: (path: VariablePath): number => readNumberHandle(resolve(path)),
+    readNumber: (path: VariablePath): number => readResolvedNumber(resolve(path)),
     readNumberHandle,
-    readBoolean: (path: VariablePath): boolean => readBooleanHandle(resolve(path)),
+    readBoolean: (path: VariablePath): boolean => readResolvedBoolean(resolve(path)),
     readBooleanHandle,
     readOptionalNumber: (path: VariablePath, defaultValue: number): number => {
       if (!variableByPath.has(path)) return defaultValue
