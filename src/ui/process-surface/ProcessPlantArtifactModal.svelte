@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Copy, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-svelte'
+  import { tick } from 'svelte'
   import type { ControlInstanceId } from '../../core/model/index.ts'
   import {
     readProcessPlantArtifact,
@@ -22,6 +23,8 @@
   let copyStatus = $state<string | null>(null)
   let renderedSvg = $state<string | null>(null)
   let renderError = $state<string | null>(null)
+  let graphViewport = $state<HTMLDivElement | null>(null)
+  let graphSize = $state<{ readonly width: number; readonly height: number } | null>(null)
   let graphScale = $state(1)
   let graphOffset = $state({ x: 0, y: 0 })
   let graphPan = $state<{
@@ -37,6 +40,29 @@
 
   const contentLineCount = $derived(data ? lineCountFor(data.content) : null)
 
+  const mermaidSvgSize = (svg: string): { readonly width: number; readonly height: number } | null => {
+    const viewBox = /\sviewBox="([^"]+)"/.exec(svg)?.[1]?.trim()
+    if (!viewBox) return null
+    const [, , width, height] = viewBox.split(/\s+/).map(Number)
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null
+    return { width, height }
+  }
+
+  const normalizeMermaidSvg = (
+    svg: string,
+  ): { readonly svg: string; readonly size: { readonly width: number; readonly height: number } | null } => {
+    const size = mermaidSvgSize(svg)
+    if (!size) return { svg, size: null }
+    const cleaned = svg
+      .replace(/\swidth="[^"]*"/, '')
+      .replace(/\sheight="[^"]*"/, '')
+      .replace(/\sstyle="[^"]*"/, '')
+    return {
+      svg: cleaned.replace('<svg ', `<svg width="${size.width}" height="${size.height}" `),
+      size,
+    }
+  }
+
   const copyContent = async (): Promise<void> => {
     const content = data?.content
     if (!content) return
@@ -48,14 +74,54 @@
     }
   }
 
+  const fitGraphView = (): void => {
+    const viewport = graphViewport
+    const size = graphSize
+    if (!viewport || !size) {
+      graphScale = 1
+      graphOffset = { x: 0, y: 0 }
+      graphPan = null
+      return
+    }
+    const padding = 36
+    const availableWidth = Math.max(1, viewport.clientWidth - padding * 2)
+    const availableHeight = Math.max(1, viewport.clientHeight - padding * 2)
+    const nextScale = Math.max(0.04, Math.min(1, Math.min(availableWidth / size.width, availableHeight / size.height)))
+    graphScale = nextScale
+    graphOffset = {
+      x: Math.max(18, (viewport.clientWidth - size.width * nextScale) / 2),
+      y: Math.max(18, (viewport.clientHeight - size.height * nextScale) / 2),
+    }
+    graphPan = null
+  }
+
   const resetGraphView = (): void => {
+    if (graphViewport && graphSize) {
+      fitGraphView()
+      return
+    }
     graphScale = 1
     graphOffset = { x: 0, y: 0 }
     graphPan = null
   }
 
   const zoomGraph = (factor: number): void => {
-    graphScale = Math.max(0.25, Math.min(3, graphScale * factor))
+    const viewport = graphViewport
+    const previousScale = graphScale
+    const nextScale = Math.max(0.04, Math.min(3, previousScale * factor))
+    if (!viewport || nextScale === previousScale) {
+      graphScale = nextScale
+      return
+    }
+    const center = {
+      x: viewport.clientWidth / 2,
+      y: viewport.clientHeight / 2,
+    }
+    graphScale = nextScale
+    graphOffset = {
+      x: center.x - ((center.x - graphOffset.x) / previousScale) * nextScale,
+      y: center.y - ((center.y - graphOffset.y) / previousScale) * nextScale,
+    }
   }
 
   const startGraphPan = (event: PointerEvent): void => {
@@ -87,7 +153,23 @@
 
   const wheelZoomGraph = (event: WheelEvent): void => {
     event.preventDefault()
-    zoomGraph(event.deltaY < 0 ? 1.1 : 1 / 1.1)
+    const viewport = graphViewport
+    const previousScale = graphScale
+    const nextScale = Math.max(0.04, Math.min(3, previousScale * (event.deltaY < 0 ? 1.1 : 1 / 1.1)))
+    if (!viewport || nextScale === previousScale) {
+      graphScale = nextScale
+      return
+    }
+    const viewportRect = viewport.getBoundingClientRect()
+    const focus = {
+      x: event.clientX - viewportRect.left,
+      y: event.clientY - viewportRect.top,
+    }
+    graphScale = nextScale
+    graphOffset = {
+      x: focus.x - ((focus.x - graphOffset.x) / previousScale) * nextScale,
+      y: focus.y - ((focus.y - graphOffset.y) / previousScale) * nextScale,
+    }
   }
 
   $effect(() => {
@@ -104,6 +186,7 @@
         copyStatus = null
         renderedSvg = null
         renderError = null
+        graphSize = null
         resetGraphView()
         const next = await readProcessPlantArtifact(selectedControlInstanceId, selectedSystemId, selectedArtifact)
         if (!cancelled) data = next
@@ -126,6 +209,7 @@
     let cancelled = false
     renderedSvg = null
     renderError = null
+    graphSize = null
     resetGraphView()
 
     if (!artifactData || artifactData.language !== 'mermaid') {
@@ -153,7 +237,13 @@
         })
         const renderId = `process-plant-graph-${artifactData.systemId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}`
         const result = await mermaid.default.render(renderId, artifactData.content)
-        if (!cancelled) renderedSvg = result.svg
+        const normalized = normalizeMermaidSvg(result.svg)
+        if (!cancelled) {
+          graphSize = normalized.size
+          renderedSvg = normalized.svg
+          await tick()
+          fitGraphView()
+        }
       } catch (err) {
         if (!cancelled) renderError = err instanceof Error ? err.message : String(err)
       }
@@ -208,6 +298,7 @@
         {#if data.language === 'mermaid'}
           {#if renderedSvg}
             <div
+              bind:this={graphViewport}
               class="process-artifact-diagram"
               class:panning={graphPan !== null}
               role="application"

@@ -1509,11 +1509,13 @@ body.rail-resizing {
 }
 
 .process-artifact-copy-status {
+  grid-row: 2;
   padding: 7px 14px;
   border-bottom: 1px solid var(--border);
 }
 
 .process-artifact-body {
+  grid-row: 3;
   min-height: 0;
   overflow: auto;
   background: color-mix(in srgb, var(--panel-strong) 54%, var(--panel));
@@ -1532,6 +1534,7 @@ body.rail-resizing {
 
 .process-artifact-diagram {
   position: relative;
+  height: 100%;
   min-height: 100%;
   overflow: hidden;
   background: #ffffff;
@@ -1553,6 +1556,8 @@ body.rail-resizing {
 
 .process-artifact-diagram-inner svg {
   display: block;
+  width: auto;
+  height: auto;
   max-width: none;
   user-select: none;
 }
