@@ -105,6 +105,17 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(refs[0]!.buildId).toBe('20260526-2000')
   })
 
+  test('accepts local-file reference sources in promoted manifests', async () => {
+    const root = await refRoot()
+    await writeReferenceManifest(root, 'grid-norway', '20260528-230419', {
+      sources: [{ id: 'osm:pbf-power:NO', kind: 'local' }],
+    })
+    const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
+    const refs = findReferenceTilesets(manifest)
+    expect(refs.map(ref => ref.datasetId)).toEqual(['grid-norway'])
+    expect(refs[0]?.sources).toEqual([{ id: 'osm:pbf-power:NO', kind: 'local' }])
+  })
+
   test('skips corrupt per-dataset manifests with a warning, base still served', async () => {
     const root = await refRoot()
     const buildDir = join(root, 'builds', 'broken', 'b1')

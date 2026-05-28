@@ -66,7 +66,7 @@ export type BaseTileset = z.infer<typeof baseTilesetSchema>
 
 const tilesetSourceSchema = z.object({
   id: z.string().min(1),
-  kind: z.enum(['manual', 'remote']),
+  kind: z.enum(['manual', 'local', 'remote']),
 })
 
 const tilesetLicenceSchema = z.object({
