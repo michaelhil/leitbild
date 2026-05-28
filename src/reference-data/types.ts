@@ -38,6 +38,11 @@ export type DatasetSource =
       readonly path: string
     }
   | {
+      readonly kind: 'local'
+      readonly id: SourceId
+      readonly load: (cache: FetchCache) => Promise<ReadonlyArray<NormalizedFeature>>
+    }
+  | {
       readonly kind: 'remote'
       readonly id: SourceId
       readonly fetch: (cache: FetchCache) => Promise<RawBytes>

@@ -9,6 +9,7 @@ import {
 import { compileGridReferenceGraph } from '../reference-graph.ts'
 import { gridReferenceFeatureSchema } from '../schemas/grid-reference.ts'
 import { overpassPowerSource, type HttpFetch, type OverpassBbox } from '../sources/overpass-power.ts'
+import { osmPbfPowerSource } from '../sources/osm-pbf-power.ts'
 
 export const gridNorwayDatasetId = asDatasetId('grid-norway')
 
@@ -23,6 +24,10 @@ export interface GridNorwayThresholds {
 
 export interface GridNorwayDatasetConfig {
   readonly bbox: OverpassBbox
+  readonly osmPbfPath?: string
+  readonly osmPbfDownloadUrl?: string
+  readonly osmPbfUserAgent?: string
+  readonly sourceMode?: 'osm-pbf' | 'overpass'
   readonly overpassEndpointUrl?: string
   readonly overpassUserAgent?: string
   readonly overpassFetchFn?: HttpFetch
@@ -65,13 +70,21 @@ const failIfBelow = (
 
 export const createGridNorwayDataset = (config: GridNorwayDatasetConfig): DatasetConfig => {
   const thresholds = config.thresholds ?? gridNorwayProductionThresholds
-  const powerSource = overpassPowerSource({
-    id: 'osm:overpass-power:NO',
-    bbox: config.bbox,
-    ...(config.overpassEndpointUrl !== undefined ? { endpointUrl: config.overpassEndpointUrl } : {}),
-    ...(config.overpassUserAgent !== undefined ? { userAgent: config.overpassUserAgent } : {}),
-    ...(config.overpassFetchFn !== undefined ? { fetchFn: config.overpassFetchFn } : {}),
-  })
+  const sourceMode = config.sourceMode ?? 'osm-pbf'
+  const powerSource = sourceMode === 'overpass'
+    ? overpassPowerSource({
+        id: 'osm:overpass-power:NO',
+        bbox: config.bbox,
+        ...(config.overpassEndpointUrl !== undefined ? { endpointUrl: config.overpassEndpointUrl } : {}),
+        ...(config.overpassUserAgent !== undefined ? { userAgent: config.overpassUserAgent } : {}),
+        ...(config.overpassFetchFn !== undefined ? { fetchFn: config.overpassFetchFn } : {}),
+      })
+    : osmPbfPowerSource({
+        id: 'osm:pbf-power:NO',
+        path: config.osmPbfPath ?? '/opt/leitbild/maps/sources/norway-latest.osm.pbf',
+        ...(config.osmPbfDownloadUrl !== undefined ? { downloadUrl: config.osmPbfDownloadUrl } : {}),
+        ...(config.osmPbfUserAgent !== undefined ? { userAgent: config.osmPbfUserAgent } : {}),
+      })
   return {
     id: gridNorwayDatasetId,
     schemaVersion: 1,

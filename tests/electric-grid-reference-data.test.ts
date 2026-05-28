@@ -52,6 +52,7 @@ describe('electric-grid reference data sources', () => {
       category: 'line',
       assetKind: 'branch',
       voltageKv: [420],
+      maxVoltageKv: 420,
       frequencyHz: 50,
       circuits: 2,
       operator: 'Statnett',
@@ -181,6 +182,7 @@ describe('electric-grid reference data sources', () => {
     const body = await readFile(fixturePath('overpass-power-sample.json'), 'utf8')
     const dataset = createGridNorwayDataset({
       bbox: { south: 58, west: 5, north: 62, east: 12 },
+      sourceMode: 'overpass',
       overpassFetchFn: fixtureFetcher(body),
       thresholds: {
         nodes: 2,

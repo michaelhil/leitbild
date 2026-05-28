@@ -52,17 +52,20 @@ security-constrained planning model.
 ## Credible Real-Data Layout
 
 **Implemented v1.** The `electric-grid` pack contributes a `grid-norway`
-reference dataset builder. It uses OpenStreetMap power-network data via an
-Overpass query as the first real geometry backbone, normalises features into a
-Leitbild grid-reference schema, validates every feature through the shared
-reference-data pipeline, writes PMTiles/sidecar/manifest/audit artifacts, and
-registers MapLibre style layers for lines, cables, substations, plants, and
-generators.
+reference dataset builder. It now uses a raw Geofabrik/OpenStreetMap Norway
+PBF extract as the default geometry backbone instead of relying on public
+Overpass query output. The extractor parses OSM nodes, ways, and relations,
+normalises power-network features into a Leitbild grid-reference schema,
+validates every feature through the shared reference-data pipeline, writes
+PMTiles/sidecar/manifest/audit artifacts, and registers MapLibre style layers
+for voltage-coloured lines, cables, substations, plants, and generators.
 
 The build path is:
 
 ```text
-Overpass power features
+Geofabrik Norway OSM PBF
+  -> raw OSM power nodes/ways/relations
+  -> exact contiguous line/cable merge by type, voltage, operator, and name
   -> grid reference features with provenance/confidence
   -> reference feature audit
   -> node/branch graph audit
@@ -82,22 +85,28 @@ bun run reference:promote -- --dataset grid-norway
 Optional environment:
 
 ```bash
-GRID_NORWAY_BBOX="57.5,4.0,71.5,31.5"
+GRID_NORWAY_SOURCE="osm-pbf" # default; set "overpass" only for fallback/debug
+GRID_NORWAY_OSM_PBF_PATH="/opt/leitbild/maps/sources/norway-latest.osm.pbf"
+GRID_NORWAY_OSM_PBF_URL="https://download.geofabrik.de/europe/norway-latest.osm.pbf"
+GRID_NORWAY_OSM_PBF_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
+GRID_NORWAY_BBOX="57.5,4.0,71.5,31.5" # Overpass fallback only
 GRID_NORWAY_OVERPASS_URL="https://overpass-api.de/api/interpreter"
 GRID_NORWAY_OVERPASS_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
 ```
 
-`GRID_NORWAY_BBOX` is `south,west,north,east`. Use a small regional bounding
-box while iterating. National extraction can be slow and dependent on public
-Overpass capacity. `GRID_NORWAY_OVERPASS_USER_AGENT` should identify the
-deployment; public Overpass instances may reject anonymous default clients.
-For the current live build, a Southern Norway bbox such as `58.5,5.0,61.5,12.5`
-is a safer public-Overpass extraction than the full national extent; a tiled
-national compiler is the next step before making nationwide rebuilds routine.
+The raw PBF path is preferred because it is deterministic, does not depend on
+public Overpass limits, preserves relation context, and can be rebuilt from the
+same OSM snapshot as the base map. `GRID_NORWAY_BBOX` is `south,west,north,east`
+and applies only when `GRID_NORWAY_SOURCE="overpass"` is selected for fallback
+or debugging.
 
 **What this makes credible.**
 
 - visible line and cable corridors come from a real public map source
+- OSM relation geometry is retained for many substations and plants, so the
+  map can show real site polygons rather than only point labels
+- contiguous OSM way fragments are merged where endpoints and electrical tags
+  match, reducing visual fragmentation without inventing topology
 - the map overview filters out low-voltage distribution fragments: line,
   cable, transformer, and substation features need at least 66 kV, and small
   generation assets need at least 10 MW unless connected at transmission
@@ -114,8 +123,8 @@ national compiler is the next step before making nationwide rebuilds routine.
 
 - OSM/OpenInfraMap geometry is open and useful, but completeness and tagging
   quality vary by region
-- relation-only features may be shown using a bounds centroid with low
-  confidence until richer relation geometry is available
+- exact OSM way merging is deliberately conservative and does not yet infer
+  missing connectivity across switchgear, substations, or nearby endpoints
 - exact utility busbar topology, breaker state, protection settings, dynamic
   ratings, impedances, and secure operating limits are not public and must not
   be invented silently

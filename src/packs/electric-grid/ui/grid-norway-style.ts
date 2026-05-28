@@ -10,6 +10,53 @@ interface GridCategoryStyle {
   readonly circleRadius: number
 }
 
+const voltageColorExpression: ReadonlyArray<unknown> = [
+  'case',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400],
+  '#c0262d',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+  '#b34ac0',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 220],
+  '#c56a00',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
+  '#229746',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 110],
+  '#35a853',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
+  '#b59a00',
+  '#6f9fc7',
+]
+
+const voltageOpacityExpression: ReadonlyArray<unknown> = [
+  'case',
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+  0.90,
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
+  ['interpolate', ['linear'], ['zoom'], 5, 0.72, 9, 0.86],
+  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
+  ['interpolate', ['linear'], ['zoom'], 5, 0.16, 8, 0.52, 11, 0.78],
+  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 11, 0.36],
+]
+
+const voltageWidthExpression: ReadonlyArray<unknown> = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  5,
+  ['case',
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 2.8,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 2.0,
+    1.0,
+  ],
+  12,
+  ['case',
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 5.2,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.8,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 2.6,
+    1.5,
+  ],
+]
+
 const styles: Readonly<Record<string, GridCategoryStyle>> = {
   line:        { fillColor: '#64748b', fillOpacity: 0.00, lineColor: '#64748b', lineOpacity: 0.70, lineWidth: 1.6, circleColor: '#64748b', circleRadius: 3.5 },
   cable:       { fillColor: '#0f766e', fillOpacity: 0.00, lineColor: '#0f766e', lineOpacity: 0.70, lineWidth: 1.4, circleColor: '#0f766e', circleRadius: 3.5 },
@@ -39,6 +86,19 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
   },
   lineFor: (category) => {
     const style = styleFor(category)
+    if (category === 'line' || category === 'cable') {
+      return {
+        'line-color': category === 'cable' ? '#2b8fa0' : voltageColorExpression,
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          0.96,
+          voltageOpacityExpression,
+        ],
+        'line-width': voltageWidthExpression,
+        ...(category === 'cable' ? { 'line-dasharray': [4, 2] } : {}),
+      }
+    }
     return {
       'line-color': style.lineColor,
       'line-opacity': [
@@ -72,7 +132,28 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
     }
   },
   labelFor: (category) => {
-    if (category === 'line' || category === 'cable' || category === 'unknown') return null
+    if (category === 'line' || category === 'cable') {
+      return {
+        layout: {
+          'symbol-placement': 'line',
+          'text-field': [
+            'case',
+            ['>', ['coalesce', ['get', 'maxVoltageKv'], 0], 0],
+            ['concat', ['to-string', ['round', ['get', 'maxVoltageKv']]], ' kV'],
+            '',
+          ],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 13, 12],
+          'text-allow-overlap': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#283241',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.8,
+        },
+      }
+    }
+    if (category === 'unknown') return null
     return {
       layout: {
         'text-field': ['coalesce', ['get', 'name'], ['get', 'operator'], ''],

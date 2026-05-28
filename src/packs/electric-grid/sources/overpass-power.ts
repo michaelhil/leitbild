@@ -11,6 +11,7 @@ import {
   type RawBytes,
 } from '../../../reference-data/types.ts'
 import type { GridReferenceCategory, GridReferenceFeatureProperties } from '../schemas/grid-reference.ts'
+import { buildOsmPowerFeature, categoryForPower } from './osm-power-normalization.ts'
 
 export type HttpFetch = (
   url: string,
@@ -70,70 +71,8 @@ const overpassResponseSchema = z.object({
 
 type OverpassElement = z.infer<typeof overpassElementSchema>
 
-const numericTag = (tags: Readonly<Record<string, string>>, key: string): number | null => {
-  const value = tags[key]
-  if (!value) return null
-  const first = value.split(';')[0]?.trim()
-  if (!first) return null
-  const parsed = Number(first.replace(',', '.'))
-  return Number.isFinite(parsed) ? parsed : null
-}
-
-const positiveNumericTag = (tags: Readonly<Record<string, string>>, key: string): number | null => {
-  const parsed = numericTag(tags, key)
-  return parsed !== null && parsed > 0 ? parsed : null
-}
-
-const voltageKv = (tags: Readonly<Record<string, string>>): ReadonlyArray<number> => {
-  const value = tags.voltage ?? ''
-  const parsed = value
-    .split(/[;,]/)
-    .map(part => Number(part.trim().replace(',', '.')))
-    .filter(value => Number.isFinite(value) && value > 0)
-    .map(value => value >= 1000 ? value / 1000 : value)
-  return [...new Set(parsed)].sort((left, right) => right - left)
-}
-
 const tagsAsStrings = (tags: Readonly<Record<string, string | number | boolean>>): Record<string, string> =>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [key, String(value)]))
-
-const categoryForPower = (power: string | undefined): GridReferenceCategory => {
-  if (power === 'line') return 'line'
-  if (power === 'cable') return 'cable'
-  if (power === 'substation') return 'substation'
-  if (power === 'transformer') return 'transformer'
-  if (power === 'plant') return 'plant'
-  if (power === 'generator') return 'generator'
-  return 'unknown'
-}
-
-const maximumVoltageKv = (values: ReadonlyArray<number>): number | null =>
-  values.length === 0 ? null : Math.max(...values)
-
-const hasTransmissionVoltage = (properties: GridReferenceFeatureProperties): boolean =>
-  (maximumVoltageKv(properties.voltageKv) ?? 0) >= 66
-
-const hasMaterialGeneration = (properties: GridReferenceFeatureProperties): boolean =>
-  (properties.outputMw ?? 0) >= 10 || hasTransmissionVoltage(properties)
-
-const includeReferenceFeature = (properties: GridReferenceFeatureProperties): boolean => {
-  if (properties.category === 'line' || properties.category === 'cable' || properties.category === 'transformer') {
-    return hasTransmissionVoltage(properties)
-  }
-  if (properties.category === 'substation') return hasTransmissionVoltage(properties)
-  if (properties.category === 'plant' || properties.category === 'generator') return hasMaterialGeneration(properties)
-  return false
-}
-
-const assetKindForCategory = (
-  category: GridReferenceCategory,
-): GridReferenceFeatureProperties['assetKind'] => {
-  if (category === 'line' || category === 'cable' || category === 'transformer') return 'branch'
-  if (category === 'substation') return 'node'
-  if (category === 'plant' || category === 'generator') return 'generator'
-  if (category === 'load') return 'load'
-  return 'unknown'
-}
 
 const geometryFromElement = (element: OverpassElement, category: GridReferenceCategory): {
   readonly geometry: GeoJsonGeometry
@@ -181,37 +120,6 @@ const geometryFromElement = (element: OverpassElement, category: GridReferenceCa
   return null
 }
 
-const buildProperties = (
-  element: OverpassElement,
-  source: string,
-  category: GridReferenceCategory,
-  geometrySource: GridReferenceFeatureProperties['geometrySource'],
-  confidencePenalty: boolean,
-): GridReferenceFeatureProperties => {
-  const tags = tagsAsStrings(element.tags)
-  const voltages = voltageKv(tags)
-  const hasKeyElectricalProperties = voltages.length > 0 || tags.frequency !== undefined || tags.output !== undefined || tags['plant:output:electricity'] !== undefined
-  return {
-    source,
-    category,
-    assetKind: assetKindForCategory(category),
-    externalId: `${element.type}/${element.id}`,
-    name: tags.name ?? tags.ref ?? null,
-    operator: tags.operator ?? tags.owner ?? null,
-    voltageKv: [...voltages],
-    frequencyHz: positiveNumericTag(tags, 'frequency'),
-    circuits: positiveNumericTag(tags, 'circuits'),
-    cables: positiveNumericTag(tags, 'cables'),
-    power: tags.power ?? null,
-    plantSource: tags['plant:source'] ?? tags['generator:source'] ?? null,
-    outputMw: positiveNumericTag(tags, 'plant:output:electricity') ?? positiveNumericTag(tags, 'generator:output:electricity') ?? positiveNumericTag(tags, 'output'),
-    geometrySource,
-    propertyProvenance: hasKeyElectricalProperties ? 'observed' : 'unknown',
-    confidence: confidencePenalty ? 'low' : hasKeyElectricalProperties ? 'high' : 'medium',
-    tags,
-  }
-}
-
 export const normaliseOverpassPowerElements = (
   raw: unknown,
   source = 'osm:overpass-power',
@@ -225,14 +133,16 @@ export const normaliseOverpassPowerElements = (
     if (category === 'unknown') return []
     const geo = geometryFromElement(element, category)
     if (!geo) return []
-    const properties = buildProperties(element, source, category, geo.geometrySource, geo.confidencePenalty)
-    if (!includeReferenceFeature(properties)) return []
-    return [{
-      type: 'Feature',
-      id: `${source}:${element.type}:${element.id}`,
+    const feature = buildOsmPowerFeature({
+      source,
+      elementType: element.type,
+      id: element.id,
+      tags: tagsAsStrings(element.tags),
       geometry: geo.geometry,
-      properties,
-    }]
+      geometrySource: geo.geometrySource,
+      confidencePenalty: geo.confidencePenalty,
+    })
+    return feature ? [feature] : []
   })
 }
 

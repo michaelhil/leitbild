@@ -156,7 +156,7 @@ describe('aero-norway style module', () => {
 describe('grid-norway style module', () => {
   test('line and cable categories render as lines without point symbols', () => {
     expect(gridNorwayStyleModule.lineFor('line')['line-color']).toBeDefined()
-    expect(gridNorwayStyleModule.lineFor('cable')['line-dasharray']).toEqual([4, 3])
+    expect(gridNorwayStyleModule.lineFor('cable')['line-dasharray']).toEqual([4, 2])
     expect(gridNorwayStyleModule.pointFor?.('line')).toBeNull()
     expect(gridNorwayStyleModule.pointFor?.('cable')).toBeNull()
   })

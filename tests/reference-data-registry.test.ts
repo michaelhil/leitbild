@@ -36,11 +36,11 @@ describe('reference-data registry (collector)', () => {
     expect(config.licences.length).toBe(3)
   })
 
-  test('grid-norway build() returns a bounded Overpass dataset config by default', () => {
+  test('grid-norway build() returns a raw OSM PBF dataset config by default', () => {
     const descriptor = findRegisteredDataset(String(gridNorwayDatasetId), packs)!
     const config = descriptor.build(emptyEnv)
     expect(String(config.id)).toBe(String(gridNorwayDatasetId))
-    expect(config.sources.map(source => String(source.id))).toEqual(['osm:overpass-power:NO'])
+    expect(config.sources.map(source => String(source.id))).toEqual(['osm:pbf-power:NO'])
     expect(config.licences.map(licence => String(licence.id))).toEqual(['osm-odbl-1.0'])
   })
 

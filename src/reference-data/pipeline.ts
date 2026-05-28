@@ -44,6 +44,9 @@ const loadSource = async (source: DatasetSource, fetchCache: FetchCache): Promis
   if (source.kind === 'manual') {
     return loadManualSource(source.path)
   }
+  if (source.kind === 'local') {
+    return source.load(fetchCache)
+  }
   const raw = await source.fetch(fetchCache)
   return source.parse(raw)
 }

@@ -31,6 +31,7 @@ export const buildEnv = () => {
   return {
     referenceRoot: root,
     fetchCache: createFetchCache(`${root}/sources`),
+    skipTileBuild: process.env.LEITBILD_REFERENCE_SKIP_TILE_BUILD === '1',
   }
 }
 

@@ -35,7 +35,7 @@ export const datasetManifestSchema = z.object({
   })),
   sources: z.array(z.object({
     id: z.string().min(1),
-    kind: z.enum(['manual', 'remote']),
+    kind: z.enum(['manual', 'local', 'remote']),
   })).min(1),
   licences: z.array(z.object({
     id: z.string().min(1),

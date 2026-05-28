@@ -24,6 +24,7 @@ export const gridReferenceFeatureSchema = z.object({
   name: z.string().min(1).nullable(),
   operator: z.string().min(1).nullable(),
   voltageKv: z.array(z.number().finite().positive()),
+  maxVoltageKv: z.number().finite().positive().nullable(),
   frequencyHz: z.number().finite().positive().nullable(),
   circuits: z.number().int().positive().nullable(),
   cables: z.number().int().positive().nullable(),
