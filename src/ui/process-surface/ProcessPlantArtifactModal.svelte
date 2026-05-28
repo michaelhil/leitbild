@@ -95,14 +95,18 @@
     graphPan = null
   }
 
+  const clearGraphView = (): void => {
+    graphScale = 1
+    graphOffset = { x: 0, y: 0 }
+    graphPan = null
+  }
+
   const resetGraphView = (): void => {
     if (graphViewport && graphSize) {
       fitGraphView()
       return
     }
-    graphScale = 1
-    graphOffset = { x: 0, y: 0 }
-    graphPan = null
+    clearGraphView()
   }
 
   const zoomGraph = (factor: number): void => {
@@ -187,7 +191,7 @@
         renderedSvg = null
         renderError = null
         graphSize = null
-        resetGraphView()
+        clearGraphView()
         const next = await readProcessPlantArtifact(selectedControlInstanceId, selectedSystemId, selectedArtifact)
         if (!cancelled) data = next
       } catch (err) {
@@ -210,7 +214,7 @@
     renderedSvg = null
     renderError = null
     graphSize = null
-    resetGraphView()
+    clearGraphView()
 
     if (!artifactData || artifactData.language !== 'mermaid') {
       return () => {
