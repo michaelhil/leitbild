@@ -118,7 +118,10 @@
   }
 
   const scrollSourceToTop = (): void => {
-    sourceViewport?.scrollTo({ top: 0 })
+    const sourceContainer = sourceViewport
+    const scrollContainer = sourceContainer?.closest('.process-artifact-body')
+    if (scrollContainer instanceof HTMLElement) scrollContainer.scrollTo({ top: 0, left: 0 })
+    sourceContainer?.scrollTo({ top: 0, left: 0 })
     sourceSearchCursor = -1
   }
 
