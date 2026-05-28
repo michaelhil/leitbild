@@ -62,13 +62,15 @@ The pressurized water reactor graph now has a pack-owned transient diagnostic ke
 
 The kernel is not a second solver. It is compiled from the same scenario-owned graph as the runtime and reads the canonical variable table after each fixed step. The read-only query `process-plant.transient.diagnostics` returns:
 
-- primary inventory, pressure bias, leak flow, safety injection, and tube leakage
-- secondary inventory, steam mass, SG level, tube coverage, voiding, heat transfer, steam outflow, and feedwater flow
+- primary inventory, pressure bias, leak flow, safety injection, tube leakage, aggregate reactor-coolant flow, and running RCP count
+- secondary inventory, steam mass, SG level, tube coverage, voiding, heat transfer, steam outflow, feedwater flow, feedwater tank state, and auxiliary-feedwater reserve/flow
+- balance-of-plant state for turbine output/steam use and condenser backpressure, heat rejection, hotwell inventory, and cooling-water availability
 - containment pressure, sump inventory, incoming release, and source term
 - core fission power, decay heat, total thermal power, cooling availability, heat-removal deficit, and fuel heatup rate
 - accumulator inventory/outflow, safety bus state, and diesel running count
+- electrical bus/load availability, degraded bus count, served/demand load, and unserved load count
 - conservation residuals for primary inventory, steam generator liquid/steam inventories, boiling energy, and pressurizer inventory
-- a small I&C summary when reference protection is configured
+- I&C active counts, highest active severity, active first-out annunciators, and compact active lifecycle summaries when reference protection is configured
 
 This gives overviews, procedures, AI agents, and tests a coherent PWR transient view without scraping dozens of individual variables or creating pack-specific HTTP endpoints.
 
@@ -1041,18 +1043,23 @@ The process-plant pack now has a compact acceptance trace harness:
 bun run process-plant:acceptance
 ```
 
-The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs six representative headless cases, records selected published variables, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, component behaviors, and process-link behaviors that provider-backed simulations use.
+The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs representative headless cases, records selected published variables, samples final PWR transient diagnostics, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, transient kernel, component behaviors, and process-link behaviors that provider-backed simulations use.
 
 Current acceptance cases:
 
 - baseline steady run,
 - steam-generator tube rupture-like fault,
 - loss of main feedwater,
+- LOCA/safety-injection response,
+- auxiliary-feedwater recovery,
+- loss of offsite power with emergency diesel recovery,
 - reactor coolant pump A trip/coastdown,
 - pressurizer relief valve open,
+- main-steam safety release,
+- condenser backpressure,
 - turbine/load reduction.
 
-The checks are trend-level guardrails, not licensing-grade validation. They catch regressions such as missing SGTR leak/radiation coupling, feedwater loss not lowering steam-generator level, RCP trips collapsing instantly instead of coasting down, relief flow not removing pressurizer steam mass, or load reduction not lowering turbine output.
+The checks are trend-level guardrails, not licensing-grade validation. They catch regressions such as missing SGTR leak/radiation coupling, feedwater loss not lowering steam-generator level, RCP trips collapsing instantly instead of coasting down, LOOP not recovering safety buses after diesel start, condenser backpressure not derating turbine output, relief flow not removing pressurizer steam mass, or load reduction not lowering turbine output.
 
 ![Process plant acceptance traces](./assets/process-plant-acceptance-traces.svg)
 

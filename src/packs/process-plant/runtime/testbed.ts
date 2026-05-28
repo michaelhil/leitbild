@@ -3,6 +3,7 @@ import { createProcessPlantScheduleRunner, type ProcessPlantScheduleConfig } fro
 import { createProcessPlantTelemetryRecorder, type ProcessPlantTelemetryConfig, type ProcessPlantTelemetrySeries } from './telemetry.ts'
 import { createProcessPlantRuntime } from './runtime.ts'
 import type { ProcessPlantRuntime, ProcessPlantRuntimeSnapshot } from './model.ts'
+import type { PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
 
 export interface ProcessPlantTestbed {
   readonly runtime: ProcessPlantRuntime
@@ -29,6 +30,7 @@ export interface ProcessPlantMultiSystemConfig {
 export interface ProcessPlantMultiSystemSnapshot {
   readonly systemId: string
   readonly runtime: ProcessPlantRuntimeSnapshot
+  readonly pwrTransientDiagnostics: PwrTransientDiagnostics
   readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries>
 }
 
@@ -78,6 +80,7 @@ export const createProcessPlantMultiSystemTestbed = (
       return systems.map(system => ({
         systemId: system.system.id,
         runtime: system.runtime.snapshot(),
+        pwrTransientDiagnostics: system.runtime.pwrTransientDiagnostics(),
         ...(system.telemetry === undefined ? {} : { telemetry: system.telemetry.series() }),
       }))
     },

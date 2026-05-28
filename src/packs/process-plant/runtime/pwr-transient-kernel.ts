@@ -9,9 +9,17 @@ export interface PwrTransientKernel {
   readonly reactorVessel: CompiledComponent | null
   readonly pressurizer: CompiledComponent | null
   readonly steamGenerators: ReadonlyArray<CompiledComponent>
+  readonly reactorCoolantPumps: ReadonlyArray<CompiledComponent>
   readonly containment: CompiledComponent | null
   readonly accumulators: ReadonlyArray<CompiledComponent>
+  readonly feedwaterTank: CompiledComponent | null
+  readonly auxFeedwaterTank: CompiledComponent | null
+  readonly auxFeedwaterPumps: ReadonlyArray<CompiledComponent>
+  readonly turbine: CompiledComponent | null
+  readonly condenser: CompiledComponent | null
+  readonly electricalBuses: ReadonlyArray<CompiledComponent>
   readonly safetyBuses: ReadonlyArray<CompiledComponent>
+  readonly electricalLoads: ReadonlyArray<CompiledComponent>
   readonly diesels: ReadonlyArray<CompiledComponent>
 }
 
@@ -32,6 +40,9 @@ export interface PwrTransientDiagnostics {
     readonly leakFlowKgPerS: number | null
     readonly safetyInjectionFlowKgPerS: number | null
     readonly tubeLeakFlowKgPerS: number | null
+    readonly reactorCoolantFlowKgPerS: number
+    readonly runningReactorCoolantPumpCount: number
+    readonly minReactorCoolantPumpSpeedFraction: number | null
   }
   readonly secondary: {
     readonly liquidInventoryKg: number
@@ -45,6 +56,23 @@ export interface PwrTransientDiagnostics {
     readonly heatTransferMw: number
     readonly steamOutflowKgPerS: number
     readonly feedwaterFlowKgPerS: number
+    readonly feedwaterTankInventoryKg: number | null
+    readonly feedwaterTankLevelPercent: number | null
+    readonly feedwaterTankAvailableFlowKgPerS: number | null
+    readonly auxFeedwaterFlowKgPerS: number
+    readonly auxFeedwaterTankInventoryKg: number | null
+    readonly auxFeedwaterTankLevelPercent: number | null
+    readonly auxFeedwaterTankAvailableFlowKgPerS: number | null
+  }
+  readonly balanceOfPlant: {
+    readonly turbineElectricMw: number | null
+    readonly turbineSteamFlowKgPerS: number | null
+    readonly turbineSteamAvailabilityFraction: number | null
+    readonly condenserBackPressurePa: number | null
+    readonly condenserHeatRejectedMw: number | null
+    readonly condenserCondensateInventoryKg: number | null
+    readonly condenserCondensateLevelPercent: number | null
+    readonly condenserCoolingWaterAvailabilityFraction: number | null
   }
   readonly containment: {
     readonly pressureMPa: number | null
@@ -66,6 +94,18 @@ export interface PwrTransientDiagnostics {
     readonly deenergizedSafetyBusCount: number
     readonly runningDieselCount: number
   }
+  readonly electrical: {
+    readonly busCount: number
+    readonly energizedBusCount: number
+    readonly deenergizedBusCount: number
+    readonly degradedBusCount: number
+    readonly minBusVoltageFraction: number | null
+    readonly minSafetyBusVoltageFraction: number | null
+    readonly totalServedLoadMw: number
+    readonly totalDemandLoadMw: number
+    readonly minLoadServedFraction: number | null
+    readonly unservedLoadCount: number
+  }
   readonly conservation: {
     readonly maxSteamGeneratorLiquidResidualKg: number
     readonly maxSteamGeneratorSteamResidualKg: number
@@ -81,6 +121,12 @@ const componentOfKind = (
   kind: string,
 ): CompiledComponent | null =>
   system.graph.components.find(component => String(component.kind) === kind) ?? null
+
+const componentById = (
+  system: CompiledProcessPlantSystem,
+  id: string,
+): CompiledComponent | null =>
+  system.graph.components.find(component => String(component.id) === id) ?? null
 
 const componentsOfKind = (
   system: CompiledProcessPlantSystem,
@@ -116,6 +162,15 @@ const sumComponentNumber = (
   return table.has(path) ? sum + table.readNumber(path) : sum
 }, 0)
 
+const countComponentBoolean = (
+  table: ProcessPlantVariableTable,
+  components: ReadonlyArray<CompiledComponent>,
+  localPath: string,
+  expected: boolean,
+): number => components.filter(component =>
+  readOptionalBoolean(table, componentVariablePath(component, localPath)) === expected
+).length
+
 const valuesFor = (
   table: ProcessPlantVariableTable,
   components: ReadonlyArray<CompiledComponent>,
@@ -141,15 +196,27 @@ export const compilePwrTransientKernel = (
   const core = componentOfKind(system, 'reactorCore')
   const reactorVessel = componentOfKind(system, 'reactorVessel')
   const pressurizer = componentOfKind(system, 'pressurizer')
+  const reactorCoolantPumps = componentsOfKind(system, 'centrifugalPump')
+    .filter(component => String(component.id).toLowerCase().startsWith('rcp'))
+  const electricalBuses = componentsOfKind(system, 'electricalBus')
   return {
     active: core !== null && reactorVessel !== null && pressurizer !== null && steamGenerators.length > 0,
     core,
     reactorVessel,
     pressurizer,
     steamGenerators,
+    reactorCoolantPumps,
     containment: componentOfKind(system, 'containmentVolume'),
     accumulators: componentsOfKind(system, 'accumulator'),
-    safetyBuses: componentsOfKind(system, 'electricalBus').filter(component => String(component.id).toLowerCase().includes('safety')),
+    feedwaterTank: componentById(system, 'feedwaterTank'),
+    auxFeedwaterTank: componentById(system, 'auxFeedwaterTank'),
+    auxFeedwaterPumps: componentsOfKind(system, 'centrifugalPump')
+      .filter(component => String(component.id).toLowerCase().startsWith('auxfeedwaterpump')),
+    turbine: componentOfKind(system, 'turbineLoadSink'),
+    condenser: componentOfKind(system, 'condenserSink'),
+    electricalBuses,
+    safetyBuses: electricalBuses.filter(component => String(component.id).toLowerCase().includes('safety')),
+    electricalLoads: componentsOfKind(system, 'electricalLoad'),
     diesels: componentsOfKind(system, 'dieselGenerator'),
   }
 }
@@ -178,6 +245,9 @@ export const evaluatePwrTransientKernel = (
   const voidValues = valuesFor(table, kernel.steamGenerators, 'voidFraction')
   const tubeCoverageValues = valuesFor(table, kernel.steamGenerators, 'tubeCoverageFraction')
   const tubeUncoveredValues = valuesFor(table, kernel.steamGenerators, 'tubeUncoveredFraction')
+  const busVoltageValues = valuesFor(table, kernel.electricalBuses, 'voltageFraction')
+  const safetyBusVoltageValues = valuesFor(table, kernel.safetyBuses, 'voltageFraction')
+  const loadServedFractionValues = valuesFor(table, kernel.electricalLoads, 'servedFraction')
   return {
     schemaVersion: 1,
     active: kernel.active,
@@ -195,6 +265,9 @@ export const evaluatePwrTransientKernel = (
       leakFlowKgPerS: readOptionalNumber(table, componentPath(vessel, 'primaryLeakFlowKgPerS')),
       safetyInjectionFlowKgPerS: readOptionalNumber(table, componentPath(vessel, 'safetyInjectionFlowKgPerS')),
       tubeLeakFlowKgPerS: readOptionalNumber(table, componentPath(vessel, 'tubeLeakFlowKgPerS')),
+      reactorCoolantFlowKgPerS: sumComponentNumber(table, kernel.reactorCoolantPumps, 'loopFlowKgPerS'),
+      runningReactorCoolantPumpCount: countComponentBoolean(table, kernel.reactorCoolantPumps, 'running', true),
+      minReactorCoolantPumpSpeedFraction: minimum(valuesFor(table, kernel.reactorCoolantPumps, 'speedFraction')),
     },
     secondary: {
       liquidInventoryKg: sumComponentNumber(table, kernel.steamGenerators, 'secondaryInventoryKg'),
@@ -208,6 +281,23 @@ export const evaluatePwrTransientKernel = (
       heatTransferMw: heatTransfer,
       steamOutflowKgPerS: sumComponentNumber(table, kernel.steamGenerators, 'steamOutflowKgPerS'),
       feedwaterFlowKgPerS: sumComponentNumber(table, kernel.steamGenerators, 'feedwaterFlowKgPerS'),
+      feedwaterTankInventoryKg: readOptionalNumber(table, componentPath(kernel.feedwaterTank, 'inventoryKg')),
+      feedwaterTankLevelPercent: readOptionalNumber(table, componentPath(kernel.feedwaterTank, 'levelPercent')),
+      feedwaterTankAvailableFlowKgPerS: readOptionalNumber(table, componentPath(kernel.feedwaterTank, 'availableOutletFlowKgPerS')),
+      auxFeedwaterFlowKgPerS: sumComponentNumber(table, kernel.auxFeedwaterPumps, 'flowKgPerS'),
+      auxFeedwaterTankInventoryKg: readOptionalNumber(table, componentPath(kernel.auxFeedwaterTank, 'inventoryKg')),
+      auxFeedwaterTankLevelPercent: readOptionalNumber(table, componentPath(kernel.auxFeedwaterTank, 'levelPercent')),
+      auxFeedwaterTankAvailableFlowKgPerS: readOptionalNumber(table, componentPath(kernel.auxFeedwaterTank, 'availableOutletFlowKgPerS')),
+    },
+    balanceOfPlant: {
+      turbineElectricMw: readOptionalNumber(table, componentPath(kernel.turbine, 'electricMw')),
+      turbineSteamFlowKgPerS: readOptionalNumber(table, componentPath(kernel.turbine, 'steamFlowKgPerS')),
+      turbineSteamAvailabilityFraction: readOptionalNumber(table, componentPath(kernel.turbine, 'steamAvailabilityFraction')),
+      condenserBackPressurePa: readOptionalNumber(table, componentPath(kernel.condenser, 'backPressurePa')),
+      condenserHeatRejectedMw: readOptionalNumber(table, componentPath(kernel.condenser, 'heatRejectedMw')),
+      condenserCondensateInventoryKg: readOptionalNumber(table, componentPath(kernel.condenser, 'condensateInventoryKg')),
+      condenserCondensateLevelPercent: readOptionalNumber(table, componentPath(kernel.condenser, 'condensateLevelPercent')),
+      condenserCoolingWaterAvailabilityFraction: readOptionalNumber(table, componentPath(kernel.condenser, 'coolingWaterAvailabilityFraction')),
     },
     containment: {
       pressureMPa: readOptionalNumber(table, componentPath(containment, 'pressureMPa')),
@@ -233,6 +323,18 @@ export const evaluatePwrTransientKernel = (
       runningDieselCount: kernel.diesels.filter(component =>
         readOptionalBoolean(table, componentVariablePath(component, 'running')) === true
       ).length,
+    },
+    electrical: {
+      busCount: kernel.electricalBuses.length,
+      energizedBusCount: countComponentBoolean(table, kernel.electricalBuses, 'energized', true),
+      deenergizedBusCount: countComponentBoolean(table, kernel.electricalBuses, 'energized', false),
+      degradedBusCount: countComponentBoolean(table, kernel.electricalBuses, 'degraded', true),
+      minBusVoltageFraction: minimum(busVoltageValues),
+      minSafetyBusVoltageFraction: minimum(safetyBusVoltageValues),
+      totalServedLoadMw: sumComponentNumber(table, kernel.electricalLoads, 'servedMw'),
+      totalDemandLoadMw: sumComponentNumber(table, kernel.electricalLoads, 'demandMw'),
+      minLoadServedFraction: minimum(loadServedFractionValues),
+      unservedLoadCount: loadServedFractionValues.filter(fraction => fraction < 0.99).length,
     },
     conservation: {
       maxSteamGeneratorLiquidResidualKg: maxAbs(valuesFor(table, kernel.steamGenerators, 'secondaryInventoryBalanceResidualKg')),

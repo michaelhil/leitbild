@@ -163,15 +163,26 @@ describe('process plant simulation provider', () => {
     })
     expect((transientDiagnostics.result as {
       readonly diagnostics: {
-        readonly primary: { readonly inventoryKg: number | null }
-        readonly secondary: { readonly heatTransferMw: number }
+        readonly primary: { readonly inventoryKg: number | null; readonly reactorCoolantFlowKgPerS: number }
+        readonly secondary: { readonly heatTransferMw: number; readonly feedwaterTankInventoryKg: number | null }
+        readonly balanceOfPlant: { readonly turbineElectricMw: number | null }
+        readonly electrical: { readonly minSafetyBusVoltageFraction: number | null; readonly unservedLoadCount: number }
       }
     }).diagnostics.primary.inventoryKg).toBeGreaterThan(0)
-    expect((transientDiagnostics.result as {
+    const diagnostics = (transientDiagnostics.result as {
       readonly diagnostics: {
-        readonly secondary: { readonly heatTransferMw: number }
+        readonly primary: { readonly reactorCoolantFlowKgPerS: number }
+        readonly secondary: { readonly heatTransferMw: number; readonly feedwaterTankInventoryKg: number | null }
+        readonly balanceOfPlant: { readonly turbineElectricMw: number | null }
+        readonly electrical: { readonly minSafetyBusVoltageFraction: number | null; readonly unservedLoadCount: number }
       }
-    }).diagnostics.secondary.heatTransferMw).toBeGreaterThanOrEqual(0)
+    }).diagnostics
+    expect(diagnostics.primary.reactorCoolantFlowKgPerS).toBeGreaterThan(0)
+    expect(diagnostics.secondary.heatTransferMw).toBeGreaterThanOrEqual(0)
+    expect(diagnostics.secondary.feedwaterTankInventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.balanceOfPlant.turbineElectricMw).toBeGreaterThan(0)
+    expect(diagnostics.electrical.minSafetyBusVoltageFraction).toBeGreaterThanOrEqual(0)
+    expect(diagnostics.electrical.unservedLoadCount).toBeGreaterThanOrEqual(0)
 
     const railProfile = await connection.query(query('process-plant.display-profile.read', {
       systemId: 'plant',
@@ -227,6 +238,9 @@ describe('process plant simulation provider', () => {
     expect(compiled.widgets.map(widget => widget.id)).toContain('reactor-vessel')
     expect(compiled.paths.map(path => path.id)).toContain('main-steam-to-turbine')
     expect(compiled.bindingPaths).toContain('core.totalThermalPowerMw')
+    expect(compiled.bindingPaths).toContain('sgA.tubeCoverageFraction')
+    expect(compiled.bindingPaths).toContain('condenser.coolingWaterAvailabilityFraction')
+    expect(compiled.bindingPaths).toContain('auxFeedwaterTank.availableOutletFlowKgPerS')
 
     const snapshot = await connection.query(query('process-plant.surface.snapshot', {
       systemId: 'plant',
@@ -1523,6 +1537,9 @@ describe('process plant simulation provider', () => {
         activeAlarmCount: 0,
         activeTripCount: 0,
         failureCount: 0,
+        firstOutCount: 0,
+        activeHighestSeverity: null,
+        activeFirstOut: [],
       },
     })
 

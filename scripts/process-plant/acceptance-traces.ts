@@ -5,8 +5,10 @@ import {
   createProcessPlantMultiSystemTestbed,
   processPlantPressurizedWaterReactorGraphRef,
   type ProcessPlantMultiSystemConfig,
+  type ProcessPlantMultiSystemSnapshot,
   type ProcessPlantScheduledAction,
   type ProcessPlantTelemetrySeries,
+  type PwrTransientDiagnostics,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
 
@@ -95,6 +97,10 @@ const telemetryVariables = [
   'condenser.coolingWaterOutletTemperatureC',
   'condenser.coolingWaterHeatCapacityMw',
   'condenser.coolingWaterAvailabilityFraction',
+  'safetyBusA.voltageFraction',
+  'safetyBusB.voltageFraction',
+  'plantControlsLoadA.servedFraction',
+  'plantControlsLoadB.servedFraction',
 ] as const satisfies ReadonlyArray<string>
 
 type CaseId =
@@ -103,6 +109,7 @@ type CaseId =
   | 'loss-feedwater'
   | 'loca-safety-injection'
   | 'aux-feedwater-recovery'
+  | 'loss-offsite-power'
   | 'rcp-trip'
   | 'relief-open'
   | 'main-steam-safety-release'
@@ -224,6 +231,32 @@ const cases: ReadonlyArray<AcceptanceCase> = [
         type: 'setVariable',
         path: variablePath('auxFeedwaterValveA.positionFraction'),
         value: 1,
+      },
+    ],
+  },
+  {
+    id: 'loss-offsite-power',
+    title: 'Loss of Offsite Power',
+    description: 'Offsite breakers open, emergency diesels recover safety buses, and essential loads are served.',
+    actions: [
+      {
+        id: 'loop',
+        atMs: 60_000,
+        type: 'lossOfOffsitePower',
+      },
+      {
+        id: 'start-diesel-a',
+        atMs: 75_000,
+        type: 'setVariable',
+        path: variablePath('dieselGeneratorA.startCommand'),
+        value: true,
+      },
+      {
+        id: 'start-diesel-b',
+        atMs: 75_000,
+        type: 'setVariable',
+        path: variablePath('dieselGeneratorB.startCommand'),
+        value: true,
       },
     ],
   },
@@ -510,6 +543,10 @@ const nonnegativeTelemetryPaths: ReadonlySet<string> = new Set([
   'condenser.coolingWaterOutletTemperatureC',
   'condenser.coolingWaterHeatCapacityMw',
   'condenser.coolingWaterAvailabilityFraction',
+  'safetyBusA.voltageFraction',
+  'safetyBusB.voltageFraction',
+  'plantControlsLoadA.servedFraction',
+  'plantControlsLoadB.servedFraction',
 ])
 
 const evaluateTelemetryIntegrity = (
@@ -660,6 +697,17 @@ const evaluateCase = (
       check(caseId, 'auxiliary feedwater keeps SG level bounded above dryout', afterLevel > 12, `endLevel=${afterLevel.toFixed(1)}%`),
     ]
   }
+  if (caseId === 'loss-offsite-power') {
+    const minSafetyBusA = minAfter(telemetry, 'safetyBusA.voltageFraction', 120_000)
+    const minSafetyBusB = minAfter(telemetry, 'safetyBusB.voltageFraction', 120_000)
+    const minLoadA = minAfter(telemetry, 'plantControlsLoadA.servedFraction', 120_000)
+    const minLoadB = minAfter(telemetry, 'plantControlsLoadB.servedFraction', 120_000)
+    return [
+      check(caseId, 'LOOP recovers safety bus A voltage after diesel start', minSafetyBusA > 0.9, `minBusAAfter120s=${minSafetyBusA.toFixed(2)}`),
+      check(caseId, 'LOOP recovers safety bus B voltage after diesel start', minSafetyBusB > 0.9, `minBusBAfter120s=${minSafetyBusB.toFixed(2)}`),
+      check(caseId, 'LOOP keeps essential controls loads served after recovery', minLoadA > 0.99 && minLoadB > 0.99, `loadA=${minLoadA.toFixed(2)} loadB=${minLoadB.toFixed(2)}`),
+    ]
+  }
   if (caseId === 'rcp-trip') {
     const beforeFlow = valueAtOrAfter(telemetry, 'rcpA.loopFlowKgPerS', 55_000)
     const shortAfterFlow = valueAtOrAfter(telemetry, 'rcpA.loopFlowKgPerS', 65_000)
@@ -734,6 +782,74 @@ const evaluateCase = (
     check(caseId, 'mixed transient lowers the tripped loop flow', afterFlow < beforeFlow * 0.8, `before=${beforeFlow.toFixed(0)} end=${afterFlow.toFixed(0)}kg/s`),
     check(caseId, 'mixed transient lowers turbine output after load reduction', afterElectric < beforeElectric * 0.75, `before=${beforeElectric.toFixed(1)} end=${afterElectric.toFixed(1)}MW`),
   ]
+}
+
+const positiveOrZero = (value: number | null): number =>
+  value ?? 0
+
+const evaluateKernelDiagnostics = (
+  caseId: CaseId,
+  diagnostics: PwrTransientDiagnostics,
+): ReadonlyArray<AcceptanceCheck> => {
+  const common = [
+    check(caseId, 'PWR transient diagnostics kernel is active', diagnostics.active, `active=${String(diagnostics.active)}`),
+    check(caseId, 'kernel sees the four-loop PWR component family', diagnostics.componentCounts.steamGenerators === 4 && diagnostics.componentCounts.safetyBuses === 2, `sg=${diagnostics.componentCounts.steamGenerators} safetyBus=${diagnostics.componentCounts.safetyBuses}`),
+    check(caseId, 'kernel reports finite balance residuals', Number.isFinite(diagnostics.conservation.maxSteamGeneratorLiquidResidualKg) && Number.isFinite(diagnostics.conservation.maxSteamGeneratorSteamResidualKg), `sgLiquid=${diagnostics.conservation.maxSteamGeneratorLiquidResidualKg.toExponential(2)} sgSteam=${diagnostics.conservation.maxSteamGeneratorSteamResidualKg.toExponential(2)}`),
+  ]
+  if (caseId === 'baseline') {
+    return [
+      ...common,
+      check(caseId, 'baseline kernel reports all reactor coolant pumps running', diagnostics.primary.runningReactorCoolantPumpCount === 4, `runningRcp=${diagnostics.primary.runningReactorCoolantPumpCount}`),
+      check(caseId, 'baseline kernel reports served electrical loads after solve', diagnostics.electrical.unservedLoadCount === 0, `unserved=${diagnostics.electrical.unservedLoadCount}`),
+    ]
+  }
+  if (caseId === 'sgtr') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports SGTR primary-to-secondary leak flow', positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS) > 0.1, `tubeLeak=${positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS).toFixed(2)}kg/s`),
+    ]
+  }
+  if (caseId === 'loss-feedwater') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports reduced total feedwater flow', diagnostics.secondary.feedwaterFlowKgPerS < 500, `feedwater=${diagnostics.secondary.feedwaterFlowKgPerS.toFixed(1)}kg/s`),
+      check(caseId, 'kernel reports declining SG level family', positiveOrZero(diagnostics.secondary.minLevelPercent) < 55, `minLevel=${positiveOrZero(diagnostics.secondary.minLevelPercent).toFixed(1)}%`),
+    ]
+  }
+  if (caseId === 'loca-safety-injection') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports primary leak response', positiveOrZero(diagnostics.primary.leakFlowKgPerS) > 10 && positiveOrZero(diagnostics.primary.inventoryFraction) < 1, `leak=${positiveOrZero(diagnostics.primary.leakFlowKgPerS).toFixed(1)} inventoryFraction=${positiveOrZero(diagnostics.primary.inventoryFraction).toFixed(3)}`),
+      check(caseId, 'kernel reports containment mass/radiation response', positiveOrZero(diagnostics.containment.sumpInventoryKg) > 5_000 && positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH) > 0.02, `sump=${positiveOrZero(diagnostics.containment.sumpInventoryKg).toFixed(0)} radiation=${positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH).toFixed(3)}`),
+    ]
+  }
+  if (caseId === 'aux-feedwater-recovery') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports auxiliary feedwater flow and reserve', diagnostics.secondary.auxFeedwaterFlowKgPerS > 20 && positiveOrZero(diagnostics.secondary.auxFeedwaterTankInventoryKg) > 0, `auxFlow=${diagnostics.secondary.auxFeedwaterFlowKgPerS.toFixed(1)} auxTank=${positiveOrZero(diagnostics.secondary.auxFeedwaterTankInventoryKg).toFixed(0)}kg`),
+    ]
+  }
+  if (caseId === 'loss-offsite-power') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports diesel-backed safety bus recovery', diagnostics.safetySystems.runningDieselCount === 2 && diagnostics.safetySystems.deenergizedSafetyBusCount === 0, `diesels=${diagnostics.safetySystems.runningDieselCount} deenergizedSafetyBuses=${diagnostics.safetySystems.deenergizedSafetyBusCount}`),
+      check(caseId, 'kernel reports essential loads served after LOOP recovery', diagnostics.electrical.unservedLoadCount === 0 && positiveOrZero(diagnostics.electrical.minSafetyBusVoltageFraction) > 0, `unserved=${diagnostics.electrical.unservedLoadCount} minSafetyVoltage=${positiveOrZero(diagnostics.electrical.minSafetyBusVoltageFraction).toFixed(2)}`),
+    ]
+  }
+  if (caseId === 'rcp-trip') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports one reactor coolant pump tripped', diagnostics.primary.runningReactorCoolantPumpCount === 3, `runningRcp=${diagnostics.primary.runningReactorCoolantPumpCount}`),
+      check(caseId, 'kernel reports remaining primary loop circulation', diagnostics.primary.reactorCoolantFlowKgPerS > 0, `rcpFlow=${diagnostics.primary.reactorCoolantFlowKgPerS.toFixed(0)}kg/s`),
+    ]
+  }
+  if (caseId === 'condenser-backpressure') {
+    return [
+      ...common,
+      check(caseId, 'kernel reports condenser backpressure and turbine derate', positiveOrZero(diagnostics.balanceOfPlant.condenserBackPressurePa) > 20_000 && positiveOrZero(diagnostics.balanceOfPlant.turbineElectricMw) < 900, `backPressure=${positiveOrZero(diagnostics.balanceOfPlant.condenserBackPressurePa).toFixed(0)}Pa turbine=${positiveOrZero(diagnostics.balanceOfPlant.turbineElectricMw).toFixed(1)}MW`),
+    ]
+  }
+  return common
 }
 
 const svgEscape = (value: string): string =>
@@ -811,7 +927,7 @@ const renderPanel = (
 }
 
 const renderSvg = (
-  traces: ReadonlyArray<{ readonly systemId: string; readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries> }>,
+  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
   checks: ReadonlyArray<AcceptanceCheck>,
 ): string => {
   const columns = 3
@@ -832,7 +948,7 @@ const renderSvg = (
 }
 
 const csvRowsFor = (
-  traces: ReadonlyArray<{ readonly systemId: string; readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries> }>,
+  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
 ): ReadonlyArray<string> => {
   const rows = ['case,path,elapsedMs,value,canonicalValue,unit']
   for (const trace of traces) {
@@ -855,6 +971,7 @@ const main = async (): Promise<void> => {
     if (!trace.telemetry) throw new Error(`acceptance trace missing telemetry for ${trace.systemId}`)
     return [
       ...evaluateCase(trace.systemId as CaseId, trace.telemetry),
+      ...evaluateKernelDiagnostics(trace.systemId as CaseId, trace.pwrTransientDiagnostics),
       ...evaluateTelemetryIntegrity(trace.systemId as CaseId, trace.telemetry),
     ]
   })

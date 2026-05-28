@@ -27,8 +27,8 @@ Deepen the existing component implementations rather than replacing the graph ru
 - Reactor vessel now reports a primary inventory balance residual.
 - Steam generators report tube coverage, uncovered tube fraction, and available heat-transfer fraction; uncovered tubes reduce heat transfer.
 - Reactor core reports cooling availability, heat-removal deficit, and fuel heatup rate; reduced primary flow increases heatup.
-- Transient diagnostics include primary, secondary, containment, core, safety-system, and conservation summaries.
-- Runtime transient query results include a small I&C summary when protection is configured.
+- Transient diagnostics include primary, secondary, balance-of-plant, containment, core, safety-system, electrical, and conservation summaries.
+- Runtime transient query results include active counts, highest severity, active first-out annunciators, and compact active lifecycle summaries when protection is configured.
 
 Add typed scheduled PWR fault actions:
 

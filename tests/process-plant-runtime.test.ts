@@ -161,9 +161,20 @@ describe('process plant runtime', () => {
     })
     expect(diagnostics.primary.inventoryKg).toBeGreaterThan(0)
     expect(diagnostics.primary.inventoryFraction).toBeCloseTo(1, 6)
+    expect(diagnostics.primary.reactorCoolantFlowKgPerS).toBeGreaterThan(0)
+    expect(diagnostics.primary.runningReactorCoolantPumpCount).toBe(4)
+    expect(diagnostics.primary.minReactorCoolantPumpSpeedFraction).toBeCloseTo(1, 6)
     expect(diagnostics.secondary.liquidInventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.secondary.feedwaterTankInventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.secondary.feedwaterTankAvailableFlowKgPerS).toBeGreaterThan(0)
+    expect(diagnostics.secondary.auxFeedwaterTankInventoryKg).toBeGreaterThan(0)
     expect(diagnostics.core.totalThermalPowerMw).toBeGreaterThan(0)
     expect(diagnostics.core.heatRemovalDeficitMw).toBeGreaterThanOrEqual(0)
+    expect(diagnostics.balanceOfPlant.turbineElectricMw).toBeGreaterThan(0)
+    expect(diagnostics.balanceOfPlant.condenserHeatRejectedMw).toBeGreaterThanOrEqual(0)
+    expect(diagnostics.electrical.busCount).toBeGreaterThanOrEqual(2)
+    expect(diagnostics.electrical.minSafetyBusVoltageFraction).toBeGreaterThanOrEqual(0)
+    expect(diagnostics.electrical.unservedLoadCount).toBeGreaterThanOrEqual(0)
     expect(snapshot.variables.find(variable => variable.path === valueOf('core.powerMw'))).toMatchObject({
       value: 2890,
       quantity: 'power',
@@ -1226,6 +1237,11 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.levelPercent'))))
       .toBeGreaterThan(Number(runtime.readVariable(valueOf('sgA.collapsedLevelPercent'))))
     expect(Number(runtime.readVariable(valueOf('sgA.voidFraction')))).toBeGreaterThan(0)
+
+    const diagnostics = runtime.pwrTransientDiagnostics()
+    expect(diagnostics.secondary.feedwaterFlowKgPerS).toBeLessThan(initialFeedwaterFlow * 4)
+    expect(diagnostics.secondary.feedwaterTankInventoryKg).toBeGreaterThan(0)
+    expect(diagnostics.balanceOfPlant.turbineSteamFlowKgPerS).toBeGreaterThanOrEqual(0)
   })
 
   test('low steam generator level uncovers tube bundle and degrades heat transfer', () => {
@@ -1447,7 +1463,11 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
     expect(Number(runtime.readVariable(valueOf('core.coreCoolingAvailabilityFraction')))).toBeLessThan(initialCoolingAvailability)
     expect(Number(runtime.readVariable(valueOf('core.coreHeatRemovalDeficitMw')))).toBeGreaterThan(0)
-    expect(runtime.pwrTransientDiagnostics().core.coolingAvailabilityFraction).toBeLessThan(initialCoolingAvailability)
+    const diagnostics = runtime.pwrTransientDiagnostics()
+    expect(diagnostics.core.coolingAvailabilityFraction).toBeLessThan(initialCoolingAvailability)
+    expect(diagnostics.primary.runningReactorCoolantPumpCount).toBe(3)
+    expect(diagnostics.primary.reactorCoolantFlowKgPerS).toBeLessThan(initialFlow * 4)
+    expect(diagnostics.primary.minReactorCoolantPumpSpeedFraction).toBeGreaterThanOrEqual(0)
     expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(100)
   })
 
@@ -1885,5 +1905,9 @@ describe('process plant runtime', () => {
     expect(runtime.readVariable(valueOf('dieselGeneratorB.running'))).toBe(true)
     expect(diagnostics.safetySystems.deenergizedSafetyBusCount).toBe(0)
     expect(diagnostics.safetySystems.runningDieselCount).toBe(2)
+    expect(diagnostics.electrical.deenergizedBusCount).toBe(0)
+    expect(diagnostics.electrical.minSafetyBusVoltageFraction).toBeGreaterThan(0)
+    expect(diagnostics.electrical.totalDemandLoadMw).toBeGreaterThan(0)
+    expect(diagnostics.electrical.unservedLoadCount).toBe(0)
   })
 })

@@ -3,15 +3,15 @@
   "durationMs": 240000,
   "stepMs": 1000,
   "sampleIntervalMs": 1000,
-  "caseCount": 11,
-  "systemCount": 11,
-  "componentCount": 737,
-  "linkCount": 1034,
-  "variableCount": 9504,
-  "checkCount": 126,
+  "caseCount": 12,
+  "systemCount": 12,
+  "componentCount": 804,
+  "linkCount": 1128,
+  "variableCount": 10368,
+  "checkCount": 186,
   "failedCheckCount": 0,
-  "wallMs": 4364.845666,
-  "realtimeFactor": 54.98476197439967,
+  "wallMs": 9785.560166,
+  "realtimeFactor": 24.52593371546391,
   "minRealtimeFactor": 20,
   "checks": [
     {
@@ -31,6 +31,36 @@
       "description": "baseline does not drift violently",
       "passed": true,
       "details": "start=2781.6 end=2701.2MW"
+    },
+    {
+      "caseId": "baseline",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "baseline",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "baseline",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=9.15e-13 sgSteam=3.81e-13"
+    },
+    {
+      "caseId": "baseline",
+      "description": "baseline kernel reports all reactor coolant pumps running",
+      "passed": true,
+      "details": "runningRcp=4"
+    },
+    {
+      "caseId": "baseline",
+      "description": "baseline kernel reports served electrical loads after solve",
+      "passed": true,
+      "details": "unserved=0"
     },
     {
       "caseId": "baseline",
@@ -94,6 +124,30 @@
     },
     {
       "caseId": "sgtr",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.44e-12 sgSteam=1.65e-12"
+    },
+    {
+      "caseId": "sgtr",
+      "description": "kernel reports SGTR primary-to-secondary leak flow",
+      "passed": true,
+      "details": "tubeLeak=16.88kg/s"
+    },
+    {
+      "caseId": "sgtr",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -151,6 +205,36 @@
       "description": "loss of feedwater removes main feed contribution",
       "passed": true,
       "details": "maxFeedAfter120s=0.0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=3.93e-13 sgSteam=5.57e-13"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "kernel reports reduced total feedwater flow",
+      "passed": true,
+      "details": "feedwater=0.0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater",
+      "description": "kernel reports declining SG level family",
+      "passed": true,
+      "details": "minLevel=18.5%"
     },
     {
       "caseId": "loss-feedwater",
@@ -244,6 +328,36 @@
     },
     {
       "caseId": "loca-safety-injection",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.11e-12 sgSteam=1.21e-12"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "kernel reports primary leak response",
+      "passed": true,
+      "details": "leak=106.2 inventoryFraction=0.783"
+    },
+    {
+      "caseId": "loca-safety-injection",
+      "description": "kernel reports containment mass/radiation response",
+      "passed": true,
+      "details": "sump=7325 radiation=0.288"
+    },
+    {
+      "caseId": "loca-safety-injection",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -310,6 +424,30 @@
     },
     {
       "caseId": "aux-feedwater-recovery",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "aux-feedwater-recovery",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "aux-feedwater-recovery",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.64e-12 sgSteam=5.49e-13"
+    },
+    {
+      "caseId": "aux-feedwater-recovery",
+      "description": "kernel reports auxiliary feedwater flow and reserve",
+      "passed": true,
+      "details": "auxFlow=340.0 auxTank=315137kg"
+    },
+    {
+      "caseId": "aux-feedwater-recovery",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -357,6 +495,102 @@
       "details": "feed=1.14e-13kg/s aux=0.00e+0kg/s"
     },
     {
+      "caseId": "loss-offsite-power",
+      "description": "LOOP recovers safety bus A voltage after diesel start",
+      "passed": true,
+      "details": "minBusAAfter120s=1.00"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "LOOP recovers safety bus B voltage after diesel start",
+      "passed": true,
+      "details": "minBusBAfter120s=1.00"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "LOOP keeps essential controls loads served after recovery",
+      "passed": true,
+      "details": "loadA=1.00 loadB=1.00"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=8.30e-13 sgSteam=8.70e-13"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "kernel reports diesel-backed safety bus recovery",
+      "passed": true,
+      "details": "diesels=2 deenergizedSafetyBuses=0"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "kernel reports essential loads served after LOOP recovery",
+      "passed": true,
+      "details": "unserved=0 minSafetyVoltage=1.00"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "all acceptance telemetry samples are finite numbers",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "nonnegative physical telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "reactor fission power alias remains exact",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "reactor thermal power equals fission plus decay heat",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MW"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "reactor vessel pressure bias equals compressibility plus thermal expansion",
+      "passed": true,
+      "details": "maxMismatch=0.00e+0MPa"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "steam generator liquid and steam balances remain conservative",
+      "passed": true,
+      "details": "inventory=1.81e-12kg steam=1.81e-12kg steamMass=2.14e+4kg energy=1.14e-13MW"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "pressurizer water and steam balances remain conservative",
+      "passed": true,
+      "details": "water=0.00e+0kg steam=0.00e+0kg"
+    },
+    {
+      "caseId": "loss-offsite-power",
+      "description": "feedwater and aux feedwater headers conserve reachable flow",
+      "passed": true,
+      "details": "feed=1.14e-13kg/s aux=0.00e+0kg/s"
+    },
+    {
       "caseId": "rcp-trip",
       "description": "RCP trip begins a coastdown, not an instant zero",
       "passed": true,
@@ -367,6 +601,36 @@
       "description": "RCP trip materially lowers loop flow",
       "passed": true,
       "details": "before=3946 end=0kg/s"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.56e-12 sgSteam=8.87e-13"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "kernel reports one reactor coolant pump tripped",
+      "passed": true,
+      "details": "runningRcp=3"
+    },
+    {
+      "caseId": "rcp-trip",
+      "description": "kernel reports remaining primary loop circulation",
+      "passed": true,
+      "details": "rcpFlow=11838kg/s"
     },
     {
       "caseId": "rcp-trip",
@@ -427,6 +691,24 @@
       "description": "relief valve reduces pressurizer steam mass tendency",
       "passed": true,
       "details": "before=1800.0 end=90.0kg"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "relief-open",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=9.15e-13 sgSteam=3.81e-13"
     },
     {
       "caseId": "relief-open",
@@ -508,6 +790,24 @@
     },
     {
       "caseId": "main-steam-safety-release",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "main-steam-safety-release",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.83e-13 sgSteam=1.79e+1"
+    },
+    {
+      "caseId": "main-steam-safety-release",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -586,6 +886,24 @@
     },
     {
       "caseId": "load-reduction",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "load-reduction",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=1.68e-12 sgSteam=1.47e+1"
+    },
+    {
+      "caseId": "load-reduction",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -658,6 +976,30 @@
     },
     {
       "caseId": "condenser-backpressure",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "condenser-backpressure",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "condenser-backpressure",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=3.58e-12 sgSteam=1.68e+1"
+    },
+    {
+      "caseId": "condenser-backpressure",
+      "description": "kernel reports condenser backpressure and turbine derate",
+      "passed": true,
+      "details": "backPressure=42817Pa turbine=349.4MW"
+    },
+    {
+      "caseId": "condenser-backpressure",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -724,6 +1066,24 @@
     },
     {
       "caseId": "mixed-transient",
+      "description": "PWR transient diagnostics kernel is active",
+      "passed": true,
+      "details": "active=true"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "kernel sees the four-loop PWR component family",
+      "passed": true,
+      "details": "sg=4 safetyBus=2"
+    },
+    {
+      "caseId": "mixed-transient",
+      "description": "kernel reports finite balance residuals",
+      "passed": true,
+      "details": "sgLiquid=7.99e+0 sgSteam=9.95e-13"
+    },
+    {
+      "caseId": "mixed-transient",
       "description": "all acceptance telemetry samples are finite numbers",
       "passed": true,
       "details": "all finite"
@@ -776,7 +1136,7 @@
       "caseId": "baseline",
       "description": "multi-case acceptance run remains comfortably faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=55.0x min=20.0x"
+      "details": "realtimeFactor=24.5x min=20.0x"
     }
   ],
   "artifacts": {

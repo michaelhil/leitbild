@@ -28,13 +28,15 @@ Use the pack query `process-plant.transient.diagnostics` with `{ "systemId": "..
 
 The response summarizes:
 
-- **Primary**: inventory, inventory fraction, pressure, pressure bias, boundary leak, safety injection, and SG tube leak flow
-- **Secondary**: SG inventory, steam mass, level, voiding, tube coverage, heat transfer, steam outflow, and feedwater flow
+- **Primary**: inventory, inventory fraction, pressure, pressure bias, boundary leak, safety injection, SG tube leak flow, aggregate reactor-coolant flow, and running RCP count
+- **Secondary**: SG inventory, steam mass, level, voiding, tube coverage, heat transfer, steam outflow, feedwater flow, feedwater tank state, and auxiliary-feedwater reserve/flow
+- **Balance of plant**: turbine output/steam use, condenser backpressure, heat rejection, hotwell inventory, and cooling-water availability
 - **Containment**: pressure, sump inventory, incoming release, radiation source term
 - **Core**: fission power, decay heat, total thermal power, cooling availability, heat-removal deficit, fuel heatup rate
 - **Safety systems**: accumulator inventory/outflow, safety bus state, running diesels
+- **Electrical**: bus voltage/energization, degraded bus count, served/demand load, and unserved load count
 - **Conservation**: primary inventory residual, SG liquid/steam residuals, SG boiling residuals, pressurizer residuals
-- **I&C**: configured state plus active alarm/trip/rule/failure counts when protection is configured
+- **I&C**: configured state, active alarm/trip/rule/failure counts, highest active severity, active first-out annunciators, and compact active lifecycle summaries when protection is configured
 
 This is the recommended overview/query surface for PWR operations displays, procedure context, AI context, and scenario acceptance checks.
 

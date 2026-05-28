@@ -22,6 +22,7 @@ const sgWidget = (loop: LoopLetter, x: number, rank: number) => {
       steam: { label: 'Steam', path: `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`, digits: 0 },
       feedwater: { label: 'FW', path: `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`, digits: 0 },
       heat: { label: 'Heat', path: `sg${loop}.heatTransferMw`, digits: 0 },
+      tubeCoverage: { label: 'Tube cov', path: `sg${loop}.tubeCoverageFraction`, digits: 2, display: 'percent' },
       radiation: { label: 'Rad', path: `sg${loop}.secondaryRadiationMSvPerH`, digits: 2 },
     },
     ports: {
@@ -193,6 +194,8 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
         electricOutput: { label: 'Electric output', path: 'turbine.electricMw', digits: 0 },
         reactivity: { label: 'Reactivity', path: 'core.effectiveReactivityPcm', digits: 0 },
         pzrPressure: { label: 'RCS pressure', path: 'pressurizer.pressureMPa', digits: 2 },
+        cooling: { label: 'Core cooling', path: 'core.coreCoolingAvailabilityFraction', digits: 2, display: 'percent' },
+        heatDeficit: { label: 'Heat deficit', path: 'core.coreHeatRemovalDeficitMw', digits: 0 },
       },
       style: { tone: 'primary' },
     },
@@ -209,6 +212,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
         power: { label: 'Core power', path: 'core.totalThermalPowerMw', digits: 0 },
         coolant: { label: 'Coolant temp', path: 'vessel.meanPrimaryCoolantTemperatureC', digits: 0 },
         inventory: { label: 'Inventory', path: 'vessel.primaryCoolantInventoryKg', digits: 0 },
+        cooling: { label: 'Cooling', path: 'core.coreCoolingAvailabilityFraction', digits: 2, display: 'percent' },
       },
       ports: {
         hotLegA: { x: 196, y: 74 },
@@ -273,6 +277,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       binds: {
         output: { label: 'Output', path: 'turbine.electricMw', digits: 0 },
         steam: { label: 'Steam use', path: 'turbine.steamFlowKgPerS', digits: 0 },
+        availability: { label: 'Steam avail', path: 'turbine.steamAvailabilityFraction', digits: 2, display: 'percent' },
       },
       ports: { steamIn: { x: 0, y: 60 }, exhaust: { x: 59, y: 118 } },
       style: { tone: 'secondary' },
@@ -290,6 +295,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
         level: { label: 'Hotwell', path: 'condenser.condensateLevelPercent', digits: 0, display: 'percent' },
         backPressure: { label: 'Backpressure', path: 'condenser.backPressurePa', digits: 0 },
         heatRejected: { label: 'Heat rejected', path: 'condenser.heatRejectedMw', digits: 0 },
+        cooling: { label: 'CW avail', path: 'condenser.coolingWaterAvailabilityFraction', digits: 2, display: 'percent' },
       },
       ports: { steamIn: { x: 107, y: 0 }, condensateOut: { x: 28, y: 132 } },
       style: { tone: 'secondary' },
@@ -306,6 +312,8 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       binds: {
         tankLevel: { label: 'Tank', path: 'feedwaterTank.levelPercent', digits: 0, display: 'percent' },
         availableFlow: { label: 'Available', path: 'feedwaterTank.availableOutletFlowKgPerS', digits: 0 },
+        auxTank: { label: 'AFW tank', path: 'auxFeedwaterTank.levelPercent', digits: 0, display: 'percent' },
+        auxAvailable: { label: 'AFW avail', path: 'auxFeedwaterTank.availableOutletFlowKgPerS', digits: 0 },
       },
       ports: {
         outA: { x: 98, y: 0 },
@@ -326,6 +334,8 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       binds: {
         busA: { label: 'Bus A', path: 'safetyBusA.voltageFraction', digits: 2, display: 'percent' },
         busB: { label: 'Bus B', path: 'safetyBusB.voltageFraction', digits: 2, display: 'percent' },
+        loadA: { label: 'Load A', path: 'safetyBusA.servedLoadMw', digits: 1 },
+        loadB: { label: 'Load B', path: 'safetyBusB.servedLoadMw', digits: 1 },
       },
       style: { tone: 'support' },
     },
