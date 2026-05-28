@@ -79,6 +79,11 @@ const numericTag = (tags: Readonly<Record<string, string>>, key: string): number
   return Number.isFinite(parsed) ? parsed : null
 }
 
+const positiveNumericTag = (tags: Readonly<Record<string, string>>, key: string): number | null => {
+  const parsed = numericTag(tags, key)
+  return parsed !== null && parsed > 0 ? parsed : null
+}
+
 const voltageKv = (tags: Readonly<Record<string, string>>): ReadonlyArray<number> => {
   const value = tags.voltage ?? ''
   const parsed = value
@@ -176,12 +181,12 @@ const buildProperties = (
     name: tags.name ?? tags.ref ?? null,
     operator: tags.operator ?? tags.owner ?? null,
     voltageKv: [...voltages],
-    frequencyHz: numericTag(tags, 'frequency'),
-    circuits: numericTag(tags, 'circuits'),
-    cables: numericTag(tags, 'cables'),
+    frequencyHz: positiveNumericTag(tags, 'frequency'),
+    circuits: positiveNumericTag(tags, 'circuits'),
+    cables: positiveNumericTag(tags, 'cables'),
     power: tags.power ?? null,
     plantSource: tags['plant:source'] ?? tags['generator:source'] ?? null,
-    outputMw: numericTag(tags, 'plant:output:electricity') ?? numericTag(tags, 'generator:output:electricity') ?? numericTag(tags, 'output'),
+    outputMw: positiveNumericTag(tags, 'plant:output:electricity') ?? positiveNumericTag(tags, 'generator:output:electricity') ?? positiveNumericTag(tags, 'output'),
     geometrySource,
     propertyProvenance: hasKeyElectricalProperties ? 'observed' : 'unknown',
     confidence: confidencePenalty ? 'low' : hasKeyElectricalProperties ? 'high' : 'medium',

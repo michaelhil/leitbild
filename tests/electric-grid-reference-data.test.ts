@@ -99,6 +99,29 @@ describe('electric-grid reference data sources', () => {
     }, 'osm:overpass-power:test')).toThrow('server returned remark')
   })
 
+  test('normalises non-positive electrical numeric tags to null', () => {
+    const [feature] = normaliseOverpassPowerElements({
+      elements: [{
+        type: 'way',
+        id: 1,
+        tags: {
+          power: 'line',
+          frequency: '0',
+          circuits: '0',
+          cables: '0',
+        },
+        geometry: [
+          { lat: 59, lon: 10 },
+          { lat: 60, lon: 11 },
+        ],
+      }],
+    }, 'osm:overpass-power:test')
+
+    expect(feature?.properties.frequencyHz).toBeNull()
+    expect(feature?.properties.circuits).toBeNull()
+    expect(feature?.properties.cables).toBeNull()
+  })
+
   test('compiles reference features into an auditable node-branch graph', async () => {
     const features = normaliseOverpassPowerElements(await overpassFixture(), 'osm:overpass-power:test')
     const graph = compileGridReferenceGraph(features, { maxEndpointDistanceKm: 20 })
