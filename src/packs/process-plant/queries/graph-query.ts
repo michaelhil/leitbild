@@ -6,7 +6,7 @@ import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
-import { processPlantComponentSourcePathByKind } from '../graph/component-registry.ts'
+import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
 import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
@@ -35,59 +35,15 @@ const sourceTextFor = (sourcePath: string): string => {
   return content
 }
 
-const objectStartBefore = (source: string, index: number): number => {
-  let cursor = index
-  while (cursor >= 0) {
-    if (source[cursor] === '{') return cursor
-    cursor -= 1
-  }
-  return 0
-}
-
-const objectEndAfter = (source: string, start: number): number => {
-  let depth = 0
-  let quote: '"' | "'" | '`' | null = null
-  let escaped = false
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index]
-    if (quote) {
-      if (escaped) {
-        escaped = false
-      } else if (char === '\\') {
-        escaped = true
-      } else if (char === quote) {
-        quote = null
-      }
-      continue
-    }
-    if (char === '"' || char === "'" || char === '`') {
-      quote = char
-      continue
-    }
-    if (char === '{') depth += 1
-    if (char === '}') {
-      depth -= 1
-      if (depth === 0) return index + 1
-    }
-  }
-  return source.length
-}
-
 const componentSourceViewFor = (component: CompiledPlantGraph['components'][number]): ComponentSourceView => {
-  const sourcePath = processPlantComponentSourcePathByKind.get(component.kind)
+  const sourcePath = processPlantComponentBehaviorSourcePathByKind.get(component.kind)
   if (!sourcePath) {
     return {
       path: 'unknown',
-      content: `Component definition source not found for kind ${component.kind}`,
+      content: `Component behavior source not found for kind ${component.kind}`,
     }
   }
-  const source = sourceTextFor(sourcePath)
-  const kindPattern = new RegExp(`kind:\\s*['"]${String(component.kind)}['"]\\s+as\\s+ComponentKind`)
-  const match = kindPattern.exec(source)
-  if (!match) return { path: sourcePath, content: source }
-  const start = objectStartBefore(source, match.index)
-  const end = objectEndAfter(source, start)
-  return { path: sourcePath, content: source.slice(start, end).trim() }
+  return { path: sourcePath, content: sourceTextFor(sourcePath) }
 }
 
 const displayProfileReadQuerySchema = z.object({

@@ -1681,11 +1681,19 @@ body.rail-resizing {
   font-size: 13px;
 }
 
-.process-component-source-modal {
+.process-component-source-backdrop {
   position: fixed;
+  inset: 0;
   z-index: 55;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  background: rgba(16, 24, 40, 0.12);
+}
+
+.process-component-source-modal {
   width: min(760px, calc(100vw - 96px));
-  max-height: min(620px, calc(100vh - 96px));
+  height: min(620px, calc(100vh - 96px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
@@ -1745,7 +1753,8 @@ body.rail-resizing {
 }
 
 .process-component-source-modal pre {
-  min-width: max-content;
+  min-width: 0;
+  min-height: 0;
   margin: 0;
   padding: 16px;
   overflow: auto;
@@ -1754,6 +1763,12 @@ body.rail-resizing {
   font-size: 12px;
   line-height: 1.45;
   white-space: pre;
+}
+
+.process-component-source-modal code {
+  display: block;
+  width: max-content;
+  min-width: 100%;
 }
 
 .process-surface-viewport {

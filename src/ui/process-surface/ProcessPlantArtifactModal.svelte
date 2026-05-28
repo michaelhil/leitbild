@@ -148,6 +148,10 @@
     void moveSourceSearch(event.shiftKey ? -1 : 1)
   }
 
+  const closeComponentSourceFromBackdrop = (event: MouseEvent): void => {
+    if (event.target === event.currentTarget) componentSource = null
+  }
+
   const fitGraphView = (): void => {
     const viewport = graphViewport
     const size = graphSize
@@ -462,17 +466,26 @@
     </div>
   </section>
   {#if componentSource}
-    <section class="process-component-source-modal" aria-label="Component source">
-      <header>
-        <div>
-          <strong>{componentSource.label}</strong>
-          <span>{componentSource.kind} · {componentSource.sourcePath}</span>
-        </div>
-        <button type="button" aria-label="Close component source" onclick={() => { componentSource = null }}>
-          <X size={16} aria-hidden="true" />
-        </button>
-      </header>
-      <pre><code>{componentSource.source}</code></pre>
-    </section>
+    <div
+      class="process-component-source-backdrop"
+      role="presentation"
+      onclick={closeComponentSourceFromBackdrop}
+    >
+      <section
+        class="process-component-source-modal"
+        aria-label="Component source"
+      >
+        <header>
+          <div>
+            <strong>{componentSource.label}</strong>
+            <span>{componentSource.kind} · {componentSource.sourcePath}</span>
+          </div>
+          <button type="button" aria-label="Close component source" onclick={() => { componentSource = null }}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        <pre><code>{componentSource.source}</code></pre>
+      </section>
+    </div>
   {/if}
 </div>
