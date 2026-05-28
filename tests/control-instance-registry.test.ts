@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { access, appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, appendFile, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, ControlInstanceEvent, InteractionSignal, ObjectId, SignalId } from '../src/core/model/index.ts'
@@ -24,6 +24,30 @@ describe('control instance registry', () => {
       createLocalWeatherPackRuntimeAdapter(),
     ],
   })
+
+  const writeLegacySnapshotWithoutPackId = async (
+    dataDir: string,
+    controlInstanceId: ControlInstanceId,
+    scenarioId: string,
+  ): Promise<void> => {
+    const instanceDir = join(dataDir, 'control-instances', controlInstanceId)
+    await mkdir(instanceDir, { recursive: true })
+    const legacyObject = { ...osloAmbulanceScenario.initialObjects[0] } as Record<string, unknown>
+    delete legacyObject.packId
+    await writeFile(join(instanceDir, 'snapshot.json'), `${JSON.stringify({
+      schemaVersion: 1,
+      controlInstanceId,
+      savedAt: nowIso(),
+      snapshot: {
+        objects: [legacyObject],
+        seq: 0,
+        scenario: {
+          scenarioId,
+          highlightedObjectIds: [],
+        },
+      },
+    })}\n`, 'utf8')
+  }
 
   const issueDispatchCommand = async (runtime: ControlInstanceRuntime): Promise<void> => {
     const snapshot = runtime.snapshot()
@@ -257,6 +281,39 @@ describe('control instance registry', () => {
       snapshotSeq,
       objectCount: osloAmbulanceScenario.initialObjects.length,
     })
+  })
+
+  test('lists unreadable persisted snapshots without breaking the registry', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const controlInstanceId = 'oslo-ambulance:legacy-run' as ControlInstanceId
+    await writeLegacySnapshotWithoutPackId(dataDir, controlInstanceId, 'oslo-ambulance')
+
+    const registry = createRegistry(dataDir)
+    const known = await registry.listKnown()
+
+    expect(known).toContainEqual({
+      id: controlInstanceId,
+      scenarioId: 'oslo-ambulance',
+      runId: 'legacy-run',
+      loaded: false,
+      snapshotSeq: null,
+      objectCount: null,
+      loadError: expect.stringContaining('packId'),
+    })
+  })
+
+  test('resets unreadable persisted snapshots when joining an explicit scenario run', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const controlInstanceId = 'oslo-ambulance:legacy-run' as ControlInstanceId
+    await writeLegacySnapshotWithoutPackId(dataDir, controlInstanceId, 'oslo-ambulance')
+
+    const registry = createRegistry(dataDir)
+    const runtime = await registry.ensure(controlInstanceId, { scenarioId: 'oslo-ambulance' })
+
+    expect(runtime.snapshot().scenario?.scenarioId).toBe('oslo-ambulance')
+    expect(runtime.snapshot().objects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
+    expect(runtime.snapshot().objects.every(object => typeof object.packId === 'string')).toBe(true)
+    expect(await registry.close(controlInstanceId)).toBe(true)
   })
 
   test('deletes loaded and persisted control instance state', async () => {

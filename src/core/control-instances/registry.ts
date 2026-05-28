@@ -1,5 +1,6 @@
 import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { ZodError } from 'zod'
 import type { ControlInstanceId, InteractionHandler, ScenarioDefinition } from '../model/index.ts'
 import {
   controlInstanceIdSchema,
@@ -24,6 +25,7 @@ export interface ControlInstanceSummary {
   readonly loaded: boolean
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
+  readonly loadError?: string
 }
 
 export interface ControlInstanceRegistryStatus {
@@ -104,6 +106,25 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
+  const isUnreadableSnapshotError = (err: unknown): boolean =>
+    err instanceof SyntaxError || err instanceof ZodError
+
+  const unreadableSnapshotMessage = (err: unknown): string =>
+    err instanceof Error ? err.message : 'snapshot could not be read'
+
+  const scenarioRunFor = (
+    id: ControlInstanceId,
+    scenarioId: string | undefined,
+  ): { readonly scenarioId: string | null; readonly runId: string | null } => {
+    if (scenarioId !== undefined) return parseScenarioRunControlInstanceId(id, scenarioId)
+    const inferredScenarioId = config.scenarioCatalog
+      .listScenarios()
+      .map(scenario => scenario.id)
+      .sort((left, right) => right.length - left.length)
+      .find(candidate => id.startsWith(`${candidate}:`))
+    return parseScenarioRunControlInstanceId(id, inferredScenarioId)
+  }
+
   const createRuntime = async (createConfig: {
     readonly id: ControlInstanceId
     readonly scenarioId: string
@@ -124,7 +145,15 @@ export const createControlInstanceRegistry = (config: {
         path: join(instanceDir, 'runtimes', `${adapter.id}.json`),
       }),
     ]))
-    let restoredSnapshot = await snapshotStore.load()
+    let restoredSnapshot
+    try {
+      restoredSnapshot = await snapshotStore.load()
+    } catch (err) {
+      if (!isUnreadableSnapshotError(err)) throw err
+      console.warn(`control instance ${id} has an unreadable persisted snapshot; resetting from scenario ${requestedScenarioId}: ${unreadableSnapshotMessage(err)}`)
+      await rm(instanceDir, { recursive: true, force: true })
+      restoredSnapshot = null
+    }
     let restoredEvents: ReadonlyArray<ControlInstanceEvent> = []
     if (
       restoredSnapshot
@@ -287,7 +316,7 @@ export const createControlInstanceRegistry = (config: {
     const loaded = controlInstances.get(id)
     if (loaded) {
       const snapshot = loaded.snapshot()
-      const scenarioRun = parseScenarioRunControlInstanceId(id, snapshot.scenario?.scenarioId)
+      const scenarioRun = scenarioRunFor(id, snapshot.scenario?.scenarioId)
       return {
         id,
         ...scenarioRun,
@@ -300,14 +329,23 @@ export const createControlInstanceRegistry = (config: {
       controlInstanceId: id,
       path: join(controlInstanceRoot, id, 'snapshot.json'),
     })
-    const snapshot = await snapshotStore.load()
-    const scenarioRun = parseScenarioRunControlInstanceId(id, snapshot?.scenario?.scenarioId)
+    let snapshot
+    let loadError: string | undefined
+    try {
+      snapshot = await snapshotStore.load()
+    } catch (err) {
+      if (!isUnreadableSnapshotError(err)) throw err
+      loadError = unreadableSnapshotMessage(err)
+      snapshot = null
+    }
+    const scenarioRun = scenarioRunFor(id, snapshot?.scenario?.scenarioId)
     return {
       id,
       ...scenarioRun,
       loaded: false,
       snapshotSeq: snapshot?.seq ?? null,
       objectCount: snapshot?.objects.length ?? null,
+      ...(loadError === undefined ? {} : { loadError }),
     }
   }
 

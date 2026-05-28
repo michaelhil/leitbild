@@ -22,6 +22,7 @@ export interface ControlInstanceSummary {
   readonly snapshotSeq: number | null
   readonly objectCount: number | null
   readonly websocketClientCount: number
+  readonly loadError?: string
 }
 
 export interface ControlInstanceListResponse {
