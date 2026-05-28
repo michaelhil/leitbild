@@ -2,9 +2,11 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { CompiledPlantGraph, ProcessPlantDisplayField } from '../graph/index.ts'
+import type { CompiledPlantGraph, ComponentId, ComponentInstanceSpec, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
+import { compileProcessSurface } from '../surfaces/compiler.ts'
+import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success, systemQuerySchema } from './common.ts'
 
@@ -36,17 +38,64 @@ const graphView = (graph: CompiledPlantGraph): unknown => ({
   displayProfiles: graph.displayProfiles,
 })
 
-const artifactMetadata = (graph: CompiledPlantGraph): Record<string, unknown> => ({
+const overviewComponentIdsCache = new WeakMap<ProcessPlantSystemRuntime, ReadonlySet<ComponentId>>()
+
+const overviewComponentIdsFor = (system: ProcessPlantSystemRuntime): ReadonlySet<ComponentId> => {
+  const existing = overviewComponentIdsCache.get(system)
+  if (existing) return existing
+  const ids = new Set<ComponentId>()
+  const surface = processPlantReferenceSurfaces.find(candidate => candidate.id === 'unit-overview')
+  if (surface) {
+    const compiled = compileProcessSurface({ definition: surface, graph: system.system.graph })
+    for (const widget of compiled.widgets) {
+      for (const componentId of widget.source?.componentIds ?? []) ids.add(componentId)
+    }
+  }
+  overviewComponentIdsCache.set(system, ids)
+  return ids
+}
+
+const artifactMetadata = (
+  graph: CompiledPlantGraph,
+  overviewComponentIds: ReadonlySet<ComponentId>,
+): Record<string, unknown> => ({
   specId: graph.specId,
   componentCount: graph.components.length,
   linkCount: graph.links.length,
   variableCount: graph.variables.length,
+  overviewComponentCount: overviewComponentIds.size,
 })
+
+const artifactComponents = (
+  graph: CompiledPlantGraph,
+  sourceComponents: ReadonlyArray<ComponentInstanceSpec>,
+  overviewComponentIds: ReadonlySet<ComponentId>,
+): ReadonlyArray<Record<string, unknown>> => {
+  const sourceById = new Map(sourceComponents.map(component => [component.id, component]))
+  return graph.components.map(component => {
+    const source = sourceById.get(component.id) ?? {
+      id: component.id,
+      kind: component.kind,
+      label: component.label,
+      parameters: component.parameters,
+      variables: [],
+    } satisfies ComponentInstanceSpec
+    return {
+      id: component.id,
+      label: component.label,
+      kind: component.kind,
+      shownOnOverview: overviewComponentIds.has(component.id),
+      source: JSON.stringify(source, null, 2),
+    }
+  })
+}
 
 const artifactView = (
   system: ProcessPlantSystemRuntime,
   artifact: 'authored-spec' | 'compiled-graph-mermaid',
 ): unknown => {
+  const overviewComponentIds = overviewComponentIdsFor(system)
+  const components = artifactComponents(system.system.graph, system.system.sourceGraph.components, overviewComponentIds)
   if (artifact === 'authored-spec') {
     return {
       systemId: system.system.id,
@@ -54,7 +103,8 @@ const artifactView = (
       title: `${system.system.graph.title} source specification`,
       language: 'json',
       content: JSON.stringify(system.system.sourceGraph, null, 2),
-      metadata: artifactMetadata(system.system.graph),
+      components,
+      metadata: artifactMetadata(system.system.graph, overviewComponentIds),
     }
   }
   return {
@@ -62,8 +112,9 @@ const artifactView = (
     artifact,
     title: `${system.system.graph.title} full component graph`,
     language: 'mermaid',
-    content: plantGraphToMermaid(system.system.graph),
-    metadata: artifactMetadata(system.system.graph),
+    content: plantGraphToMermaid(system.system.graph, { highlightedComponentIds: overviewComponentIds }),
+    components,
+    metadata: artifactMetadata(system.system.graph, overviewComponentIds),
   }
 }
 

@@ -1486,6 +1486,36 @@ body.rail-resizing {
   gap: 6px;
 }
 
+.process-artifact-search {
+  width: min(280px, 30vw);
+  height: 30px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.process-artifact-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+}
+
+.process-artifact-search span {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .process-artifact-actions button {
   width: 30px;
   height: 30px;
@@ -1532,6 +1562,85 @@ body.rail-resizing {
   white-space: pre;
 }
 
+.process-artifact-source {
+  min-height: 100%;
+}
+
+.process-artifact-component-index {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(224px, 1fr));
+  gap: 6px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 82%, var(--panel-strong));
+}
+
+.process-artifact-component-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.75fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-strong) 60%, transparent);
+}
+
+.process-artifact-component-row button {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.process-artifact-component-row button.overview {
+  color: #991b1b;
+  font-weight: 700;
+}
+
+.process-artifact-component-row > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-artifact-component-row .source-icon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.process-artifact-component-row .source-icon:hover {
+  color: var(--text);
+}
+
+.process-artifact-body pre .source-match {
+  border-radius: 3px;
+  color: #111827;
+  background: #fde68a;
+}
+
+.process-artifact-body pre .active-line {
+  display: inline;
+  outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
 .process-artifact-diagram {
   position: relative;
   height: 100%;
@@ -1570,6 +1679,81 @@ body.rail-resizing {
   color: var(--critical);
   background: color-mix(in srgb, var(--critical) 8%, var(--panel));
   font-size: 13px;
+}
+
+.process-component-source-modal {
+  position: fixed;
+  z-index: 55;
+  width: min(760px, calc(100vw - 96px));
+  max-height: min(620px, calc(100vh - 96px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.34);
+}
+
+.process-component-source-modal header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 82%, var(--panel));
+}
+
+.process-component-source-modal header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.process-component-source-modal header strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-component-source-modal header span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-component-source-modal header button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.process-component-source-modal header button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-component-source-modal pre {
+  min-width: max-content;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
 }
 
 .process-surface-viewport {

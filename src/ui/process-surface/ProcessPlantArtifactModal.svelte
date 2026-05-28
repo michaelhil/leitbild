@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { Copy, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-svelte'
+  import { ChevronDown, ChevronUp, Copy, FileCode2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-svelte'
   import { tick } from 'svelte'
   import type { ControlInstanceId } from '../../core/model/index.ts'
   import {
     readProcessPlantArtifact,
     type ProcessPlantArtifact,
+    type ProcessPlantArtifactComponent,
     type ProcessPlantArtifactKind,
   } from './process-surface-client.ts'
 
@@ -27,6 +28,10 @@
   let graphSize = $state<{ readonly width: number; readonly height: number } | null>(null)
   let graphScale = $state(1)
   let graphOffset = $state({ x: 0, y: 0 })
+  let sourceViewport = $state<HTMLDivElement | null>(null)
+  let sourceSearchQuery = $state('')
+  let sourceSearchCursor = $state(-1)
+  let componentSource = $state<ProcessPlantArtifactComponent | null>(null)
   let graphPan = $state<{
     readonly pointerId: number
     readonly pointerStart: { readonly x: number; readonly y: number }
@@ -39,6 +44,37 @@
   }
 
   const contentLineCount = $derived(data ? lineCountFor(data.content) : null)
+  const sourceLines = $derived(data?.language === 'json' ? data.content.split(/\r\n|\r|\n/) : [])
+  const normalizedSourceSearchQuery = $derived(sourceSearchQuery.trim().toLowerCase())
+  const sourceSearchMatches = $derived(normalizedSourceSearchQuery.length === 0
+    ? []
+    : sourceLines.flatMap((line, lineIndex) => line.toLowerCase().includes(normalizedSourceSearchQuery) ? [lineIndex] : []))
+  const sourceSearchSummary = $derived(normalizedSourceSearchQuery.length === 0
+    ? ''
+    : `${sourceSearchCursor < 0 ? 0 : sourceSearchCursor + 1}/${sourceSearchMatches.length}`)
+
+  interface SourceTextSegment {
+    readonly text: string
+    readonly match: boolean
+  }
+
+  const sourceTextSegments = (line: string): ReadonlyArray<SourceTextSegment> => {
+    const query = sourceSearchQuery.trim()
+    if (query.length === 0) return [{ text: line, match: false }]
+    const segments: SourceTextSegment[] = []
+    const lowerLine = line.toLowerCase()
+    const lowerQuery = query.toLowerCase()
+    let cursor = 0
+    while (cursor < line.length) {
+      const index = lowerLine.indexOf(lowerQuery, cursor)
+      if (index < 0) break
+      if (index > cursor) segments.push({ text: line.slice(cursor, index), match: false })
+      segments.push({ text: line.slice(index, index + query.length), match: true })
+      cursor = index + query.length
+    }
+    if (cursor < line.length) segments.push({ text: line.slice(cursor), match: false })
+    return segments.length === 0 ? [{ text: line, match: false }] : segments
+  }
 
   const mermaidSvgSize = (svg: string): { readonly width: number; readonly height: number } | null => {
     const viewBox = /\sviewBox="([^"]+)"/.exec(svg)?.[1]?.trim()
@@ -72,6 +108,39 @@
     } catch (err) {
       copyStatus = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  const scrollToSourceLine = (lineIndex: number): void => {
+    const viewport = sourceViewport
+    const line = viewport?.querySelector(`[data-source-line="${lineIndex}"]`)
+    if (!(line instanceof HTMLElement)) return
+    line.scrollIntoView({ block: 'center' })
+  }
+
+  const moveSourceSearch = async (direction: 1 | -1): Promise<void> => {
+    const matches = sourceSearchMatches
+    if (matches.length === 0) return
+    const current = sourceSearchCursor >= 0 && sourceSearchCursor < matches.length ? sourceSearchCursor : (direction > 0 ? -1 : 0)
+    sourceSearchCursor = (current + direction + matches.length) % matches.length
+    await tick()
+    scrollToSourceLine(matches[sourceSearchCursor] ?? 0)
+  }
+
+  const updateSourceSearch = (query: string): void => {
+    sourceSearchQuery = query
+    sourceSearchCursor = -1
+  }
+
+  const searchForComponent = async (component: ProcessPlantArtifactComponent): Promise<void> => {
+    updateSourceSearch(component.label)
+    await tick()
+    await moveSourceSearch(1)
+  }
+
+  const handleSearchKeydown = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    void moveSourceSearch(event.shiftKey ? -1 : 1)
   }
 
   const fitGraphView = (): void => {
@@ -188,6 +257,9 @@
         error = null
         data = null
         copyStatus = null
+        sourceSearchQuery = ''
+        sourceSearchCursor = -1
+        componentSource = null
         renderedSvg = null
         renderError = null
         graphSize = null
@@ -271,6 +343,27 @@
         {/if}
       </div>
       <div class="process-artifact-actions">
+        {#if data?.language === 'json'}
+          <label class="process-artifact-search">
+            <Search size={14} aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Search source"
+              value={sourceSearchQuery}
+              oninput={(event) => updateSourceSearch(event.currentTarget.value)}
+              onkeydown={handleSearchKeydown}
+            />
+            {#if sourceSearchSummary}
+              <span>{sourceSearchSummary}</span>
+            {/if}
+          </label>
+          <button type="button" aria-label="Previous source match" onclick={() => void moveSourceSearch(-1)} disabled={sourceSearchMatches.length === 0}>
+            <ChevronUp size={16} aria-hidden="true" />
+          </button>
+          <button type="button" aria-label="Next source match" onclick={() => void moveSourceSearch(1)} disabled={sourceSearchMatches.length === 0}>
+            <ChevronDown size={16} aria-hidden="true" />
+          </button>
+        {/if}
         {#if data?.language === 'mermaid' && renderedSvg}
           <button type="button" aria-label="Zoom out graph" onclick={() => zoomGraph(1 / 1.2)}>
             <ZoomOut size={16} aria-hidden="true" />
@@ -329,11 +422,49 @@
             <div class="process-surface-message">Rendering Mermaid graph...</div>
           {/if}
         {:else}
-          <pre><code>{data.content}</code></pre>
+          <div class="process-artifact-source" bind:this={sourceViewport}>
+            <section class="process-artifact-component-index" aria-label="Plant components">
+              {#each data.components as component (component.id)}
+                <div class="process-artifact-component-row">
+                  <button
+                    type="button"
+                    class:overview={component.shownOnOverview}
+                    onclick={() => void searchForComponent(component)}
+                  >
+                    {component.label}
+                  </button>
+                  <span>{component.id}</span>
+                  <button
+                    type="button"
+                    class="source-icon"
+                    aria-label="Show source for {component.label}"
+                    onclick={() => { componentSource = component }}
+                  >
+                    <FileCode2 size={14} aria-hidden="true" />
+                  </button>
+                </div>
+              {/each}
+            </section>
+            <pre><code>{#each sourceLines as line, lineIndex (`${lineIndex}-${line}`)}<span data-source-line={lineIndex} class:active-line={sourceSearchMatches[sourceSearchCursor] === lineIndex}>{#each sourceTextSegments(line) as segment}<span class:source-match={segment.match}>{segment.text}</span>{/each}</span>{lineIndex + 1 < sourceLines.length ? '\n' : ''}{/each}</code></pre>
+          </div>
         {/if}
       {:else}
         <div class="process-surface-error">Plant artifact did not load.</div>
       {/if}
     </div>
   </section>
+  {#if componentSource}
+    <section class="process-component-source-modal" aria-label="Component source">
+      <header>
+        <div>
+          <strong>{componentSource.label}</strong>
+          <span>{componentSource.kind} · {componentSource.id}</span>
+        </div>
+        <button type="button" aria-label="Close component source" onclick={() => { componentSource = null }}>
+          <X size={16} aria-hidden="true" />
+        </button>
+      </header>
+      <pre><code>{componentSource.source}</code></pre>
+    </section>
+  {/if}
 </div>

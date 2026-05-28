@@ -1062,12 +1062,14 @@ describe('process plant graph foundation', () => {
 
   test('generates Mermaid documentation from compiled topology', () => {
     const compiled = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
-    const mermaid = plantGraphToMermaid(compiled)
+    const mermaid = plantGraphToMermaid(compiled, { highlightedComponentIds: ['core', 'sgA'] as never })
 
     expect(mermaid).toContain('flowchart TB')
     expect(mermaid).toContain('Reactor Core')
     expect(mermaid).toContain('primaryCoolant')
     expect(mermaid).toContain('mainSteam')
     expect(mermaid).toContain('fluidFlow')
+    expect(mermaid).toContain('classDef overview')
+    expect(mermaid).toContain('class c0,c5 overview')
   })
 })

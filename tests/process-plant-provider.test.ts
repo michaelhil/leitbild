@@ -210,6 +210,22 @@ describe('process plant simulation provider', () => {
     if (!sourceArtifact.ok) throw new Error(sourceArtifact.reason)
     expect((sourceArtifact.result as { readonly language: string; readonly content: string }).language).toBe('json')
     expect((sourceArtifact.result as { readonly content: string }).content).toContain('"title": "Pressurized Water Reactor"')
+    const sourceResult = sourceArtifact.result as {
+      readonly components: ReadonlyArray<{
+        readonly id: string
+        readonly label: string
+        readonly shownOnOverview: boolean
+        readonly source: string
+      }>
+      readonly metadata: { readonly componentCount: number; readonly overviewComponentCount: number }
+    }
+    expect(sourceResult.components).toHaveLength(sourceResult.metadata.componentCount)
+    expect(sourceResult.components.find(component => component.id === 'sgA')?.shownOnOverview).toBe(true)
+    expect(sourceResult.components.find(component => component.id === 'mainSteamHeader')?.shownOnOverview).toBe(true)
+    expect(sourceResult.components.find(component => component.id === 'safetyBusA')?.shownOnOverview).toBe(true)
+    expect(sourceResult.components.find(component => component.id === 'auxFeedwaterPumpMotor')?.shownOnOverview).toBe(false)
+    expect(sourceResult.components.find(component => component.id === 'sgA')?.source).toContain('"id": "sgA"')
+    expect(sourceResult.metadata.overviewComponentCount).toBe(sourceResult.components.filter(component => component.shownOnOverview).length)
 
     const graphArtifact = await connection.query(query('process-plant.artifact.read', {
       systemId: 'plant',
@@ -226,6 +242,8 @@ describe('process plant simulation provider', () => {
     expect(graphResult.content).toContain('flowchart TB')
     expect(graphResult.content).toContain('Reactor Core')
     expect(graphResult.content).toContain('primaryCoolant')
+    expect(graphResult.content).toContain('classDef overview')
+    expect(graphResult.content).toContain('class ')
     expect(graphResult.metadata.componentCount).toBeGreaterThan(20)
     expect(graphResult.metadata.linkCount).toBeGreaterThan(20)
 

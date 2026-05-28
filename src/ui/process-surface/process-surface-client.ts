@@ -44,17 +44,27 @@ export interface ProcessSurfaceProjection {
 
 export type ProcessPlantArtifactKind = 'authored-spec' | 'compiled-graph-mermaid'
 
+export interface ProcessPlantArtifactComponent {
+  readonly id: string
+  readonly label: string
+  readonly kind: string
+  readonly shownOnOverview: boolean
+  readonly source: string
+}
+
 export interface ProcessPlantArtifact {
   readonly systemId: string
   readonly artifact: ProcessPlantArtifactKind
   readonly title: string
   readonly language: 'json' | 'mermaid'
   readonly content: string
+  readonly components: ReadonlyArray<ProcessPlantArtifactComponent>
   readonly metadata: {
     readonly specId: string
     readonly componentCount: number
     readonly linkCount: number
     readonly variableCount: number
+    readonly overviewComponentCount: number
   }
 }
 
@@ -121,6 +131,18 @@ const parseCompiledProcessSurface = (value: unknown): CompiledProcessSurface => 
     widgets: assertArray(surface.widgets, 'process surface requires widgets') as CompiledProcessSurface['widgets'],
     paths: assertArray(surface.paths, 'process surface requires paths') as CompiledProcessSurface['paths'],
     bindingPaths: assertArray(surface.bindingPaths, 'process surface requires bindingPaths') as CompiledProcessSurface['bindingPaths'],
+  }
+}
+
+const parseProcessPlantArtifactComponent = (value: unknown): ProcessPlantArtifactComponent => {
+  const component = assertObject(value, 'process plant artifact component is malformed')
+  if (typeof component.shownOnOverview !== 'boolean') throw new Error('process plant artifact component requires shownOnOverview')
+  return {
+    id: assertString(component.id, 'process plant artifact component requires id'),
+    label: assertString(component.label, 'process plant artifact component requires label'),
+    kind: assertString(component.kind, 'process plant artifact component requires kind'),
+    shownOnOverview: component.shownOnOverview,
+    source: assertString(component.source, 'process plant artifact component requires source'),
   }
 }
 
@@ -235,11 +257,13 @@ export const readProcessPlantArtifact = async (
     title: assertString(result.title, 'process plant artifact result requires title'),
     language,
     content: assertString(result.content, 'process plant artifact result requires content'),
+    components: assertArray(result.components, 'process plant artifact result requires components').map(parseProcessPlantArtifactComponent),
     metadata: {
       specId: assertString(metadata.specId, 'process plant artifact metadata requires specId'),
       componentCount: assertNumber(metadata.componentCount, 'process plant artifact metadata requires componentCount'),
       linkCount: assertNumber(metadata.linkCount, 'process plant artifact metadata requires linkCount'),
       variableCount: assertNumber(metadata.variableCount, 'process plant artifact metadata requires variableCount'),
+      overviewComponentCount: assertNumber(metadata.overviewComponentCount, 'process plant artifact metadata requires overviewComponentCount'),
     },
   }
 }
