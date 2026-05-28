@@ -22,6 +22,7 @@ export interface ProcessPlantInitialVariableValue {
 export interface CompiledProcessPlantSystem {
   readonly id: string
   readonly componentLibrary: 'process-plant'
+  readonly sourceGraph: PlantGraphSpec
   readonly graph: CompiledPlantGraph
   readonly initialState: ReadonlyArray<ProcessPlantInitialVariableValue>
 }
@@ -108,6 +109,7 @@ export const compileProcessPlantSystem = (
   return {
     id: definition.id,
     componentLibrary: 'process-plant',
+    sourceGraph: graph,
     graph: compiledGraph,
     initialState,
   }

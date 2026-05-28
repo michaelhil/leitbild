@@ -1248,7 +1248,7 @@ body.rail-resizing {
 .process-surface-statusbar {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: 8px;
   padding: 0 10px 0 14px;
@@ -1424,6 +1424,110 @@ body.rail-resizing {
   height: 8px;
   border-right: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
   border-bottom: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.process-artifact-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(16, 24, 40, 0.28);
+  pointer-events: auto;
+}
+
+.process-artifact-modal {
+  width: min(1120px, calc(100vw - 56px));
+  height: min(780px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.34);
+}
+
+.process-artifact-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 82%, var(--panel));
+}
+
+.process-artifact-header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.process-artifact-header strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-artifact-header span,
+.process-artifact-copy-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.process-artifact-actions button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.process-artifact-actions button:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-artifact-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.process-artifact-copy-status {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-artifact-body {
+  min-height: 0;
+  overflow: auto;
+  background: color-mix(in srgb, var(--panel-strong) 54%, var(--panel));
+}
+
+.process-artifact-body pre {
+  min-width: max-content;
+  margin: 0;
+  padding: 16px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
 }
 
 .process-surface-viewport {

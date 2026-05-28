@@ -1,14 +1,16 @@
 <script lang="ts">
-  import { Eye } from 'lucide-svelte'
+  import { Eye, FileText, GitBranch } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
+  import ProcessPlantArtifactModal from './ProcessPlantArtifactModal.svelte'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import {
     listProcessSurfaces,
     readProcessSurface,
     readProcessSurfaceProjection,
     readProcessSurfaceSnapshot,
+    type ProcessPlantArtifactKind,
     type ProcessSurfaceProjection,
     type ProcessSurfaceLensOption,
   } from './process-surface-client.ts'
@@ -50,6 +52,7 @@
   let projection = $state<ProcessSurfaceProjection | null>(null)
   let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
+  let artifactModal = $state<ProcessPlantArtifactKind | null>(null)
   let widgetPositions = $state<ProcessSurfaceLayout>({})
   let loadedSystemId = $state<string | null>(null)
   let windowBounds = $state<ProcessSurfaceWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
@@ -124,6 +127,10 @@
           ? 'ready'
           : 'idle',
   ))
+
+  const openArtifact = (artifact: ProcessPlantArtifactKind): void => {
+    artifactModal = artifact
+  }
 
   const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
     const currentSurface = surface
@@ -366,6 +373,24 @@
           </div>
         {/if}
       </div>
+      <button
+        type="button"
+        class="process-surface-icon-button"
+        aria-label="Open plant specification source"
+        title="Plant specification source"
+        onclick={() => openArtifact('authored-spec')}
+      >
+        <FileText size={17} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="process-surface-icon-button"
+        aria-label="Open full Mermaid component graph"
+        title="Full Mermaid component graph"
+        onclick={() => openArtifact('compiled-graph-mermaid')}
+      >
+        <GitBranch size={17} aria-hidden="true" />
+      </button>
       <button type="button" aria-label="Close process display" onclick={close}>×</button>
     </header>
     <div class="process-surface-window-body">
@@ -416,4 +441,12 @@
       onpointercancel={finishWindowDrag}
     ></div>
   </section>
+  {#if artifactModal && loadedSystemId}
+    <ProcessPlantArtifactModal
+      {controlInstanceId}
+      systemId={loadedSystemId}
+      artifact={artifactModal}
+      close={() => { artifactModal = null }}
+    />
+  {/if}
 </div>

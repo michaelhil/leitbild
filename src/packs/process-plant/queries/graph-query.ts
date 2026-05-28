@@ -3,9 +3,15 @@ import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { CompiledPlantGraph, ProcessPlantDisplayField } from '../graph/index.ts'
+import { plantGraphToMermaid } from '../graph/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success, systemQuerySchema } from './common.ts'
+
+const artifactReadQuerySchema = z.object({
+  systemId: idSchema,
+  artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
+})
 
 const displayProfileReadQuerySchema = z.object({
   systemId: idSchema,
@@ -15,6 +21,7 @@ const displayProfileReadQuerySchema = z.object({
 export const processPlantGraphQueryKinds = [
   'process-plant.systems.list',
   'process-plant.graph.read',
+  'process-plant.artifact.read',
   'process-plant.display-profile.read',
 ] as const
 
@@ -28,6 +35,37 @@ const graphView = (graph: CompiledPlantGraph): unknown => ({
   variables: graph.variables,
   displayProfiles: graph.displayProfiles,
 })
+
+const artifactMetadata = (graph: CompiledPlantGraph): Record<string, unknown> => ({
+  specId: graph.specId,
+  componentCount: graph.components.length,
+  linkCount: graph.links.length,
+  variableCount: graph.variables.length,
+})
+
+const artifactView = (
+  system: ProcessPlantSystemRuntime,
+  artifact: 'authored-spec' | 'compiled-graph-mermaid',
+): unknown => {
+  if (artifact === 'authored-spec') {
+    return {
+      systemId: system.system.id,
+      artifact,
+      title: `${system.system.graph.title} source specification`,
+      language: 'json',
+      content: JSON.stringify(system.system.sourceGraph, null, 2),
+      metadata: artifactMetadata(system.system.graph),
+    }
+  }
+  return {
+    systemId: system.system.id,
+    artifact,
+    title: `${system.system.graph.title} full component graph`,
+    language: 'mermaid',
+    content: plantGraphToMermaid(system.system.graph),
+    metadata: artifactMetadata(system.system.graph),
+  }
+}
 
 interface DisplayProfileRuntimePlan {
   readonly profile: CompiledPlantGraph['displayProfiles'][number]
@@ -117,6 +155,11 @@ export const answerProcessPlantGraphQuery = (config: {
     const payload = systemQuerySchema.parse(config.request.payload)
     const system = requireSystem(config.systems, payload.systemId)
     return success(config.request, { graph: graphView(system.system.graph) }, config.at)
+  }
+  if (config.request.kind === 'process-plant.artifact.read') {
+    const payload = artifactReadQuerySchema.parse(config.request.payload)
+    const system = requireSystem(config.systems, payload.systemId)
+    return success(config.request, artifactView(system, payload.artifact), config.at)
   }
   const payload = displayProfileReadQuerySchema.parse(config.request.payload)
   const system = requireSystem(config.systems, payload.systemId)

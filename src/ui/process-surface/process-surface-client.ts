@@ -42,6 +42,22 @@ export interface ProcessSurfaceProjection {
   }
 }
 
+export type ProcessPlantArtifactKind = 'authored-spec' | 'compiled-graph-mermaid'
+
+export interface ProcessPlantArtifact {
+  readonly systemId: string
+  readonly artifact: ProcessPlantArtifactKind
+  readonly title: string
+  readonly language: 'json' | 'mermaid'
+  readonly content: string
+  readonly metadata: {
+    readonly specId: string
+    readonly componentCount: number
+    readonly linkCount: number
+    readonly variableCount: number
+  }
+}
+
 const assertObject = (value: unknown, message: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(message)
   return value as Record<string, unknown>
@@ -54,6 +70,11 @@ const assertArray = (value: unknown, message: string): ReadonlyArray<unknown> =>
 
 const assertString = (value: unknown, message: string): string => {
   if (typeof value !== 'string') throw new Error(message)
+  return value
+}
+
+const assertNumber = (value: unknown, message: string): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(message)
   return value
 }
 
@@ -186,6 +207,39 @@ export const readProcessSurfaceProjection = async (
       visiblePathIds: assertArray(surfaceProjection.visiblePathIds, 'process surface projection has no visiblePathIds') as ReadonlyArray<string>,
       hiddenWidgetIds: assertArray(surfaceProjection.hiddenWidgetIds, 'process surface projection has no hiddenWidgetIds') as ReadonlyArray<string>,
       hiddenPathIds: assertArray(surfaceProjection.hiddenPathIds, 'process surface projection has no hiddenPathIds') as ReadonlyArray<string>,
+    },
+  }
+}
+
+export const readProcessPlantArtifact = async (
+  controlInstanceId: ControlInstanceId,
+  systemId: string,
+  artifact: ProcessPlantArtifactKind,
+): Promise<ProcessPlantArtifact> => {
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.artifact.read',
+    payload: { systemId, artifact },
+  })
+  const result = requireOkResult(body.response)
+  const metadata = assertObject(result.metadata, 'process plant artifact result requires metadata')
+  const language = assertString(result.language, 'process plant artifact result requires language')
+  if (language !== 'json' && language !== 'mermaid') throw new Error(`unsupported process plant artifact language: ${language}`)
+  const returnedArtifact = assertString(result.artifact, 'process plant artifact result requires artifact')
+  if (returnedArtifact !== 'authored-spec' && returnedArtifact !== 'compiled-graph-mermaid') {
+    throw new Error(`unsupported process plant artifact kind: ${returnedArtifact}`)
+  }
+  return {
+    systemId: assertString(result.systemId, 'process plant artifact result requires systemId'),
+    artifact: returnedArtifact,
+    title: assertString(result.title, 'process plant artifact result requires title'),
+    language,
+    content: assertString(result.content, 'process plant artifact result requires content'),
+    metadata: {
+      specId: assertString(metadata.specId, 'process plant artifact metadata requires specId'),
+      componentCount: assertNumber(metadata.componentCount, 'process plant artifact metadata requires componentCount'),
+      linkCount: assertNumber(metadata.linkCount, 'process plant artifact metadata requires linkCount'),
+      variableCount: assertNumber(metadata.variableCount, 'process plant artifact metadata requires variableCount'),
     },
   }
 }

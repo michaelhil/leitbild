@@ -202,6 +202,33 @@ describe('process plant simulation provider', () => {
     expect(profileFields.map(field => field.key)).toContain('thermal-power')
     expect(profileFields.find(field => field.key === 'thermal-power')?.variable.path).toBe('core.totalThermalPowerMw')
 
+    const sourceArtifact = await connection.query(query('process-plant.artifact.read', {
+      systemId: 'plant',
+      artifact: 'authored-spec',
+    }))
+    expect(sourceArtifact.ok).toBe(true)
+    if (!sourceArtifact.ok) throw new Error(sourceArtifact.reason)
+    expect((sourceArtifact.result as { readonly language: string; readonly content: string }).language).toBe('json')
+    expect((sourceArtifact.result as { readonly content: string }).content).toContain('"title": "Pressurized Water Reactor"')
+
+    const graphArtifact = await connection.query(query('process-plant.artifact.read', {
+      systemId: 'plant',
+      artifact: 'compiled-graph-mermaid',
+    }))
+    expect(graphArtifact.ok).toBe(true)
+    if (!graphArtifact.ok) throw new Error(graphArtifact.reason)
+    const graphResult = graphArtifact.result as {
+      readonly language: string
+      readonly content: string
+      readonly metadata: { readonly componentCount: number; readonly linkCount: number }
+    }
+    expect(graphResult.language).toBe('mermaid')
+    expect(graphResult.content).toContain('flowchart TB')
+    expect(graphResult.content).toContain('Reactor Core')
+    expect(graphResult.content).toContain('primaryCoolant')
+    expect(graphResult.metadata.componentCount).toBeGreaterThan(20)
+    expect(graphResult.metadata.linkCount).toBeGreaterThan(20)
+
     await connection.close()
   })
 
