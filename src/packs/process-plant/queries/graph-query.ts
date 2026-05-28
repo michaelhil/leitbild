@@ -2,7 +2,8 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { CompiledPlantGraph } from '../graph/index.ts'
+import type { CompiledPlantGraph, ProcessPlantDisplayField } from '../graph/index.ts'
+import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success, systemQuerySchema } from './common.ts'
 
@@ -28,25 +29,64 @@ const graphView = (graph: CompiledPlantGraph): unknown => ({
   displayProfiles: graph.displayProfiles,
 })
 
-const displayProfileView = (
+interface DisplayProfileRuntimePlan {
+  readonly profile: CompiledPlantGraph['displayProfiles'][number]
+  readonly groups: ReadonlyArray<{
+    readonly id: string
+    readonly label: string
+    readonly fields: ReadonlyArray<{
+      readonly field: ProcessPlantDisplayField
+      readonly handle: ProcessPlantVariableHandle
+    }>
+  }>
+}
+
+const displayProfileCache = new WeakMap<ProcessPlantSystemRuntime, Map<string, DisplayProfileRuntimePlan>>()
+
+const displayProfilePlanFor = (
   system: ProcessPlantSystemRuntime,
   profileId: string,
-): unknown => {
+): DisplayProfileRuntimePlan => {
+  const existingCache = displayProfileCache.get(system)
+  const existingPlan = existingCache?.get(profileId)
+  if (existingPlan) return existingPlan
   const profile = system.system.graph.displayProfiles.find(candidate => candidate.id === profileId)
   if (!profile) throw new Error(`process plant display profile not found: ${profileId}`)
-  return {
-    systemId: system.system.id,
+  const plan = {
     profile,
     groups: profile.groups.map(group => ({
       id: group.id,
       label: group.label,
+      fields: group.fields.map(field => ({
+        field,
+        handle: system.runtime.resolveVariableHandle(field.path),
+      })),
+    })),
+  } satisfies DisplayProfileRuntimePlan
+  const cache = existingCache ?? new Map<string, DisplayProfileRuntimePlan>()
+  cache.set(profileId, plan)
+  if (!existingCache) displayProfileCache.set(system, cache)
+  return plan
+}
+
+const displayProfileView = (
+  system: ProcessPlantSystemRuntime,
+  profileId: string,
+): unknown => {
+  const plan = displayProfilePlanFor(system, profileId)
+  return {
+    systemId: system.system.id,
+    profile: plan.profile,
+    groups: plan.groups.map(group => ({
+      id: group.id,
+      label: group.label,
       fields: group.fields.map(field => {
-        const variable = system.runtime.readVariableSnapshot(field.path)
+        const variable = system.runtime.readVariableSnapshotHandle(field.handle)
         return {
-          key: field.key,
-          label: field.label ?? variable.label,
-          path: field.path,
-          ...(field.digits === undefined ? {} : { digits: field.digits }),
+          key: field.field.key,
+          label: field.field.label ?? variable.label,
+          path: field.field.path,
+          ...(field.field.digits === undefined ? {} : { digits: field.field.digits }),
           variable,
         }
       }),

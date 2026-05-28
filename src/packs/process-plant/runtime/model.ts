@@ -1,5 +1,6 @@
 import type { ProcessEquipmentId, ProcessQuantity, ProcessSignalTagId, ProcessUnit, ProcessVariableCapability, ProcessVariableLimits, ProcessVariableValue, VariableDomain, VariableKind, VariablePath } from '../graph/index.ts'
 import type { PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
+import type { ProcessPlantVariableHandle } from './variable-table.ts'
 
 export type ProcessPlantValue = ProcessVariableValue
 
@@ -59,8 +60,11 @@ export interface ProcessPlantRuntimeSnapshot {
 export interface ProcessPlantRuntime {
   readonly tick: (elapsedMs: number) => ProcessPlantTickResult
   readonly elapsedMs: () => number
+  readonly resolveVariableHandle: (path: VariablePath) => ProcessPlantVariableHandle
   readonly readVariable: (path: VariablePath) => ProcessPlantValue
+  readonly readVariableHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantValue
   readonly readVariableSnapshot: (path: VariablePath) => ProcessPlantVariableSnapshot
+  readonly readVariableSnapshotHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantVariableSnapshot
   readonly writeCommand: (command: ProcessPlantCommand) => void
   readonly pwrTransientDiagnostics: () => PwrTransientDiagnostics
   readonly snapshot: () => ProcessPlantRuntimeSnapshot

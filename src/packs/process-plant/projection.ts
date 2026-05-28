@@ -8,7 +8,8 @@ import {
   type ProcessPlantUnitDomainData,
   type ProcessPlantUnitProjection,
 } from './model.ts'
-import type { ProcessPlantIcLifecycleState, ProcessPlantRuntime } from './runtime/index.ts'
+import type { ProcessPlantIcLifecycleState } from './runtime/index.ts'
+import type { ProcessPlantVariableHandle } from './runtime/variable-table.ts'
 import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 
 const railDisplayProfileId = 'leitbild-rail'
@@ -32,23 +33,36 @@ const formatRuntimePerformance = (system: ProcessPlantSystemRuntime): string => 
   return `RT x${sample.realtimeFactor.toFixed(0)} (${sample.wallMs.toFixed(1)} ms)`
 }
 
-const readField = (
-  variables: ReturnType<ProcessPlantRuntime['snapshot']>['variables'],
-  field: ProcessPlantDisplayField,
-): ReturnType<typeof processPlantField> => {
-  const variable = variables.find(candidate => candidate.path === field.path)
-  const label = field.label ?? variable?.label ?? String(field.path)
-  return variable
-    ? processPlantField(field.key, label, formatValue(variable.value, variable.unit, field.digits))
-    : processPlantField(field.key, label, 'not in graph')
+interface RailDisplayFieldPlan {
+  readonly field: ProcessPlantDisplayField
+  readonly handle: ProcessPlantVariableHandle
 }
 
-const railDisplayFieldsFor = (
+const railDisplayFieldPlanCache = new WeakMap<ProcessPlantSystemRuntime, ReadonlyArray<RailDisplayFieldPlan>>()
+
+const railDisplayFieldPlansFor = (
   system: ProcessPlantSystemRuntime,
-): ReadonlyArray<ProcessPlantDisplayField> => {
+): ReadonlyArray<RailDisplayFieldPlan> => {
+  const existing = railDisplayFieldPlanCache.get(system)
+  if (existing) return existing
   const profile = system.system.graph.displayProfiles.find(candidate => candidate.id === railDisplayProfileId)
-  if (!profile) return []
-  return profile.groups.flatMap(group => group.fields)
+  const plans = profile === undefined
+    ? []
+    : profile.groups.flatMap(group => group.fields.map(field => ({
+        field,
+        handle: system.runtime.resolveVariableHandle(field.path),
+      })))
+  railDisplayFieldPlanCache.set(system, plans)
+  return plans
+}
+
+const readField = (
+  system: ProcessPlantSystemRuntime,
+  plan: RailDisplayFieldPlan,
+): ReturnType<typeof processPlantField> => {
+  const variable = system.runtime.readVariableSnapshotHandle(plan.handle)
+  const label = plan.field.label ?? variable.label
+  return processPlantField(plan.field.key, label, formatValue(variable.value, variable.unit, plan.field.digits))
 }
 
 const activeLifecycles = (
@@ -91,12 +105,12 @@ export const projectedProcessPlantUnit = (config: {
       } satisfies ProcessPlantUnitDomainData,
     }
   }
-  const lifecycles = activeLifecycles(config.system)
-  const runtimeSnapshot = config.system.runtime.snapshot()
+  const system = config.system
+  const lifecycles = activeLifecycles(system)
   const status = statusFor(lifecycles)
   const activeTripCount = lifecycles.filter(lifecycle => lifecycle.kind === 'trip').length
   const fields = [
-    ...railDisplayFieldsFor(config.system).map(field => readField(runtimeSnapshot.variables, field)),
+    ...railDisplayFieldPlansFor(system).map(plan => readField(system, plan)),
     processPlantField('active-alarms', 'Active alarms', String(lifecycles.filter(lifecycle => lifecycle.kind === 'alarm').length)),
     processPlantField('active-trips', 'Active trips', String(activeTripCount)),
     processPlantField('runtime-performance', 'Runtime', formatRuntimePerformance(config.system)),

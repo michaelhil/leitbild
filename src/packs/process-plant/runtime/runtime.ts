@@ -68,7 +68,7 @@ export const createProcessPlantRuntime = (config: {
   )
   const fixedStepMs = system.graph.timestep.fixedStepMs
   const plan = compileProcessPlantExecutionPlan(system)
-  const pwrKernel = compilePwrTransientKernel(system)
+  const pwrKernel = compilePwrTransientKernel(system, table)
   if (!config.restoredSnapshot) {
     runProcessPlantInitialReconciliation({ system, table, plan })
   }
@@ -78,6 +78,15 @@ export const createProcessPlantRuntime = (config: {
     remainderMs: config.restoredSnapshot?.remainderMs ?? 0,
   }
   let lastPwrTransientDiagnostics: PwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
+  let pwrTransientDiagnosticsDirty = false
+
+  const pwrTransientDiagnostics = (): PwrTransientDiagnostics => {
+    if (pwrTransientDiagnosticsDirty) {
+      lastPwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
+      pwrTransientDiagnosticsDirty = false
+    }
+    return lastPwrTransientDiagnostics
+  }
 
   const snapshot = (): ProcessPlantRuntimeSnapshot => ({
     graphSpecId: String(system.graph.specId),
@@ -95,7 +104,7 @@ export const createProcessPlantRuntime = (config: {
       let simulatedMs = 0
       while (clock.remainderMs >= fixedStepMs) {
         step(system, table, plan, clock, fixedStepMs, assertInvariants)
-        lastPwrTransientDiagnostics = evaluatePwrTransientKernel(pwrKernel, table)
+        pwrTransientDiagnosticsDirty = true
         clock.remainderMs -= fixedStepMs
         simulatedMs += fixedStepMs
       }
@@ -107,12 +116,15 @@ export const createProcessPlantRuntime = (config: {
       }
     },
     elapsedMs: (): number => clock.elapsedMs,
+    resolveVariableHandle: (path: VariablePath) => table.resolve(path),
     readVariable: (path: VariablePath): ProcessPlantValue => table.read(path),
+    readVariableHandle: (handle) => table.readHandle(handle),
     readVariableSnapshot: (path: VariablePath) => table.snapshotVariable(path),
+    readVariableSnapshotHandle: (handle) => table.snapshotHandle(handle),
     writeCommand: (command: ProcessPlantCommand): void => {
       table.queueCommand(command)
     },
-    pwrTransientDiagnostics: (): PwrTransientDiagnostics => lastPwrTransientDiagnostics,
+    pwrTransientDiagnostics,
     snapshot,
   }
 }

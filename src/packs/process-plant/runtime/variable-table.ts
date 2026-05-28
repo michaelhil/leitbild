@@ -10,17 +10,28 @@ import {
 export interface ProcessPlantVariableTable {
   readonly queueCommand: (command: ProcessPlantCommand) => void
   readonly applyQueuedCommands: () => void
+  readonly resolve: (path: VariablePath) => ProcessPlantVariableHandle
   readonly has: (path: VariablePath) => boolean
   readonly read: (path: VariablePath) => ProcessPlantValue
+  readonly readHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantValue
   readonly readNumber: (path: VariablePath) => number
+  readonly readNumberHandle: (handle: ProcessPlantVariableHandle) => number
   readonly readBoolean: (path: VariablePath) => boolean
+  readonly readBooleanHandle: (handle: ProcessPlantVariableHandle) => boolean
   readonly readOptionalNumber: (path: VariablePath, defaultValue: number) => number
   readonly write: (path: VariablePath, value: ProcessPlantValue) => void
   readonly queuedCommands: () => ReadonlyArray<ProcessPlantCommand>
   readonly snapshotVariable: (path: VariablePath) => ProcessPlantVariableSnapshot
+  readonly snapshotHandle: (handle: ProcessPlantVariableHandle) => ProcessPlantVariableSnapshot
   readonly snapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly publishedSnapshot: () => ReadonlyArray<ProcessPlantVariableSnapshot>
   readonly assertInvariants: () => void
+}
+
+export interface ProcessPlantVariableHandle {
+  readonly path: VariablePath
+  readonly variable: CompiledVariable
+  readonly slot: number
 }
 
 const snapshotVariable = (
@@ -58,7 +69,10 @@ export const createProcessPlantVariableTable = (
   initialVariables?: ReadonlyArray<ProcessPlantInitialVariableValue>,
 ): ProcessPlantVariableTable => {
   const variables = system.graph.variables
-  const variableByPath = new Map(variables.map((variable, slot) => [variable.path, { variable, slot }]))
+  const variableByPath = new Map(variables.map((variable, slot) => [variable.path, { path: variable.path, variable, slot } satisfies ProcessPlantVariableHandle]))
+  const publishedHandles = variables.flatMap((variable, slot) =>
+    variable.published ? [{ path: variable.path, variable, slot } satisfies ProcessPlantVariableHandle] : []
+  )
   const values: ProcessPlantValue[] = new Array(variables.length)
   const commands: ProcessPlantCommand[] = []
   const restoredValues = restoredVariables === undefined
@@ -106,17 +120,41 @@ export const createProcessPlantVariableTable = (
     }
   }
 
-  const read = (path: VariablePath): ProcessPlantValue => {
+  const assertHandleMatchesTable = (handle: ProcessPlantVariableHandle): void => {
+    if (variables[handle.slot] !== handle.variable) {
+      throw new Error(`process plant variable handle does not match this runtime table: ${handle.path}`)
+    }
+  }
+
+  const resolve = (path: VariablePath): ProcessPlantVariableHandle => {
     const entry = variableByPath.get(path)
     if (!entry) throw new Error(`unknown process plant variable: ${path}`)
-    const value = values[entry.slot]
-    if (value === undefined) throw new Error(`variable ${path} has no runtime value`)
+    return entry
+  }
+
+  const readHandle = (handle: ProcessPlantVariableHandle): ProcessPlantValue => {
+    assertHandleMatchesTable(handle)
+    const value = values[handle.slot]
+    if (value === undefined) throw new Error(`variable ${handle.path} has no runtime value`)
+    return value
+  }
+
+  const read = (path: VariablePath): ProcessPlantValue => readHandle(resolve(path))
+
+  const readNumberHandle = (handle: ProcessPlantVariableHandle): number => {
+    const value = readHandle(handle)
+    if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`variable ${handle.path} is not numeric`)
+    return value
+  }
+
+  const readBooleanHandle = (handle: ProcessPlantVariableHandle): boolean => {
+    const value = readHandle(handle)
+    if (typeof value !== 'boolean') throw new Error(`variable ${handle.path} is not boolean`)
     return value
   }
 
   const write = (path: VariablePath, value: ProcessPlantValue): void => {
-    const entry = variableByPath.get(path)
-    if (!entry) throw new Error(`unknown process plant variable: ${path}`)
+    const entry = resolve(path)
     assertProcessPlantVariableValueValid(entry.variable, value)
     values[entry.slot] = value
   }
@@ -138,18 +176,14 @@ export const createProcessPlantVariableTable = (
         write(command.path, command.value)
       }
     },
+    resolve,
     has: (path: VariablePath): boolean => variableByPath.has(path),
     read,
-    readNumber: (path: VariablePath): number => {
-      const value = read(path)
-      if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`variable ${path} is not numeric`)
-      return value
-    },
-    readBoolean: (path: VariablePath): boolean => {
-      const value = read(path)
-      if (typeof value !== 'boolean') throw new Error(`variable ${path} is not boolean`)
-      return value
-    },
+    readHandle,
+    readNumber: (path: VariablePath): number => readNumberHandle(resolve(path)),
+    readNumberHandle,
+    readBoolean: (path: VariablePath): boolean => readBooleanHandle(resolve(path)),
+    readBooleanHandle,
     readOptionalNumber: (path: VariablePath, defaultValue: number): number => {
       if (!variableByPath.has(path)) return defaultValue
       const value = read(path)
@@ -159,14 +193,17 @@ export const createProcessPlantVariableTable = (
     write,
     queuedCommands: (): ReadonlyArray<ProcessPlantCommand> => [...commands],
     snapshotVariable: (path: VariablePath): ProcessPlantVariableSnapshot => {
-      const entry = variableByPath.get(path)
-      if (!entry) throw new Error(`unknown process plant variable: ${path}`)
-      return snapshotVariable(values, entry.variable, entry.slot)
+      const handle = resolve(path)
+      return snapshotVariable(values, handle.variable, handle.slot)
+    },
+    snapshotHandle: (handle: ProcessPlantVariableHandle): ProcessPlantVariableSnapshot => {
+      assertHandleMatchesTable(handle)
+      return snapshotVariable(values, handle.variable, handle.slot)
     },
     snapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
       variables.map((variable, slot) => snapshotVariable(values, variable, slot)),
     publishedSnapshot: (): ReadonlyArray<ProcessPlantVariableSnapshot> =>
-      variables.flatMap((variable, slot) => variable.published ? [snapshotVariable(values, variable, slot)] : []),
+      publishedHandles.map(handle => snapshotVariable(values, handle.variable, handle.slot)),
     assertInvariants: (): void => {
       for (let slot = 0; slot < variables.length; slot += 1) {
         const variable = variables[slot]

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { variablePathSchema, type VariablePath } from '../graph/index.ts'
 import type { ProcessPlantRuntime, ProcessPlantVariableSnapshot } from './model.ts'
+import type { ProcessPlantVariableHandle } from './variable-table.ts'
 
 export interface ProcessPlantTelemetryPoint {
   readonly elapsedMs: number
@@ -115,14 +116,21 @@ export const createProcessPlantTelemetryRecorder = (config: {
     }),
   )
   let nextSampleAtMs = restored?.nextSampleAtMs ?? 0
+  let variableHandles: ReadonlyArray<ProcessPlantVariableHandle> | null = null
+
+  const handlesFor = (runtime: ProcessPlantRuntime): ReadonlyArray<ProcessPlantVariableHandle> => {
+    variableHandles ??= telemetry.variables.map(path => runtime.resolveVariableHandle(path))
+    return variableHandles
+  }
 
   return {
     recordDueSamples: (runtime: ProcessPlantRuntime): void => {
       const runtimeElapsedMs = runtime.elapsedMs()
       if (runtimeElapsedMs < nextSampleAtMs) return
+      const handles = handlesFor(runtime)
       while (nextSampleAtMs <= runtimeElapsedMs) {
-        for (const path of telemetry.variables) {
-          appendPoint(series, nextSampleAtMs, runtime.readVariableSnapshot(path))
+        for (const handle of handles) {
+          appendPoint(series, nextSampleAtMs, runtime.readVariableSnapshotHandle(handle))
         }
         nextSampleAtMs += telemetry.sampleIntervalMs
       }

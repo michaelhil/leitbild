@@ -7,6 +7,7 @@ import {
   type VariablePath,
 } from '../graph/index.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
+import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { requireSystem, success } from './common.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
 import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
@@ -40,20 +41,31 @@ const surfaceFor = (surfaceId: string) => {
   return surface
 }
 
-const compiledSurfaceCache = new WeakMap<ProcessPlantSystemRuntime, Map<string, CompiledProcessSurface>>()
+interface CompiledSurfaceRuntimePlan {
+  readonly surface: CompiledProcessSurface
+  readonly bindings: ReadonlyMap<VariablePath, ProcessSurfaceBinding>
+  readonly bindingHandles: ReadonlyArray<ProcessPlantVariableHandle>
+}
+
+const compiledSurfaceCache = new WeakMap<ProcessPlantSystemRuntime, Map<string, CompiledSurfaceRuntimePlan>>()
 
 const compiledSurfaceFor = (
   system: ProcessPlantSystemRuntime,
   surfaceId: string,
-): CompiledProcessSurface => {
+): CompiledSurfaceRuntimePlan => {
   const existingCache = compiledSurfaceCache.get(system)
-  const existingSurface = existingCache?.get(surfaceId)
-  if (existingSurface) return existingSurface
+  const existingPlan = existingCache?.get(surfaceId)
+  if (existingPlan) return existingPlan
   const surface = compileProcessSurface({ definition: surfaceFor(surfaceId), graph: system.system.graph })
-  const cache = existingCache ?? new Map<string, CompiledProcessSurface>()
-  cache.set(surfaceId, surface)
+  const plan = {
+    surface,
+    bindings: bindingByPath(surface),
+    bindingHandles: surface.bindingPaths.map(path => system.runtime.resolveVariableHandle(path)),
+  } satisfies CompiledSurfaceRuntimePlan
+  const cache = existingCache ?? new Map<string, CompiledSurfaceRuntimePlan>()
+  cache.set(surfaceId, plan)
   if (!existingCache) compiledSurfaceCache.set(system, cache)
-  return surface
+  return plan
 }
 
 const formatValue = (value: unknown, unit: string, binding: ProcessSurfaceBinding): string => {
@@ -77,14 +89,13 @@ const bindingByPath = (surface: CompiledProcessSurface): ReadonlyMap<VariablePat
 
 const snapshotValuesFor = (
   system: ProcessPlantSystemRuntime,
-  surface: CompiledProcessSurface,
+  plan: CompiledSurfaceRuntimePlan,
 ): ReadonlyArray<ProcessSurfaceValue> => {
-  const bindings = bindingByPath(surface)
-  return surface.bindingPaths.map(path => {
-    const variable = system.runtime.readVariableSnapshot(path)
-    const binding = bindings.get(path)
+  return plan.bindingHandles.map(handle => {
+    const variable = system.runtime.readVariableSnapshotHandle(handle)
+    const binding = plan.bindings.get(handle.path)
     return {
-      path,
+      path: handle.path,
       label: binding?.label ?? variable.label,
       unit: variable.unit,
       value: variable.value,
@@ -114,7 +125,8 @@ export const answerProcessPlantSurfaceQuery = (config: {
   }
   const payload = surfaceQuerySchema.parse(config.request.payload)
   const system = requireSystem(config.systems, payload.systemId)
-  const surface = compiledSurfaceFor(system, payload.surfaceId)
+  const plan = compiledSurfaceFor(system, payload.surfaceId)
+  const surface = plan.surface
   if (config.request.kind === 'process-plant.surface.read') {
     return success(config.request, { systemId: system.system.id, surface }, config.at)
   }
@@ -147,6 +159,6 @@ export const answerProcessPlantSurfaceQuery = (config: {
   return success(config.request, {
     systemId: system.system.id,
     surfaceId: surface.id,
-    values: snapshotValuesFor(system, surface),
+    values: snapshotValuesFor(system, plan),
   }, config.at)
 }
