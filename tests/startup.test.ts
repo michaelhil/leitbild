@@ -50,6 +50,22 @@ describe('startup progress model', () => {
     expect(startupHasFailed(failed)).toBe(true)
   })
 
+  test('treats shell readiness as independent from map completion', () => {
+    let steps = createStartupSteps(10)
+    for (const step of steps.filter(step => step.id !== 'map')) {
+      steps = completeStartupStep(steps, step.id, 20)
+    }
+
+    expect(startupIsReady(steps)).toBe(true)
+
+    const mapFailed = failStartupStep(steps, 'map', 'map failed', 30)
+    expect(startupIsReady(mapFailed)).toBe(true)
+    expect(startupHasFailed(mapFailed)).toBe(true)
+
+    const realtimeFailed = failStartupStep(steps, 'realtime', 'socket failed', 30)
+    expect(startupIsReady(realtimeFailed)).toBe(false)
+  })
+
   test('keeps startup modal visible until the UI lifecycle dismisses it', () => {
     let steps = createStartupSteps(10)
     for (const step of steps) steps = completeStartupStep(steps, step.id, 20)

@@ -92,6 +92,13 @@
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
   let scenarioOptionsLoaded = $state(false)
+  let surfaceLoadGeneration = 0
+  let mapSurfaceLoadPromise: Promise<Component> | null = null
+  let processSurfaceModalLoadPromise: Promise<Component> | null = null
+  let postReadyPreloadStarted = false
+  let startupDebugGeneration = 0
+  let startupDebugReported = false
+  let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -124,6 +131,7 @@
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
+  const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
   const placementCursor = $derived(activePack ? placementCursorFor(placementMode, activePack) : null)
   const systemStatusTone = $derived<StatusTone>(
@@ -255,9 +263,71 @@
     seenRevisions = new Map([...seenRevisions, [object.id, object.revision]])
   }
 
-  const loadMapSurface = async (): Promise<void> => {
-    const module = await import('../MapSurface.svelte')
-    MapSurface = module.default
+  const markStartup = (label: string): void => {
+    if (!debugStartup) return
+    const atMs = performance.now()
+    const first = startupDebugMarks[0]?.atMs ?? atMs
+    startupDebugMarks = [...startupDebugMarks, { label, atMs, deltaMs: atMs - first }]
+    performance.mark(`leitbild-startup:${startupDebugGeneration}:${label}`)
+  }
+
+  const resetStartupDebug = (): void => {
+    startupDebugGeneration += 1
+    startupDebugReported = false
+    startupDebugMarks = []
+    markStartup('begin')
+  }
+
+  const reportStartupDebug = (): void => {
+    if (!debugStartup || startupDebugReported) return
+    startupDebugReported = true
+    console.table(startupDebugMarks.map(mark => ({
+      step: mark.label,
+      elapsedMs: Number(mark.deltaMs.toFixed(1)),
+    })))
+  }
+
+  const runWhenIdle = (task: () => void): void => {
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      window.requestIdleCallback(task, { timeout: 2_000 })
+      return
+    }
+    setTimeout(task, 250)
+  }
+
+  const preloadOptionalUiAfterReady = (): void => {
+    if (postReadyPreloadStarted) return
+    if (mapVisible && !mapReady) return
+    const scenario = scenarioDefinition
+    if (!scenario?.packs.includes('process-plant')) return
+    postReadyPreloadStarted = true
+    runWhenIdle(() => {
+      void (async (): Promise<void> => {
+        try {
+          markStartup('process-surface-preload:start')
+          await loadProcessSurfaceModal()
+          markStartup('process-surface-preload:done')
+        } catch (err) {
+          if (debugStartup) console.warn(err)
+        }
+      })()
+    })
+  }
+
+  const loadMapSurface = async (): Promise<Component> => {
+    if (MapSurface) return MapSurface
+    mapSurfaceLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../MapSurface.svelte')
+      return module.default
+    })()
+    try {
+      const component = await mapSurfaceLoadPromise
+      MapSurface = component
+      return component
+    } catch (err) {
+      mapSurfaceLoadPromise = null
+      throw err
+    }
   }
 
   const loadCreateObjectModal = async (): Promise<void> => {
@@ -274,42 +344,69 @@
 
   const loadProcessSurfaceModal = async (): Promise<void> => {
     if (ProcessSurfaceModal) return
-    const module = await import('../process-surface/ProcessSurfaceModal.svelte')
-    ProcessSurfaceModal = module.default
+    processSurfaceModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../process-surface/ProcessSurfaceModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcessSurfaceModal = await processSurfaceModalLoadPromise
+    } catch (err) {
+      processSurfaceModalLoadPromise = null
+      throw err
+    }
   }
 
   const startStep = (id: StartupStepId): void => {
+    markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
   }
 
   const completeStep = (id: StartupStepId): void => {
+    if (startupSteps.find(step => step.id === id)?.status === 'done') return
+    markStartup(`${id}:done`)
     startupSteps = completeStartupStep(startupSteps, id)
   }
 
   const failStep = (id: StartupStepId, err: unknown): void => {
     const message = err instanceof Error ? err.message : String(err)
+    markStartup(`${id}:failed`)
     startupSteps = failStartupStep(startupSteps, id, message)
     status = message
   }
 
   const completeReadyWhenReady = (): void => {
-    if (!snapshotReady || !realtimeAttached || (mapVisible && !mapReady)) return
+    if (!snapshotReady || !realtimeAttached) return
     completeStep('ready')
+    reportStartupDebug()
+    preloadOptionalUiAfterReady()
   }
 
   const completeObjectsWhenReady = async (): Promise<void> => {
-    if (!snapshotReady || (mapVisible && !mapReady)) return
+    if (!snapshotReady) return
     await tick()
     completeStep('objects')
     completeReadyWhenReady()
   }
 
   const loadSurfaceForScenario = async (scenarioId: string): Promise<void> => {
+    const generation = ++surfaceLoadGeneration
     const scenario = scenarioDefinition?.id === scenarioId
       ? scenarioDefinition
       : await loadScenarioDefinitionAndPack(scenarioId)
     if (surfaceHasPrimitive(scenario.surface, 'map')) {
-      await loadMapSurface()
+      mapReady = false
+      markStartup('map-module:start')
+      void (async (): Promise<void> => {
+        try {
+          await loadMapSurface()
+          if (generation !== surfaceLoadGeneration) return
+          markStartup('map-module:done')
+          completeStep('map')
+        } catch (err) {
+          if (generation !== surfaceLoadGeneration) return
+          failStep('map', err)
+        }
+      })()
       return
     }
     MapSurface = null
@@ -346,9 +443,11 @@
   }
 
   const resetStartupForJoin = (): void => {
+    resetStartupDebug()
+    surfaceLoadGeneration += 1
+    postReadyPreloadStarted = false
     startupDismissed = false
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
-    if (mapReady) completeStep('map')
   }
 
   const activeRoute = () => parseControlSurfaceRoute(location.pathname)
@@ -364,12 +463,16 @@
   }
 
   const loadScenarioDefinitionAndPack = async (scenarioId: string): Promise<ScenarioDefinition> => {
+    markStartup('scenario-fetch:start')
     const body = await fetchScenario(scenarioId)
+    markStartup('scenario-fetch:done')
     return await loadScenarioDefinitionAndPackFromDefinition(body.scenario)
   }
 
   const loadScenarioDefinitionAndPackFromDefinition = async (scenario: ScenarioDefinition): Promise<ScenarioDefinition> => {
+    markStartup('pack-load:start')
     const nextPack = await createScenarioControlPack(scenario.packs)
+    markStartup('pack-load:done')
     scenarioDefinition = scenario
     activePack = nextPack
     return scenario
@@ -604,7 +707,9 @@
       const route = activeRoute()
       if (route.mode !== 'control-instance') throw new Error('control instance route expected')
       expectedRealtimeScenarioId = route.scenarioId
+      markStartup('join-request:start')
       const body = await joinControlInstanceClient(id, { scenarioId: route.scenarioId })
+      markStartup('join-request:done')
       await completeStartupFromResponse(body, {
         setActiveStartupStep: id => {
           activeStartupStep = id
@@ -667,9 +772,11 @@
 
   const handleMapReady = (): void => {
     mapReady = true
-    completeStep('map')
-    startStep('objects')
+    markStartup('map:ready')
+    if (startupSteps.find(step => step.id === 'map')?.status !== 'done') completeStep('map')
+    if (startupSteps.find(step => step.id === 'objects')?.status === 'pending') startStep('objects')
     void completeObjectsWhenReady()
+    preloadOptionalUiAfterReady()
   }
 
   const handleMapError = (message: string): void => {

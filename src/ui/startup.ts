@@ -57,6 +57,7 @@ export const completeStartupStep = (
   nowMs = performance.now(),
 ): ReadonlyArray<StartupStep> =>
   updateStep(steps, id, step => {
+    if (step.status === 'done') return step
     const { error: _error, ...stepWithoutError } = step
     return {
       ...stepWithoutError,
@@ -98,7 +99,8 @@ export const resetStartupStepsAfter = (
 }
 
 export const startupIsReady = (steps: ReadonlyArray<StartupStep>): boolean =>
-  steps.every(step => step.status === 'done')
+  steps.find(step => step.id === 'ready')?.status === 'done'
+  && !steps.some(step => step.id !== 'map' && step.status === 'failed')
 
 export const startupHasFailed = (steps: ReadonlyArray<StartupStep>): boolean =>
   steps.some(step => step.status === 'failed')
