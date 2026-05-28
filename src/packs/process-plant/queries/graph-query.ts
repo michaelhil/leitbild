@@ -1,9 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { CompiledPlantGraph, ComponentId, ComponentInstanceSpec, ProcessPlantDisplayField } from '../graph/index.ts'
+import type { CompiledPlantGraph, ComponentId, ProcessPlantDisplayField } from '../graph/index.ts'
 import { plantGraphToMermaid } from '../graph/index.ts'
+import { processPlantComponentSourcePathByKind } from '../graph/component-registry.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
 import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
@@ -14,6 +17,78 @@ const artifactReadQuerySchema = z.object({
   systemId: idSchema,
   artifact: z.enum(['authored-spec', 'compiled-graph-mermaid']),
 })
+
+const sourceRoot = fileURLToPath(new URL('../../../..', import.meta.url))
+
+interface ComponentSourceView {
+  readonly path: string
+  readonly content: string
+}
+
+const componentSourceCache = new Map<string, string>()
+
+const sourceTextFor = (sourcePath: string): string => {
+  const existing = componentSourceCache.get(sourcePath)
+  if (existing !== undefined) return existing
+  const content = readFileSync(`${sourceRoot}/${sourcePath}`, 'utf8')
+  componentSourceCache.set(sourcePath, content)
+  return content
+}
+
+const objectStartBefore = (source: string, index: number): number => {
+  let cursor = index
+  while (cursor >= 0) {
+    if (source[cursor] === '{') return cursor
+    cursor -= 1
+  }
+  return 0
+}
+
+const objectEndAfter = (source: string, start: number): number => {
+  let depth = 0
+  let quote: '"' | "'" | '`' | null = null
+  let escaped = false
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index]
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      continue
+    }
+    if (char === '{') depth += 1
+    if (char === '}') {
+      depth -= 1
+      if (depth === 0) return index + 1
+    }
+  }
+  return source.length
+}
+
+const componentSourceViewFor = (component: CompiledPlantGraph['components'][number]): ComponentSourceView => {
+  const sourcePath = processPlantComponentSourcePathByKind.get(component.kind)
+  if (!sourcePath) {
+    return {
+      path: 'unknown',
+      content: `Component definition source not found for kind ${component.kind}`,
+    }
+  }
+  const source = sourceTextFor(sourcePath)
+  const kindPattern = new RegExp(`kind:\\s*['"]${String(component.kind)}['"]\\s+as\\s+ComponentKind`)
+  const match = kindPattern.exec(source)
+  if (!match) return { path: sourcePath, content: source }
+  const start = objectStartBefore(source, match.index)
+  const end = objectEndAfter(source, start)
+  return { path: sourcePath, content: source.slice(start, end).trim() }
+}
 
 const displayProfileReadQuerySchema = z.object({
   systemId: idSchema,
@@ -68,24 +143,17 @@ const artifactMetadata = (
 
 const artifactComponents = (
   graph: CompiledPlantGraph,
-  sourceComponents: ReadonlyArray<ComponentInstanceSpec>,
   overviewComponentIds: ReadonlySet<ComponentId>,
 ): ReadonlyArray<Record<string, unknown>> => {
-  const sourceById = new Map(sourceComponents.map(component => [component.id, component]))
   return graph.components.map(component => {
-    const source = sourceById.get(component.id) ?? {
-      id: component.id,
-      kind: component.kind,
-      label: component.label,
-      parameters: component.parameters,
-      variables: [],
-    } satisfies ComponentInstanceSpec
+    const source = componentSourceViewFor(component)
     return {
       id: component.id,
       label: component.label,
       kind: component.kind,
       shownOnOverview: overviewComponentIds.has(component.id),
-      source: JSON.stringify(source, null, 2),
+      source: source.content,
+      sourcePath: source.path,
     }
   })
 }
@@ -95,7 +163,7 @@ const artifactView = (
   artifact: 'authored-spec' | 'compiled-graph-mermaid',
 ): unknown => {
   const overviewComponentIds = overviewComponentIdsFor(system)
-  const components = artifactComponents(system.system.graph, system.system.sourceGraph.components, overviewComponentIds)
+  const components = artifactComponents(system.system.graph, overviewComponentIds)
   if (artifact === 'authored-spec') {
     return {
       systemId: system.system.id,

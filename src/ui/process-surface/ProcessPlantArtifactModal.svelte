@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronUp, Copy, FileCode2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-svelte'
+  import { ChevronsUp, ChevronDown, ChevronUp, Copy, FileCode2, RotateCcw, Search, X, ZoomIn, ZoomOut } from 'lucide-svelte'
   import { tick } from 'svelte'
   import type { ControlInstanceId } from '../../core/model/index.ts'
   import {
@@ -115,6 +115,11 @@
     const line = viewport?.querySelector(`[data-source-line="${lineIndex}"]`)
     if (!(line instanceof HTMLElement)) return
     line.scrollIntoView({ block: 'center' })
+  }
+
+  const scrollSourceToTop = (): void => {
+    sourceViewport?.scrollTo({ top: 0 })
+    sourceSearchCursor = -1
   }
 
   const moveSourceSearch = async (direction: 1 | -1): Promise<void> => {
@@ -363,6 +368,9 @@
           <button type="button" aria-label="Next source match" onclick={() => void moveSourceSearch(1)} disabled={sourceSearchMatches.length === 0}>
             <ChevronDown size={16} aria-hidden="true" />
           </button>
+          <button type="button" aria-label="Jump to top of source" onclick={scrollSourceToTop}>
+            <ChevronsUp size={16} aria-hidden="true" />
+          </button>
         {/if}
         {#if data?.language === 'mermaid' && renderedSvg}
           <button type="button" aria-label="Zoom out graph" onclick={() => zoomGraph(1 / 1.2)}>
@@ -458,7 +466,7 @@
       <header>
         <div>
           <strong>{componentSource.label}</strong>
-          <span>{componentSource.kind} · {componentSource.id}</span>
+          <span>{componentSource.kind} · {componentSource.sourcePath}</span>
         </div>
         <button type="button" aria-label="Close component source" onclick={() => { componentSource = null }}>
           <X size={16} aria-hidden="true" />

@@ -50,6 +50,7 @@ export interface ProcessPlantArtifactComponent {
   readonly kind: string
   readonly shownOnOverview: boolean
   readonly source: string
+  readonly sourcePath: string
 }
 
 export interface ProcessPlantArtifact {
@@ -143,6 +144,7 @@ const parseProcessPlantArtifactComponent = (value: unknown): ProcessPlantArtifac
     kind: assertString(component.kind, 'process plant artifact component requires kind'),
     shownOnOverview: component.shownOnOverview,
     source: assertString(component.source, 'process plant artifact component requires source'),
+    sourcePath: assertString(component.sourcePath, 'process plant artifact component requires sourcePath'),
   }
 }
 

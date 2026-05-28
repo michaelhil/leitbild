@@ -213,9 +213,10 @@ describe('process plant simulation provider', () => {
     const sourceResult = sourceArtifact.result as {
       readonly components: ReadonlyArray<{
         readonly id: string
-        readonly label: string
-        readonly shownOnOverview: boolean
-        readonly source: string
+      readonly label: string
+      readonly shownOnOverview: boolean
+      readonly source: string
+      readonly sourcePath: string
       }>
       readonly metadata: { readonly componentCount: number; readonly overviewComponentCount: number }
     }
@@ -224,7 +225,8 @@ describe('process plant simulation provider', () => {
     expect(sourceResult.components.find(component => component.id === 'mainSteamHeader')?.shownOnOverview).toBe(true)
     expect(sourceResult.components.find(component => component.id === 'safetyBusA')?.shownOnOverview).toBe(true)
     expect(sourceResult.components.find(component => component.id === 'auxFeedwaterPumpMotor')?.shownOnOverview).toBe(false)
-    expect(sourceResult.components.find(component => component.id === 'sgA')?.source).toContain('"id": "sgA"')
+    expect(sourceResult.components.find(component => component.id === 'sgA')?.source).toContain("kind: 'steamGenerator' as ComponentKind")
+    expect(sourceResult.components.find(component => component.id === 'sgA')?.sourcePath).toBe('src/packs/process-plant/graph/steam-generator-component-definitions.ts')
     expect(sourceResult.metadata.overviewComponentCount).toBe(sourceResult.components.filter(component => component.shownOnOverview).length)
 
     const graphArtifact = await connection.query(query('process-plant.artifact.read', {
