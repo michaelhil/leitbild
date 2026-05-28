@@ -4,7 +4,7 @@
   "title": "Oslo ambulance tutorial",
   "description": "A timed Oslo ambulance dispatch scenario with existing transports, unresolved incidents, traffic conditions, and tutorial guidance.",
   "packs": ["ambulance", "traffic", "weather"],
-  "providerOverrides": {},
+  "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T09:00:00.000Z",
     "mapCenter": [10.7522, 59.9139],
@@ -206,7 +206,7 @@
     }
   ],
   "initialContexts": [],
-  "providerConfigs": {
+  "runtimeConfigs": {
     "ambulance": {},
     "traffic": {},
     "weather": {
@@ -371,7 +371,7 @@
             "type": "show_guidance",
             "guidance": {
               "id": "marienlyst-traffic-created",
-              "title": "Traffic provider update",
+              "title": "Traffic runtime update",
               "tone": "update",
               "message": "A traffic area has been added by the traffic pack. Watch for route impacts when ambulances cross affected areas.",
               "objectIds": ["traffic:marienlyst-event"],

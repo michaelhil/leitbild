@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { geoJsonPointSchema } from '../../core/model/index.ts'
 
-export const weatherDomainId = 'weather' as const
+export const weatherPackId = 'weather' as const
 
 export const precipitationTypeSchema = z.enum(['none', 'rain', 'snow', 'sleet', 'freezing_rain', 'hail'])
 export type PrecipitationType = z.infer<typeof precipitationTypeSchema>
@@ -137,7 +137,7 @@ export const weatherInfluenceSchema = z.object({
 })
 export type WeatherInfluence = z.infer<typeof weatherInfluenceSchema>
 
-export const weatherDomainDataSchema = z.object({
+export const weatherPackDataSchema = z.object({
   type: z.literal('weather_condition'),
   schemaVersion: z.literal(1),
   conditionKind: z.enum(['weather_influence', 'point_observation']),
@@ -147,7 +147,7 @@ export const weatherDomainDataSchema = z.object({
   render: weatherRenderSchema.optional(),
   summary: z.string().min(1),
 })
-export type WeatherDomainData = z.infer<typeof weatherDomainDataSchema>
+export type WeatherPackData = z.infer<typeof weatherPackDataSchema>
 
 export const createWeatherAreaPayloadSchema = z.object({
   objectType: z.literal('weather_area'),

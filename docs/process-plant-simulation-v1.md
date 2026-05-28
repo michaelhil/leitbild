@@ -4,7 +4,7 @@
 
 Leitbild should be able to host process-control simulations that interact with the wider operational world. The first feasibility target is a pressurized water reactor plant, but the pack identity is deliberately broader: `process-plant`.
 
-V1 is not a licensing-grade thermal-hydraulic analysis code. It is a medium-fidelity process-control simulator intended to test whether Leitbild can run, inspect, control, and coordinate coupled plant models credibly enough for control-room workflow research, AI-agent studies, and cross-domain scenario interaction.
+V1 is not a licensing-grade thermal-hydraulic analysis code. It is a medium-fidelity process-control simulator intended to test whether Leitbild can run, inspect, control, and coordinate coupled plant models credibly enough for control-room workflow research, AI-agent studies, and cross-discipline scenario interaction.
 
 The key feasibility question is whether a scenario-owned component graph, typed ports/links, a compiled runtime graph, and a fixed-step solver can make plant evolution understandable, efficient, replayable, and extensible.
 
@@ -23,7 +23,7 @@ Inside the pack:
 - a variable registry exposes stable paths, units, writability, and publish policy.
 - connections can act as process links with optional physical metadata and link-local variables.
 - discrete events represent commands, trips, alarms, threshold crossings, and scenario injections.
-- pack queries expose read-only process state through Leitbild's generic query surface after provider lifecycle integration exists.
+- pack queries expose read-only process state through Leitbild's generic query surface after pack runtime lifecycle integration exists.
 
 Leitbild core sees selected operational objects, commands, queries, events, and surfaces. It does not see every internal plant variable as an `OperationalObject`.
 
@@ -46,7 +46,7 @@ Scenario object example:
 }
 ```
 
-The process-plant provider owns the runtime and I&C state for `systemId`. On each provider tick it derives a projection for the operational object:
+The process-plant pack runtime owns the runtime and I&C state for `systemId`. On each pack runtime tick it derives a projection for the operational object:
 
 - status tone and label from active alarm/trip lifecycle state
 - active alarm and trip counts
@@ -121,7 +121,7 @@ The reusable machinery remains code-owned:
 - parameter/state schemas,
 - graph compiler,
 - solver/runtime,
-- provider query surface,
+- pack runtime query surface,
 - command/event handlers.
 
 That boundary is deliberate. Scenarios instantiate components and connect them; they do not invent arbitrary physics in V1.
@@ -218,7 +218,7 @@ Example:
       "path": "flowKgPerS",
       "label": "Main steam flow",
       "kind": "derived",
-      "domain": "hydraulic",
+      "discipline": "hydraulic",
       "writable": false,
       "publish": "telemetry",
       "quantity": "flowRate",
@@ -232,7 +232,7 @@ Example:
       "path": "leak.areaFraction",
       "label": "Main steam line leak area",
       "kind": "control",
-      "domain": "hydraulic",
+      "discipline": "hydraulic",
       "writable": true,
       "publish": "telemetry",
       "quantity": "ratio",
@@ -371,7 +371,7 @@ Current process-plant signal query kinds:
 
 - `process-plant.signals.resolve`: resolve signal references to metadata
 - `process-plant.signals.read`: resolve signal references and return current variable snapshots
-- `process-plant.signals.search`: search by text, tag, equipment, domain, quantity, writability, procedure relevance, and publish policy
+- `process-plant.signals.search`: search by text, tag, equipment, discipline, quantity, writability, procedure relevance, and publish policy
 
 Example procedure-agent read:
 
@@ -402,7 +402,7 @@ Writable controls use the same signal reference shape through `process-plant.con
 }
 ```
 
-No process-specific HTTP endpoint family is introduced. The Control Instance API routes generic pack queries and command envelopes to the active process-plant provider.
+No process-specific HTTP endpoint family is introduced. The Control Instance API routes generic pack queries and command envelopes to the active process-plant pack runtime.
 
 ## Cross-Pack Operational Demands
 
@@ -453,7 +453,7 @@ This scenario is a composition test:
 - six process runtimes run in parallel
 - process unit map/rail state comes from runtime/I&C projection
 - ambulance routing and arrivals continue independently
-- weather continues through its own provider-backed H3 field
+- weather continues through its own runtime-backed H3 field
 - scenario guidance and demand signals use runtime events, not UI-only hacks
 
 ## Control And Protection Substrate
@@ -487,7 +487,7 @@ The rule language supports:
 - optional explicit `clearCondition` and `clearDelayMs` for alarm hysteresis and chatter control
 - latching, reset-on-clear behavior, and explicit reset conditions
 
-Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or provider config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
+Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or runtime config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
 
 Runtime ordering is:
 
@@ -502,11 +502,11 @@ This keeps the process variable table as the only continuous-state truth. The in
 
 Automatic actions from normal controllers and protection functions use the same validation semantics as operator, scenario, and AI commands: resolve a signal, check writability, validate type and hard limits, queue the write at a phase boundary, and make failure visible. An internal actor such as `actor:process-plant-protection` may request the action, but it does not get a private mutation path.
 
-I&C definitions are semantically validated before the runtime starts. The provider rejects rule classes that do not match their effects: alarm rules may only enter alarms, protection rules may only enter trips or request validated writes, normal-control rules may only request validated writes, and permissive/interlock rules must declare command gates rather than lifecycle effects. Write effects and command gates are resolved against graph-owned signals during startup, and non-writable targets, impossible value types, or hard-range violations fail visibly.
+I&C definitions are semantically validated before the runtime starts. The pack runtime rejects rule classes that do not match their effects: alarm rules may only enter alarms, protection rules may only enter trips or request validated writes, normal-control rules may only request validated writes, and permissive/interlock rules must declare command gates rather than lifecycle effects. Write effects and command gates are resolved against graph-owned signals during startup, and non-writable targets, impossible value types, or hard-range violations fail visibly.
 
 Permissives and interlocks constrain the same command/write path used by operators, scenarios, AI agents, and automatic I&C writes. A command gate names the target signal it governs. A permissive blocks the write when its condition is false; an interlock blocks the write when its condition is true. Gates evaluate against the authoritative runtime snapshot at the current solver boundary, so recently accepted commands do not become visible until the fixed-step runtime applies them.
 
-Implemented I&C provider config shape:
+Implemented I&C runtime config shape:
 
 ```json
 {
@@ -700,7 +700,7 @@ Variable descriptors include:
 - `kind`
 - `quantity`
 - `unit`
-- `domain`
+- `discipline`
 - `writable`
 - `publish`
 
@@ -817,7 +817,7 @@ The runtime phase order is explicit:
 
 Publishing is not a hidden solver phase. After the fixed-step loop advances, the runtime returns the selected published variables from the authoritative variable table. Keeping publication as a read-out rather than a phase avoids implying that process state changes during telemetry extraction. Telemetry recorders resolve selected variable paths once and sample those variables directly; they do not snapshot the entire runtime just to read a few trends.
 
-Runtime snapshots include the graph spec id and compiled variable path list. Restore rejects snapshots whose graph identity or variable layout no longer matches the compiled system, which prevents stale provider-private state from being applied to a different plant graph.
+Runtime snapshots include the graph spec id and compiled variable path list. Restore rejects snapshots whose graph identity or variable layout no longer matches the compiled system, which prevents stale runtime-private state from being applied to a different plant graph.
 
 This follows the same broad lesson as serious simulator integrations such as FlyByWire: simulator bridges and user inputs should be outside the continuous model, while the model itself runs in a clear read/update/write rhythm. Continuous physics should not depend on incidental event order or browser update cadence.
 
@@ -849,7 +849,7 @@ Current runtime behavior is deliberately minimal but functional:
 
 The current thermophysical helpers live in `src/packs/process-plant/runtime/thermophysics.ts`. They are intentionally approximate and code-backed: specific heat, latent heat, water temperature rise from heat/flow, steam flow from heat, a pressure-to-saturation-temperature approximation, and a small energy-balance helper. Keep this shared helper layer thin. It should prevent duplicated constants and arithmetic drift without pretending to be RELAP, Modelica, or a steam-table package.
 
-The runtime is connected through the process-plant simulation provider. The provider owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Control Instance command path.
+The runtime is connected through the process-plant pack runtime. The pack runtime owns private runtime snapshots, exposes read-only process state through pack queries, and accepts writable-variable commands through the normal Control Instance command path.
 
 ## Feasibility Scenarios
 
@@ -938,11 +938,11 @@ Candidate future events:
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, provider lifecycle integration, provider-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, procedure tag compatibility validation, persistent I&C lifecycle state, validated I&C writes, command gates, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
+The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, pack runtime lifecycle integration, runtime-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, procedure tag compatibility validation, persistent I&C lifecycle state, validated I&C writes, command gates, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
 
-Process-plant provider config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant provider has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
+Process-plant runtime config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant pack runtime has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
-Every provider-configured system key must match a declared process system id. Unknown keys are rejected before runtime starts. This keeps typoed multi-unit scenarios from silently running without the intended I&C, schedule, or telemetry configuration.
+Every pack runtime-configured system key must match a declared process system id. Unknown keys are rejected before runtime starts. This keeps typoed multi-unit scenarios from silently running without the intended I&C, schedule, or telemetry configuration.
 
 Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It is implemented as a small catalog assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
 
@@ -952,11 +952,11 @@ Reusable controller behavior in the reference set is expressed through authoring
 
 For now, a process system must choose either `icRef` or inline `protection`; defining both is rejected. This avoids hidden merge behavior. If a scenario needs custom I&C, either reference the built-in behavior or define the complete inline rule set for that system.
 
-Example provider config:
+Example runtime config:
 
 ```json
 {
-  "providerConfigs": {
+  "runtimeConfigs": {
     "process-plant": {
       "systems": {
         "unit-2": {
@@ -985,7 +985,7 @@ Example provider config:
 
 ## Persistence And Replay
 
-The process plant provider owns private runtime state. It persists enough provider snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
+The process plant pack runtime owns private runtime state. It persists enough pack runtime snapshot data to restore a running plant without replaying the scenario definition as if it were current state.
 
 Persist:
 
@@ -1003,7 +1003,7 @@ Future persistence additions:
 - active alarms,
 - explicit long-run trend retention policy.
 
-Do not persist every high-frequency telemetry frame into the durable journal. The durable journal remains meaningful accepted history. Provider snapshots hold current runtime truth.
+Do not persist every high-frequency telemetry frame into the durable journal. The durable journal remains meaningful accepted history. Pack runtime snapshots hold current runtime truth.
 
 Telemetry is opt-in and pack-owned. A process system without telemetry config still runs and can be queried for current variable snapshots. A process system with telemetry config records selected variables at the configured interval and exposes the samples through `process-plant.trends.read`.
 
@@ -1013,7 +1013,7 @@ The performance strategy is architectural:
 
 - compile graph once,
 - use numeric component and port indices,
-- group links by physical domain,
+- group links by physical discipline,
 - use a fixed timestep,
 - publish selected variables only,
 - avoid parsing raw graph strings in the solver loop,
@@ -1043,7 +1043,7 @@ The process-plant pack now has a compact acceptance trace harness:
 bun run process-plant:acceptance
 ```
 
-The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs representative headless cases, records selected published variables, samples final PWR transient diagnostics, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, transient kernel, component behaviors, and process-link behaviors that provider-backed simulations use.
+The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs representative headless cases, records selected published variables, samples final PWR transient diagnostics, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, transient kernel, component behaviors, and process-link behaviors that runtime-backed simulations use.
 
 Current acceptance cases:
 
@@ -1118,7 +1118,7 @@ Phase 4: emergency scenario tests:
 Phase 5: Leitbild integration:
 
 - process plant pack registration,
-- provider adapter,
+- pack runtime adapter,
 - generic pack queries,
 - commands,
 - events,
@@ -1152,6 +1152,6 @@ Phase 6: first control-room surface:
 - Do not add placeholder production paths.
 - Fail loudly on invalid graph specs.
 - Do not introduce a second HTTP server.
-- Do not add domain-specific HTTP endpoint families.
+- Do not add discipline-specific HTTP endpoint families.
 - Do not blur continuous solver state with discrete events.
 - Do not treat generated Mermaid diagrams as canonical topology.

@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { geoPointFromLonLat, nowIso, type AdapterId, type DomainId, type IsoTimestamp, type OperationalObject } from '../../../../core/model/index.ts'
+import { geoPointFromLonLat, nowIso, type AdapterId, type PackId, type IsoTimestamp, type OperationalObject } from '../../../../core/model/index.ts'
 import {
-  aircraftDomainDataSchema,
+  aircraftPackDataSchema,
   aircraftObjectId,
-  aviationDomainId,
-  type AircraftDomainData,
+  aviationPackId,
+  type AircraftPackData,
 } from '../../model.ts'
 import { aviationVatsimAdapterId } from '../constants.ts'
 import type { VatsimBbox } from './constants.ts'
@@ -72,7 +72,7 @@ const KT_TO_MPS = 0.514444
 const isInsideBbox = (lon: number, lat: number, bbox: VatsimBbox): boolean =>
   lat >= bbox.lamin && lat <= bbox.lamax && lon >= bbox.lomin && lon <= bbox.lomax
 
-const buildDomainData = (pilot: VatsimPilot): AircraftDomainData => {
+const buildPackData = (pilot: VatsimPilot): AircraftPackData => {
   const altFt = pilot.altitude
   const altM = altFt === null ? null : altFt * FT_TO_M
   const speedKt = pilot.groundspeed
@@ -89,7 +89,7 @@ const buildDomainData = (pilot: VatsimPilot): AircraftDomainData => {
         route: fp.route ?? null,
       }
     : null
-  return aircraftDomainDataSchema.parse({
+  return aircraftPackDataSchema.parse({
     type: 'aircraft',
     schemaVersion: 1,
     source: 'vatsim',
@@ -108,7 +108,7 @@ const buildDomainData = (pilot: VatsimPilot): AircraftDomainData => {
   })
 }
 
-const buildObject = (pilot: VatsimPilot, data: AircraftDomainData, at: IsoTimestamp): OperationalObject => {
+const buildObject = (pilot: VatsimPilot, data: AircraftPackData, at: IsoTimestamp): OperationalObject => {
   if (pilot.longitude === null || pilot.latitude === null) {
     throw new Error('vatsim normalise: pilot missing position')
   }
@@ -117,7 +117,7 @@ const buildObject = (pilot: VatsimPilot, data: AircraftDomainData, at: IsoTimest
   return {
     id: aircraftObjectId('vatsim', externalId) as OperationalObject['id'],
     kind: 'aircraft',
-    domain: aviationDomainId as DomainId,
+    packId: aviationPackId as PackId,
     label,
     lifecycle: 'active',
     revision: 0,
@@ -143,7 +143,7 @@ const buildObject = (pilot: VatsimPilot, data: AircraftDomainData, at: IsoTimest
       createdAt: at,
       updatedAt: at,
     },
-    domainData: data,
+    packData: data,
   }
 }
 
@@ -160,7 +160,7 @@ export const normaliseVatsimData = (
   for (const pilot of parsed.pilots) {
     if (pilot.longitude === null || pilot.latitude === null) continue
     if (options.bbox && !isInsideBbox(pilot.longitude, pilot.latitude, options.bbox)) continue
-    const data = buildDomainData(pilot)
+    const data = buildPackData(pilot)
     out.push(buildObject(pilot, data, at))
   }
   return out

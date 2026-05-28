@@ -1,6 +1,6 @@
-import type { AdapterId, DomainId } from '../../../core/model/index.ts'
-import { weatherDomainId } from '../model.ts'
+import type { AdapterId, PackId } from '../../../core/model/index.ts'
+import { weatherPackId } from '../model.ts'
 
-export const weatherSimProviderId = 'weather-local'
+export const weatherSimRuntimeId = 'weather-local'
 export const weatherSimAdapterId = 'adapter:weather-local' as AdapterId
-export const weatherSimDomain = weatherDomainId as DomainId
+export const weatherSimPackId = weatherPackId as PackId

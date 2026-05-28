@@ -8,7 +8,7 @@ import {
   weatherInfluenceEllipsePolygon,
 } from './influence.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
-import { weatherDomainDataSchema } from './model.ts'
+import { weatherPackDataSchema } from './model.ts'
 import type { WeatherCellState, WeatherSparseField } from './cell-field.ts'
 
 const maxBaseGridCells = 4_000
@@ -172,7 +172,7 @@ const influenceShapeFeatures = (config: {
   readonly animationDurationMs?: number
 }): ReadonlyArray<PackMapAreaFeature> =>
   activeWeatherInfluencesAt(config.objects, config.at).flatMap(influence => {
-    const parsed = weatherDomainDataSchema.safeParse(config.objects.find(object => object.id === influence.objectId)?.domainData)
+    const parsed = weatherPackDataSchema.safeParse(config.objects.find(object => object.id === influence.objectId)?.packData)
     if (parsed.success && parsed.data.render?.showInfluenceShape === false) return []
     const severity = weatherPresentationSeverityForState(influence.frame.state)
     const animationDurationMs = config.animationDurationMs ?? 0

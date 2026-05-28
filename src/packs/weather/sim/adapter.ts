@@ -1,7 +1,7 @@
 import type {
   CommandEnvelope,
   CommandResult,
-  DomainEvent,
+  ControlInstanceEvent,
   GeoJsonPoint,
   IsoTimestamp,
   ObjectId,
@@ -10,11 +10,11 @@ import type {
 } from '../../../core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../../../core/model/index.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationConnectionConfig,
-  SimulationEvent,
-  SimulationEventHandler,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
@@ -30,26 +30,26 @@ import { weatherDataAtTime, weatherObjectCurrentCenter } from '../influence.ts'
 import {
   createWeatherConditionPayloadSchema,
   weatherAtmosphereSchema,
-  weatherDomainDataSchema,
-  weatherDomainId,
+  weatherPackDataSchema,
+  weatherPackId,
   weatherInfluenceSchema,
   weatherSurfaceSchema,
   type CreateWeatherAreaPayload,
-  type WeatherDomainData,
+  type WeatherPackData,
   type WeatherSample,
   type WeatherState,
 } from '../model.ts'
-import { createWeatherDomainData } from '../scenario.ts'
+import { createWeatherPackData } from '../scenario.ts'
 import { answerWeatherQuery, weatherQueryKinds } from '../query.ts'
-import { weatherSimAdapterId, weatherSimDomain, weatherSimProviderId } from './constants.ts'
+import { weatherSimAdapterId, weatherSimPackId, weatherSimRuntimeId } from './constants.ts'
 
 const updateIntervalMs = 5_000
 const minimumSurfaceDelta = 0.01
 
 const restoreWeatherObject = (object: OperationalObject): OperationalObject => {
-  const parsed = weatherDomainDataSchema.safeParse(object.domainData)
-  if (!parsed.success) throw new Error(`invalid restored weather object domain data for ${object.id}: ${parsed.error.message}`)
-  return { ...object, domainData: parsed.data }
+  const parsed = weatherPackDataSchema.safeParse(object.packData)
+  if (!parsed.success) throw new Error(`invalid restored weather object pack data for ${object.id}: ${parsed.error.message}`)
+  return { ...object, packData: parsed.data }
 }
 
 const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
@@ -64,15 +64,15 @@ const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
 }
 
 const emit = (
-  handlers: ReadonlySet<SimulationEventHandler>,
-  events: ReadonlyArray<SimulationEvent>,
+  handlers: ReadonlySet<PackRuntimeEventHandler>,
+  events: ReadonlyArray<PackRuntimeEvent>,
   at: IsoTimestamp,
 ): void => {
   if (events.length === 0) return
   for (const handler of handlers) {
     handler({
       type: 'event.emission',
-      providerId: weatherSimProviderId,
+      runtimeId: weatherSimRuntimeId,
       emittedAt: at,
       events,
     })
@@ -106,13 +106,13 @@ const createWeatherConditionObject = (config: {
   readonly id: ObjectId
   readonly label: string
   readonly point?: GeoJsonPoint
-  readonly data: WeatherDomainData
+  readonly data: WeatherPackData
   readonly at: IsoTimestamp
   readonly causedByCommandId?: CommandEnvelope['id']
 }): OperationalObject => ({
   id: config.id,
   kind: 'zone',
-  domain: weatherSimDomain,
+  packId: weatherSimPackId,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -129,14 +129,14 @@ const createWeatherConditionObject = (config: {
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: config.data,
+  packData: config.data,
 })
 
 const weatherProbeDataFromSample = (config: {
   readonly sample: WeatherSample
   readonly at: IsoTimestamp
   readonly summary: string
-}): WeatherDomainData => weatherDomainDataSchema.parse({
+}): WeatherPackData => weatherPackDataSchema.parse({
   type: 'weather_condition',
   schemaVersion: 1,
   conditionKind: 'point_observation',
@@ -154,7 +154,7 @@ const resampleWeatherProbe = (
   field: WeatherSparseField,
   at: IsoTimestamp,
 ): OperationalObject | null => {
-  const previous = weatherDomainDataSchema.parse(object.domainData)
+  const previous = weatherPackDataSchema.parse(object.packData)
   if (previous.conditionKind !== 'point_observation') return null
   const point = object.spatial.position?.point
   if (!point) throw new Error(`weather probe ${object.id} is missing a point`)
@@ -173,11 +173,11 @@ const resampleWeatherProbe = (
       ...object.timestamps,
       updatedAt: at,
     },
-    domainData: next,
+    packData: next,
   }
 }
 
-const dataChangedMeaningfully = (previous: WeatherDomainData, next: WeatherDomainData): boolean => (
+const dataChangedMeaningfully = (previous: WeatherPackData, next: WeatherPackData): boolean => (
   previous.state.atmosphere.precipitation.type !== next.state.atmosphere.precipitation.type ||
   Math.abs(previous.state.atmosphere.precipitation.intensityMmPerHour - next.state.atmosphere.precipitation.intensityMmPerHour) >= 0.05 ||
   Math.abs(previous.state.atmosphere.airTemperatureC - next.state.atmosphere.airTemperatureC) >= 0.1 ||
@@ -201,7 +201,7 @@ const pointChangedMeaningfully = (previous: GeoJsonPoint | undefined, next: GeoJ
 const createOperatorWeatherAreaData = (
   payload: CreateWeatherAreaPayload,
   at: IsoTimestamp,
-): WeatherDomainData => {
+): WeatherPackData => {
   if (!payload.center || payload.semiMajorAxisM === undefined || payload.semiMinorAxisM === undefined) {
     throw new Error('weather area creation requires center, semiMajorAxisM, and semiMinorAxisM')
   }
@@ -230,7 +230,7 @@ const createOperatorWeatherAreaData = (
       falloffCurve: payload.falloffCurve,
     }],
   })
-  const data = createWeatherDomainData({
+  const data = createWeatherPackData({
     at,
     summary: payload.summary,
     state,
@@ -245,19 +245,18 @@ const createOperatorWeatherAreaData = (
   }
 }
 
-export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
-  id: weatherSimProviderId,
-  packId: 'weather',
-  domain: weatherDomainId,
+export const createLocalWeatherPackRuntimeAdapter = (): PackRuntimeAdapter => ({
+  id: weatherSimRuntimeId,
+  packId: weatherPackId,
   acceptedCommandKinds: [createWeatherAreaCommandKind],
   queryKinds: weatherQueryKinds,
-  connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = new Map<string, OperationalObject>()
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
-      .filter(object => object.domain === weatherDomainId)
+      .filter(object => object.packId === weatherPackId)
     for (const object of initialObjects) objects.set(object.id, restoreWeatherObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
-    const handlers = new Set<SimulationEventHandler>()
+    const handlers = new Set<PackRuntimeEventHandler>()
     const startedAt = config.scenario?.world.startsAt ?? nowIso()
     let clock: SimulationClockState = { currentTime: startedAt, updatedAt: startedAt, paused: false, speed: 1 }
     let lastTickWallMs = Date.now()
@@ -280,9 +279,9 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
       if (elapsedSeconds <= 0) return
       const at = new Date(Date.parse(clock.currentTime) + elapsedSeconds * 1000).toISOString() as IsoTimestamp
       clock = { ...clock, currentTime: at, updatedAt: nowIso() }
-      const events: SimulationEvent[] = []
+      const events: PackRuntimeEvent[] = []
       for (const object of objects.values()) {
-        const previous = weatherDomainDataSchema.parse(object.domainData)
+        const previous = weatherPackDataSchema.parse(object.packData)
         if (previous.conditionKind === 'point_observation') continue
         const next = weatherDataAtTime(previous, at)
         const center = weatherObjectCurrentCenter(next, at)
@@ -296,7 +295,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
             ...object.timestamps,
             updatedAt: at,
           },
-          domainData: next,
+          packData: next,
         }
         objects.set(updated.id, updated)
         events.push({
@@ -335,7 +334,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
-      subscribe: (handler: SimulationEventHandler): (() => void) => {
+      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
@@ -348,7 +347,7 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
             ok: false,
             commandId: command.id,
             rejectedAt: acceptedAt,
-            reason: `weather provider does not accept command kind: ${command.kind}`,
+            reason: `weather runtime does not accept command kind: ${command.kind}`,
           }
         }
         const payload = createWeatherConditionPayloadSchema.safeParse(command.payload)
@@ -396,10 +395,10 @@ export const createLocalWeatherSimulationAdapter = (): SimulationAdapter => ({
           objects: [...objects.values()],
           at: clock.currentTime,
         }),
-      observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
         let changed = false
         for (const event of events) {
-          if (event.type === 'object.upserted' && event.object.domain === weatherDomainId) {
+          if (event.type === 'object.upserted' && event.object.packId === weatherPackId) {
             objects.set(event.object.id, restoreWeatherObject(event.object))
             changed = true
           }

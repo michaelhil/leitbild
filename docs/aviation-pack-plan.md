@@ -36,19 +36,19 @@ No code touches. No observable change.
 
 ### B.2 — OpenSky live aircraft
 
-- New simulation provider `src/packs/aviation/sim/opensky/`:
+- New pack runtime `src/packs/aviation/sim/opensky/`:
   - OAuth2 client_credentials authentication; token cached, refreshed at 80% of expiry.
   - REST `GET /api/states/all?lamin&lomin&lamax&lomax` polled every 5–10 s; adaptive backoff on 429.
-  - State vector → `OperationalObject` of `kind: 'aircraft'` with `domain: 'aviation'`.
+  - State vector → `OperationalObject` of `kind: 'aircraft'` with `pack: 'aviation'`.
 - Aircraft `OperationalObject`s flow through the existing object-rail machinery (one row per aircraft below the existing pack-defined categories).
 - A source picker appears in the aviation rail section (radio buttons; OpenSky vs VATSIM — but only OpenSky is wired this phase).
 - Secrets: `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET` joined to `/etc/leitbild/reference.env` on Hetzner.
-- Aircraft are *ephemeral*: filtered out of snapshot restore in the provider's `connect()`.
+- Aircraft are *ephemeral*: filtered out of snapshot restore in the pack runtime's `connect()`.
 
 ### B.3 — VATSIM + runtime source-swap
 
-- New provider `src/packs/aviation/sim/vatsim/`: public JSON poll every 15 s, bbox-filtered.
-- New composite provider `src/packs/aviation/sim/source-router.ts`: holds active source in private state; switches via the `aviation.set_source` command without scenario reload.
+- New pack runtime `src/packs/aviation/sim/vatsim/`: public JSON poll every 15 s, bbox-filtered.
+- New composite pack runtime `src/packs/aviation/sim/source-router.ts`: holds active source in private state; switches via the `aviation.set_source` command without scenario reload.
 - Switch flow: cancel pending fetch, emit `object.deleted` for every current aircraft, replace activeSource, emit `aviation.source_changed` notification, start new poll loop. No ghosts.
 - Source picker in the rail becomes fully interactive.
 

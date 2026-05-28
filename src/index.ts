@@ -2,15 +2,15 @@ import { createServer } from './core/api/server.ts'
 import { createControlInstanceRegistry } from './core/control-instances/registry.ts'
 import { createScenarioCatalog } from './core/scenarios/catalog.ts'
 import { leitbildPacks } from './app-assembly.ts'
-import { createLocalAmbulanceSimulationAdapter } from './packs/ambulance/sim/adapter.ts'
-import { createAviationNoopSimulationAdapter } from './packs/aviation/sim/noop-adapter.ts'
-import { createOpenSkySimulationAdapter } from './packs/aviation/sim/opensky/adapter.ts'
-import { createVatsimSimulationAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
-import { createAviationMultiSimulationAdapter } from './packs/aviation/sim/multi/adapter.ts'
-import type { SimulationAdapter } from './simulation/protocol.ts'
-import { createLocalProcessPlantSimulationAdapter } from './packs/process-plant/sim/adapter.ts'
-import { createLocalTrafficSimulationAdapter } from './packs/traffic/sim/adapter.ts'
-import { createLocalWeatherSimulationAdapter } from './packs/weather/sim/adapter.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from './packs/ambulance/sim/adapter.ts'
+import { createAviationNoopPackRuntimeAdapter } from './packs/aviation/sim/noop-adapter.ts'
+import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/adapter.ts'
+import { createVatsimPackRuntimeAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
+import { createAviationMultiPackRuntimeAdapter } from './packs/aviation/sim/multi/adapter.ts'
+import type { PackRuntimeAdapter } from './simulation/protocol.ts'
+import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { createBuiltinScenarios } from './scenarios/index.ts'
 
@@ -23,25 +23,25 @@ const scenarioCatalog = createScenarioCatalog({ packs: leitbildPacks, scenarios 
 // registration rather than crash the server — scenarios that opt into
 // aviation.opensky will fail loud at control-instance creation, which is the
 // right surface for "you forgot to set up credentials".
-const aviationOpenSkyAdapter: SimulationAdapter | null = (() => {
+const aviationOpenSkyAdapter: PackRuntimeAdapter | null = (() => {
   const clientId = process.env.OPENSKY_CLIENT_ID
   const clientSecret = process.env.OPENSKY_CLIENT_SECRET
   if (!clientId || !clientSecret) {
-    console.warn('aviation: OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET not set — aviation.opensky provider unavailable')
+    console.warn('aviation: OPENSKY_CLIENT_ID / OPENSKY_CLIENT_SECRET not set — aviation.opensky runtime unavailable')
     return null
   }
-  return createOpenSkySimulationAdapter({ clientId, clientSecret })
+  return createOpenSkyPackRuntimeAdapter({ clientId, clientSecret })
 })()
 
 // VATSIM needs no credentials — register unconditionally.
-const aviationVatsimAdapter = createVatsimSimulationAdapter()
+const aviationVatsimAdapter = createVatsimPackRuntimeAdapter()
 
-// The multi-provider stitches OpenSky and VATSIM behind one provider id so a
+// The multi-runtime stitches OpenSky and VATSIM behind one runtime id so a
 // Control Instance can swap source at runtime via aviation.set_source. Only
 // expose it when at least one underlying source is available, otherwise
 // scenarios that depend on it would fail in a more confusing way at start-up.
-const aviationMultiAdapter: SimulationAdapter | null = (aviationOpenSkyAdapter || aviationVatsimAdapter)
-  ? createAviationMultiSimulationAdapter({
+const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter || aviationVatsimAdapter)
+  ? createAviationMultiPackRuntimeAdapter({
       ...(aviationOpenSkyAdapter ? { opensky: aviationOpenSkyAdapter } : {}),
       vatsim: aviationVatsimAdapter,
       defaultSource: aviationOpenSkyAdapter ? 'opensky' : 'vatsim',
@@ -52,11 +52,11 @@ const registry = createControlInstanceRegistry({
   dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
   scenarioCatalog,
   simulationAdapters: [
-    createLocalAmbulanceSimulationAdapter({ routing }),
-    createLocalTrafficSimulationAdapter({ routing }),
-    createLocalWeatherSimulationAdapter(),
-    createLocalProcessPlantSimulationAdapter(),
-    createAviationNoopSimulationAdapter(),
+    createLocalAmbulancePackRuntimeAdapter({ routing }),
+    createLocalTrafficPackRuntimeAdapter({ routing }),
+    createLocalWeatherPackRuntimeAdapter(),
+    createLocalProcessPlantPackRuntimeAdapter(),
+    createAviationNoopPackRuntimeAdapter(),
     ...(aviationOpenSkyAdapter ? [aviationOpenSkyAdapter] : []),
     aviationVatsimAdapter,
     ...(aviationMultiAdapter ? [aviationMultiAdapter] : []),

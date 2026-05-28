@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, domainIdSchema, objectIdSchema, type ActorId, type DomainId, type ObjectId } from './ids.ts'
+import { actorIdSchema, packIdSchema, objectIdSchema, type ActorId, type PackId, type ObjectId } from './ids.ts'
 import { geoJsonGeometrySchema, geoJsonLineStringSchema, geoJsonPointSchema, metersSchema, type GeoJsonGeometry, type GeoJsonLineString, type GeoJsonPoint, type Meters } from './geo.ts'
 import { isoTimestampSchema, type IsoTimestamp } from './time.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
@@ -95,7 +95,7 @@ export interface ObjectTimestamps {
 export interface OperationalObject {
   readonly id: ObjectId
   readonly kind: ObjectKind
-  readonly domain: DomainId
+  readonly packId: PackId
   readonly label: string
   readonly lifecycle: ObjectLifecycle
   readonly revision: number
@@ -108,7 +108,7 @@ export interface OperationalObject {
   readonly communication?: CommunicationState
   readonly provenance: Provenance
   readonly timestamps: ObjectTimestamps
-  readonly domainData?: unknown
+  readonly packData?: unknown
   readonly context?: ObjectContext
 }
 
@@ -186,7 +186,7 @@ export const objectTimestampsSchema = z.object({
 export const operationalObjectSchema = z.object({
   id: objectIdSchema,
   kind: objectKindSchema,
-  domain: domainIdSchema,
+  packId: packIdSchema,
   label: z.string().min(1),
   lifecycle: objectLifecycleSchema,
   revision: z.number().int().nonnegative(),
@@ -199,6 +199,6 @@ export const operationalObjectSchema = z.object({
   communication: communicationStateSchema.optional(),
   provenance: provenanceSchema,
   timestamps: objectTimestampsSchema,
-  domainData: z.unknown().optional(),
+  packData: z.unknown().optional(),
   context: objectContextSchema.optional(),
 })

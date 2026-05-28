@@ -1,5 +1,5 @@
 import type { AdapterId } from '../../../core/model/index.ts'
-import { processPlantDomainId } from '../model.ts'
+import { processPlantPackId } from '../model.ts'
 
-export const processPlantSimProviderId = 'process-plant-local'
+export const processPlantSimRuntimeId = 'process-plant-local'
 export const processPlantSimAdapterId = 'adapter:process-plant-local' as AdapterId

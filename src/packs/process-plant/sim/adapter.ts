@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, ObjectId, OperationalObject, SignalId, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso } from '../../../core/model/index.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationConnectionConfig,
-  SimulationEvent,
-  SimulationEventHandler,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
@@ -17,22 +17,22 @@ import {
 } from '../commands.ts'
 import { compileProcessPlantSystems } from '../process-systems.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { processPlantDomainId } from '../model.ts'
+import { processPlantPackId } from '../model.ts'
 import { answerProcessPlantQuery, processPlantQueryKinds } from '../query.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { processPlantSimAdapterId, processPlantSimProviderId } from './constants.ts'
+import { processPlantSimAdapterId, processPlantSimRuntimeId } from './constants.ts'
 import {
-  processPlantProviderStateSchema,
-  type ProcessPlantProviderState,
-} from './provider-state.ts'
+  processPlantRuntimeStateSchema,
+  type ProcessPlantRuntimeState,
+} from './runtime-state.ts'
 import {
   initialProcessPlantObjects,
   processPlantProjectionEvents,
   processPlantUnitSystemId,
   projectedInitialProcessPlantObjects,
 } from './object-projection.ts'
-import { assertProviderConfigMatchesCompiledSystems, processPlantProviderConfigFor } from './provider-config.ts'
-import { createProcessPlantProviderPersistence } from './persistence.ts'
+import { assertRuntimeConfigMatchesCompiledSystems, processPlantRuntimeConfigFor } from './runtime-config.ts'
+import { createProcessPlantRuntimePersistence } from './persistence.ts'
 import { createProcessPlantSystemRuntimes } from './system-runtime-factory.ts'
 
 const updateIntervalMs = 1_000
@@ -45,9 +45,9 @@ const fail = (request: PackQueryRequest, reason: string): PackQueryResponse => (
   generatedAt: nowIso(),
 })
 
-const emitSimulationEvents = (
-  handlers: ReadonlySet<SimulationEventHandler>,
-  events: ReadonlyArray<SimulationEvent>,
+const emitPackRuntimeEvents = (
+  handlers: ReadonlySet<PackRuntimeEventHandler>,
+  events: ReadonlyArray<PackRuntimeEvent>,
 ): void => {
   if (events.length === 0) return
   const emittedAt = nowIso()
@@ -56,61 +56,60 @@ const emitSimulationEvents = (
       type: 'event.emission',
       events,
       emittedAt,
-      providerId: processPlantSimProviderId,
+      runtimeId: processPlantSimRuntimeId,
     })
   }
 }
 
-const emitProviderFailure = (config: {
-  readonly handlers: ReadonlySet<SimulationEventHandler>
-  readonly controlInstanceId: SimulationConnectionConfig['controlInstanceId']
+const emitRuntimeFailure = (config: {
+  readonly handlers: ReadonlySet<PackRuntimeEventHandler>
+  readonly controlInstanceId: PackRuntimeConnectionConfig['controlInstanceId']
   readonly error: unknown
 }): void => {
   const at = nowIso()
-  emitSimulationEvents(config.handlers, [{
+  emitPackRuntimeEvents(config.handlers, [{
     type: 'interaction.signal',
     at,
     provenance: { source: 'simulator', adapterId: processPlantSimAdapterId },
     signal: {
-      id: `process-plant-provider-failed:${randomUUID()}` as SignalId,
+      id: `process-plant-runtime-failed:${randomUUID()}` as SignalId,
       controlInstanceId: config.controlInstanceId,
       at,
-      source: { kind: 'simulation', id: processPlantSimProviderId },
+      source: { kind: 'simulation', id: processPlantSimRuntimeId },
       targets: [{ kind: 'broadcast' }],
-      type: 'process-plant.provider.failed',
+      type: 'process-plant.runtime.failed',
       severity: 'critical',
       payload: {
-        providerId: processPlantSimProviderId,
+        runtimeId: processPlantSimRuntimeId,
         message: config.error instanceof Error ? config.error.message : String(config.error),
       },
     },
   }])
 }
 
-export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter => ({
-  id: processPlantSimProviderId,
-  packId: 'process-plant',
-  domain: processPlantDomainId,
+export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter => ({
+  id: processPlantSimRuntimeId,
+  packId: processPlantPackId,
   acceptedCommandKinds: [processPlantControlWriteCommandKind, processPlantIcLifecycleCommandKind],
   queryKinds: processPlantQueryKinds,
-  connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
-    const handlers = new Set<SimulationEventHandler>()
-    const rawProviderState = await config.providerStateStore?.load()
-    const providerState = rawProviderState === undefined || rawProviderState === null
+  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+    const handlers = new Set<PackRuntimeEventHandler>()
+    const rawRuntimeState = await config.runtimeStateStore?.load()
+    const runtimeState = rawRuntimeState === undefined || rawRuntimeState === null
       ? null
-      : processPlantProviderStateSchema.parse(rawProviderState) as ProcessPlantProviderState
-    const providerConfig = processPlantProviderConfigFor(config)
+      : processPlantRuntimeStateSchema.parse(rawRuntimeState) as ProcessPlantRuntimeState
+    const runtimeConfig = processPlantRuntimeConfigFor(config)
     const compiledSystems = compileProcessPlantSystems(config.scenario?.processSystems ?? [])
-    assertProviderConfigMatchesCompiledSystems({
-      providerConfig,
+    assertRuntimeConfigMatchesCompiledSystems({
+      runtimeConfig,
       systemIds: new Set(compiledSystems.map(system => system.id)),
     })
     const systems = createProcessPlantSystemRuntimes({
       compiledSystems,
-      providerConfig,
-      providerState,
+      runtimeConfig,
+      runtimeState,
     })
-    const persistence = createProcessPlantProviderPersistence({
+    const persistence = createProcessPlantRuntimePersistence({
       connection: config,
       systems,
     })
@@ -129,15 +128,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       }).map(object => [object.id, object]),
     )
 
-    let providerFailed = false
+    let runtimeFailed = false
 
     const advance = async (): Promise<void> => {
-      if (providerFailed) return
+      if (runtimeFailed) return
       const nowWallMs = Date.now()
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
       if (elapsedMs <= 0 || systems.size === 0) return
-      const events: SimulationEvent[] = []
+      const events: PackRuntimeEvent[] = []
       for (const { runtime, schedule, telemetry, protection, performance: runtimePerformance } of systems.values()) {
         const startedAt = performance.now()
         schedule.applyDueActions(runtime, runtime.elapsedMs() + elapsedMs)
@@ -146,7 +145,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           runtime,
           elapsedMs: runtime.elapsedMs(),
           controlInstanceId: config.controlInstanceId,
-          sourceProviderId: processPlantSimProviderId,
+          sourceRuntimeId: processPlantSimRuntimeId,
         }) ?? []))
         telemetry?.recordDueSamples(runtime)
         runtimePerformance.record({
@@ -163,15 +162,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
           adapterId: processPlantSimAdapterId,
         },
       }))
-      emitSimulationEvents(handlers, events)
+      emitPackRuntimeEvents(handlers, events)
       await persistence.saveNow()
     }
 
     const interval = setInterval(() => {
       void advance().catch(error => {
-        providerFailed = true
+        runtimeFailed = true
         clearInterval(interval)
-        emitProviderFailure({
+        emitRuntimeFailure({
           handlers,
           controlInstanceId: config.controlInstanceId,
           error,
@@ -185,7 +184,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         objects: [...objectsById.values()],
         capturedAt: nowIso(),
       }),
-      subscribe: (handler: SimulationEventHandler): (() => void) => {
+      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
@@ -193,8 +192,8 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
       },
       sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
         const acceptedAt = nowIso()
-        if (providerFailed) {
-          return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: 'process plant provider has stopped after a runtime failure' }
+        if (runtimeFailed) {
+          return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: 'process plant runtime has stopped after a runtime failure' }
         }
         if (command.kind === processPlantIcLifecycleCommandKind) {
           const payload = processPlantIcLifecyclePayloadSchema.safeParse(command.payload)
@@ -208,13 +207,13 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
               action: payload.data.action,
               elapsedMs: system.runtime.elapsedMs(),
               controlInstanceId: config.controlInstanceId,
-              sourceProviderId: processPlantSimProviderId,
+              sourceRuntimeId: processPlantSimRuntimeId,
               actorId: command.actorId,
               ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
               ...(payload.data.reason === undefined ? {} : { reason: payload.data.reason }),
               ...(payload.data.shelveDurationMs === undefined ? {} : { shelveDurationMs: payload.data.shelveDurationMs }),
             })
-            emitSimulationEvents(handlers, events)
+            emitPackRuntimeEvents(handlers, events)
             await persistence.saveNow()
             return { ok: true, commandId: command.id, acceptedAt }
           } catch (err) {
@@ -231,7 +230,7 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
             ok: false,
             commandId: command.id,
             rejectedAt: acceptedAt,
-            reason: `process plant provider does not accept command kind: ${command.kind}`,
+            reason: `process plant runtime does not accept command kind: ${command.kind}`,
           }
         }
         const payload = processPlantControlWritePayloadSchema.safeParse(command.payload)
@@ -263,15 +262,15 @@ export const createLocalProcessPlantSimulationAdapter = (): SimulationAdapter =>
         }
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-        if (providerFailed) return fail(request, 'process plant provider has stopped after a runtime failure')
-        if (systems.size === 0) return fail(request, 'process plant provider is not active for this scenario')
+        if (runtimeFailed) return fail(request, 'process plant runtime has stopped after a runtime failure')
+        if (systems.size === 0) return fail(request, 'process plant runtime is not active for this scenario')
         return answerProcessPlantQuery({
           request,
           systems,
           at: nowIso(),
         })
       },
-      observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
         for (const event of events) {
           if (event.type === 'object.upserted' && processPlantUnitSystemId(event.object) !== null) {
             objectsById.set(event.object.id, event.object)

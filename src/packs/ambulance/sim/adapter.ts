@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
 import type { CommandEnvelope, CommandResult, GeoJsonPoint, InteractionSignal, OperationalObject, SignalId } from '../../../core/model/index.ts'
 import { assetRoutePlannedSignalType, interactionSignalSchema, nowIso } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from '../model.ts'
+import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from '../model.ts'
 import { createAmbulanceSimEngine } from './engine.ts'
-import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
+import { ambulanceSimAdapterId, ambulanceSimRuntimeId } from './constants.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import {
   assignToIncidentCommandKind,
@@ -16,8 +16,8 @@ import {
 import { ambulanceQueryKinds, answerAmbulanceQuery } from '../query.ts'
 
 const emit = (
-  handlers: ReadonlySet<SimulationEventHandler>,
-  events: ReadonlyArray<SimulationEvent>,
+  handlers: ReadonlySet<PackRuntimeEventHandler>,
+  events: ReadonlyArray<PackRuntimeEvent>,
 ): void => {
   const firstEvent = events[0]
   if (!firstEvent) return
@@ -26,36 +26,36 @@ const emit = (
       type: 'event.emission',
       events,
       emittedAt: firstEvent.at,
-      providerId: ambulanceSimProviderId,
+      runtimeId: ambulanceSimRuntimeId,
     })
   }
 }
 
-const validateAmbulanceProviderObject = (object: OperationalObject): OperationalObject => {
+const validateAmbulanceRuntimeObject = (object: OperationalObject): OperationalObject => {
   if (object.kind === 'mobile_entity') {
-    const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
-    if (!parsed.success) throw new Error(`invalid ambulance object domain data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, domainData: parsed.data }
+    const parsed = ambulancePackDataSchema.safeParse(object.packData)
+    if (!parsed.success) throw new Error(`invalid ambulance object pack data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, packData: parsed.data }
   }
   if (object.kind === 'facility') {
-    const parsed = hospitalDomainDataSchema.safeParse(object.domainData)
-    if (!parsed.success) throw new Error(`invalid hospital object domain data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, domainData: parsed.data }
+    const parsed = hospitalPackDataSchema.safeParse(object.packData)
+    if (!parsed.success) throw new Error(`invalid hospital object pack data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, packData: parsed.data }
   }
   if (object.kind === 'incident') {
-    const parsed = incidentDomainDataSchema.safeParse(object.domainData)
-    if (!parsed.success) throw new Error(`invalid incident object domain data for ${object.id}: ${parsed.error.message}`)
-    return { ...object, domainData: parsed.data }
+    const parsed = incidentPackDataSchema.safeParse(object.packData)
+    if (!parsed.success) throw new Error(`invalid incident object pack data for ${object.id}: ${parsed.error.message}`)
+    return { ...object, packData: parsed.data }
   }
-  throw new Error(`unsupported ambulance provider object kind for ${object.id}: ${object.kind}`)
+  throw new Error(`unsupported ambulance runtime object kind for ${object.id}: ${object.kind}`)
 }
 
-const initialObjectsFor = (config: SimulationConnectionConfig): ReadonlyArray<OperationalObject> => {
+const initialObjectsFor = (config: PackRuntimeConnectionConfig): ReadonlyArray<OperationalObject> => {
   const objects = config.initialObjects ?? config.scenario?.initialObjects
-  if (!objects) throw new Error(`ambulance provider requires scenario or restored objects for control instance ${config.controlInstanceId}`)
+  if (!objects) throw new Error(`ambulance runtime requires scenario or restored objects for control instance ${config.controlInstanceId}`)
   return objects
-    .filter(object => object.domain === ambulanceDomainId)
-    .map(validateAmbulanceProviderObject)
+    .filter(object => object.packId === ambulancePackId)
+    .map(validateAmbulanceRuntimeObject)
 }
 
 const pointForTarget = (object: OperationalObject): GeoJsonPoint => {
@@ -117,12 +117,11 @@ const restoreMissingRuntimeRoutes = async (
   return restored
 }
 
-export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
+export const createLocalAmbulancePackRuntimeAdapter = (adapterConfig: {
   readonly routing: RoutingAdapter
-}): SimulationAdapter => ({
-  id: ambulanceSimProviderId,
-  packId: 'ambulance',
-  domain: ambulanceDomainId,
+}): PackRuntimeAdapter => ({
+  id: ambulanceSimRuntimeId,
+  packId: ambulancePackId,
   acceptedCommandKinds: [
     assignToIncidentCommandKind,
     cancelDestinationCommandKind,
@@ -130,14 +129,14 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
     setDestinationCommandKind,
   ],
   queryKinds: ambulanceQueryKinds,
-  connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const objects = await restoreMissingRuntimeRoutes(initialObjectsFor(config), adapterConfig.routing)
     const engine = createAmbulanceSimEngine({
       controlInstanceId: config.controlInstanceId,
       routing: adapterConfig.routing,
       objects,
     })
-    const handlers = new Set<SimulationEventHandler>()
+    const handlers = new Set<PackRuntimeEventHandler>()
     let clock = {
       currentTime: nowIso(),
       updatedAt: nowIso(),
@@ -154,20 +153,20 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
       const result = await engine.handleCommand(command)
       if (result.ok) {
         const snapshot = engine.snapshot()
-        const objectEvents: SimulationEvent[] = snapshot.objects.map(object => ({
+        const objectEvents: PackRuntimeEvent[] = snapshot.objects.map(object => ({
           type: 'object.upserted',
           object,
           at: snapshot.capturedAt,
           provenance: object.provenance,
         }))
-        const routeSignals: SimulationEvent[] = snapshot.objects
+        const routeSignals: PackRuntimeEvent[] = snapshot.objects
           .filter(object => object.spatial.route?.planned && command.targetObjectIds.includes(object.id))
           .map(object => {
             const signal = interactionSignalSchema.parse({
               id: `signal:${randomUUID()}` as SignalId,
               controlInstanceId: command.controlInstanceId,
               at: snapshot.capturedAt,
-              source: { kind: 'object', id: object.id, providerId: ambulanceSimProviderId },
+              source: { kind: 'object', id: object.id, runtimeId: ambulanceSimRuntimeId },
               targets: [{ kind: 'object', id: object.id }],
               type: assetRoutePlannedSignalType,
               severity: 'notice',
@@ -193,7 +192,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
 
     return {
       getSnapshot: async () => engine.snapshot(),
-      subscribe: (handler: SimulationEventHandler): (() => void) => {
+      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
@@ -208,7 +207,7 @@ export const createLocalAmbulanceSimulationAdapter = (adapterConfig: {
       observeCommittedEvents: async (events): Promise<void> => {
         engine.observeCommittedEvents(events.filter(event =>
           event.type === 'object.deleted'
-          || (event.type === 'object.upserted' && event.object.domain === ambulanceDomainId)
+          || (event.type === 'object.upserted' && event.object.packId === ambulancePackId)
         ))
       },
       setClock: async (nextClock): Promise<void> => {

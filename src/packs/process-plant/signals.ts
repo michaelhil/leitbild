@@ -9,7 +9,7 @@ import type {
   ProcessEquipmentId,
   VariablePath,
 } from './graph/index.ts'
-import type { ProcessQuantity, ProcessUnit, VariableDomain, VariableKind } from './graph/index.ts'
+import type { ProcessQuantity, ProcessUnit, VariableDiscipline, VariableKind } from './graph/index.ts'
 import { processSignalTagIdSchema, variablePathSchema } from './graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from './runtime/index.ts'
 
@@ -74,7 +74,7 @@ export interface ProcessPlantSignalView {
   readonly limits?: ProcessVariableLimits
   readonly label: string
   readonly kind: VariableKind
-  readonly domain: VariableDomain
+  readonly discipline: VariableDiscipline
   readonly quantity: ProcessQuantity
   readonly unit: ProcessUnit
   readonly writable: boolean
@@ -97,7 +97,7 @@ export const processPlantSignalView = (binding: ProcessSignalBinding): ProcessPl
   ...(binding.limits === undefined ? {} : { limits: binding.limits }),
   label: binding.label,
   kind: binding.kind,
-  domain: binding.domain,
+  discipline: binding.discipline,
   quantity: binding.quantity,
   unit: binding.unit,
   writable: binding.writable,

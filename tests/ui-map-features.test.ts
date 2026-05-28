@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, DomainId, ObjectId, ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, PackId, ObjectId, ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
 import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
@@ -144,7 +144,7 @@ describe('map feature projection', () => {
     const lineObject = {
       id: 'traffic:test-road' as ObjectId,
       kind: 'zone' as const,
-      domain: 'traffic' as DomainId,
+      packId: 'traffic' as PackId,
       label: 'Test road slowdown',
       lifecycle: 'active' as const,
       revision: 0,
@@ -178,7 +178,7 @@ describe('map feature projection', () => {
     const polygonObject = {
       id: 'traffic:test-area' as ObjectId,
       kind: 'zone' as const,
-      domain: 'traffic' as DomainId,
+      packId: 'traffic' as PackId,
       label: 'Test area',
       lifecycle: 'active' as const,
       revision: 0,
@@ -215,7 +215,7 @@ describe('map feature projection', () => {
     const weatherObject = {
       id: 'weather:test-area' as ObjectId,
       kind: 'zone' as const,
-      domain: 'weather' as DomainId,
+      packId: 'weather' as PackId,
       label: 'Test weather area',
       lifecycle: 'active' as const,
       revision: 0,

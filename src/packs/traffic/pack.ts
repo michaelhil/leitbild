@@ -2,20 +2,20 @@ import type { KnowledgeFact, OperationalObject } from '../../core/model/index.ts
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreateObjectParameter, PackCreationGeometry, PackObjectField, PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { createTrafficConditionCommandKind } from './commands.ts'
-import { trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficSeverity } from './model.ts'
+import { trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficSeverity } from './model.ts'
 import { createTrafficRouteImpactHandler } from './interactions.ts'
-import { trafficSimProviderId } from './sim/constants.ts'
+import { trafficSimRuntimeId } from './sim/constants.ts'
 import { trafficScenarioSupport } from './scenario.ts'
 
 const factText = <T>(fact: KnowledgeFact<T> | undefined, formatter: (value: T) => string = String): string =>
   !fact || fact.state === 'unknown' ? 'unknown' : formatter(fact.value)
 
-const parseTrafficData = (object: OperationalObject): TrafficDomainData | null => {
-  const parsed = trafficDomainDataSchema.safeParse(object.domainData)
+const parseTrafficData = (object: OperationalObject): TrafficPackData | null => {
+  const parsed = trafficPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const trafficDetails = (data: TrafficDomainData): ReadonlyArray<PackObjectField> => [
+const trafficDetails = (data: TrafficPackData): ReadonlyArray<PackObjectField> => [
   packField('geometry', 'Geometry', data.geometryMode.replaceAll('_', ' ')),
   packField('condition', 'Condition', data.condition.replaceAll('_', ' ')),
   packField('severity', 'Severity', data.severity),
@@ -122,11 +122,10 @@ const buildTrafficCreatePayload = (
 export const trafficPack: LeitbildPack = {
   id: 'traffic',
   name: 'Traffic Conditions',
-  domain: trafficDomainId,
-  simulationProviders: [
-    { id: trafficSimProviderId, label: 'Local traffic simulator', kind: 'local' },
+  runtimes: [
+    { id: trafficSimRuntimeId, label: 'Local traffic simulator', kind: 'local' },
   ],
-  defaultSimulationProviderId: trafficSimProviderId,
+  defaultRuntimeId: trafficSimRuntimeId,
   scenario: trafficScenarioSupport,
   categories: [
     {
@@ -151,7 +150,7 @@ export const trafficPack: LeitbildPack = {
       color: trafficColor(data?.severity),
       summary: data ? `${data.geometryMode.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status,
       status: packStatus(data?.severity === 'blocked' || data?.severity === 'high' ? 'error' : 'working', data ? `${data.condition.replaceAll('_', ' ')} · ${data.severity}` : object.operational.status),
-      fields: data ? trafficDetails(data) : [packField('error', 'Error', 'Invalid traffic domain data')],
+      fields: data ? trafficDetails(data) : [packField('error', 'Error', 'Invalid traffic pack data')],
     }
   },
   defaultObjectLabel: (typeId, context): string => {

@@ -25,7 +25,7 @@ All aviation-domain code lives in a new pack at `src/packs/aviation/`. The neutr
 ```text
 src/packs/aviation/
   pack.ts
-  model.ts                              # AircraftDomainData zod, source ids
+  model.ts                              # AircraftPackData zod, source ids
   commands.ts                           # aviation.set_source (B.3)
   query.ts                              # fleet_snapshot, source_status, providers_available (B.2+)
   scenario.ts                           # pack codec

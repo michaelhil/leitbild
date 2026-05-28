@@ -15,7 +15,7 @@ Reference data is everything geospatial in Leitbild that is **not canonical oper
 
 Reference data is rendered behind operational objects on the map, queryable by packs through a server-side spatial index, and discoverable through the existing Map Capability Manifest at `/map/capabilities.json`.
 
-It is distinct from the base map (OSM PMTiles via Planetiler, see `docs/vector-tile-pipeline.md`) and from live operational truth (provider-owned simulation state, see ADR 0003).
+It is distinct from the base map (OSM PMTiles via Planetiler, see `docs/vector-tile-pipeline.md`) and from live operational truth (runtime-owned simulation state, see ADR 0003).
 
 ## Architecture summary
 

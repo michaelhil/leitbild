@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
-import { aircraftDomainDataSchema } from '../src/packs/aviation/model.ts'
+import { aircraftPackDataSchema } from '../src/packs/aviation/model.ts'
 import { NORWAY_BBOX } from '../src/packs/aviation/sim/vatsim/constants.ts'
 import { normaliseVatsimData } from '../src/packs/aviation/sim/vatsim/normalise.ts'
 
@@ -21,7 +21,7 @@ describe('normaliseVatsimData', () => {
     if (!sas) return
     expect(String(sas.provenance.adapterId)).toBe('aviation.vatsim')
     expect(sas.provenance.externalId).toBe('1234567')
-    const data = aircraftDomainDataSchema.parse(sas.domainData)
+    const data = aircraftPackDataSchema.parse(sas.packData)
     expect(data.source).toBe('vatsim')
     expect(data.callsign).toBe('SAS321')
     // 32000 ft × 0.3048 = 9753.6 m
@@ -35,7 +35,7 @@ describe('normaliseVatsimData', () => {
     const ground = aircraft.find(object => object.id === 'aircraft:vatsim:7654321')
     expect(ground).toBeDefined()
     if (!ground) return
-    const groundData = aircraftDomainDataSchema.parse(ground.domainData)
+    const groundData = aircraftPackDataSchema.parse(ground.packData)
     expect(groundData.onGround).toBe(true)
     expect(ground.operational.status).toBe('idle')
     expect(groundData.flightPlan).toBeNull()

@@ -7,15 +7,15 @@ import {
   createScenarioRunControlInstanceId,
   parseScenarioRunControlInstanceId,
 } from '../model/index.ts'
-import type { SimulationAdapter } from '../../simulation/protocol.ts'
-import { createSimulationHub } from '../../simulation/hub.ts'
+import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
+import { createRuntimeHub } from '../../simulation/hub.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import { createJsonlEventLog } from './event-log.ts'
-import { createJsonProviderStateStore } from './provider-state-store.ts'
+import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
 import type { ControlInstanceCapabilities } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
-import type { DomainEvent } from '../model/index.ts'
+import type { ControlInstanceEvent } from '../model/index.ts'
 
 export interface ControlInstanceSummary {
   readonly id: ControlInstanceId
@@ -53,7 +53,7 @@ export interface ControlInstanceRegistry {
 
 export const createControlInstanceRegistry = (config: {
   readonly dataDir: string
-  readonly simulationAdapters: ReadonlyArray<SimulationAdapter>
+  readonly simulationAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly scenarioCatalog: ScenarioCatalog
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
 }): ControlInstanceRegistry => {
@@ -71,8 +71,8 @@ export const createControlInstanceRegistry = (config: {
         wikiRefs: [],
       }
     }
-    const activeProviderIds = new Set(scenarioRuntime.providers.map(provider => provider.providerId))
-    const activeAdapters = config.simulationAdapters.filter(adapter => activeProviderIds.has(adapter.id))
+    const activeRuntimeIds = new Set(scenarioRuntime.runtimes.map(runtime => runtime.runtimeId))
+    const activeAdapters = config.simulationAdapters.filter(adapter => activeRuntimeIds.has(adapter.id))
     const queryKinds = Object.fromEntries(
       scenarioRuntime.scenario.packs.map(packId => [
         packId,
@@ -91,7 +91,7 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
-  const validateRestoredEvents = (id: ControlInstanceId, events: ReadonlyArray<DomainEvent>): void => {
+  const validateRestoredEvents = (id: ControlInstanceId, events: ReadonlyArray<ControlInstanceEvent>): void => {
     let previousSeq = 0
     for (const event of events) {
       if (event.controlInstanceId !== id) {
@@ -117,15 +117,15 @@ export const createControlInstanceRegistry = (config: {
       controlInstanceId: id,
       path: join(instanceDir, 'snapshot.json'),
     })
-    const providerStateStores = Object.fromEntries(config.simulationAdapters.map(adapter => [
+    const runtimeStateStores = Object.fromEntries(config.simulationAdapters.map(adapter => [
       adapter.id,
-      createJsonProviderStateStore({
-        providerId: adapter.id,
-        path: join(instanceDir, 'providers', `${adapter.id}.json`),
+      createJsonRuntimeStateStore({
+        runtimeId: adapter.id,
+        path: join(instanceDir, 'runtimes', `${adapter.id}.json`),
       }),
     ]))
     let restoredSnapshot = await snapshotStore.load()
-    let restoredEvents: ReadonlyArray<DomainEvent> = []
+    let restoredEvents: ReadonlyArray<ControlInstanceEvent> = []
     if (
       restoredSnapshot
       && createConfig?.scenarioId !== undefined
@@ -146,23 +146,23 @@ export const createControlInstanceRegistry = (config: {
       : requestedScenarioId
     const scenarioRuntime = scenarioId === undefined ? undefined : config.scenarioCatalog.runtimeFor(scenarioId)
     if (scenarioId !== undefined && !scenarioRuntime) throw new Error(`unknown scenario: ${scenarioId}`)
-    const simulation = await createSimulationHub(config.simulationAdapters).connect({
+    const simulation = await createRuntimeHub(config.simulationAdapters).connect({
       controlInstanceId: id,
       ...(scenarioRuntime
         ? {
             scenario: {
               scenarioId: scenarioRuntime.scenarioId,
-              providerIds: scenarioRuntime.providers.map(provider => provider.providerId),
+              runtimeIds: scenarioRuntime.runtimes.map(runtime => runtime.runtimeId),
               world: scenarioRuntime.scenario.world,
               initialObjects: scenarioRuntime.initialObjects,
               processSystems: scenarioRuntime.scenario.processSystems,
-              providerConfigs: scenarioRuntime.providerConfigs,
-              providerConfig: {},
+              runtimeConfigs: scenarioRuntime.runtimeConfigs,
+              runtimeConfig: {},
             },
           }
         : {}),
       ...(restoredSnapshot ? { initialObjects: restoredSnapshot.objects } : {}),
-      providerStateStores,
+      runtimeStateStores,
     })
     const runtime = await createControlInstanceRuntime({
       id,

@@ -2,13 +2,13 @@ import type { ControlInstanceId, GeoJsonPolygon, IsoTimestamp, OperationalObject
 import type { LeitbildPack, PackMapAreaFeature } from '../../core/packs/protocol.ts'
 import { queryControlInstancePack } from '../control-instance-client.ts'
 
-export interface MapAreaFeatureProviderContext {
+export interface MapAreaFeatureLoaderContext {
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
   readonly currentTime?: IsoTimestamp
 }
 
-export interface MapAreaFeatureProviderConfig {
+export interface MapAreaFeatureRuntimeConfig {
   readonly pack: () => LeitbildPack | null
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly controlInstanceId: () => ControlInstanceId | null
@@ -24,10 +24,10 @@ const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaF
   return features as ReadonlyArray<PackMapAreaFeature>
 }
 
-export const createMapAreaFeatureProvider = (
-  config: MapAreaFeatureProviderConfig,
-): ((context: MapAreaFeatureProviderContext) => Promise<ReadonlyArray<PackMapAreaFeature>>) =>
-  async (context: MapAreaFeatureProviderContext): Promise<ReadonlyArray<PackMapAreaFeature>> => {
+export const createMapAreaFeatureLoader = (
+  config: MapAreaFeatureRuntimeConfig,
+): ((context: MapAreaFeatureLoaderContext) => Promise<ReadonlyArray<PackMapAreaFeature>>) =>
+  async (context: MapAreaFeatureLoaderContext): Promise<ReadonlyArray<PackMapAreaFeature>> => {
     const currentTime = context.currentTime ?? config.currentTime()
     const presentationContext = {
       objects: config.objects(),

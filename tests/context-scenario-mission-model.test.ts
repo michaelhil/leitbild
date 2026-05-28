@@ -137,7 +137,7 @@ describe('object context, scenario, and mission model', () => {
       schemaVersion: 1,
       title: 'Oslo context basic',
       packs: ['ambulance'],
-      providerOverrides: {},
+      runtimeOverrides: {},
       world: {
         startsAt: nowIso(),
         mapCenter: geoPointFromLonLat(10.7522, 59.9139),
@@ -148,7 +148,7 @@ describe('object context, scenario, and mission model', () => {
         objectId: object.id,
         context: object.context,
       }],
-      providerConfigs: { ambulance: { adapter: 'ambulance.local' } },
+      runtimeConfigs: { ambulance: { adapter: 'ambulance.local' } },
       missionId: 'mission:oslo-response-basic',
       surface: {
         schemaVersion: 1,

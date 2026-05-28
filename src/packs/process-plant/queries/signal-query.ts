@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import { processQuantitySchema, processSignalTagIdSchema, variableDomainSchema } from '../graph/index.ts'
+import { processQuantitySchema, processSignalTagIdSchema, variableDisciplineSchema } from '../graph/index.ts'
 import {
   processPlantSignalQuality,
   processPlantSignalReferenceSchema,
@@ -22,7 +22,7 @@ const signalsSearchQuerySchema = z.object({
   text: z.string().min(1).optional(),
   tagId: processSignalTagIdSchema.optional(),
   equipmentId: idSchema.optional(),
-  domain: variableDomainSchema.optional(),
+  discipline: variableDisciplineSchema.optional(),
   quantity: processQuantitySchema.optional(),
   writable: z.boolean().optional(),
   procedureRelevant: z.boolean().optional(),
@@ -40,7 +40,7 @@ const matchesSignalSearch = (
   config: z.infer<typeof signalsSearchQuerySchema>,
 ): boolean => {
   if (config.publishedOnly && binding.published !== true) return false
-  if (config.domain !== undefined && binding.domain !== config.domain) return false
+  if (config.discipline !== undefined && binding.discipline !== config.discipline) return false
   if (config.quantity !== undefined && binding.quantity !== config.quantity) return false
   if (config.writable !== undefined && binding.writable !== config.writable) return false
   if (config.procedureRelevant !== undefined && binding.capabilities?.procedureRelevant !== config.procedureRelevant) return false

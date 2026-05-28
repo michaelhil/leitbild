@@ -2,20 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type DomainEvent, type ObjectId } from '../src/core/model/index.ts'
+import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type ControlInstanceEvent, type ObjectId } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/control-instances/actors.ts'
 import { createHealthDetails } from '../src/core/api/server.ts'
 import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage } from '../src/core/api/realtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
-import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface CapturedRealtimeClient {
-  readonly events: DomainEvent[]
+  readonly events: ControlInstanceEvent[]
   readonly eventMessages: RealtimeEventBatchMessage[]
   readonly readyMessages: string[]
 }
@@ -80,9 +80,9 @@ describe('server health', () => {
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
       simulationAdapters: [
-        createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficSimulationAdapter(),
-        createLocalWeatherSimulationAdapter(),
+        createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficPackRuntimeAdapter(),
+        createLocalWeatherPackRuntimeAdapter(),
       ],
     })
     const runtime = await registry.ensure('sandbox' as ControlInstanceId)
@@ -119,9 +119,9 @@ describe('server health', () => {
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
       simulationAdapters: [
-        createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficSimulationAdapter(),
-        createLocalWeatherSimulationAdapter(),
+        createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficPackRuntimeAdapter(),
+        createLocalWeatherPackRuntimeAdapter(),
       ],
     })
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
@@ -180,9 +180,9 @@ describe('server health', () => {
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
       simulationAdapters: [
-        createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-        createLocalTrafficSimulationAdapter(),
-        createLocalWeatherSimulationAdapter(),
+        createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficPackRuntimeAdapter(),
+        createLocalWeatherPackRuntimeAdapter(),
       ],
     })
     const firstClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }

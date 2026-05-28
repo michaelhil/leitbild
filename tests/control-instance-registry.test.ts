@@ -2,15 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { access, appendFile, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent, InteractionSignal, ObjectId, SignalId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, ControlInstanceEvent, InteractionSignal, ObjectId, SignalId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import type { ControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { assignToIncidentCommandKind } from '../src/packs/ambulance/commands.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
-import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
@@ -19,9 +19,9 @@ describe('control instance registry', () => {
     dataDir,
     scenarioCatalog: createTestScenarioCatalog(),
     simulationAdapters: [
-      createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-      createLocalTrafficSimulationAdapter(),
-      createLocalWeatherSimulationAdapter(),
+      createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+      createLocalTrafficPackRuntimeAdapter(),
+      createLocalWeatherPackRuntimeAdapter(),
     ],
   })
 
@@ -106,7 +106,7 @@ describe('control instance registry', () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const registry = createRegistry(dataDir)
     const runtime = await registry.create()
-    const notifications: DomainEvent[][] = []
+    const notifications: ControlInstanceEvent[][] = []
     const unsubscribe = runtime.subscribe(notification => {
       notifications.push([...notification.events])
     })
@@ -273,7 +273,7 @@ describe('control instance registry', () => {
     expect(await registry.delete(controlInstanceId)).toBe(false)
   })
 
-  test('restores provider snapshots by domain without duplicating objects across providers', async () => {
+  test('restores runtime snapshots by runtime without duplicating objects across runtimes', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const controlInstanceId = 'sandbox' as ControlInstanceId
     const firstRegistry = createRegistry(dataDir)
@@ -371,7 +371,7 @@ describe('control instance registry', () => {
     if (events.length === 0) throw new Error('missing initial event')
     expect(await firstRegistry.close(controlInstanceId)).toBe(true)
     const eventPath = join(dataDir, 'control-instances', controlInstanceId, 'events.jsonl')
-    const wrongEvent: DomainEvent = { ...events[0]!, controlInstanceId: 'other' as ControlInstanceId }
+    const wrongEvent: ControlInstanceEvent = { ...events[0]!, controlInstanceId: 'other' as ControlInstanceId }
     await writeFile(eventPath, `${JSON.stringify(wrongEvent)}\n`, 'utf8')
 
     const secondRegistry = createRegistry(dataDir)

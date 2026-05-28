@@ -4,8 +4,8 @@ import type { ProcessPlantDisplayField } from './graph/index.ts'
 import {
   emptyProcessPlantProjection,
   processPlantField,
-  processPlantUnitDomainDataSchema,
-  type ProcessPlantUnitDomainData,
+  processPlantUnitPackDataSchema,
+  type ProcessPlantUnitPackData,
   type ProcessPlantUnitProjection,
 } from './model.ts'
 import type { ProcessPlantIcLifecycleState } from './runtime/index.ts'
@@ -94,15 +94,15 @@ export const projectedProcessPlantUnit = (config: {
   readonly system: ProcessPlantSystemRuntime | undefined
   readonly at: IsoTimestamp
 }): OperationalObject => {
-  const parsed = processPlantUnitDomainDataSchema.safeParse(config.object.domainData)
+  const parsed = processPlantUnitPackDataSchema.safeParse(config.object.packData)
   if (!parsed.success) return config.object
   if (!config.system) {
     return {
       ...config.object,
-      domainData: {
+      packData: {
         ...parsed.data,
         projection: emptyProcessPlantProjection(config.at),
-      } satisfies ProcessPlantUnitDomainData,
+      } satisfies ProcessPlantUnitPackData,
     }
   }
   const system = config.system
@@ -136,10 +136,10 @@ export const projectedProcessPlantUnit = (config: {
       status: status.tone === 'ready' ? 'normal' : status.tone === 'error' ? 'critical' : 'degraded',
       priority: status.tone === 'error' ? 'critical' : status.tone === 'working' ? 'high' : 'normal',
     },
-    domainData: {
+    packData: {
       ...parsed.data,
       projection,
-    } satisfies ProcessPlantUnitDomainData,
+    } satisfies ProcessPlantUnitPackData,
     timestamps: {
       ...config.object.timestamps,
       updatedAt: config.at,
@@ -148,7 +148,7 @@ export const projectedProcessPlantUnit = (config: {
 }
 
 export const processPlantProjectionKey = (object: OperationalObject): string => {
-  const parsed = processPlantUnitDomainDataSchema.safeParse(object.domainData)
+  const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
   const projection = parsed.success ? parsed.data.projection : undefined
   return parsed.success
     ? JSON.stringify({

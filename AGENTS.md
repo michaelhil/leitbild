@@ -29,24 +29,24 @@
 - Keep pack-specific logic in `src/packs/*`; keep `core` use-case agnostic.
 - Generic UI modules must consume pack presentation and creation protocols instead of importing pack-specific models, simulators, geometry helpers, or condition calculators.
 - Shared spatial indexing belongs in `src/core/spatial/*`. The `h3-js` dependency may only be imported by the core spatial wrapper; packs and UI must consume Leitbild spatial interfaces instead of depending on H3 directly.
-- Weather field computation belongs inside the weather pack. UI may request provider-projected map features through the pack query protocol, but must not import weather models, weather cell math, or weather condition calculators.
-- Pack map-feature animation metadata is presentation-only. It can smooth rendered geometry and attached symbol anchors between provider query refreshes, but it must not become a simulation update path or a substitute for provider-owned truth.
-- New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add domain seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
-- Scenario Definitions name active `packs`; provider ids are internal runtime wiring resolved from pack defaults or explicit scenario provider overrides.
+- Weather field computation belongs inside the weather pack. UI may request runtime-projected map features through the pack query protocol, but must not import weather models, weather cell math, or weather condition calculators.
+- Pack map-feature animation metadata is presentation-only. It can smooth rendered geometry and attached symbol anchors between runtime query refreshes, but it must not become a simulation update path or a substitute for runtime-owned truth.
+- New Control Instances must start from a validated top-level Scenario Definition resolved through the Scenario Catalog. Do not add pack seed factories, hidden simulator defaults, pack-owned scenario files, or parallel startup formats.
+- Scenario Definitions name active `packs`; runtime ids are internal wiring resolved from pack defaults or explicit scenario runtime overrides.
 - Scenario Definitions own initial UI assembly through a validated Surface Definition. Do not render hardcoded operational map/rail/footer surfaces before the scenario surface is loaded.
 - Surface Definitions may configure only safe built-in primitives. Do not allow scenario JSON, AI output, or pack code to inject arbitrary Svelte components, HTML, scripts, or hidden fallback viewports.
 - Built-in scenarios should be authored as compact declarative JSON Scenario Configs when practical, then expanded through pack-owned scenario codecs into full validated Scenario Definitions. Do not put reusable object-construction logic inside individual scenario files.
 - Scenario Config expansion must stay deterministic and ordered. Do not parallelize object/action expansion when later specs may reference earlier created objects.
-- Scenario scripts must stay declarative and must emit ordered domain events through the Control Instance runtime. Do not add browser-only scenario/tutorial state, simulator-private scenario timers, or arbitrary scenario code execution.
+- Scenario scripts must stay declarative and must emit ordered Control Instance events through the Control Instance runtime. Do not add browser-only scenario/tutorial state, simulator-private scenario timers, or arbitrary scenario code execution.
 - Restored Control Instances must start from persisted snapshots/history, not by replaying or reapplying Scenario Definitions.
 - Treat Control Instance Projected State as canonical current Leitbild truth. UI, API, AI agents, metrics, and interaction handlers must read shared operational state from the Control Instance projection.
 - Treat the Durable Journal as meaningful accepted history, not as full current state and not as a high-frequency motion trace.
-- Simulation providers may keep private mechanics and provider-local projections, but those are not canonical shared object state. Providers must rehydrate private runtime mechanics from canonical objects on connect; do not make the UI infer or drive simulator motion.
-- Use the Simulation Hub for multiple providers in one Control Instance. Do not merge a new provider domain into an existing domain simulator just to get a short-term demo.
-- Providers must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
-- Provider-owned read models must be exposed through the generic pack query surface. Do not add domain-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
-- Pack queries must be read-only. They must not issue commands, mutate provider state, emit events, or commit canonical changes.
-- Process-control packs such as `process-plant` must keep continuous physics inside the pack-owned runtime. Use validated component graphs, typed ports, compiled runtime indices, pack queries, and discrete domain events; do not turn internal process variables into `OperationalObject`s or use event messages as the continuous physics solver.
+- Pack runtimes may keep private mechanics and runtime-local projections, but those are not canonical shared object state. Runtimes must rehydrate private mechanics from canonical objects on connect; do not make the UI infer or drive simulator motion.
+- Use the Simulation Hub for multiple pack runtimes in one Control Instance. Do not merge a new pack runtime into an existing pack runtime just to get a short-term demo.
+- Pack runtimes must declare accepted command kinds; do not rely on broad command broadcast as the long-term command-routing model.
+- Runtime-owned read models must be exposed through the generic pack query surface. Do not add pack-specific HTTP endpoint families such as `/api/weather/*`, `/api/traffic/*`, or `/api/ambulance/*` without a new ADR.
+- Pack queries must be read-only. They must not issue commands, mutate runtime state, emit events, or commit canonical changes.
+- Process-control packs such as `process-plant` must keep continuous physics inside the pack-owned runtime. Use validated component graphs, typed ports, compiled runtime indices, pack queries, and discrete Control Instance events; do not turn internal process variables into `OperationalObject`s or use event messages as the continuous physics solver.
 - Process-plant signal bindings are graph-owned metadata. Use `tagId` plus explicit `systemId`; do not reintroduce `sensorId`, `actuatorId`, implicit current-unit lookup, fleet-wide aliases, or separate binding catalogs without an ADR.
 - Process-plant variable capabilities and limits belong on variable descriptors and compiled signal bindings. Derive defaults from `writable`, `publish`, and `tagId`; add explicit overrides only when they carry operational value. Do not add arbitrary hard ranges to generic variables.
 - Process-plant control/protection rules must be typed declarative data evaluated by the pack runtime. Treat this as a simplified plant I&C substrate above continuous physics: instrumentation signals, normal controllers, protection functions, alarms, structured annunciator metadata, mode-qualified rules, permissives, interlocks, and validated actions. Do not add arbitrary expression languages, generated procedure code, global mode stores, or mid-solver mutation.
@@ -55,15 +55,15 @@
 - Process-plant alarms are persistent current state plus transition events. Do not model alarms only as transient interaction events or clear them merely because they were acknowledged.
 - Process-plant automatic actions from normal control or protection must flow through the same validated queued write path as operator, scenario, and AI commands. Do not create a privileged mutation path that bypasses writability, limits, type checks, or solver phase boundaries.
 - Process system topology is scenario-owned config/data. Keep reusable component definitions and solver behavior in code, but do not make hardcoded TypeScript plant graphs the canonical runtime source of truth.
-- Keep `domainData` and `context` conceptually separate: `domainData` is pack-owned domain operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
+- Keep `packData` and `context` conceptually separate: `packData` is pack-owned operational truth, while `context` is structured, perspective-bearing awareness for assets, operators, system processes, and AI agents.
 - Do not store generated prompts, raw full event logs, or unbounded memory dumps in object `context`; derive bounded agent context views instead.
 - Model cross-object and cross-simulation interaction through scoped interaction signals and registered handlers. Objects may be the source or subject of signals/events, but objects are data, not active executable actors.
 - Interaction handlers must return constrained effects for the control-instance runtime to validate, order, persist, and broadcast. Handlers must not directly mutate shared state or call other objects.
-- Providers observe committed domain events; do not add second authoritative mutation paths that mirror canonical object state into a simulator as if the simulator owned shared truth.
+- Pack runtimes observe committed Control Instance events; do not add second authoritative mutation paths that mirror canonical object state into a simulator as if the simulator owned shared truth.
 - Traffic conditions should first be aggregate zone/segment objects. Do not add individual traffic vehicles until a feature actually needs per-vehicle behavior and culling/performance rules are in place.
 - Route impacts from traffic must be canonical and visible. Do not silently reroute a mobile asset without an explicit command or declared automation policy.
-- Treat AI outputs as untrusted input: AI agents may issue commands or emit interaction signals, but only validated handlers and committed domain events can change canonical state.
-- Treat the self-hosted vector map artifact as contextual data, not operational truth. Simulation providers and UI surfaces must discover map-context capabilities through `/map/capabilities.json` instead of hard-coding tile assumptions.
+- Treat AI outputs as untrusted input: AI agents may issue commands or emit interaction signals, but only validated handlers and committed Control Instance events can change canonical state.
+- Treat the self-hosted vector map artifact as contextual data, not operational truth. Pack runtimes and UI surfaces must discover map-context capabilities through `/map/capabilities.json` instead of hard-coding tile assumptions.
 - Do not reintroduce raster OSM base maps or raster fallback paths. Leitbild's base map is vector-only.
 
 ## Svelte UI Rules

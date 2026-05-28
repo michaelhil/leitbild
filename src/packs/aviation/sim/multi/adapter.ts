@@ -1,16 +1,16 @@
 import { z } from 'zod'
-import { nowIso, type CommandEnvelope, type CommandResult, type DomainEvent, type IsoTimestamp, type ObjectId, type SimulationClockState } from '../../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type IsoTimestamp, type ObjectId, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationConnectionConfig,
-  SimulationEvent,
-  SimulationEventHandler,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
-import { aviationDomain } from '../constants.ts'
+import { aviationRuntimePackId } from '../constants.ts'
 import {
-  aviationMultiProviderId,
+  aviationMultiRuntimeId,
   aviationSetSourceCommandKind,
   aviationSources,
   type AviationSourceId,
@@ -26,21 +26,21 @@ import {
 //     ghost aircraft from the previous source.
 //   - It keeps the rail picker's mental model simple: one command, one CI.
 //   - The cost is small: we just forward events from the active sub-adapter,
-//     re-stamping the providerId so downstream routing sees `aviation.multi`.
+//     re-stamping the runtimeId so downstream routing sees `aviation.multi`.
 
 const setSourcePayloadSchema = z.object({
   source: z.enum(aviationSources),
 })
 
 export interface AviationMultiAdapterConfig {
-  readonly opensky?: SimulationAdapter
-  readonly vatsim?: SimulationAdapter
-  /** Initial source if the scenario doesn't pin one via providerConfig. */
+  readonly opensky?: PackRuntimeAdapter
+  readonly vatsim?: PackRuntimeAdapter
+  /** Initial source if the scenario doesn't pin one via runtimeConfig. */
   readonly defaultSource?: AviationSourceId
   readonly nowIso?: () => IsoTimestamp
 }
 
-const sourceForAdapter = (config: AviationMultiAdapterConfig, source: AviationSourceId): SimulationAdapter | null => {
+const sourceForAdapter = (config: AviationMultiAdapterConfig, source: AviationSourceId): PackRuntimeAdapter | null => {
   if (source === 'opensky') return config.opensky ?? null
   if (source === 'vatsim') return config.vatsim ?? null
   return null
@@ -58,12 +58,12 @@ const firstAvailableSource = (
 }
 
 const readInitialSource = (
-  connectionConfig: SimulationConnectionConfig,
+  connectionConfig: PackRuntimeConnectionConfig,
   fallback: AviationSourceId,
 ): AviationSourceId => {
-  // The catalog routes scenario.providerConfigs[packId] to the active
-  // provider's `providerConfig` slot — so we read the single value here.
-  const raw = connectionConfig.scenario?.providerConfig
+  // The catalog routes scenario.runtimeConfigs[packId] to the active
+  // runtime's `runtimeConfig` slot — so we read the single value here.
+  const raw = connectionConfig.scenario?.runtimeConfig
   if (raw && typeof raw === 'object' && 'source' in raw) {
     const source = (raw as { source?: unknown }).source
     if (source === 'opensky' || source === 'vatsim') return source
@@ -71,29 +71,28 @@ const readInitialSource = (
   return fallback
 }
 
-export const createAviationMultiSimulationAdapter = (
+export const createAviationMultiPackRuntimeAdapter = (
   config: AviationMultiAdapterConfig,
-): SimulationAdapter => {
+): PackRuntimeAdapter => {
   const clock = config.nowIso ?? nowIso
   const defaultSource: AviationSourceId = config.defaultSource ?? 'opensky'
 
   return {
-    id: aviationMultiProviderId,
-    packId: 'aviation',
-    domain: aviationDomain,
+    id: aviationMultiRuntimeId,
+    packId: aviationRuntimePackId,
     acceptedCommandKinds: [aviationSetSourceCommandKind],
     queryKinds: ['aviation.source_status'],
-    connect: async (connectionConfig: SimulationConnectionConfig): Promise<SimulationConnection> => {
-      const handlers = new Set<SimulationEventHandler>()
+    connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+      const handlers = new Set<PackRuntimeEventHandler>()
       // Object ids currently forwarded to the rail; cleared on source switch.
       const trackedIds = new Set<string>()
       const requestedInitialSource = readInitialSource(connectionConfig, defaultSource)
       const availableInitialSource = firstAvailableSource(config, requestedInitialSource)
       if (!availableInitialSource) throw new Error('aviation.multi: no live aircraft source adapter is registered')
       let currentSource: AviationSourceId = availableInitialSource
-      let activeConnection: SimulationConnection | null = null
+      let activeConnection: PackRuntimeConnection | null = null
       let activeUnsubscribe: (() => void) | null = null
-      let activeProvenanceTemplate: SimulationEvent['provenance'] | null = null
+      let activeProvenanceTemplate: PackRuntimeEvent['provenance'] | null = null
       let clockState: SimulationClockState = {
         currentTime: connectionConfig.scenario?.world.startsAt ?? clock(),
         updatedAt: clock(),
@@ -101,20 +100,20 @@ export const createAviationMultiSimulationAdapter = (
         speed: 1,
       }
 
-      const emit = (events: ReadonlyArray<SimulationEvent>): void => {
+      const emit = (events: ReadonlyArray<PackRuntimeEvent>): void => {
         if (events.length === 0) return
         const at = clock()
         for (const handler of handlers) {
           handler({
             type: 'event.emission',
-            providerId: aviationMultiProviderId,
+            runtimeId: aviationMultiRuntimeId,
             emittedAt: at,
             events,
           })
         }
       }
 
-      const handleSubEmission: SimulationEventHandler = (emission) => {
+      const handleSubEmission: PackRuntimeEventHandler = (emission) => {
         if (emission.type !== 'event.emission') return
         for (const event of emission.events) {
           if (event.type === 'object.upserted') {
@@ -160,7 +159,7 @@ export const createAviationMultiSimulationAdapter = (
         //    the rail doesn't carry stale aircraft into the new source's view.
         if (trackedIds.size > 0 && activeProvenanceTemplate) {
           const at = clock()
-          const sweep: SimulationEvent[] = [...trackedIds].map(id => ({
+          const sweep: PackRuntimeEvent[] = [...trackedIds].map(id => ({
             type: 'object.deleted',
             objectId: id as ObjectId,
             at,
@@ -186,11 +185,11 @@ export const createAviationMultiSimulationAdapter = (
             return { controlInstanceId: connectionConfig.controlInstanceId, objects: [], capturedAt: clock() }
           }
           const sub = await activeConnection.getSnapshot()
-          // Re-stamp controlInstanceId for the multi provider; sub-adapter
+          // Re-stamp controlInstanceId for the multi runtime; sub-adapter
           // already filled it but we want to be explicit.
           return { ...sub, controlInstanceId: connectionConfig.controlInstanceId }
         },
-        subscribe: (handler: SimulationEventHandler): (() => void) => {
+        subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
           handlers.add(handler)
           // Lazy upstream subscription: only attach to the sub-adapter when the
           // first downstream handler is interested. Mirrors OpenSky's pattern.
@@ -263,7 +262,7 @@ export const createAviationMultiSimulationAdapter = (
           }
           return sub
         },
-        observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+        observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
           if (activeConnection) await activeConnection.observeCommittedEvents(events)
         },
         setClock: async (next: SimulationClockState): Promise<void> => {

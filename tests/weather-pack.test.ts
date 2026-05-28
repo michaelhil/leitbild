@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainId, GeoJsonPolygon, IsoTimestamp } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, PackId, GeoJsonPolygon, IsoTimestamp } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createWeatherAreaCommandKind } from '../src/packs/weather/commands.ts'
 import {
@@ -12,10 +12,10 @@ import {
 } from '../src/packs/weather/cell-field.ts'
 import { hexResolution } from '../src/core/spatial/index.ts'
 import { defaultAtmosphere, defaultSurface, evolveWeatherData, weatherSampleAtPoint } from '../src/packs/weather/conditions.ts'
-import { weatherDomainDataSchema } from '../src/packs/weather/model.ts'
+import { weatherPackDataSchema } from '../src/packs/weather/model.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
-import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { weatherSimProviderId } from '../src/packs/weather/sim/constants.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
 
@@ -79,14 +79,14 @@ const weatherMapFeatures = async (config: {
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
 }): Promise<ReadonlyArray<PackMapAreaFeature>> => {
-  const adapter = createLocalWeatherSimulationAdapter()
+  const adapter = createLocalWeatherPackRuntimeAdapter()
   const connection = await adapter.connect({ controlInstanceId, scenario: {
     scenarioId: osloAmbulanceScenario.id,
-    providerIds: [weatherSimProviderId],
+    runtimeIds: [weatherSimRuntimeId],
     world: osloAmbulanceScenario.world,
     initialObjects: osloAmbulanceScenario.initialObjects,
-    providerConfigs: {},
-    providerConfig: {},
+    runtimeConfigs: {},
+    runtimeConfig: {},
   } })
   try {
     const response = await connection.query({
@@ -122,7 +122,7 @@ describe('weather pack', () => {
         'test.blah': 0.6,
       },
     }
-    const parsed = weatherDomainDataSchema.parse({
+    const parsed = weatherPackDataSchema.parse({
       type: 'weather_condition',
       schemaVersion: 1,
       conditionKind: 'weather_influence',
@@ -150,7 +150,7 @@ describe('weather pack', () => {
 
   test('evolves precipitation into surface conditions without making routing decisions', () => {
     const at = '2026-01-01T10:00:00.000Z' as IsoTimestamp
-    const base = weatherDomainDataSchema.parse({
+    const base = weatherPackDataSchema.parse({
       type: 'weather_condition',
       schemaVersion: 1,
       conditionKind: 'weather_influence',
@@ -202,12 +202,12 @@ describe('weather pack', () => {
     expect(evolved.type).toBe('weather_condition')
   })
 
-  test('built-in scenarios include the weather pack as a sampleable condition provider', () => {
-    const weatherObject = osloAmbulanceScenario.initialObjects.find(object => object.domain === 'weather')
+  test('built-in scenarios include the weather pack as a sampleable condition runtime', () => {
+    const weatherObject = osloAmbulanceScenario.initialObjects.find(object => object.packId === 'weather')
     if (!weatherObject) throw new Error('Oslo scenario missing weather condition')
 
     const presentation = weatherPack.presentObject(weatherObject, { objects: osloAmbulanceScenario.initialObjects })
-    const parsedWeather = weatherDomainDataSchema.parse(weatherObject.domainData)
+    const parsedWeather = weatherPackDataSchema.parse(weatherObject.packData)
 
     expect(osloAmbulanceScenario.packs).toContain('weather')
     expect(presentation.categoryId).toBe('weather')
@@ -222,7 +222,7 @@ describe('weather pack', () => {
     expect(['none', 'rain']).toContain(sample.state.atmosphere.precipitation.type)
   })
 
-  test('provider-backed map query exposes H3 base grid cells for the requested viewport', async () => {
+  test('runtime-backed map query exposes H3 base grid cells for the requested viewport', async () => {
     const features = await weatherMapFeatures({ viewport: osloViewport, zoom: 12 })
     const baseGrid = features.filter(feature => feature.id.startsWith('weather-grid:'))
     const bounds = polygonBounds(baseGrid.map(feature => feature.geometry))
@@ -234,7 +234,7 @@ describe('weather pack', () => {
     expect(bounds.north).toBeGreaterThanOrEqual(59.98)
   })
 
-  test('provider-backed map query separates base grid, affected cells, and influence shapes', async () => {
+  test('runtime-backed map query separates base grid, affected cells, and influence shapes', async () => {
     const wideViewport: GeoJsonPolygon = {
       type: 'Polygon',
       coordinates: [[
@@ -261,14 +261,14 @@ describe('weather pack', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
     const later = new Date(Date.parse(start) + 420_000).toISOString() as IsoTimestamp
-    const adapter = createLocalWeatherSimulationAdapter()
+    const adapter = createLocalWeatherPackRuntimeAdapter()
     const connection = await adapter.connect({ controlInstanceId, scenario: {
       scenarioId: osloAmbulanceScenario.id,
-      providerIds: [weatherSimProviderId],
+      runtimeIds: [weatherSimRuntimeId],
       world: osloAmbulanceScenario.world,
       initialObjects: osloAmbulanceScenario.initialObjects,
-      providerConfigs: {},
-      providerConfig: {},
+      runtimeConfigs: {},
+      runtimeConfig: {},
     } })
     await connection.setClock({ currentTime: start, updatedAt: nowIso(), paused: true, speed: 1 })
     const startResponse = await connection.query({
@@ -402,7 +402,7 @@ describe('weather pack', () => {
   test('overlapping weather objects blend through the same sparse cell update pass', () => {
     const start = osloAmbulanceScenario.world.startsAt
     if (!start) throw new Error('expected Oslo scenario start time')
-    const weatherObjects = osloAmbulanceScenario.initialObjects.filter(object => object.domain === 'weather')
+    const weatherObjects = osloAmbulanceScenario.initialObjects.filter(object => object.packId === 'weather')
     expect(weatherObjects.length).toBeGreaterThanOrEqual(2)
     const updated = updateWeatherSparseField({
       field: createWeatherSparseField(osloWeatherGrid),
@@ -416,8 +416,8 @@ describe('weather pack', () => {
     expect(overlapped?.state.surface.wetness).toBeGreaterThan(defaultSurface().wetness)
   })
 
-  test('local provider accepts real weather area commands', async () => {
-    const adapter = createLocalWeatherSimulationAdapter()
+  test('local runtime accepts real weather area commands', async () => {
+    const adapter = createLocalWeatherPackRuntimeAdapter()
     const connection = await adapter.connect({ controlInstanceId, initialObjects: [] })
     const result = await connection.sendCommand(command({
       objectType: 'weather_area',
@@ -434,15 +434,15 @@ describe('weather pack', () => {
     const snapshot = await connection.getSnapshot()
     await connection.close()
 
-    expect(adapter.id).toBe(weatherSimProviderId)
+    expect(adapter.id).toBe(weatherSimRuntimeId)
     expect(result.ok).toBe(true)
     expect(snapshot.objects).toHaveLength(1)
-    expect(snapshot.objects[0]?.domain).toBe('weather' as DomainId)
+    expect(snapshot.objects[0]?.packId).toBe('weather' as PackId)
   })
 
-  test('local provider creates weather probes as point observations sampled from active zones', async () => {
-    const adapter = createLocalWeatherSimulationAdapter()
-    const zone = osloAmbulanceScenario.initialObjects.find(object => object.domain === 'weather')
+  test('local runtime creates weather probes as point observations sampled from active zones', async () => {
+    const adapter = createLocalWeatherPackRuntimeAdapter()
+    const zone = osloAmbulanceScenario.initialObjects.find(object => object.packId === 'weather')
     if (!zone) throw new Error('Oslo scenario missing weather condition')
     const connection = await adapter.connect({ controlInstanceId, initialObjects: [zone] })
     const result = await connection.sendCommand(command({
@@ -454,7 +454,7 @@ describe('weather pack', () => {
     await connection.close()
 
     const probe = snapshot.objects.find(object => object.label === 'Oslo probe')
-    const parsed = weatherDomainDataSchema.parse(probe?.domainData)
+    const parsed = weatherPackDataSchema.parse(probe?.packData)
     expect(result.ok).toBe(true)
     expect(probe?.spatial.position?.point.coordinates).toEqual(geoPointFromLonLat(10.7522, 59.9139).coordinates)
     expect(parsed.conditionKind).toBe('point_observation')

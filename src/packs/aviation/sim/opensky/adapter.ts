@@ -1,16 +1,16 @@
-import { nowIso, type CommandEnvelope, type CommandResult, type DomainEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
+import { nowIso, type CommandEnvelope, type CommandResult, type ControlInstanceEvent, type IsoTimestamp, type ObjectId, type OperationalObject, type SimulationClockState } from '../../../../core/model/index.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationConnectionConfig,
-  SimulationEvent,
-  SimulationEventHandler,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
 } from '../../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../../core/packs/protocol.ts'
 import {
-  aviationDomain,
+  aviationRuntimePackId,
   aviationOpenSkyAdapterId,
-  aviationOpenSkyProviderId,
+  aviationOpenSkyRuntimeId,
 } from '../constants.ts'
 import {
   createOpenSkyAuthClient,
@@ -27,14 +27,14 @@ import {
 } from './constants.ts'
 import { normaliseOpenSkyStates } from './normalise.ts'
 
-// OpenSky V2 SimulationAdapter.
+// OpenSky V2 PackRuntimeAdapter.
 //
 // Architecture:
 //   - One adapter instance per server process.
 //   - Each Control Instance connection owns its own ephemeral aircraft map and
 //     starts polling only while that CI has subscribers.
 //   - The loop fetches the configured bbox, normalises rows, diffs against the
-//     last poll, and emits upsert / delete SimulationEvents to subscribers.
+//     last poll, and emits upsert / delete PackRuntimeEvents to subscribers.
 //   - Aircraft are ephemeral: `initialObjects` of kind 'aircraft' is ignored;
 //     the adapter re-bootstraps from live on each connect.
 //   - Stale aircraft (no update in `staleAfterMs`) emit `object.deleted` events
@@ -125,12 +125,12 @@ const diffAndEmit = (
   state: Map<string, AircraftState>,
   fresh: ReadonlyArray<OperationalObject>,
   runtime: AdapterRuntime,
-  emit: (events: ReadonlyArray<SimulationEvent>) => void,
+  emit: (events: ReadonlyArray<PackRuntimeEvent>) => void,
 ): void => {
   const at = runtime.nowIso()
   const nowMs = runtime.clock()
   const seenIds = new Set<string>()
-  const events: SimulationEvent[] = []
+  const events: PackRuntimeEvent[] = []
   for (const fresher of fresh) {
     seenIds.add(String(fresher.id))
     const existing = state.get(String(fresher.id))
@@ -167,7 +167,7 @@ const defaultSetInterval = (cb: () => void, ms: number): unknown =>
 const defaultClearInterval = (handle: unknown): void =>
   clearInterval(handle as ReturnType<typeof setInterval>)
 
-export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): SimulationAdapter => {
+export const createOpenSkyPackRuntimeAdapter = (config: OpenSkyAdapterConfig): PackRuntimeAdapter => {
   // Resolved at module construction so missing creds surface in the systemd
   // logs immediately, not on first poll.
   if (!config.clientId) throw new Error('opensky adapter: clientId is required (OPENSKY_CLIENT_ID env)')
@@ -196,14 +196,13 @@ export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): Si
   // the server level, but each `connect()` gives that CI its own aircraft map,
   // event handler set, and subscriber-gated poll loop.
   return {
-    id: aviationOpenSkyProviderId,
-    packId: 'aviation',
-    domain: aviationDomain,
+    id: aviationOpenSkyRuntimeId,
+    packId: aviationRuntimePackId,
     acceptedCommandKinds: [],
     queryKinds: ['aviation.source_status'],
-    connect: async (connectionConfig: SimulationConnectionConfig): Promise<SimulationConnection> => {
+    connect: async (connectionConfig: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const state = new Map<string, AircraftState>()
-      const handlers = new Set<SimulationEventHandler>()
+      const handlers = new Set<PackRuntimeEventHandler>()
       const poll: ActivePoll = { handle: null, inFlight: null }
       let clock: SimulationClockState = {
         currentTime: connectionConfig.scenario?.world.startsAt ?? runtime.nowIso(),
@@ -213,13 +212,13 @@ export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): Si
       }
       let lastError: string | null = null
 
-      const emit = (events: ReadonlyArray<SimulationEvent>): void => {
+      const emit = (events: ReadonlyArray<PackRuntimeEvent>): void => {
         if (events.length === 0) return
         const at = runtime.nowIso()
         for (const handler of handlers) {
           handler({
             type: 'event.emission',
-            providerId: aviationOpenSkyProviderId,
+            runtimeId: aviationOpenSkyRuntimeId,
             emittedAt: at,
             events,
           })
@@ -263,7 +262,7 @@ export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): Si
           objects: [...state.values()].map(entry => entry.object),
           capturedAt: runtime.nowIso(),
         }),
-        subscribe: (handler: SimulationEventHandler): (() => void) => {
+        subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
           handlers.add(handler)
           if (handlers.size === 1) startPolling()
           return () => {
@@ -300,7 +299,7 @@ export const createOpenSkySimulationAdapter = (config: OpenSkyAdapterConfig): Si
             generatedAt: runtime.nowIso(),
           }
         },
-        observeCommittedEvents: async (_events: ReadonlyArray<DomainEvent>): Promise<void> => undefined,
+        observeCommittedEvents: async (_events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => undefined,
         setClock: async (next: SimulationClockState): Promise<void> => { clock = next },
         close: async (): Promise<void> => {
           stopPolling()

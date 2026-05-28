@@ -4,7 +4,7 @@
 
 Leitbild will use a single user-facing extension concept: a **Leitbild Pack**.
 
-A pack is a namespaced bundle that can contribute domain vocabulary, command schemas, simulation adapters/providers, map presentation, UI panels, research metrics, assets, and AI guidance.
+A pack is a namespaced bundle that can contribute domain vocabulary, command schemas, pack runtime adapters/providers, map presentation, UI panels, research metrics, assets, and AI guidance.
 
 The first implementation is static and built in. Leitbild will not add GitHub-based pack installation until the pack interface has stabilized through at least one internal pack.
 

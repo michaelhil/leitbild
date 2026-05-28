@@ -4,18 +4,18 @@ import { createCompositePack } from '../src/core/packs/composite.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { ambulanceDomainDataSchema, hospitalDomainDataSchema, type HospitalDomainData } from '../src/packs/ambulance/model.ts'
+import { ambulancePackDataSchema, hospitalPackDataSchema, type HospitalPackData } from '../src/packs/ambulance/model.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
-import { trafficSimProviderId } from '../src/packs/traffic/sim/constants.ts'
+import { trafficSimRuntimeId } from '../src/packs/traffic/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
-import { weatherSimProviderId } from '../src/packs/weather/sim/constants.ts'
+import { weatherSimRuntimeId } from '../src/packs/weather/sim/constants.ts'
 import { expectFieldKeys, expectStatusIndicator } from './helpers/pack-presentation.ts'
 import {
   cancelDestinationCommandKind,
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
-import { ambulanceSimProviderId } from '../src/packs/ambulance/sim/constants.ts'
+import { ambulanceSimRuntimeId } from '../src/packs/ambulance/sim/constants.ts'
 import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -30,7 +30,7 @@ describe('pack architecture', () => {
     expect(() => createPackRegistry([ambulancePack, ambulancePack])).toThrow('duplicate pack id')
   })
 
-  test('ambulance pack builds domain commands behind the generic pack interface', () => {
+  test('ambulance pack builds pack commands behind the generic pack interface', () => {
     const engine = createAmbulanceSimEngine({
       controlInstanceId: 'control-instance:pack-architecture' as ControlInstanceId,
       objects: osloAmbulanceScenario.initialObjects,
@@ -77,12 +77,12 @@ describe('pack architecture', () => {
     expectFieldKeys(incidentPresentation, ['destination'])
     expectStatusIndicator(incidentPresentation, { shape: 'arrow', direction: 'left', pulse: true })
 
-    const data = ambulanceDomainDataSchema.parse(ambulance.domainData)
+    const data = ambulancePackDataSchema.parse(ambulance.packData)
     const hospitalBound: OperationalObject = {
       ...ambulance,
       tasking: { currentTaskId: hospital.id as ObjectId },
       operational: { ...ambulance.operational, status: 'en_route' },
-      domainData: {
+      packData: {
         ...data,
         transport: {
           ...data.transport,
@@ -113,17 +113,17 @@ describe('pack architecture', () => {
     if (!hospital) throw new Error('scenario missing hospital')
 
     const hospitalWithAvailableBeds = (availableBeds: number): OperationalObject => {
-      const data = hospitalDomainDataSchema.parse(hospital.domainData)
+      const data = hospitalPackDataSchema.parse(hospital.packData)
       return {
         ...hospital,
-        domainData: {
+        packData: {
           ...data,
           emergencyDepartment: {
             ...data.emergencyDepartment,
             traumaBedsTotal: confirmedFact(3, nowIso(), 'scenario', 1),
             traumaBedsAvailable: confirmedFact(availableBeds, nowIso(), 'scenario', 1),
           },
-        } satisfies HospitalDomainData,
+        } satisfies HospitalPackData,
       }
     }
 
@@ -166,7 +166,7 @@ describe('pack architecture', () => {
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })
 
-  test('scenario catalog resolves scenario packs to internal simulation providers', () => {
+  test('scenario catalog resolves scenario packs to internal pack runtimes', () => {
     const catalog = createScenarioCatalog({
       packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [osloAmbulanceScenario],
@@ -174,15 +174,15 @@ describe('pack architecture', () => {
     const runtime = catalog.runtimeFor('oslo-ambulance')
 
     expect(catalog.listScenarios()[0]?.packs).toEqual(['ambulance', 'traffic', 'weather'])
-    expect(runtime?.providers.map(provider => provider.providerId).sort()).toEqual([
-      ambulanceSimProviderId,
-      trafficSimProviderId,
-      weatherSimProviderId,
+    expect(runtime?.runtimes.map(runtime => runtime.runtimeId).sort()).toEqual([
+      ambulanceSimRuntimeId,
+      trafficSimRuntimeId,
+      weatherSimRuntimeId,
     ].sort())
-    expect(runtime?.providerConfigs).toEqual({
-      [ambulanceSimProviderId]: {},
-      [trafficSimProviderId]: {},
-      [weatherSimProviderId]: {
+    expect(runtime?.runtimeConfigs).toEqual({
+      [ambulanceSimRuntimeId]: {},
+      [trafficSimRuntimeId]: {},
+      [weatherSimRuntimeId]: {
         fields: {
           extensions: {
             'research.operatorWeatherLoad': {
@@ -198,16 +198,16 @@ describe('pack architecture', () => {
     })
   })
 
-  test('scenario catalog rejects provider overrides outside the owning pack', () => {
+  test('scenario catalog rejects runtime overrides outside the owning pack', () => {
     expect(() => createScenarioCatalog({
       packs: [ambulancePack, trafficPack, weatherPack],
       scenarios: [{
         ...osloAmbulanceScenario,
-        id: 'bad-provider-override',
-        providerOverrides: {
-          ambulance: trafficSimProviderId,
+        id: 'bad-runtime-override',
+        runtimeOverrides: {
+          ambulance: trafficSimRuntimeId,
         },
       }],
-    })).toThrow('provider traffic-local is not registered by pack ambulance')
+    })).toThrow('runtime traffic-local is not registered by pack ambulance')
   })
 })

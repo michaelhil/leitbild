@@ -1,15 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonLineString, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalObject } from '../../../core/model/index.ts'
 import { confirmedFact, interactionSignalSchema, nowIso, type InteractionSignal, type SignalId } from '../../../core/model/index.ts'
-import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEvent, SimulationEventHandler } from '../../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEvent, PackRuntimeEventHandler } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
 import { createDirectRoutingAdapter } from '../../../routing/direct-adapter.ts'
 import { createTrafficConditionCommandKind } from '../commands.ts'
-import { createTrafficConditionPayloadSchema, trafficDomainDataSchema, trafficDomainId, type TrafficDomainData, type TrafficGeometryMode } from '../model.ts'
+import { createTrafficConditionPayloadSchema, trafficPackDataSchema, trafficPackId, type TrafficPackData, type TrafficGeometryMode } from '../model.ts'
 import { trafficConditionChangedSignalType } from '../interactions.ts'
 import { answerTrafficQuery, trafficQueryKinds } from '../query.ts'
-import { trafficSimAdapterId, trafficSimDomain, trafficSimProviderId } from './constants.ts'
+import { trafficSimAdapterId, trafficSimPackId, trafficSimRuntimeId } from './constants.ts'
 
 const defaultSpeedFactor = 0.55
 
@@ -19,8 +19,8 @@ const createTrafficConditionObject = (
     readonly label: string
     readonly geometryMode: TrafficGeometryMode
     readonly geometry: GeoJsonLineString | GeoJsonPolygon
-    readonly condition: TrafficDomainData['condition']
-    readonly severity: TrafficDomainData['severity']
+    readonly condition: TrafficPackData['condition']
+    readonly severity: TrafficPackData['severity']
     readonly speedFactor?: number
     readonly delaySecondsEstimate?: number
     readonly reason: string
@@ -30,7 +30,7 @@ const createTrafficConditionObject = (
 ): OperationalObject => ({
   id: config.id,
   kind: 'zone',
-  domain: trafficSimDomain,
+  packId: trafficSimPackId,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -63,7 +63,7 @@ const createTrafficConditionObject = (
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: {
+  packData: {
     type: 'traffic_condition',
     schemaVersion: 2,
     geometryMode: config.geometryMode,
@@ -76,13 +76,13 @@ const createTrafficConditionObject = (
     startsAt: config.at,
     sourceKind: config.causedByCommandId ? 'operator' : 'scenario',
     confidence: 1,
-  } satisfies TrafficDomainData,
+  } satisfies TrafficPackData,
 })
 
 const restoreTrafficObject = (object: OperationalObject): OperationalObject => {
-  const parsed = trafficDomainDataSchema.safeParse(object.domainData)
-  if (!parsed.success) throw new Error(`invalid restored traffic object domain data for ${object.id}: ${parsed.error.message}`)
-  return { ...object, domainData: parsed.data }
+  const parsed = trafficPackDataSchema.safeParse(object.packData)
+  if (!parsed.success) throw new Error(`invalid restored traffic object pack data for ${object.id}: ${parsed.error.message}`)
+  return { ...object, packData: parsed.data }
 }
 
 const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
@@ -97,15 +97,15 @@ const nextNumberAfter = (objects: Iterable<OperationalObject>): number => {
 }
 
 const emit = (
-  handlers: ReadonlySet<SimulationEventHandler>,
-  events: ReadonlyArray<SimulationEvent>,
+  handlers: ReadonlySet<PackRuntimeEventHandler>,
+  events: ReadonlyArray<PackRuntimeEvent>,
   at: IsoTimestamp,
 ): void => {
   if (events.length === 0) return
   for (const handler of handlers) {
     handler({
       type: 'event.emission',
-      providerId: trafficSimProviderId,
+      runtimeId: trafficSimRuntimeId,
       emittedAt: at,
       events,
     })
@@ -116,12 +116,12 @@ const trafficChangedSignalEvent = (
   command: CommandEnvelope,
   object: OperationalObject,
   at: IsoTimestamp,
-): SimulationEvent => {
+): PackRuntimeEvent => {
   const signal = interactionSignalSchema.parse({
     id: `signal:${randomUUID()}` as SignalId,
     controlInstanceId: command.controlInstanceId,
     at,
-    source: { kind: 'object', id: object.id, providerId: trafficSimProviderId },
+    source: { kind: 'object', id: object.id, runtimeId: trafficSimRuntimeId },
     targets: [{ kind: 'broadcast' }],
     type: trafficConditionChangedSignalType,
     severity: 'notice',
@@ -141,22 +141,21 @@ const trafficChangedSignalEvent = (
   }
 }
 
-export const createLocalTrafficSimulationAdapter = (adapterConfig: {
+export const createLocalTrafficPackRuntimeAdapter = (adapterConfig: {
   readonly routing?: RoutingAdapter
-} = {}): SimulationAdapter => ({
-  id: trafficSimProviderId,
-  packId: 'traffic',
-  domain: trafficDomainId,
+} = {}): PackRuntimeAdapter => ({
+  id: trafficSimRuntimeId,
+  packId: trafficPackId,
   acceptedCommandKinds: [createTrafficConditionCommandKind],
   queryKinds: trafficQueryKinds,
-  connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+  connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const routing = adapterConfig.routing ?? createDirectRoutingAdapter()
     const objects = new Map<string, OperationalObject>()
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
-      .filter(object => object.domain === trafficDomainId)
+      .filter(object => object.packId === trafficPackId)
     for (const object of initialObjects) objects.set(object.id, restoreTrafficObject(object))
     let nextConditionNumber = nextNumberAfter(objects.values())
-    const handlers = new Set<SimulationEventHandler>()
+    const handlers = new Set<PackRuntimeEventHandler>()
 
     return {
       getSnapshot: async () => ({
@@ -164,7 +163,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
         objects: [...objects.values()],
         capturedAt: nowIso(),
       }),
-      subscribe: (handler: SimulationEventHandler): (() => void) => {
+      subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
@@ -177,7 +176,7 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
             ok: false,
             commandId: command.id,
             rejectedAt: acceptedAt,
-            reason: `traffic provider does not accept command kind: ${command.kind}`,
+            reason: `traffic runtime does not accept command kind: ${command.kind}`,
           }
         }
         const payload = createTrafficConditionPayloadSchema.safeParse(command.payload)
@@ -222,9 +221,9 @@ export const createLocalTrafficSimulationAdapter = (adapterConfig: {
           objects: [...objects.values()],
           at: nowIso(),
         }),
-      observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+      observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
         for (const event of events) {
-          if (event.type === 'object.upserted' && event.object.domain === trafficDomainId) objects.set(event.object.id, event.object)
+          if (event.type === 'object.upserted' && event.object.packId === trafficPackId) objects.set(event.object.id, event.object)
           if (event.type === 'object.deleted') objects.delete(event.objectId)
         }
       },

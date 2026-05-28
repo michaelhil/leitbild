@@ -193,7 +193,7 @@ export interface PackTargetContext {
   readonly objects: ReadonlyArray<OperationalObject>
 }
 
-export interface PackSimulationProvider {
+export interface PackRuntime {
   readonly id: string
   readonly label: string
   readonly kind: 'local' | 'remote' | 'replay'
@@ -223,7 +223,7 @@ export interface PackScenarioExpansionContext {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly objectById: (id: ObjectId) => OperationalObject | undefined
   readonly routing: RoutingAdapter
-  readonly providerConfigs: Record<string, unknown>
+  readonly runtimeConfigs: Record<string, unknown>
 }
 
 export interface PackScenarioOperationContext extends PackScenarioExpansionContext {
@@ -244,9 +244,8 @@ export interface PackScenarioSupport {
 export interface LeitbildPack {
   readonly id: string
   readonly name: string
-  readonly domain: string
-  readonly simulationProviders?: ReadonlyArray<PackSimulationProvider>
-  readonly defaultSimulationProviderId?: string
+  readonly runtimes?: ReadonlyArray<PackRuntime>
+  readonly defaultRuntimeId?: string
   readonly wikiRefs?: ReadonlyArray<PackWikiRef>
   /**
    * Reference dataset builders contributed by this pack. The reference-data

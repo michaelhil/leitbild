@@ -84,8 +84,8 @@
   }
 
   const systemIdFor = (candidate: OperationalObject): string => {
-    const data = candidate.domainData
-    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error('process display object has no domain data')
+    const data = candidate.packData
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) throw new Error('process display object has no pack data')
     const systemId = (data as Record<string, unknown>).systemId
     if (typeof systemId !== 'string' || systemId.length === 0) throw new Error('process display object has no system id')
     return systemId

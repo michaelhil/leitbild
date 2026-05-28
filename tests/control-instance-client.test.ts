@@ -64,14 +64,14 @@ describe('control instance client', () => {
     })
 
     const response = await sendControlInstanceCommand('control-instance:test' as ControlInstanceId, {
-      kind: 'domain.command',
+      kind: 'pack.command',
       targetObjectIds: ['object:1'],
       payload: { value: 1 },
     })
 
     expect(response.result.ok).toBe(true)
     expect(JSON.parse(recordedBody)).toEqual({
-      kind: 'domain.command',
+      kind: 'pack.command',
       targetObjectIds: ['object:1'],
       payload: { value: 1 },
     })

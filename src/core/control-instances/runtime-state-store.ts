@@ -3,26 +3,26 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { idSchema, nowIso } from '../model/index.ts'
-import type { SimulationProviderStateStore } from '../../simulation/protocol.ts'
+import type { PackRuntimeStateStore } from '../../simulation/protocol.ts'
 
-const persistedProviderStateSchema = z.object({
+const persistedRuntimeStateSchema = z.object({
   schemaVersion: z.literal(1),
-  providerId: idSchema,
+  runtimeId: idSchema,
   savedAt: z.string().datetime(),
   state: z.unknown(),
 })
 
-interface PersistedProviderState {
+interface PersistedRuntimeState {
   readonly schemaVersion: 1
-  readonly providerId: string
+  readonly runtimeId: string
   readonly savedAt: string
   readonly state: unknown
 }
 
-export const createJsonProviderStateStore = (config: {
-  readonly providerId: string
+export const createJsonRuntimeStateStore = (config: {
+  readonly runtimeId: string
   readonly path: string
-}): SimulationProviderStateStore => {
+}): PackRuntimeStateStore => {
   const load = async (): Promise<unknown | null> => {
     let raw: string
     try {
@@ -31,18 +31,18 @@ export const createJsonProviderStateStore = (config: {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw err
     }
-    const parsed = persistedProviderStateSchema.parse(JSON.parse(raw) as unknown)
-    if (parsed.providerId !== config.providerId) {
-      throw new Error(`provider state mismatch: expected ${config.providerId}, got ${parsed.providerId}`)
+    const parsed = persistedRuntimeStateSchema.parse(JSON.parse(raw) as unknown)
+    if (parsed.runtimeId !== config.runtimeId) {
+      throw new Error(`runtime state mismatch: expected ${config.runtimeId}, got ${parsed.runtimeId}`)
     }
     return parsed.state
   }
 
   const save = async (state: unknown): Promise<void> => {
     await mkdir(dirname(config.path), { recursive: true })
-    const payload: PersistedProviderState = {
+    const payload: PersistedRuntimeState = {
       schemaVersion: 1,
-      providerId: config.providerId,
+      runtimeId: config.runtimeId,
       savedAt: nowIso(),
       state,
     }

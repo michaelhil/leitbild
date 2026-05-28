@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import type { ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
-import { createOpenSkySimulationAdapter } from '../src/packs/aviation/sim/opensky/adapter.ts'
+import { createOpenSkyPackRuntimeAdapter } from '../src/packs/aviation/sim/opensky/adapter.ts'
 import type { HttpFetch } from '../src/packs/aviation/sim/opensky/auth.ts'
-import type { SimulationEvent, SimulationEventHandler } from '../src/simulation/protocol.ts'
+import type { PackRuntimeEvent, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
 
 const TOKEN_FIXTURE = new URL('./fixtures/opensky-token-response.json', import.meta.url)
 const STATES_FIXTURE = new URL('./fixtures/opensky-states-all.json', import.meta.url)
@@ -63,15 +63,15 @@ const createManualTimer = (): {
   }
 }
 
-const collectEvents = (handlers: SimulationEvent[][]): SimulationEventHandler => (message) => {
+const collectEvents = (handlers: PackRuntimeEvent[][]): PackRuntimeEventHandler => (message) => {
   if (message.type === 'event.emission') handlers.push([...message.events])
 }
 
-describe('createOpenSkySimulationAdapter', () => {
+describe('createOpenSkyPackRuntimeAdapter', () => {
   it('throws at construction when credentials are missing', () => {
-    expect(() => createOpenSkySimulationAdapter({ clientId: '', clientSecret: 'sec' }))
+    expect(() => createOpenSkyPackRuntimeAdapter({ clientId: '', clientSecret: 'sec' }))
       .toThrow(/clientId is required/)
-    expect(() => createOpenSkySimulationAdapter({ clientId: 'cid', clientSecret: '' }))
+    expect(() => createOpenSkyPackRuntimeAdapter({ clientId: 'cid', clientSecret: '' }))
       .toThrow(/clientSecret is required/)
   })
 
@@ -89,7 +89,7 @@ describe('createOpenSkySimulationAdapter', () => {
       return jsonResponse(200, statesCalls === 1 ? statesBody : emptyStates)
     }
 
-    const adapter = createOpenSkySimulationAdapter({
+    const adapter = createOpenSkyPackRuntimeAdapter({
       clientId: 'cid',
       clientSecret: 'sec',
       fetchFn,
@@ -104,7 +104,7 @@ describe('createOpenSkySimulationAdapter', () => {
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
 
-    const batches: SimulationEvent[][] = []
+    const batches: PackRuntimeEvent[][] = []
     connection.subscribe(collectEvents(batches))
 
     // Wait for the immediate first tick to settle.
@@ -144,7 +144,7 @@ describe('createOpenSkySimulationAdapter', () => {
       return jsonResponse(200, statesBody)
     }
 
-    const adapter = createOpenSkySimulationAdapter({
+    const adapter = createOpenSkyPackRuntimeAdapter({
       clientId: 'cid',
       clientSecret: 'sec',
       fetchFn,
@@ -157,7 +157,7 @@ describe('createOpenSkySimulationAdapter', () => {
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
 
-    const batches: SimulationEvent[][] = []
+    const batches: PackRuntimeEvent[][] = []
     connection.subscribe(collectEvents(batches))
     await Bun.sleep(20)
 
@@ -180,7 +180,7 @@ describe('createOpenSkySimulationAdapter', () => {
       return jsonResponse(200, statesBody)
     }
 
-    const adapter = createOpenSkySimulationAdapter({
+    const adapter = createOpenSkyPackRuntimeAdapter({
       clientId: 'cid',
       clientSecret: 'sec',
       fetchFn,

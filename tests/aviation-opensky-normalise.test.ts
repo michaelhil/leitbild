@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import { normaliseOpenSkyStates } from '../src/packs/aviation/sim/opensky/normalise.ts'
-import { aircraftDomainDataSchema } from '../src/packs/aviation/model.ts'
+import { aircraftPackDataSchema } from '../src/packs/aviation/model.ts'
 
 const FIXTURE_PATH = new URL('./fixtures/opensky-states-all.json', import.meta.url)
 const FIXED_NOW = '2026-01-01T00:00:00.000Z' as IsoTimestamp
@@ -20,14 +20,14 @@ describe('normaliseOpenSkyStates', () => {
     expect(sas).toBeDefined()
     if (!sas) return
     expect(sas.kind).toBe('aircraft')
-    expect(String(sas.domain)).toBe('aviation')
+    expect(String(sas.packId)).toBe('aviation')
     expect(sas.label).toBe('SAS123')
     expect(sas.spatial.position?.point.coordinates.map(Number)).toEqual([10.7522, 59.9139])
     expect(sas.operational.status).toBe('active')
     expect(sas.operational.mode).toBe('live')
     expect(String(sas.provenance.adapterId)).toBe('aviation.opensky')
     expect(sas.provenance.externalId).toBe('4ca1f3')
-    const data = aircraftDomainDataSchema.parse(sas.domainData)
+    const data = aircraftPackDataSchema.parse(sas.packData)
     expect(data.source).toBe('opensky')
     expect(data.callsign).toBe('SAS123')
     expect(data.altBaroM).toBe(9144)
@@ -38,7 +38,7 @@ describe('normaliseOpenSkyStates', () => {
     expect(ground).toBeDefined()
     if (!ground) return
     expect(ground.operational.status).toBe('idle')
-    const groundData = aircraftDomainDataSchema.parse(ground.domainData)
+    const groundData = aircraftPackDataSchema.parse(ground.packData)
     expect(groundData.onGround).toBe(true)
     expect(groundData.callsign).toBe('WIF456')
   })

@@ -156,7 +156,7 @@ const signalBindingFor = (variable: CompiledVariable): ProcessSignalBinding => (
   ...(variable.descriptor.limits === undefined ? {} : { limits: variable.descriptor.limits }),
   label: variable.descriptor.label,
   kind: variable.descriptor.kind,
-  domain: variable.descriptor.domain,
+  discipline: variable.descriptor.discipline,
   quantity: variable.descriptor.quantity,
   unit: variable.descriptor.unit,
   writable: variable.descriptor.writable,

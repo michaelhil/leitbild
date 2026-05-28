@@ -1,17 +1,17 @@
-import type { SimulationConnectionConfig } from '../../../simulation/protocol.ts'
+import type { PackRuntimeConnectionConfig } from '../../../simulation/protocol.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { providerStateForProcessPlantSystems } from './provider-state.ts'
+import { runtimeStateForProcessPlantSystems } from './runtime-state.ts'
 
-export interface ProcessPlantProviderPersistence {
+export interface ProcessPlantRuntimePersistence {
   readonly saveNow: () => Promise<void>
 }
 
-export const createProcessPlantProviderPersistence = (config: {
-  readonly connection: SimulationConnectionConfig
+export const createProcessPlantRuntimePersistence = (config: {
+  readonly connection: PackRuntimeConnectionConfig
   readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
-}): ProcessPlantProviderPersistence => ({
+}): ProcessPlantRuntimePersistence => ({
   saveNow: async (): Promise<void> => {
-    if (!config.connection.providerStateStore || config.systems.size === 0) return
-    await config.connection.providerStateStore.save(providerStateForProcessPlantSystems(config.systems))
+    if (!config.connection.runtimeStateStore || config.systems.size === 0) return
+    await config.connection.runtimeStateStore.save(runtimeStateForProcessPlantSystems(config.systems))
   },
 })

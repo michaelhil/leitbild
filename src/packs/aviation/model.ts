@@ -1,18 +1,18 @@
 import { z } from 'zod'
 
-// Canonical aircraft domainData for live-aircraft OperationalObjects emitted
-// by the aviation pack's providers (OpenSky in B.2, VATSIM in B.3).
+// Canonical aircraft packData for live-aircraft OperationalObjects emitted
+// by the aviation pack's runtimes (OpenSky in B.2, VATSIM in B.3).
 //
 // Fields are best-effort: OpenSky frequently omits callsign / altitude / squawk
 // for partially-observed aircraft, and VATSIM exposes a richer flight-plan
-// shape. The schema accepts null for every observable field so providers can
+// shape. The schema accepts null for every observable field so runtimes can
 // emit partial state without rejection.
 
-export const aviationDomainId = 'aviation' as const
+export const aviationPackId = 'aviation' as const
 
 export type AviationSourceId = 'opensky' | 'vatsim'
 
-export const aircraftDomainDataSchema = z.object({
+export const aircraftPackDataSchema = z.object({
   type: z.literal('aircraft'),
   schemaVersion: z.literal(1),
   source: z.enum(['opensky', 'vatsim']),
@@ -38,16 +38,16 @@ export const aircraftDomainDataSchema = z.object({
   }).nullable().optional(),
 })
 
-export type AircraftDomainData = z.infer<typeof aircraftDomainDataSchema>
+export type AircraftPackData = z.infer<typeof aircraftPackDataSchema>
 
 /** Aircraft id encoding: `aircraft:<source>:<icao24>` (OpenSky) or
  *  `aircraft:<source>:<cid>` (VATSIM). The source segment lets the runtime
- *  distinguish providers without parsing the suffix. */
+ *  distinguish runtimes without parsing the suffix. */
 export const aircraftObjectId = (source: AviationSourceId, externalId: string): string =>
   `aircraft:${source}:${externalId}`
 
 /** Heuristic to recognise an aircraft OperationalObject without parsing
- *  domainData (cheap for hot paths like the diff loop). */
+ *  packData (cheap for hot paths like the diff loop). */
 export const isAircraftKind = (kind: string): boolean => kind === 'aircraft'
 
 /** Convert metres above sea level to flight level (FL = altitude/100 ft).

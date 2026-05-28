@@ -9,8 +9,8 @@ import {
   type OperationalObject,
 } from '../../core/model/index.ts'
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
-import { trafficDomainDataSchema, trafficSeveritySchema, type TrafficDomainData, type TrafficGeometryMode } from './model.ts'
-import { trafficSimAdapterId, trafficSimDomain } from './sim/constants.ts'
+import { trafficPackDataSchema, trafficSeveritySchema, type TrafficPackData, type TrafficGeometryMode } from './model.ts'
+import { trafficSimAdapterId, trafficSimPackId } from './sim/constants.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -57,7 +57,7 @@ const trafficConditionObject = (config: {
 }): OperationalObject => ({
   id: config.spec.id,
   kind: 'zone',
-  domain: trafficSimDomain,
+  packId: trafficSimPackId,
   label: config.spec.label,
   lifecycle: 'active',
   revision: 0,
@@ -89,7 +89,7 @@ const trafficConditionObject = (config: {
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: {
+  packData: {
     type: 'traffic_condition',
     schemaVersion: 2,
     geometryMode: config.spec.geometryMode as TrafficGeometryMode,
@@ -101,7 +101,7 @@ const trafficConditionObject = (config: {
     startsAt: config.at,
     sourceKind: 'scenario',
     confidence: 1,
-  } satisfies TrafficDomainData,
+  } satisfies TrafficPackData,
 })
 
 const geometryFor = async (
@@ -127,9 +127,9 @@ export const trafficScenarioSupport: PackScenarioSupport = {
   expandObject: async (rawSpec, context): Promise<OperationalObject> => {
     const spec = trafficConditionSpecSchema.parse(rawSpec)
     const object = trafficConditionObject({ spec, geometry: await geometryFor(spec, context), at: context.at })
-    const parsed = trafficDomainDataSchema.safeParse(object.domainData)
+    const parsed = trafficPackDataSchema.safeParse(object.packData)
     if (!parsed.success) throw new Error(`invalid scenario traffic object ${object.id}: ${parsed.error.message}`)
-    return { ...object, domainData: parsed.data }
+    return { ...object, packData: parsed.data }
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`traffic scenario operation is not supported yet: ${rawOperation.type}`)

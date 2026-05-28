@@ -7,14 +7,14 @@ import type {
   IsoTimestamp,
   SimulationClockState,
 } from '../src/core/model/index.ts'
-import { createSimulationHub } from '../src/simulation/hub.ts'
+import { createRuntimeHub } from '../src/simulation/hub.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationConnectionConfig,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeConnectionConfig,
 } from '../src/simulation/protocol.ts'
 
-interface StubAdapter extends SimulationAdapter {
+interface StubAdapter extends PackRuntimeAdapter {
   readonly connectCount: () => number
 }
 
@@ -25,14 +25,13 @@ const rejectedCommand = (command: CommandEnvelope) => ({
   reason: 'stub rejects commands',
 })
 
-const createStubAdapter = (id: string, domain: string, commandKind: string): StubAdapter => {
+const createStubAdapter = (id: string, packId: string, commandKind: string): StubAdapter => {
   let connectCount = 0
-  const adapter: SimulationAdapter = {
+  const adapter: PackRuntimeAdapter = {
     id,
-    packId: id.split('.')[0] ?? id,
-    domain,
+    packId,
     acceptedCommandKinds: [commandKind],
-    connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
+    connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       connectCount += 1
       return {
         getSnapshot: async () => ({
@@ -68,21 +67,21 @@ const command = (kind: string): CommandEnvelope => ({
   issuedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
 })
 
-describe('createSimulationHub', () => {
-  test('connects only scenario-declared providers', async () => {
-    const active = createStubAdapter('active.provider', 'active-domain', 'active.command')
-    const inactive = createStubAdapter('inactive.provider', 'inactive-domain', 'inactive.command')
-    const hub = createSimulationHub([active, inactive])
+describe('createRuntimeHub', () => {
+  test('connects only scenario-declared runtimes', async () => {
+    const active = createStubAdapter('active.runtime', 'active-pack', 'active.command')
+    const inactive = createStubAdapter('inactive.runtime', 'inactive-pack', 'inactive.command')
+    const hub = createRuntimeHub([active, inactive])
 
     const connection = await hub.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
       scenario: {
         scenarioId: 'scenario:test',
-        providerIds: ['active.provider'],
+        runtimeIds: ['active.runtime'],
         world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
         initialObjects: [],
-        providerConfigs: {},
-        providerConfig: {},
+        runtimeConfigs: {},
+        runtimeConfig: {},
       },
     })
 
@@ -91,7 +90,7 @@ describe('createSimulationHub', () => {
 
     const inactiveCommand = await connection.sendCommand(command('inactive.command'))
     expect(inactiveCommand.ok).toBe(false)
-    if (!inactiveCommand.ok) expect(inactiveCommand.reason).toMatch(/no simulation provider accepts/)
+    if (!inactiveCommand.ok) expect(inactiveCommand.reason).toMatch(/no pack runtime accepts/)
 
     await connection.close()
   })

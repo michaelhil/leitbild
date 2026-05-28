@@ -67,7 +67,6 @@ export const createCompositePack = (config: {
   return {
     id: config.id,
     name: config.name,
-    domain: 'composite',
     categories: config.packs.flatMap(pack => pack.categories),
     createObjectTypes: config.packs.flatMap(pack => pack.createObjectTypes),
     interactionHandlers: config.packs.flatMap(pack => pack.interactionHandlers ?? []),

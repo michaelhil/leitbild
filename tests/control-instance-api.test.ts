@@ -2,19 +2,19 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId, DomainEvent, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
+import type { ControlInstanceId, ControlInstanceEvent, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
 import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficPack } from '../src/packs/traffic/pack.ts'
-import { createLocalWeatherSimulationAdapter } from '../src/packs/weather/sim/adapter.ts'
+import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
@@ -30,9 +30,9 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
     dataDir,
     scenarioCatalog: createTestScenarioCatalog(),
     simulationAdapters: [
-      createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }),
-      createLocalTrafficSimulationAdapter(),
-      createLocalWeatherSimulationAdapter(),
+      createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+      createLocalTrafficPackRuntimeAdapter(),
+      createLocalWeatherPackRuntimeAdapter(),
     ],
     interactionHandlers: [ambulancePack, trafficPack, weatherPack].flatMap(pack => pack.interactionHandlers ?? []),
   })
@@ -101,7 +101,7 @@ describe('control instance API', () => {
 
   test('lists and fetches scenario definitions', async () => {
     const registry = await createTestRegistry()
-    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly title: string; readonly description?: string; readonly packs?: readonly string[]; readonly requiredProviderIds?: readonly string[] }[] }>(
+    const listed = await callRoute<{ readonly defaultScenarioId: string; readonly scenarios: readonly { readonly id: string; readonly title: string; readonly description?: string; readonly packs?: readonly string[]; readonly requiredRuntimeIds?: readonly string[] }[] }>(
       registry,
       '/api/scenarios',
     )
@@ -113,7 +113,7 @@ describe('control instance API', () => {
     const oslo = listed.body.scenarios.find(scenario => scenario.id === 'oslo-ambulance')
     expect(oslo?.title).toBe('Oslo ambulance tutorial')
     expect(oslo?.packs).toBeUndefined()
-    expect(oslo?.requiredProviderIds).toBeUndefined()
+    expect(oslo?.requiredRuntimeIds).toBeUndefined()
 
     const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly unknown[] } }>(
       registry,
@@ -127,13 +127,13 @@ describe('control instance API', () => {
 
   test('loads the Halden process-plant multi-pack scenario', async () => {
     const registry = await createTestRegistry()
-    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly { readonly domain: string }[]; readonly processSystems: readonly { readonly id: string }[] } }>(
+    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly { readonly packId: string }[]; readonly processSystems: readonly { readonly id: string }[] } }>(
       registry,
       '/api/scenarios/halden-process-plant-demo',
     )
     expect(fetched.status).toBe(200)
     expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
-    expect(fetched.body.scenario.initialObjects.filter(object => object.domain === 'process-plant')).toHaveLength(6)
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(6)
     expect(fetched.body.scenario.processSystems).toHaveLength(6)
   })
 
@@ -164,7 +164,7 @@ describe('control instance API', () => {
     }
   })
 
-  test('routes generic pack queries to active simulation providers', async () => {
+  test('routes generic pack queries to active pack runtimes', async () => {
     const registry = await createTestRegistry()
     try {
       await callRoute(
@@ -273,7 +273,7 @@ describe('control instance API', () => {
       )
       const runtime = registry.get('reset-sandbox' as ControlInstanceId)
       if (!runtime) throw new Error('missing reset test runtime')
-      const notifications: DomainEvent[][] = []
+      const notifications: ControlInstanceEvent[][] = []
       const unsubscribe = runtime.subscribe(notification => {
         notifications.push([...notification.events])
       })
@@ -529,7 +529,7 @@ describe('control instance API', () => {
     }
   })
 
-  test('updates the control instance clock and pauses provider motion', async () => {
+  test('updates the control instance clock and pauses runtime motion', async () => {
     const registry = await createTestRegistry()
     try {
       const joined = await callRoute<{ readonly snapshot: { readonly clock?: SimulationClockState; readonly objects: readonly OperationalObject[] } }>(
@@ -681,7 +681,7 @@ describe('control instance API', () => {
   test('accepts interaction signals through the API and commits notification effects', async () => {
     const registry = await createTestRegistry()
     try {
-      const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string; readonly domainData?: unknown }[] } }>(
+      const joined = await callRoute<{ readonly snapshot: { readonly objects: readonly { readonly id: string; readonly kind: string; readonly packData?: unknown }[] } }>(
         registry,
         '/api/control-instances/sandbox',
         { method: 'POST' },
@@ -715,7 +715,7 @@ describe('control instance API', () => {
       expect(events.body.events.some(event => event.type === 'interaction.signal.received')).toBe(true)
       expect(events.body.events.some(event => event.type === 'notification.emitted')).toBe(true)
 
-      const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly domainData?: unknown }[] }>(
+      const objects = await callRoute<{ readonly objects: readonly { readonly id: string; readonly packData?: unknown }[] }>(
         registry,
         '/api/control-instances/sandbox/objects',
       )

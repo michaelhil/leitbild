@@ -109,7 +109,7 @@ const runWithReferenceProtection = (input: {
       runtime: input.runtime,
       elapsedMs: input.runtime.elapsedMs(),
       controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
-      sourceProviderId: 'process-plant-local',
+      sourceRuntimeId: 'process-plant-local',
     })
     elapsedMs = nextElapsedMs
   }
@@ -119,7 +119,7 @@ const runWithReferenceProtection = (input: {
 const fluidVariable = (input: {
   readonly path: string
   readonly label?: string
-  readonly domain: 'hydraulic' | 'thermal' | 'control' | 'radiological'
+  readonly discipline: 'hydraulic' | 'thermal' | 'control' | 'radiological'
   readonly quantity: 'flowRate' | 'temperature' | 'pressure' | 'pressureDelta' | 'ratio' | 'radiationDoseRate'
   readonly unit: 'kg/s' | 'degC' | 'MPa' | 'fraction' | 'mSv/h'
   readonly initialValue: number
@@ -128,7 +128,7 @@ const fluidVariable = (input: {
   path: input.path,
   label: input.label ?? input.path,
   kind: input.writable === true ? 'control' : 'derived',
-  domain: input.domain,
+  discipline: input.discipline,
   writable: input.writable ?? false,
   publish: 'telemetry',
   quantity: input.quantity,
@@ -137,9 +137,9 @@ const fluidVariable = (input: {
 })
 
 const liquidVariables = (temperatureC: number, pressureMPa = 1) => [
-  fluidVariable({ path: 'flowKgPerS', domain: 'hydraulic', quantity: 'flowRate', unit: 'kg/s', initialValue: 0 }),
-  fluidVariable({ path: 'temperatureC', domain: 'thermal', quantity: 'temperature', unit: 'degC', initialValue: temperatureC }),
-  fluidVariable({ path: 'pressureMPa', domain: 'hydraulic', quantity: 'pressure', unit: 'MPa', initialValue: pressureMPa }),
+  fluidVariable({ path: 'flowKgPerS', discipline: 'hydraulic', quantity: 'flowRate', unit: 'kg/s', initialValue: 0 }),
+  fluidVariable({ path: 'temperatureC', discipline: 'thermal', quantity: 'temperature', unit: 'degC', initialValue: temperatureC }),
+  fluidVariable({ path: 'pressureMPa', discipline: 'hydraulic', quantity: 'pressure', unit: 'MPa', initialValue: pressureMPa }),
 ]
 
 describe('process plant runtime', () => {
@@ -209,7 +209,7 @@ describe('process plant runtime', () => {
         runtime,
         elapsedMs: runtime.elapsedMs(),
         controlInstanceId: 'control-instance:runtime-protection-test' as ControlInstanceId,
-        sourceProviderId: 'process-plant-local',
+        sourceRuntimeId: 'process-plant-local',
       })
       expect(activeLifecycleIds(protection.snapshot())).toEqual({
         alarms: [],

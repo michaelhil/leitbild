@@ -2,18 +2,18 @@ import type { MissionDefinition, OperationalObject, ScenarioDefinition } from '.
 import { missionDefinitionSchema, scenarioDefinitionSchema } from '../model/index.ts'
 import type { LeitbildPack } from '../packs/protocol.ts'
 
-export interface ResolvedScenarioProvider {
+export interface ResolvedPackRuntime {
   readonly packId: string
-  readonly providerId: string
-  readonly providerConfig: unknown
+  readonly runtimeId: string
+  readonly runtimeConfig: unknown
 }
 
 export interface ResolvedScenarioRuntime {
   readonly scenarioId: string
   readonly packs: ReadonlyArray<LeitbildPack>
-  readonly providers: ReadonlyArray<ResolvedScenarioProvider>
+  readonly runtimes: ReadonlyArray<ResolvedPackRuntime>
   readonly initialObjects: ReadonlyArray<OperationalObject>
-  readonly providerConfigs: Record<string, unknown>
+  readonly runtimeConfigs: Record<string, unknown>
   readonly scenario: ScenarioDefinition
 }
 
@@ -61,18 +61,18 @@ export const createScenarioCatalog = (config: {
     for (const packId of scenario.packs) {
       const pack = packs.get(packId)
       if (!pack) throw new Error(`scenario ${scenario.id} references unknown pack: ${packId}`)
-      const providerId = scenario.providerOverrides[packId] ?? pack.defaultSimulationProviderId
-      if (!providerId) throw new Error(`scenario ${scenario.id} pack ${packId} has no default simulation provider`)
-      const providers = pack.simulationProviders ?? []
-      if (!providers.some(provider => provider.id === providerId)) {
-        throw new Error(`scenario ${scenario.id} provider ${providerId} is not registered by pack ${packId}`)
+      const runtimeId = scenario.runtimeOverrides[packId] ?? pack.defaultRuntimeId
+      if (!runtimeId) throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
+      const runtimes = pack.runtimes ?? []
+      if (!runtimes.some(runtime => runtime.id === runtimeId)) {
+        throw new Error(`scenario ${scenario.id} runtime ${runtimeId} is not registered by pack ${packId}`)
       }
     }
-    for (const packId of Object.keys(scenario.providerOverrides)) {
-      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has provider override for inactive pack: ${packId}`)
+    for (const packId of Object.keys(scenario.runtimeOverrides)) {
+      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has runtime override for inactive pack: ${packId}`)
     }
-    for (const packId of Object.keys(scenario.providerConfigs)) {
-      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has provider config for inactive pack: ${packId}`)
+    for (const packId of Object.keys(scenario.runtimeConfigs)) {
+      if (!scenario.packs.includes(packId)) throw new Error(`scenario ${scenario.id} has runtime config for inactive pack: ${packId}`)
     }
     const processSystemIds = new Set<string>()
     for (const processSystem of scenario.processSystems) {
@@ -145,25 +145,25 @@ export const createScenarioCatalog = (config: {
       if (!scenario) return undefined
       const initialObjects = applyInitialContexts(scenario)
       const activePacks = scenario.packs.map(packId => packs.get(packId)!)
-      const providers = scenario.packs.map(packId => {
+      const runtimes = scenario.packs.map(packId => {
         const pack = packs.get(packId)
-        if (!pack?.defaultSimulationProviderId && scenario.providerOverrides[packId] === undefined) {
-          throw new Error(`scenario ${scenario.id} pack ${packId} has no default simulation provider`)
+        if (!pack?.defaultRuntimeId && scenario.runtimeOverrides[packId] === undefined) {
+          throw new Error(`scenario ${scenario.id} pack ${packId} has no default pack runtime`)
         }
-        const providerId = scenario.providerOverrides[packId] ?? pack!.defaultSimulationProviderId!
+        const runtimeId = scenario.runtimeOverrides[packId] ?? pack!.defaultRuntimeId!
         return {
           packId,
-          providerId,
-          providerConfig: scenario.providerConfigs[packId] ?? {},
+          runtimeId,
+          runtimeConfig: scenario.runtimeConfigs[packId] ?? {},
         }
       })
       return {
         scenarioId: scenario.id,
         scenario,
         packs: activePacks,
-        providers,
+        runtimes,
         initialObjects,
-        providerConfigs: Object.fromEntries(providers.map(provider => [provider.providerId, provider.providerConfig])),
+        runtimeConfigs: Object.fromEntries(runtimes.map(runtime => [runtime.runtimeId, runtime.runtimeConfig])),
       }
     },
     defaultScenarioId: (): string => defaultScenarioId,

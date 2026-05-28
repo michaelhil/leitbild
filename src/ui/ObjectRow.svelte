@@ -62,7 +62,7 @@
     markSeen(object)
   }
 
-  const processSurfaceAvailable = $derived(object.domain === 'process-plant' && openProcessSurface !== undefined)
+  const processSurfaceAvailable = $derived(object.packId === 'process-plant' && openProcessSurface !== undefined)
 </script>
 
 <div

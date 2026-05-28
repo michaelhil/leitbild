@@ -2,13 +2,13 @@ import type { GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, ObjectId, OperationalO
 import { geoPointFromLonLat } from '../../core/model/index.ts'
 import {
   type WeatherAtmosphere,
-  type WeatherDomainData,
+  type WeatherPackData,
   type WeatherExtensions,
   type WeatherFalloffCurve,
   type WeatherInfluenceKeyframe,
   type WeatherState,
   type WeatherSurface,
-  weatherDomainDataSchema,
+  weatherPackDataSchema,
 } from './model.ts'
 
 const metersPerDegreeLatitude = 111_320
@@ -176,7 +176,7 @@ export const interpolateWeatherInfluenceFrame = (
 })
 
 export const activeWeatherInfluenceFrameAt = (
-  data: WeatherDomainData,
+  data: WeatherPackData,
   at: IsoTimestamp,
 ): WeatherInfluenceKeyframe | null => {
   const influence = data.influence
@@ -243,7 +243,7 @@ export const activeWeatherInfluencesAt = (
   at: IsoTimestamp,
 ): ReadonlyArray<WeatherInfluenceEntry> =>
   objects.flatMap(object => {
-    const parsed = weatherDomainDataSchema.safeParse(object.domainData)
+    const parsed = weatherPackDataSchema.safeParse(object.packData)
     if (!parsed.success || parsed.data.conditionKind !== 'weather_influence' || !parsed.data.influence) return []
     const frame = activeWeatherInfluenceFrameAt(parsed.data, at)
     if (!frame) return []
@@ -256,15 +256,15 @@ export const activeWeatherInfluencesAt = (
   }).sort((left, right) => (left.priority - right.priority) || left.objectId.localeCompare(right.objectId))
 
 export const weatherObjectCurrentCenter = (
-  data: WeatherDomainData,
+  data: WeatherPackData,
   at: IsoTimestamp,
 ): GeoJsonPoint | null =>
   activeWeatherInfluenceFrameAt(data, at)?.center ?? null
 
 export const weatherDataAtTime = (
-  data: WeatherDomainData,
+  data: WeatherPackData,
   at: IsoTimestamp,
-): WeatherDomainData => {
+): WeatherPackData => {
   if (data.conditionKind !== 'weather_influence') return data
   const frame = activeWeatherInfluenceFrameAt(data, at)
   if (!frame) return data

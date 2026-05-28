@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { knowledgeFactSchema, type KnowledgeFact, type ObjectId } from '../../core/model/index.ts'
 
-export const ambulanceDomainId = 'ambulance_dispatch' as const
+export const ambulancePackId = 'ambulance' as const
 
 export const ambulanceStatusSchema = z.enum([
   'available',
@@ -17,7 +17,7 @@ export type AmbulanceStatus = z.infer<typeof ambulanceStatusSchema>
 export const incidentStatusSchema = z.enum(['open', 'assigned', 'responding', 'resolved'])
 export type IncidentStatus = z.infer<typeof incidentStatusSchema>
 
-export const ambulanceDomainDataSchema = z.object({
+export const ambulancePackDataSchema = z.object({
   type: z.literal('ambulance'),
   schemaVersion: z.literal(1),
   capabilities: z.array(z.enum([
@@ -38,7 +38,7 @@ export const ambulanceDomainDataSchema = z.object({
     patientsOnBoard: knowledgeFactSchema(z.number().int().nonnegative()),
   }).optional(),
 })
-export type AmbulanceDomainData = z.infer<typeof ambulanceDomainDataSchema>
+export type AmbulancePackData = z.infer<typeof ambulancePackDataSchema>
 
 export const injurySummarySchema = z.object({
   category: z.enum(['trauma', 'cardiac', 'respiratory', 'burn', 'unknown']),
@@ -47,7 +47,7 @@ export const injurySummarySchema = z.object({
 })
 export type InjurySummary = z.infer<typeof injurySummarySchema>
 
-export const incidentDomainDataSchema = z.object({
+export const incidentPackDataSchema = z.object({
   type: z.literal('incident'),
   schemaVersion: z.literal(1),
   triage: knowledgeFactSchema(z.enum(['green', 'yellow', 'red'])),
@@ -59,9 +59,9 @@ export const incidentDomainDataSchema = z.object({
   hazards: knowledgeFactSchema(z.array(z.string().min(1))),
   assignedAmbulanceId: z.string().optional(),
 })
-export type IncidentDomainData = z.infer<typeof incidentDomainDataSchema>
+export type IncidentPackData = z.infer<typeof incidentPackDataSchema>
 
-export const hospitalDomainDataSchema = z.object({
+export const hospitalPackDataSchema = z.object({
   type: z.literal('hospital'),
   schemaVersion: z.literal(1),
   emergencyDepartment: z.object({
@@ -79,9 +79,9 @@ export const hospitalDomainDataSchema = z.object({
     'burn_unit',
   ])),
 })
-export type HospitalDomainData = z.infer<typeof hospitalDomainDataSchema>
+export type HospitalPackData = z.infer<typeof hospitalPackDataSchema>
 
-export type AmbulanceControlDomainData = AmbulanceDomainData | IncidentDomainData | HospitalDomainData
+export type AmbulanceControlPackData = AmbulancePackData | IncidentPackData | HospitalPackData
 
 export const factSummary = <T>(fact: KnowledgeFact<T>, formatter: (value: T) => string = String): string =>
   fact.state === 'unknown' ? 'unknown' : formatter(fact.value)

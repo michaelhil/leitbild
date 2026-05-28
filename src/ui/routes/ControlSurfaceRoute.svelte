@@ -22,7 +22,7 @@
   import {
     applyControlInstanceEventBatchMessage,
   } from '../control-instance-events.ts'
-  import { createMapAreaFeatureProvider } from '../app/map-area-feature-provider.ts'
+  import { createMapAreaFeatureLoader } from '../app/map-area-feature-loader.ts'
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
   import { createRealtimeConnectionController } from '../app/realtime-connection.ts'
   import { completeControlSurfaceStartupFromSnapshot } from '../app/control-surface-session.ts'
@@ -182,22 +182,22 @@
   }
 
   // Rail source picker (Phase B.3). Only meaningful when the scenario binds
-  // the aviation pack to aviation.multi — that provider is the only one
+  // the aviation pack to aviation.multi — that runtime is the only one
   // accepting aviation.set_source, so picking a source on a single-source
-  // provider would do nothing.
+  // runtime would do nothing.
   //
   // Active source is tracked locally because it's runtime state, not part of
   // the scenario manifest after the first switch. We seed from the scenario's
-  // providerConfigs (the same payload the multi adapter consumes at connect
+  // runtimeConfigs (the same payload the multi adapter consumes at connect
   // time) and then update optimistically on each successful command.
   let aviationActiveSourceId = $state<'opensky' | 'vatsim'>('opensky')
   let pendingSourceSwitch = $state(false)
   $effect(() => {
     const scenario = scenarioDefinition
     if (!scenario) return
-    // providerConfigs is keyed by pack id, not provider id — the catalog
-    // routes pack-id-keyed configs to the active provider at connect time.
-    const cfg = (scenario.providerConfigs ?? {})['aviation'] as { source?: string } | undefined
+    // runtimeConfigs is keyed by pack id, not runtime id — the catalog
+    // routes pack-id-keyed configs to the active runtime at connect time.
+    const cfg = (scenario.runtimeConfigs ?? {})['aviation'] as { source?: string } | undefined
     untrack(() => {
       const source = cfg?.source === 'vatsim' ? 'vatsim' : 'opensky'
       aviationActiveSourceId = source
@@ -218,9 +218,9 @@
 
   const railSourcePicker = $derived.by(() => {
     if (!activePack || !scenarioDefinition) return null
-    const activeProviderId = scenarioDefinition.providerOverrides[activePack.id]
-      ?? activePack.defaultSimulationProviderId
-    if (activeProviderId !== 'aviation.multi') return null
+    const activeRuntimeId = scenarioDefinition.runtimeOverrides[activePack.id]
+      ?? activePack.defaultRuntimeId
+    if (activeRuntimeId !== 'aviation.multi') return null
     const sources = [
       { id: 'opensky', label: 'OpenSky Network (live ADS-B)' },
       { id: 'vatsim', label: 'VATSIM (flight-sim network)' },
@@ -244,7 +244,7 @@
   const presentationFor = (object: OperationalObject): PackObjectPresentation =>
     requireActivePack().presentObject(object, { objects, currentTime: currentPackTime() })
 
-  const mapAreaFeaturesFor = createMapAreaFeatureProvider({
+  const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
     objects: () => objects,
     controlInstanceId: () => controlInstanceId,

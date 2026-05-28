@@ -1,6 +1,6 @@
 import type { AdapterId, ControlInstanceId, InteractionSignal, SignalId } from '../../../../core/model/index.ts'
 import { nowIso } from '../../../../core/model/index.ts'
-import type { SimulationEvent } from '../../../../simulation/protocol.ts'
+import type { PackRuntimeEvent } from '../../../../simulation/protocol.ts'
 import type {
   ProcessPlantIcEffect,
   ProcessPlantIcLifecyclePhase,
@@ -96,7 +96,7 @@ export const mutableLifecycleFor = (
 
 export const eventForProcessPlantIcLifecycleTransition = (config: {
   readonly controlInstanceId: ControlInstanceId
-  readonly sourceProviderId: string
+  readonly sourceRuntimeId: string
   readonly systemId: string
   readonly rule: ProcessPlantIcRule
   readonly lifecycle: ProcessPlantIcLifecycleState
@@ -105,13 +105,13 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
   readonly actorId?: string
   readonly clientId?: string
   readonly reason?: string
-}): SimulationEvent => {
+}): PackRuntimeEvent => {
   const at = nowIso()
   const signal: InteractionSignal = {
     id: signalIdFor(config.systemId, config.rule.id, config.lifecycle.effectId, config.transition, config.elapsedMs),
     controlInstanceId: config.controlInstanceId,
     at,
-    source: { kind: 'simulation', id: config.sourceProviderId },
+    source: { kind: 'simulation', id: config.sourceRuntimeId },
     targets: [{ kind: 'broadcast' }],
     type: `process-plant.${config.lifecycle.kind}.${config.transition}`,
     severity: config.lifecycle.severity,
@@ -135,6 +135,6 @@ export const eventForProcessPlantIcLifecycleTransition = (config: {
     type: 'interaction.signal',
     signal,
     at,
-    provenance: { source: 'simulator', adapterId: config.sourceProviderId as AdapterId },
+    provenance: { source: 'simulator', adapterId: config.sourceRuntimeId as AdapterId },
   }
 }

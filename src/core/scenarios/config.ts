@@ -161,7 +161,7 @@ export const scenarioConfigSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   packs: z.array(idSchema).min(1),
-  providerOverrides: z.record(idSchema).default({}),
+  runtimeOverrides: z.record(idSchema).default({}),
   world: z.object({
     startsAt: z.string().datetime(),
     mapCenter: lonLatSchema.optional(),
@@ -191,7 +191,7 @@ export const scenarioConfigSchema = z.object({
       })
     }
   })).default([]),
-  providerConfigs: z.record(z.unknown()).default({}),
+  runtimeConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
   surface: surfaceConfigSchema,
   script: scenarioScriptConfigSchema.optional(),
@@ -220,7 +220,7 @@ const expandObject = async (
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
-    readonly providerConfigs: Record<string, unknown>
+    readonly runtimeConfigs: Record<string, unknown>
   },
 ): Promise<OperationalObject> => {
   const pack = packFor(context.packs, spec.pack)
@@ -229,7 +229,7 @@ const expandObject = async (
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
     routing: context.routing,
-    providerConfigs: context.providerConfigs,
+    runtimeConfigs: context.runtimeConfigs,
   })
 }
 
@@ -240,7 +240,7 @@ const expandScriptAction = async (
     readonly packs: ReadonlyMap<string, LeitbildPack>
     readonly objectMap: Map<ObjectId, OperationalObject>
     readonly routing: RoutingAdapter
-    readonly providerConfigs: Record<string, unknown>
+    readonly runtimeConfigs: Record<string, unknown>
   },
 ): Promise<ScenarioScriptAction> => {
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
@@ -278,7 +278,7 @@ const expandScriptAction = async (
     objects: [...context.objectMap.values()],
     objectById: (id) => context.objectMap.get(id),
     routing: context.routing,
-    providerConfigs: context.providerConfigs,
+    runtimeConfigs: context.runtimeConfigs,
   })
   context.objectMap.set(updated.id, updated)
   return { type: 'upsert_object', object: updated }
@@ -328,7 +328,7 @@ export const scenarioDefinitionFromConfig = async (
       packs: packsById,
       objectMap,
       routing: options.routing,
-      providerConfigs: config.providerConfigs,
+      runtimeConfigs: config.runtimeConfigs,
     })
     if (objectMap.has(object.id)) throw new Error(`scenario ${config.id} has duplicate object id: ${object.id}`)
     objectMap.set(object.id, object)
@@ -345,7 +345,7 @@ export const scenarioDefinitionFromConfig = async (
           packs: packsById,
           objectMap,
           routing: options.routing,
-          providerConfigs: config.providerConfigs,
+          runtimeConfigs: config.runtimeConfigs,
         }))
       }
       steps.push({
@@ -364,7 +364,7 @@ export const scenarioDefinitionFromConfig = async (
     title: config.title,
     ...(config.description === undefined ? {} : { description: config.description }),
     packs: config.packs,
-    providerOverrides: config.providerOverrides,
+    runtimeOverrides: config.runtimeOverrides,
     world: {
       startsAt,
       ...(config.world.mapCenter === undefined ? {} : { mapCenter: pointFromLonLat(config.world.mapCenter) }),
@@ -373,7 +373,7 @@ export const scenarioDefinitionFromConfig = async (
     initialObjects,
     initialContexts: config.initialContexts,
     processSystems: config.processSystems,
-    providerConfigs: config.providerConfigs,
+    runtimeConfigs: config.runtimeConfigs,
     ...(config.missionId === undefined ? {} : { missionId: config.missionId }),
     surface: expandSurface(config.surface),
     ...(script === undefined ? {} : { script }),

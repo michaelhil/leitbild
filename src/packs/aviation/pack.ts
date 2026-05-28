@@ -7,19 +7,19 @@ import type {
   PackObjectPresentation,
   PackMapLayerGroup,
   PackReferenceDatasetBuilder,
-  PackSimulationProvider,
+  PackRuntime,
 } from '../../core/packs/protocol.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import { asDatasetId } from '../../reference-data/types.ts'
-import { aviationNoopProvider, aviationNoopProviderId } from './sim/noop-adapter.ts'
-import { aviationOpenSkyProviderId, aviationVatsimProviderId } from './sim/constants.ts'
-import { aviationMultiProviderId } from './sim/multi/constants.ts'
+import { aviationNoopRuntime, aviationNoopRuntimeId } from './sim/noop-adapter.ts'
+import { aviationOpenSkyRuntimeId, aviationVatsimRuntimeId } from './sim/constants.ts'
+import { aviationMultiRuntimeId } from './sim/multi/constants.ts'
 import {
-  aircraftDomainDataSchema,
+  aircraftPackDataSchema,
   altitudeToFlightLevel,
   isAircraftKind,
   velocityMpsToKnots,
-  type AircraftDomainData,
+  type AircraftPackData,
 } from './model.ts'
 
 // The dataset id is declared inline (not imported from datasets/aero-norway.ts)
@@ -30,11 +30,11 @@ const aeroNorwayDatasetIdValue = asDatasetId('aero-norway')
 // The aviation pack owns:
 //   - Norwegian airspace polygons + Avinor airport points (the aero-norway
 //     reference dataset). Pack-contributed via referenceDatasetBuilders.
-//   - Live aircraft: OpenSky / VATSIM simulation providers and the
+//   - Live aircraft: OpenSky / VATSIM pack runtimes and the
 //     aviation.set_source command.
 //   - Rail-side layer-group toggles for reference airspace / airports.
 //
-// See ADR 0022 for the architecture and the wiki page domains/aviation.md.
+// See ADR 0022 for the architecture and the wiki page packs/aviation.md.
 
 // The build callback intentionally uses `require`/dynamic import so the UI
 // bundle does not pull in node:fs/promises and other build-time modules.
@@ -71,63 +71,63 @@ const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   },
 ]
 
-// Pack-level provider catalogue. Adapter registration (the actual factory
+// Pack-level runtime catalogue. Adapter registration (the actual factory
 // invocation, with env-derived credentials) happens in `src/index.ts`. The
-// scenario opts a Control Instance into a non-default provider via
-// providerOverrides — see norway-airspace.scenario.json.
-const aviationOpenSkyProvider: PackSimulationProvider = {
-  id: aviationOpenSkyProviderId,
+// scenario opts a Control Instance into a non-default runtime via
+// runtimeOverrides — see norway-airspace.scenario.json.
+const aviationOpenSkyRuntime: PackRuntime = {
+  id: aviationOpenSkyRuntimeId,
   label: 'OpenSky Network (live ADS-B)',
   kind: 'remote',
 }
 
-const aviationVatsimProvider: PackSimulationProvider = {
-  id: aviationVatsimProviderId,
+const aviationVatsimRuntime: PackRuntime = {
+  id: aviationVatsimRuntimeId,
   label: 'VATSIM (live flight-sim network)',
   kind: 'remote',
 }
 
-// The multi provider exposes a single id that owns runtime source-swap. Scenarios
+// The multi runtime exposes a single id that owns runtime source-swap. Scenarios
 // that want operator-toggleable sources reference it; scenarios that pin a
 // specific source can still reference aviation.opensky or aviation.vatsim
 // directly.
-const aviationMultiProvider: PackSimulationProvider = {
-  id: aviationMultiProviderId,
+const aviationMultiRuntime: PackRuntime = {
+  id: aviationMultiRuntimeId,
   label: 'Aviation (multi-source: OpenSky / VATSIM)',
   kind: 'remote',
 }
 
-const parseAircraft = (object: OperationalObject): AircraftDomainData | null => {
+const parseAircraft = (object: OperationalObject): AircraftPackData | null => {
   if (!isAircraftKind(object.kind)) return null
-  const parsed = aircraftDomainDataSchema.safeParse(object.domainData)
+  const parsed = aircraftPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const formatCallsign = (data: AircraftDomainData): string =>
+const formatCallsign = (data: AircraftPackData): string =>
   data.callsign ?? data.icao24 ?? 'unknown'
 
-const formatFlightLevel = (data: AircraftDomainData): string => {
+const formatFlightLevel = (data: AircraftPackData): string => {
   const fl = altitudeToFlightLevel(data.altBaroM ?? data.altGeoM)
   if (fl === null) return data.onGround ? 'GND' : '—'
   return `FL${String(fl).padStart(3, '0')}`
 }
 
-const formatKnots = (data: AircraftDomainData): string => {
+const formatKnots = (data: AircraftPackData): string => {
   const kt = velocityMpsToKnots(data.velocityMps)
   return kt === null ? '—' : `${kt} kt`
 }
 
-const formatHeading = (data: AircraftDomainData): string =>
+const formatHeading = (data: AircraftPackData): string =>
   data.headingDeg === null ? '—' : `${Math.round(data.headingDeg)}°`
 
-const formatVertRate = (data: AircraftDomainData): string => {
+const formatVertRate = (data: AircraftPackData): string => {
   if (data.vertRateMps === null) return '—'
   const fpm = Math.round(data.vertRateMps * 196.85) // m/s → ft/min
   if (fpm === 0) return 'level'
   return `${fpm > 0 ? '+' : ''}${fpm} ft/min`
 }
 
-const aircraftFields = (data: AircraftDomainData): ReadonlyArray<PackObjectField> => [
+const aircraftFields = (data: AircraftPackData): ReadonlyArray<PackObjectField> => [
   packField('callsign', 'Callsign', formatCallsign(data)),
   packField('source', 'Source', data.source),
   packField('flightLevel', 'Altitude', formatFlightLevel(data)),
@@ -139,7 +139,7 @@ const aircraftFields = (data: AircraftDomainData): ReadonlyArray<PackObjectField
   packField('icao24', 'ICAO24', data.icao24 ?? '—'),
 ]
 
-const aircraftColor = (data: AircraftDomainData): string => {
+const aircraftColor = (data: AircraftPackData): string => {
   if (data.onGround) return '#6b7280' // slate-500
   // Squawk emergency codes (7500 hijack, 7600 radio failure, 7700 emergency).
   if (data.squawk === '7500' || data.squawk === '7600' || data.squawk === '7700') return '#dc2626'
@@ -149,17 +149,16 @@ const aircraftColor = (data: AircraftDomainData): string => {
 export const aviationPack: LeitbildPack = {
   id: 'aviation',
   name: 'Aviation',
-  domain: 'aviation',
   wikiRefs: [
-    { name: 'Leitbild aviation domain wiki', url: 'https://samsinn-wikis.github.io/leitbild/domains/aviation/' },
+    { name: 'Leitbild aviation pack wiki', url: 'https://samsinn-wikis.github.io/leitbild/packs/aviation/' },
   ],
-  simulationProviders: [
-    aviationNoopProvider,
-    aviationOpenSkyProvider,
-    aviationVatsimProvider,
-    aviationMultiProvider,
+  runtimes: [
+    aviationNoopRuntime,
+    aviationOpenSkyRuntime,
+    aviationVatsimRuntime,
+    aviationMultiRuntime,
   ],
-  defaultSimulationProviderId: aviationNoopProviderId,
+  defaultRuntimeId: aviationNoopRuntimeId,
   referenceDatasetBuilders: [aeroNorwayBuilder],
   mapLayerGroups: layerGroups,
   categories: [
@@ -181,7 +180,7 @@ export const aviationPack: LeitbildPack = {
         icon: 'aircraft',
         color: '#6b7280',
         summary: object.operational.status,
-        fields: [packField('error', 'Error', 'Invalid aircraft domain data')],
+        fields: [packField('error', 'Error', 'Invalid aircraft pack data')],
       }
     }
     const summary = `${formatCallsign(data)} · ${formatFlightLevel(data)} · ${formatKnots(data)}`

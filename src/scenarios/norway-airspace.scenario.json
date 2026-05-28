@@ -4,7 +4,7 @@
   "title": "Norway airspace",
   "description": "Activates the aviation pack and renders Norwegian airspace polygons plus Avinor airport points. Layer-group toggles live in the control rail.",
   "packs": ["aviation"],
-  "providerOverrides": {
+  "runtimeOverrides": {
     "aviation": "aviation.multi"
   },
   "world": {
@@ -17,7 +17,7 @@
   },
   "objects": [],
   "initialContexts": [],
-  "providerConfigs": {
+  "runtimeConfigs": {
     "aviation": { "source": "vatsim" }
   },
   "surface": {

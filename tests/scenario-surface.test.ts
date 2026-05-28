@@ -65,7 +65,7 @@ describe('scenario surface model', () => {
     const scenario = scenarioDefinitionSchema.parse({
       ...osloAmbulanceScenario,
       packs: ['ambulance'],
-      providerConfigs: { ambulance: {} },
+      runtimeConfigs: { ambulance: {} },
       surface: {
         ...osloAmbulanceScenario.surface,
         regions: osloAmbulanceScenario.surface.regions.map(region => (

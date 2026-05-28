@@ -3,12 +3,12 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createJsonlEventLog } from '../src/core/control-instances/event-log.ts'
-import type { ControlInstanceId, DomainEvent, EventId, ObjectId } from '../src/core/model/index.ts'
+import type { ControlInstanceId, ControlInstanceEvent, EventId, ObjectId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 
 const controlInstanceId = 'control-instance:event-log-test' as ControlInstanceId
 
-const makeEvent = (seq: number): DomainEvent => ({
+const makeEvent = (seq: number): ControlInstanceEvent => ({
   id: `event:test-${seq}` as EventId,
   controlInstanceId,
   seq,

@@ -3,7 +3,7 @@ import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import type { VariablePath } from '../graph/index.ts'
-import { processQuantitySchema, variableDomainSchema, variablePathSchema } from '../graph/index.ts'
+import { processQuantitySchema, variableDisciplineSchema, variablePathSchema } from '../graph/index.ts'
 import type { ProcessPlantVariableSnapshot } from '../runtime/index.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success } from './common.ts'
@@ -16,7 +16,7 @@ const variablesReadQuerySchema = z.object({
 const variablesSearchQuerySchema = z.object({
   systemId: idSchema.optional(),
   text: z.string().min(1).optional(),
-  domain: variableDomainSchema.optional(),
+  discipline: variableDisciplineSchema.optional(),
   quantity: processQuantitySchema.optional(),
   publishedOnly: z.boolean().default(false),
 })
@@ -36,7 +36,7 @@ const matchesSearch = (
   config: z.infer<typeof variablesSearchQuerySchema>,
 ): boolean => {
   if (config.publishedOnly && !variable.published) return false
-  if (config.domain !== undefined && variable.domain !== config.domain) return false
+  if (config.discipline !== undefined && variable.discipline !== config.discipline) return false
   if (config.quantity !== undefined && variable.quantity !== config.quantity) return false
   if (config.text !== undefined) {
     const text = config.text.toLowerCase()

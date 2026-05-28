@@ -1,14 +1,14 @@
-import type { CommandEnvelope, CommandResult, DomainEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
-export interface SimulationSnapshot {
+export interface PackRuntimeSnapshot {
   readonly controlInstanceId: ControlInstanceId
   readonly objects: ReadonlyArray<OperationalObject>
   readonly capturedAt: IsoTimestamp
 }
 
-export type SimulationEvent =
+export type PackRuntimeEvent =
   | {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
@@ -35,53 +35,52 @@ export type SimulationEvent =
       readonly provenance: Provenance
     }
 
-export interface SimulationEmission {
+export interface PackRuntimeEmission {
   readonly type: 'event.emission'
-  readonly events: ReadonlyArray<SimulationEvent>
+  readonly events: ReadonlyArray<PackRuntimeEvent>
   readonly emittedAt: IsoTimestamp
-  readonly providerId: string
+  readonly runtimeId: string
 }
 
-export type SimulationEventHandler = (emission: SimulationEmission) => void
+export type PackRuntimeEventHandler = (emission: PackRuntimeEmission) => void
 
-export interface SimulationConnection {
-  readonly getSnapshot: () => Promise<SimulationSnapshot>
-  readonly subscribe: (handler: SimulationEventHandler) => () => void
+export interface PackRuntimeConnection {
+  readonly getSnapshot: () => Promise<PackRuntimeSnapshot>
+  readonly subscribe: (handler: PackRuntimeEventHandler) => () => void
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
   readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
-  readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => Promise<void>
+  readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
   readonly close: () => Promise<void>
 }
 
-export interface SimulationProviderStateStore {
+export interface PackRuntimeStateStore {
   readonly load: () => Promise<unknown | null>
   readonly save: (state: unknown) => Promise<void>
 }
 
-export interface SimulationAdapter {
+export interface PackRuntimeAdapter {
   readonly id: string
   readonly packId: string
-  readonly domain: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
   readonly queryKinds?: ReadonlyArray<string>
-  readonly connect: (config: SimulationConnectionConfig) => Promise<SimulationConnection>
+  readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>
 }
 
-export interface SimulationScenarioRuntimeConfig {
+export interface PackScenarioRuntimeConfig {
   readonly scenarioId: string
-  readonly providerIds: ReadonlyArray<string>
+  readonly runtimeIds: ReadonlyArray<string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly processSystems?: ReadonlyArray<ScenarioProcessSystemDefinition>
-  readonly providerConfigs: Record<string, unknown>
-  readonly providerConfig: unknown
+  readonly runtimeConfigs: Record<string, unknown>
+  readonly runtimeConfig: unknown
 }
 
-export interface SimulationConnectionConfig {
+export interface PackRuntimeConnectionConfig {
   readonly controlInstanceId: ControlInstanceId
-  readonly scenario?: SimulationScenarioRuntimeConfig
+  readonly scenario?: PackScenarioRuntimeConfig
   readonly initialObjects?: ReadonlyArray<OperationalObject>
-  readonly providerStateStore?: SimulationProviderStateStore
-  readonly providerStateStores?: Readonly<Record<string, SimulationProviderStateStore>>
+  readonly runtimeStateStore?: PackRuntimeStateStore
+  readonly runtimeStateStores?: Readonly<Record<string, PackRuntimeStateStore>>
 }

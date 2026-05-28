@@ -7,7 +7,7 @@ export type ControlInstanceId = Brand<string, 'ControlInstanceId'>
 export type CommandId = Brand<string, 'CommandId'>
 export type ActorId = Brand<string, 'ActorId'>
 export type ClientId = Brand<string, 'ClientId'>
-export type DomainId = Brand<string, 'DomainId'>
+export type PackId = Brand<string, 'PackId'>
 export type AdapterId = Brand<string, 'AdapterId'>
 export type EventId = Brand<string, 'EventId'>
 export type SignalId = Brand<string, 'SignalId'>
@@ -20,7 +20,7 @@ export const controlInstanceIdSchema = idSchema.transform(value => value as Cont
 export const commandIdSchema = idSchema.transform(value => value as CommandId)
 export const actorIdSchema = idSchema.transform(value => value as ActorId)
 export const clientIdSchema = idSchema.transform(value => value as ClientId)
-export const domainIdSchema = idSchema.transform(value => value as DomainId)
+export const packIdSchema = idSchema.transform(value => value as PackId)
 export const adapterIdSchema = idSchema.transform(value => value as AdapterId)
 export const eventIdSchema = idSchema.transform(value => value as EventId)
 export const signalIdSchema = idSchema.transform(value => value as SignalId)

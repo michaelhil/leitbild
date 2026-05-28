@@ -16,7 +16,7 @@ export interface EventEnvelopeBase {
   readonly provenance: Provenance
 }
 
-export type DomainEvent =
+export type ControlInstanceEvent =
   | (EventEnvelopeBase & {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
@@ -85,7 +85,7 @@ const eventBaseSchema = z.object({
   provenance: provenanceSchema,
 })
 
-export const domainEventSchema = z.discriminatedUnion('type', [
+export const controlInstanceEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.extend({
     type: z.literal('object.upserted'),
     object: operationalObjectSchema,

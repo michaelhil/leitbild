@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
-import { aviationDomainId } from '../src/packs/aviation/model.ts'
-import { createAviationMultiSimulationAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
-import { aviationOpenSkyProviderId, aviationVatsimProviderId } from '../src/packs/aviation/sim/constants.ts'
+import { aviationPackId } from '../src/packs/aviation/model.ts'
+import { createAviationMultiPackRuntimeAdapter } from '../src/packs/aviation/sim/multi/adapter.ts'
+import { aviationOpenSkyRuntimeId, aviationVatsimRuntimeId } from '../src/packs/aviation/sim/constants.ts'
 import { aviationSetSourceCommandKind } from '../src/packs/aviation/sim/multi/constants.ts'
 import type {
-  SimulationAdapter,
-  SimulationConnection,
-  SimulationEvent,
-  SimulationEventHandler,
+  PackRuntimeAdapter,
+  PackRuntimeConnection,
+  PackRuntimeEvent,
+  PackRuntimeEventHandler,
 } from '../src/simulation/protocol.ts'
 
-// Tiny stub SimulationAdapter the multi-adapter can wrap. Each instance
+// Tiny stub PackRuntimeAdapter the multi-adapter can wrap. Each instance
 // exposes an `emit(events)` test seam plus tallies for connect/close.
 
-interface StubAdapter extends SimulationAdapter {
-  readonly emit: (events: ReadonlyArray<SimulationEvent>) => void
+interface StubAdapter extends PackRuntimeAdapter {
+  readonly emit: (events: ReadonlyArray<PackRuntimeEvent>) => void
   readonly connectCount: () => number
   readonly closeCount: () => number
   readonly subscribers: () => number
@@ -24,22 +24,21 @@ interface StubAdapter extends SimulationAdapter {
 const createStubAdapter = (id: string): StubAdapter => {
   let connectCount = 0
   let closeCount = 0
-  const handlers = new Set<SimulationEventHandler>()
-  let activeEmit: ((events: ReadonlyArray<SimulationEvent>) => void) | null = null
-  const adapter: SimulationAdapter = {
+  const handlers = new Set<PackRuntimeEventHandler>()
+  let activeEmit: ((events: ReadonlyArray<PackRuntimeEvent>) => void) | null = null
+  const adapter: PackRuntimeAdapter = {
     id,
-    packId: 'aviation',
-    domain: aviationDomainId,
+    packId: aviationPackId,
     acceptedCommandKinds: [],
     queryKinds: [],
-    connect: async (config): Promise<SimulationConnection> => {
+    connect: async (config): Promise<PackRuntimeConnection> => {
       connectCount += 1
-      const connHandlers = new Set<SimulationEventHandler>()
+      const connHandlers = new Set<PackRuntimeEventHandler>()
       activeEmit = (events) => {
         if (events.length === 0) return
         const emission = {
           type: 'event.emission' as const,
-          providerId: id,
+          runtimeId: id,
           emittedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
           events,
         }
@@ -88,12 +87,12 @@ const createStubAdapter = (id: string): StubAdapter => {
   }
 }
 
-const upsertEvent = (id: string, providerId: string): SimulationEvent => ({
+const upsertEvent = (id: string, runtimeId: string): PackRuntimeEvent => ({
   type: 'object.upserted',
   object: {
     id: id as ObjectId,
     kind: 'aircraft',
-    domain: aviationDomainId,
+    packId: aviationPackId,
     label: id,
     lifecycle: 'active',
     revision: 0,
@@ -106,15 +105,15 @@ const upsertEvent = (id: string, providerId: string): SimulationEvent => ({
     },
     operational: { status: 'active', mode: 'live' },
     alerts: [],
-    provenance: { source: 'simulator', adapterId: providerId as never, externalId: id },
+    provenance: { source: 'simulator', adapterId: runtimeId as never, externalId: id },
     timestamps: {
       createdAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
       updatedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
     },
-    domainData: { type: 'aircraft', schemaVersion: 1, source: 'opensky', icao24: null, callsign: null, originCountry: null, altBaroM: null, altGeoM: null, velocityMps: null, headingDeg: null, vertRateMps: null, onGround: false, squawk: null, lastSeenAt: null },
+    packData: { type: 'aircraft', schemaVersion: 1, source: 'opensky', icao24: null, callsign: null, originCountry: null, altBaroM: null, altGeoM: null, velocityMps: null, headingDeg: null, vertRateMps: null, onGround: false, squawk: null, lastSeenAt: null },
   } as never,
   at: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
-  provenance: { source: 'simulator', adapterId: providerId as never, externalId: id },
+  provenance: { source: 'simulator', adapterId: runtimeId as never, externalId: id },
 })
 
 const issueSetSource = (source: 'opensky' | 'vatsim'): CommandEnvelope => ({
@@ -127,46 +126,46 @@ const issueSetSource = (source: 'opensky' | 'vatsim'): CommandEnvelope => ({
   issuedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
 })
 
-describe('createAviationMultiSimulationAdapter', () => {
-  it('forwards events from the initial source and stamps providerId as aviation.multi', async () => {
-    const opensky = createStubAdapter(aviationOpenSkyProviderId)
-    const vatsim = createStubAdapter(aviationVatsimProviderId)
-    const multi = createAviationMultiSimulationAdapter({ opensky, vatsim })
+describe('createAviationMultiPackRuntimeAdapter', () => {
+  it('forwards events from the initial source and stamps runtimeId as aviation.multi', async () => {
+    const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
+    const vatsim = createStubAdapter(aviationVatsimRuntimeId)
+    const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
 
-    const emissions: { providerId: string; events: ReadonlyArray<SimulationEvent> }[] = []
+    const emissions: { runtimeId: string; events: ReadonlyArray<PackRuntimeEvent> }[] = []
     connection.subscribe((emission) => {
-      if (emission.type === 'event.emission') emissions.push({ providerId: emission.providerId, events: emission.events })
+      if (emission.type === 'event.emission') emissions.push({ runtimeId: emission.runtimeId, events: emission.events })
     })
 
     expect(opensky.connectCount()).toBe(1)
     expect(vatsim.connectCount()).toBe(0)
 
-    opensky.emit([upsertEvent('aircraft:opensky:a', aviationOpenSkyProviderId)])
+    opensky.emit([upsertEvent('aircraft:opensky:a', aviationOpenSkyRuntimeId)])
     expect(emissions.length).toBe(1)
-    expect(emissions[0]?.providerId).toBe('aviation.multi')
+    expect(emissions[0]?.runtimeId).toBe('aviation.multi')
     expect(emissions[0]?.events.length).toBe(1)
 
     await connection.close()
   })
 
   it('on set_source: sweeps deletes for tracked ids, closes old source, opens new', async () => {
-    const opensky = createStubAdapter(aviationOpenSkyProviderId)
-    const vatsim = createStubAdapter(aviationVatsimProviderId)
-    const multi = createAviationMultiSimulationAdapter({ opensky, vatsim })
+    const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
+    const vatsim = createStubAdapter(aviationVatsimRuntimeId)
+    const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
-    const emissions: ReadonlyArray<SimulationEvent>[] = []
+    const emissions: ReadonlyArray<PackRuntimeEvent>[] = []
     connection.subscribe((emission) => {
       if (emission.type === 'event.emission') emissions.push(emission.events)
     })
 
     opensky.emit([
-      upsertEvent('aircraft:opensky:a', aviationOpenSkyProviderId),
-      upsertEvent('aircraft:opensky:b', aviationOpenSkyProviderId),
+      upsertEvent('aircraft:opensky:a', aviationOpenSkyRuntimeId),
+      upsertEvent('aircraft:opensky:b', aviationOpenSkyRuntimeId),
     ])
     expect(emissions[0]?.length).toBe(2)
 
@@ -182,7 +181,7 @@ describe('createAviationMultiSimulationAdapter', () => {
     expect(vatsim.connectCount()).toBe(1)
 
     // New source's events flow through.
-    vatsim.emit([upsertEvent('aircraft:vatsim:c', aviationVatsimProviderId)])
+    vatsim.emit([upsertEvent('aircraft:vatsim:c', aviationVatsimRuntimeId)])
     expect(emissions.at(-1)?.length).toBe(1)
     expect(emissions.at(-1)?.[0]?.type).toBe('object.upserted')
 
@@ -190,9 +189,9 @@ describe('createAviationMultiSimulationAdapter', () => {
   })
 
   it('rejects set_source with an invalid payload', async () => {
-    const opensky = createStubAdapter(aviationOpenSkyProviderId)
-    const vatsim = createStubAdapter(aviationVatsimProviderId)
-    const multi = createAviationMultiSimulationAdapter({ opensky, vatsim })
+    const opensky = createStubAdapter(aviationOpenSkyRuntimeId)
+    const vatsim = createStubAdapter(aviationVatsimRuntimeId)
+    const multi = createAviationMultiPackRuntimeAdapter({ opensky, vatsim })
     const connection = await multi.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
@@ -205,8 +204,8 @@ describe('createAviationMultiSimulationAdapter', () => {
   })
 
   it('rejects set_source for an unconfigured source', async () => {
-    const vatsim = createStubAdapter(aviationVatsimProviderId)
-    const multi = createAviationMultiSimulationAdapter({ vatsim, defaultSource: 'vatsim' })
+    const vatsim = createStubAdapter(aviationVatsimRuntimeId)
+    const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'vatsim' })
     const connection = await multi.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
     })
@@ -217,17 +216,17 @@ describe('createAviationMultiSimulationAdapter', () => {
   })
 
   it('falls back to the first registered source when scenario config names an unavailable source', async () => {
-    const vatsim = createStubAdapter(aviationVatsimProviderId)
-    const multi = createAviationMultiSimulationAdapter({ vatsim, defaultSource: 'opensky' })
+    const vatsim = createStubAdapter(aviationVatsimRuntimeId)
+    const multi = createAviationMultiPackRuntimeAdapter({ vatsim, defaultSource: 'opensky' })
     const connection = await multi.connect({
       controlInstanceId: 'control-instance:test' as ControlInstanceId,
       scenario: {
         scenarioId: 'scenario:aviation',
-        providerIds: ['aviation.multi'],
+        runtimeIds: ['aviation.multi'],
         world: { startsAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp, environment: { mode: 'test' } },
         initialObjects: [],
-        providerConfigs: {},
-        providerConfig: { source: 'opensky' },
+        runtimeConfigs: {},
+        runtimeConfig: { source: 'opensky' },
       },
     })
 

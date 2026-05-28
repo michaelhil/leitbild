@@ -1,14 +1,14 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { domainEventSchema, type DomainEvent } from '../model/index.ts'
+import { controlInstanceEventSchema, type ControlInstanceEvent } from '../model/index.ts'
 
 export interface EventLog {
-  readonly appendMany: (events: ReadonlyArray<DomainEvent>) => Promise<void>
-  readonly readAll: () => Promise<ReadonlyArray<DomainEvent>>
-  readonly readAfter: (seq: number) => Promise<ReadonlyArray<DomainEvent>>
+  readonly appendMany: (events: ReadonlyArray<ControlInstanceEvent>) => Promise<void>
+  readonly readAll: () => Promise<ReadonlyArray<ControlInstanceEvent>>
+  readonly readAfter: (seq: number) => Promise<ReadonlyArray<ControlInstanceEvent>>
 }
 
-const assertStrictSequence = (events: ReadonlyArray<DomainEvent>, context: string, previousSeq = -1): number => {
+const assertStrictSequence = (events: ReadonlyArray<ControlInstanceEvent>, context: string, previousSeq = -1): number => {
   let lastSeq = previousSeq
   for (const event of events) {
     if (event.seq <= lastSeq) {
@@ -19,7 +19,7 @@ const assertStrictSequence = (events: ReadonlyArray<DomainEvent>, context: strin
   return lastSeq
 }
 
-const readEvents = async (path: string): Promise<ReadonlyArray<DomainEvent>> => {
+const readEvents = async (path: string): Promise<ReadonlyArray<ControlInstanceEvent>> => {
   let text: string
   try {
     text = await readFile(path, 'utf8')
@@ -28,7 +28,7 @@ const readEvents = async (path: string): Promise<ReadonlyArray<DomainEvent>> => 
     throw err
   }
   const lines = text.split('\n')
-  const events: DomainEvent[] = []
+  const events: ControlInstanceEvent[] = []
   let previousSeq = -1
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]
@@ -40,7 +40,7 @@ const readEvents = async (path: string): Promise<ReadonlyArray<DomainEvent>> => 
     } catch (err) {
       throw new Error(`invalid event log JSON at ${location}: ${err instanceof Error ? err.message : String(err)}`)
     }
-    const parsed = domainEventSchema.safeParse(raw)
+    const parsed = controlInstanceEventSchema.safeParse(raw)
     if (!parsed.success) {
       throw new Error(`invalid event log event at ${location}: ${parsed.error.message}`)
     }
@@ -48,7 +48,7 @@ const readEvents = async (path: string): Promise<ReadonlyArray<DomainEvent>> => 
       throw new Error(`event log sequence regression at ${location}: ${parsed.data.seq} after ${previousSeq}`)
     }
     previousSeq = parsed.data.seq
-    events.push(parsed.data as DomainEvent)
+    events.push(parsed.data as ControlInstanceEvent)
   }
   return events
 }
@@ -56,7 +56,7 @@ const readEvents = async (path: string): Promise<ReadonlyArray<DomainEvent>> => 
 export const createJsonlEventLog = (path: string): EventLog => {
   let lastPersistedSeq: number | null = null
 
-  const readAll = async (): Promise<ReadonlyArray<DomainEvent>> => readEvents(path)
+  const readAll = async (): Promise<ReadonlyArray<ControlInstanceEvent>> => readEvents(path)
   const readLastPersistedSeq = async (): Promise<number> => {
     const events = await readAll()
     return events.at(-1)?.seq ?? -1
@@ -69,7 +69,7 @@ export const createJsonlEventLog = (path: string): EventLog => {
   }
 
   return {
-    appendMany: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+    appendMany: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
       if (events.length === 0) return
       const previousSeq = await ensureLastPersistedSeq()
       const lastSeq = assertStrictSequence(events, path, previousSeq)
@@ -78,7 +78,7 @@ export const createJsonlEventLog = (path: string): EventLog => {
       lastPersistedSeq = lastSeq
     },
     readAll,
-    readAfter: async (seq: number): Promise<ReadonlyArray<DomainEvent>> =>
+    readAfter: async (seq: number): Promise<ReadonlyArray<ControlInstanceEvent>> =>
       (await readAll()).filter(event => event.seq > seq),
   }
 }

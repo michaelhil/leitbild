@@ -25,12 +25,12 @@ export const pumpComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       minimumNaturalCirculationFlowKgPerS: z.number().finite().nonnegative().optional(),
     }),
     variables: [
-      variable({ path: 'running', label: 'Running', kind: 'discrete', domain: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
-      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', domain: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
-      variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-      variable({ path: 'developedHeadPa', label: 'Developed head', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'head', unit: 'Pa' }),
-      variable({ path: 'loopFlowTargetKgPerS', label: 'Primary loop target flow', kind: 'derived', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
-      variable({ path: 'loopFlowKgPerS', label: 'Primary loop flow', kind: 'state', domain: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'running', label: 'Running', kind: 'discrete', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
+      variable({ path: 'speedFraction', label: 'Speed', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'ratio', unit: 'fraction', limits: { hardRange: { min: 0, max: 1 } } }),
+      variable({ path: 'flowKgPerS', label: 'Flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'developedHeadPa', label: 'Developed head', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'head', unit: 'Pa' }),
+      variable({ path: 'loopFlowTargetKgPerS', label: 'Primary loop target flow', kind: 'derived', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
+      variable({ path: 'loopFlowKgPerS', label: 'Primary loop flow', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'flowRate', unit: 'kg/s' }),
     ],
   }),
 ]

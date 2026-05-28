@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { geoPointFromLonLat, nowIso, type AdapterId, type DomainId, type IsoTimestamp, type OperationalObject } from '../../../../core/model/index.ts'
+import { geoPointFromLonLat, nowIso, type AdapterId, type PackId, type IsoTimestamp, type OperationalObject } from '../../../../core/model/index.ts'
 import {
-  aircraftDomainDataSchema,
+  aircraftPackDataSchema,
   aircraftObjectId,
-  aviationDomainId,
-  type AircraftDomainData,
+  aviationPackId,
+  type AircraftPackData,
 } from '../../model.ts'
 import { aviationOpenSkyAdapterId } from '../constants.ts'
 
@@ -63,8 +63,8 @@ export interface NormaliseOpenSkyOptions {
   readonly now?: () => IsoTimestamp
 }
 
-const buildAircraftDomainData = (row: z.infer<typeof stateVectorRow>): AircraftDomainData =>
-  aircraftDomainDataSchema.parse({
+const buildAircraftPackData = (row: z.infer<typeof stateVectorRow>): AircraftPackData =>
+  aircraftPackDataSchema.parse({
     type: 'aircraft',
     schemaVersion: 1,
     source: 'opensky',
@@ -83,7 +83,7 @@ const buildAircraftDomainData = (row: z.infer<typeof stateVectorRow>): AircraftD
 
 const buildOperationalObject = (
   row: z.infer<typeof stateVectorRow>,
-  data: AircraftDomainData,
+  data: AircraftPackData,
   at: IsoTimestamp,
 ): OperationalObject => {
   const lon = row[5]
@@ -93,7 +93,7 @@ const buildOperationalObject = (
   return {
     id: aircraftObjectId('opensky', row[0]) as OperationalObject['id'],
     kind: 'aircraft',
-    domain: aviationDomainId as DomainId,
+    packId: aviationPackId as PackId,
     label: callsign,
     lifecycle: 'active',
     revision: 0,
@@ -119,7 +119,7 @@ const buildOperationalObject = (
       createdAt: at,
       updatedAt: at,
     },
-    domainData: data,
+    packData: data,
   }
 }
 
@@ -135,7 +135,7 @@ export const normaliseOpenSkyStates = (
   const out: OperationalObject[] = []
   for (const row of parsed.states) {
     if (requirePosition && (row[5] === null || row[6] === null)) continue
-    const data = buildAircraftDomainData(row)
+    const data = buildAircraftPackData(row)
     out.push(buildOperationalObject(row, data, at))
   }
   return out

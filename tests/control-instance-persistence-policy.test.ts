@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { AdapterId, ControlInstanceId, DomainEvent, DomainId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
+import type { AdapterId, ControlInstanceId, ControlInstanceEvent, PackId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
-import type { SimulationConnection, SimulationEmission, SimulationEventHandler } from '../src/simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
 import { createJsonlEventLog } from '../src/core/control-instances/event-log.ts'
 import { createControlInstanceSnapshotStore } from '../src/core/control-instances/snapshot-store.ts'
 import { createControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
@@ -16,13 +16,13 @@ const makeObject = (config?: {
   readonly point?: ReturnType<typeof geoPointFromLonLat>
   readonly status?: string
   readonly revision?: number
-  readonly domainData?: unknown
+  readonly packData?: unknown
 }): OperationalObject => {
   const at = nowIso()
   return {
     id: objectId,
     kind: 'mobile_entity',
-    domain: 'domain:test' as DomainId,
+    packId: 'packId:test' as PackId,
     label: 'Test Mobile',
     lifecycle: 'active',
     revision: config?.revision ?? 0,
@@ -41,7 +41,7 @@ const makeObject = (config?: {
       priority: 'normal',
       mode: 'simulated',
     },
-    ...(config?.domainData === undefined ? {} : { domainData: config.domainData }),
+    ...(config?.packData === undefined ? {} : { packData: config.packData }),
     alerts: [],
     provenance: {
       source: 'simulator',
@@ -56,10 +56,10 @@ const makeObject = (config?: {
 }
 
 const createControlledSimulation = (initialObject: OperationalObject): {
-  readonly connection: SimulationConnection
-  readonly emit: (events: ReadonlyArray<Parameters<SimulationEventHandler>[0]['events'][number]>) => void
+  readonly connection: PackRuntimeConnection
+  readonly emit: (events: ReadonlyArray<Parameters<PackRuntimeEventHandler>[0]['events'][number]>) => void
 } => {
-  const handlers = new Set<SimulationEventHandler>()
+  const handlers = new Set<PackRuntimeEventHandler>()
   return {
     connection: {
       getSnapshot: async () => ({
@@ -67,7 +67,7 @@ const createControlledSimulation = (initialObject: OperationalObject): {
         objects: [initialObject],
         capturedAt: nowIso(),
       }),
-      subscribe: (handler: SimulationEventHandler) => {
+      subscribe: (handler: PackRuntimeEventHandler) => {
         handlers.add(handler)
         return () => {
           handlers.delete(handler)
@@ -93,24 +93,24 @@ const createControlledSimulation = (initialObject: OperationalObject): {
       },
     },
     emit: (events) => {
-      const emission: SimulationEmission = {
+      const emission: PackRuntimeEmission = {
         type: 'event.emission',
         events,
         emittedAt: nowIso(),
-        providerId: 'test-provider',
+        runtimeId: 'test-runtime',
       }
       for (const handler of handlers) handler(emission)
     },
   }
 }
 
-const readEventLog = async (path: string): Promise<ReadonlyArray<DomainEvent>> => {
+const readEventLog = async (path: string): Promise<ReadonlyArray<ControlInstanceEvent>> => {
   try {
     const raw = await readFile(path, 'utf8')
     return raw
       .split('\n')
       .filter(line => line.trim().length > 0)
-      .map(line => JSON.parse(line) as DomainEvent)
+      .map(line => JSON.parse(line) as ControlInstanceEvent)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
     throw err
@@ -183,11 +183,11 @@ describe('control instance persistence policy', () => {
     await runtime.close()
   })
 
-  test('keeps provider projection-only domain data updates out of the durable journal', async () => {
+  test('keeps runtime projection-only pack data updates out of the durable journal', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject({
-      domainData: {
+      packData: {
         type: 'test-unit',
         schemaVersion: 1,
         systemId: 'system-a',
@@ -210,7 +210,7 @@ describe('control instance persistence policy', () => {
 
     const projectionUpdate = makeObject({
       revision: 1,
-      domainData: {
+      packData: {
         type: 'test-unit',
         schemaVersion: 1,
         systemId: 'system-a',
@@ -234,9 +234,9 @@ describe('control instance persistence policy', () => {
     expect(runtime.events()).toHaveLength(0)
     expect(await readEventLog(eventLogPath)).toHaveLength(0)
 
-    const domainTruthUpdate = makeObject({
+    const packTruthUpdate = makeObject({
       revision: 2,
-      domainData: {
+      packData: {
         type: 'test-unit',
         schemaVersion: 1,
         systemId: 'system-b',
@@ -248,13 +248,13 @@ describe('control instance persistence policy', () => {
     })
     simulation.emit([{
       type: 'object.upserted',
-      object: domainTruthUpdate,
+      object: packTruthUpdate,
       at: nowIso(),
-      provenance: domainTruthUpdate.provenance,
+      provenance: packTruthUpdate.provenance,
     }])
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
-      'durable non-projection domain data update',
+      'durable non-projection pack data update',
     )
 
     expect(runtime.events().map(event => event.type)).toEqual(['object.upserted'])

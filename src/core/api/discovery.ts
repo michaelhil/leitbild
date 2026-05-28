@@ -292,7 +292,7 @@ export const buildManifest = (baseUrl: string): DiscoveryManifest => {
         },
         {
           type: 'events',
-          description: 'Batch of Control Instance Domain Events from the live feed.',
+          description: 'Batch of Control Instance events from the live feed.',
         },
         {
           type: 'controlInstance.reset',

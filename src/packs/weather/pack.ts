@@ -7,16 +7,16 @@ import { weatherPresentationSeverityForState, weatherSampleAtPoint, type Weather
 import {
   createWeatherAreaPayloadSchema,
   createWeatherProbePayloadSchema,
-  weatherDomainDataSchema,
-  weatherDomainId,
-  type WeatherDomainData,
+  weatherPackDataSchema,
+  weatherPackId,
+  type WeatherPackData,
   type WeatherState,
 } from './model.ts'
 import { weatherScenarioSupport } from './scenario.ts'
-import { weatherSimProviderId } from './sim/constants.ts'
+import { weatherSimRuntimeId } from './sim/constants.ts'
 
-const parseWeatherData = (object: OperationalObject): WeatherDomainData | null => {
-  const parsed = weatherDomainDataSchema.safeParse(object.domainData)
+const parseWeatherData = (object: OperationalObject): WeatherPackData | null => {
+  const parsed = weatherPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
@@ -37,7 +37,7 @@ const surfaceSummary = (state: WeatherState): string => {
   return parts.length > 0 ? parts.join(', ') : 'dry'
 }
 
-const weatherFields = (data: WeatherDomainData): ReadonlyArray<PackObjectField> => [
+const weatherFields = (data: WeatherPackData): ReadonlyArray<PackObjectField> => [
   packField('air-temperature', 'Air temperature', `${oneDecimal(data.state.atmosphere.airTemperatureC)} °C`),
   packField('ground-temperature', 'Ground temperature', `${oneDecimal(data.state.surface.groundTemperatureC)} °C`),
   packField('precipitation', 'Precipitation', `${data.state.atmosphere.precipitation.type.replaceAll('_', ' ')} · ${oneDecimal(data.state.atmosphere.precipitation.intensityMmPerHour)} mm/h`),
@@ -65,7 +65,7 @@ const weatherValue = (state: WeatherState): string => {
   ].join(' · ')
 }
 
-const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: WeatherDomainData | null): string => {
+const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: WeatherPackData | null): string => {
   if (severity === 'hazard') return '#dc2626'
   if (severity === 'adverse') return '#d97706'
   if (severity === 'notice') {
@@ -82,7 +82,7 @@ const statusToneFor = (severity: WeatherPresentationSeverity | undefined): 'read
 }
 
 const samplePointFor = (object: OperationalObject): GeoJsonPoint | null => {
-  if (object.domain === weatherDomainId) return null
+  if (object.packId === weatherPackId) return null
   return object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
 }
 
@@ -119,11 +119,10 @@ const buildWeatherCreatePayload = (
 export const weatherPack: LeitbildPack = {
   id: 'weather',
   name: 'Weather Conditions',
-  domain: weatherDomainId,
-  simulationProviders: [
-    { id: weatherSimProviderId, label: 'Local weather simulator', kind: 'local' },
+  runtimes: [
+    { id: weatherSimRuntimeId, label: 'Local weather simulator', kind: 'local' },
   ],
-  defaultSimulationProviderId: weatherSimProviderId,
+  defaultRuntimeId: weatherSimRuntimeId,
   scenario: weatherScenarioSupport,
   categories: [
     {
@@ -144,7 +143,7 @@ export const weatherPack: LeitbildPack = {
       color: weatherColor(severity, data),
       summary: data ? `${data.summary} · ${severity}` : object.operational.status,
       status: packStatus(tone, data ? `${severity} weather` : 'Invalid weather data'),
-      fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather domain data')],
+      fields: data ? weatherFields(data) : [packField('error', 'Error', 'Invalid weather pack data')],
       mapIconVisible: data?.conditionKind !== 'weather_influence',
       noteworthyUpdates: false,
     }

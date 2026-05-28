@@ -48,7 +48,7 @@ const snapshotVariable = (
     canonicalValue: toCanonicalProcessValue(value, variable.descriptor.unit),
     quantity: variable.descriptor.quantity,
     unit: variable.descriptor.unit,
-    domain: variable.descriptor.domain,
+    discipline: variable.descriptor.discipline,
     kind: variable.descriptor.kind,
     writable: variable.descriptor.writable,
     published: variable.published,

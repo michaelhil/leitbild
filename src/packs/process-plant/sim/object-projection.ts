@@ -1,11 +1,11 @@
 import type { IsoTimestamp, ObjectId, OperationalObject, Provenance } from '../../../core/model/index.ts'
-import type { SimulationEvent } from '../../../simulation/protocol.ts'
+import type { PackRuntimeEvent } from '../../../simulation/protocol.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import { processPlantUnitDomainDataSchema } from '../model.ts'
+import { processPlantUnitPackDataSchema } from '../model.ts'
 import { processPlantProjectionKey, projectedProcessPlantUnit } from '../projection.ts'
 
 export const processPlantUnitSystemId = (object: OperationalObject): string | null => {
-  const parsed = processPlantUnitDomainDataSchema.safeParse(object.domainData)
+  const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data.systemId : null
 }
 
@@ -36,8 +36,8 @@ export const processPlantProjectionEvents = (config: {
   readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
   readonly at: IsoTimestamp
   readonly provenance: Provenance
-}): ReadonlyArray<SimulationEvent> => {
-  const events: SimulationEvent[] = []
+}): ReadonlyArray<PackRuntimeEvent> => {
+  const events: PackRuntimeEvent[] = []
   for (const object of config.objectsById.values()) {
     const systemId = processPlantUnitSystemId(object)
     if (systemId === null) continue

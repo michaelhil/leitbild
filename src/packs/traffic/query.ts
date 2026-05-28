@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { GeoJsonLineString, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject } from '../../core/model/index.ts'
 import { geoJsonLineStringSchema, objectIdSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import { trafficDomainDataSchema, trafficDomainId } from './model.ts'
+import { trafficPackDataSchema, trafficPackId } from './model.ts'
 
 const objectQuerySchema = z.object({
   objectId: objectIdSchema,
@@ -36,7 +36,7 @@ const failure = (request: PackQueryRequest, reason: string, generatedAt: IsoTime
 })
 
 const trafficObjects = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<OperationalObject> =>
-  objects.filter(object => object.domain === trafficDomainId && trafficDomainDataSchema.safeParse(object.domainData).success)
+  objects.filter(object => object.packId === trafficPackId && trafficPackDataSchema.safeParse(object.packData).success)
 
 const pointDistanceToLine = (point: GeoJsonPoint, line: GeoJsonLineString): number =>
   Math.min(...line.coordinates.map(coordinate => routeDistanceMeters(point, pointFromPosition(coordinate))))

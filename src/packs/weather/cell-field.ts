@@ -23,7 +23,7 @@ import {
 import {
   type WeatherSample,
   type WeatherState,
-  weatherDomainDataSchema,
+  weatherPackDataSchema,
 } from './model.ts'
 
 const minimumStoredResidual = 0.005
@@ -151,7 +151,7 @@ export const weatherGridForObjects = (config: {
   readonly fallbackResolution?: number
 }): WeatherGridDefinition => {
   const resolutions = config.objects.flatMap(object => {
-    const parsed = weatherDomainDataSchema.safeParse(object.domainData)
+    const parsed = weatherPackDataSchema.safeParse(object.packData)
     return parsed.success && parsed.data.render?.truthResolution ? [parsed.data.render.truthResolution] : []
   })
   return {

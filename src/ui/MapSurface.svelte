@@ -394,7 +394,6 @@
             // controller only reads mapLayerGroups, so the rest can be stubs.
             id: 'mapsurface-aggregate',
             name: 'MapSurface aggregate',
-            domain: 'mapsurface-aggregate',
             categories: [],
             createObjectTypes: [],
             presentObject: () => { throw new Error('not used') },

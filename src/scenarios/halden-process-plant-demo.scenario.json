@@ -4,7 +4,7 @@
   "title": "Halden process-plant multi-sim demo",
   "description": "Six independently simulated process-plant units near Halden, running alongside ambulance response and moving weather.",
   "packs": ["process-plant", "ambulance", "weather"],
-  "providerOverrides": {},
+  "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
     "mapCenter": [11.3890, 59.1185],
@@ -320,7 +320,7 @@
       }
     }
   ],
-  "providerConfigs": {
+  "runtimeConfigs": {
     "process-plant": {
       "systems": {
         "halden-unit-a1": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },

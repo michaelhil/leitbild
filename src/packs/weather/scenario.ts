@@ -9,7 +9,7 @@ import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSup
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import {
   weatherAtmosphereSchema,
-  weatherDomainDataSchema,
+  weatherPackDataSchema,
   weatherAtmospherePatchSchema,
   weatherExtensionDefinitionsSchema,
   weatherExtensionsSchema,
@@ -18,14 +18,14 @@ import {
   weatherFalloffCurveSchema,
   weatherInfluenceSchema,
   type WeatherAtmospherePatch,
-  type WeatherDomainData,
+  type WeatherPackData,
   type WeatherExtensionDefinitions,
   type WeatherExtensions,
   type WeatherInfluence,
   type WeatherState,
   type WeatherSurfacePatch,
 } from './model.ts'
-import { weatherSimAdapterId, weatherSimDomain } from './sim/constants.ts'
+import { weatherSimAdapterId, weatherSimPackId } from './sim/constants.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -62,14 +62,14 @@ const weatherConditionSpecSchema = z.object({
   keyframes: z.array(weatherKeyframeSpecSchema).min(1),
 })
 
-const weatherProviderConfigSchema = z.object({
+const weatherRuntimeConfigSchema = z.object({
   fields: z.object({
     extensions: weatherExtensionDefinitionsSchema,
   }).default({ extensions: {} }),
 }).default({ fields: { extensions: {} } })
 
-const weatherProviderConfigFor = (providerConfigs: Record<string, unknown>): z.infer<typeof weatherProviderConfigSchema> =>
-  weatherProviderConfigSchema.parse(providerConfigs.weather ?? {})
+const weatherRuntimeConfigFor = (runtimeConfigs: Record<string, unknown>): z.infer<typeof weatherRuntimeConfigSchema> =>
+  weatherRuntimeConfigSchema.parse(runtimeConfigs.weather ?? {})
 
 const extensionDefaultsFor = (definitions: WeatherExtensionDefinitions): WeatherExtensions =>
   Object.fromEntries(Object.entries(definitions).map(([key, definition]) => [key, definition.default]))
@@ -80,7 +80,7 @@ const validatedExtensions = (
 ): WeatherExtensions => {
   for (const [key, value] of Object.entries(extensions)) {
     const definition = definitions[key]
-    if (!definition) throw new Error(`weather extension "${key}" is not declared in providerConfigs.weather.fields.extensions`)
+    if (!definition) throw new Error(`weather extension "${key}" is not declared in runtimeConfigs.weather.fields.extensions`)
     if (typeof value !== definition.type) throw new Error(`weather extension "${key}" must be ${definition.type}`)
     if (definition.type === 'number') {
       const numericValue = value
@@ -92,7 +92,7 @@ const validatedExtensions = (
   return extensions
 }
 
-export const createWeatherDomainData = (config: {
+export const createWeatherPackData = (config: {
   readonly at: IsoTimestamp
   readonly summary: string
   readonly state: WeatherState
@@ -103,8 +103,8 @@ export const createWeatherDomainData = (config: {
     readonly showInfluenceShape: boolean
     readonly showIcon: boolean
   }
-}): WeatherDomainData => {
-  return weatherDomainDataSchema.parse({
+}): WeatherPackData => {
+  return weatherPackDataSchema.parse({
     type: 'weather_condition',
     schemaVersion: 1,
     conditionKind: 'weather_influence',
@@ -186,7 +186,7 @@ const weatherConditionObject = (config: {
   const influence = influenceForSpec(config.spec, config.at, config.extensionDefinitions)
   const firstFrame = influence.keyframes[0]
   if (!firstFrame) throw new Error(`weather condition ${config.spec.id} has no keyframes`)
-  const data = createWeatherDomainData({
+  const data = createWeatherPackData({
     at: config.at,
     summary: config.spec.summary,
     state: firstFrame.state,
@@ -201,7 +201,7 @@ const weatherConditionObject = (config: {
   return {
     id: config.spec.id,
     kind: 'zone',
-    domain: weatherSimDomain,
+    packId: weatherSimPackId,
     label: config.spec.label,
     lifecycle: 'active',
     revision: 0,
@@ -228,18 +228,18 @@ const weatherConditionObject = (config: {
       createdAt: config.at,
       updatedAt: config.at,
     },
-    domainData: data,
+    packData: data,
   }
 }
 
 export const weatherScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec, context): OperationalObject => {
     const spec = weatherConditionSpecSchema.parse(rawSpec)
-    const providerConfig = weatherProviderConfigFor(context.providerConfigs)
+    const runtimeConfig = weatherRuntimeConfigFor(context.runtimeConfigs)
     return weatherConditionObject({
       spec,
       at: context.at,
-      extensionDefinitions: providerConfig.fields.extensions,
+      extensionDefinitions: runtimeConfig.fields.extensions,
     })
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {

@@ -2,7 +2,7 @@
 
 ## Decision
 
-Leitbild talks to simulations through stable `SimulationConnection` interfaces coordinated by a Simulation Hub when a Control Instance has multiple providers.
+Leitbild talks to simulations through stable `PackRuntimeConnection` interfaces coordinated by a Simulation Hub when a Control Instance has multiple providers.
 
 V1 includes local in-process ambulance and traffic simulator adapters, but the adapter contract is remote-capable and suitable for a future WebSocket adapter.
 
@@ -14,7 +14,7 @@ Simulation providers own specialist mechanics such as motion stepping, route fol
 
 Domain rules may be local to one provider or may require interaction across providers. Cross-object and cross-simulation interaction is coordinated through Control Instance interaction signals and handlers, not by one provider mutating another provider.
 
-Objects may be the source or subject of domain events, but objects do not emit directly onto Leitbild's event stream. Simulation instances emit `SimulationEvent`s and interaction signals through the adapter with explicit provenance. Leitbild orders accepted domain events in the Control Instance runtime, applies them to Projected State, broadcasts them through the Live Change Feed, and persists durable ones to the Durable Journal.
+Objects may be the source or subject of domain events, but objects do not emit directly onto Leitbild's event stream. Simulation instances emit `PackRuntimeEvent`s and interaction signals through the adapter with explicit provenance. Leitbild orders accepted domain events in the Control Instance runtime, applies them to Projected State, broadcasts them through the Live Change Feed, and persists durable ones to the Durable Journal.
 
 After events are committed, simulation providers may observe committed events to update private state or provider-local projections. This observation is not a second canonical mutation path.
 

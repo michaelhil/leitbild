@@ -81,8 +81,8 @@ export const connectionServiceSchema = z.string()
 export const variableKindSchema = z.enum(['state', 'derived', 'control', 'parameter', 'alarm', 'discrete'])
 export type VariableKind = z.infer<typeof variableKindSchema>
 
-export const variableDomainSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator', 'radiological', 'chemical'])
-export type VariableDomain = z.infer<typeof variableDomainSchema>
+export const variableDisciplineSchema = z.enum(['hydraulic', 'thermal', 'nuclear', 'electrical', 'control', 'operator', 'radiological', 'chemical'])
+export type VariableDiscipline = z.infer<typeof variableDisciplineSchema>
 
 export const variablePublishPolicySchema = z.enum(['internal', 'telemetry', 'alarm', 'leitbild'])
 export type VariablePublishPolicy = z.infer<typeof variablePublishPolicySchema>
@@ -302,7 +302,7 @@ const variableDescriptorBaseSchema = z.object({
   path: variablePathSchema,
   label: z.string().min(1),
   kind: variableKindSchema,
-  domain: variableDomainSchema,
+  discipline: variableDisciplineSchema,
   writable: z.boolean(),
   publish: variablePublishPolicySchema,
   quantity: processQuantitySchema,
@@ -515,7 +515,7 @@ export interface ProcessSignalBinding {
   readonly limits?: ProcessVariableLimits
   readonly label: string
   readonly kind: VariableKind
-  readonly domain: VariableDomain
+  readonly discipline: VariableDiscipline
   readonly quantity: ProcessQuantity
   readonly unit: ProcessUnit
   readonly writable: boolean

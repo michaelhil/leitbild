@@ -1,5 +1,5 @@
 import type { ControlInstanceId } from '../../../../core/model/index.ts'
-import type { SimulationEvent } from '../../../../simulation/protocol.ts'
+import type { PackRuntimeEvent } from '../../../../simulation/protocol.ts'
 import type { CompiledProcessPlantSystem } from '../../process-systems.ts'
 import type { ProcessPlantSignalReference } from '../../signals.ts'
 import type { ProcessPlantRuntime } from '../model.ts'
@@ -51,8 +51,8 @@ export interface ProcessPlantProtectionRunner {
     readonly runtime: ProcessPlantRuntime
     readonly elapsedMs: number
     readonly controlInstanceId: ControlInstanceId
-    readonly sourceProviderId: string
-  }) => ReadonlyArray<SimulationEvent>
+    readonly sourceRuntimeId: string
+  }) => ReadonlyArray<PackRuntimeEvent>
   readonly snapshot: () => ProcessPlantIcSnapshot
   readonly catalog: () => ProcessPlantIcCatalog
   readonly applyLifecycleAction: (config: {
@@ -60,12 +60,12 @@ export interface ProcessPlantProtectionRunner {
     readonly action: ProcessPlantIcLifecycleAction
     readonly elapsedMs: number
     readonly controlInstanceId: ControlInstanceId
-    readonly sourceProviderId: string
+    readonly sourceRuntimeId: string
     readonly actorId?: string
     readonly clientId?: string
     readonly reason?: string
     readonly shelveDurationMs?: number
-  }) => ReadonlyArray<SimulationEvent>
+  }) => ReadonlyArray<PackRuntimeEvent>
   readonly evaluateWrite: (config: {
     readonly runtime: ProcessPlantRuntime
     readonly signal: ProcessPlantSignalReference
@@ -225,8 +225,8 @@ export const createProcessPlantProtectionRunner = (config: {
     readonly effect: Extract<ProcessPlantIcEffect, { readonly type: 'alarm.enter' | 'trip.enter' }>
     readonly elapsedMs: number
     readonly controlInstanceId: ControlInstanceId
-    readonly sourceProviderId: string
-  }): ReadonlyArray<SimulationEvent> => {
+    readonly sourceRuntimeId: string
+  }): ReadonlyArray<PackRuntimeEvent> => {
     const kind = input.effect.type === 'alarm.enter' ? 'alarm' : 'trip'
     const lifecycle = lifecycles.get(processPlantIcLifecycleIdFor(kind, input.rule.id, input.effect.id))
     if (!lifecycle) throw new Error(`process plant I&C lifecycle state missing for effect: ${input.rule.id}/${input.effect.id}`)
@@ -260,7 +260,7 @@ export const createProcessPlantProtectionRunner = (config: {
     if (lifecycle.suppressed || lifecycle.shelved) return []
     return [eventForProcessPlantIcLifecycleTransition({
       controlInstanceId: input.controlInstanceId,
-      sourceProviderId: input.sourceProviderId,
+      sourceRuntimeId: input.sourceRuntimeId,
       systemId: config.system.id,
       rule: input.rule,
       lifecycle,
@@ -272,9 +272,9 @@ export const createProcessPlantProtectionRunner = (config: {
   const expireShelvedLifecycles = (input: {
     readonly elapsedMs: number
     readonly controlInstanceId: ControlInstanceId
-    readonly sourceProviderId: string
-  }): ReadonlyArray<SimulationEvent> => {
-    const events: SimulationEvent[] = []
+    readonly sourceRuntimeId: string
+  }): ReadonlyArray<PackRuntimeEvent> => {
+    const events: PackRuntimeEvent[] = []
     for (const lifecycle of lifecycles.values()) {
       if (!lifecycle.shelved || lifecycle.shelvedUntilElapsedMs === undefined || lifecycle.shelvedUntilElapsedMs > input.elapsedMs) continue
       const rule = rules.find(candidate => candidate.id === lifecycle.ruleId)
@@ -292,7 +292,7 @@ export const createProcessPlantProtectionRunner = (config: {
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
         controlInstanceId: input.controlInstanceId,
-        sourceProviderId: input.sourceProviderId,
+        sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule,
         lifecycle,
@@ -307,9 +307,9 @@ export const createProcessPlantProtectionRunner = (config: {
     readonly rule: ProcessPlantIcRule
     readonly elapsedMs: number
     readonly controlInstanceId: ControlInstanceId
-    readonly sourceProviderId: string
-  }): ReadonlyArray<SimulationEvent> => {
-    const events: SimulationEvent[] = []
+    readonly sourceRuntimeId: string
+  }): ReadonlyArray<PackRuntimeEvent> => {
+    const events: PackRuntimeEvent[] = []
     for (const effect of input.rule.effects) {
       if (effect.type === 'writeSignal') continue
       const kind = effect.type === 'alarm.enter' ? 'alarm' : 'trip'
@@ -336,7 +336,7 @@ export const createProcessPlantProtectionRunner = (config: {
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
         controlInstanceId: input.controlInstanceId,
-        sourceProviderId: input.sourceProviderId,
+        sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule: input.rule,
         lifecycle,
@@ -348,9 +348,9 @@ export const createProcessPlantProtectionRunner = (config: {
   }
 
   return {
-    evaluate: ({ runtime, elapsedMs, controlInstanceId, sourceProviderId }): ReadonlyArray<SimulationEvent> => {
-      const events: SimulationEvent[] = [
-        ...expireShelvedLifecycles({ elapsedMs, controlInstanceId, sourceProviderId }),
+    evaluate: ({ runtime, elapsedMs, controlInstanceId, sourceRuntimeId }): ReadonlyArray<PackRuntimeEvent> => {
+      const events: PackRuntimeEvent[] = [
+        ...expireShelvedLifecycles({ elapsedMs, controlInstanceId, sourceRuntimeId }),
       ]
       for (const rule of rules) {
         const state = states.get(rule.id)
@@ -392,7 +392,7 @@ export const createProcessPlantProtectionRunner = (config: {
             state.active = false
             state.lastTransitionElapsedMs = elapsedMs
             if (rule.resetWhenClear) state.latched = false
-            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceProviderId }))
+            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceRuntimeId }))
             continue
           }
           if (!matches) {
@@ -409,7 +409,7 @@ export const createProcessPlantProtectionRunner = (config: {
               state.lastTransitionElapsedMs = elapsedMs
             }
             if (rule.resetWhenClear) state.latched = false
-            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceProviderId }))
+            events.push(...clearLifecycle({ rule, elapsedMs, controlInstanceId, sourceRuntimeId }))
             continue
           }
         }
@@ -427,7 +427,7 @@ export const createProcessPlantProtectionRunner = (config: {
               })
               continue
             }
-            events.push(...enterLifecycle({ rule, effect, elapsedMs, controlInstanceId, sourceProviderId }))
+            events.push(...enterLifecycle({ rule, effect, elapsedMs, controlInstanceId, sourceRuntimeId }))
           } catch (error) {
             failures.push(processPlantIcFailureFor({ ruleId: rule.id, effectId: effect.id, elapsedMs, error }))
           }
@@ -464,7 +464,7 @@ export const createProcessPlantProtectionRunner = (config: {
       if (!lifecycle) throw new Error(`unknown process plant I&C lifecycle id: ${input.id}`)
       const rule = rules.find(candidate => candidate.id === lifecycle.ruleId)
       if (!rule) throw new Error(`process plant I&C rule missing for lifecycle: ${lifecycle.ruleId}`)
-      const events: SimulationEvent[] = []
+      const events: PackRuntimeEvent[] = []
       const transition = (() => {
         if (input.action === 'acknowledge') return 'acknowledged'
         if (input.action === 'suppress') return 'suppressed'
@@ -530,7 +530,7 @@ export const createProcessPlantProtectionRunner = (config: {
       })
       events.push(eventForProcessPlantIcLifecycleTransition({
         controlInstanceId: input.controlInstanceId,
-        sourceProviderId: input.sourceProviderId,
+        sourceRuntimeId: input.sourceRuntimeId,
         systemId: config.system.id,
         rule,
         lifecycle,

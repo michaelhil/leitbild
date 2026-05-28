@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
-import type { SimulationConnection, SimulationEmission, SimulationEvent } from '../../simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
@@ -12,7 +12,7 @@ import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScript
 
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
-  readonly events: ReadonlyArray<DomainEvent>
+  readonly events: ReadonlyArray<ControlInstanceEvent>
 }
 
 export type ControlInstanceEventHandler = (event: ControlInstanceEventNotification) => void
@@ -22,9 +22,9 @@ export interface ControlInstanceRuntime {
   readonly capabilities: () => ControlInstanceCapabilities
   readonly snapshot: () => ControlInstanceStateSnapshot
   readonly setClock: (update: SimulationClockUpdate) => Promise<SimulationClockState>
-  readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<DomainEvent>
+  readonly events: (config?: { readonly afterSeq?: number }) => ReadonlyArray<ControlInstanceEvent>
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
-  readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<DomainEvent>
+  readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<ControlInstanceEvent>
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
@@ -44,12 +44,12 @@ const eventId = (): EventId => `event:${randomUUID()}` as EventId
 
 export const createControlInstanceRuntime = async (config: {
   readonly id: ControlInstanceId
-  readonly simulation: SimulationConnection
+  readonly simulation: PackRuntimeConnection
   readonly eventLog: EventLog
   readonly snapshotStore: ControlInstanceSnapshotStore
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly restoredSnapshot?: ControlInstanceStateSnapshot
-  readonly restoredEvents?: ReadonlyArray<DomainEvent>
+  readonly restoredEvents?: ReadonlyArray<ControlInstanceEvent>
   readonly initialSeq?: number
   readonly scenario?: {
     readonly id: string
@@ -60,7 +60,7 @@ export const createControlInstanceRuntime = async (config: {
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
   const handlers = new Set<ControlInstanceEventHandler>()
-  const durableEvents: DomainEvent[] = [...(config.restoredEvents ?? [])]
+  const durableEvents: ControlInstanceEvent[] = [...(config.restoredEvents ?? [])]
   const restoredEventSeq = durableEvents.reduce((max, event) => Math.max(max, event.seq), 0)
   let seq = Math.max(config.initialSeq ?? 0, config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
@@ -101,10 +101,10 @@ export const createControlInstanceRuntime = async (config: {
     return currentTimeMs
   }
 
-  const publishManyNow = async (domainEvents: ReadonlyArray<DomainEvent>): Promise<void> => {
-    if (domainEvents.length === 0) return
-    const eventsToPersist: DomainEvent[] = []
-    for (const event of domainEvents) {
+  const publishManyNow = async (controlInstanceEvents: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+    if (controlInstanceEvents.length === 0) return
+    const eventsToPersist: ControlInstanceEvent[] = []
+    for (const event of controlInstanceEvents) {
       const previousObject = event.type === 'object.upserted' ? state.getObject(event.object.id) : undefined
       state.apply(event)
       if (persistenceDispositionFor(event, previousObject) === 'durable') {
@@ -114,7 +114,7 @@ export const createControlInstanceRuntime = async (config: {
     }
     await config.eventLog.appendMany(eventsToPersist)
     await config.snapshotStore.save(snapshotWithCurrentClock())
-    const notification: ControlInstanceEventNotification = { type: 'event.notification', events: domainEvents }
+    const notification: ControlInstanceEventNotification = { type: 'event.notification', events: controlInstanceEvents }
     for (const handler of handlers) handler(notification)
   }
 
@@ -129,9 +129,9 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const publishGenerated = async (
-    generate: () => ReadonlyArray<DomainEvent> | Promise<ReadonlyArray<DomainEvent>>,
-  ): Promise<ReadonlyArray<DomainEvent>> => {
-    let generatedEvents: ReadonlyArray<DomainEvent> = []
+    generate: () => ReadonlyArray<ControlInstanceEvent> | Promise<ReadonlyArray<ControlInstanceEvent>>,
+  ): Promise<ReadonlyArray<ControlInstanceEvent>> => {
+    let generatedEvents: ReadonlyArray<ControlInstanceEvent> = []
     await enqueuePublish(async () => {
       generatedEvents = await generate()
       await publishManyNow(generatedEvents)
@@ -139,14 +139,14 @@ export const createControlInstanceRuntime = async (config: {
     return generatedEvents
   }
 
-  const publishOneGenerated = async (generate: () => DomainEvent | Promise<DomainEvent>): Promise<DomainEvent> => {
+  const publishOneGenerated = async (generate: () => ControlInstanceEvent | Promise<ControlInstanceEvent>): Promise<ControlInstanceEvent> => {
     const events = await publishGenerated(async () => [await generate()])
     const event = events[0]
     if (!event) throw new Error('internal event generation produced no event')
     return event
   }
 
-  const nextScenarioBase = (at: IsoTimestamp): Omit<DomainEvent, 'type'> => ({
+  const nextScenarioBase = (at: IsoTimestamp): Omit<ControlInstanceEvent, 'type'> => ({
     id: eventId(),
     controlInstanceId: config.id,
     seq: ++seq,
@@ -154,10 +154,10 @@ export const createControlInstanceRuntime = async (config: {
     provenance: { source: 'system' },
   })
 
-  const domainEventFromScenarioAction = (
+  const controlInstanceEventFromScenarioAction = (
     action: ScenarioScriptAction,
     at: IsoTimestamp,
-  ): DomainEvent | null => {
+  ): ControlInstanceEvent | null => {
     if (action.type === 'show_guidance') {
       return { ...nextScenarioBase(at), type: 'scenario.guidance.shown', guidance: action.guidance }
     }
@@ -202,13 +202,13 @@ export const createControlInstanceRuntime = async (config: {
     ...(action.signal.ttlMs === undefined ? {} : { ttlMs: action.signal.ttlMs }),
   })
 
-  const scenarioStepStartedEvent = (step: ScenarioScriptStep, at: IsoTimestamp): DomainEvent => ({
+  const scenarioStepStartedEvent = (step: ScenarioScriptStep, at: IsoTimestamp): ControlInstanceEvent => ({
     ...nextScenarioBase(at),
     type: 'scenario.step.started',
     stepId: step.id,
   })
 
-  const scenarioStepFailedEvent = (step: ScenarioScriptStep, error: unknown, at: IsoTimestamp): DomainEvent => ({
+  const scenarioStepFailedEvent = (step: ScenarioScriptStep, error: unknown, at: IsoTimestamp): ControlInstanceEvent => ({
     ...nextScenarioBase(at),
     type: 'notification.emitted',
     notification: {
@@ -223,12 +223,12 @@ export const createControlInstanceRuntime = async (config: {
     },
   })
 
-  const domainEventsForScenarioActions = (actions: ReadonlyArray<ScenarioScriptAction>, at: IsoTimestamp): ReadonlyArray<DomainEvent> =>
+  const controlInstanceEventsForScenarioActions = (actions: ReadonlyArray<ScenarioScriptAction>, at: IsoTimestamp): ReadonlyArray<ControlInstanceEvent> =>
     actions
-      .map(action => domainEventFromScenarioAction(action, at))
-      .filter((event): event is DomainEvent => event !== null)
+      .map(action => controlInstanceEventFromScenarioAction(action, at))
+      .filter((event): event is ControlInstanceEvent => event !== null)
 
-  const nextBase = (simEvent: SimulationEvent): Omit<DomainEvent, 'type'> => ({
+  const nextBase = (simEvent: PackRuntimeEvent): Omit<ControlInstanceEvent, 'type'> => ({
     id: eventId(),
     controlInstanceId: config.id,
     seq: ++seq,
@@ -236,7 +236,7 @@ export const createControlInstanceRuntime = async (config: {
     provenance: simEvent.provenance,
   })
 
-  const domainEventFromSimulationEvent = (simEvent: SimulationEvent): DomainEvent => {
+  const controlInstanceEventFromPackRuntimeEvent = (simEvent: PackRuntimeEvent): ControlInstanceEvent => {
     if (simEvent.type === 'object.upserted') {
       return { ...nextBase(simEvent), type: 'object.upserted', object: simEvent.object }
     }
@@ -249,11 +249,11 @@ export const createControlInstanceRuntime = async (config: {
     return { ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry }
   }
 
-  const domainEventFromInteractionEffect = (
+  const controlInstanceEventFromInteractionEffect = (
     effect: InteractionEffect,
     at: IsoTimestamp,
     provenance: Provenance,
-  ): DomainEvent => {
+  ): ControlInstanceEvent => {
     if (effect.type === 'object.upsert') {
       return {
         id: eventId(),
@@ -324,12 +324,12 @@ export const createControlInstanceRuntime = async (config: {
     }
   }
 
-  const coreDeleteEvents = (command: CommandEnvelope, at: IsoTimestamp): ReadonlyArray<DomainEvent> => {
+  const coreDeleteEvents = (command: CommandEnvelope, at: IsoTimestamp): ReadonlyArray<ControlInstanceEvent> => {
     const payload = deleteObjectPayloadSchema.parse(command.payload)
     const snapshot = state.snapshot()
     const target = snapshot.objects.find(object => object.id === payload.objectId)
     if (!target) throw new Error(`cannot delete unknown object: ${payload.objectId}`)
-    const cleanupEvents: DomainEvent[] = snapshot.objects.flatMap(object => {
+    const cleanupEvents: ControlInstanceEvent[] = snapshot.objects.flatMap(object => {
       const cleaned = clearDeletedObjectReference(object, payload.objectId, at, command)
       return cleaned
         ? [{
@@ -381,9 +381,9 @@ export const createControlInstanceRuntime = async (config: {
   ): Promise<void> => {
     if (effects.length === 0) return
     const parsedEffects = effects.map(effect => interactionEffectSchema.parse(effect) as InteractionEffect)
-    const domainEvents = parsedEffects.map(effect => domainEventFromInteractionEffect(effect, at, provenance))
-    await publishManyNow(domainEvents)
-    await config.simulation.observeCommittedEvents(domainEvents)
+    const controlInstanceEvents = parsedEffects.map(effect => controlInstanceEventFromInteractionEffect(effect, at, provenance))
+    await publishManyNow(controlInstanceEvents)
+    await config.simulation.observeCommittedEvents(controlInstanceEvents)
   }
 
   const handleInteractionSignalNow = async (
@@ -414,28 +414,28 @@ export const createControlInstanceRuntime = async (config: {
     }
   }
 
-  const publishSimulationEmission = async (emission: SimulationEmission): Promise<void> => {
+  const publishPackRuntimeEmission = async (emission: PackRuntimeEmission): Promise<void> => {
     await enqueuePublish(async () => {
       for (const event of emission.events) {
         if (event.type === 'interaction.signal') {
           await handleInteractionSignalNow(event.signal, event.provenance)
         } else {
-          await publishManyNow([domainEventFromSimulationEvent(event)])
+          await publishManyNow([controlInstanceEventFromPackRuntimeEvent(event)])
         }
       }
     })
   }
 
-  const publishSimulationEmissionSafely = async (emission: SimulationEmission): Promise<void> => {
+  const publishPackRuntimeEmissionSafely = async (emission: PackRuntimeEmission): Promise<void> => {
     try {
-      await publishSimulationEmission(emission)
+      await publishPackRuntimeEmission(emission)
     } catch (err) {
       console.error(err)
     }
   }
 
   const unsubscribeSimulation = config.simulation.subscribe((emission) => {
-    void publishSimulationEmissionSafely(emission)
+    void publishPackRuntimeEmissionSafely(emission)
   })
 
   const initialScenarioState = (): ScenarioInstanceState | undefined => {
@@ -496,7 +496,7 @@ export const createControlInstanceRuntime = async (config: {
         })
         continue
       }
-      const events = await publishGenerated(() => domainEventsForScenarioActions([action], at))
+      const events = await publishGenerated(() => controlInstanceEventsForScenarioActions([action], at))
       if (events.length === 0) continue
       await config.simulation.observeCommittedEvents(events)
     }
@@ -611,7 +611,7 @@ export const createControlInstanceRuntime = async (config: {
   const queryPack = async (request: PackQueryRequest): Promise<PackQueryResponse> =>
     await config.simulation.query(request)
 
-  const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<DomainEvent> => {
+  const publishResetBoundary = async (resetConfig: { readonly scenarioId?: string }): Promise<ControlInstanceEvent> => {
     const snapshot = state.snapshot()
     const event = await publishOneGenerated(() => ({
       id: eventId(),
@@ -639,7 +639,7 @@ export const createControlInstanceRuntime = async (config: {
     }),
     snapshot: () => snapshotWithCurrentClock(),
     setClock,
-    events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<DomainEvent> => {
+    events: (eventsConfig?: { readonly afterSeq?: number }): ReadonlyArray<ControlInstanceEvent> => {
       const afterSeq = eventsConfig?.afterSeq ?? -1
       return durableEvents.filter(event => event.seq > afterSeq)
     },

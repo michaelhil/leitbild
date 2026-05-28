@@ -1,6 +1,6 @@
 ---
 title: PWR Operations
-type: domain
+type: pack
 ---
 
 # PWR Operations

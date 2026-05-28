@@ -1,12 +1,12 @@
-export const aviationDomain = 'aviation'
+export const aviationRuntimePackId = 'aviation'
 
-// The B.1 noop provider is still the pack default; scenarios opt into
-// `aviation.opensky` via providerOverrides. VATSIM lands in B.3.
-export const aviationNoopProviderId = 'aviation.noop'
-export const aviationNoopAdapterId = aviationNoopProviderId
+// The B.1 noop runtime is still the pack default; scenarios opt into
+// `aviation.opensky` via runtimeOverrides. VATSIM lands in B.3.
+export const aviationNoopRuntimeId = 'aviation.noop'
+export const aviationNoopAdapterId = aviationNoopRuntimeId
 
-export const aviationOpenSkyProviderId = 'aviation.opensky'
-export const aviationOpenSkyAdapterId = aviationOpenSkyProviderId
+export const aviationOpenSkyRuntimeId = 'aviation.opensky'
+export const aviationOpenSkyAdapterId = aviationOpenSkyRuntimeId
 
-export const aviationVatsimProviderId = 'aviation.vatsim'
-export const aviationVatsimAdapterId = aviationVatsimProviderId
+export const aviationVatsimRuntimeId = 'aviation.vatsim'
+export const aviationVatsimAdapterId = aviationVatsimRuntimeId

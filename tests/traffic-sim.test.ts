@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
 import { createTrafficConditionCommandKind } from '../src/packs/traffic/commands.ts'
-import { trafficDomainDataSchema } from '../src/packs/traffic/model.ts'
+import { trafficPackDataSchema } from '../src/packs/traffic/model.ts'
 import { trafficConditionChangedSignalType } from '../src/packs/traffic/interactions.ts'
-import { createLocalTrafficSimulationAdapter } from '../src/packs/traffic/sim/adapter.ts'
+import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { trafficScenarioSupport } from '../src/packs/traffic/scenario.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 
@@ -22,7 +22,7 @@ const makeCommand = (payload: unknown): CommandEnvelope => ({
 
 describe('local traffic simulator', () => {
   test('rejects previous traffic condition data instead of migrating it silently', () => {
-    expect(() => trafficDomainDataSchema.parse({
+    expect(() => trafficPackDataSchema.parse({
       type: 'traffic_condition',
       schemaVersion: 1,
       condition: 'slowdown',
@@ -41,7 +41,7 @@ describe('local traffic simulator', () => {
   })
 
   test('creates road-segment traffic from routed start and end points', async () => {
-    const adapter = createLocalTrafficSimulationAdapter({ routing: createDirectRoutingAdapter() })
+    const adapter = createLocalTrafficPackRuntimeAdapter({ routing: createDirectRoutingAdapter() })
     const connection = await adapter.connect({ controlInstanceId })
     try {
       const emittedTypes: string[] = []
@@ -63,7 +63,7 @@ describe('local traffic simulator', () => {
       expect(result.ok).toBe(true)
       const object = (await connection.getSnapshot()).objects.find(candidate => candidate.label === 'Operator road slowdown')
       if (!object) throw new Error('traffic object was not created')
-      const data = trafficDomainDataSchema.parse(object.domainData)
+      const data = trafficPackDataSchema.parse(object.packData)
 
       expect(object.spatial.geometry?.type).toBe('LineString')
       expect(data.geometryMode).toBe('road_segment')
@@ -77,7 +77,7 @@ describe('local traffic simulator', () => {
   })
 
   test('creates area traffic from a polygon', async () => {
-    const adapter = createLocalTrafficSimulationAdapter()
+    const adapter = createLocalTrafficPackRuntimeAdapter()
     const connection = await adapter.connect({ controlInstanceId })
     try {
       const result = await connection.sendCommand(makeCommand({
@@ -100,7 +100,7 @@ describe('local traffic simulator', () => {
       expect(result.ok).toBe(true)
       const object = (await connection.getSnapshot()).objects.find(candidate => candidate.label === 'Operator area slowdown')
       if (!object) throw new Error('traffic object was not created')
-      const data = trafficDomainDataSchema.parse(object.domainData)
+      const data = trafficPackDataSchema.parse(object.packData)
 
       expect(object.spatial.geometry?.type).toBe('Polygon')
       expect(data.geometryMode).toBe('area')
@@ -132,7 +132,7 @@ describe('local traffic simulator', () => {
       objects: [],
       objectById: () => undefined,
       routing: createDirectRoutingAdapter(),
-      providerConfigs: {},
+      runtimeConfigs: {},
     })
     const ring = object.spatial.geometry?.type === 'Polygon' ? object.spatial.geometry.coordinates[0] : undefined
 

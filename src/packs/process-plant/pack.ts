@@ -1,17 +1,17 @@
-import type { DomainId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
+import type { PackId, GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoPointFromLonLat, meters, objectIdSchema } from '../../core/model/index.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
 import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackObjectPresentation, PackScenarioObjectSpec } from '../../core/packs/protocol.ts'
 import { processPlantControlWriteCommandKind } from './commands.ts'
-import { emptyProcessPlantProjection, processPlantDomainId, processPlantUnitDomainDataSchema, type ProcessPlantUnitDomainData } from './model.ts'
-import { processPlantSimAdapterId, processPlantSimProviderId } from './sim/constants.ts'
+import { emptyProcessPlantProjection, processPlantPackId, processPlantUnitPackDataSchema, type ProcessPlantUnitPackData } from './model.ts'
+import { processPlantSimAdapterId, processPlantSimRuntimeId } from './sim/constants.ts'
 
 const unsupported = (operation: string): never => {
   throw new Error(`process-plant pack does not support ${operation}`)
 }
 
-const parseUnitData = (object: OperationalObject): ProcessPlantUnitDomainData | null => {
-  const parsed = processPlantUnitDomainDataSchema.safeParse(object.domainData)
+const parseUnitData = (object: OperationalObject): ProcessPlantUnitPackData | null => {
+  const parsed = processPlantUnitPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
@@ -46,7 +46,7 @@ const optionalUnitData = (
 
 const expandUnitObject = (spec: PackScenarioObjectSpec, at: IsoTimestamp): OperationalObject => {
   const systemId = requiredString(spec, 'systemId')
-  const domainData: ProcessPlantUnitDomainData = {
+  const packData: ProcessPlantUnitPackData = {
     type: 'process-plant-unit',
     schemaVersion: 1,
     systemId,
@@ -57,7 +57,7 @@ const expandUnitObject = (spec: PackScenarioObjectSpec, at: IsoTimestamp): Opera
   return {
     id: objectIdSchema.parse(spec.id),
     kind: 'facility',
-    domain: processPlantDomainId as DomainId,
+    packId: processPlantPackId as PackId,
     label: spec.label,
     lifecycle: 'active',
     revision: 0,
@@ -85,11 +85,11 @@ const expandUnitObject = (spec: PackScenarioObjectSpec, at: IsoTimestamp): Opera
       createdAt: at,
       updatedAt: at,
     },
-    domainData,
+    packData,
   }
 }
 
-const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitDomainData): PackObjectPresentation => {
+const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitPackData): PackObjectPresentation => {
   const projection = data.projection ?? emptyProcessPlantProjection(object.timestamps.updatedAt)
   return {
     categoryId: 'process-plants',
@@ -110,16 +110,15 @@ const presentationForUnit = (object: OperationalObject, data: ProcessPlantUnitDo
 export const processPlantPack: LeitbildPack = {
   id: 'process-plant',
   name: 'Process Plant',
-  domain: processPlantDomainId,
-  simulationProviders: [{
-    id: processPlantSimProviderId,
+  runtimes: [{
+    id: processPlantSimRuntimeId,
     label: 'Local process plant simulator',
     kind: 'local',
   }],
   wikiRefs: [
     { name: 'Leitbild PWR operations wiki', url: 'https://github.com/michaelhil/leitbild/blob/main/docs/wiki/pwr-ops.md' },
   ],
-  defaultSimulationProviderId: processPlantSimProviderId,
+  defaultRuntimeId: processPlantSimRuntimeId,
   scenario: {
     expandObject: (spec, context): OperationalObject => {
       if (spec.type !== 'unit') unsupported(`scenario object type ${spec.type}`)

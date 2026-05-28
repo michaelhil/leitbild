@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { operationalObjectSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type DomainEvent, type ObjectId, type OperationalObject, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
+import { operationalObjectSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type ControlInstanceEvent, type ObjectId, type OperationalObject, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
 
 export interface ControlInstanceStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -16,7 +16,7 @@ export const controlInstanceStateSnapshotSchema = z.object({
 })
 
 export interface ControlInstanceStateStore {
-  readonly apply: (event: DomainEvent) => void
+  readonly apply: (event: ControlInstanceEvent) => void
   readonly hydrate: (snapshot: ControlInstanceStateSnapshot) => void
   readonly snapshot: () => ControlInstanceStateSnapshot
   readonly getObject: (id: ObjectId) => OperationalObject | undefined
@@ -33,7 +33,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
     scenario = update(scenario)
   }
 
-  const apply = (event: DomainEvent): void => {
+  const apply = (event: ControlInstanceEvent): void => {
     seq = Math.max(seq, event.seq)
     if (event.type === 'object.upserted') {
       objects.set(event.object.id, event.object)

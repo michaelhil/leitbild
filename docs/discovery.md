@@ -74,9 +74,9 @@ The V1 manifest reports CORS as not configured. Browser-direct cross-origin acce
 
 ## 9. Realtime Semantics
 
-V1 exposes one mixed WebSocket stream per Control Instance. When a client joins an existing stream, Leitbild sends `realtime.ready`. Live Control Instance Domain Events are then delivered as `events` batches.
+V1 exposes one mixed WebSocket stream per Control Instance. When a client joins an existing stream, Leitbild sends `realtime.ready`. Live Control Instance events are then delivered as `events` batches.
 
-Before `POST /api/control-instances/{id}/reset` wipes the current runtime, Leitbild emits a durable `controlInstance.reset` Domain Event in the live feed. The event includes `previousSeq`, optional `previousScenarioId`, and optional post-reset target `scenarioId`; consumers should treat it as an explicit epoch boundary and refetch the snapshot.
+Before `POST /api/control-instances/{id}/reset` wipes the current runtime, Leitbild emits a durable `controlInstance.reset` Control Instance event in the live feed. The event includes `previousSeq`, optional `previousScenarioId`, and optional post-reset target `scenarioId`; consumers should treat it as an explicit epoch boundary and refetch the snapshot.
 
 Durable catch-up is through the `controlInstanceEvents` relation. Realtime channel filtering is explicitly planned, not supported in V1.
 
@@ -99,7 +99,7 @@ Response shape:
 }
 ```
 
-This is intentionally coarse in V2.D-min. `scenarioId` and `activePackIds` come from the Control Instance scenario runtime. `acceptedCommandKinds` comes from the active simulation providers' declared command kinds. `queryKinds` lists static query kind strings where the active pack's provider declares them; it does not publish payload schemas. `wikiRefs` is reserved for later pack-declared references and is empty for now.
+This is intentionally coarse in V2.D-min. `scenarioId` and `activePackIds` come from the Control Instance scenario runtime. `acceptedCommandKinds` comes from the active pack runtimes' declared command kinds. `queryKinds` lists static query kind strings where the active pack runtime declares them; it does not publish payload schemas. `wikiRefs` is reserved for later pack-declared references and is empty for now.
 
 The endpoint does not serialize Zod schemas or per-action payload contracts. Clients such as Samsinn should keep using generic command/query calls and treat this response as discovery, not typed validation metadata.
 
@@ -216,7 +216,7 @@ Full V1 response, serialized from `buildManifest("https://leitbild.example")` an
       },
       {
         "type": "events",
-        "description": "Batch of Control Instance Domain Events from the live feed."
+        "description": "Batch of Control Instance events from the live feed."
       },
       {
         "type": "controlInstance.reset",

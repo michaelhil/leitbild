@@ -6,9 +6,9 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 
 | Area | Canonical Truth | Derived Or Cached State | Boundary Rule |
 | --- | --- | --- | --- |
-| Control instance state | Projected control-instance state in `src/core/control-instances/runtime.ts`, persisted through snapshot plus durable event log | UI stores, recent-run cache, MapLibre sources, rail presentation | Providers emit events; core commits them; UI never becomes canonical truth. |
+| Control instance state | Projected control-instance state in `src/core/control-instances/runtime.ts`, persisted through snapshot plus durable event log | UI stores, recent-run cache, MapLibre sources, rail presentation | Pack runtimes emit events; core commits them; UI never becomes canonical truth. |
 | Durable history | `events.jsonl` with monotonically increasing sequence numbers | In-memory `durableEvents` array | Sequence regression is corruption; snapshot is current truth, journal is meaningful ordered history. |
-| Provider-private state | Per-provider JSON under the control-instance provider state directory | Provider runtime objects after restore | Provider state is private to the adapter and must not be reinterpreted by core. |
+| Runtime-private state | Per-runtime JSON under the control-instance runtime state directory | Pack runtime objects after restore | Runtime state is private to the adapter and must not be reinterpreted by core. |
 | Process plant graph | Scenario `processSystems` or `graphRef`, compiled by the process-plant graph compiler | Runtime variable table, execution plan, topology caches | Graph/spec validation must reject ambiguous links, variables, I&C references, and alarm references before runtime. |
 | Process plant runtime | Per-system runtime variable table and elapsed time | Projected process-plant operational objects and rail/map presentation | Published variables are projected outward; continuous physics stays inside the pack. |
 | I&C/alarm/trip state | Per-system protection runner snapshot | Catalog/query responses and projected active alarm/trip counts | I&C is automatic plant behavior, not a procedure engine. Procedures query it; they do not live inside it. |
@@ -22,21 +22,21 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 | --- | --- | --- | --- | --- |
 | Control-instance publish queue | Core runtime | Every committed event batch | Snapshot, durable log, subscribers | Ordered queue; failures must surface instead of being swallowed. |
 | Scenario script timers | Core runtime | Wall-clock timers adjusted by sim clock speed | Scenario events, object events, interaction signals | Timer/action errors are a crack if they only log to console. |
-| Process plant provider | Process-plant adapter | 1 s interval, scaled by sim clock | Per-system runtime, provider state, projected object updates, I&C signals | A runtime failure now stops the provider and emits a critical provider-failed signal. |
+| Process plant pack runtime | Process-plant adapter | 1 s interval, scaled by sim clock | Per-system runtime, pack runtime state, projected object updates, I&C signals | A runtime failure now stops the pack runtime and emits a critical pack runtime-failed signal. |
 | Process plant physics | Per process system | Fixed-step runtime phases | Runtime variable table and telemetry recorder | Acceptance traces and benchmark guardrails verify bounded trends and performance. |
-| Weather provider | Weather adapter | Provider interval | Weather sparse field and weather projections | Query failures return explicit pack-query failures. |
-| Ambulance/traffic providers | Pack adapters | Provider interval / commands | Pack objects and route/traffic projections | Failures should reject commands or produce explicit provider signals. |
+| Weather pack runtime | Weather adapter | Pack runtime interval | Weather sparse field and weather projections | Query failures return explicit pack-query failures. |
+| Ambulance/traffic pack runtimes | Pack adapters | Pack runtime interval / commands | Pack objects and route/traffic projections | Failures should reject commands or produce explicit pack runtime signals. |
 | Map rendering | UI MapSurface | Snapshot/events/map move/zoom | MapLibre sources/layers only | Map load/style errors are shown through startup/realtime status. |
 
 ## Scenario Initialization Trace
 
 1. Route parsing resolves `/i/<scenario>/<run>` or picker selection into a scenario id and run id.
-2. Scenario catalog loads the scenario definition, required packs, provider configs, initial objects, process systems, script, and surface definition.
+2. Scenario catalog loads the scenario definition, required packs, runtime configs, initial objects, process systems, script, and surface definition.
 3. Control-instance registry opens or creates the scenario-run control instance id.
 4. Snapshot and event log are restored. If the requested scenario conflicts with the stored snapshot, the run is reset rather than silently merged.
-5. Simulation hub connects only the scenario’s active providers and passes each provider its private state store.
-6. Providers restore private state, compile scenario-defined systems, and project initial operational objects.
-7. Core hydrates projected state, initializes the clock, starts due script steps, and subscribes to provider emissions.
+5. Simulation hub connects only the scenario’s active pack runtimes and passes each pack runtime its private state store.
+6. Pack runtimes restore private state, compile scenario-defined systems, and project initial operational objects.
+7. Core hydrates projected state, initializes the clock, starts due script steps, and subscribes to pack runtime emissions.
 8. UI loads the surface, snapshot, map style, operational objects, and realtime stream. Startup status must show failures honestly.
 
 ## Fallback And Catch Audit
@@ -45,7 +45,7 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 | --- | --- | --- |
 | `src/core/control-instances/scenario-runner.ts` | Crack: due-step failure currently logs to console from the timer runner. | Prefer reporting failures through core committed events or caller-owned error handling in a later focused pass. |
 | `src/core/control-instances/runtime.ts` simulation emission safety | Crack: publish failure logs to console and keeps running. | Needs a visible runtime error channel, but changing core event semantics is larger than this pass. |
-| `src/packs/process-plant/sim/adapter.ts` provider tick | Fixed in this pass: provider tick failure now stops the provider, rejects subsequent commands/queries, and emits a critical interaction signal. | Add tests around provider-failed signaling if the failure channel grows broader. |
+| `src/packs/process-plant/sim/adapter.ts` pack runtime tick | Fixed in this pass: pack runtime tick failure now stops the pack runtime, rejects subsequent commands/queries, and emits a critical interaction signal. | Add tests around pack runtime-failed signaling if the failure channel grows broader. |
 | UI local-storage catches | Acceptable local resilience: theme/rail settings can fall back to defaults. | Keep warnings visible in development; do not make these simulation truth. |
 | Pack query `safeParse` catches | Acceptable boundary handling when converted to explicit query failures. | Keep failure responses specific and pack-scoped. |
 | Weather fallback point for field construction | Needs monitoring, not changed here. | Ensure future weather queries preserve global-default semantics without hiding malformed geometry. |
@@ -57,7 +57,7 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 3. `docs/assets/process-plant-acceptance-traces.csv` was tracked at roughly 180k lines and churned on every acceptance run. This pass removes the tracked CSV and makes full CSV generation opt-in via `PROCESS_PLANT_ACCEPTANCE_WRITE_CSV=1`.
 4. Map source/layer helper modules now live under `src/ui/map/`. `App.svelte` remains the largest UI health target and still needs lifecycle-oriented splitting.
 5. Scenario and graph validation should be tightened only where refactors expose real ambiguity, not by adding broad speculative schema flags.
-6. Process-plant provider config previously tolerated unknown system keys. This pass rejects those keys before runtime starts.
+6. Process-plant runtime config previously tolerated unknown system keys. This pass rejects those keys before runtime starts.
 
 ## Baseline Verification
 

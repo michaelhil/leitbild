@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, SignalId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, operationalDemandRequestedSignalType } from '../src/core/model/index.ts'
 import type { PackQueryRequest } from '../src/core/packs/protocol.ts'
-import type { SimulationProviderStateStore } from '../src/simulation/protocol.ts'
+import type { PackRuntimeStateStore } from '../src/simulation/protocol.ts'
 import {
-  createLocalProcessPlantSimulationAdapter,
+  createLocalProcessPlantPackRuntimeAdapter,
   compileProcessPlantSystems,
   createProcessPlantProtectionRunner,
   pressurizedWaterReactorPlantSpec,
@@ -12,7 +12,7 @@ import {
   processPlantIcLifecycleCommandKind,
   processPlantPressurizedWaterReactorIcRef,
   processPlantPack,
-  processPlantUnitDomainDataSchema,
+  processPlantUnitPackDataSchema,
   variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
 import { createAmbulanceMedicalDemandInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
@@ -20,7 +20,7 @@ import { createAmbulanceMedicalDemandInteractionHandler } from '../src/packs/amb
 const controlInstanceId = 'control-instance:process-plant-test' as ControlInstanceId
 const startsAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
 
-const createMemoryStateStore = (): SimulationProviderStateStore => {
+const createMemoryStateStore = (): PackRuntimeStateStore => {
   let state: unknown | null = null
   return {
     load: async (): Promise<unknown | null> => state,
@@ -35,7 +35,7 @@ const scenarioConfig = (
   processSystemOverrides: Record<string, unknown> = {},
 ) => ({
   scenarioId: 'process-plant-test',
-  providerIds: ['process-plant-local'],
+  runtimeIds: ['process-plant-local'],
   world: {
     startsAt,
     environment: {},
@@ -48,10 +48,10 @@ const scenarioConfig = (
     graph: pressurizedWaterReactorPlantSpec,
     ...processSystemOverrides,
   }],
-  providerConfigs: {
+  runtimeConfigs: {
     'process-plant-local': processPlantConfig,
   },
-  providerConfig: {},
+  runtimeConfig: {},
 })
 
 const query = (kind: string, payload: unknown = {}): PackQueryRequest => ({
@@ -80,7 +80,7 @@ const lifecycleCommand = (payload: unknown): CommandEnvelope => ({
   issuedAt: startsAt,
 })
 
-describe('process plant simulation provider', () => {
+describe('process plant pack runtime', () => {
   test('projects scenario-defined process units as operational objects', async () => {
     const unit = await processPlantPack.scenario!.expandObject({
       pack: 'process-plant',
@@ -99,20 +99,20 @@ describe('process plant simulation provider', () => {
           throw new Error('process plant unit expansion should not route')
         },
       },
-      providerConfigs: {},
+      runtimeConfigs: {},
     }) as OperationalObject
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: {
         ...scenarioConfig(),
         initialObjects: [unit],
       },
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const snapshot = await connection.getSnapshot()
     expect(snapshot.objects.map(object => object.id)).toEqual(['plant:test' as ObjectId])
-    const data = processPlantUnitDomainDataSchema.parse(snapshot.objects[0]?.domainData)
+    const data = processPlantUnitPackDataSchema.parse(snapshot.objects[0]?.packData)
     expect(data.systemId).toBe('plant')
     expect(data.projection?.fields.map(field => field.key)).toContain('thermal-power')
     expect(data.projection?.fields.find(field => field.key === 'runtime-performance')?.value).toBe('pending')
@@ -121,17 +121,17 @@ describe('process plant simulation provider', () => {
     await Bun.sleep(1_100)
 
     const advancedSnapshot = await connection.getSnapshot()
-    const advancedData = processPlantUnitDomainDataSchema.parse(advancedSnapshot.objects[0]?.domainData)
+    const advancedData = processPlantUnitPackDataSchema.parse(advancedSnapshot.objects[0]?.packData)
     expect(advancedData.projection?.fields.find(field => field.key === 'runtime-performance')?.value).toMatch(/^RT x\d+ \(\d+\.\d ms\)$/)
 
     await connection.close()
   })
 
   test('runs scenario-defined process systems without operational objects', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const snapshot = await connection.getSnapshot()
@@ -254,10 +254,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('exposes compiled process surfaces and batched surface snapshots through pack queries', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const surfaces = await connection.query(query('process-plant.surfaces.list', { systemId: 'plant' }))
@@ -384,10 +384,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('applies validated write commands through the runtime update loop', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const accepted = await connection.sendCommand(command({
@@ -413,10 +413,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('resolves process signal tags and accepts tag-addressed writes', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const resolved = await connection.query(query('process-plant.signals.resolve', {
@@ -455,10 +455,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('exposes procedure-relevant signal search and mixed signal reads', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const procedureSignals = await connection.query(query('process-plant.signals.search', {
@@ -520,10 +520,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('rejects command writes outside declared hard ranges', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const rejected = await connection.sendCommand(command({
@@ -538,12 +538,12 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
-  test('restores queued commands from provider-private state', async () => {
+  test('restores queued commands from runtime-private state', async () => {
     const stateStore = createMemoryStateStore()
-    const firstConnection = await createLocalProcessPlantSimulationAdapter().connect({
+    const firstConnection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: stateStore,
+      runtimeStateStore: stateStore,
     })
     const accepted = await firstConnection.sendCommand(command({
       systemId: 'plant',
@@ -553,10 +553,10 @@ describe('process plant simulation provider', () => {
     expect(accepted.ok).toBe(true)
     await firstConnection.close()
 
-    const secondConnection = await createLocalProcessPlantSimulationAdapter().connect({
+    const secondConnection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: stateStore,
+      runtimeStateStore: stateStore,
     })
     await Bun.sleep(1_100)
     const read = await secondConnection.query(query('process-plant.variables.read', {
@@ -571,7 +571,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('applies pack-owned scheduled actions and exposes configured telemetry trends', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -592,7 +592,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     await Bun.sleep(1_100)
@@ -618,10 +618,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('rejects invalid process variable writes explicitly', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const rejected = await connection.sendCommand(command({
@@ -638,7 +638,7 @@ describe('process plant simulation provider', () => {
 
   test('emits protection signals and queues protection writes at tick boundaries', async () => {
     const received: unknown[] = []
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -672,7 +672,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
     connection.subscribe(emission => {
       received.push(...emission.events)
@@ -699,7 +699,7 @@ describe('process plant simulation provider', () => {
 
   test('emits non-latched protection effects once per active condition entry', async () => {
     const received: unknown[] = []
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -727,7 +727,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
     connection.subscribe(emission => {
       received.push(...emission.events)
@@ -748,7 +748,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('exposes I&C status with persistent alarm lifecycle state', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -776,7 +776,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const heater = await connection.sendCommand(command({
@@ -804,7 +804,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('preserves structured annunciator metadata in I&C lifecycle state', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -841,7 +841,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const heater = await connection.sendCommand(command({
@@ -877,7 +877,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('mode conditions qualify I&C rules without a separate mode store', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -913,7 +913,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const heater = await connection.sendCommand(command({
@@ -939,10 +939,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('validates control writes through the query surface without mutating state', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const accepted = await connection.query(query('process-plant.control.validate', {
@@ -969,10 +969,10 @@ describe('process plant simulation provider', () => {
   })
 
   test('evaluates procedure-facing I&C conditions by tag id', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const result = await connection.query(query('process-plant.conditions.evaluate', {
@@ -998,7 +998,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('blocks process writes through explicit I&C permissives and interlocks', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1038,7 +1038,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const stopRcp = await connection.sendCommand(command({
@@ -1071,7 +1071,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('rejects invalid I&C rule class and effect combinations before runtime starts', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1097,12 +1097,12 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })).rejects.toThrow('alarm rule alarm-with-write-test must only define alarm.enter effects')
   })
 
   test('rejects invalid I&C clear conditions before runtime starts', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1135,15 +1135,15 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })).rejects.toThrow('uses numeric operator > with non-numeric signal rcpA.running')
   })
 
   test('validates procedure tag appendices against graph-owned process signal bindings', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig(),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const validation = await connection.query(query('process-plant.procedure-tags.validate', {
@@ -1183,7 +1183,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('rejects invalid I&C write targets before runtime starts', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1209,12 +1209,12 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })).rejects.toThrow('writes non-writable signal core.powerMw')
   })
 
   test('applies explicit I&C lifecycle actions through one command surface', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1241,7 +1241,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const heater = await connection.sendCommand(command({
@@ -1298,7 +1298,7 @@ describe('process plant simulation provider', () => {
 
   test('emits lifecycle action events and records operator provenance in alarm history', async () => {
     const received: unknown[] = []
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1325,7 +1325,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
     connection.subscribe(emission => received.push(...emission.events))
 
@@ -1372,7 +1372,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('uses explicit alarm clear conditions and clear delays to avoid chatter', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1408,7 +1408,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 10 }))).ok).toBe(true)
@@ -1438,7 +1438,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('expires shelved alarms and exposes alarm summary first-out state', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1496,7 +1496,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     expect((await connection.sendCommand(command({ systemId: 'plant', tagId: 'PZR-HTR', value: 1 }))).ok).toBe(true)
@@ -1545,7 +1545,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('loads reference I&C behavior through explicit icRef', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1554,7 +1554,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     await Bun.sleep(1_100)
@@ -1595,7 +1595,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('exposes I&C catalog for UI and AI introspection', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1604,7 +1604,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const catalog = await connection.query(query('process-plant.ic.catalog', { systemId: 'plant' }))
@@ -1633,7 +1633,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('rejects ambiguous reference and inline I&C configuration', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1643,12 +1643,12 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })).rejects.toThrow('must not define both icRef and inline protection')
   })
 
-  test('rejects provider config for an unknown process system', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+  test('rejects runtime config for an unknown process system', async () => {
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1657,12 +1657,12 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
-    })).rejects.toThrow('process plant provider config references unknown process system: missingPlant')
+      runtimeStateStore: createMemoryStateStore(),
+    })).rejects.toThrow('process plant runtime config references unknown process system: missingPlant')
   })
 
   test('rejects unknown process plant icRef explicitly', async () => {
-    await expect(createLocalProcessPlantSimulationAdapter().connect({
+    await expect(createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1671,12 +1671,12 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })).rejects.toThrow('unknown process plant icRef')
   })
 
   test('reference I&C reports SGTR indications without encoding procedures', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1685,7 +1685,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const leak = await connection.sendCommand(command({
@@ -1723,7 +1723,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('reference I&C actuates auxiliary feedwater on SG low-low level', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1737,7 +1737,7 @@ describe('process plant simulation provider', () => {
           'sgA.levelPercent': 5,
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     await Bun.sleep(3_200)
@@ -1774,7 +1774,7 @@ describe('process plant simulation provider', () => {
   })
 
   test('reference I&C reports RCP trip and loop low flow', async () => {
-    const connection = await createLocalProcessPlantSimulationAdapter().connect({
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1783,7 +1783,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: createMemoryStateStore(),
+      runtimeStateStore: createMemoryStateStore(),
     })
 
     const stopped = await connection.sendCommand(command({
@@ -1805,9 +1805,9 @@ describe('process plant simulation provider', () => {
     await connection.close()
   })
 
-  test('reference I&C state restores per system from provider snapshots', async () => {
+  test('reference I&C state restores per system from runtime snapshots', async () => {
     const store = createMemoryStateStore()
-    const first = await createLocalProcessPlantSimulationAdapter().connect({
+    const first = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1816,7 +1816,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: store,
+      runtimeStateStore: store,
     })
 
     const leak = await first.sendCommand(command({
@@ -1828,7 +1828,7 @@ describe('process plant simulation provider', () => {
     await Bun.sleep(1_200)
     await first.close()
 
-    const restored = await createLocalProcessPlantSimulationAdapter().connect({
+    const restored = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
       scenario: scenarioConfig({
         systems: {
@@ -1837,7 +1837,7 @@ describe('process plant simulation provider', () => {
           },
         },
       }),
-      providerStateStore: store,
+      runtimeStateStore: store,
     })
     const status = await restored.query(query('process-plant.ic.status', { systemId: 'plant' }))
     expect(status.ok).toBe(true)

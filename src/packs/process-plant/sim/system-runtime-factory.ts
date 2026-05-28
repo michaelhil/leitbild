@@ -9,33 +9,33 @@ import {
 } from '../runtime/index.ts'
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { createProcessPlantRuntimePerformance, type ProcessPlantSystemRuntime } from '../system-runtime.ts'
-import type { ProcessPlantProviderConfig } from './provider-config.ts'
-import { protectionConfigFor } from './provider-config.ts'
+import type { ProcessPlantRuntimeConfig } from './runtime-config.ts'
+import { protectionConfigFor } from './runtime-config.ts'
 import {
   restoredProtectionSnapshotFor,
   restoredRuntimeSnapshotFor,
   restoredScheduleSnapshotFor,
   restoredTelemetrySnapshotFor,
-  type ProcessPlantProviderState,
-} from './provider-state.ts'
+  type ProcessPlantRuntimeState,
+} from './runtime-state.ts'
 
 export const createProcessPlantSystemRuntimes = (config: {
   readonly compiledSystems: ReadonlyArray<CompiledProcessPlantSystem>
-  readonly providerConfig: ProcessPlantProviderConfig
-  readonly providerState: ProcessPlantProviderState | null
+  readonly runtimeConfig: ProcessPlantRuntimeConfig
+  readonly runtimeState: ProcessPlantRuntimeState | null
 }): ReadonlyMap<string, ProcessPlantSystemRuntime> => new Map(config.compiledSystems.map(system => [
   system.id,
   (() => {
-    const systemConfig = config.providerConfig.systems[system.id]
+    const systemConfig = config.runtimeConfig.systems[system.id]
     const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
     const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
     const protectionConfig = protectionConfigFor(systemConfig)
-    const restoredRuntimeSnapshot = restoredRuntimeSnapshotFor(config.providerState, system.id)
+    const restoredRuntimeSnapshot = restoredRuntimeSnapshotFor(config.runtimeState, system.id)
     const runtime = createProcessPlantRuntime({
       system,
       ...(restoredRuntimeSnapshot === undefined ? {} : { restoredSnapshot: restoredRuntimeSnapshot }),
     })
-    const restoredTelemetrySnapshot = restoredTelemetrySnapshotFor(config.providerState, system.id)
+    const restoredTelemetrySnapshot = restoredTelemetrySnapshotFor(config.runtimeState, system.id)
     const telemetry: ProcessPlantTelemetryRecorder | undefined = telemetryConfig === undefined
       ? undefined
       : createProcessPlantTelemetryRecorder({
@@ -44,8 +44,8 @@ export const createProcessPlantSystemRuntimes = (config: {
           ...(restoredTelemetrySnapshot === undefined ? {} : { restoredSnapshot: restoredTelemetrySnapshot }),
         })
     telemetry?.recordDueSamples(runtime)
-    const restoredSchedule = restoredScheduleSnapshotFor(config.providerState, system.id)
-    const restoredProtectionSnapshot = restoredProtectionSnapshotFor(config.providerState, system.id)
+    const restoredSchedule = restoredScheduleSnapshotFor(config.runtimeState, system.id)
+    const restoredProtectionSnapshot = restoredProtectionSnapshotFor(config.runtimeState, system.id)
     const protection = protectionConfig === undefined
       ? undefined
       : createProcessPlantProtectionRunner({

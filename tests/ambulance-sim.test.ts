@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, DomainEvent } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, ControlInstanceEvent } from '../src/core/model/index.ts'
 import { confirmedFact, geoPointFromLonLat, meters, nowIso, type KnowledgeFact, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import {
   assignToIncidentCommandKind,
@@ -7,12 +7,12 @@ import {
   createObjectCommandKind,
   setDestinationCommandKind,
 } from '../src/packs/ambulance/commands.ts'
-import { ambulanceDomainDataSchema, hospitalDomainDataSchema, incidentDomainDataSchema, type AmbulanceDomainData, type HospitalDomainData, type IncidentDomainData } from '../src/packs/ambulance/model.ts'
+import { ambulancePackDataSchema, hospitalPackDataSchema, incidentPackDataSchema, type AmbulancePackData, type HospitalPackData, type IncidentPackData } from '../src/packs/ambulance/model.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
-import { createLocalAmbulanceSimulationAdapter } from '../src/packs/ambulance/sim/adapter.ts'
+import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createAmbulanceSimEngine, type AmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { createAmbulanceArrivalInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
-import type { SimulationEvent } from '../src/simulation/protocol.ts'
+import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { testScenarioRuntimeConfig } from './helpers.ts'
 
@@ -42,54 +42,54 @@ const knownFactValue = <T>(fact: KnowledgeFact<T> | undefined): T => {
 }
 
 const withAmbulancePatients = (object: OperationalObject, patientsOnBoard: number, patientCapacity = 1): OperationalObject => {
-  const data = ambulanceDomainDataSchema.parse(object.domainData)
+  const data = ambulancePackDataSchema.parse(object.packData)
   const at = nowIso()
   return {
     ...object,
-    domainData: {
+    packData: {
       ...data,
       transport: {
         patientCapacity: confirmedFact(patientCapacity, at, 'scenario', 1),
         patientsOnBoard: confirmedFact(patientsOnBoard, at, 'scenario', 1),
       },
-    } satisfies AmbulanceDomainData,
+    } satisfies AmbulancePackData,
   }
 }
 
 const withIncidentVictims = (object: OperationalObject, victimCount: number): OperationalObject => {
-  const data = incidentDomainDataSchema.parse(object.domainData)
+  const data = incidentPackDataSchema.parse(object.packData)
   const at = nowIso()
   return {
     ...object,
-    domainData: {
+    packData: {
       ...data,
       victims: {
         ...data.victims,
         count: confirmedFact(victimCount, at, 'scenario', 1),
       },
-    } satisfies IncidentDomainData,
+    } satisfies IncidentPackData,
   }
 }
 
 const withHospitalBedsAvailable = (object: OperationalObject, bedsAvailable: number): OperationalObject => {
-  const data = hospitalDomainDataSchema.parse(object.domainData)
+  const data = hospitalPackDataSchema.parse(object.packData)
   const at = nowIso()
   return {
     ...object,
-    domainData: {
+    packData: {
       ...data,
       emergencyDepartment: {
         ...data.emergencyDepartment,
         traumaBedsAvailable: confirmedFact(bedsAvailable, at, 'scenario', 1),
         patientsReceived: confirmedFact(0, at, 'scenario', 1),
       },
-    } satisfies HospitalDomainData,
+    } satisfies HospitalPackData,
   }
 }
 
 const applyInteractionEvents = async (
   engine: AmbulanceSimEngine,
-  events: ReadonlyArray<SimulationEvent>,
+  events: ReadonlyArray<PackRuntimeEvent>,
 ): Promise<void> => {
   const handler = createAmbulanceArrivalInteractionHandler()
   for (const event of events) {
@@ -99,9 +99,9 @@ const applyInteractionEvents = async (
       snapshot: { objects: engine.snapshot().objects, seq: 0 },
       provenance: event.provenance,
     })
-    const committedEvents: DomainEvent[] = effects.map((effect, index) => {
+    const committedEvents: ControlInstanceEvent[] = effects.map((effect, index) => {
       const base = {
-        id: `event:test-${event.signal.id}-${index}` as DomainEvent['id'],
+        id: `event:test-${event.signal.id}-${index}` as ControlInstanceEvent['id'],
         controlInstanceId,
         seq: index + 1,
         at: event.signal.at,
@@ -117,7 +117,7 @@ const applyInteractionEvents = async (
 
 describe('local ambulance simulator', () => {
   test('starts with the tutorial ambulance, incident, and hospital set', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
 
     expect(initial.objects.filter(object => object.kind === 'mobile_entity')).toHaveLength(3)
@@ -127,9 +127,9 @@ describe('local ambulance simulator', () => {
     const ambulance = initial.objects.find(object => object.id === 'amb:a12')
     const hospital = initial.objects.find(object => object.id === 'facility:ous')
     expect(ambulance?.spatial.position?.point.coordinates).toEqual(hospital?.spatial.position?.point.coordinates)
-    expect(ambulanceDomainDataSchema.parse(ambulance?.domainData).capabilities).toContain('advanced_life_support')
-    expect(incidentDomainDataSchema.parse(initial.objects.find(object => object.id === 'incident:torshov-partial')?.domainData).victims.count.state).toBe('unknown')
-    expect(hospitalDomainDataSchema.parse(hospital?.domainData).emergencyDepartment.diversionStatus.state).toBe('confirmed')
+    expect(ambulancePackDataSchema.parse(ambulance?.packData).capabilities).toContain('advanced_life_support')
+    expect(incidentPackDataSchema.parse(initial.objects.find(object => object.id === 'incident:torshov-partial')?.packData).victims.count.state).toBe('unknown')
+    expect(hospitalPackDataSchema.parse(hospital?.packData).emergencyDepartment.diversionStatus.state).toBe('confirmed')
     await connection.close()
   })
 
@@ -146,7 +146,7 @@ describe('local ambulance simulator', () => {
         spatial: spatialWithoutRoute,
       }
     })
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({
       controlInstanceId,
       scenario: {
         ...runtime,
@@ -170,7 +170,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('accepts a dispatch command and updates scenario state', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity' && object.operational.status === 'available')
     const incident = initial.objects.find(object => object.id === 'incident:gronland-unattended')
@@ -199,14 +199,14 @@ describe('local ambulance simulator', () => {
     await connection.close()
   })
 
-  test('ignores committed object upserts owned by other simulation domains', async () => {
+  test('ignores committed object upserts owned by other pack runtimes', async () => {
     const runtime = testScenarioRuntimeConfig()
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: runtime })
-    const trafficObject = runtime.initialObjects.find(object => object.domain === 'traffic')
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: runtime })
+    const trafficObject = runtime.initialObjects.find(object => object.packId === 'traffic')
     if (!trafficObject) throw new Error('scenario missing traffic object')
 
     await connection.observeCommittedEvents([{
-      id: 'event:test-traffic-upsert' as DomainEvent['id'],
+      id: 'event:test-traffic-upsert' as ControlInstanceEvent['id'],
       controlInstanceId,
       seq: 1,
       at: nowIso(),
@@ -216,7 +216,7 @@ describe('local ambulance simulator', () => {
     }])
 
     const snapshot = await connection.getSnapshot()
-    expect(snapshot.objects.some(object => object.domain === 'traffic')).toBe(false)
+    expect(snapshot.objects.some(object => object.packId === 'traffic')).toBe(false)
     await connection.close()
   })
 
@@ -229,13 +229,13 @@ describe('local ambulance simulator', () => {
 
     const initialIncident = engine.snapshot().objects.find(object => object.id === 'incident:torshov-partial')
     if (!initialIncident) throw new Error('scenario missing incident')
-    expect(incidentDomainDataSchema.parse(initialIncident.domainData).victims.count.state).toBe('unknown')
+    expect(incidentPackDataSchema.parse(initialIncident.packData).victims.count.state).toBe('unknown')
 
     const incidentEvents = engine.tick(5_000)
     expect(incidentEvents.some(event => event.type === 'object.upserted' && event.object.kind === 'incident')).toBe(true)
     const revealedIncident = engine.snapshot().objects.find(object => object.id === initialIncident.id)
     if (!revealedIncident) throw new Error('scenario missing updated incident')
-    const incidentData = incidentDomainDataSchema.parse(revealedIncident.domainData)
+    const incidentData = incidentPackDataSchema.parse(revealedIncident.packData)
     expect(incidentData.victims.count.state).toBe('estimated')
     expect(incidentData.victims.injuries.state).toBe('estimated')
 
@@ -243,7 +243,7 @@ describe('local ambulance simulator', () => {
     expect(hospitalEvents.some(event => event.type === 'object.upserted' && event.object.kind === 'facility')).toBe(true)
     const hospital = engine.snapshot().objects.find(object => object.kind === 'facility')
     if (!hospital) throw new Error('scenario missing hospital')
-    const hospitalData = hospitalDomainDataSchema.parse(hospital.domainData)
+    const hospitalData = hospitalPackDataSchema.parse(hospital.packData)
     expect(hospitalData.emergencyDepartment.ambulanceBaysAvailable.state).toBe('confirmed')
     if (hospitalData.emergencyDepartment.ambulanceBaysAvailable.state === 'unknown') throw new Error('expected known ambulance bay capacity')
     if (hospitalData.emergencyDepartment.diversionStatus.state === 'unknown') throw new Error('expected known diversion status')
@@ -399,8 +399,8 @@ describe('local ambulance simulator', () => {
     expect(restoredMoving?.spatial.position?.speedMps).toBe(15)
   })
 
-  test('creates ambulance domain objects from operator commands', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+  test('creates ambulance pack objects from operator commands', async () => {
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const result = await connection.sendCommand(makeCommand({
       id: 'create-hospital',
       kind: createObjectCommandKind,
@@ -418,7 +418,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('retargets and cancels an ambulance destination', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const incident = initial.objects.find(object => object.kind === 'incident')
@@ -462,7 +462,7 @@ describe('local ambulance simulator', () => {
   })
 
   test('clears destination when an ambulance reaches a hospital', async () => {
-    const connection = await createLocalAmbulanceSimulationAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
+    const connection = await createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }).connect({ controlInstanceId, scenario: testScenarioRuntimeConfig() })
     const initial = await connection.getSnapshot()
     const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
     const hospital = initial.objects.find(object => object.kind === 'facility')
@@ -529,8 +529,8 @@ describe('local ambulance simulator', () => {
     const remainingIncident = arrived.objects.find(object => object.id === incident.id)
     if (!arrivedAmbulance || !remainingIncident) throw new Error('expected ambulance and incident after partial pickup')
 
-    const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance.domainData)
-    const incidentData = incidentDomainDataSchema.parse(remainingIncident.domainData)
+    const ambulanceData = ambulancePackDataSchema.parse(arrivedAmbulance.packData)
+    const incidentData = incidentPackDataSchema.parse(remainingIncident.packData)
     expect(ambulanceData.transport?.patientsOnBoard.state).toBe('confirmed')
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(1)
     expect(incidentData.victims.count.state).toBe('confirmed')
@@ -570,11 +570,11 @@ describe('local ambulance simulator', () => {
     await applyInteractionEvents(engine, events)
     const resolvedIncident = engine.snapshot().objects.find(object => object.id === incident.id)
     if (!resolvedIncident) throw new Error('expected resolved incident to remain visible')
-    const incidentData = incidentDomainDataSchema.parse(resolvedIncident.domainData)
+    const incidentData = incidentPackDataSchema.parse(resolvedIncident.packData)
     expect(resolvedIncident.operational.status).toBe('resolved')
     expect(knownFactValue(incidentData.victims.count)).toBe(0)
     const arrivedAmbulance = engine.snapshot().objects.find(object => object.id === ambulance.id)
-    const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance?.domainData)
+    const ambulanceData = ambulancePackDataSchema.parse(arrivedAmbulance?.packData)
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(1)
   })
 
@@ -606,8 +606,8 @@ describe('local ambulance simulator', () => {
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const updatedHospital = arrived.objects.find(object => object.id === hospital.id)
-    const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance?.domainData)
-    const hospitalData = hospitalDomainDataSchema.parse(updatedHospital?.domainData)
+    const ambulanceData = ambulancePackDataSchema.parse(arrivedAmbulance?.packData)
+    const hospitalData = hospitalPackDataSchema.parse(updatedHospital?.packData)
     expect(arrivedAmbulance?.operational.status).toBe('available')
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(0)
     expect(knownFactValue(hospitalData.emergencyDepartment.traumaBedsAvailable)).toBe(1)
@@ -646,8 +646,8 @@ describe('local ambulance simulator', () => {
     const arrived = engine.snapshot()
     const arrivedAmbulance = arrived.objects.find(object => object.id === ambulance.id)
     const updatedHospital = arrived.objects.find(object => object.id === hospital.id)
-    const ambulanceData = ambulanceDomainDataSchema.parse(arrivedAmbulance?.domainData)
-    const hospitalData = hospitalDomainDataSchema.parse(updatedHospital?.domainData)
+    const ambulanceData = ambulancePackDataSchema.parse(arrivedAmbulance?.packData)
+    const hospitalData = hospitalPackDataSchema.parse(updatedHospital?.packData)
     expect(arrivedAmbulance?.operational.status).toBe('at_hospital')
     expect(knownFactValue(ambulanceData.transport?.patientsOnBoard)).toBe(1)
     expect(knownFactValue(hospitalData.emergencyDepartment.traumaBedsAvailable)).toBe(0)

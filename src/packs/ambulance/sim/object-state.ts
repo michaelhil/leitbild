@@ -1,7 +1,7 @@
 import type { CommandEnvelope, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, TelemetryState } from '../../../core/model/index.ts'
 import { confirmedFact, estimatedFact, meters, unknownFact } from '../../../core/model/index.ts'
-import type { AmbulanceDomainData, HospitalDomainData, IncidentDomainData, InjurySummary } from '../model.ts'
-import { ambulanceSimAdapterId, ambulanceSimDomain } from './constants.ts'
+import type { AmbulancePackData, HospitalPackData, IncidentPackData, InjurySummary } from '../model.ts'
+import { ambulanceSimAdapterId, ambulanceSimPackId } from './constants.ts'
 
 const makeTelemetry = (at: IsoTimestamp, heartRate: number, spo2: number): TelemetryState => ({
   signals: {
@@ -24,7 +24,7 @@ const makeTelemetry = (at: IsoTimestamp, heartRate: number, spo2: number): Telem
   },
 })
 
-const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimestamp): AmbulanceDomainData => ({
+const makeAmbulancePackData = (equipment: ReadonlyArray<string>, at: IsoTimestamp): AmbulancePackData => ({
   type: 'ambulance',
   schemaVersion: 1,
   capabilities: [
@@ -45,14 +45,14 @@ const makeAmbulanceDomainData = (equipment: ReadonlyArray<string>, at: IsoTimest
   },
 })
 
-const makeIncidentDomainData = (
+const makeIncidentPackData = (
   triage: 'green' | 'yellow' | 'red',
   at: IsoTimestamp,
   config?: {
     readonly victimCount?: number | 'unknown'
     readonly assignedAmbulanceId?: ObjectId
   },
-): IncidentDomainData => ({
+): IncidentPackData => ({
   type: 'incident',
   schemaVersion: 1,
   triage: confirmedFact(triage, at, 'scenario', 1),
@@ -67,13 +67,13 @@ const makeIncidentDomainData = (
   ...(config?.assignedAmbulanceId ? { assignedAmbulanceId: config.assignedAmbulanceId } : {}),
 })
 
-const makeHospitalDomainData = (
+const makeHospitalPackData = (
   at: IsoTimestamp,
   config?: {
     readonly traumaBedsTotal?: number
     readonly traumaBedsAvailable?: number
   },
-): HospitalDomainData => ({
+): HospitalPackData => ({
   type: 'hospital',
   schemaVersion: 1,
   emergencyDepartment: {
@@ -91,23 +91,23 @@ const makeEstimatedInjuries = (): InjurySummary[] => [
   { category: 'respiratory', severity: 'serious', count: 1 },
 ]
 
-const incidentDataOf = (object: OperationalObject): IncidentDomainData | null => {
-  const data = object.domainData
+const incidentDataOf = (object: OperationalObject): IncidentPackData | null => {
+  const data = object.packData
   return typeof data === 'object'
     && data !== null
     && (data as { readonly type?: unknown }).type === 'incident'
     && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
-    ? data as IncidentDomainData
+    ? data as IncidentPackData
     : null
 }
 
-const hospitalDataOf = (object: OperationalObject): HospitalDomainData | null => {
-  const data = object.domainData
+const hospitalDataOf = (object: OperationalObject): HospitalPackData | null => {
+  const data = object.packData
   return typeof data === 'object'
     && data !== null
     && (data as { readonly type?: unknown }).type === 'hospital'
     && (data as { readonly schemaVersion?: unknown }).schemaVersion === 1
-    ? data as HospitalDomainData
+    ? data as HospitalPackData
     : null
 }
 
@@ -117,7 +117,7 @@ export const revealIncidentDetails = (object: OperationalObject, at: IsoTimestam
   return {
     ...object,
     revision: object.revision + 1,
-    domainData: {
+    packData: {
       ...data,
       victims: {
         count: estimatedFact(2, at, 'simulation', 0.72),
@@ -125,7 +125,7 @@ export const revealIncidentDetails = (object: OperationalObject, at: IsoTimestam
         entrapment: estimatedFact(false, at, 'simulation', 0.61),
       },
       hazards: estimatedFact(['traffic obstruction', 'possible fuel spill'], at, 'simulation', 0.55),
-    } satisfies IncidentDomainData,
+    } satisfies IncidentPackData,
     provenance: {
       source: 'simulator',
       adapterId: ambulanceSimAdapterId,
@@ -145,14 +145,14 @@ export const updateHospitalCapacity = (object: OperationalObject, at: IsoTimesta
   return {
     ...object,
     revision: object.revision + 1,
-    domainData: {
+    packData: {
       ...data,
       emergencyDepartment: {
         ...data.emergencyDepartment,
         ambulanceBaysAvailable: confirmedFact(1, at, 'simulation', 1),
         diversionStatus: confirmedFact('limited', at, 'simulation', 1),
       },
-    } satisfies HospitalDomainData,
+    } satisfies HospitalPackData,
     provenance: {
       source: 'simulator',
       adapterId: ambulanceSimAdapterId,
@@ -174,7 +174,7 @@ export const createScenarioAmbulanceObject = (config: {
 }): OperationalObject => ({
   id: config.id,
   kind: 'mobile_entity',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -208,9 +208,9 @@ export const createScenarioAmbulanceObject = (config: {
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: {
-    ...makeAmbulanceDomainData(config.equipment, config.at),
-  } satisfies AmbulanceDomainData,
+  packData: {
+    ...makeAmbulancePackData(config.equipment, config.at),
+  } satisfies AmbulancePackData,
 })
 
 export const createScenarioIncidentObject = (config: {
@@ -224,7 +224,7 @@ export const createScenarioIncidentObject = (config: {
 }): OperationalObject => ({
   id: config.id,
   kind: 'incident',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -262,12 +262,12 @@ export const createScenarioIncidentObject = (config: {
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: {
-    ...makeIncidentDomainData(config.triage, config.at, {
+  packData: {
+    ...makeIncidentPackData(config.triage, config.at, {
       ...(config.victimCount === undefined ? {} : { victimCount: config.victimCount }),
       ...(config.assignedAmbulanceId === undefined ? {} : { assignedAmbulanceId: config.assignedAmbulanceId }),
     }),
-  } satisfies IncidentDomainData,
+  } satisfies IncidentPackData,
 })
 
 export const createScenarioHospitalObject = (config: {
@@ -280,7 +280,7 @@ export const createScenarioHospitalObject = (config: {
 }): OperationalObject => ({
   id: config.id,
   kind: 'facility',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label: config.label,
   lifecycle: 'active',
   revision: 0,
@@ -307,18 +307,18 @@ export const createScenarioHospitalObject = (config: {
     createdAt: config.at,
     updatedAt: config.at,
   },
-  domainData: {
-    ...makeHospitalDomainData(config.at, {
+  packData: {
+    ...makeHospitalPackData(config.at, {
       ...(config.traumaBedsTotal === undefined ? {} : { traumaBedsTotal: config.traumaBedsTotal }),
       ...(config.traumaBedsAvailable === undefined ? {} : { traumaBedsAvailable: config.traumaBedsAvailable }),
     }),
-  } satisfies HospitalDomainData,
+  } satisfies HospitalPackData,
 })
 
 export const createHospitalObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
   kind: 'facility',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label,
   lifecycle: 'active',
   revision: 0,
@@ -346,15 +346,15 @@ export const createHospitalObject = (id: ObjectId, label: string, point: GeoJson
     createdAt: at,
     updatedAt: at,
   },
-  domainData: {
-    ...makeHospitalDomainData(at),
-  } satisfies HospitalDomainData,
+  packData: {
+    ...makeHospitalPackData(at),
+  } satisfies HospitalPackData,
 })
 
 export const createAddedAmbulanceObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
   kind: 'mobile_entity',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label,
   lifecycle: 'active',
   revision: 0,
@@ -389,15 +389,15 @@ export const createAddedAmbulanceObject = (id: ObjectId, label: string, point: G
     createdAt: at,
     updatedAt: at,
   },
-  domainData: {
-    ...makeAmbulanceDomainData(['defibrillator', 'oxygen', 'stretcher'], at),
-  } satisfies AmbulanceDomainData,
+  packData: {
+    ...makeAmbulancePackData(['defibrillator', 'oxygen', 'stretcher'], at),
+  } satisfies AmbulancePackData,
 })
 
 export const createAddedIncidentObject = (id: ObjectId, label: string, point: GeoJsonPoint, at: IsoTimestamp, causedByCommandId: CommandEnvelope['id']): OperationalObject => ({
   id,
   kind: 'incident',
-  domain: ambulanceSimDomain,
+  packId: ambulanceSimPackId,
   label,
   lifecycle: 'active',
   revision: 0,
@@ -434,7 +434,7 @@ export const createAddedIncidentObject = (id: ObjectId, label: string, point: Ge
     createdAt: at,
     updatedAt: at,
   },
-  domainData: {
-    ...makeIncidentDomainData('red', at),
-  } satisfies IncidentDomainData,
+  packData: {
+    ...makeIncidentPackData('red', at),
+  } satisfies IncidentPackData,
 })

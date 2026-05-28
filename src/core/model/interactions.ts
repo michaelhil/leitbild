@@ -25,7 +25,7 @@ export type InteractionEndpoint =
   | {
       readonly kind: 'object'
       readonly id: ObjectId
-      readonly providerId?: string
+      readonly runtimeId?: string
     }
   | {
       readonly kind: 'simulation'
@@ -113,7 +113,7 @@ export const interactionEndpointSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('object'),
     id: objectIdSchema,
-    providerId: z.string().min(1).optional(),
+    runtimeId: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal('simulation'),

@@ -23,7 +23,7 @@ const command = (config: {
   actorId: actor.id,
   clientId: 'client:test' as ClientId,
   ...(config.idempotencyKey === undefined ? {} : { idempotencyKey: config.idempotencyKey }),
-  kind: 'domain.command',
+  kind: 'pack.command',
   targetObjectIds: ['object:1' as ObjectId],
   payload: config.payload ?? { value: 1 },
   issuedAt: '2026-05-25T00:00:00.000Z' as CommandEnvelope['issuedAt'],

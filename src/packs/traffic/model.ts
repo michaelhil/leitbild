@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { geoJsonLineStringSchema, geoJsonPointSchema, geoJsonPolygonSchema, knowledgeFactSchema } from '../../core/model/index.ts'
 
-export const trafficDomainId = 'traffic' as const
+export const trafficPackId = 'traffic' as const
 
 export const trafficConditionSchema = z.enum(['free_flow', 'congestion', 'closure', 'slowdown', 'access_restricted'])
 export type TrafficCondition = z.infer<typeof trafficConditionSchema>
@@ -15,7 +15,7 @@ export type TrafficGeometryMode = z.infer<typeof trafficGeometryModeSchema>
 export const trafficMobilityModeSchema = z.enum(['road_vehicle', 'emergency_vehicle', 'drone', 'vessel', 'pedestrian'])
 export type TrafficMobilityMode = z.infer<typeof trafficMobilityModeSchema>
 
-export const trafficDomainDataSchema = z.object({
+export const trafficPackDataSchema = z.object({
   type: z.literal('traffic_condition'),
   schemaVersion: z.literal(2),
   geometryMode: trafficGeometryModeSchema,
@@ -31,7 +31,7 @@ export const trafficDomainDataSchema = z.object({
   sourceKind: z.enum(['scenario', 'operator', 'simulation', 'external_feed']),
   confidence: z.number().finite().min(0).max(1).optional(),
 })
-export type TrafficDomainData = z.infer<typeof trafficDomainDataSchema>
+export type TrafficPackData = z.infer<typeof trafficPackDataSchema>
 
 export const createTrafficRoadSegmentPayloadSchema = z.object({
   objectType: z.literal('traffic_road_segment'),

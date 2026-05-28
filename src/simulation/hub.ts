@@ -1,7 +1,7 @@
-import type { CommandEnvelope, CommandResult, DomainEvent, OperationalObject } from '../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
-import type { SimulationAdapter, SimulationConnection, SimulationConnectionConfig, SimulationEmission, SimulationEventHandler, SimulationScenarioRuntimeConfig, SimulationSnapshot } from './protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
   const seen = new Set<string>()
@@ -14,48 +14,47 @@ const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): Readonly
 }
 
 const restoredObjectsFor = (
-  adapter: SimulationAdapter,
+  adapter: PackRuntimeAdapter,
   objects: ReadonlyArray<OperationalObject> | undefined,
 ): ReadonlyArray<OperationalObject> | undefined => {
   if (!objects) return undefined
-  return objects.filter(object => object.domain === adapter.domain)
+  return objects.filter(object => object.packId === adapter.packId)
 }
 
 const scenarioFor = (
-  adapter: SimulationAdapter,
-  scenario: SimulationConnectionConfig['scenario'],
-): SimulationScenarioRuntimeConfig | undefined => {
+  adapter: PackRuntimeAdapter,
+  scenario: PackRuntimeConnectionConfig['scenario'],
+): PackScenarioRuntimeConfig | undefined => {
   if (!scenario) return undefined
   return {
     scenarioId: scenario.scenarioId,
-    providerIds: scenario.providerIds,
+    runtimeIds: scenario.runtimeIds,
     world: scenario.world,
-    initialObjects: scenario.initialObjects.filter(object => object.domain === adapter.domain),
+    initialObjects: scenario.initialObjects.filter(object => object.packId === adapter.packId),
     processSystems: (scenario.processSystems ?? []).filter(processSystem => processSystem.pack === adapter.packId),
-    providerConfigs: scenario.providerConfigs,
-    providerConfig: scenario.providerConfigs[adapter.id] ?? {},
+    runtimeConfigs: scenario.runtimeConfigs,
+    runtimeConfig: scenario.runtimeConfigs[adapter.id] ?? {},
   }
 }
 
-export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>): SimulationAdapter => {
-  if (adapters.length === 0) throw new Error('SimulationHub requires at least one simulation adapter')
+export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): PackRuntimeAdapter => {
+  if (adapters.length === 0) throw new Error('RuntimeHub requires at least one pack runtime adapter')
   const adapterIds = new Set<string>()
   for (const adapter of adapters) {
-    if (adapterIds.has(adapter.id)) throw new Error(`duplicate simulation adapter id: ${adapter.id}`)
+    if (adapterIds.has(adapter.id)) throw new Error(`duplicate pack runtime adapter id: ${adapter.id}`)
     adapterIds.add(adapter.id)
   }
 
   return {
     id: 'simulation-hub',
     packId: 'simulation-hub',
-    domain: 'simulation-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
-    connect: async (config: SimulationConnectionConfig): Promise<SimulationConnection> => {
-      const missingProviderIds = config.scenario?.providerIds.filter(providerId => !adapterIds.has(providerId)) ?? []
-      if (missingProviderIds.length > 0) throw new Error(`missing simulation providers: ${missingProviderIds.join(', ')}`)
-      const activeProviderIds = config.scenario ? new Set(config.scenario.providerIds) : null
-      const activeAdapters = activeProviderIds
-        ? adapters.filter(adapter => activeProviderIds.has(adapter.id))
+    connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+      const missingRuntimeIds = config.scenario?.runtimeIds.filter(runtimeId => !adapterIds.has(runtimeId)) ?? []
+      if (missingRuntimeIds.length > 0) throw new Error(`missing pack runtimes: ${missingRuntimeIds.join(', ')}`)
+      const activeRuntimeIds = config.scenario ? new Set(config.scenario.runtimeIds) : null
+      const activeAdapters = activeRuntimeIds
+        ? adapters.filter(adapter => activeRuntimeIds.has(adapter.id))
         : adapters
       const connections = await Promise.all(activeAdapters.map(async adapter => {
         const initialObjects = restoredObjectsFor(adapter, config.initialObjects)
@@ -66,23 +65,23 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
             controlInstanceId: config.controlInstanceId,
             ...(scenario === undefined ? {} : { scenario }),
             ...(initialObjects === undefined ? {} : { initialObjects }),
-            ...(config.providerStateStores?.[adapter.id] === undefined
+            ...(config.runtimeStateStores?.[adapter.id] === undefined
               ? {}
-              : { providerStateStore: config.providerStateStores[adapter.id] }),
+              : { runtimeStateStore: config.runtimeStateStores[adapter.id] }),
           }),
         }
       }))
-      const handlers = new Set<SimulationEventHandler>()
-      const unsubscribes = connections.map(({ connection }) => connection.subscribe((emission: SimulationEmission) => {
+      const handlers = new Set<PackRuntimeEventHandler>()
+      const unsubscribes = connections.map(({ connection }) => connection.subscribe((emission: PackRuntimeEmission) => {
         for (const handler of handlers) handler(emission)
       }))
 
-      const getSnapshot = async (): Promise<SimulationSnapshot> => {
+      const getSnapshot = async (): Promise<PackRuntimeSnapshot> => {
         const snapshots = await Promise.all(connections.map(({ connection }) => connection.getSnapshot()))
         const objects = snapshots.flatMap(snapshot => snapshot.objects)
         const duplicates = duplicateObjectIds(objects)
         if (duplicates.length > 0) {
-          throw new Error(`duplicate simulation object ids from providers: ${duplicates.join(', ')}`)
+          throw new Error(`duplicate simulation object ids from runtimes: ${duplicates.join(', ')}`)
         }
         return {
           controlInstanceId: config.controlInstanceId,
@@ -98,7 +97,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
             ok: false,
             commandId: command.id,
             rejectedAt: nowIso(),
-            reason: `no simulation provider accepts command kind: ${command.kind}`,
+            reason: `no pack runtime accepts command kind: ${command.kind}`,
           }
         }
         return target.connection.sendCommand(command)
@@ -111,7 +110,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
             ok: false,
             packId: request.packId,
             kind: request.kind,
-            reason: `no simulation provider is active for pack: ${request.packId}`,
+            reason: `no pack runtime is active for pack: ${request.packId}`,
             generatedAt: nowIso(),
           }
         }
@@ -120,7 +119,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
 
       return {
         getSnapshot,
-        subscribe: (handler: SimulationEventHandler): (() => void) => {
+        subscribe: (handler: PackRuntimeEventHandler): (() => void) => {
           handlers.add(handler)
           return () => {
             handlers.delete(handler)
@@ -128,7 +127,7 @@ export const createSimulationHub = (adapters: ReadonlyArray<SimulationAdapter>):
         },
         sendCommand,
         query,
-        observeCommittedEvents: async (events: ReadonlyArray<DomainEvent>): Promise<void> => {
+        observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
           await Promise.all(connections.map(({ connection }) => connection.observeCommittedEvents(events)))
         },
         setClock: async (clock): Promise<void> => {

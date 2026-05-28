@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { nowIso, type DomainId, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
+import { nowIso, type PackId, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
 import type { PackObjectPresentation } from '../src/core/packs/protocol.ts'
 import { buildPresentedCategoryRows } from '../src/ui/control-rail-presenter.ts'
 import type { CategoryRow } from '../src/ui/types.ts'
@@ -8,7 +8,7 @@ const object = {
   id: 'object:test' as ObjectId,
   label: 'Test Object',
   kind: 'facility',
-  domain: 'test' as DomainId,
+  packId: 'test' as PackId,
   lifecycle: 'active',
   revision: 1,
   spatial: { frame: { kind: 'wgs84' } },

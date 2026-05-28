@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { commandEnvelopeSchema, domainIdSchema, controlInstanceIdSchema } from '../core/model/index.ts'
+import { commandEnvelopeSchema, packIdSchema, controlInstanceIdSchema } from '../core/model/index.ts'
 
 export const simulationProtocolVersion = 1
 
@@ -8,7 +8,7 @@ export const leitbildToSimulationMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('hello'),
     protocolVersion: z.literal(simulationProtocolVersion),
     controlInstanceId: controlInstanceIdSchema,
-    domain: domainIdSchema,
+    packId: packIdSchema,
   }),
   z.object({
     type: z.literal('snapshot.request'),

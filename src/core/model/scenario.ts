@@ -161,12 +161,12 @@ export interface ScenarioDefinition {
   readonly title: string
   readonly description?: string
   readonly packs: ReadonlyArray<string>
-  readonly providerOverrides: Record<string, string>
+  readonly runtimeOverrides: Record<string, string>
   readonly world: ScenarioWorldDefinition
   readonly initialObjects: ReadonlyArray<OperationalObject>
   readonly initialContexts: ReadonlyArray<ScenarioInitialObjectContext>
   readonly processSystems: ReadonlyArray<ScenarioProcessSystemDefinition>
-  readonly providerConfigs: Record<string, unknown>
+  readonly runtimeConfigs: Record<string, unknown>
   readonly missionId?: string
   readonly surface: SurfaceDefinition
   readonly script?: ScenarioScript
@@ -372,12 +372,12 @@ export const scenarioDefinitionSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   packs: z.array(idSchema).default([]),
-  providerOverrides: z.record(idSchema).default({}),
+  runtimeOverrides: z.record(idSchema).default({}),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
   processSystems: z.array(scenarioProcessSystemDefinitionSchema).default([]),
-  providerConfigs: z.record(z.unknown()).default({}),
+  runtimeConfigs: z.record(z.unknown()).default({}),
   missionId: idSchema.optional(),
   surface: surfaceDefinitionSchema,
   script: scenarioScriptSchema.optional(),

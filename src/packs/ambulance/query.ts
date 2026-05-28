@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { IsoTimestamp, ObjectId, OperationalObject } from '../../core/model/index.ts'
 import { objectIdSchema } from '../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import { ambulanceDomainDataSchema, ambulanceDomainId, hospitalDomainDataSchema, incidentDomainDataSchema } from './model.ts'
+import { ambulancePackDataSchema, ambulancePackId, hospitalPackDataSchema, incidentPackDataSchema } from './model.ts'
 
 const objectQuerySchema = z.object({
   objectId: objectIdSchema,
@@ -35,9 +35,9 @@ const failure = (request: PackQueryRequest, reason: string, generatedAt: IsoTime
 })
 
 const ambulanceTypeOf = (object: OperationalObject): 'ambulance' | 'hospital' | 'incident' | null => {
-  if (ambulanceDomainDataSchema.safeParse(object.domainData).success) return 'ambulance'
-  if (hospitalDomainDataSchema.safeParse(object.domainData).success) return 'hospital'
-  if (incidentDomainDataSchema.safeParse(object.domainData).success) return 'incident'
+  if (ambulancePackDataSchema.safeParse(object.packData).success) return 'ambulance'
+  if (hospitalPackDataSchema.safeParse(object.packData).success) return 'hospital'
+  if (incidentPackDataSchema.safeParse(object.packData).success) return 'incident'
   return null
 }
 
@@ -47,8 +47,8 @@ const assignedCapacityFor = (
 ): number =>
   objects
     .filter(object => object.tasking?.currentTaskId === incident.id)
-    .map(object => ambulanceDomainDataSchema.safeParse(object.domainData))
-    .filter((parsed): parsed is { readonly success: true; readonly data: z.infer<typeof ambulanceDomainDataSchema> } => parsed.success)
+    .map(object => ambulancePackDataSchema.safeParse(object.packData))
+    .filter((parsed): parsed is { readonly success: true; readonly data: z.infer<typeof ambulancePackDataSchema> } => parsed.success)
     .reduce((sum, parsed) => {
       const capacity = parsed.data.transport?.patientCapacity
       return sum + (capacity && capacity.state !== 'unknown' ? capacity.value : 0)
@@ -60,7 +60,7 @@ export const answerAmbulanceQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse => {
   try {
-    const packObjects = config.objects.filter(object => object.domain === ambulanceDomainId)
+    const packObjects = config.objects.filter(object => object.packId === ambulancePackId)
     if (config.request.kind === 'ambulance.objects') {
       const payload = objectsQuerySchema.parse(config.request.payload)
       const objects = payload.type

@@ -2,7 +2,7 @@
 
 `/map/capabilities.json` is the machine-readable contract for Leitbild's self-hosted vector map.
 
-It tells UI surfaces, simulation providers, AI agents, and developer tooling what contextual map layers exist and which properties may be used.
+It tells UI surfaces, pack runtimes, AI agents, and developer tooling what contextual map layers exist and which properties may be used.
 
 ## Principles
 
@@ -35,7 +35,7 @@ UI:
 - Inspect map features.
 - Enable or disable map-context tools.
 
-Simulation providers:
+Pack runtimes:
 
 - Understand which contextual map hints can be queried.
 - Avoid hard-coded assumptions about unavailable fields.
@@ -54,4 +54,4 @@ AI agents:
 - `mobility_constraint`
 - `base_context`
 
-These categories are intentionally broad enough for ambulance, traffic, drone, robotaxi, maritime, and future control-center domains without pretending the base map is a domain pack.
+These categories are intentionally broad enough for ambulance, traffic, drone, robotaxi, maritime, and future control-center domains without pretending the base map is a pack.

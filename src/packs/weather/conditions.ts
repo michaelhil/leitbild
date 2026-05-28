@@ -1,5 +1,5 @@
 import type { GeoJsonPoint, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import { type WeatherAtmosphere, type WeatherDomainData, type WeatherSample, type WeatherState, type WeatherSurface } from './model.ts'
+import { type WeatherAtmosphere, type WeatherPackData, type WeatherSample, type WeatherState, type WeatherSurface } from './model.ts'
 import { defaultAtmosphere, defaultSurface } from './defaults.ts'
 import { activeWeatherInfluencesAt, mixWeatherState, weatherInfluenceWeightForPoint } from './influence.ts'
 
@@ -146,10 +146,10 @@ export const evolveSurfaceWithResidual = (config: {
 }
 
 export const evolveWeatherData = (
-  data: WeatherDomainData,
+  data: WeatherPackData,
   at: IsoTimestamp,
   elapsedSeconds: number,
-): WeatherDomainData => {
+): WeatherPackData => {
   const atmosphere = deriveAtmosphere(data.state.atmosphere, at)
   const surface = evolveSurface({
     surface: data.state.surface,

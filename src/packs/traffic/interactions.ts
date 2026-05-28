@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { ControlInstanceId, GeoJsonLineString, GeoJsonPoint, InteractionEffect, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, RouteImpact, SignalId } from '../../core/model/index.ts'
 import { assetRoutePlannedSignalType, confirmedFact, notificationIdSchema, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
-import { trafficDomainDataSchema, type TrafficDomainData } from './model.ts'
+import { trafficPackDataSchema, type TrafficPackData } from './model.ts'
 
 const routePlannedPayloadSchema = z.object({
   objectId: z.string().min(1).transform(value => value as ObjectId),
@@ -13,8 +13,8 @@ const trafficChangedPayloadSchema = z.object({
 
 export const trafficConditionChangedSignalType = 'traffic.condition.changed'
 
-const trafficDataOf = (object: OperationalObject): TrafficDomainData | null => {
-  const parsed = trafficDomainDataSchema.safeParse(object.domainData)
+const trafficDataOf = (object: OperationalObject): TrafficPackData | null => {
+  const parsed = trafficPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
@@ -57,7 +57,7 @@ const existingImpactIds = (object: OperationalObject): ReadonlySet<ObjectId> =>
 const impactedObject = (
   object: OperationalObject,
   traffic: OperationalObject,
-  data: TrafficDomainData,
+  data: TrafficPackData,
   at: IsoTimestamp,
 ): OperationalObject => {
   const route = object.spatial.route
@@ -125,7 +125,7 @@ const effectsForRoute = (
   if (!route) return []
   const impacts = trafficObjects
     .map(traffic => ({ traffic, data: trafficDataOf(traffic) }))
-    .filter((entry): entry is { readonly traffic: OperationalObject; readonly data: TrafficDomainData } => entry.data !== null)
+    .filter((entry): entry is { readonly traffic: OperationalObject; readonly data: TrafficPackData } => entry.data !== null)
     .filter(({ traffic }) => routeIntersectsTraffic(route, traffic))
   if (impacts.length === 0) return []
   const updated = impacts.reduce((current, { traffic, data }) => impactedObject(current, traffic, data, at), object)

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { idSchema, isoTimestampSchema, type IsoTimestamp } from '../../core/model/index.ts'
 
-export const processPlantDomainId = 'process-plant' as const
+export const processPlantPackId = 'process-plant' as const
 
 export const processPlantUnitProjectionFieldSchema = z.object({
   key: idSchema,
@@ -23,7 +23,7 @@ export const processPlantUnitProjectionSchema = z.object({
 }).strict()
 export type ProcessPlantUnitProjection = z.infer<typeof processPlantUnitProjectionSchema>
 
-export const processPlantUnitDomainDataSchema = z.object({
+export const processPlantUnitPackDataSchema = z.object({
   type: z.literal('process-plant-unit'),
   schemaVersion: z.literal(1),
   systemId: idSchema,
@@ -31,7 +31,7 @@ export const processPlantUnitDomainDataSchema = z.object({
   coolingWater: z.string().min(1).optional(),
   projection: processPlantUnitProjectionSchema.optional(),
 }).strict()
-export type ProcessPlantUnitDomainData = z.infer<typeof processPlantUnitDomainDataSchema>
+export type ProcessPlantUnitPackData = z.infer<typeof processPlantUnitPackDataSchema>
 
 export const processPlantField = (
   key: string,

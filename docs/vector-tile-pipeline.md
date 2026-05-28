@@ -7,7 +7,7 @@ Leitbild's base map is built from OpenStreetMap data into a self-hosted PMTiles 
 - Use one vector map paradigm; do not keep raster OSM fallbacks.
 - Generate Norway-scale vector tiles from a Geofabrik `.osm.pbf` extract.
 - Keep the conversion repeatable, inspectable, and batch-oriented.
-- Expose a machine-readable capability manifest so UI surfaces, simulation providers, and AI agents know which map-context layers exist.
+- Expose a machine-readable capability manifest so UI surfaces, pack runtimes, and AI agents know which map-context layers exist.
 - Keep map context separate from canonical operational truth.
 
 ## Hetzner Layout
@@ -107,7 +107,7 @@ Caddy serves the large PMTiles archive and glyph files directly. The Leitbild se
 
 ## Schema Evolution
 
-The capability manifest is canonical. Documentation explains the manifest, but simulation providers and developer tools should read the manifest itself.
+The capability manifest is canonical. Documentation explains the manifest, but pack runtimes and developer tools should read the manifest itself.
 
 Rules:
 

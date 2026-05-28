@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, DomainEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId } from '../../../core/model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonLineString, GeoJsonPoint, InteractionSignal, IsoTimestamp, MotionProfileSet, ObjectId, OperationalObject, ControlInstanceId } from '../../../core/model/index.ts'
 import { advanceAlongRoute, defaultMotionProfile, interactionSignalSchema, meters, motionProfileFor, nowIso, pointFromPosition, remainingDistanceAlongRoute, routeDistanceMeters } from '../../../core/model/index.ts'
 import type { RoutingAdapter } from '../../../routing/protocol.ts'
-import type { SimulationEvent, SimulationSnapshot } from '../../../simulation/protocol.ts'
+import type { PackRuntimeEvent, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import {
   assignToIncidentCommandKind,
   assignToIncidentPayloadSchema,
@@ -13,8 +13,8 @@ import {
   setDestinationCommandKind,
   setDestinationPayloadSchema,
 } from '../commands.ts'
-import type { IncidentDomainData } from '../model.ts'
-import { ambulanceSimAdapterId, ambulanceSimProviderId } from './constants.ts'
+import type { IncidentPackData } from '../model.ts'
+import { ambulanceSimAdapterId, ambulanceSimRuntimeId } from './constants.ts'
 import { assetArrivedAtTargetSignalType } from './interactions.ts'
 import {
   createAddedAmbulanceObject,
@@ -43,10 +43,10 @@ interface EngineState {
 }
 
 export interface AmbulanceSimEngine {
-  readonly snapshot: () => SimulationSnapshot
-  readonly tick: (dtMs: number) => ReadonlyArray<SimulationEvent>
+  readonly snapshot: () => PackRuntimeSnapshot
+  readonly tick: (dtMs: number) => ReadonlyArray<PackRuntimeEvent>
   readonly handleCommand: (command: CommandEnvelope) => Promise<CommandResult>
-  readonly observeCommittedEvents: (events: ReadonlyArray<DomainEvent>) => void
+  readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => void
 }
 
 const defaultAmbulanceMotionProfileId = 'normal'
@@ -77,7 +77,7 @@ const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
   return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
 }
 
-const upsertEvent = (object: OperationalObject, at: IsoTimestamp): SimulationEvent => ({
+const upsertEvent = (object: OperationalObject, at: IsoTimestamp): PackRuntimeEvent => ({
   type: 'object.upserted',
   object,
   at,
@@ -88,7 +88,7 @@ const upsertEvent = (object: OperationalObject, at: IsoTimestamp): SimulationEve
   },
 })
 
-const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): SimulationEvent => ({
+const deleteEvent = (objectId: ObjectId, at: IsoTimestamp): PackRuntimeEvent => ({
   type: 'object.deleted',
   objectId,
   at,
@@ -105,12 +105,12 @@ const arrivalSignalEvent = (
   target: OperationalObject,
   at: IsoTimestamp,
   motion: AmbulanceMotion,
-): SimulationEvent => {
+): PackRuntimeEvent => {
   const signal = interactionSignalSchema.parse({
     id: `signal:${randomUUID()}`,
     controlInstanceId,
     at,
-    source: { kind: 'object', id: ambulance.id, providerId: ambulanceSimProviderId },
+    source: { kind: 'object', id: ambulance.id, runtimeId: ambulanceSimRuntimeId },
     targets: [{ kind: 'object', id: target.id }],
     type: assetArrivedAtTargetSignalType,
     severity: 'notice',
@@ -134,15 +134,15 @@ const arrivalSignalEvent = (
 
 const isHospital = (object: OperationalObject): boolean =>
   object.kind === 'facility'
-  && typeof object.domainData === 'object'
-  && object.domainData !== null
-  && (object.domainData as { readonly type?: unknown }).type === 'hospital'
+  && typeof object.packData === 'object'
+  && object.packData !== null
+  && (object.packData as { readonly type?: unknown }).type === 'hospital'
 
 const isAmbulance = (object: OperationalObject): boolean =>
   object.kind === 'mobile_entity'
-  && typeof object.domainData === 'object'
-  && object.domainData !== null
-  && (object.domainData as { readonly type?: unknown }).type === 'ambulance'
+  && typeof object.packData === 'object'
+  && object.packData !== null
+  && (object.packData as { readonly type?: unknown }).type === 'ambulance'
 
 const isDestinationTarget = (object: OperationalObject): boolean =>
   object.kind === 'incident' || isHospital(object)
@@ -259,14 +259,14 @@ export const createAmbulanceSimEngine = (config: {
     nextIncidentNumber: nextNumberAfter(objectProjection.values(), 'incident:', 1),
   }
 
-  const snapshot = (): SimulationSnapshot => ({
+  const snapshot = (): PackRuntimeSnapshot => ({
     controlInstanceId: state.controlInstanceId,
     objects: [...state.objectProjection.values()],
     capturedAt: nowIso(),
   })
 
-  const tick = (dtMs: number): ReadonlyArray<SimulationEvent> => {
-    const events: SimulationEvent[] = []
+  const tick = (dtMs: number): ReadonlyArray<PackRuntimeEvent> => {
+    const events: PackRuntimeEvent[] = []
     const at2 = nowIso()
     state.elapsedMs += dtMs
     if (state.elapsedMs >= 5_000) {
@@ -472,10 +472,10 @@ export const createAmbulanceSimEngine = (config: {
             ...incident.timestamps,
             updatedAt: at3,
           },
-          domainData: {
-            ...(incident.domainData as IncidentDomainData),
+          packData: {
+            ...(incident.packData as IncidentPackData),
             assignedAmbulanceId: updatedAmbulance.id,
-          } satisfies IncidentDomainData,
+          } satisfies IncidentPackData,
         }
       : incident
     state.objectProjection.set(updatedIncident.id, updatedIncident)
@@ -490,7 +490,7 @@ export const createAmbulanceSimEngine = (config: {
     return { ok: true, commandId: command.id, acceptedAt: at3 }
   }
 
-  const observeCommittedEvents = (events: ReadonlyArray<DomainEvent>): void => {
+  const observeCommittedEvents = (events: ReadonlyArray<ControlInstanceEvent>): void => {
     for (const event of events) {
       if (event.type === 'object.upserted') {
         state.objectProjection.set(event.object.id, event.object)

@@ -10,12 +10,12 @@ import {
   type KnowledgeFact,
 } from '../../../core/model/index.ts'
 import {
-  ambulanceDomainDataSchema,
-  hospitalDomainDataSchema,
-  incidentDomainDataSchema,
-  type AmbulanceDomainData,
-  type HospitalDomainData,
-  type IncidentDomainData,
+  ambulancePackDataSchema,
+  hospitalPackDataSchema,
+  incidentPackDataSchema,
+  type AmbulancePackData,
+  type HospitalPackData,
+  type IncidentPackData,
 } from '../model.ts'
 import { createScenarioIncidentObject } from './object-state.ts'
 
@@ -51,24 +51,24 @@ const numberFactWithValue = (
     : estimatedFact(value, at, 'simulation', fact.confidence)
 }
 
-const ambulanceDataOf = (object: OperationalObject): AmbulanceDomainData | null => {
-  const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
+const ambulanceDataOf = (object: OperationalObject): AmbulancePackData | null => {
+  const parsed = ambulancePackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const incidentDataOf = (object: OperationalObject): IncidentDomainData | null => {
-  const parsed = incidentDomainDataSchema.safeParse(object.domainData)
+const incidentDataOf = (object: OperationalObject): IncidentPackData | null => {
+  const parsed = incidentPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const hospitalDataOf = (object: OperationalObject): HospitalDomainData | null => {
-  const parsed = hospitalDomainDataSchema.safeParse(object.domainData)
+const hospitalDataOf = (object: OperationalObject): HospitalPackData | null => {
+  const parsed = hospitalPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
 const ambulanceWithData = (
   ambulance: OperationalObject,
-  data: AmbulanceDomainData,
+  data: AmbulancePackData,
   at: IsoTimestamp,
   adapterId: AdapterId,
   status: string,
@@ -81,7 +81,7 @@ const ambulanceWithData = (
     status,
     ...(intent === undefined ? {} : { intent }),
   },
-  domainData: data,
+  packData: data,
   provenance: {
     source: 'simulator',
     adapterId,
@@ -93,9 +93,9 @@ const ambulanceWithData = (
   },
 })
 
-const objectWithDomainData = (
+const objectWithPackData = (
   object: OperationalObject,
-  domainData: IncidentDomainData | HospitalDomainData,
+  packData: IncidentPackData | HospitalPackData,
   at: IsoTimestamp,
   adapterId: AdapterId,
   status?: string,
@@ -110,7 +110,7 @@ const objectWithDomainData = (
           status,
         },
       }),
-  domainData,
+  packData,
   provenance: {
     source: 'simulator',
     adapterId,
@@ -131,8 +131,8 @@ const arrivalWithoutTransfer = (
 
 const handleIncidentArrival = (
   input: AmbulanceArrivalInteractionInput,
-  ambulanceData: AmbulanceDomainData,
-  incidentData: IncidentDomainData,
+  ambulanceData: AmbulancePackData,
+  incidentData: IncidentPackData,
 ): AmbulanceArrivalInteractionResult => {
   const capacity = knownNumber(ambulanceData.transport?.patientCapacity) ?? knownNumber(ambulanceData.crew.availableSeats) ?? 0
   const onBoard = knownNumber(ambulanceData.transport?.patientsOnBoard) ?? 0
@@ -144,7 +144,7 @@ const handleIncidentArrival = (
 
   const transferCount = Math.min(availableCapacity, victimCount)
   const nextVictimCount = victimCount - transferCount
-  const nextAmbulanceData: AmbulanceDomainData = {
+  const nextAmbulanceData: AmbulancePackData = {
     ...ambulanceData,
     transport: {
       patientCapacity: ambulanceData.transport?.patientCapacity ?? confirmedFact(capacity, input.at, 'simulation', 1),
@@ -159,7 +159,7 @@ const handleIncidentArrival = (
     'on_scene',
     'patient_loaded',
   )
-  const nextIncidentData: IncidentDomainData = {
+  const nextIncidentData: IncidentPackData = {
     ...incidentData,
     victims: {
       ...incidentData.victims,
@@ -171,7 +171,7 @@ const handleIncidentArrival = (
     return {
       upserts: [
         nextAmbulance,
-        objectWithDomainData(input.target, nextIncidentData, input.at, input.adapterId, 'resolved'),
+        objectWithPackData(input.target, nextIncidentData, input.at, input.adapterId, 'resolved'),
       ],
       deletes: [],
     }
@@ -180,7 +180,7 @@ const handleIncidentArrival = (
   return {
     upserts: [
       nextAmbulance,
-      objectWithDomainData(input.target, nextIncidentData, input.at, input.adapterId, 'responding'),
+      objectWithPackData(input.target, nextIncidentData, input.at, input.adapterId, 'responding'),
     ],
     deletes: [],
   }
@@ -194,8 +194,8 @@ const diversionForBeds = (bedsAvailable: number): 'open' | 'limited' | 'closed' 
 
 const handleHospitalArrival = (
   input: AmbulanceArrivalInteractionInput,
-  ambulanceData: AmbulanceDomainData,
-  hospitalData: HospitalDomainData,
+  ambulanceData: AmbulancePackData,
+  hospitalData: HospitalPackData,
 ): AmbulanceArrivalInteractionResult => {
   const onBoard = knownNumber(ambulanceData.transport?.patientsOnBoard) ?? 0
   if (onBoard === 0) return arrivalWithoutTransfer(input.ambulance)
@@ -212,14 +212,14 @@ const handleHospitalArrival = (
   const remainingOnBoard = onBoard - transferCount
   const remainingBeds = bedsAvailable - transferCount
   const patientsReceived = knownNumber(hospitalData.emergencyDepartment.patientsReceived) ?? 0
-  const nextAmbulanceData: AmbulanceDomainData = {
+  const nextAmbulanceData: AmbulancePackData = {
     ...ambulanceData,
     transport: {
       patientCapacity: ambulanceData.transport?.patientCapacity ?? confirmedFact(onBoard, input.at, 'simulation', 1),
       patientsOnBoard: numberFactWithValue(ambulanceData.transport?.patientsOnBoard, remainingOnBoard, input.at),
     },
   }
-  const nextHospitalData: HospitalDomainData = {
+  const nextHospitalData: HospitalPackData = {
     ...hospitalData,
     emergencyDepartment: {
       ...hospitalData.emergencyDepartment,
@@ -239,7 +239,7 @@ const handleHospitalArrival = (
         remainingOnBoard === 0 ? 'available' : 'at_hospital',
         remainingOnBoard === 0 ? undefined : 'awaiting_hospital_capacity',
       ),
-      objectWithDomainData(input.target, nextHospitalData, input.at, input.adapterId),
+      objectWithPackData(input.target, nextHospitalData, input.at, input.adapterId),
     ],
     deletes: [],
   }

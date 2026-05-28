@@ -8,16 +8,16 @@ import {
   type CreatableAmbulanceObjectType,
 } from './commands.ts'
 import {
-  ambulanceDomainDataSchema,
-  ambulanceDomainId,
-  hospitalDomainDataSchema,
-  incidentDomainDataSchema,
-  type AmbulanceDomainData,
-  type HospitalDomainData,
-  type IncidentDomainData,
+  ambulancePackDataSchema,
+  ambulancePackId,
+  hospitalPackDataSchema,
+  incidentPackDataSchema,
+  type AmbulancePackData,
+  type HospitalPackData,
+  type IncidentPackData,
   type InjurySummary,
 } from './model.ts'
-import { ambulanceSimProviderId } from './sim/constants.ts'
+import { ambulanceSimRuntimeId } from './sim/constants.ts'
 import { createAmbulanceArrivalInteractionHandler } from './sim/interactions.ts'
 import { ambulanceScenarioSupport } from './scenario.ts'
 
@@ -62,24 +62,24 @@ const routeImpactText = (object: OperationalObject): string | null => {
   return `Traffic impact: ${impacts.map(impact => `${impact.label} (${impact.severity})`).join(', ')}`
 }
 
-const parseAmbulanceData = (object: OperationalObject): AmbulanceDomainData | null => {
-  const parsed = ambulanceDomainDataSchema.safeParse(object.domainData)
+const parseAmbulanceData = (object: OperationalObject): AmbulancePackData | null => {
+  const parsed = ambulancePackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const parseIncidentData = (object: OperationalObject): IncidentDomainData | null => {
-  const parsed = incidentDomainDataSchema.safeParse(object.domainData)
+const parseIncidentData = (object: OperationalObject): IncidentPackData | null => {
+  const parsed = incidentPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
-const parseHospitalData = (object: OperationalObject): HospitalDomainData | null => {
-  const parsed = hospitalDomainDataSchema.safeParse(object.domainData)
+const parseHospitalData = (object: OperationalObject): HospitalPackData | null => {
+  const parsed = hospitalPackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
 
 const ambulanceDetails = (
   object: OperationalObject,
-  data: AmbulanceDomainData,
+  data: AmbulancePackData,
   objects: ReadonlyArray<OperationalObject>,
 ): ReadonlyArray<PackObjectField> => [
   packField('destination', 'Destination', targetLabel(object, objects)),
@@ -97,7 +97,7 @@ const ambulanceCapacity = (object: OperationalObject): number => {
   return knownNumber(data.transport?.patientCapacity) ?? knownNumber(data.crew.availableSeats) ?? 0
 }
 
-const ambulancePatientsOnBoard = (data: AmbulanceDomainData): number =>
+const ambulancePatientsOnBoard = (data: AmbulancePackData): number =>
   knownNumber(data.transport?.patientsOnBoard) ?? 0
 
 const assignedAmbulanceCapacityFor = (
@@ -108,12 +108,12 @@ const assignedAmbulanceCapacityFor = (
     .filter(object => object.tasking?.currentTaskId === incident.id && parseAmbulanceData(object) !== null)
     .reduce((total, ambulance) => total + ambulanceCapacity(ambulance), 0)
 
-const incidentDemand = (data: IncidentDomainData): number =>
+const incidentDemand = (data: IncidentPackData): number =>
   knownNumber(data.victims.count) ?? 1
 
 const incidentStatus = (
   object: OperationalObject,
-  data: IncidentDomainData,
+  data: IncidentPackData,
   objects: ReadonlyArray<OperationalObject>,
 ): PackObjectStatusPresentation => {
   if (object.operational.status === 'resolved') {
@@ -130,7 +130,7 @@ const incidentStatus = (
 
 const ambulanceStatus = (
   object: OperationalObject,
-  data: AmbulanceDomainData,
+  data: AmbulancePackData,
   objects: ReadonlyArray<OperationalObject>,
 ): PackObjectStatusPresentation => {
   const patientsOnBoard = ambulancePatientsOnBoard(data)
@@ -164,7 +164,7 @@ const ambulanceStatus = (
   return packStatus('idle', object.operational.status)
 }
 
-const hospitalStatus = (data: HospitalDomainData): PackObjectStatusPresentation => {
+const hospitalStatus = (data: HospitalPackData): PackObjectStatusPresentation => {
   const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
   const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
   if (total === null || available === null || total === 0) return packStatus('idle', 'Trauma bed capacity unknown')
@@ -174,14 +174,14 @@ const hospitalStatus = (data: HospitalDomainData): PackObjectStatusPresentation 
   return packStatus('ready', `Trauma beds available ${boundedAvailable}/${total}`)
 }
 
-const traumaBedsAvailableText = (data: HospitalDomainData): string => {
+const traumaBedsAvailableText = (data: HospitalPackData): string => {
   const total = knownNumber(data.emergencyDepartment.traumaBedsTotal)
   const available = knownNumber(data.emergencyDepartment.traumaBedsAvailable)
   if (total === null || available === null) return 'unknown'
   return `${Math.max(0, Math.min(available, total))} / ${total}`
 }
 
-const incidentDetails = (object: OperationalObject, data: IncidentDomainData, objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackObjectField> => [
+const incidentDetails = (object: OperationalObject, data: IncidentPackData, objects: ReadonlyArray<OperationalObject>): ReadonlyArray<PackObjectField> => [
   packField('triage', 'Triage', factText(data.triage)),
   packField('victims', 'Victims', factText(data.victims.count, String)),
   packField('assigned-capacity', 'Assigned capacity', `${assignedAmbulanceCapacityFor(object, objects)} / ${incidentDemand(data)}`),
@@ -189,7 +189,7 @@ const incidentDetails = (object: OperationalObject, data: IncidentDomainData, ob
   packField('hazards', 'Hazards', factText(data.hazards, listText)),
 ]
 
-const hospitalDetails = (data: HospitalDomainData): ReadonlyArray<PackObjectField> => [
+const hospitalDetails = (data: HospitalPackData): ReadonlyArray<PackObjectField> => [
   packField('trauma-beds', 'Trauma beds', traumaBedsAvailableText(data)),
   packField('ambulance-bays', 'Ambulance bays', factText(data.emergencyDepartment.ambulanceBaysAvailable, String)),
   packField('patients-received', 'Patients received', factText(data.emergencyDepartment.patientsReceived, String)),
@@ -206,8 +206,8 @@ const presentationForAmbulance = (
     icon: 'ambulance',
     color: '#22845d',
     summary: `${object.tasking?.currentTaskId ? `Target: ${targetLabel(object, objects)}` : 'Target: none'} · ${object.operational.status}`,
-    status: data ? ambulanceStatus(object, data, objects) : packStatus('error', 'Invalid ambulance domain data'),
-    fields: data ? ambulanceDetails(object, data, objects) : [packField('error', 'Error', 'Invalid ambulance domain data')],
+    status: data ? ambulanceStatus(object, data, objects) : packStatus('error', 'Invalid ambulance pack data'),
+    fields: data ? ambulanceDetails(object, data, objects) : [packField('error', 'Error', 'Invalid ambulance pack data')],
   }
 }
 
@@ -221,8 +221,8 @@ const presentationForIncident = (
     icon: 'crash',
     color: '#c7352b',
     summary: data ? `victims ${factText(data.victims.count, String)} · triage ${factText(data.triage)}` : object.operational.status,
-    status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident domain data'),
-    fields: data ? incidentDetails(object, data, objects) : [packField('error', 'Error', 'Invalid incident domain data')],
+    status: data ? incidentStatus(object, data, objects) : packStatus('error', 'Invalid incident pack data'),
+    fields: data ? incidentDetails(object, data, objects) : [packField('error', 'Error', 'Invalid incident pack data')],
     muted: object.operational.status === 'resolved',
     noteworthyUpdates: true,
   }
@@ -237,8 +237,8 @@ const presentationForHospital = (object: OperationalObject): PackObjectPresentat
     summary: data
       ? `trauma beds ${traumaBedsAvailableText(data)} available · bays ${factText(data.emergencyDepartment.ambulanceBaysAvailable, String)}`
       : object.operational.status,
-    status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital domain data'),
-    fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital domain data')],
+    status: data ? hospitalStatus(data) : packStatus('error', 'Invalid hospital pack data'),
+    fields: data ? hospitalDetails(data) : [packField('error', 'Error', 'Invalid hospital pack data')],
     noteworthyUpdates: true,
   }
 }
@@ -262,11 +262,10 @@ const assertPointGeometry = (geometry: PackCreationGeometry) => {
 export const ambulancePack: LeitbildPack = {
   id: 'ambulance',
   name: 'Ambulance Dispatch',
-  domain: ambulanceDomainId,
-  simulationProviders: [
-    { id: ambulanceSimProviderId, label: 'Local ambulance simulator', kind: 'local' },
+  runtimes: [
+    { id: ambulanceSimRuntimeId, label: 'Local ambulance simulator', kind: 'local' },
   ],
-  defaultSimulationProviderId: ambulanceSimProviderId,
+  defaultRuntimeId: ambulanceSimRuntimeId,
   wikiRefs: [
     { name: 'Leitbild ambulance wiki', url: 'https://github.com/samsinn-wikis/leitbild-ambulance' },
   ],

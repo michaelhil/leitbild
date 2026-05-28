@@ -11,7 +11,7 @@ import {
   type OperationalObject,
 } from '../../core/model/index.ts'
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
-import type { AmbulanceDomainData, IncidentDomainData } from './model.ts'
+import type { AmbulancePackData, IncidentPackData } from './model.ts'
 import {
   createScenarioAmbulanceObject,
   createScenarioHospitalObject,
@@ -103,7 +103,7 @@ const withAmbulanceState = (
   route: OperationalObject['spatial']['route'],
 ): OperationalObject => {
   if (spec.patientsOnBoard === undefined && spec.targetId === undefined && spec.status === undefined) return object
-  const data = object.domainData as AmbulanceDomainData
+  const data = object.packData as AmbulancePackData
   return {
     ...object,
     revision: object.revision + 1,
@@ -125,13 +125,13 @@ const withAmbulanceState = (
             assignedAt: at,
           },
         }),
-    domainData: {
+    packData: {
       ...data,
       transport: {
         ...data.transport!,
         patientsOnBoard: confirmedFact(spec.patientsOnBoard ?? 0, at, 'scenario', 1),
       },
-    } satisfies AmbulanceDomainData,
+    } satisfies AmbulancePackData,
     timestamps: {
       ...object.timestamps,
       updatedAt: at,
@@ -173,11 +173,11 @@ const withVictimCount = (
   victims: z.infer<typeof victimCountSchema>,
   at: IsoTimestamp,
 ): OperationalObject => {
-  const data = object.domainData as IncidentDomainData
+  const data = object.packData as IncidentPackData
   return {
     ...object,
     revision: object.revision + 1,
-    domainData: {
+    packData: {
       ...data,
       victims: {
         ...data.victims,
@@ -189,7 +189,7 @@ const withVictimCount = (
             ? confirmedFact(victims.count, at, 'scenario', 1)
             : estimatedFact(victims.count, at, 'scenario', 0.84),
       },
-    } satisfies IncidentDomainData,
+    } satisfies IncidentPackData,
     timestamps: {
       ...object.timestamps,
       updatedAt: at,

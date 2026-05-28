@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { SimulationConnectionConfig } from '../../../simulation/protocol.ts'
+import type { PackRuntimeConnectionConfig } from '../../../simulation/protocol.ts'
 import {
   processPlantScheduleConfigSchema,
   processPlantTelemetryConfigSchema,
@@ -7,9 +7,9 @@ import {
   type ProcessPlantProtectionConfig,
 } from '../runtime/index.ts'
 import { resolveProcessPlantIcConfig } from '../specs/index.ts'
-import { processPlantSimProviderId } from './constants.ts'
+import { processPlantSimRuntimeId } from './constants.ts'
 
-export const processPlantProviderSystemConfigSchema = z.object({
+export const processPlantRuntimeSystemConfigSchema = z.object({
   schedule: processPlantScheduleConfigSchema.optional(),
   telemetry: processPlantTelemetryConfigSchema.optional(),
   icRef: z.string().min(1).optional(),
@@ -24,35 +24,35 @@ export const processPlantProviderSystemConfigSchema = z.object({
   }
 })
 
-export const processPlantProviderConfigSchema = z.object({
-  systems: z.record(processPlantProviderSystemConfigSchema).default({}),
+export const processPlantRuntimeConfigSchema = z.object({
+  systems: z.record(processPlantRuntimeSystemConfigSchema).default({}),
 }).strict()
 
-export type ProcessPlantProviderSystemConfig = z.infer<typeof processPlantProviderSystemConfigSchema>
-export type ProcessPlantProviderConfig = z.infer<typeof processPlantProviderConfigSchema>
+export type ProcessPlantRuntimeSystemConfig = z.infer<typeof processPlantRuntimeSystemConfigSchema>
+export type ProcessPlantRuntimeConfig = z.infer<typeof processPlantRuntimeConfigSchema>
 
-export const processPlantProviderConfigFor = (
-  config: SimulationConnectionConfig,
-): ProcessPlantProviderConfig => {
-  const rawConfig = config.scenario?.providerConfigs?.[processPlantSimProviderId] ?? config.scenario?.providerConfig ?? {}
-  return processPlantProviderConfigSchema.parse(rawConfig)
+export const processPlantRuntimeConfigFor = (
+  config: PackRuntimeConnectionConfig,
+): ProcessPlantRuntimeConfig => {
+  const rawConfig = config.scenario?.runtimeConfigs?.[processPlantSimRuntimeId] ?? config.scenario?.runtimeConfig ?? {}
+  return processPlantRuntimeConfigSchema.parse(rawConfig)
 }
 
 export const protectionConfigFor = (
-  systemConfig: ProcessPlantProviderSystemConfig | undefined,
+  systemConfig: ProcessPlantRuntimeSystemConfig | undefined,
 ): ProcessPlantProtectionConfig | undefined => {
   if (systemConfig?.protection !== undefined) return systemConfig.protection
   if (systemConfig?.icRef !== undefined) return resolveProcessPlantIcConfig(systemConfig.icRef)
   return undefined
 }
 
-export const assertProviderConfigMatchesCompiledSystems = (config: {
-  readonly providerConfig: ProcessPlantProviderConfig
+export const assertRuntimeConfigMatchesCompiledSystems = (config: {
+  readonly runtimeConfig: ProcessPlantRuntimeConfig
   readonly systemIds: ReadonlySet<string>
 }): void => {
-  for (const configuredSystemId of Object.keys(config.providerConfig.systems)) {
+  for (const configuredSystemId of Object.keys(config.runtimeConfig.systems)) {
     if (!config.systemIds.has(configuredSystemId)) {
-      throw new Error(`process plant provider config references unknown process system: ${configuredSystemId}`)
+      throw new Error(`process plant runtime config references unknown process system: ${configuredSystemId}`)
     }
   }
 }

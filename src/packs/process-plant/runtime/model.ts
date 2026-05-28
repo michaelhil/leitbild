@@ -1,4 +1,4 @@
-import type { ProcessEquipmentId, ProcessQuantity, ProcessSignalTagId, ProcessUnit, ProcessVariableCapability, ProcessVariableLimits, ProcessVariableValue, VariableDomain, VariableKind, VariablePath } from '../graph/index.ts'
+import type { ProcessEquipmentId, ProcessQuantity, ProcessSignalTagId, ProcessUnit, ProcessVariableCapability, ProcessVariableLimits, ProcessVariableValue, VariableDiscipline, VariableKind, VariablePath } from '../graph/index.ts'
 import type { PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
 import type { ProcessPlantVariableHandle } from './variable-table.ts'
 
@@ -29,7 +29,7 @@ export interface ProcessPlantVariableSnapshot {
   readonly canonicalValue: ProcessPlantValue
   readonly quantity: ProcessQuantity
   readonly unit: ProcessUnit
-  readonly domain: VariableDomain
+  readonly discipline: VariableDiscipline
   readonly kind: VariableKind
   readonly writable: boolean
   readonly published: boolean

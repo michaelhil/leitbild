@@ -6,7 +6,7 @@ Leitbild uses a canonical `OperationalObject` envelope for research/control-cent
 
 GeoJSON-compatible geometry is used inside the spatial model, but GeoJSON is not the full canonical object format.
 
-`domainData` remains the domain-specific operational truth owned and validated by a domain pack.
+`packData` remains the domain-specific operational truth owned and validated by a domain pack.
 
 `context` is optional perspective-bearing awareness: facts, activity, references, and summaries that describe what an asset, operator, system process, or AI perspective knows or remembers.
 
@@ -19,7 +19,7 @@ Leitbild also needs artificial situation awareness for agents and operators. Tha
 ## Consequences
 
 - Map render data is derived from canonical objects.
-- Domain modules validate their own `domainData`.
+- Domain modules validate their own `packData`.
 - Core validates the cross-domain `context` envelope.
 - Coordinate helpers make longitude/latitude order explicit.
 - Agent context views are derived from object state, domain data, context, and mission/task state; they are not persisted as canonical state.

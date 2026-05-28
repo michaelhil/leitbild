@@ -4,7 +4,7 @@
   "title": "Halden ambulance response",
   "description": "A compact Halden scenario for checking scenario switching, routed traffic, hospital capacity, and dispatch basics.",
   "packs": ["ambulance", "traffic", "weather"],
-  "providerOverrides": {},
+  "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
     "mapCenter": [11.3870, 59.1248],
@@ -143,7 +143,7 @@
     }
   ],
   "initialContexts": [],
-  "providerConfigs": {
+  "runtimeConfigs": {
     "ambulance": {},
     "traffic": {},
     "weather": {}

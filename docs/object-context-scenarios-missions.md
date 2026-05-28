@@ -5,7 +5,7 @@ This document defines Leitbild's extended object data model and the first scenar
 ## Goals
 
 - Keep `OperationalObject` as the canonical envelope for map-based control-center work.
-- Keep `domainData` as domain-specific operational truth validated by the active domain pack.
+- Keep `packData` as pack-specific operational truth validated by the active pack.
 - Add `context` as a perspective-bearing awareness layer for assets, operators, system processes, and AI agents.
 - Separate scenario initialization from mission intent, objectives, tasking, and progression.
 - Keep the v1 model JSON-friendly, Zod-validated, and suitable for later LLM-derived views without making LLM prompts canonical state.
@@ -14,7 +14,7 @@ This document defines Leitbild's extended object data model and the first scenar
 
 Leitbild needs objects that are useful to humans, simulators, and AI agents. A hospital, ambulance, drone, ship, robotaxi, or incident all need current operational state, but agents also need a concise representation of what the object knows, has observed, has been told, and may need to remember.
 
-This must not become one untyped blob. Simulation truth, operational domain state, and object perspective have different lifecycles and failure modes:
+This must not become one untyped blob. Simulation truth, operational pack state, and object perspective have different lifecycles and failure modes:
 
 - **Operational truth** must remain replayable, validated, and suitable for UI/map rendering.
 - **Perspective** may be incomplete, stale, uncertain, or actor-specific.
@@ -30,16 +30,16 @@ This must not become one untyped blob. Simulation truth, operational domain stat
 ## Terminology
 
 **Operational Object**:
-The canonical Leitbild object envelope. It contains identity, kind, domain, spatial state, operational state, tasking, telemetry, alerts, provenance, timestamps, optional domain data, and optional context.
+The canonical Leitbild object envelope. It contains identity, kind, pack, spatial state, operational state, tasking, telemetry, alerts, provenance, timestamps, optional pack data, and optional context.
 
-**Domain Data**:
-Domain-specific operational truth for an object. Domain packs own the schema and validation. Examples: ambulance crew/capabilities, incident victims/hazards, hospital emergency capacity.
+**Pack Data**:
+Pack-specific operational truth for an object. Packs own the schema and validation. Examples: ambulance crew/capabilities, incident victims/hazards, hospital emergency capacity.
 
 **Object Context**:
 Perspective-bearing artificial situation awareness attached to an operational object. Context captures what an asset, operator, system, or AI perspective knows, remembers, observed, or was told.
 
 **Scenario Definition**:
-Validated startup definition for a new control instance: world settings, active packs, optional provider overrides/configuration, initial objects, and initial contexts.
+Validated startup definition for a new control instance: world settings, active packs, optional pack runtime overrides/configuration, initial objects, and initial contexts.
 
 **Mission Definition**:
 Operational intent layered on top of a scenario: goals, objectives, tasks, stages, triggers, actions, and evaluation metrics.
@@ -52,24 +52,24 @@ A bounded, derived, LLM-friendly view assembled from object state, context, miss
 
 ## Data Model Boundaries
 
-### `domainData` vs `context`
+### `packData` vs `context`
 
-`domainData` answers: "What is true enough for this domain's operational model?"
+`packData` answers: "What is true enough for this pack's operational model?"
 
 `context` answers: "What does this perspective know or remember about itself and the situation?"
 
 Examples:
 
-- Ambulance `domainData`: ALS capability, crew level, available seats.
+- Ambulance `packData`: ALS capability, crew level, available seats.
 - Ambulance `context`: recent dispatch radio call, last route deviation note, knowledge that Incident 77 may have two victims.
-- Hospital `domainData`: current ambulance bay availability and diversion status.
+- Hospital `packData`: current ambulance bay availability and diversion status.
 - Hospital `context`: note that the ER charge nurse reported a possible capacity reduction five minutes ago.
 
 ### Truth vs Perspective
 
 Leitbild supports both:
 
-- Truth/reference state lives in canonical object fields and pack-validated `domainData`.
+- Truth/reference state lives in canonical object fields and pack-validated `packData`.
 - Perspective-bearing awareness lives in `context`.
 - Every context fact/activity must carry source, perspective, and time.
 
@@ -95,17 +95,17 @@ A scenario initializes the world. It may include:
 
 - metadata: id, title, description, schema version
 - active pack identifiers
-- optional provider overrides keyed by pack id
+- optional pack runtime overrides keyed by pack id
 - world setup: time, map center/viewport, environment values
 - initial objects
 - initial object contexts
-- provider-specific simulator configuration keyed by pack id
+- pack runtime-specific simulator configuration keyed by pack id
 - optional mission id/reference
 - surface definition for initial client UI assembly
 
 Scenarios should be shareable as JSON and validated before use. Scenarios are top-level compositions, not owned by a single pack. Packs are capabilities; scenarios are recipes that choose which capabilities are active.
 
-Built-in scenarios use a compact Scenario Config as the authoring format. The config names active packs and describes pack-specific objects and operations with small JSON objects such as `pack: "ambulance", type: "incident"` or `pack: "traffic", type: "traffic_condition"`. Each pack owns the codec that expands those compact specs into validated `OperationalObject`s and applies pack-specific scenario operations. This keeps scenario files easy to inspect, edit, and generate while keeping domain object construction out of the scenario authoring layer.
+Built-in scenarios use a compact Scenario Config as the authoring format. The config names active packs and describes pack-specific objects and operations with small JSON objects such as `pack: "ambulance", type: "incident"` or `pack: "traffic", type: "traffic_condition"`. Each pack owns the codec that expands those compact specs into validated `OperationalObject`s and applies pack-specific scenario operations. This keeps scenario files easy to inspect, edit, and generate while keeping pack object construction out of the scenario authoring layer.
 
 Scenario Config expansion is deterministic and ordered. Initial objects are expanded in file order, and script actions are expanded in file order, because later objects/actions may legally reference objects created earlier. Do not parallelize scenario expansion across actions unless the spec gains an explicit dependency model.
 
@@ -113,11 +113,11 @@ Traffic condition configs may describe road-segment congestion by two route inte
 
 The expanded `ScenarioDefinition` remains the runtime contract. The Control Instance runtime does not execute JSON directly; it receives a validated definition with full operational objects and declarative script actions.
 
-New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Domain-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
+New control instances start from a validated Scenario Definition. Restored control instances start from persisted snapshots and durable history. Pack-specific seed factories are not a production startup mechanism; if a pack needs helper functions, they must produce full validated `OperationalObject`s inside a Scenario Definition rather than a parallel seed format.
 
-Scenario startup is multi-pack and may become multi-provider. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default simulation provider unless the scenario names an explicit provider override. The Simulation Hub receives the resolved provider ids and passes each provider only the initial objects and config relevant to that provider. This keeps scenario authoring centered on packs while preserving provider boundaries.
+Scenario startup is multi-pack and may become multi-pack runtime. A scenario may activate several packs, for example ambulance plus traffic. The Scenario Catalog resolves each active pack to the pack's default pack runtime unless the scenario names an explicit pack runtime override. The Simulation Hub receives the resolved runtime ids and passes each pack runtime only the initial objects and config relevant to that pack runtime. This keeps scenario authoring centered on packs while preserving pack runtime boundaries.
 
-Simulation providers are responsible for rehydrating provider-private runtime mechanics from canonical objects when they connect. For example, the ambulance provider rebuilds active motion from an ambulance's tasking, position, target object, and route. If an active restored ambulance has tasking but no persisted route, the provider derives the missing route through the same routing adapter used for commands and scenario expansion before starting motion. This does not create a second source of truth: Leitbild's projected object state remains canonical, while the provider rebuilds private runtime state from it.
+Pack runtimes are responsible for rehydrating runtime-private runtime mechanics from canonical objects when they connect. For example, the ambulance pack runtime rebuilds active motion from an ambulance's tasking, position, target object, and route. If an active restored ambulance has tasking but no persisted route, the pack runtime derives the missing route through the same routing adapter used for commands and scenario expansion before starting motion. This does not create a second source of truth: Leitbild's projected object state remains canonical, while the pack runtime rebuilds private runtime state from it.
 
 ## Scenario Surface Definition V1
 
@@ -163,14 +163,14 @@ Each step has an id, optional title, and one or more actions. Supported V1 actio
 
 Compact Scenario Config may author `create_object` and `update_object` actions. These are expansion-time conveniences only: `create_object` becomes `upsert_object`, and `update_object` becomes `upsert_object` after the owning pack applies a declared operation such as `ambulance/set_incident_victims`. The runtime action vocabulary stays small.
 
-Scenario script actions are committed as ordinary ordered Domain Events by the Control Instance runtime. This is deliberate:
+Scenario script actions are committed as ordinary ordered Control Instance events by the Control Instance runtime. This is deliberate:
 
 - clients receive script changes over the same live feed as simulator and operator changes
 - snapshots contain current guidance/highlights and evolved object state
-- simulation providers observe committed object changes through the same provider projection mechanism
+- pack runtimes observe committed object changes through the same pack runtime projection mechanism
 - event ordering stays under Control Instance ownership
 
-Scenario scripts should be used for startup/tutorial flow, timed incidents, delayed fact revelation, and scenario-authored world changes. They should not contain general business logic, loops, arbitrary expressions, or domain rules. Domain mechanics such as ambulance patient loading or hospital admission remain in packs and interaction handlers.
+Scenario scripts should be used for startup/tutorial flow, timed incidents, delayed fact revelation, and scenario-authored world changes. They should not contain general business logic, loops, arbitrary expressions, or pack rules. Pack mechanics such as ambulance patient loading or hospital admission remain in packs and interaction handlers.
 
 Script progress is runtime state, not reusable scenario definition data. A Control Instance snapshot stores the scenario id, current guidance, highlighted object ids, and fired script step ids. This lets restored runtimes avoid refiring completed steps and fire overdue steps after restart.
 
@@ -227,9 +227,9 @@ Mission progress is runtime state, separate from the mission definition. It trac
 
 Keeping progress separate makes mission definitions reusable and makes replay/debugging cleaner.
 
-## Domain Interaction Rules
+## Pack Interaction Rules
 
-Some domain behavior is not a user command and not a generic Leitbild-core concern. Examples include an ambulance loading patients at an incident, a hospital accepting patients, a drone draining battery, or a ship loading cargo.
+Some pack behavior is not a user command and not a generic Leitbild-core concern. Examples include an ambulance loading patients at an incident, a hospital accepting patients, a drone draining battery, or a ship loading cargo.
 
 These behaviors should live inside the relevant pack. Leitbild core should not know ambulance-specific transfer rules, hospital admission rules, drone battery logic, or maritime cargo rules.
 
@@ -237,14 +237,14 @@ V1 rule pattern:
 
 - objects carry data: capabilities, resources, load, capacity, status, context
 - the simulation detects operational conditions such as arrival, proximity, timeout, threshold crossing, or assignment changes
-- domain-local rule functions interpret object data and return explicit object upserts/deletes or other simulation events
-- the simulation instance applies the results and emits ordered `SimulationEvent`s through the adapter
+- pack-local rule functions interpret object data and return explicit object upserts/deletes or other simulation events
+- the simulation instance applies the results and emits ordered `PackRuntimeEvent`s through the adapter
 
 Objects should not contain executable behavior. An ambulance object should not directly mutate an incident, and a hospital object should not directly mutate an ambulance. Instead, the ambulance pack can define deterministic interaction helpers such as "empty ambulance arrived at incident" or "loaded ambulance arrived at hospital".
 
-Any object type can be the source or subject of a domain event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the simulation instance emits the event with provenance that identifies the simulator, object, and cause. This keeps event ordering, replay, persistence, and remote simulator integration coherent.
+Any object type can be the source or subject of a Control Instance event. For example, a hospital can report that no emergency beds are available, or an incident can report updated victim information. The object does not emit directly onto Leitbild's event stream; the simulation instance emits the event with provenance that identifies the simulator, object, and cause. This keeps event ordering, replay, persistence, and remote simulator integration coherent.
 
-Generalization to a core rule engine is deferred until at least two real domain packs need the same abstraction.
+Generalization to a core rule engine is deferred until at least two real packs need the same abstraction.
 
 ## Agent Context View
 
@@ -262,13 +262,13 @@ The view should be bounded. Do not pass entire event logs, entire object graphs,
 
 ## Options Considered
 
-### Put everything into `domainData`
+### Put everything into `packData`
 
-Rejected. Domain data should remain domain operational truth. Mixing perspective and memory into it would make replay, validation, and UI behavior ambiguous.
+Rejected. Pack data should remain pack-owned operational truth. Mixing perspective and memory into it would make replay, validation, and UI behavior ambiguous.
 
-### Rename `domainData` to `domainState`
+### Rename `packData` to `domainState`
 
-Deferred. The name may be clearer eventually, but current code and tests already use `domainData`. Renaming while adding context would make this change larger and riskier.
+Deferred. The name may be clearer eventually, but current code and tests already use `packData`. Renaming while adding context would make this change larger and riskier.
 
 ### Use `SituationModel` as the field name
 
@@ -284,11 +284,11 @@ Rejected for v1. It would be powerful but hard to validate, inspect, and test. L
 
 ## Architectural Rules
 
-- `domainData` and `context` must not be blurred.
+- `packData` and `context` must not be blurred.
 - Context must be structured, not a generic junk drawer.
 - Context is optional; existing snapshots remain valid.
 - Mission definitions are reusable data; mission progress is runtime state.
 - Agent context views are derived and must not become canonical state.
 - Scenario and mission definitions must validate at file/API boundaries before execution.
-- Domain interaction rules live in packs and must produce explicit events or object changes.
+- Pack interaction rules live in packs and must produce explicit events or object changes.
 - Operational objects are data, not active executable actors.
