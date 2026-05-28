@@ -89,6 +89,14 @@ describe('electric-grid reference data sources', () => {
     expect(query).toContain('["power"~"^(line|minor_line|cable|substation|transformer|plant|generator)$"]')
     expect(query).toContain('(58,5,62,12)')
     expect(query).toContain('out body geom')
+    expect(query).not.toContain('relation[')
+  })
+
+  test('rejects Overpass runtime remarks instead of treating timeout bodies as empty datasets', () => {
+    expect(() => normaliseOverpassPowerElements({
+      elements: [],
+      remark: 'runtime error: Query timed out in "query" at line 4 after 181 seconds.',
+    }, 'osm:overpass-power:test')).toThrow('server returned remark')
   })
 
   test('compiles reference features into an auditable node-branch graph', async () => {

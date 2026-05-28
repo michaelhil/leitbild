@@ -65,6 +65,7 @@ const overpassElementSchema = z.object({
 
 const overpassResponseSchema = z.object({
   elements: z.array(overpassElementSchema),
+  remark: z.string().optional(),
 })
 
 type OverpassElement = z.infer<typeof overpassElementSchema>
@@ -193,6 +194,9 @@ export const normaliseOverpassPowerElements = (
   source = 'osm:overpass-power',
 ): ReadonlyArray<NormalizedFeature> => {
   const parsed = overpassResponseSchema.parse(raw)
+  if (parsed.remark) {
+    throw new Error(`overpass-power: server returned remark for ${source} — ${parsed.remark}`)
+  }
   return parsed.elements.flatMap((element): ReadonlyArray<NormalizedFeature> => {
     const category = categoryForPower(String(element.tags.power ?? ''))
     if (category === 'unknown') return []
@@ -218,7 +222,6 @@ export const buildOverpassPowerQuery = (config: {
     '(',
     `node["power"~"^(substation|transformer|plant|generator)$"](${bbox});`,
     `way["power"~"^(line|minor_line|cable|substation|transformer|plant|generator)$"](${bbox});`,
-    `relation["power"~"^(line|minor_line|cable|substation|transformer|plant|generator)$"](${bbox});`,
     ');',
     'out body geom;',
   ].join('\n')

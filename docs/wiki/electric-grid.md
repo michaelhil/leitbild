@@ -91,6 +91,9 @@ GRID_NORWAY_OVERPASS_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
 box while iterating. National extraction can be slow and dependent on public
 Overpass capacity. `GRID_NORWAY_OVERPASS_USER_AGENT` should identify the
 deployment; public Overpass instances may reject anonymous default clients.
+For the current live build, a Southern Norway bbox such as `58.5,5.0,61.5,12.5`
+is a safer public-Overpass extraction than the full national extent; a tiled
+national compiler is the next step before making nationwide rebuilds routine.
 
 **What this makes credible.**
 
