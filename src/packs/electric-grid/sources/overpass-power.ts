@@ -98,13 +98,31 @@ const tagsAsStrings = (tags: Readonly<Record<string, string | number | boolean>>
   Object.fromEntries(Object.entries(tags).map(([key, value]) => [key, String(value)]))
 
 const categoryForPower = (power: string | undefined): GridReferenceCategory => {
-  if (power === 'line' || power === 'minor_line') return 'line'
+  if (power === 'line') return 'line'
   if (power === 'cable') return 'cable'
   if (power === 'substation') return 'substation'
   if (power === 'transformer') return 'transformer'
   if (power === 'plant') return 'plant'
   if (power === 'generator') return 'generator'
   return 'unknown'
+}
+
+const maximumVoltageKv = (values: ReadonlyArray<number>): number | null =>
+  values.length === 0 ? null : Math.max(...values)
+
+const hasTransmissionVoltage = (properties: GridReferenceFeatureProperties): boolean =>
+  (maximumVoltageKv(properties.voltageKv) ?? 0) >= 66
+
+const hasMaterialGeneration = (properties: GridReferenceFeatureProperties): boolean =>
+  (properties.outputMw ?? 0) >= 10 || hasTransmissionVoltage(properties)
+
+const includeReferenceFeature = (properties: GridReferenceFeatureProperties): boolean => {
+  if (properties.category === 'line' || properties.category === 'cable' || properties.category === 'transformer') {
+    return hasTransmissionVoltage(properties)
+  }
+  if (properties.category === 'substation') return hasTransmissionVoltage(properties)
+  if (properties.category === 'plant' || properties.category === 'generator') return hasMaterialGeneration(properties)
+  return false
 }
 
 const assetKindForCategory = (
@@ -207,11 +225,13 @@ export const normaliseOverpassPowerElements = (
     if (category === 'unknown') return []
     const geo = geometryFromElement(element, category)
     if (!geo) return []
+    const properties = buildProperties(element, source, category, geo.geometrySource, geo.confidencePenalty)
+    if (!includeReferenceFeature(properties)) return []
     return [{
       type: 'Feature',
       id: `${source}:${element.type}:${element.id}`,
       geometry: geo.geometry,
-      properties: buildProperties(element, source, category, geo.geometrySource, geo.confidencePenalty),
+      properties,
     }]
   })
 }
@@ -226,7 +246,7 @@ export const buildOverpassPowerQuery = (config: {
     `[out:json][timeout:${timeout}];`,
     '(',
     `node["power"~"^(substation|transformer|plant|generator)$"](${bbox});`,
-    `way["power"~"^(line|minor_line|cable|substation|transformer|plant|generator)$"](${bbox});`,
+    `way["power"~"^(line|cable|substation|transformer|plant|generator)$"](${bbox});`,
     ');',
     'out body geom;',
   ].join('\n')

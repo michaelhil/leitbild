@@ -58,12 +58,7 @@ describe('electric grid pack', () => {
       runtimeId: electricGridRuntimeId,
       runtimeConfig: {},
     })
-    expect(electricGridPack.mapLayerGroups).toContainEqual({
-      id: 'electric-grid:branches',
-      label: 'Simulated grid lines',
-      defaultVisible: true,
-      layerIdPattern: 'operational:grid:*',
-    })
+    expect(electricGridPack.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
     expect(gridObjects.length).toBeGreaterThanOrEqual(20)
     expect(gridObjects.some(object => {

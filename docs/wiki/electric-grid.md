@@ -98,6 +98,10 @@ national compiler is the next step before making nationwide rebuilds routine.
 **What this makes credible.**
 
 - visible line and cable corridors come from a real public map source
+- the map overview filters out low-voltage distribution fragments: line,
+  cable, transformer, and substation features need at least 66 kV, and small
+  generation assets need at least 10 MW unless connected at transmission
+  voltage
 - voltage, frequency, circuits, operator, names, plant source, and output are
   preserved when OSM tags provide them
 - substations and generation sites can be toggled as reference layers

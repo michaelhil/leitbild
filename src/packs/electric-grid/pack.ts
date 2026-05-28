@@ -147,12 +147,6 @@ const commandFor = (kind: string, object: OperationalObject, payload: unknown): 
 
 const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   {
-    id: 'electric-grid:branches',
-    label: 'Simulated grid lines',
-    defaultVisible: true,
-    layerIdPattern: 'operational:grid:*',
-  },
-  {
     id: 'electric-grid:reference-lines',
     label: 'Reference lines',
     defaultVisible: true,

@@ -167,6 +167,11 @@ describe('grid-norway style module', () => {
     expect(gridNorwayStyleModule.pointFor?.('plant')).not.toBeNull()
     expect(gridNorwayStyleModule.labelFor?.('plant')).not.toBeNull()
   })
+
+  test('grid labels do not fall back to raw OSM ids', () => {
+    const label = gridNorwayStyleModule.labelFor?.('substation')
+    expect(label?.layout?.['text-field']).toEqual(['coalesce', ['get', 'name'], ['get', 'operator'], ''])
+  })
 })
 
 describe('style module abstraction', () => {

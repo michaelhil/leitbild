@@ -39,12 +39,11 @@ describe('electric-grid reference data sources', () => {
   test('normalises Overpass power features into provenance-bearing grid reference features', async () => {
     const features = normaliseOverpassPowerElements(await overpassFixture(), 'osm:overpass-power:test')
 
-    expect(features).toHaveLength(4)
+    expect(features).toHaveLength(3)
     for (const feature of features) gridReferenceFeatureSchema.parse(feature.properties)
     expect(features.map(feature => feature.properties.category).sort()).toEqual([
       'line',
       'plant',
-      'substation',
       'substation',
     ])
     expect(features[0]?.geometry.type).toBe('LineString')
@@ -70,13 +69,7 @@ describe('electric-grid reference data sources', () => {
       plantSource: 'hydro',
       outputMw: 120,
     })
-    expect(features[3]?.geometry.type).toBe('Point')
-    expect(features[3]?.properties).toMatchObject({
-      category: 'substation',
-      geometrySource: 'bounds-centroid',
-      confidence: 'low',
-      propertyProvenance: 'unknown',
-    })
+    expect(features.some(feature => feature.id === 'osm:overpass-power:test:relation:4001')).toBe(false)
   })
 
   test('builds a bounded Overpass query for power-network extraction', () => {
@@ -86,9 +79,10 @@ describe('electric-grid reference data sources', () => {
     })
 
     expect(query).toContain('[out:json][timeout:120]')
-    expect(query).toContain('["power"~"^(line|minor_line|cable|substation|transformer|plant|generator)$"]')
+    expect(query).toContain('["power"~"^(line|cable|substation|transformer|plant|generator)$"]')
     expect(query).toContain('(58,5,62,12)')
     expect(query).toContain('out body geom')
+    expect(query).not.toContain('minor_line')
     expect(query).not.toContain('relation[')
   })
 
@@ -106,6 +100,7 @@ describe('electric-grid reference data sources', () => {
         id: 1,
         tags: {
           power: 'line',
+          voltage: '132000',
           frequency: '0',
           circuits: '0',
           cables: '0',
@@ -122,11 +117,47 @@ describe('electric-grid reference data sources', () => {
     expect(feature?.properties.cables).toBeNull()
   })
 
+  test('filters distribution fragments out of the reference overview layer', () => {
+    const features = normaliseOverpassPowerElements({
+      elements: [
+        {
+          type: 'way',
+          id: 1,
+          tags: { power: 'minor_line', voltage: '22000' },
+          geometry: [
+            { lat: 59, lon: 10 },
+            { lat: 59.1, lon: 10.1 },
+          ],
+        },
+        {
+          type: 'way',
+          id: 2,
+          tags: { power: 'line', voltage: '22000' },
+          geometry: [
+            { lat: 59, lon: 10 },
+            { lat: 59.1, lon: 10.1 },
+          ],
+        },
+        {
+          type: 'way',
+          id: 3,
+          tags: { power: 'line', voltage: '132000' },
+          geometry: [
+            { lat: 59, lon: 10 },
+            { lat: 59.1, lon: 10.1 },
+          ],
+        },
+      ],
+    }, 'osm:overpass-power:test')
+
+    expect(features.map(feature => feature.properties.externalId)).toEqual(['way/3'])
+  })
+
   test('compiles reference features into an auditable node-branch graph', async () => {
     const features = normaliseOverpassPowerElements(await overpassFixture(), 'osm:overpass-power:test')
     const graph = compileGridReferenceGraph(features, { maxEndpointDistanceKm: 20 })
 
-    expect(graph.nodes.length).toBe(3)
+    expect(graph.nodes.length).toBe(2)
     expect(graph.branches.length).toBe(1)
     expect(graph.branches[0]).toMatchObject({
       category: 'line',
@@ -136,13 +167,13 @@ describe('electric-grid reference data sources', () => {
     })
     expect(graph.branches[0]?.lengthKm).toBeGreaterThan(20)
     expect(graph.audit).toMatchObject({
-      nodeCount: 3,
+      nodeCount: 2,
       branchCount: 1,
       unresolvedBranchEndpointCount: 0,
-      lowConfidenceFeatureCount: 1,
-      voltageMissingCount: 2,
+      lowConfidenceFeatureCount: 0,
+      voltageMissingCount: 1,
     })
-    expect(graph.audit.warnings.some(warning => warning.includes('low confidence'))).toBe(true)
+    expect(graph.audit.warnings.some(warning => warning.includes('no voltage tag'))).toBe(true)
   })
 
   test('builds the grid-norway reference dataset through the shared pipeline', async () => {
@@ -152,7 +183,7 @@ describe('electric-grid reference data sources', () => {
       bbox: { south: 58, west: 5, north: 62, east: 12 },
       overpassFetchFn: fixtureFetcher(body),
       thresholds: {
-        nodes: 3,
+        nodes: 2,
         branches: 1,
         maxUnresolvedEndpointFraction: 1,
       },
@@ -166,8 +197,8 @@ describe('electric-grid reference data sources', () => {
       readonly licences: ReadonlyArray<{ readonly id: string }>
     }
 
-    expect(outcome.featureCount).toBe(4)
-    expect(sidecar.features).toHaveLength(4)
+    expect(outcome.featureCount).toBe(3)
+    expect(sidecar.features).toHaveLength(3)
     expect(manifest.datasetId).toBe('grid-norway')
     expect(manifest.sources.map(source => source.id)).toEqual(['osm:overpass-power:NO'])
     expect(manifest.licences.map(licence => licence.id)).toEqual(['osm-odbl-1.0'])

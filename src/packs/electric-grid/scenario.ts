@@ -326,7 +326,7 @@ export const electricGridScenarioSupport: PackScenarioSupport = {
       at: context.at,
       data,
       spatial: spec.type === 'branch' ? lineSpatial(spec.path) : pointSpatial(spec.position, context.at),
-      kind: spec.type === 'branch' ? 'zone' : 'facility',
+      kind: 'facility',
     })
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {

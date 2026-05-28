@@ -75,7 +75,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
     if (category === 'line' || category === 'cable' || category === 'unknown') return null
     return {
       layout: {
-        'text-field': ['coalesce', ['get', 'name'], ['get', 'externalId']],
+        'text-field': ['coalesce', ['get', 'name'], ['get', 'operator'], ''],
         'text-size': 11,
         'text-offset': [0, 1.15],
         'text-anchor': 'top',
