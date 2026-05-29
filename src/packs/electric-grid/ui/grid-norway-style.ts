@@ -202,6 +202,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
             voltageTextExpression,
             '',
           ],
+          'text-font': ['Noto Sans Regular'],
           'text-size': ['interpolate', ['linear'], ['zoom'], 8, 9, 13, 11],
           'text-allow-overlap': false,
           'text-optional': true,
@@ -220,6 +221,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
     return {
       layout: {
         'text-field': textField,
+        'text-font': ['Noto Sans Regular'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 13, 11.5],
         'text-offset': [0, 1.15],
         'text-anchor': 'top',

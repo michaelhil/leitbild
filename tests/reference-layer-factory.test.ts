@@ -152,6 +152,10 @@ describe('aero-norway style module', () => {
     expect(aeroNorwayStyleModule.labelFor?.('airport')).not.toBeNull()
   })
 
+  test('airport labels use the self-hosted glyph stack', () => {
+    expect(aeroNorwayStyleModule.labelFor?.('airport')?.layout['text-font']).toEqual(['Noto Sans Regular'])
+  })
+
   test('unknown category produces a fallback paint (no throw)', () => {
     const paint = aeroNorwayStyleModule.fillFor('something-future-airac-introduces')
     expect(paint['fill-color']).toBeDefined()
@@ -181,6 +185,7 @@ describe('grid-norway style module', () => {
       ['get', 'name'],
       '',
     ])
+    expect(label?.layout?.['text-font']).toEqual(['Noto Sans Regular'])
   })
 
   test('grid opacity expressions avoid nested zoom syntax rejected by MapLibre', () => {

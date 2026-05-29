@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, ObjectId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, IsoTimestamp, ObjectId } from '../src/core/model/index.ts'
 import { nowIso } from '../src/core/model/index.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { gridDerateBranchCommandKind, gridTripGeneratorCommandKind } from '../src/packs/electric-grid/commands.ts'
-import { electricGridPackDataSchema, type ElectricGridPackData, type GridBranchData, type GridGeneratorData, type GridSystemData } from '../src/packs/electric-grid/model.ts'
+import { electricGridPackDataSchema, type ElectricGridPackData, type GridBranchData, type GridGeneratorData, type GridLoadData, type GridSystemData } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { solveGrid } from '../src/packs/electric-grid/runtime/solver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
@@ -118,6 +119,38 @@ describe('electric grid pack', () => {
     } finally {
       await connection.close()
     }
+  })
+
+  test('applies deterministic operating demand profiles without drifting load baselines', () => {
+    const scenario = gridScenario()
+    const first = solveGrid({
+      objects: scenario.initialObjects,
+      runtimeState: null,
+      dtSeconds: 1,
+      at: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
+    })
+    const second = solveGrid({
+      objects: first.objects,
+      runtimeState: first.runtimeState,
+      dtSeconds: 90,
+      at: '2026-01-01T10:01:30.000Z' as IsoTimestamp,
+    })
+    const firstLoad = first.objects
+      .flatMap(object => {
+        const parsed = electricGridPackDataSchema.safeParse(object.packData)
+        return parsed.success ? [parsed.data] : []
+      })
+      .find(data => data.type === 'grid_load') as GridLoadData | undefined
+    const secondLoad = second.objects
+      .flatMap(object => {
+        const parsed = electricGridPackDataSchema.safeParse(object.packData)
+        return parsed.success ? [parsed.data] : []
+      })
+      .find(data => data.type === 'grid_load') as GridLoadData | undefined
+
+    expect(firstLoad?.nominalDemandMw).toBeGreaterThan(0)
+    expect(secondLoad?.nominalDemandMw).toBe(firstLoad?.nominalDemandMw)
+    expect(Math.abs(second.summary.totalLoadMw - first.summary.totalLoadMw)).toBeGreaterThan(1)
   })
 
   test('accepts operational commands and exposes query snapshots', async () => {

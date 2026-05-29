@@ -6,6 +6,7 @@ import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
   currentPmtilesResponse,
+  mapGlyphResponse,
   mapCapabilitiesResponse,
   mapStyleResponse,
   type MapArtifactConfig,
@@ -181,6 +182,10 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse())
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
       if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
+      if (url.pathname.startsWith('/map/fonts/')) {
+        const glyphResponse = await mapGlyphResponse(url, mapArtifacts)
+        if (glyphResponse) return secure(glyphResponse)
+      }
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, {
         registry: config.registry,

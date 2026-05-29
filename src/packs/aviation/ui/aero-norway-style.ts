@@ -99,6 +99,7 @@ export const aeroNorwayStyleModule: DatasetStyleModule = {
     return {
       layout: {
         'text-field': ['coalesce', ['get', 'icao'], ['get', 'name']],
+        'text-font': ['Noto Sans Regular'],
         'text-size': 11,
         'text-offset': [0, 1.2],
         'text-anchor': 'top',

@@ -7,7 +7,7 @@ import {
   findBaseTileset,
   mapCapabilityManifestSchema,
 } from '../src/map/capabilities.ts'
-import { currentPmtilesResponse } from '../src/map/artifacts.ts'
+import { currentPmtilesResponse, mapGlyphResponse } from '../src/map/artifacts.ts'
 import { createLeitbildMapStyle } from '../src/map/style.ts'
 
 describe('vector map artifacts', () => {
@@ -61,5 +61,23 @@ describe('vector map artifacts', () => {
     })
     expect(missingResponse.status).toBe(503)
     expect(await missingResponse.json()).toMatchObject({ ok: false, error: 'vector map artifact unavailable' })
+  })
+
+  test('glyph serving honors the self-hosted map font contract', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
+    const glyphDir = join(rootDir, 'fonts', 'Noto Sans Regular')
+    await mkdir(glyphDir, { recursive: true })
+    await Bun.write(join(glyphDir, '0-255.pbf'), 'glyph-bytes')
+
+    const served = await mapGlyphResponse(new URL('http://localhost/map/fonts/Noto%20Sans%20Regular/0-255.pbf'), { rootDir })
+    expect(served?.status).toBe(200)
+    expect(served?.headers.get('content-type')).toBe('application/x-protobuf')
+    expect(await served?.text()).toBe('glyph-bytes')
+
+    const missing = await mapGlyphResponse(new URL('http://localhost/map/fonts/Noto%20Sans%20Regular/256-511.pbf'), { rootDir })
+    expect(missing?.status).toBe(404)
+
+    const invalidRange = await mapGlyphResponse(new URL('http://localhost/map/fonts/Noto%20Sans%20Regular/0-255.txt'), { rootDir })
+    expect(invalidRange?.status).toBe(400)
   })
 })

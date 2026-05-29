@@ -122,28 +122,49 @@ const applyCommandToObject = (
   }
   if (command.kind === gridShedLoadCommandKind && data.data.type === 'grid_load') {
     const payload = shedLoadSchema.parse(command.payload)
-    const shedMw = Math.min(data.data.interruptibleMw, payload.shedMw)
+    const nominalDemandMw = data.data.nominalDemandMw ?? data.data.demandMw
+    const shedMw = Math.min(data.data.nominalInterruptibleMw ?? data.data.interruptibleMw, payload.shedMw)
+    const nextNominalDemandMw = Math.max(data.data.criticalMw, nominalDemandMw - shedMw)
     return updatedWithPackData(object, {
       ...data.data,
-      demandMw: Math.max(data.data.criticalMw, data.data.demandMw - shedMw),
-      servedMw: Math.max(data.data.criticalMw, data.data.demandMw - shedMw),
+      nominalDemandMw: nextNominalDemandMw,
+      demandMw: nextNominalDemandMw,
+      servedMw: nextNominalDemandMw,
       shedMw,
       serviceState: shedMw > 0 ? 'shed' : data.data.serviceState,
     }, at)
   }
   if (command.kind === gridRestoreLoadCommandKind && data.data.type === 'grid_load') {
-    return updatedWithPackData(object, { ...data.data, demandMw: data.data.criticalMw + data.data.interruptibleMw, shedMw: 0, serviceState: 'normal' }, at)
+    const restoredDemandMw = data.data.criticalMw + (data.data.nominalInterruptibleMw ?? data.data.interruptibleMw)
+    return updatedWithPackData(object, {
+      ...data.data,
+      nominalDemandMw: restoredDemandMw,
+      demandMw: restoredDemandMw,
+      shedMw: 0,
+      serviceState: 'normal',
+    }, at)
   }
   if (command.kind === gridSetEvChargingPolicyCommandKind && data.data.type === 'grid_load' && data.data.loadKind === 'ev_charging') {
     const payload = evPolicySchema.parse(command.payload)
     return updatedWithPackData(object, {
       ...data.data,
+      nominalDemandMw: payload.demandMw,
+      nominalInterruptibleMw: Math.max(0, payload.demandMw - data.data.criticalMw),
       demandMw: payload.demandMw,
       interruptibleMw: Math.max(0, payload.demandMw - data.data.criticalMw),
       servedMw: Math.min(payload.demandMw, data.data.servedMw),
     }, at)
   }
   return null
+}
+
+const currentSimulationTime = (clock: SimulationClockState | null): IsoTimestamp => {
+  if (!clock) return nowIso()
+  if (clock.paused) return clock.currentTime
+  const currentTimeMs = Date.parse(clock.currentTime)
+  const updatedAtMs = Date.parse(clock.updatedAt)
+  if (!Number.isFinite(currentTimeMs) || !Number.isFinite(updatedAtMs)) return nowIso()
+  return new Date(currentTimeMs + Math.max(0, Date.now() - updatedAtMs) * clock.speed).toISOString() as IsoTimestamp
 }
 
 export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter => ({
@@ -167,7 +188,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       persistence: PackRuntimeEventPersistence = 'projected',
     ): void => {
       if (closed || clock?.paused) return
-      const at = nowIso()
+      const at = currentSimulationTime(clock)
       const solved = solveGrid({ objects: [...objects.values()], runtimeState, dtSeconds, at })
       runtimeState = solved.runtimeState
       const events: PackRuntimeEvent[] = []

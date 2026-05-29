@@ -1,5 +1,5 @@
 import { lstat, readlink, stat } from 'node:fs/promises'
-import { basename, resolve } from 'node:path'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { createBaseTileset, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
@@ -34,8 +34,10 @@ export interface MapArtifactStatus {
 }
 
 const pmtilesContentType = 'application/vnd.pmtiles'
+const glyphContentType = 'application/x-protobuf'
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
+const mapFontPathPrefix = '/map/fonts/'
 
 export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
   rootDir: resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps'),
@@ -46,6 +48,11 @@ export const currentPmtilesPath = (config: MapArtifactConfig): string =>
 
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
+
+const isWithin = (rootPath: string, candidatePath: string): boolean => {
+  const relativePath = relative(rootPath, candidatePath)
+  return relativePath.length > 0 && !relativePath.startsWith('..') && !isAbsolute(relativePath)
+}
 
 export const mapCapabilitiesResponse = async (): Promise<Response> => {
   const manifest = await loadMapCapabilityManifest({ referenceRoot: referenceRootFromEnv() })
@@ -165,4 +172,42 @@ export const currentPmtilesResponse = async (req: Request, config: MapArtifactCo
   headers.set('Content-Range', `bytes ${range.start}-${range.end}/${info.size}`)
   headers.set('Content-Length', String(range.end - range.start + 1))
   return new Response(file.slice(range.start, range.end + 1), { status: 206, headers })
+}
+
+export const mapGlyphResponse = async (url: URL, config: MapArtifactConfig): Promise<Response | null> => {
+  if (!url.pathname.startsWith(mapFontPathPrefix)) return null
+
+  const encodedPath = url.pathname.slice(mapFontPathPrefix.length)
+  const separatorIndex = encodedPath.lastIndexOf('/')
+  if (separatorIndex <= 0 || separatorIndex === encodedPath.length - 1) {
+    return Response.json({ ok: false, error: 'invalid map glyph path' }, { status: 400 })
+  }
+
+  const fontStack = decodeURIComponent(encodedPath.slice(0, separatorIndex))
+  const rangeFile = decodeURIComponent(encodedPath.slice(separatorIndex + 1))
+  if (!/^\d+-\d+\.pbf$/.test(rangeFile)) {
+    return Response.json({ ok: false, error: 'invalid map glyph range' }, { status: 400 })
+  }
+
+  const fontsRoot = resolve(config.rootDir, 'fonts')
+  const filePath = resolve(fontsRoot, fontStack, rangeFile)
+  if (!isWithin(fontsRoot, filePath)) {
+    return Response.json({ ok: false, error: 'invalid map glyph path' }, { status: 400 })
+  }
+
+  const file = Bun.file(filePath)
+  if (!await file.exists()) {
+    return Response.json({
+      ok: false,
+      error: 'map glyph unavailable',
+      expectedPath: filePath,
+    }, { status: 404 })
+  }
+
+  return new Response(file, {
+    headers: {
+      'Content-Type': glyphContentType,
+      'Cache-Control': 'public, max-age=86400',
+    },
+  })
 }

@@ -51,6 +51,74 @@ const ramp = (current: number, target: number, maxDelta: number): number => {
   return Math.max(target, current - maxDelta)
 }
 
+const secondsFromIso = (timestamp: IsoTimestamp): number => {
+  const ms = Date.parse(timestamp)
+  return Number.isFinite(ms) ? ms / 1000 : 0
+}
+
+const stableUnitFor = (value: string): number => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0) / 0xffffffff
+}
+
+const loadDailyFactor = (load: GridLoadData, hour: number): number => {
+  const phase = 2 * Math.PI * hour / 24
+  if (load.loadKind === 'residential') {
+    return 1.0
+      + 0.055 * Math.sin(phase - 0.6)
+      + 0.050 * Math.sin(2 * phase - 2.2)
+  }
+  if (load.loadKind === 'commercial' || load.loadKind === 'airport') {
+    return 0.98
+      + 0.080 * Math.sin(phase - 1.35)
+      + 0.025 * Math.sin(2 * phase - 1.8)
+  }
+  if (load.loadKind === 'ev_charging') {
+    return 0.96
+      + 0.105 * Math.sin(phase - 2.35)
+      + 0.035 * Math.sin(2 * phase - 2.9)
+  }
+  if (load.loadKind === 'industry' || load.loadKind === 'data_center' || load.loadKind === 'process_plant') {
+    return 1.0 + 0.018 * Math.sin(phase - 0.9)
+  }
+  if (load.loadKind === 'hospital') {
+    return 1.0 + 0.010 * Math.sin(phase - 0.4)
+  }
+  return 1
+}
+
+const profiledLoad = (
+  objectId: string,
+  load: GridLoadData,
+  at: IsoTimestamp,
+): GridLoadData => {
+  const seconds = secondsFromIso(at)
+  const secondsOfDay = ((seconds % 86400) + 86400) % 86400
+  const hour = secondsOfDay / 3600
+  const seed = stableUnitFor(`${objectId}:${load.loadKind}`)
+  const fastFactor = 0.012 * Math.sin(seconds / (41 + seed * 23) + seed * Math.PI * 2)
+    + 0.006 * Math.sin(seconds / (113 + seed * 31) + seed * Math.PI * 5)
+  const nominalDemandMw = load.nominalDemandMw ?? load.demandMw
+  const nominalInterruptibleMw = load.nominalInterruptibleMw ?? load.interruptibleMw
+  const nominalReactiveDemandMvar = load.nominalReactiveDemandMvar ?? load.reactiveDemandMvar
+  const demandMw = Math.max(load.criticalMw, nominalDemandMw * clamp(loadDailyFactor(load, hour) + fastFactor, 0.78, 1.22))
+  const nominalInterruptibleShare = nominalDemandMw <= 0 ? 0 : nominalInterruptibleMw / nominalDemandMw
+  const nominalReactiveShare = nominalDemandMw <= 0 ? 0 : nominalReactiveDemandMvar / nominalDemandMw
+  return {
+    ...load,
+    nominalDemandMw,
+    nominalInterruptibleMw,
+    nominalReactiveDemandMvar,
+    demandMw,
+    interruptibleMw: Math.max(0, Math.min(demandMw - load.criticalMw, demandMw * nominalInterruptibleShare)),
+    reactiveDemandMvar: Math.max(0, demandMw * nominalReactiveShare),
+  }
+}
+
 const solveLinear = (
   matrix: number[][],
   rhs: number[],
@@ -312,7 +380,7 @@ export const solveGrid = (config: {
   const buses = busIdsFor(parsed)
   const branches = parsed.flatMap(item => item.data.type === 'grid_branch' ? [item.data] : [])
   const generators = parsed.flatMap(item => item.data.type === 'grid_generator' ? [item.data] : [])
-  const loads = parsed.flatMap(item => item.data.type === 'grid_load' ? [item.data] : [])
+  const loads = parsed.flatMap(item => item.data.type === 'grid_load' ? [profiledLoad(item.object.id, item.data, config.at)] : [])
   const storage = parsed.flatMap(item => item.data.type === 'grid_storage' ? [item.data] : [])
   const islands = islandsFor(buses, branches)
   const availableReserveMw = generators.reduce((sum, generator) => sum + generator.reserveMw, 0)
