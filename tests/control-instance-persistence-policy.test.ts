@@ -172,6 +172,7 @@ describe('control instance persistence policy', () => {
       object: assignedObject,
       at: nowIso(),
       provenance: assignedObject.provenance,
+      persistence: 'durable',
     }])
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
@@ -251,6 +252,7 @@ describe('control instance persistence policy', () => {
       object: packTruthUpdate,
       at: nowIso(),
       provenance: packTruthUpdate.provenance,
+      persistence: 'durable',
     }])
     await waitFor(
       async () => (await readEventLog(eventLogPath)).length === 1,
@@ -262,7 +264,7 @@ describe('control instance persistence policy', () => {
     await runtime.close()
   })
 
-  test('honors explicit projected runtime events even when object meaning changes', async () => {
+  test('defaults runtime object upserts to projected even when object meaning changes', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
     const eventLogPath = join(dataDir, 'events.jsonl')
     const initialObject = makeObject({
@@ -297,7 +299,6 @@ describe('control instance persistence policy', () => {
       object: projectedObject,
       at: nowIso(),
       provenance: projectedObject.provenance,
-      persistence: 'projected',
     }])
     await waitFor(
       async () => runtime.snapshot().objects.find(object => object.id === objectId)?.revision === projectedObject.revision,

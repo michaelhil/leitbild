@@ -256,8 +256,13 @@ export const createControlInstanceRuntime = async (config: {
   const persistenceForPackRuntimeEvent = (
     event: PackRuntimeEvent,
   ): ControlInstanceEventPersistenceDisposition | undefined => {
-    if (event.persistence === undefined) return undefined
-    return event.persistence
+    if (event.persistence !== undefined) return event.persistence
+    if (
+      event.type === 'object.upserted'
+      || event.type === 'object.deleted'
+      || event.type === 'telemetry.sampled'
+    ) return 'projected'
+    return undefined
   }
 
   const controlInstanceEventFromInteractionEffect = (
