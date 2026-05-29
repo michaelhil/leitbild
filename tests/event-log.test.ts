@@ -38,6 +38,22 @@ describe('JSONL event log', () => {
 
     expect((await eventLog.readAll()).map(event => event.seq)).toEqual([1, 2, 3])
     expect((await eventLog.readAfter(1)).map(event => event.seq)).toEqual([2, 3])
+    expect((await eventLog.readLast())?.seq).toBe(3)
+    expect(await eventLog.readLastSeq()).toBe(3)
+    expect(await eventLog.sizeBytes()).toBeGreaterThan(0)
+  })
+
+  test('reads the last event without loading the whole journal', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-event-log-test-'))
+    const path = join(dataDir, 'events.jsonl')
+    const eventLog = createJsonlEventLog(path)
+
+    await eventLog.appendMany([makeEvent(1), makeEvent(2)])
+
+    const recreated = createJsonlEventLog(path)
+    await recreated.appendMany([makeEvent(3)])
+
+    expect((await recreated.readAll()).map(event => event.seq)).toEqual([1, 2, 3])
   })
 
   test('rejects an out-of-order append batch without writing it', async () => {

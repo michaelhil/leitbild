@@ -261,4 +261,52 @@ describe('control instance persistence policy', () => {
     expect(await readEventLog(eventLogPath)).toHaveLength(1)
     await runtime.close()
   })
+
+  test('honors explicit projected runtime events even when object meaning changes', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const eventLogPath = join(dataDir, 'events.jsonl')
+    const initialObject = makeObject({
+      packData: {
+        type: 'test-system',
+        schemaVersion: 1,
+        frequencyHz: 50,
+      },
+    })
+    const runtimeConnection = createControlledRuntimeConnection(initialObject)
+    const runtime = await createControlInstanceRuntime({
+      id: controlInstanceId,
+      runtimeConnection: runtimeConnection.connection,
+      eventLog: createJsonlEventLog(eventLogPath),
+      snapshotStore: createControlInstanceSnapshotStore({
+        controlInstanceId,
+        path: join(dataDir, 'snapshot.json'),
+      }),
+    })
+
+    const projectedObject = makeObject({
+      status: 'constrained',
+      revision: 1,
+      packData: {
+        type: 'test-system',
+        schemaVersion: 1,
+        frequencyHz: 49.82,
+      },
+    })
+    runtimeConnection.emit([{
+      type: 'object.upserted',
+      object: projectedObject,
+      at: nowIso(),
+      provenance: projectedObject.provenance,
+      persistence: 'projected',
+    }])
+    await waitFor(
+      async () => runtime.snapshot().objects.find(object => object.id === objectId)?.revision === projectedObject.revision,
+      'explicit projected runtime update',
+    )
+
+    expect(runtime.snapshot().objects.find(object => object.id === objectId)?.operational.status).toBe('constrained')
+    expect(runtime.events()).toHaveLength(0)
+    expect(await readEventLog(eventLogPath)).toHaveLength(0)
+    await runtime.close()
+  })
 })

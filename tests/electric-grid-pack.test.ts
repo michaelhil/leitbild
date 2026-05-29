@@ -9,6 +9,7 @@ import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { scenarios } from '../src/scenarios/index.ts'
+import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
 
 const controlInstanceId = 'control-instance:electric-grid-test' as ControlInstanceId
 const actorId = 'actor:electric-grid-test' as ActorId
@@ -183,6 +184,48 @@ describe('electric grid pack', () => {
           },
         })
       }
+    } finally {
+      await connection.close()
+    }
+  })
+
+  test('keeps solver projections projected while persisting command mutations', async () => {
+    const scenario = gridScenario()
+    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: {
+        scenarioId: scenario.id,
+        runtimeIds: [electricGridRuntimeId],
+        world: scenario.world,
+        initialObjects: scenario.initialObjects,
+        runtimeConfigs: {},
+        runtimeConfig: {},
+      },
+    })
+
+    try {
+      const emitted: ReadonlyArray<PackRuntimeEvent>[] = []
+      const unsubscribe = connection.subscribe(emission => {
+        emitted.push(emission.events)
+      })
+      const snapshot = await connection.getSnapshot()
+      const generator = snapshot.objects.find(object => {
+        const parsed = electricGridPackDataSchema.safeParse(object.packData)
+        return parsed.success && parsed.data.type === 'grid_generator'
+      })
+      if (!generator) throw new Error('missing command target')
+
+      const trip = await connection.sendCommand(command({
+        kind: gridTripGeneratorCommandKind,
+        targetObjectIds: [generator.id],
+        payload: {},
+      }))
+      unsubscribe()
+
+      expect(trip.ok).toBe(true)
+      const objectEvents = emitted.flat().filter(event => event.type === 'object.upserted')
+      expect(objectEvents.some(event => event.persistence === 'durable')).toBe(true)
+      expect(objectEvents.some(event => event.persistence === 'projected')).toBe(true)
     } finally {
       await connection.close()
     }

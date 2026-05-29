@@ -18,6 +18,8 @@ import type { ControlInstanceCapabilities } from './runtime.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
 import type { ControlInstanceEvent } from '../model/index.ts'
 
+const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
+
 export interface ControlInstanceSummary {
   readonly id: ControlInstanceId
   readonly scenarioId: string | null
@@ -106,6 +108,13 @@ export const createControlInstanceRegistry = (config: {
     }
   }
 
+  const validateRestoredEventTail = (id: ControlInstanceId, event: ControlInstanceEvent | null): void => {
+    if (event === null) return
+    if (event.controlInstanceId !== id) {
+      throw new Error(`event log control instance mismatch: expected ${id}, got ${event.controlInstanceId}`)
+    }
+  }
+
   const isUnreadableSnapshotError = (err: unknown): boolean =>
     err instanceof SyntaxError || err instanceof ZodError
 
@@ -155,6 +164,7 @@ export const createControlInstanceRegistry = (config: {
       restoredSnapshot = null
     }
     let restoredEvents: ReadonlyArray<ControlInstanceEvent> = []
+    let maxEventSeq = 0
     if (
       restoredSnapshot
       && createConfig?.scenarioId !== undefined
@@ -163,10 +173,18 @@ export const createControlInstanceRegistry = (config: {
       await rm(instanceDir, { recursive: true, force: true })
       restoredSnapshot = null
     } else {
-      restoredEvents = await eventLog.readAll()
-      validateRestoredEvents(id, restoredEvents)
+      const eventLogBytes = await eventLog.sizeBytes()
+      if (eventLogBytes <= maxRestoredEventHistoryBytes) {
+        restoredEvents = await eventLog.readAll()
+        validateRestoredEvents(id, restoredEvents)
+        maxEventSeq = restoredEvents.at(-1)?.seq ?? 0
+      } else {
+        const lastEvent = await eventLog.readLast()
+        validateRestoredEventTail(id, lastEvent)
+        maxEventSeq = lastEvent?.seq ?? 0
+        console.warn(`control instance ${id} has a ${eventLogBytes} byte durable event log; restoring current state from snapshot without preloading full event history`)
+      }
     }
-    const maxEventSeq = restoredEvents.at(-1)?.seq ?? 0
     if (restoredSnapshot && restoredSnapshot.seq < maxEventSeq) {
       throw new Error(`snapshot sequence ${restoredSnapshot.seq} is behind event log sequence ${maxEventSeq} for ${id}`)
     }
@@ -201,7 +219,7 @@ export const createControlInstanceRegistry = (config: {
       ...(config.interactionHandlers ? { interactionHandlers: config.interactionHandlers } : {}),
       ...(restoredSnapshot ? { restoredSnapshot } : {}),
       ...(restoredEvents.length === 0 ? {} : { restoredEvents }),
-      ...(createConfig?.initialSeq === undefined ? {} : { initialSeq: createConfig.initialSeq }),
+      ...(createConfig?.initialSeq === undefined && maxEventSeq === 0 ? {} : { initialSeq: Math.max(createConfig.initialSeq ?? 0, maxEventSeq) }),
       ...(scenarioRuntime === undefined
         ? {}
         : {

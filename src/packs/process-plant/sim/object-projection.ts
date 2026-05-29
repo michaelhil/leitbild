@@ -53,6 +53,7 @@ export const processPlantProjectionEvents = (config: {
       object: next,
       at: config.at,
       provenance: config.provenance,
+      persistence: 'projected',
     })
   }
   return events

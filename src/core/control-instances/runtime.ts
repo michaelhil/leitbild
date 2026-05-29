@@ -7,7 +7,7 @@ import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
-import { persistenceDispositionFor } from './persistence-policy.ts'
+import { persistenceDispositionFor, type ControlInstanceEventPersistenceDisposition } from './persistence-policy.ts'
 import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScriptRunner } from './scenario-runner.ts'
 
 export interface ControlInstanceEventNotification {
@@ -101,13 +101,17 @@ export const createControlInstanceRuntime = async (config: {
     return currentTimeMs
   }
 
-  const publishManyNow = async (controlInstanceEvents: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
+  const publishManyNow = async (
+    controlInstanceEvents: ReadonlyArray<ControlInstanceEvent>,
+    options?: { readonly persistence?: ControlInstanceEventPersistenceDisposition },
+  ): Promise<void> => {
     if (controlInstanceEvents.length === 0) return
     const eventsToPersist: ControlInstanceEvent[] = []
     for (const event of controlInstanceEvents) {
       const previousObject = event.type === 'object.upserted' ? state.getObject(event.object.id) : undefined
       state.apply(event)
-      if (persistenceDispositionFor(event, previousObject) === 'durable') {
+      const persistence = options?.persistence ?? persistenceDispositionFor(event, previousObject)
+      if (persistence === 'durable') {
         durableEvents.push(event)
         eventsToPersist.push(event)
       }
@@ -247,6 +251,13 @@ export const createControlInstanceRuntime = async (config: {
       return { ...nextBase(simEvent), type: 'interaction.signal.received', signal: simEvent.signal }
     }
     return { ...nextBase(simEvent), type: 'telemetry.sampled', objectId: simEvent.objectId, telemetry: simEvent.telemetry }
+  }
+
+  const persistenceForPackRuntimeEvent = (
+    event: PackRuntimeEvent,
+  ): ControlInstanceEventPersistenceDisposition | undefined => {
+    if (event.persistence === undefined) return undefined
+    return event.persistence
   }
 
   const controlInstanceEventFromInteractionEffect = (
@@ -420,7 +431,11 @@ export const createControlInstanceRuntime = async (config: {
         if (event.type === 'interaction.signal') {
           await handleInteractionSignalNow(event.signal, event.provenance)
         } else {
-          await publishManyNow([controlInstanceEventFromPackRuntimeEvent(event)])
+          const persistence = persistenceForPackRuntimeEvent(event)
+          await publishManyNow(
+            [controlInstanceEventFromPackRuntimeEvent(event)],
+            persistence === undefined ? {} : { persistence },
+          )
         }
       }
     })

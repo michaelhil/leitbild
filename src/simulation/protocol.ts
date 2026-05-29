@@ -8,32 +8,32 @@ export interface PackRuntimeSnapshot {
   readonly capturedAt: IsoTimestamp
 }
 
+export type PackRuntimeEventPersistence = 'durable' | 'projected'
+
+interface PackRuntimeEventBase {
+  readonly at: IsoTimestamp
+  readonly provenance: Provenance
+  readonly persistence?: PackRuntimeEventPersistence
+}
+
 export type PackRuntimeEvent =
-  | {
+  | (PackRuntimeEventBase & {
       readonly type: 'object.upserted'
       readonly object: OperationalObject
-      readonly at: IsoTimestamp
-      readonly provenance: Provenance
-    }
-  | {
+    })
+  | (PackRuntimeEventBase & {
       readonly type: 'object.deleted'
       readonly objectId: ObjectId
-      readonly at: IsoTimestamp
-      readonly provenance: Provenance
-    }
-  | {
+    })
+  | (PackRuntimeEventBase & {
       readonly type: 'telemetry.sampled'
       readonly objectId: ObjectId
       readonly telemetry: TelemetryState
-      readonly at: IsoTimestamp
-      readonly provenance: Provenance
-    }
-  | {
+    })
+  | (PackRuntimeEventBase & {
       readonly type: 'interaction.signal'
       readonly signal: InteractionSignal
-      readonly at: IsoTimestamp
-      readonly provenance: Provenance
-    }
+    })
 
 export interface PackRuntimeEmission {
   readonly type: 'event.emission'

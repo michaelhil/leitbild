@@ -14,6 +14,7 @@ import type {
   PackRuntimeConnectionConfig,
   PackRuntimeEvent,
   PackRuntimeEventHandler,
+  PackRuntimeEventPersistence,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import {
@@ -161,7 +162,10 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let clock: SimulationClockState | null = null
     let interval: ReturnType<typeof setInterval> | null = null
 
-    const solveAndEmit = (dtSeconds: number): void => {
+    const solveAndEmit = (
+      dtSeconds: number,
+      persistence: PackRuntimeEventPersistence = 'projected',
+    ): void => {
       if (closed || clock?.paused) return
       const at = nowIso()
       const solved = solveGrid({ objects: [...objects.values()], runtimeState, dtSeconds, at })
@@ -171,7 +175,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         const previous = objects.get(next.id)
         objects.set(next.id, next)
         if (!previous || previous.revision !== next.revision) {
-          events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance })
+          events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, persistence })
         }
       }
       void config.runtimeStateStore?.save({
@@ -183,8 +187,8 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       emit(handlers, events, at)
     }
 
-    solveAndEmit(1)
-    interval = setInterval(() => solveAndEmit(updateIntervalMs / 1000), updateIntervalMs)
+    solveAndEmit(1, 'projected')
+    interval = setInterval(() => solveAndEmit(updateIntervalMs / 1000, 'projected'), updateIntervalMs)
 
     return {
       getSnapshot: async () => ({
@@ -204,6 +208,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           return commandRejected(command, acceptedAt, `electric-grid runtime does not accept command kind: ${command.kind}`)
         }
         const targets = command.targetObjectIds.length > 0 ? command.targetObjectIds : [...objects.keys()]
+        const commandEvents: PackRuntimeEvent[] = []
         try {
           for (const targetId of targets) {
             const object = objects.get(targetId)
@@ -211,11 +216,19 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
             const next = applyCommandToObject(object, command, acceptedAt)
             if (!next) continue
             objects.set(next.id, next)
+            commandEvents.push({
+              type: 'object.upserted',
+              object: next,
+              at: acceptedAt,
+              provenance: { source: 'operator', causedByCommandId: command.id },
+              persistence: 'durable',
+            })
           }
         } catch (err) {
           return commandRejected(command, acceptedAt, err instanceof Error ? err.message : String(err))
         }
-        solveAndEmit(1)
+        emit(handlers, commandEvents, acceptedAt)
+        solveAndEmit(1, 'projected')
         return commandAccepted(command, acceptedAt)
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
