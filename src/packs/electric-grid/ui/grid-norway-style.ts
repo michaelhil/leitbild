@@ -32,10 +32,10 @@ const voltageOpacityExpression: ReadonlyArray<unknown> = [
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
   0.94,
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
-  ['interpolate', ['linear'], ['zoom'], 5, 0.68, 9, 0.88],
+  0.82,
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
-  ['interpolate', ['linear'], ['zoom'], 5, 0.10, 8, 0.42, 11, 0.78],
-  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 10, 0.28, 12, 0.58],
+  0.68,
+  0.46,
 ]
 
 const voltageWidthExpression: ReadonlyArray<unknown> = [
@@ -168,7 +168,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
             'case',
             ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
             0.94,
-            ['interpolate', ['linear'], ['zoom'], 8, 0.25, 12, 0.78],
+            0.72,
           ],
           'circle-radius': siteRadiusExpression,
           'circle-stroke-color': '#ffffff',

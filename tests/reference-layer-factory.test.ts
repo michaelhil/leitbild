@@ -26,6 +26,11 @@ const baseManifest: DatasetManifestForLayers = {
   ],
 }
 
+const expressionContains = (value: unknown, token: string): boolean =>
+  Array.isArray(value)
+    ? value.some(item => expressionContains(item, token))
+    : value === token
+
 describe('buildReferenceDatasetLayers', () => {
   test('emits one fill + one line per category, in deterministic order', () => {
     const built = buildReferenceDatasetLayers(baseManifest, aeroNorwayStyleModule)
@@ -176,6 +181,16 @@ describe('grid-norway style module', () => {
       ['get', 'name'],
       '',
     ])
+  })
+
+  test('grid opacity expressions avoid nested zoom syntax rejected by MapLibre', () => {
+    const linePaint = gridNorwayStyleModule.lineFor('line')
+    const substationPaint = gridNorwayStyleModule.pointFor?.('substation')?.paint
+    const transformerPaint = gridNorwayStyleModule.pointFor?.('transformer')?.paint
+
+    expect(expressionContains(linePaint['line-opacity'], 'zoom')).toBe(false)
+    expect(expressionContains(substationPaint?.['circle-opacity'], 'zoom')).toBe(false)
+    expect(expressionContains(transformerPaint?.['circle-opacity'], 'zoom')).toBe(false)
   })
 })
 
