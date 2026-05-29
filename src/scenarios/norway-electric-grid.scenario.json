@@ -425,7 +425,7 @@
         "config": {
           "center": [10.5, 62.4],
           "zoom": 5,
-          "layers": ["objects", "traffic", "weather", "highlights"]
+          "layers": ["objects", "traffic", "weather", "grid", "highlights"]
         }
       },
       {

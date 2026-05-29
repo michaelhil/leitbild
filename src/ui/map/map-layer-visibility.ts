@@ -29,6 +29,10 @@ const layerIdsForSurfaceLayer = (layer: SurfaceMapLayer): ReadonlyArray<string> 
     mapLayerIds.weatherLineCasing,
     mapLayerIds.weatherLine,
   ]
+  if (layer === 'grid') return [
+    mapLayerIds.gridLineCasing,
+    mapLayerIds.gridLine,
+  ]
   return [mapLayerIds.objectHalos]
 }
 
@@ -37,7 +41,7 @@ export const applyConfiguredMapLayerVisibility = (config: {
   readonly enabledLayers: ReadonlyArray<SurfaceMapLayer>
 }): void => {
   const enabledLayers = new Set<SurfaceMapLayer>(config.enabledLayers)
-  const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'weather', 'highlights']
+  const surfaceLayers: ReadonlyArray<SurfaceMapLayer> = ['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights']
   for (const surfaceLayer of surfaceLayers) {
     const visibility = enabledLayers.has(surfaceLayer) ? 'visible' : 'none'
     for (const layerId of layerIdsForSurfaceLayer(surfaceLayer)) {

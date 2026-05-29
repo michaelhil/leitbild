@@ -34,8 +34,8 @@ const voltageOpacityExpression: ReadonlyArray<unknown> = [
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
   ['interpolate', ['linear'], ['zoom'], 5, 0.68, 9, 0.88],
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
-  ['interpolate', ['linear'], ['zoom'], 5, 0.08, 8, 0.36, 11, 0.72],
-  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 11, 0.22],
+  ['interpolate', ['linear'], ['zoom'], 5, 0.10, 8, 0.42, 11, 0.78],
+  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 10, 0.28, 12, 0.58],
 ]
 
 const voltageWidthExpression: ReadonlyArray<unknown> = [
@@ -54,8 +54,8 @@ const voltageWidthExpression: ReadonlyArray<unknown> = [
     ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400], 6.0,
     ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 5.2,
     ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.2,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 1.8,
-    0.9,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 2.0,
+    1.35,
   ],
 ]
 

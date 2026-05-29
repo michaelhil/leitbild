@@ -60,6 +60,7 @@ describe('electric grid pack', () => {
     })
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
+    expect(scenario.surface.regions.find(region => region.primitive === 'map')?.config.layers).toContain('grid')
     expect(gridObjects.length).toBeGreaterThanOrEqual(20)
     expect(gridObjects.some(object => {
       const parsed = electricGridPackDataSchema.safeParse(object.packData)
