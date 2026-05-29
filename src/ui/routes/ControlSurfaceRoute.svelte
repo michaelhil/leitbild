@@ -98,6 +98,7 @@
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let postReadyPreloadStarted = false
+  let startupAutoDismissTimer: number | null = null
   let startupDebugGeneration = 0
   let startupDebugReported = false
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
@@ -432,8 +433,15 @@
   }
 
   const closeStartupModal = (): void => {
+    clearStartupAutoDismissTimer()
     startupDismissed = true
     startupStatusModalOpen = false
+  }
+
+  const clearStartupAutoDismissTimer = (): void => {
+    if (startupAutoDismissTimer === null) return
+    window.clearTimeout(startupAutoDismissTimer)
+    startupAutoDismissTimer = null
   }
 
   const openStatusModal = (): void => {
@@ -819,6 +827,7 @@
       return () => {
         removePlacementGlobalEvents()
         railLayout.stopResize()
+        clearStartupAutoDismissTimer()
       }
     }
     completeStep('route')
@@ -828,6 +837,7 @@
       return () => {
         removePlacementGlobalEvents()
         railLayout.stopResize()
+        clearStartupAutoDismissTimer()
       }
     }
     void joinControlInstance()
@@ -835,7 +845,25 @@
       removePlacementGlobalEvents()
       railLayout.stopResize()
       realtimeConnection.disconnect()
+      clearStartupAutoDismissTimer()
     }
+  })
+
+  $effect(() => {
+    if (
+      startupDismissed
+      || startupStatusModalOpen
+      || startupHasFailed(startupSteps)
+      || !startupIsReady(startupSteps)
+    ) {
+      clearStartupAutoDismissTimer()
+      return
+    }
+    if (startupAutoDismissTimer !== null) return
+    startupAutoDismissTimer = window.setTimeout(() => {
+      startupAutoDismissTimer = null
+      closeStartupModal()
+    }, 1_500)
   })
 
   $effect(() => {
