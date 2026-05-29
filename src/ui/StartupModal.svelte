@@ -30,6 +30,7 @@
   const ready = $derived(startupIsReady(steps))
   const failed = $derived(startupHasFailed(steps))
   const failedStep = $derived(steps.find(step => step.status === 'failed') ?? null)
+  const canClose = $derived(!closeWhenReadyOnly || ready)
 
   const clearCloseTimers = (): void => {
     if (closeDelayTimer !== null) window.clearTimeout(closeDelayTimer)
@@ -84,8 +85,8 @@
         fadeTimer = window.setTimeout(() => {
           fadeTimer = null
           close()
-        }, 2_000)
-      }, 2_000)
+        }, 250)
+      }, 750)
     } else if (!ready) {
       clearCloseTimers()
       fading = false
@@ -98,9 +99,9 @@
     title="Starting Leitbild"
     description="Opening the control surface and checking each startup step."
     close={close}
-    closeOnBackdrop={!closeWhenReadyOnly || ready}
-    closeOnEscape={!closeWhenReadyOnly || ready}
-    showClose={false}
+    closeOnBackdrop={canClose}
+    closeOnEscape={canClose}
+    showClose={canClose}
     titleTone={tone}
     size="medium"
   >

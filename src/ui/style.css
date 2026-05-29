@@ -2576,7 +2576,7 @@ body.rail-resizing {
 
 .startup-modal-frame.fading .modal-backdrop {
   opacity: 0;
-  transition: opacity 2s ease;
+  transition: opacity 250ms ease;
 }
 
 .startup-steps li {

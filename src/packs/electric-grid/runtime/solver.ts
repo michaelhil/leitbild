@@ -100,12 +100,17 @@ const profiledLoad = (
   const secondsOfDay = ((seconds % 86400) + 86400) % 86400
   const hour = secondsOfDay / 3600
   const seed = stableUnitFor(`${objectId}:${load.loadKind}`)
+  const commonRegulationFactor = 0.006 * Math.sin(seconds / 95 + 0.8)
+    + 0.003 * Math.sin(seconds / 29 + 1.7)
   const fastFactor = 0.012 * Math.sin(seconds / (41 + seed * 23) + seed * Math.PI * 2)
     + 0.006 * Math.sin(seconds / (113 + seed * 31) + seed * Math.PI * 5)
   const nominalDemandMw = load.nominalDemandMw ?? load.demandMw
   const nominalInterruptibleMw = load.nominalInterruptibleMw ?? load.interruptibleMw
   const nominalReactiveDemandMvar = load.nominalReactiveDemandMvar ?? load.reactiveDemandMvar
-  const demandMw = Math.max(load.criticalMw, nominalDemandMw * clamp(loadDailyFactor(load, hour) + fastFactor, 0.78, 1.22))
+  const demandMw = Math.max(
+    load.criticalMw,
+    nominalDemandMw * clamp(loadDailyFactor(load, hour) + commonRegulationFactor + fastFactor, 0.78, 1.22),
+  )
   const nominalInterruptibleShare = nominalDemandMw <= 0 ? 0 : nominalInterruptibleMw / nominalDemandMw
   const nominalReactiveShare = nominalDemandMw <= 0 ? 0 : nominalReactiveDemandMvar / nominalDemandMw
   return {

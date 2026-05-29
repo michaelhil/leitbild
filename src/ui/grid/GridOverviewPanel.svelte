@@ -35,6 +35,12 @@
       : system.frequencyHz < 49.95 || system.frequencyHz > 50.05
         ? 'watch'
         : 'normal')
+
+  const mw = (value: number): string =>
+    value.toLocaleString(undefined, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    })
 </script>
 
 {#if system}
@@ -45,7 +51,7 @@
         <h2>Norway operating overview</h2>
       </div>
       <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
-        <span>{system.frequencyHz.toFixed(2)}</span>
+        <span>{system.frequencyHz.toFixed(3)}</span>
         <small>Hz</small>
       </div>
     </header>
@@ -53,15 +59,15 @@
     <div class="metric-grid">
       <div class="metric">
         <span>Generation</span>
-        <strong>{Math.round(system.totalGenerationMw).toLocaleString()} MW</strong>
+        <strong>{mw(system.totalGenerationMw)} MW</strong>
       </div>
       <div class="metric">
         <span>Served load</span>
-        <strong>{Math.round(system.servedLoadMw).toLocaleString()} MW</strong>
+        <strong>{mw(system.servedLoadMw)} MW</strong>
       </div>
       <div class="metric">
         <span>Reserve</span>
-        <strong>{Math.round(system.reserveMarginMw).toLocaleString()} MW</strong>
+        <strong>{mw(system.reserveMarginMw)} MW</strong>
       </div>
       <div class="metric">
         <span>Lowest voltage</span>
@@ -84,7 +90,7 @@
         {#each generators as generator}
           <div class="row">
             <span>{generator.object.label}</span>
-            <strong>{Math.round(generator.data.dispatchMw)} MW</strong>
+            <strong>{mw(generator.data.dispatchMw)} MW</strong>
           </div>
         {/each}
       </div>
@@ -166,7 +172,7 @@
   }
 
   .frequency {
-    min-width: 86px;
+    min-width: 108px;
     text-align: right;
     color: #047857;
   }
