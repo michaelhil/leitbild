@@ -12,11 +12,17 @@ const ssh = async (command: string): Promise<void> => {
 }
 
 const verifyEndpoint = async (path: string): Promise<void> => {
-  try {
-    await ssh(`status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:4177${path})" && [ "$status" = "200" ]`)
-  } catch (error) {
-    throw new Error(`Post-deploy verification failed for ${path}`, { cause: error })
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 30; attempt += 1) {
+    try {
+      await ssh(`status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:4177${path})" && [ "$status" = "200" ]`)
+      return
+    } catch (error) {
+      lastError = error
+      if (attempt < 30) await Bun.sleep(1000)
+    }
   }
+  throw new Error(`Post-deploy verification failed for ${path}`, { cause: lastError })
 }
 
 // Fail fast before spending time on local checks when the execution environment
