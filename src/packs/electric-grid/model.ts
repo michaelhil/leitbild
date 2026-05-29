@@ -126,6 +126,9 @@ export const gridGeneratorDataSchema = z.object({
   voltageSetpointPu: finiteNumber.positive(),
   state: z.enum(['online', 'offline', 'tripped', 'derated']),
   resourceFraction: fraction.optional(),
+  annualProductionGwh: finiteNumber.nonnegative().optional(),
+  operator: z.string().min(1).optional(),
+  priceArea: z.string().min(1).optional(),
   provenance: gridPropertyProvenanceSchema,
 })
 

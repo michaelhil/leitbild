@@ -2,12 +2,18 @@
   "id": "norway-electric-grid",
   "schemaVersion": 1,
   "title": "Norway electric-grid operations",
-  "description": "A Norway-scale electric-grid demonstration with transmission corridors, hydro, wind, storage, EV charging, hospitals, industry, airports, dynamic frequency, voltage, branch loading, and load-shedding behavior.",
-  "packs": ["electric-grid", "weather"],
+  "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology for the operational grid arena, with hydro generation, consumer zones, frequency/voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
+  "packs": [
+    "electric-grid",
+    "weather"
+  ],
   "runtimeOverrides": {},
   "world": {
     "startsAt": "2026-01-01T10:00:00.000Z",
-    "mapCenter": [10.5, 62.4],
+    "mapCenter": [
+      10.5,
+      62.4
+    ],
     "environment": {
       "city": "Norway",
       "mode": "electric-grid-demo"
@@ -16,348 +22,19 @@
   "objects": [
     {
       "pack": "electric-grid",
-      "type": "grid_system",
-      "id": "grid:norway-system",
-      "label": "Norway grid overview",
-      "position": [10.75, 61.25],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "market_area",
-      "id": "grid:market-no1",
-      "label": "NO1 system area",
-      "areaId": "NO1",
-      "position": [10.75, 59.9],
-      "priceNokPerMwh": 820,
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "substation",
-      "id": "grid:ss-oslo",
-      "label": "Oslo 420 kV hub",
-      "busId": "NO1-OSL-420",
-      "nominalKv": 420,
-      "transformerCapacityMw": 3600,
-      "position": [10.7522, 59.9139],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "substation",
-      "id": "grid:ss-telemark",
-      "label": "Telemark 420 kV hydro hub",
-      "busId": "NO2-TEL-420",
-      "nominalKv": 420,
-      "transformerCapacityMw": 4200,
-      "position": [8.58, 59.39],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "substation",
-      "id": "grid:ss-bergen",
-      "label": "Bergen 300 kV hub",
-      "busId": "NO5-BGO-300",
-      "nominalKv": 300,
-      "transformerCapacityMw": 2400,
-      "position": [5.3221, 60.3913],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "substation",
-      "id": "grid:ss-trondheim",
-      "label": "Trondheim 420 kV hub",
-      "busId": "NO3-TRD-420",
-      "nominalKv": 420,
-      "transformerCapacityMw": 3200,
-      "position": [10.3951, 63.4305],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "substation",
-      "id": "grid:ss-narvik",
-      "label": "Narvik 420 kV hub",
-      "busId": "NO4-NVK-420",
-      "nominalKv": 420,
-      "transformerCapacityMw": 2200,
-      "position": [17.4272, 68.4385],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "branch",
-      "id": "grid:line-telemark-oslo",
-      "label": "Telemark - Oslo 420 kV corridor",
-      "branchKind": "ac_line",
-      "fromBusId": "NO2-TEL-420",
-      "toBusId": "NO1-OSL-420",
-      "nominalKv": 420,
-      "ratingMw": 1700,
-      "reactancePu": 0.065,
-      "resistancePu": 0.012,
-      "weatherExposure": "medium",
-      "path": [[8.58, 59.39], [9.23, 59.57], [10.05, 59.78], [10.7522, 59.9139]],
-      "provenance": { "method": "defaulted", "sourceId": "leitbild-demo-grid-v1", "confidence": "low" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "branch",
-      "id": "grid:line-telemark-bergen",
-      "label": "Telemark - Bergen 300 kV corridor",
-      "branchKind": "ac_line",
-      "fromBusId": "NO2-TEL-420",
-      "toBusId": "NO5-BGO-300",
-      "nominalKv": 300,
-      "ratingMw": 1150,
-      "reactancePu": 0.09,
-      "resistancePu": 0.018,
-      "weatherExposure": "high",
-      "path": [[8.58, 59.39], [7.62, 59.83], [6.42, 60.11], [5.3221, 60.3913]],
-      "provenance": { "method": "defaulted", "sourceId": "leitbild-demo-grid-v1", "confidence": "low" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "branch",
-      "id": "grid:line-oslo-trondheim",
-      "label": "Oslo - Trondheim 420 kV corridor",
-      "branchKind": "ac_line",
-      "fromBusId": "NO1-OSL-420",
-      "toBusId": "NO3-TRD-420",
-      "nominalKv": 420,
-      "ratingMw": 1500,
-      "reactancePu": 0.105,
-      "resistancePu": 0.02,
-      "weatherExposure": "medium",
-      "path": [[10.7522, 59.9139], [10.75, 61.0], [10.5, 62.2], [10.3951, 63.4305]],
-      "provenance": { "method": "defaulted", "sourceId": "leitbild-demo-grid-v1", "confidence": "low" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "branch",
-      "id": "grid:line-trondheim-narvik",
-      "label": "Trondheim - Narvik 420 kV corridor",
-      "branchKind": "ac_line",
-      "fromBusId": "NO3-TRD-420",
-      "toBusId": "NO4-NVK-420",
-      "nominalKv": 420,
-      "ratingMw": 1100,
-      "reactancePu": 0.14,
-      "resistancePu": 0.024,
-      "weatherExposure": "high",
-      "path": [[10.3951, 63.4305], [12.5, 64.7], [14.7, 66.0], [17.4272, 68.4385]],
-      "provenance": { "method": "defaulted", "sourceId": "leitbild-demo-grid-v1", "confidence": "low" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "branch",
-      "id": "grid:hvdc-south-import",
-      "label": "South coast HVDC import",
-      "branchKind": "hvdc_link",
-      "fromBusId": "NO2-TEL-420",
-      "toBusId": "NO1-OSL-420",
-      "nominalKv": 525,
-      "ratingMw": 900,
-      "reactancePu": 0.18,
-      "resistancePu": 0.01,
-      "weatherExposure": "low",
-      "path": [[8.58, 59.39], [8.0, 58.9], [8.4, 58.2]],
-      "provenance": { "method": "defaulted", "sourceId": "leitbild-demo-grid-v1", "confidence": "low" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "generator",
-      "id": "grid:gen-telemark-hydro",
-      "label": "Telemark hydro fleet",
-      "generationKind": "hydro",
-      "busId": "NO2-TEL-420",
-      "capacityMw": 2600,
-      "availableMw": 2380,
-      "dispatchMw": 1450,
-      "targetMw": 1500,
-      "reserveMw": 420,
-      "rampRateMwPerMinute": 260,
-      "inertiaSeconds": 5.5,
-      "resourceFraction": 0.72,
-      "position": [8.38, 59.62],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "generator",
-      "id": "grid:gen-west-hydro",
-      "label": "Western hydro fleet",
-      "generationKind": "hydro",
-      "busId": "NO5-BGO-300",
-      "capacityMw": 1800,
-      "availableMw": 1650,
-      "dispatchMw": 820,
-      "targetMw": 880,
-      "reserveMw": 260,
-      "rampRateMwPerMinute": 210,
-      "inertiaSeconds": 5.0,
-      "resourceFraction": 0.66,
-      "position": [6.07, 60.38],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "generator",
-      "id": "grid:gen-fosen-wind",
-      "label": "Fosen wind cluster",
-      "generationKind": "wind",
-      "busId": "NO3-TRD-420",
-      "capacityMw": 1050,
-      "availableMw": 690,
-      "dispatchMw": 520,
-      "targetMw": 560,
-      "reserveMw": 80,
-      "rampRateMwPerMinute": 90,
-      "inertiaSeconds": 1.2,
-      "resourceFraction": 0.64,
-      "position": [10.22, 63.72],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "generator",
-      "id": "grid:gen-north-hydro",
-      "label": "Northern hydro fleet",
-      "generationKind": "hydro",
-      "busId": "NO4-NVK-420",
-      "capacityMw": 1250,
-      "availableMw": 1030,
-      "dispatchMw": 610,
-      "targetMw": 650,
-      "reserveMw": 210,
-      "rampRateMwPerMinute": 160,
-      "inertiaSeconds": 4.8,
-      "resourceFraction": 0.61,
-      "position": [17.62, 68.20],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "storage",
-      "id": "grid:storage-oslo-battery",
-      "label": "Oslo grid battery",
-      "busId": "NO1-OSL-420",
-      "capacityMwh": 650,
-      "stateOfChargeFraction": 0.58,
-      "maxChargeMw": 180,
-      "maxDischargeMw": 220,
-      "position": [10.88, 59.87],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "load",
-      "id": "grid:load-oslo-urban",
-      "label": "Oslo urban load",
-      "loadKind": "residential",
-      "busId": "NO1-OSL-420",
-      "demandMw": 1280,
-      "criticalMw": 420,
-      "interruptibleMw": 860,
-      "reactiveDemandMvar": 280,
-      "priority": "normal",
-      "position": [10.67, 59.93],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "load",
-      "id": "grid:load-oslo-hospital",
-      "label": "Oslo hospital critical load",
-      "loadKind": "hospital",
-      "busId": "NO1-OSL-420",
-      "demandMw": 85,
-      "criticalMw": 70,
-      "interruptibleMw": 15,
-      "reactiveDemandMvar": 22,
-      "priority": "critical",
-      "position": [10.7387, 59.9369],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "load",
-      "id": "grid:load-gardermoen-airport",
-      "label": "Oslo airport load",
-      "loadKind": "airport",
-      "busId": "NO1-OSL-420",
-      "demandMw": 120,
-      "criticalMw": 55,
-      "interruptibleMw": 65,
-      "reactiveDemandMvar": 34,
-      "priority": "high",
-      "position": [11.1004, 60.1939],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "load",
-      "id": "grid:load-west-industry",
-      "label": "Western process industry",
-      "loadKind": "industry",
-      "busId": "NO5-BGO-300",
-      "demandMw": 1180,
-      "criticalMw": 520,
-      "interruptibleMw": 660,
-      "reactiveDemandMvar": 380,
-      "priority": "high",
-      "position": [5.73, 60.02],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "load",
-      "id": "grid:load-trondheim-data",
-      "label": "Trondheim data-center load",
-      "loadKind": "data_center",
-      "busId": "NO3-TRD-420",
-      "demandMw": 360,
-      "criticalMw": 220,
-      "interruptibleMw": 140,
-      "reactiveDemandMvar": 90,
-      "priority": "high",
-      "position": [10.55, 63.37],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "ev_charging",
-      "id": "grid:load-oslo-ev",
-      "label": "Oslo EV fast-charging cluster",
-      "loadKind": "ev_charging",
-      "busId": "NO1-OSL-420",
-      "demandMw": 220,
-      "criticalMw": 20,
-      "interruptibleMw": 200,
-      "reactiveDemandMvar": 38,
-      "priority": "low",
-      "controllable": true,
-      "position": [10.92, 59.95],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
-    },
-    {
-      "pack": "electric-grid",
-      "type": "ev_charging",
-      "id": "grid:load-truck-depot",
-      "label": "E6 truck charging depot",
-      "loadKind": "ev_charging",
-      "busId": "NO3-TRD-420",
-      "demandMw": 160,
-      "criticalMw": 10,
-      "interruptibleMw": 150,
-      "reactiveDemandMvar": 25,
-      "priority": "low",
-      "controllable": true,
-      "position": [10.75, 63.18],
-      "provenance": { "method": "configured", "sourceId": "leitbild-demo-grid-v1", "confidence": "medium" }
+      "type": "regional_grid",
+      "id": "grid:source-derived-oslofjord-arena",
+      "label": "Source-derived Oslofjord grid arena",
+      "position": [
+        10.75,
+        59.9
+      ],
+      "arenaId": "source-derived-oslofjord-grid",
+      "provenance": {
+        "method": "converted",
+        "sourceId": "source-derived-oslofjord-grid-arena-v1",
+        "confidence": "medium"
+      }
     },
     {
       "pack": "weather",
@@ -375,7 +52,10 @@
         "windDirectionDeg": 285,
         "visibilityM": 4200,
         "cloudCover": 0.9,
-        "precipitation": { "type": "snow", "intensityMmPerHour": 0.7 }
+        "precipitation": {
+          "type": "snow",
+          "intensityMmPerHour": 0.7
+        }
       },
       "surface": {
         "groundTemperatureC": -1,
@@ -388,15 +68,34 @@
       "keyframes": [
         {
           "atSeconds": 0,
-          "center": [6.25, 61.15],
+          "center": [
+            6.25,
+            61.15
+          ],
           "semiMajorAxisM": 180000,
           "semiMinorAxisM": 42000,
           "rotationDeg": 40,
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.8, "y": 0.55 }, { "x": 1, "y": 0 }]
+          "falloffCurve": [
+            {
+              "x": 0,
+              "y": 1
+            },
+            {
+              "x": 0.8,
+              "y": 0.55
+            },
+            {
+              "x": 1,
+              "y": 0
+            }
+          ]
         },
         {
           "atSeconds": 900,
-          "center": [8.9, 62.6],
+          "center": [
+            8.9,
+            62.6
+          ],
           "semiMajorAxisM": 220000,
           "semiMinorAxisM": 52000,
           "rotationDeg": 34,
@@ -408,7 +107,20 @@
             "ice": 0.28,
             "frost": 0.62
           },
-          "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.8, "y": 0.55 }, { "x": 1, "y": 0 }]
+          "falloffCurve": [
+            {
+              "x": 0,
+              "y": 1
+            },
+            {
+              "x": 0.8,
+              "y": 0.55
+            },
+            {
+              "x": 1,
+              "y": 0
+            }
+          ]
         }
       ]
     }
@@ -423,9 +135,18 @@
         "primitive": "map",
         "visible": true,
         "config": {
-          "center": [10.5, 62.4],
+          "center": [
+            10.5,
+            62.4
+          ],
           "zoom": 5,
-          "layers": ["objects", "traffic", "weather", "grid", "highlights"]
+          "layers": [
+            "objects",
+            "traffic",
+            "weather",
+            "grid",
+            "highlights"
+          ]
         }
       },
       {
@@ -435,23 +156,51 @@
         "config": {
           "width": 330,
           "sections": [
-            { "categoryId": "grid-system", "collapsed": false },
-            { "categoryId": "grid-branches", "collapsed": false },
-            { "categoryId": "grid-generation", "collapsed": false },
-            { "categoryId": "grid-consumers", "collapsed": false },
-            { "categoryId": "grid-substations", "collapsed": true }
+            {
+              "categoryId": "grid-system",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-generation",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-consumers",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-branches",
+              "collapsed": true
+            },
+            {
+              "categoryId": "grid-substations",
+              "collapsed": true
+            }
           ]
         }
       },
-      { "id": "system-footer", "primitive": "systemFooter", "visible": true, "config": {} },
-      { "id": "guidance-overlay", "primitive": "guidanceOverlay", "visible": true, "config": {} }
+      {
+        "id": "system-footer",
+        "primitive": "systemFooter",
+        "visible": true,
+        "config": {}
+      },
+      {
+        "id": "guidance-overlay",
+        "primitive": "guidanceOverlay",
+        "visible": true,
+        "config": {}
+      }
     ]
   },
   "script": {
     "steps": [
       {
         "id": "grid-intro-guidance",
-        "at": { "kind": "after_scenario_start", "seconds": 1 },
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 1
+        },
         "title": "Grid operations intro",
         "actions": [
           {
@@ -460,7 +209,9 @@
               "id": "grid-intro",
               "title": "Norway electric-grid operations",
               "message": "Monitor frequency, branch loading, voltage health, generation dispatch, consumer supply, and EV charging. Select generators, lines, or loads in the rail to exercise accepted grid commands.",
-              "objectIds": ["grid:norway-system"],
+              "objectIds": [
+                "grid:norway-system"
+              ],
               "dismissible": true,
               "tone": "default"
             }

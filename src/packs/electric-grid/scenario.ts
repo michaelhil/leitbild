@@ -17,6 +17,7 @@ import {
   type ElectricGridPackData,
   type GridPropertyProvenance,
 } from './model.ts'
+import { norwayGridArenaObjectSpecs } from './arena/norway-grid-arena.ts'
 import { electricGridAdapterId, electricGridRuntimePackId } from './sim/constants.ts'
 
 const lonLatSchema = z.tuple([
@@ -41,6 +42,11 @@ const baseSpecSchema = z.object({
 
 const systemSpecSchema = baseSpecSchema.extend({
   type: z.literal('grid_system'),
+})
+
+const regionalGridSpecSchema = baseSpecSchema.extend({
+  type: z.literal('regional_grid'),
+  arenaId: z.literal('source-derived-oslofjord-grid').default('source-derived-oslofjord-grid'),
 })
 
 const substationSpecSchema = baseSpecSchema.extend({
@@ -80,6 +86,9 @@ const generatorSpecSchema = baseSpecSchema.extend({
   voltageSetpointPu: z.number().finite().positive().default(1.01),
   state: z.enum(['online', 'offline', 'tripped', 'derated']).default('online'),
   resourceFraction: z.number().finite().min(0).max(1).optional(),
+  annualProductionGwh: z.number().finite().nonnegative().optional(),
+  operator: z.string().min(1).optional(),
+  priceArea: z.string().min(1).optional(),
 })
 
 const loadSpecSchema = baseSpecSchema.extend({
@@ -259,6 +268,9 @@ const dataForSpec = (spec: z.infer<typeof gridObjectSpecSchema>, at: IsoTimestam
         voltageSetpointPu: spec.voltageSetpointPu,
         state: spec.state,
         ...(spec.resourceFraction === undefined ? {} : { resourceFraction: spec.resourceFraction }),
+        ...(spec.annualProductionGwh === undefined ? {} : { annualProductionGwh: spec.annualProductionGwh }),
+        ...(spec.operator === undefined ? {} : { operator: spec.operator }),
+        ...(spec.priceArea === undefined ? {} : { priceArea: spec.priceArea }),
         provenance,
       }
     }
@@ -317,17 +329,31 @@ const dataForSpec = (spec: z.infer<typeof gridObjectSpecSchema>, at: IsoTimestam
   }
 }
 
+const expandGridObject = (rawSpec: PackScenarioObjectSpec, at: IsoTimestamp): OperationalObject => {
+  const spec = gridObjectSpecSchema.parse(rawSpec)
+  const data = electricGridPackDataSchema.parse(dataForSpec(spec, at))
+  return baseObject({
+    spec,
+    at,
+    data,
+    spatial: spec.type === 'branch' ? lineSpatial(spec.path) : pointSpatial(spec.position, at),
+    kind: 'facility',
+  })
+}
+
 export const electricGridScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec: PackScenarioObjectSpec, context): OperationalObject => {
-    const spec = gridObjectSpecSchema.parse(rawSpec)
-    const data = electricGridPackDataSchema.parse(dataForSpec(spec, context.at))
-    return baseObject({
-      spec,
-      at: context.at,
-      data,
-      spatial: spec.type === 'branch' ? lineSpatial(spec.path) : pointSpatial(spec.position, context.at),
-      kind: 'facility',
-    })
+    if (rawSpec.type === 'regional_grid') {
+      throw new Error('electric-grid regional_grid expands to multiple objects and must be expanded through scenario config')
+    }
+    return expandGridObject(rawSpec, context.at)
+  },
+  expandObjects: (rawSpec: PackScenarioObjectSpec, context): ReadonlyArray<OperationalObject> => {
+    if (rawSpec.type === 'regional_grid') {
+      regionalGridSpecSchema.parse(rawSpec)
+      return norwayGridArenaObjectSpecs().map(spec => expandGridObject(spec, context.at))
+    }
+    return [expandGridObject(rawSpec, context.at)]
   },
   applyOperation: (rawOperation: PackScenarioOperationSpec): OperationalObject => {
     throw new Error(`electric-grid scenario operation is not supported yet: ${rawOperation.type}`)

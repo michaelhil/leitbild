@@ -23,6 +23,16 @@ export const nlod20: LicenceRef = {
   shareAlike: false,
 }
 
+export const nveNlod20: LicenceRef = {
+  id: asLicenceId('nve-nlod-2.0'),
+  name: 'Norwegian Licence for Open Government Data 2.0',
+  url: 'https://data.norge.no/nlod/en/2.0',
+  attribution: '© NVE · NLOD 2.0',
+  commercialUseAllowed: true,
+  redistributionAllowed: true,
+  shareAlike: false,
+}
+
 export const osmOdbl: LicenceRef = {
   id: asLicenceId('osm-odbl-1.0'),
   name: 'Open Data Commons Open Database License 1.0',
@@ -43,7 +53,7 @@ export const repoOwned: LicenceRef = {
   shareAlike: false,
 }
 
-const knownLicences: ReadonlyArray<LicenceRef> = [ccByNcSa40, nlod20, osmOdbl, repoOwned]
+const knownLicences: ReadonlyArray<LicenceRef> = [ccByNcSa40, nlod20, nveNlod20, osmOdbl, repoOwned]
 
 export const findLicence = (id: LicenceId): LicenceRef | null =>
   knownLicences.find(licence => licence.id === id) ?? null

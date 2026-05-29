@@ -89,6 +89,9 @@ const fieldsFor = (data: ElectricGridPackData): ReadonlyArray<PackObjectField> =
       packField('dispatch', 'Dispatch', mw(data.dispatchMw)),
       packField('available', 'Available', `${mw(data.availableMw)} / ${mw(data.capacityMw)}`),
       packField('reserve', 'Reserve', mw(data.reserveMw)),
+      ...(data.annualProductionGwh === undefined ? [] : [packField('annual-production', 'Normal annual production', `${Math.round(data.annualProductionGwh).toLocaleString()} GWh`)]),
+      ...(data.operator === undefined ? [] : [packField('operator', 'Operator', data.operator)]),
+      ...(data.priceArea === undefined ? [] : [packField('price-area', 'Price area', data.priceArea)]),
       packField('state', 'State', data.state),
     ]
   }
@@ -197,12 +200,17 @@ const gridNorwayBuilder: PackReferenceDatasetBuilder = {
     const { createGridNorwayDataset } = require('./datasets/grid-norway.ts') as typeof import('./datasets/grid-norway.ts')
     return createGridNorwayDataset({
       bbox: parseBbox(env.GRID_NORWAY_BBOX),
-      sourceMode: env.GRID_NORWAY_SOURCE === 'overpass' ? 'overpass' : 'osm-pbf',
+      sourceMode: env.GRID_NORWAY_SOURCE === 'overpass'
+        ? 'overpass'
+        : env.GRID_NORWAY_SOURCE === 'nve-nettanlegg'
+          ? 'nve-nettanlegg'
+          : 'osm-pbf',
       ...(env.GRID_NORWAY_OSM_PBF_PATH !== undefined ? { osmPbfPath: env.GRID_NORWAY_OSM_PBF_PATH } : {}),
       ...(env.GRID_NORWAY_OSM_PBF_URL !== undefined ? { osmPbfDownloadUrl: env.GRID_NORWAY_OSM_PBF_URL } : {}),
       ...(env.GRID_NORWAY_OSM_PBF_USER_AGENT !== undefined ? { osmPbfUserAgent: env.GRID_NORWAY_OSM_PBF_USER_AGENT } : {}),
       ...(env.GRID_NORWAY_OVERPASS_URL !== undefined ? { overpassEndpointUrl: env.GRID_NORWAY_OVERPASS_URL } : {}),
       ...(env.GRID_NORWAY_OVERPASS_USER_AGENT !== undefined ? { overpassUserAgent: env.GRID_NORWAY_OVERPASS_USER_AGENT } : {}),
+      ...(env.GRID_NORWAY_NVE_NETTANLEGG_URL !== undefined ? { nveNettanleggEndpointUrl: env.GRID_NORWAY_NVE_NETTANLEGG_URL } : {}),
     })
   },
 }

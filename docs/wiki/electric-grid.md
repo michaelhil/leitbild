@@ -43,10 +43,11 @@ line rendering, and a compact grid monitoring overview panel.
 - native MapLibre branch-line layers plus pack presentation for rail categories
   and object details
 
-**Known v1 boundaries.** The scenario data is authored/configured demonstration
-data, not a compiled authoritative national grid dataset. The solver is suitable
-for regional/national overview behavior and demonstrations, but it is not a full
-AC power-flow solver, relay-coordination model, market-clearing engine, or
+**Known v1 boundaries.** The built-in operations arena is source-derived from
+public OSM/NVE reference material, but it is still a public-data operational
+model, not an authoritative utility network model. The solver is suitable for
+regional/national overview behavior and demonstrations, but it is not a full AC
+power-flow solver, relay-coordination model, market-clearing engine, or
 security-constrained planning model.
 
 ## Credible Real-Data Layout
@@ -80,18 +81,23 @@ Use the shared reference-data scripts:
 ```bash
 bun run reference:build -- --dataset grid-norway
 bun run reference:promote -- --dataset grid-norway
+bun run scripts/electric-grid/build-norway-grid-arena.ts \
+  data/reference-local/builds/grid-norway/<build>/grid-norway.features.geojson \
+  src/packs/electric-grid/arena/norway-grid-arena-data.ts
 ```
 
 Optional environment:
 
 ```bash
 GRID_NORWAY_SOURCE="osm-pbf" # default; set "overpass" only for fallback/debug
+GRID_NORWAY_SOURCE="nve-nettanlegg" # optional official NVE Nettanlegg source mode
 GRID_NORWAY_OSM_PBF_PATH="/opt/leitbild/maps/sources/norway-latest.osm.pbf"
 GRID_NORWAY_OSM_PBF_URL="https://download.geofabrik.de/europe/norway-latest.osm.pbf"
 GRID_NORWAY_OSM_PBF_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
 GRID_NORWAY_BBOX="57.5,4.0,71.5,31.5" # Overpass fallback only
 GRID_NORWAY_OVERPASS_URL="https://overpass-api.de/api/interpreter"
 GRID_NORWAY_OVERPASS_USER_AGENT="Leitbild/0.1 (https://leitbild.samsinn.app)"
+GRID_NORWAY_NVE_NETTANLEGG_URL="https://kart.nve.no/enterprise/rest/services/Nettanlegg4/MapServer"
 ```
 
 The raw PBF path is preferred because it is deterministic, does not depend on
@@ -113,23 +119,40 @@ or debugging.
   voltage
 - voltage, frequency, circuits, operator, names, plant source, and output are
   preserved when OSM tags provide them
+- NVE hydropower and wind records augment matched generator assets with
+  installed capacity, normal annual production, owner, and NO price area; OSM
+  still owns the geometry
+- OSM plant/generator duplicates are collapsed during arena generation when a
+  larger co-located plant-level feature clearly covers smaller same-family unit
+  nodes
 - substations and generation sites can be toggled as reference layers
 - each feature carries `source`, `externalId`, `propertyProvenance`,
   `confidence`, and raw tags
 - a graph audit reports node count, branch count, unresolved endpoints,
   missing voltage tags, and low-confidence geometry
+- the built-in `norway-electric-grid` scenario expands a source-derived
+  Oslofjord/NO1 arena into 100+ substations, 100+ branches, hydro generators,
+  storage, EV charging, and inferred consumer load zones
+- the arena build script keeps the largest connected high-voltage component
+  from the imported reference layer, avoiding disconnected visual fragments as
+  simulation objects
+- NVE hydropower/wind APIs are used to augment generator provenance and
+  semantics where names match; NVE Nettanlegg has a first-class source adapter
+  for official network line/station geometry
 
 **Important limitations.**
 
-- OSM/OpenInfraMap geometry is open and useful, but completeness and tagging
-  quality vary by region
+- OSM/OpenInfraMap and NVE public geometry are open and useful, but completeness
+  and tagging quality vary by region
 - exact OSM way merging is deliberately conservative and does not yet infer
   missing connectivity across switchgear, substations, or nearby endpoints
 - exact utility busbar topology, breaker state, protection settings, dynamic
   ratings, impedances, and secure operating limits are not public and must not
   be invented silently
-- the current graph compiler audits topology but does not yet replace the
-  hand-authored simulation scenario with imported buses and branches
+- consumer loads are inferred demand aggregates attached to real buses; they
+  are suitable for operational scenarios, not measured feeder demand
+- line ratings and impedances are inferred corridor parameters when public
+  source data lacks electrical limits
 
 **Recommended next data-source additions.**
 

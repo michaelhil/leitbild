@@ -31,7 +31,7 @@ export const gridReferenceFeatureSchema = z.object({
   power: z.string().min(1).nullable(),
   plantSource: z.string().min(1).nullable(),
   outputMw: z.number().finite().nonnegative().nullable(),
-  geometrySource: z.enum(['osm-geometry', 'osm-node', 'bounds-centroid', 'manual']),
+  geometrySource: z.enum(['osm-geometry', 'osm-node', 'source-geometry', 'bounds-centroid', 'manual']),
   propertyProvenance: provenanceSchema,
   confidence: confidenceSchema,
   tags: z.record(z.string()),

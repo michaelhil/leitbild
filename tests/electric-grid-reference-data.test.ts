@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createGridNorwayDataset } from '../src/packs/electric-grid/datasets/grid-norway.ts'
 import { compileGridReferenceGraph } from '../src/packs/electric-grid/reference-graph.ts'
 import { gridReferenceFeatureSchema } from '../src/packs/electric-grid/schemas/grid-reference.ts'
+import { normaliseNveNettanleggFeatures, nveNettanleggLayers } from '../src/packs/electric-grid/sources/nve-nettanlegg.ts'
 import { buildOverpassPowerQuery, normaliseOverpassPowerElements, type HttpFetch } from '../src/packs/electric-grid/sources/overpass-power.ts'
 import { buildDataset } from '../src/reference-data/pipeline.ts'
 import { createFetchCache } from '../src/reference-data/fetch-cache.ts'
@@ -116,6 +117,45 @@ describe('electric-grid reference data sources', () => {
     expect(feature?.properties.frequencyHz).toBeNull()
     expect(feature?.properties.circuits).toBeNull()
     expect(feature?.properties.cables).toBeNull()
+  })
+
+  test('normalises NVE Nettanlegg features into source-geometry grid references', () => {
+    const features = normaliseNveNettanleggFeatures({
+      type: 'FeatureCollection',
+      features: [{
+        id: 42,
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [10.1, 59.9],
+            [10.2, 60.0],
+          ],
+        },
+        properties: {
+          objectid: 42,
+          navn: 'Sylling - Hamang',
+          eier: 'STATNETT SF',
+          nvenetbasid: 9001,
+          nvenettnivaa: 1,
+          spenning_kv: 300,
+          driftsattaar: 1967,
+        },
+      }],
+    }, { sourceId: 'nve:nettanlegg4:test', layer: nveNettanleggLayers[0]! })
+
+    expect(features).toHaveLength(1)
+    expect(gridReferenceFeatureSchema.parse(features[0]?.properties)).toMatchObject({
+      source: 'nve:nettanlegg4:test',
+      category: 'line',
+      assetKind: 'branch',
+      externalId: 'nve:0/9001',
+      name: 'Sylling - Hamang',
+      operator: 'STATNETT SF',
+      voltageKv: [300],
+      maxVoltageKv: 300,
+      geometrySource: 'source-geometry',
+      confidence: 'high',
+    })
   })
 
   test('filters distribution fragments out of the reference overview layer', () => {

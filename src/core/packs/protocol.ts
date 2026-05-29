@@ -235,6 +235,10 @@ export interface PackScenarioSupport {
     spec: PackScenarioObjectSpec,
     context: PackScenarioExpansionContext,
   ) => OperationalObject | Promise<OperationalObject>
+  readonly expandObjects?: (
+    spec: PackScenarioObjectSpec,
+    context: PackScenarioExpansionContext,
+  ) => ReadonlyArray<OperationalObject> | Promise<ReadonlyArray<OperationalObject>>
   readonly applyOperation: (
     operation: PackScenarioOperationSpec,
     context: PackScenarioOperationContext,

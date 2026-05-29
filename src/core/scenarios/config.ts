@@ -222,15 +222,19 @@ const expandObject = async (
     readonly routing: RoutingAdapter
     readonly runtimeConfigs: Record<string, unknown>
   },
-): Promise<OperationalObject> => {
+): Promise<ReadonlyArray<OperationalObject>> => {
   const pack = packFor(context.packs, spec.pack)
-  return await pack.scenario!.expandObject(spec, {
+  const expansionContext = {
     at: context.at,
     objects: [...context.objectMap.values()],
-    objectById: (id) => context.objectMap.get(id),
+    objectById: (id: ObjectId) => context.objectMap.get(id),
     routing: context.routing,
     runtimeConfigs: context.runtimeConfigs,
-  })
+  }
+  if (pack.scenario!.expandObjects) {
+    return await pack.scenario!.expandObjects(spec, expansionContext)
+  }
+  return [await pack.scenario!.expandObject(spec, expansionContext)]
 }
 
 const expandScriptAction = async (
@@ -264,7 +268,9 @@ const expandScriptAction = async (
     return action
   }
   if (action.type === 'create_object') {
-    const object = await expandObject(action.object, context)
+    const objects = await expandObject(action.object, context)
+    if (objects.length !== 1) throw new Error(`scenario script creates ${objects.length} objects; script create_object expects exactly one object`)
+    const object = objects[0]!
     if (context.objectMap.has(object.id)) throw new Error(`scenario script creates duplicate object id: ${object.id}`)
     context.objectMap.set(object.id, object)
     return { type: 'upsert_object', object }
@@ -323,16 +329,18 @@ export const scenarioDefinitionFromConfig = async (
   const objectMap = new Map<ObjectId, OperationalObject>()
   const initialObjects: OperationalObject[] = []
   for (const objectConfig of config.objects) {
-    const object = await expandObject(objectConfig as PackScenarioObjectSpec, {
+    const objects = await expandObject(objectConfig as PackScenarioObjectSpec, {
       at: startsAt,
       packs: packsById,
       objectMap,
       routing: options.routing,
       runtimeConfigs: config.runtimeConfigs,
     })
-    if (objectMap.has(object.id)) throw new Error(`scenario ${config.id} has duplicate object id: ${object.id}`)
-    objectMap.set(object.id, object)
-    initialObjects.push(object)
+    for (const object of objects) {
+      if (objectMap.has(object.id)) throw new Error(`scenario ${config.id} has duplicate object id: ${object.id}`)
+      objectMap.set(object.id, object)
+      initialObjects.push(object)
+    }
   }
   let script: ScenarioDefinition['script'] | undefined
   if (config.script) {

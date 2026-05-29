@@ -61,14 +61,24 @@ describe('electric grid pack', () => {
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
     expect(scenario.surface.regions.find(region => region.primitive === 'map')?.config.layers).toContain('grid')
-    expect(gridObjects.length).toBeGreaterThanOrEqual(20)
+    expect(gridObjects.length).toBeGreaterThanOrEqual(250)
     expect(gridObjects.some(object => {
       const parsed = electricGridPackDataSchema.safeParse(object.packData)
-      return parsed.success && parsed.data.type === 'grid_branch' && parsed.data.branchKind === 'hvdc_link'
+      return parsed.success && parsed.data.type === 'grid_branch' && parsed.data.provenance.sourceId === 'osm:pbf-power:NO'
     })).toBe(true)
+    expect(gridObjects.some(object => object.provenance.externalId?.includes('leitbild-demo-grid-v1') === true)).toBe(false)
     expect(gridObjects.some(object => {
       const parsed = electricGridPackDataSchema.safeParse(object.packData)
       return parsed.success && parsed.data.type === 'grid_load' && parsed.data.loadKind === 'ev_charging'
+    })).toBe(true)
+    expect(gridObjects.some(object => {
+      const parsed = electricGridPackDataSchema.safeParse(object.packData)
+      return parsed.success &&
+        parsed.data.type === 'grid_generator' &&
+        parsed.data.provenance.sourceId.startsWith('nve:vannkraftdatabase:') &&
+        parsed.data.annualProductionGwh !== undefined &&
+        parsed.data.operator !== undefined &&
+        parsed.data.priceArea?.startsWith('NO') === true
     })).toBe(true)
   })
 
@@ -102,7 +112,8 @@ describe('electric grid pack', () => {
       expect(system.totalGenerationMw).toBeGreaterThan(0)
       expect(system.servedLoadMw).toBeGreaterThan(0)
       expect(branches.some(branch => Math.abs(branch.flowMw) > 0)).toBe(true)
-      expect(system.lowestVoltagePu).toBeGreaterThan(0.88)
+      expect(system.lowestVoltagePu).toBeGreaterThan(0.98)
+      expect(system.activeIslandCount).toBe(1)
     } finally {
       await connection.close()
     }

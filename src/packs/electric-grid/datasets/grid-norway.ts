@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { osmOdbl } from '../../../reference-data/licences.ts'
+import { nveNlod20, osmOdbl } from '../../../reference-data/licences.ts'
 import {
   asDatasetId,
   type DatasetConfig,
@@ -10,6 +10,7 @@ import { compileGridReferenceGraph } from '../reference-graph.ts'
 import { gridReferenceFeatureSchema } from '../schemas/grid-reference.ts'
 import { overpassPowerSource, type HttpFetch, type OverpassBbox } from '../sources/overpass-power.ts'
 import { osmPbfPowerSource } from '../sources/osm-pbf-power.ts'
+import { nveNettanleggSource, type HttpFetch as NveHttpFetch } from '../sources/nve-nettanlegg.ts'
 
 export const gridNorwayDatasetId = asDatasetId('grid-norway')
 
@@ -27,10 +28,12 @@ export interface GridNorwayDatasetConfig {
   readonly osmPbfPath?: string
   readonly osmPbfDownloadUrl?: string
   readonly osmPbfUserAgent?: string
-  readonly sourceMode?: 'osm-pbf' | 'overpass'
+  readonly sourceMode?: 'osm-pbf' | 'overpass' | 'nve-nettanlegg'
   readonly overpassEndpointUrl?: string
   readonly overpassUserAgent?: string
   readonly overpassFetchFn?: HttpFetch
+  readonly nveNettanleggEndpointUrl?: string
+  readonly nveNettanleggFetchFn?: NveHttpFetch
   readonly thresholds?: GridNorwayThresholds
 }
 
@@ -79,7 +82,13 @@ export const createGridNorwayDataset = (config: GridNorwayDatasetConfig): Datase
         ...(config.overpassUserAgent !== undefined ? { userAgent: config.overpassUserAgent } : {}),
         ...(config.overpassFetchFn !== undefined ? { fetchFn: config.overpassFetchFn } : {}),
       })
-    : osmPbfPowerSource({
+    : sourceMode === 'nve-nettanlegg'
+      ? nveNettanleggSource({
+          id: 'nve:nettanlegg4:NO',
+          ...(config.nveNettanleggEndpointUrl !== undefined ? { endpointUrl: config.nveNettanleggEndpointUrl } : {}),
+          ...(config.nveNettanleggFetchFn !== undefined ? { fetchFn: config.nveNettanleggFetchFn } : {}),
+        })
+      : osmPbfPowerSource({
         id: 'osm:pbf-power:NO',
         path: config.osmPbfPath ?? '/opt/leitbild/maps/sources/norway-latest.osm.pbf',
         ...(config.osmPbfDownloadUrl !== undefined ? { downloadUrl: config.osmPbfDownloadUrl } : {}),
@@ -91,7 +100,7 @@ export const createGridNorwayDataset = (config: GridNorwayDatasetConfig): Datase
     featureSchema: gridNorwayFeatureSchema,
     sources: [powerSource],
     tilebuild: gridNorwayTilebuild,
-    licences: [osmOdbl],
+    licences: sourceMode === 'nve-nettanlegg' ? [nveNlod20] : [osmOdbl],
     featureToCategory: gridNorwayFeatureToCategory,
     audit: (features): void => {
       const graph = compileGridReferenceGraph(features)
