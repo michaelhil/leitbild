@@ -10,6 +10,7 @@ import { trafficPack } from '../src/packs/traffic/pack.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import {
   animatePackMapAreaFeatures,
+  createGridLineFeatureCollection,
   createObjectFeatureCollection,
   createRouteFeatureCollection,
   createTrafficAreaFeatureCollection,
@@ -172,6 +173,42 @@ describe('map feature projection', () => {
     expect(trafficFeatures.features).toHaveLength(1)
     expect(trafficFeatures.features[0]?.id).toBe('traffic:test-road')
     expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
+  })
+
+  test('projects electric-grid branch geometry regardless of generic object kind', () => {
+    const branchObject = {
+      id: 'grid-branch:test-corridor' as ObjectId,
+      kind: 'facility' as const,
+      packId: 'electric-grid' as PackId,
+      label: 'Test grid corridor',
+      lifecycle: 'active' as const,
+      revision: 0,
+      spatial: {
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            geoPointFromLonLat(10.74, 59.93).coordinates,
+            geoPointFromLonLat(10.88, 59.99).coordinates,
+          ],
+        },
+        frame: { kind: 'wgs84' as const },
+      },
+      operational: { status: 'normal', priority: 'normal' as const, mode: 'simulated' as const },
+      alerts: [],
+      provenance: { source: 'simulator' as const },
+      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
+    }
+
+    const gridFeatures = createGridLineFeatureCollection(
+      [branchObject],
+      () => ({ categoryId: 'grid-branches', color: '#c0262d', summary: 'grid branch · closed' }),
+    )
+
+    expect(mapSourceIds.gridLines).toBe('grid-line-source')
+    expect(gridFeatures.features).toHaveLength(1)
+    expect(gridFeatures.features[0]?.id).toBe('grid-branch:test-corridor')
+    expect(gridFeatures.features[0]?.geometry).toEqual(branchObject.spatial.geometry)
+    expect(gridFeatures.features[0]?.properties.color).toBe('#c0262d')
   })
 
   test('projects traffic areas into native MapLibre polygon features', () => {

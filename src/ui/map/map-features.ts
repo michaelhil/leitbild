@@ -198,7 +198,7 @@ export const createGridLineFeatureCollection = (
 ): GeoJsonFeatureCollection<GeoJsonLineString, ZoneFeatureProperties> => ({
   type: 'FeatureCollection',
   features: objects
-    .filter(object => object.kind === 'zone' && object.spatial.geometry?.type === 'LineString' && presentObject(object).categoryId === 'grid-branches')
+    .filter(object => object.spatial.geometry?.type === 'LineString' && presentObject(object).categoryId === 'grid-branches')
     .map(object => {
       const presentation = presentObject(object)
       return {

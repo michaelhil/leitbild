@@ -30,12 +30,12 @@ const voltageColorExpression: ReadonlyArray<unknown> = [
 const voltageOpacityExpression: ReadonlyArray<unknown> = [
   'case',
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
-  0.90,
+  0.94,
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
-  ['interpolate', ['linear'], ['zoom'], 5, 0.72, 9, 0.86],
+  ['interpolate', ['linear'], ['zoom'], 5, 0.68, 9, 0.88],
   ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
-  ['interpolate', ['linear'], ['zoom'], 5, 0.16, 8, 0.52, 11, 0.78],
-  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 11, 0.36],
+  ['interpolate', ['linear'], ['zoom'], 5, 0.08, 8, 0.36, 11, 0.72],
+  ['interpolate', ['linear'], ['zoom'], 8, 0.00, 11, 0.22],
 ]
 
 const voltageWidthExpression: ReadonlyArray<unknown> = [
@@ -44,17 +44,55 @@ const voltageWidthExpression: ReadonlyArray<unknown> = [
   ['zoom'],
   5,
   ['case',
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 2.8,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 2.0,
-    1.0,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400], 3.4,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 3.0,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 1.7,
+    0.55,
   ],
   12,
   ['case',
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400], 6.0,
     ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 5.2,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.8,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 2.6,
-    1.5,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.2,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 1.8,
+    0.9,
   ],
+]
+
+const siteRadiusExpression: ReadonlyArray<unknown> = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  7,
+  ['case',
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 4.2,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.1,
+    2.0,
+  ],
+  13,
+  ['case',
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 6.0,
+    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 4.4,
+    3.0,
+  ],
+]
+
+const visibleVoltageLabelExpression: ReadonlyArray<unknown> = [
+  '>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 220,
+]
+
+const voltageTextExpression: ReadonlyArray<unknown> = [
+  'case',
+  visibleVoltageLabelExpression,
+  ['concat', ['to-string', ['round', ['get', 'maxVoltageKv']]], ' kV'],
+  '',
+]
+
+const siteLabelExpression: ReadonlyArray<unknown> = [
+  'case',
+  ['all', ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], ['has', 'name']],
+  ['get', 'name'],
+  '',
 ]
 
 const styles: Readonly<Record<string, GridCategoryStyle>> = {
@@ -88,7 +126,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
     const style = styleFor(category)
     if (category === 'line' || category === 'cable') {
       return {
-        'line-color': category === 'cable' ? '#2b8fa0' : voltageColorExpression,
+        'line-color': voltageColorExpression,
         'line-opacity': [
           'case',
           ['boolean', ['feature-state', 'hover'], false],
@@ -122,6 +160,28 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
   pointFor: (category) => {
     if (category === 'line' || category === 'cable') return null
     const style = styleFor(category)
+    if (category === 'substation' || category === 'transformer') {
+      return {
+        paint: {
+          'circle-color': voltageColorExpression,
+          'circle-opacity': [
+            'case',
+            ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
+            0.94,
+            ['interpolate', ['linear'], ['zoom'], 8, 0.25, 12, 0.78],
+          ],
+          'circle-radius': siteRadiusExpression,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-opacity': 0.92,
+          'circle-stroke-width': [
+            'case',
+            ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+            1.5,
+            1.0,
+          ],
+        },
+      }
+    }
     return {
       paint: {
         'circle-color': style.circleColor,
@@ -139,10 +199,10 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
           'text-field': [
             'case',
             ['>', ['coalesce', ['get', 'maxVoltageKv'], 0], 0],
-            ['concat', ['to-string', ['round', ['get', 'maxVoltageKv']]], ' kV'],
+            voltageTextExpression,
             '',
           ],
-          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 13, 12],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 9, 13, 11],
           'text-allow-overlap': false,
           'text-optional': true,
         },
@@ -154,10 +214,13 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
       }
     }
     if (category === 'unknown') return null
+    const textField = category === 'substation' || category === 'transformer'
+      ? siteLabelExpression
+      : ['coalesce', ['get', 'name'], ['get', 'operator'], '']
     return {
       layout: {
-        'text-field': ['coalesce', ['get', 'name'], ['get', 'operator'], ''],
-        'text-size': 11,
+        'text-field': textField,
+        'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 13, 11.5],
         'text-offset': [0, 1.15],
         'text-anchor': 'top',
         'text-allow-overlap': false,

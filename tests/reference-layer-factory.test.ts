@@ -168,9 +168,14 @@ describe('grid-norway style module', () => {
     expect(gridNorwayStyleModule.labelFor?.('plant')).not.toBeNull()
   })
 
-  test('grid labels do not fall back to raw OSM ids', () => {
+  test('grid labels show named high-voltage sites without falling back to raw OSM ids', () => {
     const label = gridNorwayStyleModule.labelFor?.('substation')
-    expect(label?.layout?.['text-field']).toEqual(['coalesce', ['get', 'name'], ['get', 'operator'], ''])
+    expect(label?.layout?.['text-field']).toEqual([
+      'case',
+      ['all', ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], ['has', 'name']],
+      ['get', 'name'],
+      '',
+    ])
   })
 })
 
