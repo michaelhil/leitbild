@@ -105,6 +105,14 @@ export interface MapRuntimeLayers {
   readonly deckLayers: ReadonlyArray<Layer>
 }
 
+export interface MapRuntimeDiagnosticPhaseReport {
+  readonly phase: RenderPhase | 'runtime'
+  readonly status: 'running' | 'ready' | 'failed'
+  readonly message: string
+  readonly details?: ReadonlyArray<MapRuntimeDiagnosticDetail>
+  readonly error?: MapRuntimeError
+}
+
 export interface MapRuntimeError {
   readonly phase: RenderPhase | 'runtime'
   readonly message: string
@@ -135,6 +143,11 @@ export interface MapRuntimeDiagnosticsSnapshot {
 export interface MapRuntimeHandle {
   readonly map: MapLibreMap
   readonly updateLayers: (layers: MapRuntimeLayers) => void
+  readonly reportDiagnosticPhase: (report: MapRuntimeDiagnosticPhaseReport) => void
+  readonly setDiagnosticDetails: (
+    phase: RenderPhase | 'runtime',
+    details: ReadonlyArray<MapRuntimeDiagnosticDetail>,
+  ) => void
   readonly setStyleUrl: (styleUrl: string) => Promise<void>
   readonly resize: () => void
   readonly diagnostics: () => MapRuntimeDiagnosticsSnapshot

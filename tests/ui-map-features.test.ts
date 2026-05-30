@@ -236,6 +236,42 @@ describe('map feature store', () => {
     expect(second.revisions.paths).toBe(first.revisions.paths)
     expect(second.paths[0]).toBe(first.paths[0])
   })
+
+  test('updates placement without re-projecting object presentations', () => {
+    const object = makeObject('ambulance:placement-selective', {
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.75, 59.91),
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+    })
+    let presentationCallCount = 0
+    const store = createMapFeatureStore()
+    const input = {
+      objects: [object],
+      selectedControllerId: null,
+      highlightedObjectIds: [],
+      placementPoints: [],
+      packAreaFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor: (nextObject: OperationalObject) => {
+        presentationCallCount += 1
+        return presentationFor(nextObject)
+      },
+    }
+    const first = store.update(input)
+    presentationCallCount = 0
+    const second = store.updateFamilies({
+      ...input,
+      placementPoints: [geoPointFromLonLat(10.76, 59.92)],
+    }, new Set(['placement'] as const))
+
+    expect(presentationCallCount).toBe(0)
+    expect(second.revisions.points).toBe(first.revisions.points)
+    expect(second.revisions.placement).toBe(first.revisions.placement + 1)
+  })
 })
 
 describe('base map readiness diagnostics', () => {

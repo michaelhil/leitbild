@@ -118,7 +118,7 @@ If a future drone pack also wants the airspace tileset, it imports `aviation/dat
 ## Consequences
 
 - **`docs/adr/0019-reference-data-pipeline.md` placement-and-ownership claims are amended.** Datasets are pack-owned; pipeline is neutral. ADR 0019's "datasets neutral" rule is corrected in an amendment block at the bottom of that ADR.
-- **The free-floating `MapLayersPanel` is removed from `MapSurface`.** Visibility flows through the pack rail.
+- **The free-floating `MapLayersPanel` is removed from the operational map shell.** Visibility flows through the pack rail.
 - **Scenario opt-in is enforced.** Existing Halden / Oslo scenarios continue to work unchanged because they do not declare `aviation` in their `packs:` list. To preserve the live-demo airspace view, Phase B.1 ships `src/scenarios/norway-airspace.scenario.json` activating the pack.
 - **No new runtime dependencies.** The move is mechanical — same code, different folder; one new presenter for the rail section; one new pack file.
 - **Existing 500+ tests stay green.** Import paths are rewritten; logic doesn't change.

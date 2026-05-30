@@ -29,7 +29,7 @@ No code touches. No observable change.
   - **Add** `referenceDatasets?: DatasetConfig[]` — direct contribution.
   - **Add** `mapLayerGroups?: PackMapLayerGroup[]` — rail toggles.
 - New `src/packs/aviation/rail.ts` presenter + a small Svelte component rendered inside the rail.
-- The free-floating `MapLayersPanel` is removed from `MapSurface`.
+- The free-floating `MapLayersPanel` is removed from the operational map shell.
 - A new scenario `src/scenarios/norway-airspace.scenario.json` activates the pack and renders the rail-driven toggles for airspace + airports.
 - No live aircraft yet.
 - Production behaviour: existing Halden / Oslo scenarios continue working unchanged because they do not declare `aviation` in their `packs:` list. The new `norway-airspace` scenario is the only place airspace renders. On-disk state on Hetzner does not change; the build CLI just sources the dataset from a different code location.

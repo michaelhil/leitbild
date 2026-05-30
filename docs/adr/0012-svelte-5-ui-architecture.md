@@ -40,7 +40,7 @@ The primary `src/ui` Svelte component surface should stay fully migrated: no `ex
 3. Migrate leaf components next.
 4. Migrate modal composition and form ownership.
 5. Extract deep client UI state modules from `App.svelte`.
-6. Migrate `MapSurface` carefully, keeping MapLibre lifecycle imperative and isolated.
+6. Migrate `OperationalMap` carefully, keeping MapLibre/deck.gl lifecycle imperative and isolated.
 7. Audit remaining classic syntax and either migrate it or document why it remains.
 
 This migration is complete for the current `src/ui` component set as of the runes pass that introduced `rail-layout-state.svelte.ts` and `placement-state.svelte.ts`.
@@ -51,7 +51,8 @@ This migration is complete for the current `src/ui` component set as of the rune
 - `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, and resize pointer listeners. It does not own map invalidation.
 - `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
 - `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
-- `MapSurface.svelte` is an imperative MapLibre adapter. Svelte effects synchronize input boundaries such as object updates, theme changes, configured layer visibility, and placement cursor changes, but MapLibre owns its internal map lifecycle.
+- `OperationalMap.svelte` is a thin imperative map shell. Svelte effects synchronize input boundaries such as object updates, theme changes, configured layer visibility, and placement cursor changes, while `src/ui/map-runtime/*` owns MapLibre construction, base-map readiness, reference-layer registration, deck.gl operational overlays, and frame-budgeted render updates.
+- Reference geometry is not operational geometry. Large imported datasets such as OSM grid lines, airspace, contours, and facility footprints should render as vector-tile reference layers; operational rendering should carry commandable/monitorable assets, selected branches, alarms, and high-cadence visual state.
 - MapLibre resize must be driven by the observed rendered size of the map container, not by rail state, modal state, startup state, arbitrary revision counters, or delayed activation frames. A `ResizeObserver` at the map boundary is the project pattern for keeping MapLibre's internal transform in sync with browser layout.
 - `runOnMount` is the project vocabulary for one-time setup and cleanup of browser event listeners, intervals, WebSocket startup orchestration, and MapLibre construction. It wraps setup in `untrack` so these lifecycle effects do not accidentally subscribe to the state they initialize.
 

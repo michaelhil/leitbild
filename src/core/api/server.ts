@@ -78,14 +78,31 @@ export const createHealthDetails = async (config: {
   mapArtifacts: await createMapArtifactStatus(config.mapArtifacts),
 })
 
-export const staticContentTypeForPath = (filePath: string): string =>
-  filePath.endsWith('.html')
-    ? 'text/html'
-    : filePath.endsWith('.css')
-      ? 'text/css'
-      : filePath.endsWith('.js') || filePath.endsWith('.mjs')
-        ? 'application/javascript'
-        : 'application/octet-stream'
+const staticContentTypes: Readonly<Record<string, string>> = {
+  '.avif': 'image/avif',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.js': 'application/javascript',
+  '.json': 'application/json',
+  '.map': 'application/json',
+  '.mjs': 'application/javascript',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.wasm': 'application/wasm',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+}
+
+export const staticContentTypeForPath = (filePath: string): string => {
+  const lowerPath = filePath.toLowerCase()
+  const extension = Object.keys(staticContentTypes)
+    .find(candidate => lowerPath.endsWith(candidate))
+  return extension ? staticContentTypes[extension]! : 'application/octet-stream'
+}
 
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
   const normalizedPath = pathname === '/' || pathname === '/i' || pathname.startsWith('/i/') ? '/index.html' : pathname

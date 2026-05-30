@@ -15,10 +15,15 @@ import {
   type OperationalSymbolFeature,
   type Position2,
   type Position3,
+  type RenderFamily,
 } from './types.ts'
 
 export interface MapFeatureStore {
   readonly update: (input: OperationalRenderInput) => OperationalRenderSnapshot
+  readonly updateFamilies: (
+    input: OperationalRenderInput,
+    families: ReadonlySet<RenderFamily>,
+  ) => OperationalRenderSnapshot
   readonly snapshot: () => OperationalRenderSnapshot
 }
 
@@ -277,6 +282,80 @@ const areaSymbolFor = (feature: PackMapAreaFeature): OperationalSymbolFeature | 
 const placementPosition = (point: GeoJsonPoint): Position3 =>
   pointPosition(point)
 
+interface ProjectedObjectFeatures {
+  readonly points: ReadonlyArray<OperationalPointFeature>
+  readonly objectPaths: ReadonlyArray<OperationalPathFeature>
+  readonly objectAreas: ReadonlyArray<OperationalAreaFeature>
+}
+
+const projectionContextFor = (
+  input: OperationalRenderInput,
+): MapFeatureProjectionContext => ({
+  selectedControllerId: input.selectedControllerId,
+  highlightedObjectIds: new Set(input.highlightedObjectIds),
+  hasNewInfo: input.hasNewInfo,
+  presentationFor: input.presentationFor,
+})
+
+const projectObjects = (
+  input: OperationalRenderInput,
+  context: MapFeatureProjectionContext,
+): ProjectedObjectFeatures => {
+  const points: OperationalPointFeature[] = []
+  const objectPaths: OperationalPathFeature[] = []
+  const objectAreas: OperationalAreaFeature[] = []
+  for (const object of input.objects) {
+    const point = operationalPointFor(object, context)
+    if (point) points.push(point)
+    const route = routePathFor(object, input.selectedControllerId)
+    if (route) objectPaths.push(route)
+    const presentation = input.presentationFor(object)
+    const line = lineObjectPathFor(object, presentation)
+    if (line) objectPaths.push(line)
+    const area = trafficAreaFor(object, presentation)
+    if (area) objectAreas.push(area)
+  }
+  return {
+    points: points.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
+    objectPaths,
+    objectAreas,
+  }
+}
+
+const projectPackAreaPaths = (
+  features: ReadonlyArray<PackMapAreaFeature>,
+): ReadonlyArray<OperationalPathFeature> =>
+  features.flatMap(feature => {
+    const path = baseGridPathFor(feature)
+    return path ? [path] : []
+  })
+
+const projectPackAreas = (
+  features: ReadonlyArray<PackMapAreaFeature>,
+): ReadonlyArray<OperationalAreaFeature> =>
+  features.flatMap(feature => {
+    const area = areaFor(feature)
+    return area ? [area] : []
+  })
+
+const projectPackAreaSymbols = (
+  features: ReadonlyArray<PackMapAreaFeature>,
+): ReadonlyArray<OperationalSymbolFeature> =>
+  features.flatMap(feature => {
+    const symbol = areaSymbolFor(feature)
+    return symbol ? [symbol] : []
+  })
+
+const sortPaths = (
+  paths: ReadonlyArray<OperationalPathFeature>,
+): ReadonlyArray<OperationalPathFeature> =>
+  [...paths].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
+
+const sortAreas = (
+  areas: ReadonlyArray<OperationalAreaFeature>,
+): ReadonlyArray<OperationalAreaFeature> =>
+  [...areas].sort((left, right) => left.sortKey - right.sortKey || left.id.localeCompare(right.id))
+
 const projectFeatures = (input: OperationalRenderInput): {
   readonly points: ReadonlyArray<OperationalPointFeature>
   readonly paths: ReadonlyArray<OperationalPathFeature>
@@ -284,42 +363,14 @@ const projectFeatures = (input: OperationalRenderInput): {
   readonly areaSymbols: ReadonlyArray<OperationalSymbolFeature>
   readonly placementPoints: ReadonlyArray<Position3>
 } => {
-  const context: MapFeatureProjectionContext = {
-    selectedControllerId: input.selectedControllerId,
-    highlightedObjectIds: new Set(input.highlightedObjectIds),
-    hasNewInfo: input.hasNewInfo,
-    presentationFor: input.presentationFor,
-  }
-  const points: OperationalPointFeature[] = []
-  const paths: OperationalPathFeature[] = []
-  const areas: OperationalAreaFeature[] = []
-  for (const object of input.objects) {
-    const point = operationalPointFor(object, context)
-    if (point) points.push(point)
-    const route = routePathFor(object, input.selectedControllerId)
-    if (route) paths.push(route)
-    const presentation = input.presentationFor(object)
-    const line = lineObjectPathFor(object, presentation)
-    if (line) paths.push(line)
-    const area = trafficAreaFor(object, presentation)
-    if (area) areas.push(area)
-  }
-  const packAreaPaths = input.packAreaFeatures.flatMap(feature => {
-    const path = baseGridPathFor(feature)
-    return path ? [path] : []
-  })
-  const areaFeatures = input.packAreaFeatures.flatMap(feature => {
-    const area = areaFor(feature)
-    return area ? [area] : []
-  })
-  const areaSymbols = input.packAreaFeatures.flatMap(feature => {
-    const symbol = areaSymbolFor(feature)
-    return symbol ? [symbol] : []
-  })
+  const objectFeatures = projectObjects(input, projectionContextFor(input))
+  const packAreaPaths = projectPackAreaPaths(input.packAreaFeatures)
+  const areaFeatures = projectPackAreas(input.packAreaFeatures)
+  const areaSymbols = projectPackAreaSymbols(input.packAreaFeatures)
   return {
-    points: points.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
-    paths: [...paths, ...packAreaPaths].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
-    areas: [...areas, ...areaFeatures].sort((left, right) => left.sortKey - right.sortKey || left.id.localeCompare(right.id)),
+    points: objectFeatures.points,
+    paths: sortPaths([...objectFeatures.objectPaths, ...packAreaPaths]),
+    areas: sortAreas([...objectFeatures.objectAreas, ...areaFeatures]),
     areaSymbols,
     placementPoints: input.placementPoints.map(placementPosition),
   }
@@ -348,18 +399,53 @@ export const createMapFeatureStore = (): MapFeatureStore => {
     },
   })
 
+  const syncPlacement = (nextPlacementPoints: ReadonlyArray<Position3>): void => {
+    const nextPlacementSignature = nextPlacementPoints.map(positionSignature).join('|')
+    const currentPlacementSignature = placementPoints.map(positionSignature).join('|')
+    if (nextPlacementSignature !== currentPlacementSignature) {
+      placementPoints = nextPlacementPoints
+      placementRevision += 1
+    }
+  }
+
+  const updateAll = (input: OperationalRenderInput): OperationalRenderSnapshot => {
+    const next = projectFeatures(input)
+    syncFamily(points, next.points)
+    syncFamily(paths, next.paths)
+    syncFamily(areas, next.areas)
+    syncFamily(areaSymbols, next.areaSymbols)
+    syncPlacement(next.placementPoints)
+    return currentSnapshot()
+  }
+
   return {
-    update: (input) => {
-      const next = projectFeatures(input)
-      syncFamily(points, next.points)
-      syncFamily(paths, next.paths)
-      syncFamily(areas, next.areas)
-      syncFamily(areaSymbols, next.areaSymbols)
-      const nextPlacementSignature = next.placementPoints.map(positionSignature).join('|')
-      const currentPlacementSignature = placementPoints.map(positionSignature).join('|')
-      if (nextPlacementSignature !== currentPlacementSignature) {
-        placementPoints = next.placementPoints
-        placementRevision += 1
+    update: updateAll,
+    updateFamilies: (input, families) => {
+      const context = projectionContextFor(input)
+      const shouldUpdatePoints = families.has('operational-points')
+      const shouldUpdatePaths = families.has('operational-paths')
+      const shouldUpdateAreas = families.has('operational-areas')
+      const shouldUpdateObjects = shouldUpdatePoints || shouldUpdatePaths || shouldUpdateAreas
+      const objectFeatures = shouldUpdateObjects ? projectObjects(input, context) : null
+
+      if (shouldUpdatePoints && objectFeatures) {
+        syncFamily(points, objectFeatures.points)
+      }
+      if (shouldUpdatePaths && objectFeatures) {
+        syncFamily(paths, sortPaths([
+          ...objectFeatures.objectPaths,
+          ...projectPackAreaPaths(input.packAreaFeatures),
+        ]))
+      }
+      if (shouldUpdateAreas && objectFeatures) {
+        syncFamily(areas, sortAreas([
+          ...objectFeatures.objectAreas,
+          ...projectPackAreas(input.packAreaFeatures),
+        ]))
+        syncFamily(areaSymbols, projectPackAreaSymbols(input.packAreaFeatures))
+      }
+      if (families.has('placement')) {
+        syncPlacement(input.placementPoints.map(placementPosition))
       }
       return currentSnapshot()
     },

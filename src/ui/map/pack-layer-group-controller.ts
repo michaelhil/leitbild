@@ -52,8 +52,17 @@ const safeSetVisibility = (map: MapLibreMap, layerId: string, visible: boolean):
 export const createPackLayerGroupController = (config: {
   readonly map: MapLibreMap
   readonly packs: ReadonlyArray<LeitbildPack>
+}): PackLayerGroupController =>
+  createPackLayerGroupControllerFromGroups({
+    map: config.map,
+    groups: collectGroups(config.packs),
+  })
+
+export const createPackLayerGroupControllerFromGroups = (config: {
+  readonly map: MapLibreMap
+  readonly groups: ReadonlyArray<PackMapLayerGroup>
 }): PackLayerGroupController => {
-  const groups = collectGroups(config.packs)
+  const groups = config.groups
   const defaults: Record<string, boolean> = {}
   for (const g of groups) defaults[g.id] = g.defaultVisible
 

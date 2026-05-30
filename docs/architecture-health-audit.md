@@ -26,7 +26,7 @@ This audit records the cleanup baseline for the multi-package health pass coveri
 | Process plant physics | Per process system | Fixed-step runtime phases | Runtime variable table and telemetry recorder | Acceptance traces and benchmark guardrails verify bounded trends and performance. |
 | Weather pack runtime | Weather adapter | Pack runtime interval | Weather sparse field and weather projections | Query failures return explicit pack-query failures. |
 | Ambulance/traffic pack runtimes | Pack adapters | Pack runtime interval / commands | Pack objects and route/traffic projections | Failures should reject commands or produce explicit pack runtime signals. |
-| Map rendering | UI MapSurface | Snapshot/events/map move/zoom | MapLibre sources/layers only | Map load/style errors are shown through startup/realtime status. |
+| Map rendering | `OperationalMap.svelte` shell plus `src/ui/map-runtime/*` controllers | Snapshot/events/map move/zoom | MapLibre owns the vector base/reference map; deck.gl owns operational overlays; reference geometry is not operational geometry | Map worker/style/tile/render errors and operational render timings are shown through startup/internal diagnostics. |
 
 ## Scenario Initialization Trace
 

@@ -22,6 +22,7 @@ import { createMapDiagnostics } from './map-diagnostics.ts'
 import { mapPerformanceDiagnostics } from './map-performance-diagnostics.ts'
 import type {
   MapRuntimeDiagnosticDetail,
+  MapRuntimeDiagnosticPhaseReport,
   MapRuntimeDiagnosticsSnapshot,
   MapRuntimeError,
   MapRuntimeHandle,
@@ -141,6 +142,14 @@ const waitForBase = async (
   }
 }
 
+const diagnosticErrorFor = (
+  report: MapRuntimeDiagnosticPhaseReport,
+): MapRuntimeError => report.error ?? {
+  phase: report.phase,
+  message: report.message,
+  recoverable: false,
+}
+
 export const createMapRuntime = async (
   config: CreateMapRuntimeConfig,
 ): Promise<MapRuntimeHandle> => {
@@ -159,6 +168,24 @@ export const createMapRuntime = async (
     performance: mapPerformanceDiagnostics.snapshot(),
   })
   const emitDiagnostics = (): void => config.onDiagnostics(snapshot())
+  const reportDiagnosticPhase = (report: MapRuntimeDiagnosticPhaseReport): void => {
+    const details = report.details ?? []
+    if (report.status === 'running') {
+      diagnostics.start(report.phase, report.message, details)
+    } else if (report.status === 'ready') {
+      diagnostics.ready(report.phase, report.message, details)
+    } else {
+      diagnostics.fail(report.phase, diagnosticErrorFor(report), details)
+    }
+    emitDiagnostics()
+  }
+  const setDiagnosticDetails = (
+    phase: RenderPhase | 'runtime',
+    details: ReadonlyArray<MapRuntimeDiagnosticDetail>,
+  ): void => {
+    diagnostics.details(phase, details)
+    emitDiagnostics()
+  }
   emitDiagnostics()
   const reportError = (error: MapRuntimeError): void => {
     diagnostics.fail(error.phase, error, diagnostics.snapshot().phases.find(phase => phase.phase === error.phase)?.details ?? [])
@@ -326,6 +353,8 @@ export const createMapRuntime = async (
       ])
       emitDiagnostics()
     },
+    reportDiagnosticPhase,
+    setDiagnosticDetails,
     setStyleUrl: async (styleUrl: string): Promise<void> => {
       diagnostics.start('base', 'Changing vector map style')
       emitDiagnostics()

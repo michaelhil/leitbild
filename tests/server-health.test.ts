@@ -80,6 +80,10 @@ const dispatchAmbulanceCommand = (controlInstanceId: ControlInstanceId, ambulanc
 describe('server health', () => {
   test('serves module worker assets with a JavaScript MIME type', () => {
     expect(staticContentTypeForPath('/assets/maplibre-gl-worker-hash.mjs')).toBe('application/javascript')
+    expect(staticContentTypeForPath('/assets/OperationalMap-hash.js')).toBe('application/javascript')
+    expect(staticContentTypeForPath('/assets/index-hash.css')).toBe('text/css')
+    expect(staticContentTypeForPath('/assets/leitbild-symbols.svg')).toBe('image/svg+xml')
+    expect(staticContentTypeForPath('/assets/unknown.bin')).toBe('application/octet-stream')
   })
 
   test('reports process, storage, control instance, and realtime details', async () => {

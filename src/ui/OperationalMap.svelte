@@ -17,13 +17,6 @@
     PackMapLayerGroup,
     PackObjectPresentation,
   } from '../core/packs/protocol.ts'
-  import {
-    createDisplayMotionState,
-    displayObjectsFor,
-    hasActiveDisplayMotion,
-    reconcileDisplayMotionState,
-    type DisplayMotionState,
-  } from './display-motion.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
   import type { MapInputDebugController } from './map/map-input-debug.ts'
   import {
@@ -34,11 +27,9 @@
   import { simulationTimeAt } from './simulation-clock.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { ThemeMode } from './theme.ts'
-  import { createMapFeatureStore } from './map-runtime/map-feature-store.ts'
-  import { createMapLayerRegistry, type MapLayerRegistry } from './map-runtime/map-layer-registry.ts'
   import { createMapRuntime } from './map-runtime/map-runtime.ts'
-  import { createMapUpdateScheduler } from './map-runtime/map-update-scheduler.ts'
-  import { createOperationalDeckLayerFactory, visibleFamiliesKey } from './map-runtime/operational-deck-layers.ts'
+  import { createOperationalRenderController } from './map-runtime/operational-render-controller.ts'
+  import { createReferenceLayerController } from './map-runtime/reference-layer-controller.ts'
   import {
     installMapPerformanceDiagnosticsGlobal,
     mapPerformanceDiagnostics,
@@ -47,7 +38,6 @@
   import type {
     MapRuntimeDiagnosticsSnapshot,
     MapRuntimeHandle,
-    RenderFamily,
   } from './map-runtime/types.ts'
 
   interface Props {
@@ -116,9 +106,6 @@
   let mapInputDebugEntries = $state<ReadonlyArray<string>>([])
   let mapInputDebugSummary = $state('Waiting for map input')
   let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
-  let displayMotionState: DisplayMotionState = createDisplayMotionState()
-  let previousMotionObjects: ReadonlyArray<OperationalObject> = []
-  let displayFrame: number | null = null
   let packAreaRefreshInterval: ReturnType<typeof setInterval> | null = null
   let packAreaFeatureRequestSerial = 0
   let packAreaFeatureRequestInFlight = false
@@ -131,15 +118,6 @@
   let appliedCameraKey: string | null = null
   let mapReadyNotified = false
   let screenshotResponderCleanup: (() => void) | null = null
-  let layerRegistry: MapLayerRegistry | null = null
-  let referenceRegistrationSerial = 0
-  let registeredReferenceKey: string | null = null
-  let lastPerformanceDiagnosticAtMs = 0
-
-  const featureStore = createMapFeatureStore()
-  const updateScheduler = createMapUpdateScheduler({ frameBudgetMs: 6 })
-  const deckLayerFactory = createOperationalDeckLayerFactory()
-  let lastOperationalRenderSignature: string | null = null
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -176,29 +154,43 @@
     hasNewInfo: (object) => hasNewInfo(object),
   })
 
-  const createRenderPresentationFor = (): ((object: OperationalObject) => PackObjectPresentation) => {
-    const cache = new Map<string, PackObjectPresentation>()
-    return (object) => {
-      const key = `${object.id}:${object.revision}`
-      const cached = cache.get(key)
-      if (cached) return cached
-      const presentation = presentationFor(object)
-      cache.set(key, presentation)
-      return presentation
-    }
-  }
+  const operationalRenderController = createOperationalRenderController({
+    getRuntime: () => runtime,
+    getState: () => ({
+      objects,
+      selectedControllerId,
+      highlightedObjectIds,
+      placementPoints,
+      packAreaFeatures: cachedPackMapAreaFeatures,
+      visibleFamilies: visibleFamilies(),
+      placementCursorActive: placementCursor !== null,
+    }),
+    hasNewInfo: object => hasNewInfo(object),
+    presentationFor: object => presentationFor(object),
+    onObjectSelected: object => onObjectSelected(object),
+    onObjectSeen: object => onObjectSeen(object),
+    onObjectHover: object => {
+      if (object) popupController.show(object)
+      else popupController.hide()
+    },
+    setCursor: cursor => {
+      const canvas = runtime?.map.getCanvas()
+      if (canvas) canvas.style.cursor = cursor
+    },
+    refreshPopup: displayObjects => {
+      popupController.refresh(displayObjects)
+    },
+    onDiagnostic: currentRuntime => {
+      onMapDiagnostic(currentRuntime.diagnostics())
+    },
+    performanceDiagnostics: mapPerformanceDiagnostics,
+  })
 
-  const createRenderHasNewInfo = (): ((object: OperationalObject) => boolean) => {
-    const cache = new Map<string, boolean>()
-    return (object) => {
-      const key = `${object.id}:${object.revision}`
-      const cached = cache.get(key)
-      if (cached !== undefined) return cached
-      const next = hasNewInfo(object)
-      cache.set(key, next)
-      return next
-    }
-  }
+  const referenceLayerController = createReferenceLayerController({
+    onError: message => {
+      onMapError(message)
+    },
+  })
 
   const styleUrlFor = (mode: ThemeMode): string =>
     `/map/style.json?theme=${encodeURIComponent(mode)}`
@@ -308,148 +300,6 @@
     packAreaFeatureRequestKey = null
   }
 
-  const flushOperationalRender = (): void => {
-    const currentRuntime = runtime
-    if (!currentRuntime) return
-    const startedAtMs = performance.now()
-    const nowMs = startedAtMs
-    const displayObjects = mapPerformanceDiagnostics.measure(
-      'operational-dynamic',
-      'displayObjectsFor',
-      () => displayObjectsFor(objects, displayMotionState, nowMs),
-      { objects: objects.length },
-    )
-    const renderPresentationFor = createRenderPresentationFor()
-    const renderHasNewInfo = createRenderHasNewInfo()
-    const snapshot = mapPerformanceDiagnostics.measure(
-      'operational-dynamic',
-      'featureStore.update',
-      () => featureStore.update({
-        objects: displayObjects,
-        selectedControllerId,
-        highlightedObjectIds,
-        placementPoints,
-        packAreaFeatures: cachedPackMapAreaFeatures,
-        hasNewInfo: renderHasNewInfo,
-        presentationFor: renderPresentationFor,
-      }),
-      {
-        objects: displayObjects.length,
-        packAreaFeatures: cachedPackMapAreaFeatures.length,
-      },
-    )
-    const families = visibleFamilies()
-    const renderSignature = [
-      snapshot.revisions.points,
-      snapshot.revisions.paths,
-      snapshot.revisions.areas,
-      snapshot.revisions.areaSymbols,
-      snapshot.revisions.placement,
-      visibleFamiliesKey(families),
-    ].join('|')
-    const deckUpdated = renderSignature !== lastOperationalRenderSignature
-    if (deckUpdated) {
-      lastOperationalRenderSignature = renderSignature
-      const deckLayers = mapPerformanceDiagnostics.measure(
-        'operational-dynamic',
-        'deckLayerFactory.createLayers',
-        () => deckLayerFactory.createLayers({
-          snapshot,
-          visibleFamilies: families,
-          onObjectSelected: point => {
-            onObjectSelected(point.object)
-          },
-          onObjectSeen: point => {
-            onObjectSeen(point.object)
-          },
-          onObjectHover: point => {
-            const canvas = runtime?.map.getCanvas()
-            if (!point) {
-              if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : ''
-              popupController.hide()
-              return
-            }
-            if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : 'pointer'
-            onObjectSeen(point.object)
-            popupController.show(point.object)
-          },
-        }),
-        {
-          points: snapshot.points.length,
-          paths: snapshot.paths.length,
-          areas: snapshot.areas.length,
-          areaSymbols: snapshot.areaSymbols.length,
-          placementPoints: snapshot.placementPoints.length,
-        },
-      )
-      mapPerformanceDiagnostics.measure(
-        'operational-dynamic',
-        'runtime.updateLayers',
-        () => currentRuntime.updateLayers({ deckLayers }),
-        { deckLayers: deckLayers.length },
-      )
-    }
-    mapPerformanceDiagnostics.measure(
-      'ui-overlay',
-      'popupController.refresh',
-      () => popupController.refresh(displayObjects),
-      { objects: displayObjects.length },
-    )
-    const totalMs = performance.now() - startedAtMs
-    mapPerformanceDiagnostics.record('operational-dynamic', 'flushOperationalRender total', totalMs, {
-      points: snapshot.points.length,
-      paths: snapshot.paths.length,
-      areas: snapshot.areas.length,
-      deckUpdated,
-    })
-    emitPerformanceDiagnostic()
-  }
-
-  const emitPerformanceDiagnostic = (): void => {
-    const currentRuntime = runtime
-    if (!currentRuntime) return
-    const nowMs = performance.now()
-    if (nowMs - lastPerformanceDiagnosticAtMs < 750) return
-    lastPerformanceDiagnosticAtMs = nowMs
-    onMapDiagnostic(currentRuntime.diagnostics())
-  }
-
-  const scheduleOperationalRender = (
-    family: RenderFamily,
-    priority = 60,
-    minIntervalMs = 0,
-  ): void => {
-    updateScheduler.schedule({
-      family,
-      priority,
-      minIntervalMs,
-      run: flushOperationalRender,
-    })
-  }
-
-  const flushOperationalRenderNow = (): void => {
-    scheduleOperationalRender('operational-points', 100)
-    updateScheduler.flushNow()
-  }
-
-  const stopDisplayAnimation = (): void => {
-    if (displayFrame === null) return
-    cancelAnimationFrame(displayFrame)
-    displayFrame = null
-  }
-
-  const scheduleDisplayAnimation = (): void => {
-    if (displayFrame !== null) return
-    displayFrame = requestAnimationFrame(() => {
-      displayFrame = null
-      const nowMs = performance.now()
-      scheduleOperationalRender('operational-points', 85)
-      if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
-        scheduleDisplayAnimation()
-      }
-    })
-  }
-
   const stopPackAreaRefresh = (): void => {
     if (packAreaRefreshInterval === null) return
     clearInterval(packAreaRefreshInterval)
@@ -461,7 +311,13 @@
       cachedPackMapAreaFeatures = []
       packAreaFeatureCacheKey = null
       packAreaFeatureRequestKey = null
-      scheduleOperationalRender('operational-areas', 45)
+      runtime?.reportDiagnosticPhase({
+        phase: 'operational-static',
+        status: 'ready',
+        message: 'No pack area features active',
+        details: [],
+      })
+      operationalRenderController.syncAreaFeatures()
       return
     }
     const current = runtime?.map
@@ -481,6 +337,14 @@
     packAreaFeatureAbortController = abortController
     packAreaFeatureRequestKey = requestKey
     packAreaFeatureRequestInFlight = true
+    runtime?.reportDiagnosticPhase({
+      phase: 'operational-static',
+      status: 'running',
+      message: 'Refreshing pack area features',
+      details: [
+        { label: 'Zoom', value: zoom.toFixed(2) },
+      ],
+    })
     try {
       const features = await mapPerformanceDiagnostics.measureAsync(
         'operational-static',
@@ -496,10 +360,30 @@
       if (serial !== packAreaFeatureRequestSerial) return
       cachedPackMapAreaFeatures = features
       packAreaFeatureCacheKey = requestKey
-      scheduleOperationalRender('operational-areas', 50)
+      runtime?.reportDiagnosticPhase({
+        phase: 'operational-static',
+        status: 'ready',
+        message: 'Pack area features ready',
+        details: [
+          { label: 'Features', value: String(features.length) },
+          { label: 'Zoom', value: zoom.toFixed(2) },
+        ],
+      })
+      operationalRenderController.syncAreaFeatures()
     } catch (err) {
       if (serial !== packAreaFeatureRequestSerial || isAbortError(err)) return
-      onMapError(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      runtime?.reportDiagnosticPhase({
+        phase: 'operational-static',
+        status: 'failed',
+        message,
+        error: {
+          phase: 'operational-static',
+          message,
+          recoverable: true,
+        },
+      })
+      onMapError(message)
     } finally {
       if (packAreaFeatureAbortController === abortController) {
         packAreaFeatureAbortController = null
@@ -523,65 +407,14 @@
 
   const registerReferenceLayers = (): void => {
     const currentRuntime = runtime
-    const registry = layerRegistry
-    if (!currentRuntime || !registry) return
-    const referenceKey = [
-      controlInstanceId ?? 'no-control-instance',
-      referenceDatasetIds.join(','),
-      mapLayerGroups.map(group => `${group.id}:${group.layerIdPattern}:${group.defaultVisible}`).join(','),
-    ].join('|')
-    if (registeredReferenceKey === referenceKey) return
-    registeredReferenceKey = referenceKey
-    const serial = ++referenceRegistrationSerial
-    registry.reset()
-    if (referenceDatasetIds.length === 0 && mapLayerGroups.length === 0) return
-    const run = async (): Promise<void> => {
-      try {
-        const registration = await mapPerformanceDiagnostics.measureAsync(
-          'reference',
-          'registerReferenceLayers',
-          async () => registry.registerReferenceLayers({
-            map: currentRuntime.map,
-            datasetIds: referenceDatasetIds,
-            layerGroups: mapLayerGroups,
-            visibility: mapLayerGroupVisibility,
-            logger: message => {
-              console.warn(message)
-            },
-          }),
-          {
-            datasetIds: referenceDatasetIds.length,
-            layerGroups: mapLayerGroups.length,
-          },
-        )
-        if (serial !== referenceRegistrationSerial) return
-        currentRuntime.diagnostics()
-        onMapDiagnostic({
-          ...currentRuntime.diagnostics(),
-          phases: currentRuntime.diagnostics().phases.map(phase =>
-            phase.phase === 'reference'
-              ? {
-                  ...phase,
-                  status: 'ready',
-                  message: 'Reference layers registered',
-                  completedAtMs: performance.now(),
-                  details: [
-                    { label: 'Sources', value: String(registration.sourceIds.length) },
-                    { label: 'Layers', value: String(registration.layerIds.length) },
-                  ],
-                }
-              : phase,
-          ),
-        })
-      } catch (err) {
-        onMapError(`Reference map overlay failed: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      window.requestIdleCallback(() => { void run() }, { timeout: 1_500 })
-      return
-    }
-    window.setTimeout(() => { void run() }, 120)
+    if (!currentRuntime) return
+    referenceLayerController.register({
+      runtime: currentRuntime,
+      controlInstanceId,
+      datasetIds: referenceDatasetIds,
+      layerGroups: mapLayerGroups,
+      visibility: mapLayerGroupVisibility,
+    })
   }
 
   const applyScenarioCameraDefault = (): void => {
@@ -650,8 +483,6 @@
         return
       }
       runtime = nextRuntime
-      lastOperationalRenderSignature = null
-      layerRegistry = createMapLayerRegistry()
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
       mapInputDebugController.install(nextRuntime.map)
@@ -668,12 +499,14 @@
           capture: async options => screenshotModule.captureMapCanvasScreenshot(nextRuntime.map.getCanvas(), options),
         })
       }
-      flushOperationalRenderNow()
+      operationalRenderController.flushNow()
       notifyMapReady()
       registerReferenceLayers()
       if (mapLayerEnabled('weather')) {
         void refreshPackMapAreaFeatures()
         startPackAreaRefresh()
+      } else {
+        void refreshPackMapAreaFeatures()
       }
     }
 
@@ -692,21 +525,15 @@
       stopFrameLagMonitor()
       cleanupMapPerformanceGlobal()
       resetMapInputDebugController()
-      updateScheduler.stop()
-      stopDisplayAnimation()
+      operationalRenderController.destroy()
       stopPackAreaRefresh()
       abortPackAreaFeatureRequest('operational map was destroyed')
       popupController.hide()
       screenshotResponderCleanup?.()
       screenshotResponderCleanup = null
-      referenceRegistrationSerial += 1
-      registeredReferenceKey = null
-      layerRegistry?.reset()
-      layerRegistry = null
+      referenceLayerController.reset()
       runtime?.destroy()
       runtime = null
-      deckLayerFactory.reset()
-      lastOperationalRenderSignature = null
       packAreaFeatureCacheKey = null
       packAreaFeatureRequestKey = null
       appliedTheme = null
@@ -723,32 +550,23 @@
     selectedControllerId
     highlightedObjectIds
     routeRevision
-    const nowMs = performance.now()
-    displayMotionState = reconcileDisplayMotionState({
-      previousState: displayMotionState,
-      previousObjects: previousMotionObjects,
-      nextObjects: objects,
-      nowMs,
-    })
-    previousMotionObjects = objects
-    scheduleOperationalRender('operational-points', 75)
-    if (hasActiveDisplayMotion(displayMotionState, nowMs)) scheduleDisplayAnimation()
+    operationalRenderController.syncObjects()
   })
 
   $effect(() => {
     placementPoints
-    scheduleOperationalRender('placement', 70)
+    operationalRenderController.syncPlacement()
   })
 
   $effect(() => {
     cachedPackMapAreaFeatures
-    scheduleOperationalRender('operational-areas', 55)
+    operationalRenderController.syncAreaFeatures()
   })
 
   $effect(() => {
     mapConfig.layers
     activePackIds
-    scheduleOperationalRender('operational-points', 65)
+    operationalRenderController.syncVisibility()
     if (!mapLayerEnabled('weather')) {
       abortPackAreaFeatureRequest('weather layer disabled')
       cachedPackMapAreaFeatures = []
@@ -770,10 +588,9 @@
     void (async (): Promise<void> => {
       try {
         await currentRuntime.setStyleUrl(styleUrlFor(theme))
-        registeredReferenceKey = null
+        referenceLayerController.reset()
         registerReferenceLayers()
-        lastOperationalRenderSignature = null
-        flushOperationalRenderNow()
+        operationalRenderController.flushNow()
       } catch (err) {
         onMapError(err instanceof Error ? err.message : String(err))
       }
@@ -788,7 +605,7 @@
   })
 
   $effect(() => {
-    layerRegistry
+    runtime
     referenceDatasetIds
     mapLayerGroups
     controlInstanceId
@@ -796,10 +613,8 @@
   })
 
   $effect(() => {
-    const registry = layerRegistry
-    if (!registry) return
     mapLayerGroupVisibility
-    registry.applyLayerGroupVisibility(mapLayerGroupVisibility)
+    referenceLayerController.applyVisibility(mapLayerGroupVisibility)
   })
 </script>
 
