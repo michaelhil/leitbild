@@ -34,7 +34,7 @@ export const gridReferenceFeatureSchema = z.object({
   geometrySource: z.enum(['osm-geometry', 'osm-node', 'source-geometry', 'bounds-centroid', 'manual']),
   propertyProvenance: provenanceSchema,
   confidence: confidenceSchema,
-  tags: z.record(z.string()),
+  tags: z.record(z.string(), z.string()),
 })
 
 export type GridReferenceFeatureProperties = z.infer<typeof gridReferenceFeatureSchema>

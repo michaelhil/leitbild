@@ -48,7 +48,7 @@ export const weatherExtensionValueSchema = z.union([
 ])
 export type WeatherExtensionValue = z.infer<typeof weatherExtensionValueSchema>
 
-export const weatherExtensionsSchema = z.record(weatherExtensionValueSchema).default({})
+export const weatherExtensionsSchema = z.record(z.string(), weatherExtensionValueSchema).default({})
 export type WeatherExtensions = z.infer<typeof weatherExtensionsSchema>
 
 export const weatherExtensionDefinitionSchema = z.discriminatedUnion('type', [
@@ -73,7 +73,7 @@ export const weatherExtensionDefinitionSchema = z.discriminatedUnion('type', [
 ])
 export type WeatherExtensionDefinition = z.infer<typeof weatherExtensionDefinitionSchema>
 
-export const weatherExtensionDefinitionsSchema = z.record(weatherExtensionDefinitionSchema).default({})
+export const weatherExtensionDefinitionsSchema = z.record(z.string(), weatherExtensionDefinitionSchema).default({})
 export type WeatherExtensionDefinitions = z.infer<typeof weatherExtensionDefinitionsSchema>
 
 export const weatherQualitySchema = z.object({

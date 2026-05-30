@@ -6,7 +6,6 @@ import type {
   PackObjectField,
   PackObjectPresentation,
   PackMapLayerGroup,
-  PackReferenceDatasetBuilder,
   PackRuntime,
 } from '../../core/packs/protocol.ts'
 import { packField, packStatus } from '../../core/packs/presentation.ts'
@@ -35,23 +34,6 @@ const aeroNorwayDatasetIdValue = asDatasetId('aero-norway')
 //   - Rail-side layer-group toggles for reference airspace / airports.
 //
 // See ADR 0022 for the architecture and the wiki page packs/aviation.md.
-
-// The build callback intentionally uses `require`/dynamic import so the UI
-// bundle does not pull in node:fs/promises and other build-time modules.
-// Bun supports synchronous `require` for ESM modules at runtime; the CLI
-// import path is the only place this runs.
-const aeroNorwayBuilder: PackReferenceDatasetBuilder = {
-  id: aeroNorwayDatasetIdValue,
-  build: (env) => {
-    const apiKey = env.OPENAIP_API_KEY
-    if (typeof apiKey !== 'string' || apiKey.length === 0) {
-      throw new Error('aviation pack: OPENAIP_API_KEY is required to build the aero-norway dataset. Generate one at https://accounts.openaip.net.')
-    }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { createAeroNorwayDataset } = require('./datasets/aero-norway.ts') as typeof import('./datasets/aero-norway.ts')
-    return createAeroNorwayDataset({ openaipApiKey: apiKey })
-  },
-}
 
 const layerGroups: ReadonlyArray<PackMapLayerGroup> = [
   {
@@ -159,7 +141,7 @@ export const aviationPack: LeitbildPack = {
     aviationMultiRuntime,
   ],
   defaultRuntimeId: aviationNoopRuntimeId,
-  referenceDatasetBuilders: [aeroNorwayBuilder],
+  referenceDatasetIds: [aeroNorwayDatasetIdValue],
   mapLayerGroups: layerGroups,
   categories: [
     {

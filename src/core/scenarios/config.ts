@@ -140,13 +140,13 @@ const surfaceRegionConfigSchema = z.discriminatedUnion('primitive', [
     id: idSchema,
     primitive: z.literal('systemFooter'),
     visible: z.boolean().default(true),
-    config: z.record(z.never()).default({}),
+    config: z.record(z.string(), z.never()).default({}),
   }),
   z.object({
     id: idSchema,
     primitive: z.literal('guidanceOverlay'),
     visible: z.boolean().default(true),
-    config: z.record(z.never()).default({}),
+    config: z.record(z.string(), z.never()).default({}),
   }),
 ])
 
@@ -161,11 +161,11 @@ export const scenarioConfigSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   packs: z.array(idSchema).min(1),
-  runtimeOverrides: z.record(idSchema).default({}),
+  runtimeOverrides: z.record(z.string(), idSchema).default({}),
   world: z.object({
     startsAt: z.string().datetime(),
     mapCenter: lonLatSchema.optional(),
-    environment: z.record(z.unknown()).default({}),
+    environment: z.record(z.string(), z.unknown()).default({}),
   }),
   objects: z.array(scenarioObjectConfigSchema),
   initialContexts: z.array(z.object({
@@ -178,8 +178,8 @@ export const scenarioConfigSchema = z.object({
     componentLibrary: idSchema,
     graph: z.unknown().optional(),
     graphRef: idSchema.optional(),
-    parameters: z.record(z.unknown()).optional(),
-    initialState: z.record(z.unknown()).optional(),
+    parameters: z.record(z.string(), z.unknown()).optional(),
+    initialState: z.record(z.string(), z.unknown()).optional(),
   }).superRefine((definition, ctx) => {
     const hasGraph = definition.graph !== undefined
     const hasGraphRef = definition.graphRef !== undefined
@@ -191,7 +191,7 @@ export const scenarioConfigSchema = z.object({
       })
     }
   })).default([]),
-  runtimeConfigs: z.record(z.unknown()).default({}),
+  runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
   missionId: idSchema.optional(),
   surface: surfaceConfigSchema,
   script: scenarioScriptConfigSchema.optional(),

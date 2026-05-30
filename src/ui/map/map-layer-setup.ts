@@ -241,7 +241,7 @@ export const addOperationalMapSourcesAndLayers = (config: {
     source: mapSourceIds.gridLines,
     paint: {
       'line-color': '#f8fafc',
-      'line-width': ['+', ['coalesce', ['get', 'lineWidth'], 3], 3],
+      'line-width': ['+', ['coalesce', ['feature-state', 'lineWidth'], ['get', 'lineWidth'], 3], 3],
       'line-opacity': 0.72,
       'line-blur': 0.25,
     },
@@ -255,9 +255,9 @@ export const addOperationalMapSourcesAndLayers = (config: {
     type: 'line',
     source: mapSourceIds.gridLines,
     paint: {
-      'line-color': ['get', 'color'],
-      'line-width': ['coalesce', ['get', 'lineWidth'], 3],
-      'line-opacity': ['coalesce', ['get', 'lineOpacity'], 0.84],
+      'line-color': ['coalesce', ['feature-state', 'color'], ['get', 'color']],
+      'line-width': ['coalesce', ['feature-state', 'lineWidth'], ['get', 'lineWidth'], 3],
+      'line-opacity': ['coalesce', ['feature-state', 'lineOpacity'], ['get', 'lineOpacity'], 0.84],
     },
     layout: {
       'line-cap': 'round',

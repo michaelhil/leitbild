@@ -175,7 +175,7 @@ export interface ScenarioDefinition {
 export const scenarioWorldDefinitionSchema = z.object({
   startsAt: isoTimestampSchema.optional(),
   mapCenter: geoJsonPointSchema.optional(),
-  environment: z.record(z.unknown()).default({}),
+  environment: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'])
@@ -215,13 +215,13 @@ export const surfaceRegionDefinitionSchema = z.discriminatedUnion('primitive', [
     id: idSchema,
     primitive: z.literal('systemFooter'),
     visible: z.boolean().default(true),
-    config: z.record(z.never()).default({}),
+    config: z.record(z.string(), z.never()).default({}),
   }),
   z.object({
     id: idSchema,
     primitive: z.literal('guidanceOverlay'),
     visible: z.boolean().default(true),
-    config: z.record(z.never()).default({}),
+    config: z.record(z.string(), z.never()).default({}),
   }),
 ])
 
@@ -262,8 +262,8 @@ export const scenarioProcessSystemDefinitionSchema = z.object({
   componentLibrary: idSchema,
   graph: z.unknown().optional(),
   graphRef: idSchema.optional(),
-  parameters: z.record(z.unknown()).optional(),
-  initialState: z.record(z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  initialState: z.record(z.string(), z.unknown()).optional(),
 }).superRefine((definition, ctx) => {
   const hasGraph = definition.graph !== undefined
   const hasGraphRef = definition.graphRef !== undefined
@@ -372,12 +372,12 @@ export const scenarioDefinitionSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).optional(),
   packs: z.array(idSchema).default([]),
-  runtimeOverrides: z.record(idSchema).default({}),
+  runtimeOverrides: z.record(z.string(), idSchema).default({}),
   world: scenarioWorldDefinitionSchema,
   initialObjects: z.array(operationalObjectSchema),
   initialContexts: z.array(scenarioInitialObjectContextSchema).default([]),
   processSystems: z.array(scenarioProcessSystemDefinitionSchema).default([]),
-  runtimeConfigs: z.record(z.unknown()).default({}),
+  runtimeConfigs: z.record(z.string(), z.unknown()).default({}),
   missionId: idSchema.optional(),
   surface: surfaceDefinitionSchema,
   script: scenarioScriptSchema.optional(),

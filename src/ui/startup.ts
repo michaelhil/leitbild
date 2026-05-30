@@ -100,7 +100,7 @@ export const resetStartupStepsAfter = (
 
 export const startupIsReady = (steps: ReadonlyArray<StartupStep>): boolean =>
   steps.find(step => step.id === 'ready')?.status === 'done'
-  && !steps.some(step => step.id !== 'map' && step.status === 'failed')
+  && !startupHasFailed(steps)
 
 export const startupHasFailed = (steps: ReadonlyArray<StartupStep>): boolean =>
   steps.some(step => step.status === 'failed')

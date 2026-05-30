@@ -159,7 +159,7 @@ export const missionTriggerSchema = z.object({
   id: idSchema,
   kind: missionTriggerKindSchema,
   activeInStageIds: z.array(idSchema).default([]),
-  condition: z.record(z.unknown()).default({}),
+  condition: z.record(z.string(), z.unknown()).default({}),
   oneShot: z.boolean().default(true),
 })
 
@@ -167,7 +167,7 @@ export const missionActionSchema = z.object({
   id: idSchema,
   kind: missionActionKindSchema,
   triggerId: idSchema.optional(),
-  payload: z.record(z.unknown()).default({}),
+  payload: z.record(z.string(), z.unknown()).default({}),
 })
 
 export const missionEvaluationMetricSchema = z.object({

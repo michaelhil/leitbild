@@ -138,5 +138,19 @@ export const createCompositePack = (config: {
       }
       return out
     })(),
+    referenceDatasetIds: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['referenceDatasetIds']>[number][] = []
+      for (const pack of config.packs) {
+        const ids = pack.referenceDatasetIds ?? pack.referenceDatasetBuilders?.map(builder => builder.id) ?? []
+        for (const id of ids) {
+          const key = String(id)
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push(id)
+        }
+      }
+      return out
+    })(),
   }
 }

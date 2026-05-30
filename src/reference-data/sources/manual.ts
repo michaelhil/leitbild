@@ -19,7 +19,7 @@ const featureSchema = z.object({
   type: z.literal('Feature'),
   id: z.union([z.string(), z.number()]).optional(),
   geometry: geometrySchema,
-  properties: z.record(z.unknown()),
+  properties: z.record(z.string(), z.unknown()),
 })
 
 const featureCollectionSchema = z.object({

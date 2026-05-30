@@ -25,7 +25,7 @@ export const processPlantRuntimeSystemConfigSchema = z.object({
 })
 
 export const processPlantRuntimeConfigSchema = z.object({
-  systems: z.record(processPlantRuntimeSystemConfigSchema).default({}),
+  systems: z.record(z.string(), processPlantRuntimeSystemConfigSchema).default({}),
 }).strict()
 
 export type ProcessPlantRuntimeSystemConfig = z.infer<typeof processPlantRuntimeSystemConfigSchema>

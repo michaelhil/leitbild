@@ -11,6 +11,8 @@ import {
   issueCommandWithIdempotency,
 } from './command-idempotency.ts'
 
+const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
+
 export interface ControlInstanceRouteConfig {
   readonly registry: ControlInstanceRegistry
   readonly websocketClients?: ReadonlyArray<{
@@ -20,7 +22,7 @@ export interface ControlInstanceRouteConfig {
 }
 
 const commandRequestSchema = z.object({
-  actorId: actorIdSchema.default('actor:operator'),
+  actorId: actorIdSchema.default(defaultOperatorActorId),
   clientId: clientIdSchema.optional(),
   idempotencyKey: z.string().min(1).max(256).optional(),
   kind: z.string().min(1),
@@ -35,7 +37,7 @@ const createControlInstanceRequestSchema = z.object({
 })
 
 const signalRequestSchema = z.object({
-  actorId: actorIdSchema.default('actor:operator'),
+  actorId: actorIdSchema.default(defaultOperatorActorId),
   clientId: clientIdSchema.optional(),
   source: interactionEndpointSchema.optional(),
   type: z.string().min(1),

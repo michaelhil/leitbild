@@ -1,9 +1,8 @@
-import type maplibregl from 'maplibre-gl'
-import type { Map as MapLibreMap } from 'maplibre-gl'
+import type { Map as MapLibreMap, MapLayerMouseEvent } from 'maplibre-gl'
 import type { OperationalObject } from '../../core/model/index.ts'
 
 export const objectFromMapEvent = (
-  event: maplibregl.MapLayerMouseEvent,
+  event: MapLayerMouseEvent,
   objects: ReadonlyArray<OperationalObject>,
 ): OperationalObject | null => {
   const objectId = String(event.features?.[0]?.properties?.id ?? '')

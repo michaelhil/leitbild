@@ -1,4 +1,11 @@
-import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl'
+import {
+  Map as MapLibre,
+  NavigationControl,
+  addProtocol,
+  removeProtocol,
+  type Map as MapLibreMap,
+  type MapOptions,
+} from 'maplibre-gl'
 import { Protocol as PmtilesProtocol } from 'pmtiles'
 import type { GeoJsonPoint } from '../../core/model/index.ts'
 import { geoPointFromLonLat } from '../../core/model/index.ts'
@@ -59,13 +66,13 @@ const isReferenceDatasetMapError = (details: MapLibreErrorDetails): boolean =>
 const installPmtilesProtocol = (): Cleanup => {
   const protocol = new PmtilesProtocol({ metadata: true })
   if (pmtilesProtocolRefCount === 0) {
-    maplibregl.addProtocol('pmtiles', protocol.tile)
+    addProtocol('pmtiles', protocol.tile)
   }
   pmtilesProtocolRefCount += 1
   return () => {
     pmtilesProtocolRefCount -= 1
     if (pmtilesProtocolRefCount === 0) {
-      maplibregl.removeProtocol('pmtiles')
+      removeProtocol('pmtiles')
     }
   }
 }
@@ -131,7 +138,7 @@ const installMapContainerResizeObserver = (
 export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => {
   const cleanups: Array<Cleanup> = [installPmtilesProtocol()]
   const warnedReferenceErrors = new Set<string>()
-  const mapOptions: maplibregl.MapOptions & { readonly preserveDrawingBuffer?: boolean } = {
+  const mapOptions: MapOptions & { readonly preserveDrawingBuffer?: boolean } = {
     container: config.element,
     style: config.styleUrl,
     center: [config.center.coordinates[0], config.center.coordinates[1]],
@@ -146,7 +153,7 @@ export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => 
     cooperativeGestures: false,
     preserveDrawingBuffer: config.preserveDrawingBuffer === true,
   }
-  const current = new maplibregl.Map(mapOptions)
+  const current = new MapLibre(mapOptions)
   assertCameraInteractionContract(current)
   cleanups.push(installMapContainerResizeObserver(config, current))
 
@@ -162,7 +169,36 @@ export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => 
     }
     config.onError(details.message)
   })
-  current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
+  current.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right')
+  const canvas = current.getCanvas()
+  let webglContextLossTimer: ReturnType<typeof setTimeout> | null = null
+  const onWebglContextLost = (event: Event): void => {
+    event.preventDefault()
+    config.recordDebug('webgl:context-lost', event)
+    webglContextLossTimer = setTimeout(() => {
+      webglContextLossTimer = null
+      config.onError('Vector map WebGL context was lost')
+    }, 2_000)
+  }
+  const onWebglContextRestored = (event: Event): void => {
+    if (webglContextLossTimer !== null) {
+      clearTimeout(webglContextLossTimer)
+      webglContextLossTimer = null
+    }
+    config.recordDebug('webgl:context-restored', event)
+    current.resize({ source: 'leitbild-webgl-context-restored' })
+    current.triggerRepaint()
+  }
+  canvas.addEventListener('webglcontextlost', onWebglContextLost, false)
+  canvas.addEventListener('webglcontextrestored', onWebglContextRestored, false)
+  cleanups.push(() => {
+    if (webglContextLossTimer !== null) {
+      clearTimeout(webglContextLossTimer)
+      webglContextLossTimer = null
+    }
+    canvas.removeEventListener('webglcontextlost', onWebglContextLost, false)
+    canvas.removeEventListener('webglcontextrestored', onWebglContextRestored, false)
+  })
   current.on('click', (event) => {
     if (!config.placementActive()) return
     config.onPlacementPoint(geoPointFromLonLat(event.lngLat.lng, event.lngLat.lat))

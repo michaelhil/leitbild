@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec'
 import { aeroNorwayStyleModule } from '../src/packs/aviation/ui/aero-norway-style.ts'
 import { gridNorwayStyleModule } from '../src/packs/electric-grid/ui/grid-norway-style.ts'
 import {
@@ -30,6 +31,29 @@ const expressionContains = (value: unknown, token: string): boolean =>
   Array.isArray(value)
     ? value.some(item => expressionContains(item, token))
     : value === token
+
+const validateMapLibrePaint = (
+  type: 'line' | 'circle',
+  paint: Record<string, unknown>,
+): ReadonlyArray<string> => {
+  const errors = validateStyleMin({
+    version: 8,
+    sources: {
+      reference: {
+        type: 'vector',
+        url: 'pmtiles:///test.pmtiles',
+      },
+    },
+    layers: [{
+      id: 'reference-test',
+      type,
+      source: 'reference',
+      'source-layer': 'grid',
+      paint,
+    }],
+  })
+  return errors.map(error => error.message)
+}
 
 describe('buildReferenceDatasetLayers', () => {
   test('emits one fill + one line per category, in deterministic order', () => {
@@ -188,14 +212,15 @@ describe('grid-norway style module', () => {
     expect(label?.layout?.['text-font']).toEqual(['Noto Sans Regular'])
   })
 
-  test('grid opacity expressions avoid nested zoom syntax rejected by MapLibre', () => {
+  test('grid opacity expressions are valid MapLibre style expressions', () => {
     const linePaint = gridNorwayStyleModule.lineFor('line')
     const substationPaint = gridNorwayStyleModule.pointFor?.('substation')?.paint
     const transformerPaint = gridNorwayStyleModule.pointFor?.('transformer')?.paint
 
-    expect(expressionContains(linePaint['line-opacity'], 'zoom')).toBe(false)
-    expect(expressionContains(substationPaint?.['circle-opacity'], 'zoom')).toBe(false)
-    expect(expressionContains(transformerPaint?.['circle-opacity'], 'zoom')).toBe(false)
+    expect(expressionContains(linePaint['line-opacity'], 'zoom')).toBe(true)
+    expect(validateMapLibrePaint('line', linePaint)).toEqual([])
+    expect(validateMapLibrePaint('circle', substationPaint ?? {})).toEqual([])
+    expect(validateMapLibrePaint('circle', transformerPaint ?? {})).toEqual([])
   })
 })
 

@@ -50,7 +50,7 @@ describe('startup progress model', () => {
     expect(startupHasFailed(failed)).toBe(true)
   })
 
-  test('treats shell readiness as independent from map completion', () => {
+  test('does not report readiness after a map failure', () => {
     let steps = createStartupSteps(10)
     for (const step of steps.filter(step => step.id !== 'map')) {
       steps = completeStartupStep(steps, step.id, 20)
@@ -59,7 +59,7 @@ describe('startup progress model', () => {
     expect(startupIsReady(steps)).toBe(true)
 
     const mapFailed = failStartupStep(steps, 'map', 'map failed', 30)
-    expect(startupIsReady(mapFailed)).toBe(true)
+    expect(startupIsReady(mapFailed)).toBe(false)
     expect(startupHasFailed(mapFailed)).toBe(true)
 
     const realtimeFailed = failStartupStep(steps, 'realtime', 'socket failed', 30)

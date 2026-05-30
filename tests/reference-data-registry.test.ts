@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { aviationPack } from '../src/packs/aviation/pack.ts'
 import { aeroNorwayDatasetId } from '../src/packs/aviation/datasets/aero-norway.ts'
+import { aviationReferenceDatasetBuilders } from '../src/packs/aviation/reference-datasets.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { gridNorwayDatasetId } from '../src/packs/electric-grid/datasets/grid-norway.ts'
+import { electricGridReferenceDatasetBuilders } from '../src/packs/electric-grid/reference-datasets.ts'
 import {
   collectRegisteredDatasets,
   findRegisteredDataset,
@@ -13,7 +15,18 @@ import type { LeitbildPack } from '../src/core/packs/protocol.ts'
 const okEnv: RegistryEnvironment = { OPENAIP_API_KEY: 'test-key' }
 const emptyEnv: RegistryEnvironment = {}
 
-const packs: ReadonlyArray<LeitbildPack> = [aviationPack, electricGridPack]
+const aviationPackWithReferenceDatasets: LeitbildPack = {
+  ...aviationPack,
+  referenceDatasetBuilders: aviationReferenceDatasetBuilders,
+}
+const electricGridPackWithReferenceDatasets: LeitbildPack = {
+  ...electricGridPack,
+  referenceDatasetBuilders: electricGridReferenceDatasetBuilders,
+}
+const packs: ReadonlyArray<LeitbildPack> = [
+  aviationPackWithReferenceDatasets,
+  electricGridPackWithReferenceDatasets,
+]
 
 describe('reference-data registry (collector)', () => {
   test('lists pack-owned reference dataset contributions', () => {
@@ -53,7 +66,7 @@ describe('reference-data registry (collector)', () => {
   })
 
   test('duplicate dataset id across packs throws', () => {
-    const dup: LeitbildPack = { ...aviationPack, id: 'aviation-clone' }
-    expect(() => collectRegisteredDatasets([aviationPack, dup])).toThrow(/duplicate dataset id/)
+    const dup: LeitbildPack = { ...aviationPackWithReferenceDatasets, id: 'aviation-clone' }
+    expect(() => collectRegisteredDatasets([aviationPackWithReferenceDatasets, dup])).toThrow(/duplicate dataset id/)
   })
 })

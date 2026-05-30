@@ -37,5 +37,5 @@ export const timeSeriesSignalSchema = z.object({
 })
 
 export const telemetryStateSchema = z.object({
-  signals: z.record(timeSeriesSignalSchema),
+  signals: z.record(z.string(), timeSeriesSignalSchema),
 })

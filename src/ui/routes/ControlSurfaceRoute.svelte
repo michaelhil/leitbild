@@ -159,7 +159,7 @@
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
   // toggles and writes here; MapSurface re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
-  const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetBuilders?.map(builder => String(builder.id)) ?? [])
+  const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? [])
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
   // re-triggering this effect (a new object literal every time would otherwise
@@ -334,6 +334,19 @@
     }
   }
 
+  const preloadMapSurfaceModule = (): void => {
+    if (MapSurface || mapSurfaceLoadPromise) return
+    markStartup('map-module:preload:start')
+    void (async (): Promise<void> => {
+      try {
+        await loadMapSurface()
+        markStartup('map-module:preload:done')
+      } catch (err) {
+        if (debugStartup) console.warn('Map surface preload failed:', err)
+      }
+    })()
+  }
+
   const loadCreateObjectModal = async (): Promise<void> => {
     if (CreateObjectModal) return
     const module = await import('../CreateObjectModal.svelte')
@@ -394,6 +407,7 @@
 
   const completeReadyWhenReady = (): void => {
     if (!snapshotReady || !realtimeAttached) return
+    if (mapVisible && !mapReady) return
     completeStep('ready')
     reportStartupDebug()
     preloadOptionalUiAfterReady()
@@ -401,6 +415,7 @@
 
   const completeObjectsWhenReady = async (): Promise<void> => {
     if (!snapshotReady) return
+    if (mapVisible && !mapReady) return
     await tick()
     completeStep('objects')
     completeReadyWhenReady()
@@ -419,7 +434,6 @@
           await loadMapSurface()
           if (generation !== surfaceLoadGeneration) return
           markStartup('map-module:done')
-          completeStep('map')
         } catch (err) {
           if (generation !== surfaceLoadGeneration) return
           failStep('map', err)
@@ -840,6 +854,7 @@
         clearStartupAutoDismissTimer()
       }
     }
+    preloadMapSurfaceModule()
     void joinControlInstance()
     return () => {
       removePlacementGlobalEvents()

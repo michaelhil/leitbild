@@ -10,32 +10,81 @@ interface GridCategoryStyle {
   readonly circleRadius: number
 }
 
+const maxVoltageKvExpression: ReadonlyArray<unknown> = ['coalesce', ['get', 'maxVoltageKv'], 0]
+
+const voltageAtLeastExpression = (kv: number): ReadonlyArray<unknown> => [
+  '>=',
+  maxVoltageKvExpression,
+  kv,
+]
+
 const voltageColorExpression: ReadonlyArray<unknown> = [
   'case',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400],
+  voltageAtLeastExpression(400),
   '#c0262d',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+  voltageAtLeastExpression(300),
   '#b34ac0',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 220],
+  voltageAtLeastExpression(220),
   '#c56a00',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
+  voltageAtLeastExpression(132),
   '#229746',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 110],
+  voltageAtLeastExpression(110),
   '#35a853',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
+  voltageAtLeastExpression(66),
   '#b59a00',
   '#6f9fc7',
 ]
 
-const voltageOpacityExpression: ReadonlyArray<unknown> = [
+const nationalVoltageOpacityExpression: ReadonlyArray<unknown> = [
   'case',
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+  voltageAtLeastExpression(300),
+  0.90,
+  0.00,
+]
+
+const regionalVoltageOpacityExpression: ReadonlyArray<unknown> = [
+  'case',
+  voltageAtLeastExpression(300),
   0.94,
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
+  voltageAtLeastExpression(220),
+  0.70,
+  0.00,
+]
+
+const areaVoltageOpacityExpression: ReadonlyArray<unknown> = [
+  'case',
+  voltageAtLeastExpression(300),
+  0.94,
+  voltageAtLeastExpression(132),
+  0.80,
+  voltageAtLeastExpression(66),
+  0.34,
+  0.08,
+]
+
+const detailedVoltageOpacityExpression: ReadonlyArray<unknown> = [
+  'case',
+  voltageAtLeastExpression(300),
+  0.94,
+  voltageAtLeastExpression(132),
   0.82,
-  ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66],
+  voltageAtLeastExpression(66),
   0.68,
   0.46,
+]
+
+const voltageOpacityExpression: ReadonlyArray<unknown> = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  5,
+  nationalVoltageOpacityExpression,
+  7,
+  regionalVoltageOpacityExpression,
+  9,
+  areaVoltageOpacityExpression,
+  11,
+  detailedVoltageOpacityExpression,
 ]
 
 const voltageWidthExpression: ReadonlyArray<unknown> = [
@@ -44,19 +93,31 @@ const voltageWidthExpression: ReadonlyArray<unknown> = [
   ['zoom'],
   5,
   ['case',
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400], 3.4,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 3.0,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 1.7,
+    voltageAtLeastExpression(400), 3.4,
+    voltageAtLeastExpression(300), 3.0,
+    voltageAtLeastExpression(132), 1.7,
     0.55,
   ],
   12,
   ['case',
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 400], 6.0,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 5.2,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.2,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 66], 2.0,
+    voltageAtLeastExpression(400), 6.0,
+    voltageAtLeastExpression(300), 5.2,
+    voltageAtLeastExpression(132), 3.2,
+    voltageAtLeastExpression(66), 2.0,
     1.35,
   ],
+]
+
+const siteOpacityExpression: ReadonlyArray<unknown> = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  5,
+  ['case', voltageAtLeastExpression(300), 0.92, 0.00],
+  8,
+  ['case', voltageAtLeastExpression(300), 0.94, voltageAtLeastExpression(132), 0.72, 0.00],
+  11,
+  ['case', voltageAtLeastExpression(300), 0.94, voltageAtLeastExpression(132), 0.86, 0.64],
 ]
 
 const siteRadiusExpression: ReadonlyArray<unknown> = [
@@ -65,20 +126,20 @@ const siteRadiusExpression: ReadonlyArray<unknown> = [
   ['zoom'],
   7,
   ['case',
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 4.2,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 3.1,
+    voltageAtLeastExpression(300), 4.2,
+    voltageAtLeastExpression(132), 3.1,
     2.0,
   ],
   13,
   ['case',
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], 6.0,
-    ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132], 4.4,
+    voltageAtLeastExpression(300), 6.0,
+    voltageAtLeastExpression(132), 4.4,
     3.0,
   ],
 ]
 
 const visibleVoltageLabelExpression: ReadonlyArray<unknown> = [
-  '>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 220,
+  '>=', maxVoltageKvExpression, 220,
 ]
 
 const voltageTextExpression: ReadonlyArray<unknown> = [
@@ -90,7 +151,7 @@ const voltageTextExpression: ReadonlyArray<unknown> = [
 
 const siteLabelExpression: ReadonlyArray<unknown> = [
   'case',
-  ['all', ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300], ['has', 'name']],
+  ['all', voltageAtLeastExpression(300), ['has', 'name']],
   ['get', 'name'],
   '',
 ]
@@ -132,12 +193,7 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
     if (category === 'line' || category === 'cable') {
       return {
         'line-color': voltageColorExpression,
-        'line-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'hover'], false],
-          0.96,
-          voltageOpacityExpression,
-        ],
+        'line-opacity': voltageOpacityExpression,
         'line-width': voltageWidthExpression,
         ...(category === 'cable' ? { 'line-dasharray': [4, 2] } : {}),
       }
@@ -169,18 +225,13 @@ export const gridNorwayStyleModule: DatasetStyleModule = {
       return {
         paint: {
           'circle-color': voltageColorExpression,
-          'circle-opacity': [
-            'case',
-            ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 132],
-            0.94,
-            0.72,
-          ],
+          'circle-opacity': siteOpacityExpression,
           'circle-radius': siteRadiusExpression,
           'circle-stroke-color': '#ffffff',
           'circle-stroke-opacity': 0.92,
           'circle-stroke-width': [
             'case',
-            ['>=', ['coalesce', ['get', 'maxVoltageKv'], 0], 300],
+            voltageAtLeastExpression(300),
             1.5,
             1.0,
           ],

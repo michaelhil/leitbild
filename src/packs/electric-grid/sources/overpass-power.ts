@@ -43,7 +43,7 @@ const DEFAULT_USER_AGENT = 'Leitbild/0.1 (https://leitbild.samsinn.app)'
 
 const textEncoder = new TextEncoder()
 
-const tagRecordSchema = z.record(z.union([z.string(), z.number(), z.boolean()])).default({})
+const tagRecordSchema = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).default({})
 const coordinateSchema = z.object({
   lat: z.number().finite(),
   lon: z.number().finite(),

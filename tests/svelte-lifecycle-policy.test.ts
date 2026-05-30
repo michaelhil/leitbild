@@ -29,7 +29,7 @@ describe('Svelte lifecycle policy', () => {
     const forbiddenMountOnlyCalls = [
       'addEventListener',
       'setInterval',
-      'new maplibregl.Map',
+      'new MapLibre',
     ]
     const violations = svelteFiles(uiRoot).flatMap((file) => {
       const source = readFileSync(file, 'utf8')
@@ -44,7 +44,7 @@ describe('Svelte lifecycle policy', () => {
   test('keeps MapLibre lifecycle and resize ownership outside MapSurface', () => {
     const mapSurface = readFileSync(join(uiRoot, 'MapSurface.svelte'), 'utf8')
 
-    expect(mapSurface).not.toContain('new maplibregl.Map')
+    expect(mapSurface).not.toContain('new MapLibre')
     expect(mapSurface).not.toContain('ResizeObserver')
     expect(mapSurface).not.toContain('PmtilesProtocol')
     expect(mapSurface).not.toContain('scheduleViewportActivation')

@@ -25,6 +25,7 @@
   import type { MapInputDebugController } from './map/map-input-debug.ts'
   import { applyConfiguredMapLayerVisibility } from './map/map-layer-visibility.ts'
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
+  import { waitForMapVisualReadiness } from './map/map-visual-readiness.ts'
   import { addObjectInteractions as addMapObjectInteractions } from './map/map-object-interactions.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
   import { createMapSourceController, type MapSourceLayer } from './map/map-source-controller.ts'
@@ -126,6 +127,9 @@
   let mapInputDebugSummary = $state('Waiting for map input')
   let referenceController = $state<ReferenceDatasetController | null>(null)
   let packLayerGroupController = $state<PackLayerGroupController | null>(null)
+  let styleSetupToken = 0
+  let styleSetupInFlight = false
+  let referenceRegistrationCancel: (() => void) | null = null
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
     record: () => undefined,
@@ -331,6 +335,34 @@
     }, 2_000)
   }
 
+  const cancelDeferredReferenceRegistration = (): void => {
+    referenceRegistrationCancel?.()
+    referenceRegistrationCancel = null
+  }
+
+  const deferNonCriticalMapWork = (task: () => void): (() => void) => {
+    let cancelled = false
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(() => {
+        if (!cancelled) task()
+      }, { timeout: 1_500 })
+      return () => {
+        cancelled = true
+        window.cancelIdleCallback(id)
+      }
+    }
+    const id = window.setTimeout(() => {
+      if (!cancelled) task()
+    }, 150)
+    return () => {
+      cancelled = true
+      window.clearTimeout(id)
+    }
+  }
+
+  const currentStyleSetupIsActive = (current: MapLibreMap, token: number): boolean =>
+    map === current && styleSetupToken === token
+
   const scheduleDisplayAnimation = (): void => {
     if (displayFrame !== null) return
     displayFrame = requestAnimationFrame(() => {
@@ -377,10 +409,51 @@
     objectInteractionsAdded = true
   }
 
-  const setupOperationalMapStyle = async (current: MapLibreMap): Promise<void> => {
+  const registerReferenceDataAfterFirstFrame = (current: MapLibreMap, token: number): void => {
+    cancelDeferredReferenceRegistration()
+    referenceRegistrationCancel = deferNonCriticalMapWork(() => {
+      referenceRegistrationCancel = null
+      if (!currentStyleSetupIsActive(current, token) || !loaded) return
+      void (async (): Promise<void> => {
+        mapInputDebugController.record('reference:setup-start')
+        try {
+          const controller = await createReferenceDataController({
+            map: current,
+            beforeLayerId: mapLayerIds.weatherBaseGridOutline,
+            datasetIds: referenceDatasetIds,
+          })
+          if (!currentStyleSetupIsActive(current, token) || !loaded) return
+          referenceController = controller
+          packLayerGroupController?.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
+          mapInputDebugController.record('reference:setup-complete')
+        } catch (err) {
+          console.warn('reference-data registration failed:', err)
+        }
+      })()
+    })
+  }
+
+  const completeMapVisualReadiness = async (current: MapLibreMap, token: number): Promise<void> => {
+    await waitForMapVisualReadiness(current, {
+      recordDebug: mapInputDebugController.record,
+      isCancelled: () => !currentStyleSetupIsActive(current, token),
+    })
+    if (!currentStyleSetupIsActive(current, token)) return
+    if (!mapReadyNotified) {
+      mapReadyNotified = true
+      mapInputDebugController.record('style:map-ready')
+      onMapReady()
+    }
+    registerReferenceDataAfterFirstFrame(current, token)
+  }
+
+  const setupOperationalMapStyle = async (current: MapLibreMap, token: number): Promise<void> => {
     try {
       mapInputDebugController.record('style:setup-start')
       loaded = false
+      referenceController = null
+      packLayerGroupController = null
+      cancelDeferredReferenceRegistration()
       assertCameraInteractionContract(current)
       await Promise.all([
         registerObjectIconVariants(current, 'ambulance'),
@@ -392,6 +465,7 @@
         registerObjectIconVariants(current, 'aircraft'),
         registerObjectIconVariants(current, 'grid'),
       ])
+      if (!currentStyleSetupIsActive(current, token)) return
       addOperationalMapSourcesAndLayers({
         map: current,
         objects,
@@ -434,30 +508,22 @@
       refreshSources()
       void refreshPackMapAreaFeatures()
       startPackAreaRefresh()
-      if (!mapReadyNotified) {
-        mapReadyNotified = true
-        mapInputDebugController.record('style:map-ready')
-        onMapReady()
-      }
-      void (async (): Promise<void> => {
-        // Reference context is optional map enrichment. It must not block the
-        // base map or operational object readiness.
-        try {
-          const controller = await createReferenceDataController({
-            map: current,
-            beforeLayerId: mapLayerIds.weatherBaseGridOutline,
-            datasetIds: referenceDatasetIds,
-          })
-          if (map !== current || !loaded) return
-          referenceController = controller
-          packLayerGroupController?.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
-        } catch (err) {
-          console.warn('reference-data registration failed:', err)
-        }
-      })()
+      await completeMapVisualReadiness(current, token)
     } catch (err) {
       onMapError(err instanceof Error ? err.message : String(err))
+    } finally {
+      if (styleSetupToken === token) styleSetupInFlight = false
     }
+  }
+
+  const requestOperationalStyleSetup = (current: MapLibreMap): void => {
+    if (styleSetupInFlight) {
+      mapInputDebugController.record('style:setup-skip-in-flight')
+      return
+    }
+    styleSetupInFlight = true
+    const token = ++styleSetupToken
+    void setupOperationalMapStyle(current, token)
   }
 
   runOnMount(() => {
@@ -493,11 +559,9 @@
           mapCameraGestureActive = false
           void refreshPackMapAreaFeatures()
         },
-        onStyleLoad: (styleMap) => {
-          void setupOperationalMapStyle(styleMap)
-        },
+        onStyleLoad: requestOperationalStyleSetup,
         onLoad: (loadedMap) => {
-          if (!loaded) void setupOperationalMapStyle(loadedMap)
+          if (!loaded) requestOperationalStyleSetup(loadedMap)
         },
         preserveDrawingBuffer: screenshotConfig.enabled,
       })
@@ -538,10 +602,13 @@
       popupController.hide()
       screenshotResponderCleanup?.()
       screenshotResponderCleanup = null
+      cancelDeferredReferenceRegistration()
       mapLifecycle?.destroy()
       mapLifecycle = null
       map = null
       loaded = false
+      styleSetupToken += 1
+      styleSetupInFlight = false
       referenceController = null
       packLayerGroupController = null
       objectInteractionsAdded = false
@@ -628,6 +695,11 @@
     if (current && appliedTheme !== null && theme !== appliedTheme) {
       appliedTheme = theme
       loaded = false
+      styleSetupToken += 1
+      styleSetupInFlight = false
+      cancelDeferredReferenceRegistration()
+      referenceController = null
+      packLayerGroupController = null
       popupController.hide()
       current.setStyle(styleUrlFor(theme))
     }

@@ -89,8 +89,8 @@ export const processSurfaceWidgetSchema = z.object({
   rank: z.number().int().nonnegative().default(0),
   stack: z.number().int().nonnegative().default(0),
   geometry: processSurfaceGeometrySchema.optional(),
-  binds: z.record(processSurfaceBindingSchema).default({}),
-  ports: z.record(processSurfacePortSchema).default({}),
+  binds: z.record(z.string(), processSurfaceBindingSchema).default({}),
+  ports: z.record(z.string(), processSurfacePortSchema).default({}),
   style: z.object({
     tone: z.enum(['primary', 'secondary', 'support', 'warning', 'critical']).optional(),
   }).strict().default({}),
@@ -104,7 +104,7 @@ export const processSurfacePathSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
   waypoints: z.array(processSurfacePointSchema).default([]),
-  binds: z.record(processSurfaceBindingSchema).default({}),
+  binds: z.record(z.string(), processSurfaceBindingSchema).default({}),
   style: z.object({
     service: z.enum(['primary', 'steam', 'feedwater', 'condensate', 'electrical', 'cooling', 'support']).optional(),
   }).strict().default({}),

@@ -17,9 +17,10 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          maplibre: ['maplibre-gl'],
-          svelte: ['svelte'],
+        manualChunks: (id: string): string | undefined => {
+          if (id.includes('/node_modules/maplibre-gl/')) return 'maplibre'
+          if (id.includes('/node_modules/svelte/')) return 'svelte'
+          return undefined
         },
       },
     },

@@ -1,4 +1,4 @@
-import maplibregl, { type Map as MapLibreMap } from 'maplibre-gl'
+import { Popup, type Map as MapLibreMap } from 'maplibre-gl'
 import type { OperationalObject } from '../../core/model/index.ts'
 import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
 import { pointOf } from './map-features.ts'
@@ -16,7 +16,7 @@ export const createMapPopupController = (config: {
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
   readonly hasNewInfo: (object: OperationalObject) => boolean
 }): MapPopupController => {
-  let markerPopup: maplibregl.Popup | null = null
+  let markerPopup: Popup | null = null
   let hoveredObjectId: string | null = null
 
   const hoverCardHtml = (object: OperationalObject): string =>
@@ -42,7 +42,7 @@ export const createMapPopupController = (config: {
       if (!current || !point) return
       hoveredObjectId = object.id
       const [lon, lat] = point.coordinates
-      markerPopup = markerPopup ?? new maplibregl.Popup({
+      markerPopup = markerPopup ?? new Popup({
         closeButton: false,
         closeOnClick: false,
         offset: 26,

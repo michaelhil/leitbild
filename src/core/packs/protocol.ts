@@ -258,6 +258,12 @@ export interface LeitbildPack {
    */
   readonly referenceDatasetBuilders?: ReadonlyArray<PackReferenceDatasetBuilder>
   /**
+   * Reference dataset ids used by the UI to register already-built map overlays.
+   * Build callbacks stay server/CLI-side; UI bundles should not import dataset
+   * fetchers or build pipelines just to know which overlays a pack can render.
+   */
+  readonly referenceDatasetIds?: ReadonlyArray<DatasetId>
+  /**
    * Rail-side layer-group toggles. When a pack contributes mapLayerGroups,
    * the control rail renders a section with one row per group plus an
    * optional source-picker. See ADR 0023.
