@@ -53,6 +53,7 @@
     createStartupSteps,
     failStartupStep,
     resetStartupStepsAfter,
+    setStartupStepDetails,
     startupHasFailed,
     startupIsReady,
     startupModalShouldShow,
@@ -60,6 +61,7 @@
     type StartupStep,
     type StartupStepId,
   } from '../startup.ts'
+  import type { MapVisualReadinessSnapshot } from '../map/map-visual-readiness.ts'
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
@@ -403,6 +405,27 @@
     markStartup(`${id}:failed`)
     startupSteps = failStartupStep(startupSteps, id, message)
     status = message
+  }
+
+  const mapReadinessDetails = (snapshot: MapVisualReadinessSnapshot) => [
+    { label: 'Phase', value: snapshot.phase },
+    { label: 'Container', value: `${snapshot.container.width}x${snapshot.container.height}` },
+    { label: 'Canvas', value: `${snapshot.canvas.cssWidth}x${snapshot.canvas.cssHeight}/${snapshot.canvas.bufferWidth}x${snapshot.canvas.bufferHeight}` },
+    { label: 'Style', value: snapshot.styleLoaded ? 'loaded' : 'loading' },
+    { label: 'Tiles', value: snapshot.mapLoaded ? 'settled' : 'loading' },
+    { label: 'Layers', value: snapshot.missingLayerIds.length === 0 ? 'ok' : `missing ${snapshot.missingLayerIds.length}` },
+    { label: 'Sources', value: snapshot.missingSourceIds.length === 0 ? 'ok' : `missing ${snapshot.missingSourceIds.length}` },
+    { label: 'Features', value: snapshot.renderedFeatureCount === null ? 'unknown' : String(snapshot.renderedFeatureCount) },
+    {
+      label: 'Pixels',
+      value: snapshot.canvasSample.supported
+        ? `${snapshot.canvasSample.visiblePixels}/${snapshot.canvasSample.sampleCount} visible, ${snapshot.canvasSample.variedPixels} varied`
+        : snapshot.canvasSample.error ?? 'unavailable',
+    },
+  ]
+
+  const handleMapDiagnostic = (snapshot: MapVisualReadinessSnapshot): void => {
+    startupSteps = setStartupStepDetails(startupSteps, 'map', mapReadinessDetails(snapshot))
   }
 
   const completeReadyWhenReady = (): void => {
@@ -819,7 +842,11 @@
   }
 
   const handleMapError = (message: string): void => {
-    failStep('map', message)
+    if (!mapReady) {
+      failStep('map', message)
+      return
+    }
+    status = message
   }
 
   runOnMount(() => {
@@ -959,6 +986,7 @@
           onObjectSeen={markSeen}
           onMapReady={handleMapReady}
           onMapError={handleMapError}
+          onMapDiagnostic={handleMapDiagnostic}
           {controlInstanceId}
           activePackIds={scenarioDefinition?.packs ?? []}
           mapLayerGroups={activeMapLayerGroups}

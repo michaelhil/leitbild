@@ -10,6 +10,11 @@ export type StartupStepId =
 
 export type StartupStepStatus = 'pending' | 'running' | 'done' | 'failed'
 
+export interface StartupStepDetail {
+  readonly label: string
+  readonly value: string
+}
+
 export interface StartupStep {
   readonly id: StartupStepId
   readonly label: string
@@ -17,6 +22,7 @@ export interface StartupStep {
   readonly startedAtMs?: number
   readonly completedAtMs?: number
   readonly error?: string
+  readonly details?: ReadonlyArray<StartupStepDetail>
 }
 
 export const createStartupSteps = (nowMs = performance.now()): ReadonlyArray<StartupStep> => [
@@ -78,7 +84,17 @@ export const failStartupStep = (
     status: 'failed',
     startedAtMs: step.startedAtMs ?? nowMs,
     completedAtMs: nowMs,
-    error,
+  error,
+}))
+
+export const setStartupStepDetails = (
+  steps: ReadonlyArray<StartupStep>,
+  id: StartupStepId,
+  details: ReadonlyArray<StartupStepDetail>,
+): ReadonlyArray<StartupStep> =>
+  updateStep(steps, id, step => ({
+    ...step,
+    details,
   }))
 
 export const resetStartupStepsAfter = (

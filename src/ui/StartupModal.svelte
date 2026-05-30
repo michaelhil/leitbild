@@ -114,6 +114,13 @@
           {#if step.error}
             <span class="startup-step-error">{step.error}</span>
           {/if}
+          {#if step.details?.length}
+            <span class="startup-step-details">
+              {#each step.details as detail}
+                <span><strong>{detail.label}</strong> {detail.value}</span>
+              {/each}
+            </span>
+          {/if}
         </span>
         <span class="startup-step-status">
           {statusLabel(step)}

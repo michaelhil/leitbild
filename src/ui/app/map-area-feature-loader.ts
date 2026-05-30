@@ -1,11 +1,13 @@
 import type { ControlInstanceId, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
-import type { LeitbildPack, PackMapAreaFeature } from '../../core/packs/protocol.ts'
-import { queryControlInstancePack } from '../control-instance-client.ts'
+import type { LeitbildPack, PackMapAreaFeature, PackQueryRequest } from '../../core/packs/protocol.ts'
+import { queryControlInstancePack, type ControlInstanceRequestOptions } from '../control-instance-client.ts'
+import type { PackQueryApiResponse } from '../types.ts'
 
 export interface MapAreaFeatureLoaderContext {
   readonly viewport: GeoJsonPolygon
   readonly zoom: number
   readonly currentTime?: IsoTimestamp
+  readonly signal?: AbortSignal
 }
 
 export interface MapAreaFeatureRuntimeConfig {
@@ -13,7 +15,15 @@ export interface MapAreaFeatureRuntimeConfig {
   readonly objects: () => ReadonlyArray<OperationalObject>
   readonly controlInstanceId: () => ControlInstanceId | null
   readonly currentTime: () => IsoTimestamp | undefined
+  readonly queryTimeoutMs?: number
+  readonly queryPack?: (
+    controlInstanceId: ControlInstanceId,
+    request: PackQueryRequest,
+    options?: ControlInstanceRequestOptions,
+  ) => Promise<PackQueryApiResponse>
 }
+
+const defaultMapAreaFeatureQueryTimeoutMs = 1_500
 
 const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaFeature> => {
   if (typeof result !== 'object' || result === null || !('features' in result)) {
@@ -22,6 +32,27 @@ const mapFeaturesFromQueryResult = (result: unknown): ReadonlyArray<PackMapAreaF
   const features = (result as { readonly features?: unknown }).features
   if (!Array.isArray(features)) throw new Error('pack map feature query features field is not an array')
   return features as ReadonlyArray<PackMapAreaFeature>
+}
+
+const createAbortSignalWithTimeout = (
+  parent: AbortSignal | undefined,
+  timeoutMs: number,
+): { readonly signal: AbortSignal; readonly dispose: () => void } => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`pack map feature query timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
+  const abortFromParent = (): void => {
+    controller.abort(parent?.reason)
+  }
+  parent?.addEventListener('abort', abortFromParent, { once: true })
+  return {
+    signal: controller.signal,
+    dispose: () => {
+      clearTimeout(timeout)
+      parent?.removeEventListener('abort', abortFromParent)
+    },
+  }
 }
 
 export const createMapAreaFeatureLoader = (
@@ -41,11 +72,21 @@ export const createMapAreaFeatureLoader = (
     const syncFeatures = pack.mapAreaFeatures?.(presentationContextWithTime) ?? []
     const controlInstanceId = config.controlInstanceId()
     if (!controlInstanceId) return syncFeatures
-    const queryFeatures: PackMapAreaFeature[] = []
-    for (const request of pack.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []) {
-      const body = await queryControlInstancePack(controlInstanceId, request)
-      if (!body.response.ok) throw new Error(body.response.reason)
-      queryFeatures.push(...mapFeaturesFromQueryResult(body.response.result))
+    const requests = pack.mapAreaFeatureQueries?.(presentationContextWithTime) ?? []
+    if (requests.length === 0) return syncFeatures
+    const query = config.queryPack ?? queryControlInstancePack
+    const timeout = createAbortSignalWithTimeout(
+      context.signal,
+      config.queryTimeoutMs ?? defaultMapAreaFeatureQueryTimeoutMs,
+    )
+    try {
+      const responses = await Promise.all(requests.map(async request => {
+        const body = await query(controlInstanceId, request, { signal: timeout.signal })
+        if (!body.response.ok) throw new Error(body.response.reason)
+        return mapFeaturesFromQueryResult(body.response.result)
+      }))
+      return [...syncFeatures, ...responses.flat()]
+    } finally {
+      timeout.dispose()
     }
-    return [...syncFeatures, ...queryFeatures]
   }

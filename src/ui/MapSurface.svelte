@@ -25,7 +25,12 @@
   import type { MapInputDebugController } from './map/map-input-debug.ts'
   import { applyConfiguredMapLayerVisibility } from './map/map-layer-visibility.ts'
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
-  import { waitForMapVisualReadiness } from './map/map-visual-readiness.ts'
+  import {
+    inspectMapVisualReadiness,
+    isMapVisualReadinessFailure,
+    waitForMapVisualReadiness,
+    type MapVisualReadinessSnapshot,
+  } from './map/map-visual-readiness.ts'
   import { addObjectInteractions as addMapObjectInteractions } from './map/map-object-interactions.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
   import { createMapSourceController, type MapSourceLayer } from './map/map-source-controller.ts'
@@ -60,12 +65,13 @@
     readonly highlightedObjectIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
-    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp }) => Promise<ReadonlyArray<PackMapAreaFeature>>
+    readonly mapAreaFeaturesFor: (context: { readonly viewport: GeoJsonPolygon; readonly zoom: number; readonly currentTime?: IsoTimestamp; readonly signal?: AbortSignal }) => Promise<ReadonlyArray<PackMapAreaFeature>>
     readonly onObjectSelected: (object: OperationalObject) => void
     readonly onPlacementPoint: (point: GeoJsonPoint) => void
     readonly onObjectSeen: (object: OperationalObject) => void
     readonly onMapReady: () => void
     readonly onMapError: (message: string) => void
+    readonly onMapDiagnostic?: (snapshot: MapVisualReadinessSnapshot) => void
     readonly controlInstanceId?: string | null
     readonly activePackIds?: ReadonlyArray<string>
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
@@ -93,6 +99,7 @@
     onObjectSeen,
     onMapReady,
     onMapError,
+    onMapDiagnostic = () => undefined,
     controlInstanceId = null,
     activePackIds = [],
     mapLayerGroups = [],
@@ -114,6 +121,7 @@
   let packAreaFeatureRequestSerial = 0
   let packAreaFeatureRequestInFlight = false
   let packAreaFeatureRefreshQueued = false
+  let packAreaFeatureAbortController: AbortController | null = null
   let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
   let objectInteractionsAdded = false
   let mapReadyNotified = false
@@ -129,6 +137,7 @@
   let packLayerGroupController = $state<PackLayerGroupController | null>(null)
   let styleSetupToken = 0
   let styleSetupInFlight = false
+  let pendingStyleSetupMap: MapLibreMap | null = null
   let referenceRegistrationCancel: (() => void) | null = null
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -244,6 +253,16 @@
   const currentDisplayTime = (): IsoTimestamp | undefined =>
     simulationTimeAt(clock)
 
+  const isAbortError = (err: unknown): boolean =>
+    err instanceof DOMException && err.name === 'AbortError'
+
+  const abortPackAreaFeatureRequest = (reason: string): void => {
+    if (!packAreaFeatureAbortController) return
+    packAreaFeatureRequestSerial += 1
+    packAreaFeatureAbortController.abort(new Error(reason))
+    packAreaFeatureAbortController = null
+  }
+
   const refreshPackMapAreaFeatures = async (): Promise<void> => {
     if (packAreaFeatureRequestInFlight) {
       packAreaFeatureRefreshQueued = true
@@ -256,16 +275,27 @@
       return
     }
     const serial = ++packAreaFeatureRequestSerial
+    const abortController = new AbortController()
+    packAreaFeatureAbortController = abortController
     packAreaFeatureRequestInFlight = true
     try {
-      const features = await mapAreaFeaturesFor({ viewport, zoom: current.getZoom(), currentTime: currentDisplayTime() })
+      const features = await mapAreaFeaturesFor({
+        viewport,
+        zoom: current.getZoom(),
+        currentTime: currentDisplayTime(),
+        signal: abortController.signal,
+      })
       if (serial !== packAreaFeatureRequestSerial) return
       cachedPackMapAreaFeatures = features
       sourceController.schedule({ weather: true })
       schedulePackAreaFeatureAnimation()
     } catch (err) {
+      if (serial !== packAreaFeatureRequestSerial || isAbortError(err)) return
       onMapError(err instanceof Error ? err.message : String(err))
     } finally {
+      if (packAreaFeatureAbortController === abortController) {
+        packAreaFeatureAbortController = null
+      }
       packAreaFeatureRequestInFlight = false
       if (packAreaFeatureRefreshQueued) {
         packAreaFeatureRefreshQueued = false
@@ -363,6 +393,10 @@
   const currentStyleSetupIsActive = (current: MapLibreMap, token: number): boolean =>
     map === current && styleSetupToken === token
 
+  const publishMapDiagnostic = (current: MapLibreMap, phase: string): void => {
+    onMapDiagnostic(inspectMapVisualReadiness(current, undefined, phase))
+  }
+
   const scheduleDisplayAnimation = (): void => {
     if (displayFrame !== null) return
     displayFrame = requestAnimationFrame(() => {
@@ -411,6 +445,7 @@
 
   const registerReferenceDataAfterFirstFrame = (current: MapLibreMap, token: number): void => {
     cancelDeferredReferenceRegistration()
+    if (referenceDatasetIds.length === 0) return
     referenceRegistrationCancel = deferNonCriticalMapWork(() => {
       referenceRegistrationCancel = null
       if (!currentStyleSetupIsActive(current, token) || !loaded) return
@@ -425,20 +460,30 @@
           if (!currentStyleSetupIsActive(current, token) || !loaded) return
           referenceController = controller
           packLayerGroupController?.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
+          publishMapDiagnostic(current, 'reference-registered')
+          await waitForMapVisualReadiness(current, {
+            timeoutMs: 2_500,
+            recordDebug: mapInputDebugController.record,
+            isCancelled: () => !currentStyleSetupIsActive(current, token),
+          })
           mapInputDebugController.record('reference:setup-complete')
         } catch (err) {
-          console.warn('reference-data registration failed:', err)
+          if (isMapVisualReadinessFailure(err)) {
+            onMapDiagnostic(err.snapshot)
+          }
+          onMapError(`Reference map overlay failed: ${err instanceof Error ? err.message : String(err)}`)
         }
       })()
     })
   }
 
   const completeMapVisualReadiness = async (current: MapLibreMap, token: number): Promise<void> => {
-    await waitForMapVisualReadiness(current, {
+    const readiness = await waitForMapVisualReadiness(current, {
       recordDebug: mapInputDebugController.record,
       isCancelled: () => !currentStyleSetupIsActive(current, token),
     })
     if (!currentStyleSetupIsActive(current, token)) return
+    onMapDiagnostic(readiness.snapshot)
     if (!mapReadyNotified) {
       mapReadyNotified = true
       mapInputDebugController.record('style:map-ready')
@@ -508,22 +553,40 @@
       refreshSources()
       void refreshPackMapAreaFeatures()
       startPackAreaRefresh()
+      publishMapDiagnostic(current, 'operational-flush')
       await completeMapVisualReadiness(current, token)
     } catch (err) {
+      if (isMapVisualReadinessFailure(err)) {
+        onMapDiagnostic(err.snapshot)
+      }
       onMapError(err instanceof Error ? err.message : String(err))
     } finally {
-      if (styleSetupToken === token) styleSetupInFlight = false
+      if (styleSetupToken === token) {
+        styleSetupInFlight = false
+        if (pendingStyleSetupMap) drainOperationalStyleSetup()
+      }
     }
   }
 
-  const requestOperationalStyleSetup = (current: MapLibreMap): void => {
+  const drainOperationalStyleSetup = (): void => {
     if (styleSetupInFlight) {
-      mapInputDebugController.record('style:setup-skip-in-flight')
       return
     }
+    const current = pendingStyleSetupMap
+    if (!current) return
+    pendingStyleSetupMap = null
     styleSetupInFlight = true
     const token = ++styleSetupToken
     void setupOperationalMapStyle(current, token)
+  }
+
+  const requestOperationalStyleSetup = (current: MapLibreMap): void => {
+    pendingStyleSetupMap = current
+    if (styleSetupInFlight) {
+      mapInputDebugController.record('style:setup-queued-in-flight')
+      return
+    }
+    drainOperationalStyleSetup()
   }
 
   runOnMount(() => {
@@ -554,6 +617,7 @@
         onPlacementPoint,
         onMoveStart: () => {
           mapCameraGestureActive = true
+          abortPackAreaFeatureRequest('map camera moved before pack map-area query completed')
         },
         onMoveEnd: () => {
           mapCameraGestureActive = false
@@ -571,6 +635,10 @@
       }
       mapLifecycle = lifecycle
       const current = lifecycle.map
+      map = current
+      appliedTheme = theme
+      appliedCameraKey = cameraKeyFor(mapConfig)
+      mapInputDebugController.install(current)
       if (screenshotConfig.enabled) {
         const screenshotModule = await import('./samsinn-screenshot.ts')
         if (cancelled) {
@@ -584,10 +652,10 @@
           capture: async options => screenshotModule.captureMapCanvasScreenshot(current.getCanvas(), options),
         })
       }
-      mapInputDebugController.install(current)
-      appliedTheme = theme
-      appliedCameraKey = cameraKeyFor(mapConfig)
-      map = current
+      publishMapDiagnostic(current, 'constructed')
+      if (current.isStyleLoaded() || current.loaded()) {
+        requestOperationalStyleSetup(current)
+      }
     }
 
     void initializeMap()
@@ -599,6 +667,8 @@
       stopDisplayAnimation()
       stopPackAreaFeatureAnimation()
       stopPackAreaRefresh()
+      packAreaFeatureRefreshQueued = false
+      abortPackAreaFeatureRequest('map surface was destroyed')
       popupController.hide()
       screenshotResponderCleanup?.()
       screenshotResponderCleanup = null
@@ -611,6 +681,7 @@
       styleSetupInFlight = false
       referenceController = null
       packLayerGroupController = null
+      pendingStyleSetupMap = null
       objectInteractionsAdded = false
       mapReadyNotified = false
       mapInitialized = false
@@ -695,6 +766,7 @@
     if (current && appliedTheme !== null && theme !== appliedTheme) {
       appliedTheme = theme
       loaded = false
+      abortPackAreaFeatureRequest('map style changed before pack map-area query completed')
       styleSetupToken += 1
       styleSetupInFlight = false
       cancelDeferredReferenceRegistration()

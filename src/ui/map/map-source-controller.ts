@@ -71,7 +71,8 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   let trafficSourceDirty = false
   let gridSourceDirty = false
   let weatherSourceDirty = false
-  let gridGeometryById = new Map<string, GeoJsonLineString>()
+  let sourceSignatureById = new Map<string, string>()
+  let gridGeometrySignatureById = new Map<string, string>()
   let gridVisualStateById = new Map<string, string>()
 
   const currentMapForSourceUpdate = (): MapLibreMap | null => {
@@ -82,11 +83,68 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   const hasDirtySources = (): boolean =>
     objectSourceDirty || routeSourceDirty || trafficSourceDirty || gridSourceDirty || weatherSourceDirty
 
+  type SignatureGeometry = {
+    readonly type: string
+    readonly coordinates?: unknown
+    readonly geometries?: ReadonlyArray<SignatureGeometry | null>
+  }
+
+  const coordinateTreeSignature = (coordinates: unknown): string => {
+    if (!Array.isArray(coordinates)) return String(coordinates)
+    if (coordinates.every(value => typeof value === 'number')) return coordinates.join(',')
+    return `[${coordinates.map(coordinateTreeSignature).join('|')}]`
+  }
+
+  const geometrySignature = (geometry: SignatureGeometry | null): string => {
+    if (!geometry) return 'null'
+    if (geometry.type === 'GeometryCollection') {
+      return `GeometryCollection:${(geometry.geometries ?? []).map(geometrySignature).join('|')}`
+    }
+    return `${geometry.type}:${coordinateTreeSignature(geometry.coordinates)}`
+  }
+
+  const propertySignature = (value: unknown): string => {
+    if (value === null || typeof value !== 'object') return String(value)
+    if (Array.isArray(value)) return `[${value.map(propertySignature).join(',')}]`
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${key}:${propertySignature(item)}`)
+      .join(',')}}`
+  }
+
+  const featureCollectionSignature = (collection: GeoJSON): string => {
+    if (collection.type !== 'FeatureCollection') return propertySignature(collection)
+    return collection.features
+      .map(feature => `${String(feature.id ?? '')}:${geometrySignature(feature.geometry)}:${propertySignature(feature.properties)}`)
+      .join('\n')
+  }
+
+  const setSourceDataIfChanged = (config: {
+    readonly current: MapLibreMap
+    readonly sourceId: string
+    readonly data: GeoJSON
+    readonly signature?: string
+  }): void => {
+    const source = getGeoJsonSource(config.current, config.sourceId)
+    if (!source) return
+    const signature = config.signature ?? featureCollectionSignature(config.data)
+    if (sourceSignatureById.get(config.sourceId) === signature) return
+    source.setData(config.data)
+    sourceSignatureById.set(config.sourceId, signature)
+  }
+
+  const gridGeometrySignatureFor = (
+    features: ReturnType<typeof createGridLineFeatureCollection>['features'],
+  ): string =>
+    features
+      .map(feature => `${String(feature.id ?? '')}:${geometrySignature(feature.geometry)}`)
+      .join('\n')
+
   const gridGeometryChanged = (features: ReturnType<typeof createGridLineFeatureCollection>['features']): boolean => {
-    if (features.length !== gridGeometryById.size) return true
+    if (features.length !== gridGeometrySignatureById.size) return true
     for (const feature of features) {
       if (feature.id === undefined) return true
-      if (gridGeometryById.get(String(feature.id)) !== feature.geometry) return true
+      if (gridGeometrySignatureById.get(String(feature.id)) !== geometrySignature(feature.geometry)) return true
     }
     return false
   }
@@ -131,112 +189,126 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     if (!config.isLayerEnabled('objects')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const source = getGeoJsonSource(current, mapSourceIds.objects)
-    if (source) {
-      source.setData(asMapLibreGeoJson(createObjectFeatureCollection(
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.objects,
+      data: asMapLibreGeoJson(createObjectFeatureCollection(
         [...sourceObjects],
         config.getSelectedControllerId(),
         config.getHighlightedObjectIds(),
         config.hasNewInfo,
         config.presentationFor,
-      )))
-    }
+      )),
+    })
   }
 
   const refreshRoutes = (): void => {
     if (!config.isLayerEnabled('routes')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const source = getGeoJsonSource(current, mapSourceIds.plannedRoutes)
-    if (source) {
-      source.setData(asMapLibreGeoJson(createRouteFeatureCollection(
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.plannedRoutes,
+      data: asMapLibreGeoJson(createRouteFeatureCollection(
         [...config.getObjects()],
         config.getSelectedControllerId(),
-      )))
-    }
+      )),
+    })
   }
 
   const refreshTraffic = (): void => {
     if (!config.isLayerEnabled('traffic')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const lineSource = getGeoJsonSource(current, mapSourceIds.trafficLines)
-    const areaSource = getGeoJsonSource(current, mapSourceIds.trafficAreas)
-    if (lineSource) {
-      lineSource.setData(asMapLibreGeoJson(createTrafficLineFeatureCollection([...config.getObjects()], config.presentationFor)))
-    }
-    if (areaSource) {
-      areaSource.setData(asMapLibreGeoJson(createTrafficAreaFeatureCollection([...config.getObjects()], config.presentationFor)))
-    }
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.trafficLines,
+      data: asMapLibreGeoJson(createTrafficLineFeatureCollection([...config.getObjects()], config.presentationFor)),
+    })
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.trafficAreas,
+      data: asMapLibreGeoJson(createTrafficAreaFeatureCollection([...config.getObjects()], config.presentationFor)),
+    })
   }
 
   const refreshGrid = (): void => {
     if (!config.isLayerEnabled('grid')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const lineSource = getGeoJsonSource(current, mapSourceIds.gridLines)
-    if (lineSource) {
-      const collection = createGridLineFeatureCollection([...config.getObjects()], config.presentationFor)
-      const shouldResetGeometry = gridGeometryChanged(collection.features)
-      if (shouldResetGeometry) {
-        lineSource.setData(asMapLibreGeoJson(collection))
-        gridGeometryById = new Map(collection.features.flatMap(feature =>
-          feature.id === undefined ? [] : [[String(feature.id), feature.geometry] as const],
-        ))
-      }
-      applyGridFeatureState(current, collection.features)
+    const collection = createGridLineFeatureCollection([...config.getObjects()], config.presentationFor)
+    const shouldResetGeometry = gridGeometryChanged(collection.features)
+    if (shouldResetGeometry) {
+      const geometrySignatureValue = gridGeometrySignatureFor(collection.features)
+      setSourceDataIfChanged({
+        current,
+        sourceId: mapSourceIds.gridLines,
+        data: asMapLibreGeoJson(collection),
+        signature: geometrySignatureValue,
+      })
+      gridGeometrySignatureById = new Map(collection.features.flatMap(feature =>
+        feature.id === undefined ? [] : [[String(feature.id), geometrySignature(feature.geometry)] as const],
+      ))
     }
+    applyGridFeatureState(current, collection.features)
   }
 
   const refreshWeatherInfluences = (): void => {
     if (!config.isLayerEnabled('weather')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const influenceSource = getGeoJsonSource(current, mapSourceIds.weatherInfluences)
     const areaFeatures = config.getPackMapAreaFeatures()
-    if (influenceSource) {
-      influenceSource.setData(asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)))
-    }
-    const symbolSource = getGeoJsonSource(current, mapSourceIds.weatherInfluenceSymbols)
-    if (symbolSource) {
-      symbolSource.setData(asMapLibreGeoJson(createWeatherInfluenceSymbolFeatureCollection(areaFeatures)))
-    }
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.weatherInfluences,
+      data: asMapLibreGeoJson(createWeatherInfluenceFeatureCollection(areaFeatures)),
+    })
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.weatherInfluenceSymbols,
+      data: asMapLibreGeoJson(createWeatherInfluenceSymbolFeatureCollection(areaFeatures)),
+    })
   }
 
   const refreshWeather = (): void => {
     if (!config.isLayerEnabled('weather')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const lineSource = getGeoJsonSource(current, mapSourceIds.weatherLines)
-    const baseGridSource = getGeoJsonSource(current, mapSourceIds.weatherBaseGrid)
-    const cellSource = getGeoJsonSource(current, mapSourceIds.weatherCells)
     const areaFeatures = config.getPackMapAreaFeatures()
-    if (lineSource) {
-      lineSource.setData(asMapLibreGeoJson(createWeatherLineFeatureCollection([...config.getObjects()], config.presentationFor)))
-    }
-    if (baseGridSource) {
-      baseGridSource.setData(asMapLibreGeoJson(createWeatherBaseGridFeatureCollection(areaFeatures)))
-    }
-    if (cellSource) {
-      cellSource.setData(asMapLibreGeoJson(createWeatherCellFeatureCollection(areaFeatures)))
-    }
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.weatherLines,
+      data: asMapLibreGeoJson(createWeatherLineFeatureCollection([...config.getObjects()], config.presentationFor)),
+    })
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.weatherBaseGrid,
+      data: asMapLibreGeoJson(createWeatherBaseGridFeatureCollection(areaFeatures)),
+    })
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.weatherCells,
+      data: asMapLibreGeoJson(createWeatherCellFeatureCollection(areaFeatures)),
+    })
     refreshWeatherInfluences()
   }
 
   const refreshPlacementPreview = (): void => {
     const current = currentMapForSourceUpdate()
     if (!current) return
-    const source = getGeoJsonSource(current, mapSourceIds.placementPreview)
-    if (!source) return
-    source.setData(asMapLibreGeoJson({
-      type: 'FeatureCollection',
-      features: config.getPlacementPoints().map((point, index) => ({
-        type: 'Feature',
-        id: `placement:${index}`,
-        geometry: point,
-        properties: {},
-      })),
-    }))
+    setSourceDataIfChanged({
+      current,
+      sourceId: mapSourceIds.placementPreview,
+      data: asMapLibreGeoJson({
+        type: 'FeatureCollection',
+        features: config.getPlacementPoints().map((point, index) => ({
+          type: 'Feature',
+          id: `placement:${index}`,
+          geometry: point,
+          properties: {},
+        })),
+      }),
+    })
   }
 
   const refreshAll = (): void => {
@@ -299,7 +371,8 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     trafficSourceDirty = false
     gridSourceDirty = false
     weatherSourceDirty = false
-    gridGeometryById = new Map()
+    sourceSignatureById = new Map()
+    gridGeometrySignatureById = new Map()
     gridVisualStateById = new Map()
   }
 

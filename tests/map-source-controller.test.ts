@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createMapSourceController, type MapSourceLayer } from '../src/ui/map/map-source-controller.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
+import type { PackObjectStatusTone } from '../src/core/packs/protocol.ts'
 
 const makeMapWithSources = () => {
   const setDataCalls = new Map<string, number>()
@@ -23,26 +24,27 @@ const makeMapWithSources = () => {
 
 const createController = (config: {
   readonly map: never
-  readonly objects?: ReadonlyArray<OperationalObject>
+  readonly objects?: ReadonlyArray<OperationalObject> | (() => ReadonlyArray<OperationalObject>)
   readonly enabledLayers: ReadonlyArray<MapSourceLayer>
   readonly setDataCalls: ReadonlyMap<string, number>
   readonly presentationCategory?: string
+  readonly presentationToneFor?: (object: OperationalObject) => PackObjectStatusTone
 }) => createMapSourceController({
   getMap: () => config.map,
   isLoaded: () => true,
-  getObjects: () => config.objects ?? [],
-  getDisplayObjects: () => config.objects ?? [],
+  getObjects: () => typeof config.objects === 'function' ? config.objects() : config.objects ?? [],
+  getDisplayObjects: () => typeof config.objects === 'function' ? config.objects() : config.objects ?? [],
   getSelectedControllerId: () => null,
   getHighlightedObjectIds: () => [],
   getPlacementPoints: () => [],
   hasNewInfo: () => false,
-  presentationFor: () => ({
+  presentationFor: object => ({
     categoryId: config.presentationCategory ?? 'none',
     icon: 'grid',
     color: '#000000',
     summary: '',
     fields: [],
-    status: { tone: 'ready', label: 'Ready', indicator: { shape: 'dot' } },
+    status: { tone: config.presentationToneFor?.(object) ?? 'ready', label: 'Ready', indicator: { shape: 'dot' } },
   }),
   getPackMapAreaFeatures: () => [],
   isLayerEnabled: layer => config.enabledLayers.includes(layer),
@@ -67,9 +69,46 @@ describe('MapSourceController', () => {
     expect(setDataCalls.get('planned-route-source')).toBeUndefined()
   })
 
+  test('does not resend unchanged object source data on repeated refreshes', () => {
+    const { map, setDataCalls } = makeMapWithSources()
+    const asset: OperationalObject = {
+      id: 'facility:1' as ObjectId,
+      kind: 'facility',
+      packId: 'ambulance' as PackId,
+      label: 'Facility 1',
+      lifecycle: 'active',
+      revision: 1,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.75, 59.91),
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+      operational: { status: 'normal', mode: 'simulated' },
+      alerts: [],
+      provenance: { source: 'simulator' },
+      timestamps: {
+        createdAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        updatedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+      },
+    }
+    const controller = createController({
+      map,
+      objects: [asset],
+      enabledLayers: ['objects'],
+      setDataCalls,
+    })
+
+    controller.refreshObjects()
+    controller.refreshObjects()
+
+    expect(setDataCalls.get('objects')).toBe(1)
+  })
+
   test('uses feature-state for repeated grid branch visual updates without resending geometry', () => {
     const { map, setDataCalls, featureStateCalls } = makeMapWithSources()
-    const branch: OperationalObject = {
+    let branch: OperationalObject = {
       id: 'grid:branch:1' as ObjectId,
       kind: 'zone',
       packId: 'electric-grid' as PackId,
@@ -96,16 +135,32 @@ describe('MapSourceController', () => {
     }
     const controller = createController({
       map,
-      objects: [branch],
+      objects: () => [branch],
       enabledLayers: ['grid'],
       setDataCalls,
       presentationCategory: 'grid-branches',
+      presentationToneFor: object => object.operational.status === 'constrained' ? 'working' : 'ready',
     })
 
     controller.refreshGrid()
+    branch = {
+      ...branch,
+      revision: 2,
+      operational: { ...branch.operational, status: 'constrained' },
+      spatial: {
+        ...branch.spatial,
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [...geoPointFromLonLat(10, 59).coordinates],
+            [...geoPointFromLonLat(11, 60).coordinates],
+          ],
+        },
+      },
+    }
     controller.refreshGrid()
 
     expect(setDataCalls.get('grid-line-source')).toBe(1)
-    expect(featureStateCalls.get('grid-line-source:grid:branch:1')).toBe(1)
+    expect(featureStateCalls.get('grid-line-source:grid:branch:1')).toBe(2)
   })
 })

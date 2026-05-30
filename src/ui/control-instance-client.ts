@@ -16,6 +16,10 @@ export interface ControlInstanceCommandRequest {
   readonly payload: unknown
 }
 
+export interface ControlInstanceRequestOptions {
+  readonly signal?: AbortSignal
+}
+
 const readJsonResponse = async <T>(
   response: Response,
   failureMessage: string,
@@ -122,11 +126,13 @@ export const setControlInstanceClock = async (
 export const queryControlInstancePack = async (
   controlInstanceId: ControlInstanceId,
   request: PackQueryRequest,
+  options: ControlInstanceRequestOptions = {},
 ): Promise<PackQueryApiResponse> => {
   const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   })
   return await readJsonResponse<PackQueryApiResponse>(response, 'pack query failed')
 }
