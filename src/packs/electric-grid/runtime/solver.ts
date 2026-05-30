@@ -17,6 +17,31 @@ export interface GridRuntimeState {
   readonly busStates: ReadonlyMap<string, GridBusState>
 }
 
+export interface GridSolverTopologyBus {
+  readonly busId: string
+  readonly nominalKv: number
+}
+
+export interface GridSolverTopologyBranch {
+  readonly objectId: string
+  readonly label: string
+  readonly fromBusId: string
+  readonly toBusId: string
+  readonly nominalKv: number
+  readonly ratingMw: number
+  readonly emergencyRatingMw: number
+  readonly reactancePu: number
+  readonly resistancePu: number
+  readonly state: GridBranchData['state']
+  readonly availability: number
+  readonly weatherExposure: GridBranchData['weatherExposure']
+}
+
+export interface GridSolverTopology {
+  readonly buses: ReadonlyArray<GridSolverTopologyBus>
+  readonly branches: ReadonlyArray<GridSolverTopologyBranch>
+}
+
 export interface SolvedGridState {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly runtimeState: GridRuntimeState
@@ -158,6 +183,46 @@ const solveLinear = (
 const activeBranch = (branch: GridBranchData): boolean =>
   branch.state === 'closed' || branch.state === 'derated'
 
+const branchDataFromTopology = (
+  branch: GridSolverTopologyBranch,
+  override: GridBranchData | undefined,
+): GridBranchData => ({
+  type: 'grid_branch',
+  schemaVersion: 1,
+  assetKind: 'branch',
+  branchKind: 'ac_line',
+  fromBusId: branch.fromBusId,
+  toBusId: branch.toBusId,
+  nominalKv: branch.nominalKv,
+  ratingMw: branch.ratingMw,
+  emergencyRatingMw: branch.emergencyRatingMw,
+  reactancePu: branch.reactancePu,
+  resistancePu: branch.resistancePu,
+  state: override?.state ?? branch.state,
+  availability: override?.availability ?? branch.availability,
+  flowMw: override?.flowMw ?? 0,
+  loadingPercent: override?.loadingPercent ?? 0,
+  voltageFromPu: override?.voltageFromPu ?? 1,
+  voltageToPu: override?.voltageToPu ?? 1,
+  frequencyHz: override?.frequencyHz ?? defaultFrequencyHz,
+  lossesMw: override?.lossesMw ?? 0,
+  weatherExposure: branch.weatherExposure,
+  provenance: override?.provenance ?? {
+    method: 'converted',
+    sourceId: 'electric-grid:private-topology',
+    confidence: 'medium',
+  },
+})
+
+const topologyBranchesForSolve = (
+  topology: GridSolverTopology,
+  operationalBranches: ReadonlyMap<string, GridBranchData>,
+): ReadonlyArray<{ readonly objectId: string; readonly data: GridBranchData }> =>
+  topology.branches.map(branch => ({
+    objectId: branch.objectId,
+    data: branchDataFromTopology(branch, operationalBranches.get(branch.objectId)),
+  }))
+
 const islandsFor = (
   buses: ReadonlyArray<string>,
   branches: ReadonlyArray<GridBranchData>,
@@ -190,8 +255,11 @@ const islandsFor = (
   return islands
 }
 
-const busIdsFor = (items: ReadonlyArray<ParsedGridObject>): ReadonlyArray<string> => {
-  const busIds = new Set<string>()
+const busIdsFor = (
+  items: ReadonlyArray<ParsedGridObject>,
+  topology: GridSolverTopology | null,
+): ReadonlyArray<string> => {
+  const busIds = new Set<string>(topology?.buses.map(bus => bus.busId) ?? [])
   for (const { data } of items) {
     if (data.type === 'grid_substation') busIds.add(data.busId)
     if (data.type === 'grid_generator') busIds.add(data.busId)
@@ -378,12 +446,21 @@ const alertsForData = (
 export const solveGrid = (config: {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly runtimeState: GridRuntimeState | null
+  readonly topology?: GridSolverTopology | null
   readonly dtSeconds: number
   readonly at: IsoTimestamp
 }): SolvedGridState => {
   const parsed = parseGridObjects(config.objects)
-  const buses = busIdsFor(parsed)
-  const branches = parsed.flatMap(item => item.data.type === 'grid_branch' ? [item.data] : [])
+  const topology = config.topology ?? null
+  const buses = busIdsFor(parsed, topology)
+  const operationalBranches = new Map(parsed.flatMap(item =>
+    item.data.type === 'grid_branch' ? [[item.object.id, item.data] as const] : []))
+  const branchItems = topology
+    ? topologyBranchesForSolve(topology, operationalBranches)
+    : parsed.flatMap(item => item.data.type === 'grid_branch'
+        ? [{ objectId: item.object.id, data: item.data }]
+        : [])
+  const branches = branchItems.map(item => item.data)
   const generators = parsed.flatMap(item => item.data.type === 'grid_generator' ? [item.data] : [])
   const loads = parsed.flatMap(item => item.data.type === 'grid_load' ? [profiledLoad(item.object.id, item.data, config.at)] : [])
   const storage = parsed.flatMap(item => item.data.type === 'grid_storage' ? [item.data] : [])
@@ -453,7 +530,8 @@ export const solveGrid = (config: {
   const loadByBus = totalByBus(solvedLoads, load => load.servedMw)
   const reactiveByBus = totalByBus(solvedLoads, load => load.reactiveDemandMvar)
   const roughBranchLoadingByBus = new Map<string, number>()
-  const solvedBranches = branches.map(branch => {
+  const solvedBranchItems = branchItems.map(item => {
+    const branch = item.data
     const flowMw = activeBranch(branch)
       ? (angles.get(branch.fromBusId) ?? 0) - (angles.get(branch.toBusId) ?? 0)
       : 0
@@ -463,13 +541,17 @@ export const solveGrid = (config: {
     roughBranchLoadingByBus.set(branch.fromBusId, Math.max(roughBranchLoadingByBus.get(branch.fromBusId) ?? 0, loadingPercent))
     roughBranchLoadingByBus.set(branch.toBusId, Math.max(roughBranchLoadingByBus.get(branch.toBusId) ?? 0, loadingPercent))
     return {
-      ...branch,
-      flowMw: scaledFlowMw,
-      loadingPercent,
-      frequencyHz,
-      lossesMw: Math.abs(scaledFlowMw) * branch.resistancePu * 0.006,
-    } satisfies GridBranchData
+      objectId: item.objectId,
+      data: {
+        ...branch,
+        flowMw: scaledFlowMw,
+        loadingPercent,
+        frequencyHz,
+        lossesMw: Math.abs(scaledFlowMw) * branch.resistancePu * 0.006,
+      } satisfies GridBranchData,
+    }
   })
+  const solvedBranches = solvedBranchItems.map(item => item.data)
 
   const busStates = new Map<string, GridBusState>()
   for (const bus of buses) {
@@ -554,7 +636,9 @@ export const solveGrid = (config: {
     if (item.data.type === 'grid_generator') dataByObjectId.set(item.object.id, solvedGenerators[generatorIndex++] ?? item.data)
     if (item.data.type === 'grid_load') dataByObjectId.set(item.object.id, solvedLoads[loadIndex++] ?? item.data)
     if (item.data.type === 'grid_storage') dataByObjectId.set(item.object.id, solvedStorage[storageIndex++] ?? item.data)
-    if (item.data.type === 'grid_branch') dataByObjectId.set(item.object.id, solvedBranches[branchIndex++] ?? item.data)
+    if (item.data.type === 'grid_branch') {
+      dataByObjectId.set(item.object.id, solvedBranchItems.find(branch => branch.objectId === item.object.id)?.data ?? solvedBranches[branchIndex++] ?? item.data)
+    }
     if (item.data.type === 'grid_substation') dataByObjectId.set(item.object.id, solvedSubstations[substationIndex++] ?? item.data)
     if (item.data.type === 'grid_market_area') {
       dataByObjectId.set(item.object.id, {

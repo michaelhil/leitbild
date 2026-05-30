@@ -65,7 +65,6 @@ const asMapLibreGeoJson = (data: unknown): GeoJSON =>
 
 export const createMapSourceController = (config: MapSourceControllerConfig): MapSourceController => {
   let refreshFrame: number | null = null
-  let refreshRetryTimer: ReturnType<typeof setTimeout> | null = null
   let objectSourceDirty = false
   let routeSourceDirty = false
   let trafficSourceDirty = false
@@ -82,6 +81,14 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
 
   const hasDirtySources = (): boolean =>
     objectSourceDirty || routeSourceDirty || trafficSourceDirty || gridSourceDirty || weatherSourceDirty
+
+  const clearDirtySources = (): void => {
+    objectSourceDirty = false
+    weatherSourceDirty = false
+    trafficSourceDirty = false
+    gridSourceDirty = false
+    routeSourceDirty = false
+  }
 
   type SignatureGeometry = {
     readonly type: string
@@ -318,17 +325,12 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     refreshGrid()
     refreshRoutes()
     refreshPlacementPreview()
+    clearDirtySources()
   }
 
   const runScheduledRefresh = (): void => {
     refreshFrame = null
     if (!currentMapForSourceUpdate()) {
-      if (hasDirtySources() && refreshRetryTimer === null) {
-        refreshRetryTimer = setTimeout(() => {
-          refreshRetryTimer = null
-          if (hasDirtySources()) schedule({})
-        }, 50)
-      }
       return
     }
     const displayObjects = config.getDisplayObjects()
@@ -339,11 +341,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     if (gridSourceDirty) refreshGrid()
     if (routeSourceDirty) refreshRoutes()
     refreshPlacementPreview()
-    objectSourceDirty = false
-    weatherSourceDirty = false
-    trafficSourceDirty = false
-    gridSourceDirty = false
-    routeSourceDirty = false
+    clearDirtySources()
   }
 
   const schedule = (dirty: MapSourceDirty): void => {
@@ -353,6 +351,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
     gridSourceDirty = gridSourceDirty || (dirty.grid === true && config.isLayerEnabled('grid'))
     weatherSourceDirty = weatherSourceDirty || (dirty.weather === true && config.isLayerEnabled('weather'))
     if (!hasDirtySources()) return
+    if (!currentMapForSourceUpdate()) return
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(runScheduledRefresh)
   }
@@ -362,15 +361,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
       cancelAnimationFrame(refreshFrame)
       refreshFrame = null
     }
-    if (refreshRetryTimer !== null) {
-      clearTimeout(refreshRetryTimer)
-      refreshRetryTimer = null
-    }
-    objectSourceDirty = false
-    routeSourceDirty = false
-    trafficSourceDirty = false
-    gridSourceDirty = false
-    weatherSourceDirty = false
+    clearDirtySources()
     sourceSignatureById = new Map()
     gridGeometrySignatureById = new Map()
     gridVisualStateById = new Map()

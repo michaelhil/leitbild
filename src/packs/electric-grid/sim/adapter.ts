@@ -34,7 +34,8 @@ import {
 import { answerElectricGridQuery, electricGridQueryKinds } from '../query.ts'
 import { electricGridAdapterId, electricGridRuntimeId, electricGridRuntimePackId } from './constants.ts'
 import { electricGridPackDataSchema, type ElectricGridPackData } from '../model.ts'
-import { solveGrid, type GridRuntimeState } from '../runtime/solver.ts'
+import { norwayGridArenaTopology } from '../arena/norway-grid-arena.ts'
+import { solveGrid, type GridRuntimeState, type GridSolverTopology } from '../runtime/solver.ts'
 
 const updateIntervalMs = 2_000
 const runtimeStateFlushIntervalMs = defaultControlInstanceRuntimePolicy.runtimePrivateStateFlushIntervalMs
@@ -64,6 +65,18 @@ const persistedRuntimeStateSchema = z.object({
     frequencyHz: z.number().finite(),
   }),
 })
+const runtimeConfigSchema = z.object({
+  topology: z.object({
+    kind: z.literal('built-in'),
+    arenaId: z.literal('source-derived-oslofjord-grid'),
+  }).optional(),
+}).default({})
+
+const topologyForRuntimeConfig = (runtimeConfig: unknown): GridSolverTopology | null => {
+  const parsed = runtimeConfigSchema.parse(runtimeConfig ?? {})
+  if (parsed.topology?.kind !== 'built-in') return null
+  return norwayGridArenaTopology()
+}
 
 const restoreGridObject = (object: OperationalObject): OperationalObject => {
   const parsed = electricGridPackDataSchema.safeParse(object.packData)
@@ -259,6 +272,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   acceptedCommandKinds: electricGridCommandKinds,
   queryKinds: electricGridQueryKinds,
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+    const topology = topologyForRuntimeConfig(config.scenario?.runtimeConfig)
     const runtimeStateStore = config.runtimeStateStore
     const restoredRuntimeState = runtimeStateStore
       ? persistedRuntimeStateSchema.parse(await runtimeStateStore.load() ?? { runtimeState: { tick: 0, frequencyHz: 50 } }).runtimeState
@@ -330,7 +344,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     ): void => {
       if (closed || clock?.paused) return
       const at = currentSimulationTime(clock)
-      const solved = solveGrid({ objects: [...objects.values()], runtimeState, dtSeconds, at })
+      const solved = solveGrid({ objects: [...objects.values()], runtimeState, topology, dtSeconds, at })
       runtimeState = solved.runtimeState
       const events: PackRuntimeEvent[] = []
       for (const next of solved.objects) {

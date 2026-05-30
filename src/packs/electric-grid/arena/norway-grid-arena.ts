@@ -3,6 +3,32 @@ import { generatorDefaults, inferBranchElectricalParameters } from './electrical
 import { norwayGridArenaData } from './norway-grid-arena-data.ts'
 import type { GridArenaScenarioObjectSpec, SourceDerivedGridArenaData } from './types.ts'
 
+export interface GridArenaTopologyBranch {
+  readonly objectId: string
+  readonly label: string
+  readonly fromBusId: string
+  readonly toBusId: string
+  readonly nominalKv: number
+  readonly ratingMw: number
+  readonly emergencyRatingMw: number
+  readonly reactancePu: number
+  readonly resistancePu: number
+  readonly state: 'closed' | 'open' | 'faulted' | 'derated'
+  readonly availability: number
+  readonly weatherExposure: 'low' | 'medium' | 'high'
+}
+
+export interface GridArenaTopologyBus {
+  readonly busId: string
+  readonly label: string
+  readonly nominalKv: number
+}
+
+export interface GridArenaTopology {
+  readonly buses: ReadonlyArray<GridArenaTopologyBus>
+  readonly branches: ReadonlyArray<GridArenaTopologyBranch>
+}
+
 const objectIdToken = (value: string): string =>
   value
     .replace(/[æÆ]/g, 'ae')
@@ -17,6 +43,16 @@ const objectIdToken = (value: string): string =>
 
 const busIdFor = (name: string, nominalKv: number): string =>
   `NO1-${objectIdToken(name).toUpperCase()}-${Math.round(nominalKv)}`
+
+const substationObjectIdFor = (substation: SourceDerivedGridArenaData['substations'][number]): string =>
+  `grid:ss-${objectIdToken(substation.name)}-${Math.round(substation.maxVoltageKv)}-${objectIdToken(substation.externalId)}`
+
+const branchObjectIdFor = (
+  branch: SourceDerivedGridArenaData['branches'][number],
+  from: SourceDerivedGridArenaData['substations'][number],
+  to: SourceDerivedGridArenaData['substations'][number],
+): string =>
+  `grid:branch-${objectIdToken(`${from.name}-${to.name}-${branch.nominalKv}-${branch.externalId}`)}`
 
 const provenance = (config: {
   readonly method: 'observed' | 'converted' | 'inferred' | 'configured' | 'defaulted' | 'unknown'
@@ -74,7 +110,7 @@ export const norwayGridArenaObjectSpecs = (
     specs.push({
       pack: 'electric-grid',
       type: 'substation',
-      id: `grid:ss-${objectIdToken(substation.name)}-${Math.round(substation.maxVoltageKv)}-${objectIdToken(substation.externalId)}`,
+      id: substationObjectIdFor(substation),
       label: substation.name,
       busId: busByExternalId.get(substation.externalId) ?? busIdFor(substation.name, substation.maxVoltageKv),
       nominalKv: substation.maxVoltageKv,
@@ -101,8 +137,7 @@ export const norwayGridArenaObjectSpecs = (
       category: branch.category,
       name: branch.name,
     })
-    const idToken = objectIdToken(`${from.name}-${to.name}-${branch.nominalKv}-${branch.externalId}`)
-    const id = `grid:branch-${idToken}`
+    const id = branchObjectIdFor(branch, from, to)
     if (branchIds.has(id)) continue
     branchIds.add(id)
     specs.push({
@@ -203,6 +238,54 @@ export const norwayGridArenaObjectSpecs = (
   })
 
   return specs as ReadonlyArray<GridArenaScenarioObjectSpec>
+}
+
+export const norwayGridArenaTopology = (
+  data: SourceDerivedGridArenaData = norwayGridArenaData,
+): GridArenaTopology => {
+  const substationByExternalId = new Map(data.substations.map(substation => [substation.externalId, substation]))
+  const busByExternalId = new Map(data.substations.map(substation => [
+    substation.externalId,
+    busIdFor(substation.name, substation.maxVoltageKv),
+  ]))
+  const buses = data.substations.map(substation => ({
+    busId: busByExternalId.get(substation.externalId) ?? busIdFor(substation.name, substation.maxVoltageKv),
+    label: substation.name,
+    nominalKv: substation.maxVoltageKv,
+  }))
+  const branchIds = new Set<string>()
+  const branches: GridArenaTopologyBranch[] = []
+  for (const branch of data.branches) {
+    const from = substationByExternalId.get(branch.fromExternalId)
+    const to = substationByExternalId.get(branch.toExternalId)
+    const fromBusId = busByExternalId.get(branch.fromExternalId)
+    const toBusId = busByExternalId.get(branch.toExternalId)
+    if (!from || !to || !fromBusId || !toBusId) continue
+    const objectId = branchObjectIdFor(branch, from, to)
+    if (branchIds.has(objectId)) continue
+    branchIds.add(objectId)
+    const params = inferBranchElectricalParameters({
+      nominalKv: branch.nominalKv,
+      lengthKm: branch.lengthKm,
+      category: branch.category,
+      name: branch.name,
+    })
+    branches.push({
+      objectId,
+      label: branch.name,
+      fromBusId,
+      toBusId,
+      nominalKv: branch.nominalKv,
+      ratingMw: params.ratingMw,
+      emergencyRatingMw: params.emergencyRatingMw,
+      reactancePu: params.reactancePu,
+      resistancePu: params.resistancePu,
+      state: 'closed',
+      availability: 1,
+      weatherExposure: params.weatherExposure,
+    })
+  }
+  return { buses, branches }
 }
 
 const haversineKm = (a: readonly [number, number], b: readonly [number, number]): number => {

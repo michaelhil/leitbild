@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createMapSourceController, type MapSourceLayer } from '../src/ui/map/map-source-controller.ts'
+import { sourceFamilyDirtyFor, sourceFamilySignaturesFor } from '../src/ui/map/map-source-update-planner.ts'
 import { geoPointFromLonLat, type IsoTimestamp, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
 import type { PackObjectStatusTone } from '../src/core/packs/protocol.ts'
 
@@ -67,6 +68,108 @@ describe('MapSourceController', () => {
     expect(setDataCalls.get('traffic-line-source')).toBeUndefined()
     expect(setDataCalls.get('grid-line-source')).toBeUndefined()
     expect(setDataCalls.get('planned-route-source')).toBeUndefined()
+  })
+
+  test('classifies expensive source families separately from ordinary object movement', () => {
+    const pointObject: OperationalObject = {
+      id: 'asset:1' as ObjectId,
+      kind: 'facility',
+      packId: 'ambulance' as PackId,
+      label: 'Asset 1',
+      lifecycle: 'active',
+      revision: 1,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.75, 59.91),
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+      operational: { status: 'normal', mode: 'simulated' },
+      alerts: [],
+      provenance: { source: 'simulator' },
+      timestamps: {
+        createdAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        updatedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+      },
+    }
+    const presentationFor = () => ({
+      categoryId: 'ambulance',
+      icon: 'ambulance',
+      color: '#000000',
+      summary: '',
+      fields: [],
+      status: { tone: 'ready' as const, label: 'Ready', indicator: { shape: 'dot' as const } },
+    })
+    const previous = sourceFamilySignaturesFor([pointObject], presentationFor)
+    const next = sourceFamilySignaturesFor([{
+      ...pointObject,
+      revision: 2,
+      spatial: {
+        ...pointObject.spatial,
+        position: {
+          point: geoPointFromLonLat(10.76, 59.92),
+          observedAt: '2026-05-30T00:00:01.000Z' as IsoTimestamp,
+        },
+      },
+    }], presentationFor)
+
+    expect(sourceFamilyDirtyFor(previous, next)).toEqual({
+      weather: false,
+      traffic: false,
+      grid: false,
+    })
+  })
+
+  test('does not mark grid source dirty for non-visual branch value revisions', () => {
+    const branch: OperationalObject = {
+      id: 'grid:branch:1' as ObjectId,
+      kind: 'zone',
+      packId: 'electric-grid' as PackId,
+      label: 'Branch 1',
+      lifecycle: 'active',
+      revision: 1,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            geoPointFromLonLat(10, 59).coordinates,
+            geoPointFromLonLat(11, 60).coordinates,
+          ],
+        },
+      },
+      operational: { status: 'normal', mode: 'simulated' },
+      alerts: [],
+      provenance: { source: 'simulator' },
+      timestamps: {
+        createdAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        updatedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+      },
+    }
+    const presentationFor = (object: OperationalObject) => ({
+      categoryId: 'grid-branches',
+      icon: 'line',
+      color: object.operational.status === 'constrained' ? '#b45309' : '#1f7a5a',
+      summary: `Branch value revision ${object.revision}`,
+      fields: [],
+      status: {
+        tone: object.operational.status === 'constrained' ? 'working' as const : 'ready' as const,
+        label: 'Ready',
+        indicator: { shape: 'dot' as const },
+      },
+    })
+
+    const previous = sourceFamilySignaturesFor([branch], presentationFor)
+    const valueOnlyRevision = sourceFamilySignaturesFor([{ ...branch, revision: 2 }], presentationFor)
+    const visualRevision = sourceFamilySignaturesFor([{
+      ...branch,
+      revision: 3,
+      operational: { ...branch.operational, status: 'constrained' },
+    }], presentationFor)
+
+    expect(sourceFamilyDirtyFor(previous, valueOnlyRevision).grid).toBe(false)
+    expect(sourceFamilyDirtyFor(previous, visualRevision).grid).toBe(true)
   })
 
   test('does not resend unchanged object source data on repeated refreshes', () => {

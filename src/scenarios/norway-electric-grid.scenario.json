@@ -126,7 +126,14 @@
     }
   ],
   "initialContexts": [],
-  "runtimeConfigs": {},
+  "runtimeConfigs": {
+    "electric-grid": {
+      "topology": {
+        "kind": "built-in",
+        "arenaId": "source-derived-oslofjord-grid"
+      }
+    }
+  },
   "surface": {
     "schemaVersion": 1,
     "regions": [

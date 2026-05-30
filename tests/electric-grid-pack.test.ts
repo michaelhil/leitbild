@@ -5,6 +5,7 @@ import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { gridDerateBranchCommandKind, gridTripGeneratorCommandKind } from '../src/packs/electric-grid/commands.ts'
 import { electricGridPackDataSchema, type ElectricGridPackData, type GridBranchData, type GridGeneratorData, type GridLoadData, type GridSystemData } from '../src/packs/electric-grid/model.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
+import { norwayGridArenaTopology } from '../src/packs/electric-grid/arena/norway-grid-arena.ts'
 import { solveGrid } from '../src/packs/electric-grid/runtime/solver.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { electricGridRuntimeId } from '../src/packs/electric-grid/sim/constants.ts'
@@ -14,6 +15,12 @@ import type { PackRuntimeEvent } from '../src/simulation/protocol.ts'
 
 const controlInstanceId = 'control-instance:electric-grid-test' as ControlInstanceId
 const actorId = 'actor:electric-grid-test' as ActorId
+const sourceDerivedTopologyRuntimeConfig = {
+  topology: {
+    kind: 'built-in',
+    arenaId: 'source-derived-oslofjord-grid',
+  },
+} as const
 
 const command = (config: {
   readonly kind: string
@@ -58,7 +65,7 @@ describe('electric grid pack', () => {
     expect(runtime?.runtimes).toContainEqual({
       packId: 'electric-grid',
       runtimeId: electricGridRuntimeId,
-      runtimeConfig: {},
+      runtimeConfig: sourceDerivedTopologyRuntimeConfig,
     })
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).not.toContain('electric-grid:branches')
     expect(electricGridPack.mapLayerGroups?.map(group => group.id)).toContain('electric-grid:reference-lines')
@@ -94,7 +101,7 @@ describe('electric grid pack', () => {
         world: scenario.world,
         initialObjects: scenario.initialObjects,
         runtimeConfigs: {},
-        runtimeConfig: {},
+        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
 
@@ -123,15 +130,18 @@ describe('electric grid pack', () => {
 
   test('applies deterministic operating demand profiles without drifting load baselines', () => {
     const scenario = gridScenario()
+    const topology = norwayGridArenaTopology()
     const first = solveGrid({
       objects: scenario.initialObjects,
       runtimeState: null,
+      topology,
       dtSeconds: 1,
       at: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
     })
     const second = solveGrid({
       objects: first.objects,
       runtimeState: first.runtimeState,
+      topology,
       dtSeconds: 90,
       at: '2026-01-01T10:01:30.000Z' as IsoTimestamp,
     })
@@ -163,7 +173,7 @@ describe('electric grid pack', () => {
         world: scenario.world,
         initialObjects: scenario.initialObjects,
         runtimeConfigs: {},
-        runtimeConfig: {},
+        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
 
@@ -232,7 +242,7 @@ describe('electric grid pack', () => {
         world: scenario.world,
         initialObjects: scenario.initialObjects,
         runtimeConfigs: {},
-        runtimeConfig: {},
+        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
 
@@ -275,7 +285,7 @@ describe('electric grid pack', () => {
         world: scenario.world,
         initialObjects: scenario.initialObjects,
         runtimeConfigs: {},
-        runtimeConfig: {},
+        runtimeConfig: sourceDerivedTopologyRuntimeConfig,
       },
     })
 

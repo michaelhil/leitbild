@@ -2,6 +2,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import { mapLayerIds, mapSourceIds } from './map-features.ts'
 
 export interface MapVisualReadinessOptions {
+  readonly mode?: 'base' | 'operational'
   readonly timeoutMs?: number
   readonly recordDebug?: (label: string) => void
   readonly isCancelled?: () => boolean
@@ -19,6 +20,7 @@ export interface MapCanvasSample {
 }
 
 export interface MapVisualReadinessSnapshot {
+  readonly mode: 'base' | 'operational'
   readonly phase: string
   readonly container: { readonly width: number; readonly height: number }
   readonly canvas: {
@@ -49,6 +51,15 @@ export const isMapVisualReadinessFailure = (err: unknown): err is MapVisualReadi
   err instanceof Error && 'snapshot' in err
 
 const defaultTimeoutMs = 5_000
+const baseMapSourceId = 'leitbild-osm'
+const baseRequiredSourceIds: ReadonlyArray<string> = [baseMapSourceId]
+const baseRequiredLayerIds: ReadonlyArray<string> = [
+  'water',
+  'landuse',
+  'landcover',
+  'road',
+  'place-label',
+]
 const defaultRequiredSourceIds: ReadonlyArray<string> = [
   mapSourceIds.objects,
   mapSourceIds.placementPreview,
@@ -62,9 +73,9 @@ const baseProbeLayerIds: ReadonlyArray<string> = [
   'water',
   'landuse',
   'landcover',
-  'transportation',
-  'transportation-name',
-  'place',
+  'road',
+  'road-label',
+  'place-label',
 ]
 
 const dimensionIsVisible = (value: number): boolean =>
@@ -95,6 +106,16 @@ const mapTilesAreSettled = (map: MapLibreMap): boolean => {
     return false
   }
 }
+
+const requiredSourceIdsFor = (
+  options: Pick<MapVisualReadinessOptions, 'mode' | 'requiredSourceIds'>,
+): ReadonlyArray<string> =>
+  options.requiredSourceIds ?? (options.mode === 'base' ? baseRequiredSourceIds : defaultRequiredSourceIds)
+
+const requiredLayerIdsFor = (
+  options: Pick<MapVisualReadinessOptions, 'mode' | 'requiredLayerIds'>,
+): ReadonlyArray<string> =>
+  options.requiredLayerIds ?? (options.mode === 'base' ? baseRequiredLayerIds : defaultRequiredLayerIds)
 
 const webGlContext = (canvas: HTMLCanvasElement): WebGLRenderingContext | WebGL2RenderingContext | null => {
   try {
@@ -169,15 +190,16 @@ const countRenderedBaseFeatures = (map: MapLibreMap): number | null => {
 
 export const inspectMapVisualReadiness = (
   map: MapLibreMap,
-  options: Pick<MapVisualReadinessOptions, 'requiredSourceIds' | 'requiredLayerIds' | 'sampleCanvas'> = {},
+  options: Pick<MapVisualReadinessOptions, 'mode' | 'requiredSourceIds' | 'requiredLayerIds' | 'sampleCanvas'> = {},
   phase = 'inspect',
 ): MapVisualReadinessSnapshot => {
+  const mode = options.mode ?? 'operational'
   try {
     const containerRect = map.getContainer().getBoundingClientRect()
     const canvas = map.getCanvas()
     const canvasRect = canvas.getBoundingClientRect()
-    const requiredSourceIds = options.requiredSourceIds ?? defaultRequiredSourceIds
-    const requiredLayerIds = options.requiredLayerIds ?? defaultRequiredLayerIds
+    const requiredSourceIds = requiredSourceIdsFor({ ...options, mode })
+    const requiredLayerIds = requiredLayerIdsFor({ ...options, mode })
     const missingSourceIds = requiredSourceIds.filter(sourceId => !map.getSource(sourceId))
     const missingLayerIds = requiredLayerIds.filter(layerId => !map.getLayer(layerId))
     const presentable = dimensionIsVisible(containerRect.width)
@@ -193,8 +215,9 @@ export const inspectMapVisualReadiness = (
       ? sampleCanvasPixels(map)
       : emptyCanvasSample('canvas sampling disabled for readiness performance')
     const hasRenderedEvidence = (renderedFeatureCount ?? 0) > 0
-      || (canvasSample.supported && canvasSample.visiblePixels > 0 && canvasSample.variedPixels > 0)
+      || (canvasSample.supported && canvasSample.visiblePixels > 0)
     return {
+      mode,
       phase,
       container: {
         width: Math.round(containerRect.width),
@@ -213,21 +236,20 @@ export const inspectMapVisualReadiness = (
       renderedFeatureCount,
       canvasSample,
       healthy: presentable
-        && styleLoaded
         && missingSourceIds.length === 0
         && missingLayerIds.length === 0
-        && hasRenderedEvidence
-        && (mapLoaded || hasRenderedEvidence),
+        && hasRenderedEvidence,
     }
   } catch (err) {
     return {
+      mode,
       phase,
       container: { width: 0, height: 0 },
       canvas: { cssWidth: 0, cssHeight: 0, bufferWidth: 0, bufferHeight: 0 },
       styleLoaded: false,
       mapLoaded: false,
-      missingSourceIds: options.requiredSourceIds ?? defaultRequiredSourceIds,
-      missingLayerIds: options.requiredLayerIds ?? defaultRequiredLayerIds,
+      missingSourceIds: requiredSourceIdsFor({ ...options, mode }),
+      missingLayerIds: requiredLayerIdsFor({ ...options, mode }),
       renderedFeatureCount: null,
       canvasSample: emptyCanvasSample(err instanceof Error ? err.message : String(err)),
       healthy: false,
@@ -273,6 +295,7 @@ export const waitForMapVisualReadiness = (
     options.recordDebug?.(`visual-not-ready:${reason}`)
     const error = new Error(
       `Map did not reach a healthy rendered frame: ${reason}; `
+      + `mode=${snapshot.mode}; `
       + `container=${snapshot.container.width}x${snapshot.container.height}; `
       + `canvas=${snapshot.canvas.cssWidth}x${snapshot.canvas.cssHeight}/${snapshot.canvas.bufferWidth}x${snapshot.canvas.bufferHeight}; `
       + `styleLoaded=${snapshot.styleLoaded}; mapLoaded=${snapshot.mapLoaded}; `

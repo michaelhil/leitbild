@@ -35,6 +35,11 @@
   import { createMapPopupController } from './map/map-popup-controller.ts'
   import { createMapSourceController, type MapSourceLayer } from './map/map-source-controller.ts'
   import {
+    sourceFamilyDirtyFor,
+    sourceFamilySignaturesFor,
+    type MapSourceFamilySignatures,
+  } from './map/map-source-update-planner.ts'
+  import {
     fetchSamsinnScreenshotConfig,
     disabledSamsinnScreenshotConfig,
     type SamsinnScreenshotConfig,
@@ -113,6 +118,7 @@
   let renderRevision = $state(0)
   let lastRouteRevision = -1
   let lastSelectedControllerId: string | null = null
+  let lastSourceFamilySignatures: MapSourceFamilySignatures | null = null
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
@@ -365,6 +371,12 @@
     }, 2_000)
   }
 
+  const startPackAreaWorkIfNeeded = (): void => {
+    if (!mapLayerEnabled('weather')) return
+    void refreshPackMapAreaFeatures()
+    startPackAreaRefresh()
+  }
+
   const cancelDeferredReferenceRegistration = (): void => {
     referenceRegistrationCancel?.()
     referenceRegistrationCancel = null
@@ -393,8 +405,8 @@
   const currentStyleSetupIsActive = (current: MapLibreMap, token: number): boolean =>
     map === current && styleSetupToken === token
 
-  const publishMapDiagnostic = (current: MapLibreMap, phase: string): void => {
-    onMapDiagnostic(inspectMapVisualReadiness(current, undefined, phase))
+  const publishMapDiagnostic = (current: MapLibreMap, phase: string, mode: 'base' | 'operational' = 'operational'): void => {
+    onMapDiagnostic(inspectMapVisualReadiness(current, { mode }, phase))
   }
 
   const scheduleDisplayAnimation = (): void => {
@@ -461,11 +473,6 @@
           referenceController = controller
           packLayerGroupController?.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
           publishMapDiagnostic(current, 'reference-registered')
-          await waitForMapVisualReadiness(current, {
-            timeoutMs: 2_500,
-            recordDebug: mapInputDebugController.record,
-            isCancelled: () => !currentStyleSetupIsActive(current, token),
-          })
           mapInputDebugController.record('reference:setup-complete')
         } catch (err) {
           if (isMapVisualReadinessFailure(err)) {
@@ -477,19 +484,30 @@
     })
   }
 
-  const completeMapVisualReadiness = async (current: MapLibreMap, token: number): Promise<void> => {
-    const readiness = await waitForMapVisualReadiness(current, {
-      recordDebug: mapInputDebugController.record,
-      isCancelled: () => !currentStyleSetupIsActive(current, token),
-    })
+  const notifyMapReady = (current: MapLibreMap, token: number): void => {
     if (!currentStyleSetupIsActive(current, token)) return
-    onMapDiagnostic(readiness.snapshot)
-    if (!mapReadyNotified) {
-      mapReadyNotified = true
-      mapInputDebugController.record('style:map-ready')
-      onMapReady()
+    if (mapReadyNotified) return
+    mapReadyNotified = true
+    mapInputDebugController.record('style:map-ready')
+    onMapReady()
+  }
+
+  const verifyMapVisualReadiness = async (current: MapLibreMap, token: number): Promise<void> => {
+    try {
+      const readiness = await waitForMapVisualReadiness(current, {
+        mode: 'operational',
+        recordDebug: mapInputDebugController.record,
+        isCancelled: () => !currentStyleSetupIsActive(current, token),
+      })
+      if (!currentStyleSetupIsActive(current, token)) return
+      onMapDiagnostic(readiness.snapshot)
+    } catch (err) {
+      if (!currentStyleSetupIsActive(current, token)) return
+      if (isMapVisualReadinessFailure(err)) {
+        onMapDiagnostic(err.snapshot)
+      }
+      onMapError(err instanceof Error ? err.message : String(err))
     }
-    registerReferenceDataAfterFirstFrame(current, token)
   }
 
   const setupOperationalMapStyle = async (current: MapLibreMap, token: number): Promise<void> => {
@@ -549,12 +567,14 @@
       loaded = true
       lastRouteRevision = routeRevision
       lastSelectedControllerId = selectedControllerId
+      lastSourceFamilySignatures = sourceFamilySignaturesFor(objects, presentationFor)
       applyConfiguredLayerVisibility()
       refreshSources()
-      void refreshPackMapAreaFeatures()
-      startPackAreaRefresh()
       publishMapDiagnostic(current, 'operational-flush')
-      await completeMapVisualReadiness(current, token)
+      notifyMapReady(current, token)
+      startPackAreaWorkIfNeeded()
+      registerReferenceDataAfterFirstFrame(current, token)
+      void verifyMapVisualReadiness(current, token)
     } catch (err) {
       if (isMapVisualReadinessFailure(err)) {
         onMapDiagnostic(err.snapshot)
@@ -652,7 +672,7 @@
           capture: async options => screenshotModule.captureMapCanvasScreenshot(current.getCanvas(), options),
         })
       }
-      publishMapDiagnostic(current, 'constructed')
+      publishMapDiagnostic(current, 'constructed', 'base')
       if (current.isStyleLoaded() || current.loaded()) {
         requestOperationalStyleSetup(current)
       }
@@ -677,6 +697,7 @@
       mapLifecycle = null
       map = null
       loaded = false
+      lastSourceFamilySignatures = null
       styleSetupToken += 1
       styleSetupInFlight = false
       referenceController = null
@@ -708,12 +729,16 @@
     const routesChanged = routeRevision !== lastRouteRevision || selectedControllerId !== lastSelectedControllerId
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
+    const nextFamilySignatures = sourceFamilySignaturesFor(objects, presentationFor)
+    const previousFamilySignatures = lastSourceFamilySignatures
+    lastSourceFamilySignatures = nextFamilySignatures
+    const sourceFamilyDirty = sourceFamilyDirtyFor(previousFamilySignatures, nextFamilySignatures)
     sourceController.schedule({
       objects: true,
       routes: routesChanged,
-      traffic: mapLayerEnabled('traffic'),
-      weather: mapLayerEnabled('weather'),
-      grid: mapLayerEnabled('grid'),
+      traffic: sourceFamilyDirty.traffic,
+      weather: sourceFamilyDirty.weather,
+      grid: sourceFamilyDirty.grid,
     })
     popupController.refresh(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
@@ -766,6 +791,7 @@
     if (current && appliedTheme !== null && theme !== appliedTheme) {
       appliedTheme = theme
       loaded = false
+      lastSourceFamilySignatures = null
       abortPackAreaFeatureRequest('map style changed before pack map-area query completed')
       styleSetupToken += 1
       styleSetupInFlight = false

@@ -408,6 +408,7 @@
   }
 
   const mapReadinessDetails = (snapshot: MapVisualReadinessSnapshot) => [
+    { label: 'Mode', value: snapshot.mode },
     { label: 'Phase', value: snapshot.phase },
     { label: 'Container', value: `${snapshot.container.width}x${snapshot.container.height}` },
     { label: 'Canvas', value: `${snapshot.canvas.cssWidth}x${snapshot.canvas.cssHeight}/${snapshot.canvas.bufferWidth}x${snapshot.canvas.bufferHeight}` },

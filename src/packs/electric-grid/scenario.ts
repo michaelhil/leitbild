@@ -351,7 +351,7 @@ export const electricGridScenarioSupport: PackScenarioSupport = {
   expandObjects: (rawSpec: PackScenarioObjectSpec, context): ReadonlyArray<OperationalObject> => {
     if (rawSpec.type === 'regional_grid') {
       regionalGridSpecSchema.parse(rawSpec)
-      return norwayGridArenaObjectSpecs().map(spec => expandGridObject(spec, context.at))
+      return norwayGridArenaObjectSpecs().map(objectSpec => expandGridObject(objectSpec, context.at))
     }
     return [expandGridObject(rawSpec, context.at)]
   },
