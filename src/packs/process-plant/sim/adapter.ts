@@ -163,7 +163,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         },
       }))
       emitPackRuntimeEvents(handlers, events)
-      await persistence.saveNow()
+      persistence.scheduleSave()
     }
 
     const interval = setInterval(() => {

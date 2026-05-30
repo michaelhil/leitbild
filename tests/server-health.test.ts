@@ -51,6 +51,18 @@ const waitForMovingObjectEvent = async (
   })
 }
 
+const waitForRuntimeClosed = async (
+  registry: ReturnType<typeof createControlInstanceRegistry>,
+  controlInstanceId: ControlInstanceId,
+): Promise<void> => {
+  const deadline = Date.now() + 1_000
+  while (Date.now() < deadline) {
+    if (!registry.get(controlInstanceId)) return
+    await Bun.sleep(10)
+  }
+  throw new Error(`timed out waiting for idle runtime close: ${controlInstanceId}`)
+}
+
 const dispatchAmbulanceCommand = (controlInstanceId: ControlInstanceId, ambulanceId: ObjectId, targetId: ObjectId): CommandEnvelope =>
   commandEnvelopeSchema.parse({
     id: `command:${crypto.randomUUID()}`,
@@ -213,6 +225,45 @@ describe('server health', () => {
       realtime.reconcile()
       expect(firstClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
       expect(secondClient.readyMessages).toEqual(['oslo-ambulance', 'halden'])
+    } finally {
+      realtime.stop()
+      await registry.close(controlInstanceId)
+    }
+  })
+
+  test('closes idle runtimes after the last realtime client leaves', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-server-idle-client-test-'))
+    const controlInstanceId = 'sandbox' as ControlInstanceId
+    const registry = createControlInstanceRegistry({
+      dataDir,
+      scenarioCatalog: createTestScenarioCatalog(),
+      runtimeAdapters: [
+        createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
+        createLocalTrafficPackRuntimeAdapter(),
+        createLocalWeatherPackRuntimeAdapter(),
+      ],
+    })
+    const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
+    const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
+      registry,
+      idleRuntimeCloseDelayMs: 5,
+      send: (targetClient, message) => {
+        targetClient.eventMessages.push(message)
+        targetClient.events.push(...message.events)
+      },
+      sendReady: (targetClient, message) => {
+        targetClient.readyMessages.push(message.scenarioId ?? '')
+      },
+    })
+    try {
+      const runtime = await registry.ensure(controlInstanceId)
+      realtime.addClient(controlInstanceId, client)
+      expect(registry.get(controlInstanceId)).toBe(runtime)
+
+      realtime.removeClient(controlInstanceId, client)
+      await waitForRuntimeClosed(registry, controlInstanceId)
+      expect(realtime.status().websocketClientCount).toBe(0)
+      expect(realtime.status().subscribedControlInstanceCount).toBe(0)
     } finally {
       realtime.stop()
       await registry.close(controlInstanceId)

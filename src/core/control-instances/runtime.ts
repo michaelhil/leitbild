@@ -10,6 +10,8 @@ import { canIssueCommand, type Actor } from './actors.ts'
 import { persistenceDispositionFor, type ControlInstanceEventPersistenceDisposition } from './persistence-policy.ts'
 import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScriptRunner } from './scenario-runner.ts'
 
+const projectedSnapshotFlushIntervalMs = 10_000
+
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
   readonly events: ReadonlyArray<ControlInstanceEvent>
@@ -64,6 +66,9 @@ export const createControlInstanceRuntime = async (config: {
   const restoredEventSeq = durableEvents.reduce((max, event) => Math.max(max, event.seq), 0)
   let seq = Math.max(config.initialSeq ?? 0, config.restoredSnapshot?.seq ?? 0, restoredEventSeq)
   let publishQueue: Promise<void> = Promise.resolve()
+  let snapshotSaveQueue: Promise<void> = Promise.resolve()
+  let projectedSnapshotDirty = false
+  let projectedSnapshotTimer: ReturnType<typeof setTimeout> | null = null
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
 
@@ -101,6 +106,50 @@ export const createControlInstanceRuntime = async (config: {
     return currentTimeMs
   }
 
+  const clearProjectedSnapshotTimer = (): void => {
+    if (projectedSnapshotTimer === null) return
+    clearTimeout(projectedSnapshotTimer)
+    projectedSnapshotTimer = null
+  }
+
+  const queueSnapshotSave = async (): Promise<void> => {
+    const currentSave = snapshotSaveQueue.then(async () => {
+      await config.snapshotStore.save(snapshotWithCurrentClock())
+    })
+    snapshotSaveQueue = currentSave.catch(() => undefined)
+    await currentSave
+  }
+
+  const saveSnapshotImmediately = async (): Promise<void> => {
+    clearProjectedSnapshotTimer()
+    projectedSnapshotDirty = false
+    await queueSnapshotSave()
+  }
+
+  const scheduleProjectedSnapshotSave = (): void => {
+    projectedSnapshotDirty = true
+    if (projectedSnapshotTimer !== null) return
+    projectedSnapshotTimer = setTimeout(() => {
+      projectedSnapshotTimer = null
+      if (!projectedSnapshotDirty) return
+      projectedSnapshotDirty = false
+      void queueSnapshotSave().catch(err => {
+        console.error('control instance projected snapshot save failed:', err)
+      })
+    }, projectedSnapshotFlushIntervalMs)
+    projectedSnapshotTimer.unref?.()
+  }
+
+  const flushProjectedSnapshot = async (): Promise<void> => {
+    clearProjectedSnapshotTimer()
+    if (projectedSnapshotDirty) {
+      projectedSnapshotDirty = false
+      await queueSnapshotSave()
+      return
+    }
+    await snapshotSaveQueue
+  }
+
   const publishManyNow = async (
     controlInstanceEvents: ReadonlyArray<ControlInstanceEvent>,
     options?: { readonly persistence?: ControlInstanceEventPersistenceDisposition },
@@ -117,7 +166,11 @@ export const createControlInstanceRuntime = async (config: {
       }
     }
     await config.eventLog.appendMany(eventsToPersist)
-    await config.snapshotStore.save(snapshotWithCurrentClock())
+    if (eventsToPersist.length > 0) {
+      await saveSnapshotImmediately()
+    } else {
+      scheduleProjectedSnapshotSave()
+    }
     const notification: ControlInstanceEventNotification = { type: 'event.notification', events: controlInstanceEvents }
     for (const handler of handlers) handler(notification)
   }
@@ -682,6 +735,7 @@ export const createControlInstanceRuntime = async (config: {
       unsubscribeRuntime()
       await config.runtimeConnection.close()
       await publishQueue
+      await flushProjectedSnapshot()
       handlers.clear()
     },
   }

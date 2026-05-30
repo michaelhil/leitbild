@@ -36,12 +36,19 @@ import { electricGridPackDataSchema, type ElectricGridPackData } from '../model.
 import { solveGrid, type GridRuntimeState } from '../runtime/solver.ts'
 
 const updateIntervalMs = 2_000
+const runtimeStateFlushIntervalMs = 10_000
 
 const targetMwSchema = z.object({ targetMw: z.number().finite().nonnegative() })
 const availabilitySchema = z.object({ availableMw: z.number().finite().nonnegative() })
 const derateSchema = z.object({ availability: z.number().finite().min(0.05).max(1) })
 const shedLoadSchema = z.object({ shedMw: z.number().finite().nonnegative() })
 const evPolicySchema = z.object({ demandMw: z.number().finite().nonnegative() })
+const persistedRuntimeStateSchema = z.object({
+  runtimeState: z.object({
+    tick: z.number().int().nonnegative(),
+    frequencyHz: z.number().finite(),
+  }),
+})
 
 const restoreGridObject = (object: OperationalObject): OperationalObject => {
   const parsed = electricGridPackDataSchema.safeParse(object.packData)
@@ -173,15 +180,70 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
   acceptedCommandKinds: electricGridCommandKinds,
   queryKinds: electricGridQueryKinds,
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
+    const runtimeStateStore = config.runtimeStateStore
+    const restoredRuntimeState = runtimeStateStore
+      ? persistedRuntimeStateSchema.parse(await runtimeStateStore.load() ?? { runtimeState: { tick: 0, frequencyHz: 50 } }).runtimeState
+      : null
     const initialObjects = (config.initialObjects ?? config.scenario?.initialObjects ?? [])
       .filter(object => object.packId === electricGridRuntimePackId)
       .map(restoreGridObject)
     const objects = new Map(initialObjects.map(object => [object.id, object]))
     const handlers = new Set<PackRuntimeEventHandler>()
-    let runtimeState: GridRuntimeState | null = null
+    let runtimeState: GridRuntimeState | null = restoredRuntimeState
+      ? { ...restoredRuntimeState, busStates: new Map() }
+      : null
     let closed = false
     let clock: SimulationClockState | null = null
     let interval: ReturnType<typeof setInterval> | null = null
+    let runtimeStateSaveDirty = false
+    let runtimeStateSaveTimer: ReturnType<typeof setTimeout> | null = null
+    let runtimeStateSaveQueue: Promise<void> = Promise.resolve()
+
+    const clearRuntimeStateSaveTimer = (): void => {
+      if (runtimeStateSaveTimer === null) return
+      clearTimeout(runtimeStateSaveTimer)
+      runtimeStateSaveTimer = null
+    }
+
+    const queueRuntimeStateSave = async (): Promise<void> => {
+      if (!runtimeStateStore || !runtimeState) return
+      const payload = {
+        runtimeState: {
+          tick: runtimeState.tick,
+          frequencyHz: runtimeState.frequencyHz,
+        },
+      }
+      const currentSave = runtimeStateSaveQueue.then(async () => {
+        await runtimeStateStore.save(payload)
+      })
+      runtimeStateSaveQueue = currentSave.catch(() => undefined)
+      await currentSave
+    }
+
+    const scheduleRuntimeStateSave = (): void => {
+      if (!runtimeStateStore || !runtimeState) return
+      runtimeStateSaveDirty = true
+      if (runtimeStateSaveTimer !== null) return
+      runtimeStateSaveTimer = setTimeout(() => {
+        runtimeStateSaveTimer = null
+        if (!runtimeStateSaveDirty) return
+        runtimeStateSaveDirty = false
+        void queueRuntimeStateSave().catch(err => {
+          console.error('electric-grid runtime state save failed:', err)
+        })
+      }, runtimeStateFlushIntervalMs)
+      runtimeStateSaveTimer.unref?.()
+    }
+
+    const flushRuntimeStateSave = async (): Promise<void> => {
+      clearRuntimeStateSaveTimer()
+      if (runtimeStateSaveDirty) {
+        runtimeStateSaveDirty = false
+        await queueRuntimeStateSave()
+        return
+      }
+      await runtimeStateSaveQueue
+    }
 
     const solveAndEmit = (
       dtSeconds: number,
@@ -199,12 +261,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, persistence })
         }
       }
-      void config.runtimeStateStore?.save({
-        runtimeState: {
-          tick: runtimeState.tick,
-          frequencyHz: runtimeState.frequencyHz,
-        },
-      })
+      scheduleRuntimeStateSave()
       emit(handlers, events, at)
     }
 
@@ -269,6 +326,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         closed = true
         handlers.clear()
         if (interval) clearInterval(interval)
+        await flushRuntimeStateSave()
       },
     }
   },

@@ -6,7 +6,7 @@ import type { AdapterId, ControlInstanceId, ControlInstanceEvent, PackId, Object
 import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
 import { createJsonlEventLog } from '../src/core/control-instances/event-log.ts'
-import { createControlInstanceSnapshotStore } from '../src/core/control-instances/snapshot-store.ts'
+import { createControlInstanceSnapshotStore, type ControlInstanceSnapshotStore } from '../src/core/control-instances/snapshot-store.ts'
 import { createControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
 
 const controlInstanceId = 'control-instance:persistence-policy-test' as ControlInstanceId
@@ -309,5 +309,49 @@ describe('control instance persistence policy', () => {
     expect(runtime.events()).toHaveLength(0)
     expect(await readEventLog(eventLogPath)).toHaveLength(0)
     await runtime.close()
+  })
+
+  test('flushes projected snapshots on close instead of writing every runtime projection immediately', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const eventLogPath = join(dataDir, 'events.jsonl')
+    const initialObject = makeObject()
+    const runtimeConnection = createControlledRuntimeConnection(initialObject)
+    const savedSnapshots: unknown[] = []
+    const snapshotStore: ControlInstanceSnapshotStore = {
+      load: async () => null,
+      save: async (snapshot) => {
+        savedSnapshots.push(snapshot)
+      },
+    }
+    const runtime = await createControlInstanceRuntime({
+      id: controlInstanceId,
+      runtimeConnection: runtimeConnection.connection,
+      eventLog: createJsonlEventLog(eventLogPath),
+      snapshotStore,
+    })
+    expect(savedSnapshots).toHaveLength(1)
+
+    const projectedObject = makeObject({
+      revision: 1,
+      point: geoPointFromLonLat(10.72, 59.92),
+    })
+    runtimeConnection.emit([{
+      type: 'object.upserted',
+      object: projectedObject,
+      at: nowIso(),
+      provenance: projectedObject.provenance,
+    }])
+    await waitFor(
+      async () => runtime.snapshot().objects.find(object => object.id === objectId)?.revision === projectedObject.revision,
+      'projected snapshot throttle update',
+    )
+
+    expect(savedSnapshots).toHaveLength(1)
+    expect(await readEventLog(eventLogPath)).toHaveLength(0)
+
+    await runtime.close()
+    expect(savedSnapshots).toHaveLength(2)
+    const lastSnapshot = savedSnapshots.at(-1) as { readonly objects: ReadonlyArray<OperationalObject> } | undefined
+    expect(lastSnapshot?.objects.find(object => object.id === objectId)?.revision).toBe(1)
   })
 })

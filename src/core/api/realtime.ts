@@ -51,6 +51,8 @@ export const emptyRealtimeStatus = (): RealtimeStatus => ({
   controlInstances: [],
 })
 
+const defaultIdleRuntimeCloseDelayMs = 30_000
+
 const realtimeStatusFromClients = <Client>(
   clientsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<Client>>,
   subscribedControlInstanceCount: number,
@@ -69,9 +71,33 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
   readonly registry: ControlInstanceRegistry
   readonly send: (client: Client, message: RealtimeEventBatchMessage) => void
   readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
+  readonly idleRuntimeCloseDelayMs?: number
 }): ControlInstanceRealtimeManager<Client> => {
   const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
   const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
+  const idleRuntimeCloseTimers = new Map<ControlInstanceId, ReturnType<typeof setTimeout>>()
+  const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultIdleRuntimeCloseDelayMs
+
+  const clearIdleRuntimeCloseTimer = (controlInstanceId: ControlInstanceId): void => {
+    const timer = idleRuntimeCloseTimers.get(controlInstanceId)
+    if (!timer) return
+    clearTimeout(timer)
+    idleRuntimeCloseTimers.delete(controlInstanceId)
+  }
+
+  const scheduleIdleRuntimeClose = (controlInstanceId: ControlInstanceId): void => {
+    if (idleRuntimeCloseDelayMs < 0) return
+    clearIdleRuntimeCloseTimer(controlInstanceId)
+    const timer = setTimeout(() => {
+      idleRuntimeCloseTimers.delete(controlInstanceId)
+      if (clientsByControlInstance.get(controlInstanceId)?.size) return
+      void config.registry.close(controlInstanceId).catch(err => {
+        console.error(`idle control instance close failed for ${controlInstanceId}:`, err)
+      })
+    }, idleRuntimeCloseDelayMs)
+    timer.unref?.()
+    idleRuntimeCloseTimers.set(controlInstanceId, timer)
+  }
 
   const messageContextForRuntime = (
     controlInstanceId: ControlInstanceId,
@@ -138,8 +164,10 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     if (!clients || clients.size === 0) {
       existing?.unsubscribe()
       subscriptionsByControlInstance.delete(controlInstanceId)
+      scheduleIdleRuntimeClose(controlInstanceId)
       return { runtime: null, changed: existing !== undefined }
     }
+    clearIdleRuntimeCloseTimer(controlInstanceId)
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) {
       existing?.unsubscribe()
@@ -155,6 +183,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
 
   return {
     addClient: (controlInstanceId, client): void => {
+      clearIdleRuntimeCloseTimer(controlInstanceId)
       const clients = clientsByControlInstance.get(controlInstanceId) ?? new Set<Client>()
       clients.add(client)
       clientsByControlInstance.set(controlInstanceId, clients)
@@ -177,6 +206,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     status: () => realtimeStatusFromClients(clientsByControlInstance, subscriptionsByControlInstance.size),
     stop: (): void => {
       for (const { unsubscribe } of subscriptionsByControlInstance.values()) unsubscribe()
+      for (const controlInstanceId of [...idleRuntimeCloseTimers.keys()]) clearIdleRuntimeCloseTimer(controlInstanceId)
       subscriptionsByControlInstance.clear()
       clientsByControlInstance.clear()
     },
