@@ -306,11 +306,24 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
           frequencyHz: runtimeState.frequencyHz,
         },
       }
-      const currentSave = runtimeStateSaveQueue.then(async () => {
+      const previousSave = runtimeStateSaveQueue
+      const currentSave = async (): Promise<void> => {
+        try {
+          await previousSave
+        } catch (err) {
+          void err
+        }
         await runtimeStateStore.save(payload)
-      })
-      runtimeStateSaveQueue = currentSave.catch(() => undefined)
-      await currentSave
+      }
+      const nextSave = currentSave()
+      runtimeStateSaveQueue = (async (): Promise<void> => {
+        try {
+          await nextSave
+        } catch (err) {
+          void err
+        }
+      })()
+      await nextSave
     }
 
     const scheduleRuntimeStateSave = (): void => {
@@ -321,9 +334,14 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
         runtimeStateSaveTimer = null
         if (!runtimeStateSaveDirty) return
         runtimeStateSaveDirty = false
-        void queueRuntimeStateSave().catch(err => {
-          console.error('electric-grid runtime state save failed:', err)
-        })
+        const save = async (): Promise<void> => {
+          try {
+            await queueRuntimeStateSave()
+          } catch (err) {
+            console.error('electric-grid runtime state save failed:', err)
+          }
+        }
+        void save()
       }, runtimeStateFlushIntervalMs)
       runtimeStateSaveTimer.unref?.()
     }

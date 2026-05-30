@@ -3,7 +3,6 @@ import {
   geoPointFromLonLat,
   objectIdSchema,
   type AdapterId,
-  type GeoJsonLineString,
   type IsoTimestamp,
   type OperationalObject,
   type PackId,
@@ -69,7 +68,7 @@ const branchSpecSchema = baseSpecSchema.extend({
   state: z.enum(['closed', 'open', 'faulted', 'derated']).default('closed'),
   availability: z.number().finite().min(0).max(1).default(1),
   weatherExposure: z.enum(['low', 'medium', 'high']).default('medium'),
-  path: z.array(lonLatSchema).min(2),
+  path: z.array(lonLatSchema).min(2).optional(),
 })
 
 const generatorSpecSchema = baseSpecSchema.extend({
@@ -128,11 +127,6 @@ const gridObjectSpecSchema = z.discriminatedUnion('type', [
   marketAreaSpecSchema,
 ])
 
-const lineStringFromPath = (path: ReadonlyArray<readonly [number, number]>): GeoJsonLineString => ({
-  type: 'LineString',
-  coordinates: path.map(([lon, lat]) => geoPointFromLonLat(lon, lat).coordinates),
-})
-
 const pointSpatial = (
   position: readonly [number, number] | undefined,
   at: IsoTimestamp,
@@ -144,11 +138,6 @@ const pointSpatial = (
       staleAfterMs: 600000,
     },
   } : {}),
-  frame: { kind: 'wgs84' },
-})
-
-const lineSpatial = (path: ReadonlyArray<readonly [number, number]>): OperationalObject['spatial'] => ({
-  geometry: lineStringFromPath(path),
   frame: { kind: 'wgs84' },
 })
 
@@ -336,7 +325,7 @@ const expandGridObject = (rawSpec: PackScenarioObjectSpec, at: IsoTimestamp): Op
     spec,
     at,
     data,
-    spatial: spec.type === 'branch' ? lineSpatial(spec.path) : pointSpatial(spec.position, at),
+    spatial: pointSpatial(spec.type === 'branch' ? undefined : spec.position, at),
     kind: 'facility',
   })
 }

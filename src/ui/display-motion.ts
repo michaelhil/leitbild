@@ -1,6 +1,8 @@
 import type { GeoJsonPoint, OperationalObject } from '../core/model/index.ts'
 import { geoPointFromLonLat } from '../core/model/index.ts'
-import { pointOf } from './map/map-features.ts'
+
+const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
+  object.spatial.position?.point ?? null
 
 export interface DisplayMotionTrack {
   readonly objectId: string

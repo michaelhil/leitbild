@@ -1,7 +1,6 @@
 import { Popup, type Map as MapLibreMap } from 'maplibre-gl'
-import type { OperationalObject } from '../../core/model/index.ts'
+import type { GeoJsonPoint, OperationalObject } from '../../core/model/index.ts'
 import type { PackObjectPresentation } from '../../core/packs/protocol.ts'
-import { pointOf } from './map-features.ts'
 import { objectHoverCardHtml } from './object-hover-card.ts'
 
 export interface MapPopupController {
@@ -10,6 +9,9 @@ export interface MapPopupController {
   readonly refresh: (sourceObjects: ReadonlyArray<OperationalObject>) => void
   readonly hoveredObjectId: () => string | null
 }
+
+const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
+  object.spatial.position?.point ?? null
 
 export const createMapPopupController = (config: {
   readonly getMap: () => MapLibreMap | null

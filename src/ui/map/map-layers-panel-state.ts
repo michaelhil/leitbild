@@ -1,7 +1,7 @@
 // Pure state module for the reference-data layer toggle panel.
 // Owns: per-category visibility, defaults, persistence shape.
 // Does not: touch the DOM, MapLibre, or storage directly. The Svelte component
-// wires this state to UI events; the imperative MapSurface wiring (A.6) wires
+// wires this state to UI events; the imperative OperationalMap wiring wires
 // state changes to map.setLayoutProperty.
 
 export interface MapLayersStorage {

@@ -12,7 +12,7 @@ import { gridNorwayStyleModule } from '../../packs/electric-grid/ui/grid-norway-
 // reference-data vector sources + layers against an active MapLibre map, and
 // applies per-category visibility from the layers panel.
 //
-// Pure logic only; no DOM, no Svelte. The Svelte component (MapSurface)
+// Pure logic only; no DOM, no Svelte. The Svelte component (OperationalMap)
 // instantiates the controller and forwards toggle events. The controller
 // buffers visibility state so toggles arriving before the map finishes
 // registering layers are applied as soon as the layers exist.

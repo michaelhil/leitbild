@@ -132,7 +132,13 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const queueSnapshotSave = async (): Promise<void> => {
-    const currentSave = snapshotSaveQueue.then(async () => {
+    const previousSave = snapshotSaveQueue
+    const save = async (): Promise<void> => {
+      try {
+        await previousSave
+      } catch (err) {
+        void err
+      }
       const startedAt = performance.now()
       try {
         await config.snapshotStore.save(snapshotWithCurrentClock())
@@ -141,8 +147,15 @@ export const createControlInstanceRuntime = async (config: {
         metrics.recordSnapshotSaveFailure()
         throw err
       }
-    })
-    snapshotSaveQueue = currentSave.catch(() => undefined)
+    }
+    const currentSave = save()
+    snapshotSaveQueue = (async (): Promise<void> => {
+      try {
+        await currentSave
+      } catch (err) {
+        void err
+      }
+    })()
     await currentSave
   }
 
@@ -162,9 +175,14 @@ export const createControlInstanceRuntime = async (config: {
       if (!projectedSnapshotDirty) return
       projectedSnapshotDirty = false
       metrics.recordProjectedSnapshotFlushed()
-      void queueSnapshotSave().catch(err => {
-        console.error('control instance projected snapshot save failed:', err)
-      })
+      const save = async (): Promise<void> => {
+        try {
+          await queueSnapshotSave()
+        } catch (err) {
+          console.error('control instance projected snapshot save failed:', err)
+        }
+      }
+      void save()
     }, projectedSnapshotFlushIntervalMs)
     projectedSnapshotTimer.unref?.()
   }

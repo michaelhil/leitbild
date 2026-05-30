@@ -2,7 +2,7 @@ import { composeAttributionFromManifest } from './reference-attribution.ts'
 
 // Manifest-driven MapLibre source + layer factory for reference datasets.
 // Pure: no MapLibre instance, no side effects. The imperative wiring in
-// MapSurface (A.6) calls this and applies the result via map.addSource /
+// OperationalMap calls this and applies the result via map.addSource /
 // map.addLayer / map.setLayoutProperty for visibility.
 
 export interface DatasetStyleModule {

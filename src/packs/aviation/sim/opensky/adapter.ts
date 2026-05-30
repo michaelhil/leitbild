@@ -14,6 +14,7 @@ import {
 } from '../constants.ts'
 import {
   createOpenSkyAuthClient,
+  responseTextOrEmpty,
   type HttpFetch,
   type OpenSkyAuthClient,
 } from './auth.ts'
@@ -114,7 +115,7 @@ const performPoll = async (
     throw new Error('opensky adapter: rate-limited (HTTP 429) — backing off until next interval')
   }
   if (response.status < 200 || response.status >= 300) {
-    const text = await response.text().catch(() => '')
+    const text = await responseTextOrEmpty(response)
     const trimmed = text.length > 300 ? `${text.slice(0, 300)}…` : text
     throw new Error(`opensky adapter: HTTP ${response.status} — ${trimmed}`)
   }

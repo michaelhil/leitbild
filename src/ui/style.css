@@ -1061,6 +1061,10 @@ body.rail-resizing {
   height: 100%;
 }
 
+.map.placing .maplibregl-canvas {
+  cursor: crosshair;
+}
+
 .map-input-debug {
   position: fixed;
   right: 12px;

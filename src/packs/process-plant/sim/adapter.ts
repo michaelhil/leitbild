@@ -167,15 +167,20 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
     }
 
     const interval = setInterval(() => {
-      void advance().catch(error => {
-        runtimeFailed = true
-        clearInterval(interval)
-        emitRuntimeFailure({
-          handlers,
-          controlInstanceId: config.controlInstanceId,
-          error,
-        })
-      })
+      const runAdvance = async (): Promise<void> => {
+        try {
+          await advance()
+        } catch (error) {
+          runtimeFailed = true
+          clearInterval(interval)
+          emitRuntimeFailure({
+            handlers,
+            controlInstanceId: config.controlInstanceId,
+            error,
+          })
+        }
+      }
+      void runAdvance()
     }, updateIntervalMs)
 
     return {

@@ -61,7 +61,8 @@
     type StartupStep,
     type StartupStepId,
   } from '../startup.ts'
-  import type { MapVisualReadinessSnapshot } from '../map/map-visual-readiness.ts'
+  import { runtimeDiagnosticDetails } from '../map-runtime/map-diagnostics.ts'
+  import type { MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
@@ -85,7 +86,7 @@
   let startupDismissed = $state(false)
   let startupStatusModalOpen = $state(false)
   let settingsModalOpen = $state(false)
-  let MapSurface = $state<Component | null>(null)
+  let OperationalMap = $state<Component | null>(null)
   let CreateObjectModal = $state<Component | null>(null)
   let SettingsModal = $state<Component | null>(null)
   let ProcessSurfaceModal = $state<Component | null>(null)
@@ -96,7 +97,7 @@
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
   let scenarioOptionsLoaded = $state(false)
   let surfaceLoadGeneration = 0
-  let mapSurfaceLoadPromise: Promise<Component> | null = null
+  let operationalMapLoadPromise: Promise<Component> | null = null
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let postReadyPreloadStarted = false
@@ -159,7 +160,7 @@
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
-  // toggles and writes here; MapSurface re-applies on change.
+  // toggles and writes here; OperationalMap re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
   const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? [])
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
@@ -320,31 +321,31 @@
     })
   }
 
-  const loadMapSurface = async (): Promise<Component> => {
-    if (MapSurface) return MapSurface
-    mapSurfaceLoadPromise ??= (async (): Promise<Component> => {
-      const module = await import('../MapSurface.svelte')
+  const loadOperationalMap = async (): Promise<Component> => {
+    if (OperationalMap) return OperationalMap
+    operationalMapLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../OperationalMap.svelte')
       return module.default
     })()
     try {
-      const component = await mapSurfaceLoadPromise
-      MapSurface = component
+      const component = await operationalMapLoadPromise
+      OperationalMap = component
       return component
     } catch (err) {
-      mapSurfaceLoadPromise = null
+      operationalMapLoadPromise = null
       throw err
     }
   }
 
-  const preloadMapSurfaceModule = (): void => {
-    if (MapSurface || mapSurfaceLoadPromise) return
+  const preloadOperationalMapModule = (): void => {
+    if (OperationalMap || operationalMapLoadPromise) return
     markStartup('map-module:preload:start')
     void (async (): Promise<void> => {
       try {
-        await loadMapSurface()
+        await loadOperationalMap()
         markStartup('map-module:preload:done')
       } catch (err) {
-        if (debugStartup) console.warn('Map surface preload failed:', err)
+        if (debugStartup) console.warn('Operational map preload failed:', err)
       }
     })()
   }
@@ -407,26 +408,25 @@
     status = message
   }
 
-  const mapReadinessDetails = (snapshot: MapVisualReadinessSnapshot) => [
-    { label: 'Mode', value: snapshot.mode },
-    { label: 'Phase', value: snapshot.phase },
-    { label: 'Container', value: `${snapshot.container.width}x${snapshot.container.height}` },
-    { label: 'Canvas', value: `${snapshot.canvas.cssWidth}x${snapshot.canvas.cssHeight}/${snapshot.canvas.bufferWidth}x${snapshot.canvas.bufferHeight}` },
-    { label: 'Style', value: snapshot.styleLoaded ? 'loaded' : 'loading' },
-    { label: 'Tiles', value: snapshot.mapLoaded ? 'settled' : 'loading' },
-    { label: 'Layers', value: snapshot.missingLayerIds.length === 0 ? 'ok' : `missing ${snapshot.missingLayerIds.length}` },
-    { label: 'Sources', value: snapshot.missingSourceIds.length === 0 ? 'ok' : `missing ${snapshot.missingSourceIds.length}` },
-    { label: 'Features', value: snapshot.renderedFeatureCount === null ? 'unknown' : String(snapshot.renderedFeatureCount) },
-    {
-      label: 'Pixels',
-      value: snapshot.canvasSample.supported
-        ? `${snapshot.canvasSample.visiblePixels}/${snapshot.canvasSample.sampleCount} visible, ${snapshot.canvasSample.variedPixels} varied`
-        : snapshot.canvasSample.error ?? 'unavailable',
-    },
-  ]
+  const mapRuntimeDetails = (snapshot: MapRuntimeDiagnosticsSnapshot) => {
+    const phases = snapshot.phases.map(phase => ({
+      label: phase.phase,
+      value: phase.completedAtMs
+        ? `${phase.status} · ${((phase.completedAtMs - phase.startedAtMs) / 1000).toFixed(1)}s`
+        : phase.status,
+    }))
+    const details = runtimeDiagnosticDetails(snapshot).slice(0, 12)
+    return [
+      ...phases,
+      ...details,
+      ...(snapshot.latestError
+        ? [{ label: 'Latest error', value: snapshot.latestError.message }]
+        : []),
+    ]
+  }
 
-  const handleMapDiagnostic = (snapshot: MapVisualReadinessSnapshot): void => {
-    startupSteps = setStartupStepDetails(startupSteps, 'map', mapReadinessDetails(snapshot))
+  const handleMapDiagnostic = (snapshot: MapRuntimeDiagnosticsSnapshot): void => {
+    startupSteps = setStartupStepDetails(startupSteps, 'map', mapRuntimeDetails(snapshot))
   }
 
   const completeReadyWhenReady = (): void => {
@@ -455,7 +455,7 @@
       markStartup('map-module:start')
       void (async (): Promise<void> => {
         try {
-          await loadMapSurface()
+          await loadOperationalMap()
           if (generation !== surfaceLoadGeneration) return
           markStartup('map-module:done')
         } catch (err) {
@@ -465,7 +465,7 @@
       })()
       return
     }
-    MapSurface = null
+    OperationalMap = null
     mapReady = false
     completeStep('map')
   }
@@ -882,7 +882,7 @@
         clearStartupAutoDismissTimer()
       }
     }
-    preloadMapSurfaceModule()
+    preloadOperationalMapModule()
     void joinControlInstance()
     return () => {
       removePlacementGlobalEvents()
@@ -966,8 +966,8 @@
     {/if}
 
     <main class="surface-main" class:map-region={mapVisible}>
-      {#if mapVisible && MapSurface}
-        <MapSurface
+      {#if mapVisible && OperationalMap}
+        <OperationalMap
           {objects}
           {selectedControllerId}
           {placementMode}

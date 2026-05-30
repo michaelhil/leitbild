@@ -33,6 +33,15 @@ interface CachedToken {
 
 const defaultClock = (): number => Date.now()
 
+export const responseTextOrEmpty = async (response: Response): Promise<string> => {
+  try {
+    return await response.text()
+  } catch (err) {
+    void err
+    return ''
+  }
+}
+
 const tokenSchema = (raw: unknown): { accessToken: string; expiresInSec: number } => {
   if (!raw || typeof raw !== 'object') throw new Error('opensky auth: token endpoint did not return a JSON object')
   const obj = raw as Record<string, unknown>
@@ -71,7 +80,7 @@ export const createOpenSkyAuthClient = (config: OpenSkyAuthConfig): OpenSkyAuthC
       body,
     })
     if (response.status < 200 || response.status >= 300) {
-      const text = await response.text().catch(() => '')
+      const text = await responseTextOrEmpty(response)
       const trimmed = text.length > 300 ? `${text.slice(0, 300)}…` : text
       throw new Error(`opensky auth: token endpoint HTTP ${response.status} — ${trimmed}`)
     }
@@ -84,14 +93,16 @@ export const createOpenSkyAuthClient = (config: OpenSkyAuthConfig): OpenSkyAuthC
 
   const refresh = (): Promise<CachedToken> => {
     if (inflight) return inflight
-    inflight = fetchToken().then(token => {
-      cached = token
-      inflight = null
-      return token
-    }).catch(err => {
-      inflight = null
-      throw err
-    })
+    const run = async (): Promise<CachedToken> => {
+      try {
+        const token = await fetchToken()
+        cached = token
+        return token
+      } finally {
+        inflight = null
+      }
+    }
+    inflight = run()
     return inflight
   }
 

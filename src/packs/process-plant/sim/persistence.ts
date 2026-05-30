@@ -27,10 +27,23 @@ export const createProcessPlantRuntimePersistence = (config: {
   const queueSave = async (): Promise<void> => {
     if (!config.connection.runtimeStateStore || config.systems.size === 0) return
     const state = runtimeStateForProcessPlantSystems(config.systems)
-    const currentSave = saveQueue.then(async () => {
+    const previousSave = saveQueue
+    const save = async (): Promise<void> => {
+      try {
+        await previousSave
+      } catch (err) {
+        void err
+      }
       await config.connection.runtimeStateStore?.save(state)
-    })
-    saveQueue = currentSave.catch(() => undefined)
+    }
+    const currentSave = save()
+    saveQueue = (async (): Promise<void> => {
+      try {
+        await currentSave
+      } catch (err) {
+        void err
+      }
+    })()
     await currentSave
   }
 
@@ -48,9 +61,14 @@ export const createProcessPlantRuntimePersistence = (config: {
       timer = null
       if (!dirty) return
       dirty = false
-      void queueSave().catch(err => {
-        console.error('process-plant runtime state save failed:', err)
-      })
+      const save = async (): Promise<void> => {
+        try {
+          await queueSave()
+        } catch (err) {
+          console.error('process-plant runtime state save failed:', err)
+        }
+      }
+      void save()
     }, runtimeStateFlushIntervalMs)
     timer.unref?.()
   }

@@ -41,13 +41,16 @@ describe('Svelte lifecycle policy', () => {
     expect(violations).toEqual([])
   })
 
-  test('keeps MapLibre lifecycle and resize ownership outside MapSurface', () => {
-    const mapSurface = readFileSync(join(uiRoot, 'MapSurface.svelte'), 'utf8')
+  test('keeps MapLibre lifecycle and resize ownership inside MapRuntime', () => {
+    const operationalMap = readFileSync(join(uiRoot, 'OperationalMap.svelte'), 'utf8')
+    const mapRuntime = readFileSync(join(uiRoot, 'map-runtime', 'map-runtime.ts'), 'utf8')
 
-    expect(mapSurface).not.toContain('new MapLibre')
-    expect(mapSurface).not.toContain('ResizeObserver')
-    expect(mapSurface).not.toContain('PmtilesProtocol')
-    expect(mapSurface).not.toContain('scheduleViewportActivation')
-    expect(mapSurface).toContain('createMapLifecycle')
+    expect(operationalMap).not.toContain('new MapLibre')
+    expect(operationalMap).not.toContain('ResizeObserver')
+    expect(operationalMap).not.toContain('PmtilesProtocol')
+    expect(operationalMap).toContain('createMapRuntime')
+    expect(mapRuntime).toContain('new MapLibre')
+    expect(mapRuntime).toContain('ResizeObserver')
+    expect(mapRuntime).toContain('PmtilesProtocol')
   })
 })

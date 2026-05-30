@@ -103,9 +103,14 @@ export const createControlInstanceRegistry = (config: {
       idleRuntimeCloseTimers.delete(id)
       if (leaseCountFor(id) > 0) return
       if (!controlInstances.has(id)) return
-      void close(id).catch(err => {
-        console.error(`idle control instance close failed for ${id}:`, err)
-      })
+      const closeIdleRuntime = async (): Promise<void> => {
+        try {
+          await close(id)
+        } catch (err) {
+          console.error(`idle control instance close failed for ${id}:`, err)
+        }
+      }
+      void closeIdleRuntime()
     }, idleRuntimeCloseDelayMs)
     timer.unref?.()
     idleRuntimeCloseTimers.set(id, timer)

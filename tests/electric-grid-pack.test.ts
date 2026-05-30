@@ -75,6 +75,10 @@ describe('electric grid pack', () => {
       const parsed = electricGridPackDataSchema.safeParse(object.packData)
       return parsed.success && parsed.data.type === 'grid_branch' && parsed.data.provenance.sourceId === 'osm:pbf-power:NO'
     })).toBe(true)
+    expect(gridObjects.every(object => {
+      const parsed = electricGridPackDataSchema.safeParse(object.packData)
+      return !parsed.success || parsed.data.type !== 'grid_branch' || object.spatial.geometry === undefined
+    })).toBe(true)
     expect(gridObjects.some(object => object.provenance.externalId?.includes('leitbild-demo-grid-v1') === true)).toBe(false)
     expect(gridObjects.some(object => {
       const parsed = electricGridPackDataSchema.safeParse(object.packData)

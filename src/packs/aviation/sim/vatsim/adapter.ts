@@ -18,6 +18,7 @@ import {
   type VatsimBbox,
 } from './constants.ts'
 import { normaliseVatsimData } from './normalise.ts'
+import { responseTextOrEmpty } from '../opensky/auth.ts'
 
 // VATSIM PackRuntimeAdapter — same poll-loop shape as the OpenSky adapter but
 // anonymous (no OAuth), 30 s default interval (matching the upstream refresh),
@@ -71,7 +72,7 @@ const performPoll = async (runtime: AdapterRuntime): Promise<unknown> => {
     throw new Error('vatsim adapter: rate-limited (HTTP 429) — backing off until next interval')
   }
   if (response.status < 200 || response.status >= 300) {
-    const text = await response.text().catch(() => '')
+    const text = await responseTextOrEmpty(response)
     const trimmed = text.length > 300 ? `${text.slice(0, 300)}…` : text
     throw new Error(`vatsim adapter: HTTP ${response.status} — ${trimmed}`)
   }

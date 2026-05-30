@@ -154,7 +154,6 @@ export const norwayGridArenaObjectSpecs = (
       reactancePu: params.reactancePu,
       resistancePu: params.resistancePu,
       weatherExposure: params.weatherExposure,
-      path: branch.path,
       provenance: provenance({
         method: 'converted',
         sourceId: branch.sourceId,

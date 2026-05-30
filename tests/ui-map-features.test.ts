@@ -1,372 +1,236 @@
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, CommandEnvelope, CommandId, PackId, ObjectId, ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
-import type { PackMapAreaFeature } from '../src/core/packs/protocol.ts'
-import { geoPointFromLonLat, nowIso } from '../src/core/model/index.ts'
-import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
-import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
-import { ambulancePack } from '../src/packs/ambulance/pack.ts'
-import { trafficPack } from '../src/packs/traffic/pack.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import {
-  animatePackMapAreaFeatures,
-  createGridLineFeatureCollection,
-  createObjectFeatureCollection,
-  createRouteFeatureCollection,
-  createTrafficAreaFeatureCollection,
-  createTrafficLineFeatureCollection,
-  createWeatherBaseGridFeatureCollection,
-  createWeatherCellFeatureCollection,
-  createWeatherInfluenceFeatureCollection,
-  createWeatherInfluenceSymbolFeatureCollection,
-  hasActivePackMapAreaFeatureAnimation,
-  mapSourceIds,
-} from '../src/ui/map/map-features.ts'
+  geoPointFromLonLat,
+  nowIso,
+  type IsoTimestamp,
+  type ObjectId,
+  type OperationalObject,
+  type PackId,
+} from '../src/core/model/index.ts'
+import type { PackMapAreaFeature, PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.ts'
 
-const controlInstanceId = 'control-instance:ui-map-features' as ControlInstanceId
-const actorId = 'actor:test-operator' as ActorId
-
-const makeCommand = (config: {
-  readonly kind: string
-  readonly targetObjectIds: ReadonlyArray<ObjectId>
-  readonly payload: unknown
-}): CommandEnvelope => ({
-  id: `command:${crypto.randomUUID()}` as CommandId,
-  controlInstanceId,
-  actorId,
-  kind: config.kind,
-  targetObjectIds: config.targetObjectIds,
-  payload: config.payload,
-  issuedAt: nowIso(),
+const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
+  categoryId: object.packId === 'electric-grid' ? 'grid-branches' : object.packId,
+  icon: object.packId === 'electric-grid' ? 'line' : object.packId,
+  color: object.operational.status === 'constrained' ? '#b45309' : '#16834f',
+  summary: object.label,
+  fields: [],
+  status: {
+    tone: object.operational.status === 'constrained' ? 'working' : 'ready',
+    label: object.operational.status,
+    indicator: { shape: 'dot' },
+  },
 })
 
-describe('map feature projection', () => {
-  test('projects routed ambulances into route GeoJSON without changing coordinate order', async () => {
-    const engine = createAmbulanceSimEngine({
-      controlInstanceId,
-      objects: osloAmbulanceScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const initial = engine.snapshot()
-    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
-    const incident = initial.objects.find(object => object.kind === 'incident')
-    if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
+const makeObject = (
+  id: string,
+  patch: Partial<OperationalObject>,
+): OperationalObject => ({
+  id: id as ObjectId,
+  kind: 'facility',
+  packId: 'ambulance' as PackId,
+  label: id,
+  lifecycle: 'active',
+  revision: 1,
+  spatial: { frame: { kind: 'wgs84' } },
+  operational: { status: 'normal', mode: 'simulated' },
+  alerts: [],
+  provenance: { source: 'simulator' },
+  timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
+  ...patch,
+})
 
-    const result = await engine.handleCommand(makeCommand({
-      kind: setDestinationCommandKind,
-      targetObjectIds: [ambulance.id, incident.id],
-      payload: {
-        ambulanceId: ambulance.id,
-        destinationId: incident.id,
-      },
-    }))
-    expect(result.ok).toBe(true)
+const updateStore = (
+  objects: ReadonlyArray<OperationalObject>,
+  extras: {
+    readonly selectedControllerId?: string | null
+    readonly highlightedObjectIds?: ReadonlyArray<string>
+    readonly placementPoints?: ReadonlyArray<ReturnType<typeof geoPointFromLonLat>>
+    readonly packAreaFeatures?: ReadonlyArray<PackMapAreaFeature>
+    readonly hasNewInfo?: (object: OperationalObject) => boolean
+  } = {},
+) => createMapFeatureStore().update({
+  objects,
+  selectedControllerId: extras.selectedControllerId ?? null,
+  highlightedObjectIds: extras.highlightedObjectIds ?? [],
+  placementPoints: extras.placementPoints ?? [],
+  packAreaFeatures: extras.packAreaFeatures ?? [],
+  hasNewInfo: extras.hasNewInfo ?? (() => false),
+  presentationFor,
+})
 
-    const updatedObjects = engine.snapshot().objects
-    const updatedAmbulance = updatedObjects.find(object => object.id === ambulance.id)
-    if (!updatedAmbulance?.spatial.route?.planned) throw new Error('dispatch did not produce a planned route')
-
-    const routeFeatures = createRouteFeatureCollection(updatedObjects, ambulance.id)
-    const selectedRoute = routeFeatures.features.find(feature => feature.id === ambulance.id)
-    expect(mapSourceIds.plannedRoutes).toBe('planned-route-source')
-    expect(selectedRoute).toBeDefined()
-    expect(selectedRoute?.properties.selected).toBe(true)
-    expect(selectedRoute?.geometry).toEqual(updatedAmbulance.spatial.route.planned)
-    expect(selectedRoute?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.route.planned.coordinates[0])
-  })
-
-  test('projects remaining route when route progress is available', async () => {
-    const engine = createAmbulanceSimEngine({
-      controlInstanceId,
-      objects: osloAmbulanceScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const initial = engine.snapshot()
-    const ambulance = initial.objects.find(object => object.kind === 'mobile_entity')
-    const incident = initial.objects.find(object => object.kind === 'incident')
-    if (!ambulance || !incident) throw new Error('scenario missing ambulance or incident')
-
-    const result = await engine.handleCommand(makeCommand({
-      kind: setDestinationCommandKind,
-      targetObjectIds: [ambulance.id, incident.id],
-      payload: {
-        ambulanceId: ambulance.id,
-        destinationId: incident.id,
-      },
-    }))
-    expect(result.ok).toBe(true)
-    engine.tick(1_000)
-
-    const updatedObjects = engine.snapshot().objects
-    const updatedAmbulance = updatedObjects.find(object => object.id === ambulance.id)
-    if (!updatedAmbulance?.spatial.position || !updatedAmbulance.spatial.route?.planned) throw new Error('missing moved ambulance route')
-
-    const routeFeatures = createRouteFeatureCollection(updatedObjects, ambulance.id)
-
-    expect(routeFeatures.features[0]?.geometry.coordinates[0]).toEqual(updatedAmbulance.spatial.position.point.coordinates)
-    expect(routeFeatures.features[0]?.geometry.coordinates.length).toBeLessThanOrEqual(updatedAmbulance.spatial.route.planned.coordinates.length + 1)
-  })
-
-  test('projects positioned objects into native MapLibre symbol features', () => {
-    const engine = createAmbulanceSimEngine({
-      controlInstanceId,
-      objects: osloAmbulanceScenario.initialObjects,
-      routing: createDirectRoutingAdapter(),
-    })
-    const objects = engine.snapshot().objects
-    const ambulance = objects.find(object => object.kind === 'mobile_entity')
-    if (!ambulance) throw new Error('scenario missing ambulance')
-
-    const objectFeatures = createObjectFeatureCollection(
-      objects,
-      ambulance.id,
-      ['incident:gronland-unattended'],
-      object => {
-        const presentation = ambulancePack.presentObject(object, { objects })
-        return presentation.noteworthyUpdates === true && object.id === 'incident:gronland-unattended'
-      },
-      object => ambulancePack.presentObject(object, { objects }),
-    )
-    const ambulanceFeature = objectFeatures.features.find(feature => feature.id === ambulance.id)
-    const incidentFeature = objectFeatures.features.find(feature => feature.id === 'incident:gronland-unattended')
-
-    expect(objectFeatures.features).toHaveLength(objects.filter(object => object.spatial.position?.point).length)
-    expect(ambulanceFeature?.geometry).toEqual(ambulance.spatial.position?.point)
-    expect(ambulanceFeature?.properties.icon).toBe('object-ambulance-ready')
-    expect(ambulanceFeature?.properties.color).toBe('#16834f')
-    expect(ambulanceFeature?.properties.muted).toBe(false)
-    expect(ambulanceFeature?.properties.selected).toBe(true)
-    expect(ambulanceFeature?.properties.highlighted).toBe(false)
-    expect(ambulanceFeature?.properties.hasNewInfo).toBe(false)
-    expect(incidentFeature?.properties.hasNewInfo).toBe(true)
-  })
-
-  test('projects traffic conditions into native MapLibre line features', () => {
-    const lineObject = {
-      id: 'traffic:test-road' as ObjectId,
-      kind: 'zone' as const,
-      packId: 'traffic' as PackId,
-      label: 'Test road slowdown',
-      lifecycle: 'active' as const,
-      revision: 0,
+describe('map feature store', () => {
+  test('projects positioned operational objects into semantic point features', () => {
+    const ambulance = makeObject('ambulance:1', {
+      kind: 'mobile_entity',
+      packId: 'ambulance' as PackId,
       spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.75, 59.91),
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+    })
+
+    const snapshot = updateStore([ambulance], {
+      selectedControllerId: ambulance.id,
+      highlightedObjectIds: [ambulance.id],
+      hasNewInfo: object => object.id === ambulance.id,
+    })
+    const point = snapshot.points[0]
+
+    expect(snapshot.points).toHaveLength(1)
+    expect(point?.id).toBe(ambulance.id)
+    expect(point?.symbolId).toBe('ambulance')
+    expect(point?.selected).toBe(true)
+    expect(point?.highlighted).toBe(true)
+    expect(point?.hasNewInfo).toBe(true)
+    expect(point?.position.slice(0, 2)).toEqual([10.75, 59.91])
+  })
+
+  test('projects selected mobile routes without mutating object geometry', () => {
+    const route = {
+      type: 'LineString' as const,
+      coordinates: [
+        geoPointFromLonLat(10.75, 59.91).coordinates,
+        geoPointFromLonLat(10.80, 59.93).coordinates,
+        geoPointFromLonLat(10.85, 59.94).coordinates,
+      ],
+    }
+    const ambulance = makeObject('ambulance:route', {
+      kind: 'mobile_entity',
+      packId: 'ambulance' as PackId,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.80, 59.93),
+          observedAt: '2026-05-30T00:00:01.000Z' as IsoTimestamp,
+        },
+        route: {
+          planned: route,
+          progress: {
+            segmentIndex: 1,
+            updatedAt: '2026-05-30T00:00:01.000Z' as IsoTimestamp,
+          },
+          source: 'simulator',
+        },
+      },
+    })
+
+    const snapshot = updateStore([ambulance], { selectedControllerId: ambulance.id })
+    const routePath = snapshot.paths.find(path => path.kind === 'route')
+
+    expect(routePath?.selected).toBe(true)
+    expect(routePath?.path[0]).toEqual(geoPointFromLonLat(10.80, 59.93).coordinates)
+    expect(route.coordinates[0]).toEqual(geoPointFromLonLat(10.75, 59.91).coordinates)
+  })
+
+  test('projects traffic and weather line objects while leaving grid reference geometry out of operational paths', () => {
+    const traffic = makeObject('traffic:line', {
+      kind: 'zone',
+      packId: 'traffic' as PackId,
+      spatial: {
+        frame: { kind: 'wgs84' },
         geometry: {
-          type: 'LineString' as const,
+          type: 'LineString',
           coordinates: [
-            geoPointFromLonLat(10.74, 59.93).coordinates,
-            geoPointFromLonLat(10.76, 59.92).coordinates,
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.92).coordinates,
           ],
         },
-        frame: { kind: 'wgs84' as const },
       },
-      operational: { status: 'slowdown', priority: 'high' as const, mode: 'simulated' as const },
-      alerts: [],
-      provenance: { source: 'operator' as const },
-      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
-    }
-    const trafficFeatures = createTrafficLineFeatureCollection(
-      [lineObject],
-      () => ({ categoryId: 'traffic', color: '#dc2626', summary: 'road segment · high' }),
-    )
-
-    expect(mapSourceIds.trafficLines).toBe('traffic-line-source')
-    expect(trafficFeatures.features).toHaveLength(1)
-    expect(trafficFeatures.features[0]?.id).toBe('traffic:test-road')
-    expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
-  })
-
-  test('projects electric-grid branch geometry regardless of generic object kind', () => {
-    const branchObject = {
-      id: 'grid-branch:test-corridor' as ObjectId,
-      kind: 'facility' as const,
-      packId: 'electric-grid' as PackId,
-      label: 'Test grid corridor',
-      lifecycle: 'active' as const,
-      revision: 0,
-      spatial: {
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: [
-            geoPointFromLonLat(10.74, 59.93).coordinates,
-            geoPointFromLonLat(10.88, 59.99).coordinates,
-          ],
-        },
-        frame: { kind: 'wgs84' as const },
-      },
-      operational: { status: 'normal', priority: 'normal' as const, mode: 'simulated' as const },
-      alerts: [],
-      provenance: { source: 'simulator' as const },
-      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
-    }
-
-    const gridFeatures = createGridLineFeatureCollection(
-      [branchObject],
-      () => ({ categoryId: 'grid-branches', color: '#c0262d', summary: 'grid branch · closed' }),
-    )
-
-    expect(mapSourceIds.gridLines).toBe('grid-line-source')
-    expect(gridFeatures.features).toHaveLength(1)
-    expect(gridFeatures.features[0]?.id).toBe('grid-branch:test-corridor')
-    expect(gridFeatures.features[0]?.geometry).toEqual(branchObject.spatial.geometry)
-    expect(gridFeatures.features[0]?.properties.color).toBe('#c0262d')
-  })
-
-  test('projects traffic areas into native MapLibre polygon features', () => {
-    const polygonObject = {
-      id: 'traffic:test-area' as ObjectId,
-      kind: 'zone' as const,
-      packId: 'traffic' as PackId,
-      label: 'Test area',
-      lifecycle: 'active' as const,
-      revision: 0,
-      spatial: {
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[
-            geoPointFromLonLat(10.70, 59.90).coordinates,
-            geoPointFromLonLat(10.82, 59.90).coordinates,
-            geoPointFromLonLat(10.82, 59.98).coordinates,
-            geoPointFromLonLat(10.70, 59.90).coordinates,
-          ]],
-        },
-        frame: { kind: 'wgs84' as const },
-      },
-      operational: { status: 'slowdown', priority: 'high' as const, mode: 'simulated' as const },
-      alerts: [],
-      provenance: { source: 'simulator' as const },
-      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
-    }
-
-    const trafficFeatures = createTrafficAreaFeatureCollection(
-      [polygonObject],
-      () => ({ categoryId: 'traffic', color: '#dc2626', summary: 'area · high' }),
-    )
-
-    expect(mapSourceIds.trafficAreas).toBe('traffic-area-source')
-    expect(trafficFeatures.features).toHaveLength(1)
-    expect(trafficFeatures.features[0]?.geometry.type).toBe('Polygon')
-    expect(trafficFeatures.features[0]?.properties.color).toBe('#dc2626')
-  })
-
-  test('keeps traffic and weather zone layers separate', () => {
-    const weatherObject = {
-      id: 'weather:test-area' as ObjectId,
-      kind: 'zone' as const,
+    })
+    const weather = makeObject('weather:line', {
+      kind: 'zone',
       packId: 'weather' as PackId,
-      label: 'Test weather area',
-      lifecycle: 'active' as const,
-      revision: 0,
-      spatial: {
-        geometry: {
-          type: 'Polygon' as const,
-          coordinates: [[
-            geoPointFromLonLat(10.70, 59.90).coordinates,
-            geoPointFromLonLat(10.82, 59.90).coordinates,
-            geoPointFromLonLat(10.82, 59.98).coordinates,
-            geoPointFromLonLat(10.70, 59.90).coordinates,
-          ]],
-        },
-        frame: { kind: 'wgs84' as const },
-      },
-      operational: { status: 'notice', priority: 'normal' as const, mode: 'simulated' as const },
-      alerts: [],
-      provenance: { source: 'simulator' as const },
-      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
-    }
-    const weatherPresentation = () => ({
-      categoryId: 'weather',
-      color: '#2563eb',
-      summary: 'notice weather',
+      spatial: traffic.spatial,
     })
-    const weatherAreaFeatures: ReadonlyArray<PackMapAreaFeature> = [
+    const grid = makeObject('grid:branch', {
+      kind: 'zone',
+      packId: 'electric-grid' as PackId,
+      spatial: traffic.spatial,
+      operational: { status: 'constrained', mode: 'simulated' },
+    })
+
+    const snapshot = updateStore([traffic, weather, grid])
+
+    expect(snapshot.paths.map(path => path.kind).sort()).toEqual(['traffic', 'weather-line'])
+  })
+
+  test('projects pack area features and symbols into deck-ready area families', () => {
+    const polygon = {
+      type: 'Polygon' as const,
+      coordinates: [[
+        geoPointFromLonLat(10.70, 59.90).coordinates,
+        geoPointFromLonLat(10.82, 59.90).coordinates,
+        geoPointFromLonLat(10.82, 59.98).coordinates,
+        geoPointFromLonLat(10.70, 59.90).coordinates,
+      ]],
+    }
+    const features: ReadonlyArray<PackMapAreaFeature> = [
       {
         id: 'weather-grid:8:cell-1',
         categoryId: 'weather',
-        geometry: weatherObject.spatial.geometry,
+        geometry: polygon,
         color: '#2563eb',
-        summary: 'notice weather',
-        opacity: 0.12,
-      },
-      {
-        id: 'weather-cell:cell-2',
-        categoryId: 'weather',
-        geometry: weatherObject.spatial.geometry,
-        color: '#2563eb',
-        summary: 'notice weather',
-        opacity: 0.12,
+        summary: 'base cell',
       },
       {
         id: 'weather:test-area',
         categoryId: 'weather',
-        geometry: weatherObject.spatial.geometry,
+        geometry: polygon,
         anchorPoint: geoPointFromLonLat(10.75, 59.91),
         symbol: { icon: 'weather', tone: 'working' },
         color: '#2563eb',
-        summary: 'notice weather',
-        opacity: 0.12,
+        summary: 'influence',
       },
     ]
-    const trafficFeatures = createTrafficAreaFeatureCollection([weatherObject], weatherPresentation)
-    const baseGridFeatures = createWeatherBaseGridFeatureCollection(weatherAreaFeatures)
-    const cellFeatures = createWeatherCellFeatureCollection(weatherAreaFeatures)
-    const influenceFeatures = createWeatherInfluenceFeatureCollection(weatherAreaFeatures)
-    const influenceSymbolFeatures = createWeatherInfluenceSymbolFeatureCollection(weatherAreaFeatures)
 
-    expect(mapSourceIds.weatherBaseGrid).toBe('weather-base-grid-source')
-    expect(mapSourceIds.weatherCells).toBe('weather-cell-source')
-    expect(mapSourceIds.weatherInfluences).toBe('weather-influence-source')
-    expect(mapSourceIds.weatherInfluenceSymbols).toBe('weather-influence-symbol-source')
-    expect(trafficFeatures.features).toHaveLength(0)
-    expect(baseGridFeatures.features.map(feature => feature.id)).toEqual(['weather-grid:8:cell-1'])
-    expect(cellFeatures.features.map(feature => feature.id)).toEqual(['weather-cell:cell-2'])
-    expect(influenceFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area'])
-    expect(influenceSymbolFeatures.features.map(feature => feature.id)).toEqual(['weather:test-area:symbol'])
-    expect(influenceSymbolFeatures.features[0]?.geometry.coordinates).toEqual(geoPointFromLonLat(10.75, 59.91).coordinates)
+    const snapshot = updateStore([], { packAreaFeatures: features })
+
+    expect(snapshot.areas.map(area => area.kind)).toEqual(['weather-base', 'weather-influence'])
+    expect(snapshot.areaSymbols).toHaveLength(1)
+    expect(snapshot.areaSymbols[0]?.symbolId).toBe('weather')
   })
 
-  test('interpolates animated pack map area polygons without changing pack truth', () => {
-    const fromGeometry = {
-      type: 'Polygon' as const,
-      coordinates: [[
-        geoPointFromLonLat(10.0, 59.0).coordinates,
-        geoPointFromLonLat(10.2, 59.0).coordinates,
-        geoPointFromLonLat(10.2, 59.2).coordinates,
-        geoPointFromLonLat(10.0, 59.0).coordinates,
-      ]],
-    }
-    const toGeometry = {
-      type: 'Polygon' as const,
-      coordinates: [[
-        geoPointFromLonLat(11.0, 60.0).coordinates,
-        geoPointFromLonLat(11.2, 60.0).coordinates,
-        geoPointFromLonLat(11.2, 60.2).coordinates,
-        geoPointFromLonLat(11.0, 60.0).coordinates,
-      ]],
-    }
-    const features: ReadonlyArray<PackMapAreaFeature> = [{
-      id: 'weather:animated',
-      categoryId: 'weather',
-      geometry: fromGeometry,
-      animation: {
-        fromGeometry,
-        toGeometry,
-        fromAnchorPoint: geoPointFromLonLat(10.1, 59.1),
-        toAnchorPoint: geoPointFromLonLat(11.1, 60.1),
-        fromTime: '2026-01-01T10:00:00.000Z' as IsoTimestamp,
-        toTime: '2026-01-01T10:00:02.000Z' as IsoTimestamp,
+  test('keeps stable revisions when non-visual object revisions change', () => {
+    const grid = makeObject('grid:branch', {
+      kind: 'zone',
+      packId: 'electric-grid' as PackId,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            geoPointFromLonLat(10.70, 59.90).coordinates,
+            geoPointFromLonLat(10.72, 59.92).coordinates,
+          ],
+        },
       },
-      anchorPoint: geoPointFromLonLat(10.1, 59.1),
-      symbol: { icon: 'weather', tone: 'working' },
-      color: '#2563eb',
-      summary: 'animated weather',
-    }]
+    })
+    const store = createMapFeatureStore()
+    const first = store.update({
+      objects: [grid],
+      selectedControllerId: null,
+      highlightedObjectIds: [],
+      placementPoints: [],
+      packAreaFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor,
+    })
+    const second = store.update({
+      objects: [{ ...grid, revision: 2 }],
+      selectedControllerId: null,
+      highlightedObjectIds: [],
+      placementPoints: [],
+      packAreaFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor,
+    })
 
-    const animated = animatePackMapAreaFeatures(features, '2026-01-01T10:00:01.000Z')
-    expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:01.000Z')).toBe(true)
-    expect(Number(animated[0]?.geometry.coordinates[0]?.[0]?.[0])).toBeCloseTo(10.5)
-    expect(Number(animated[0]?.anchorPoint?.coordinates[0])).toBeCloseTo(10.6)
-    expect(Number(features[0]?.geometry.coordinates[0]?.[0]?.[0])).toBe(10)
-    expect(Number(features[0]?.anchorPoint?.coordinates[0])).toBe(10.1)
-    expect(hasActivePackMapAreaFeatureAnimation(features, '2026-01-01T10:00:03.000Z')).toBe(false)
+    expect(second.revisions.paths).toBe(first.revisions.paths)
+    expect(second.paths[0]).toBe(first.paths[0])
   })
 })
