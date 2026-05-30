@@ -109,6 +109,8 @@
   let packAreaAnimationFrame: number | null = null
   let packAreaRefreshInterval: ReturnType<typeof setInterval> | null = null
   let packAreaFeatureRequestSerial = 0
+  let packAreaFeatureRequestInFlight = false
+  let packAreaFeatureRefreshQueued = false
   let cachedPackMapAreaFeatures = $state<ReadonlyArray<PackMapAreaFeature>>([])
   let objectInteractionsAdded = false
   let mapReadyNotified = false
@@ -221,6 +223,10 @@
     simulationTimeAt(clock)
 
   const refreshPackMapAreaFeatures = async (): Promise<void> => {
+    if (packAreaFeatureRequestInFlight) {
+      packAreaFeatureRefreshQueued = true
+      return
+    }
     const current = map
     const viewport = currentViewport()
     if (!current || !viewport) {
@@ -228,6 +234,7 @@
       return
     }
     const serial = ++packAreaFeatureRequestSerial
+    packAreaFeatureRequestInFlight = true
     try {
       const features = await mapAreaFeaturesFor({ viewport, zoom: current.getZoom(), currentTime: currentDisplayTime() })
       if (serial !== packAreaFeatureRequestSerial) return
@@ -236,6 +243,12 @@
       schedulePackAreaFeatureAnimation()
     } catch (err) {
       onMapError(err instanceof Error ? err.message : String(err))
+    } finally {
+      packAreaFeatureRequestInFlight = false
+      if (packAreaFeatureRefreshQueued) {
+        packAreaFeatureRefreshQueued = false
+        window.setTimeout(() => { void refreshPackMapAreaFeatures() }, 0)
+      }
     }
   }
 
@@ -516,6 +529,8 @@
       mapInitialized = false
       appliedCameraKey = null
       mapCameraGestureActive = false
+      packAreaFeatureRequestInFlight = false
+      packAreaFeatureRefreshQueued = false
     }
   })
 
@@ -550,7 +565,6 @@
     if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
     untrack(() => {
       schedulePackAreaFeatureAnimation()
-      void refreshPackMapAreaFeatures()
     })
   })
 

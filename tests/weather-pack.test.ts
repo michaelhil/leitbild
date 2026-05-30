@@ -106,6 +106,20 @@ const weatherMapFeatures = async (config: {
   }
 }
 
+const weatherMapQueryLayersForZoom = (zoom: number): ReadonlyArray<string> => {
+  const queries = weatherPack.mapAreaFeatureQueries?.({
+    objects: [],
+    map: { viewport: osloViewport, zoom },
+  }) ?? []
+  const query = queries[0]
+  if (!query || typeof query.payload !== 'object' || query.payload === null || !('layers' in query.payload)) {
+    throw new Error('weather map query did not include layers')
+  }
+  const layers = (query.payload as { readonly layers: unknown }).layers
+  if (!Array.isArray(layers)) throw new Error('weather map query layers were not an array')
+  return layers.map(layer => String(layer))
+}
+
 describe('weather pack', () => {
   test('validates generic atmosphere and surface condition data', () => {
     const at = nowIso()
@@ -232,6 +246,11 @@ describe('weather pack', () => {
     expect(bounds.east).toBeGreaterThanOrEqual(10.88)
     expect(bounds.south).toBeLessThanOrEqual(59.88)
     expect(bounds.north).toBeGreaterThanOrEqual(59.98)
+  })
+
+  test('pack map feature queries skip the base grid at national overview zoom', () => {
+    expect(weatherMapQueryLayersForZoom(5)).toEqual(['affectedCells', 'influenceShapes'])
+    expect(weatherMapQueryLayersForZoom(7)).toEqual(['baseGrid', 'affectedCells', 'influenceShapes'])
   })
 
   test('runtime-backed map query separates base grid, affected cells, and influence shapes', async () => {

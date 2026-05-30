@@ -65,6 +65,11 @@ const weatherValue = (state: WeatherState): string => {
   ].join(' · ')
 }
 
+const weatherMapFeatureLayersForZoom = (zoom: number): ReadonlyArray<'baseGrid' | 'affectedCells' | 'influenceShapes'> =>
+  zoom < 7
+    ? ['affectedCells', 'influenceShapes']
+    : ['baseGrid', 'affectedCells', 'influenceShapes']
+
 const weatherColor = (severity: WeatherPresentationSeverity | undefined, data: WeatherPackData | null): string => {
   if (severity === 'hazard') return '#dc2626'
   if (severity === 'adverse') return '#d97706'
@@ -157,7 +162,7 @@ export const weatherPack: LeitbildPack = {
           zoom: context.map.zoom,
           ...(context.currentTime ? { at: context.currentTime } : {}),
           animationDurationMs: 2_000,
-          layers: ['baseGrid', 'affectedCells', 'influenceShapes'],
+          layers: weatherMapFeatureLayersForZoom(context.map.zoom),
         },
       }]
     : [],
