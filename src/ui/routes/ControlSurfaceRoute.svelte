@@ -452,6 +452,7 @@
       : await loadScenarioDefinitionAndPack(scenarioId)
     if (surfaceHasPrimitive(scenario.surface, 'map')) {
       mapReady = false
+      startStep('map')
       markStartup('map-module:start')
       void (async (): Promise<void> => {
         try {

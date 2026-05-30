@@ -13,6 +13,7 @@ import type { WeatherCellState, WeatherSparseField } from './cell-field.ts'
 
 const maxBaseGridCells = 4_000
 type WeatherPresentationSeverity = ReturnType<typeof weatherPresentationSeverityForState>
+type WeatherMapFeatureLayer = 'baseGrid' | 'affectedCells' | 'influenceShapes'
 
 const visualResolutionForZoom = (zoom: number): number => {
   if (zoom < 7) return 5
@@ -219,15 +220,19 @@ export const projectWeatherFieldForMap = (config: {
   readonly zoom: number
   readonly at?: IsoTimestamp
   readonly animationDurationMs?: number
+  readonly layers?: ReadonlyArray<WeatherMapFeatureLayer>
 }): ReadonlyArray<PackMapAreaFeature> => {
   const at = config.at ?? nowIso()
+  const layers = new Set<WeatherMapFeatureLayer>(config.layers ?? ['baseGrid', 'affectedCells', 'influenceShapes'])
   return [
-    ...baseGridFeatures({ viewport: config.viewport, zoom: config.zoom }),
-    ...affectedCellFeaturesFromField({ field: config.field, viewport: config.viewport, zoom: config.zoom }),
-    ...influenceShapeFeatures({
-      objects: config.objects,
-      at,
-      ...(config.animationDurationMs === undefined ? {} : { animationDurationMs: config.animationDurationMs }),
-    }),
+    ...(layers.has('baseGrid') ? baseGridFeatures({ viewport: config.viewport, zoom: config.zoom }) : []),
+    ...(layers.has('affectedCells') ? affectedCellFeaturesFromField({ field: config.field, viewport: config.viewport, zoom: config.zoom }) : []),
+    ...(layers.has('influenceShapes')
+      ? influenceShapeFeatures({
+          objects: config.objects,
+          at,
+          ...(config.animationDurationMs === undefined ? {} : { animationDurationMs: config.animationDurationMs }),
+        })
+      : []),
   ]
 }

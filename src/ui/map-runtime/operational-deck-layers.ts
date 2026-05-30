@@ -21,6 +21,27 @@ export interface OperationalDeckLayerConfig {
   readonly onObjectSelected: (object: OperationalPointFeature) => void
   readonly onObjectSeen: (object: OperationalPointFeature) => void
   readonly onObjectHover: (object: OperationalPointFeature | null) => void
+  readonly layerData?: OperationalDeckLayerData
+}
+
+export interface OperationalDeckLayerData {
+  readonly visiblePaths: ReadonlyArray<OperationalPathFeature>
+  readonly visibleAreas: ReadonlyArray<OperationalAreaFeature>
+  readonly newInfoPoints: ReadonlyArray<OperationalPointFeature>
+  readonly placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }>
+}
+
+export interface OperationalDeckLayerDataCache {
+  readonly dataFor: (
+    snapshot: OperationalRenderSnapshot,
+    visibleFamilies: ReadonlySet<string>,
+  ) => OperationalDeckLayerData
+  readonly reset: () => void
+}
+
+export interface OperationalDeckLayerFactory {
+  readonly createLayers: (config: OperationalDeckLayerConfig) => ReadonlyArray<Layer>
+  readonly reset: () => void
 }
 
 const atlasUrl = leitbildSymbolAtlasUrl()
@@ -31,6 +52,11 @@ const visible = (
   family: string,
 ): boolean =>
   visibleFamilies.has(family)
+
+export const visibleFamiliesKey = (
+  visibleFamilies: ReadonlySet<string>,
+): string =>
+  [...visibleFamilies].sort().join('|')
 
 const pointFill = (point: OperationalPointFeature): ColorRgba => {
   if (point.muted) return [point.color[0], point.color[1], point.color[2], 132]
@@ -64,6 +90,11 @@ const deckPath = (
 ): number[] =>
   path.path as unknown as number[]
 
+const pathCasingWidth = (
+  path: OperationalPathFeature,
+): number =>
+  path.kind === 'weather-line' ? 0 : path.widthPx + 4
+
 const pathFamilyIsVisible = (
   path: OperationalPathFeature,
   visibleFamilies: ReadonlySet<string>,
@@ -84,13 +115,84 @@ const areaFamilyIsVisible = (
   return true
 }
 
+const emptyPaths: ReadonlyArray<OperationalPathFeature> = []
+const emptyAreas: ReadonlyArray<OperationalAreaFeature> = []
+const emptyPoints: ReadonlyArray<OperationalPointFeature> = []
+const emptyPlacementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }> = []
+
+export const createOperationalDeckLayerDataCache = (): OperationalDeckLayerDataCache => {
+  let pathsRevision = -1
+  let pathsVisibleKey = ''
+  let visiblePaths: ReadonlyArray<OperationalPathFeature> = emptyPaths
+  let areasRevision = -1
+  let areasVisibleKey = ''
+  let visibleAreas: ReadonlyArray<OperationalAreaFeature> = emptyAreas
+  let pointsRevision = -1
+  let newInfoPoints: ReadonlyArray<OperationalPointFeature> = emptyPoints
+  let placementRevision = -1
+  let placementPoints: ReadonlyArray<{ readonly id: string; readonly position: Position3 }> = emptyPlacementPoints
+
+  const reset = (): void => {
+    pathsRevision = -1
+    pathsVisibleKey = ''
+    visiblePaths = emptyPaths
+    areasRevision = -1
+    areasVisibleKey = ''
+    visibleAreas = emptyAreas
+    pointsRevision = -1
+    newInfoPoints = emptyPoints
+    placementRevision = -1
+    placementPoints = emptyPlacementPoints
+  }
+
+  return {
+    dataFor: (snapshot, visibleFamilies) => {
+      const nextVisibleKey = visibleFamiliesKey(visibleFamilies)
+      if (pathsRevision !== snapshot.revisions.paths || pathsVisibleKey !== nextVisibleKey) {
+        pathsRevision = snapshot.revisions.paths
+        pathsVisibleKey = nextVisibleKey
+        visiblePaths = snapshot.paths.filter(path => pathFamilyIsVisible(path, visibleFamilies))
+      }
+      if (areasRevision !== snapshot.revisions.areas || areasVisibleKey !== nextVisibleKey) {
+        areasRevision = snapshot.revisions.areas
+        areasVisibleKey = nextVisibleKey
+        visibleAreas = snapshot.areas.filter(area => areaFamilyIsVisible(area, visibleFamilies))
+      }
+      if (pointsRevision !== snapshot.revisions.points) {
+        pointsRevision = snapshot.revisions.points
+        newInfoPoints = snapshot.points.filter(point => point.hasNewInfo)
+      }
+      if (placementRevision !== snapshot.revisions.placement) {
+        placementRevision = snapshot.revisions.placement
+        placementPoints = snapshot.placementPoints.length === 0
+          ? emptyPlacementPoints
+          : placementPointObjects(snapshot.placementPoints)
+      }
+      return { visiblePaths, visibleAreas, newInfoPoints, placementPoints }
+    },
+    reset,
+  }
+}
+
+export const createOperationalDeckLayerFactory = (): OperationalDeckLayerFactory => {
+  const dataCache = createOperationalDeckLayerDataCache()
+  return {
+    createLayers: config => createOperationalDeckLayers({
+      ...config,
+      layerData: dataCache.dataFor(config.snapshot, config.visibleFamilies),
+    }),
+    reset: dataCache.reset,
+  }
+}
+
 export const createOperationalDeckLayers = (
   config: OperationalDeckLayerConfig,
 ): ReadonlyArray<Layer> => {
   const snapshot = config.snapshot
   const visibleFamilies = config.visibleFamilies
-  const visiblePaths = snapshot.paths.filter(path => pathFamilyIsVisible(path, visibleFamilies))
-  const visibleAreas = snapshot.areas.filter(area => areaFamilyIsVisible(area, visibleFamilies))
+  const layerData = config.layerData ?? createOperationalDeckLayerDataCache().dataFor(snapshot, visibleFamilies)
+  const visiblePaths = layerData.visiblePaths
+  const visibleAreas = layerData.visibleAreas
   return [
     new PolygonLayer<OperationalAreaFeature>({
       id: 'leitbild-operational-areas',
@@ -118,7 +220,7 @@ export const createOperationalDeckLayers = (
       visible: visiblePaths.length > 0,
       getPath: deckPath,
       getColor: path => path.casingColor,
-      getWidth: path => path.widthPx + 4,
+      getWidth: pathCasingWidth,
       widthUnits: 'pixels',
       jointRounded: true,
       capRounded: true,
@@ -219,7 +321,7 @@ export const createOperationalDeckLayers = (
     }),
     new ScatterplotLayer<OperationalPointFeature>({
       id: 'leitbild-object-new-info',
-      data: snapshot.points.filter(point => point.hasNewInfo),
+      data: layerData.newInfoPoints,
       pickable: false,
       visible: visible(visibleFamilies, 'objects'),
       radiusUnits: 'pixels',
@@ -256,7 +358,7 @@ export const createOperationalDeckLayers = (
     }),
     new ScatterplotLayer<{ readonly id: string; readonly position: Position3 }>({
       id: 'leitbild-placement-preview',
-      data: placementPointObjects(snapshot.placementPoints),
+      data: layerData.placementPoints,
       pickable: false,
       visible: snapshot.placementPoints.length > 0,
       radiusUnits: 'pixels',

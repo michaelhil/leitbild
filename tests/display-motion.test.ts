@@ -123,7 +123,9 @@ describe('display motion interpolation', () => {
     })
 
     expect(hasActiveDisplayMotion(state, 1_500)).toBe(false)
-    expect(displayObjectsFor([next], state, 1_500)[0]?.spatial.position?.point).toEqual(next.spatial.position?.point)
+    const displayed = displayObjectsFor([next], state, 1_500)[0]
+    expect(displayed).toBe(next)
+    expect(displayed?.spatial.position?.point).toEqual(next.spatial.position?.point)
   })
 
   test('snaps when a moving object stops', () => {
@@ -152,6 +154,8 @@ describe('display motion interpolation', () => {
     })
 
     expect(hasActiveDisplayMotion(state, 1_500)).toBe(false)
-    expect(displayObjectsFor([stopped], state, 1_500)[0]?.spatial.position?.point).toEqual(stopped.spatial.position?.point)
+    const displayed = displayObjectsFor([stopped], state, 1_500)[0]
+    expect(displayed).toBe(stopped)
+    expect(displayed?.spatial.position?.point).toEqual(stopped.spatial.position?.point)
   })
 })

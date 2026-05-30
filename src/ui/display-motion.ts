@@ -133,6 +133,7 @@ export const displayObjectsFor = (
   objects.map(object => {
     const track = state.tracks.get(object.id)
     if (!track || !object.spatial.position) return object
+    if (!isActiveTrack(track, nowMs)) return object
     return {
       ...object,
       spatial: {

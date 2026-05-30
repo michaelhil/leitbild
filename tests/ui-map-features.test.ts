@@ -190,7 +190,8 @@ describe('map feature store', () => {
 
     const snapshot = updateStore([], { packAreaFeatures: features })
 
-    expect(snapshot.areas.map(area => area.kind)).toEqual(['weather-base', 'weather-influence'])
+    expect(snapshot.paths.map(path => path.kind)).toEqual(['weather-line'])
+    expect(snapshot.areas.map(area => area.kind)).toEqual(['weather-influence'])
     expect(snapshot.areaSymbols).toHaveLength(1)
     expect(snapshot.areaSymbols[0]?.symbolId).toBe('weather')
   })

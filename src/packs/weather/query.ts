@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject } from '../../core/model/index.ts'
 import { geoJsonLineStringSchema, geoJsonPointSchema, geoJsonPolygonSchema, nowIso, pointFromPosition, routeDistanceMeters } from '../../core/model/index.ts'
-import type { PackMapAreaFeature, PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
+import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
 import type { WeatherSparseField } from './cell-field.ts'
 import { weatherSampleAtPointFromSparseField, weatherSparseFieldStats } from './cell-field.ts'
 import { weatherPresentationSeverityForState } from './conditions.ts'
@@ -180,11 +180,8 @@ export const answerWeatherQuery = (config: {
         viewport: payload.viewport,
         zoom: payload.zoom,
         at,
+        layers: payload.layers,
         ...(payload.animationDurationMs === undefined ? {} : { animationDurationMs: payload.animationDurationMs }),
-      }).filter((feature: PackMapAreaFeature): boolean => {
-        if (feature.id.startsWith('weather-grid:')) return payload.layers.includes('baseGrid')
-        if (feature.id.startsWith('weather-cell:')) return payload.layers.includes('affectedCells')
-        return payload.layers.includes('influenceShapes')
       })
       return success(config.request, {
         features,

@@ -38,7 +38,7 @@
   import { createMapLayerRegistry, type MapLayerRegistry } from './map-runtime/map-layer-registry.ts'
   import { createMapRuntime } from './map-runtime/map-runtime.ts'
   import { createMapUpdateScheduler } from './map-runtime/map-update-scheduler.ts'
-  import { createOperationalDeckLayers } from './map-runtime/operational-deck-layers.ts'
+  import { createOperationalDeckLayerFactory, visibleFamiliesKey } from './map-runtime/operational-deck-layers.ts'
   import type {
     MapRuntimeDiagnosticsSnapshot,
     MapRuntimeHandle,
@@ -119,6 +119,8 @@
   let packAreaFeatureRequestInFlight = false
   let packAreaFeatureRefreshQueued = false
   let packAreaFeatureAbortController: AbortController | null = null
+  let packAreaFeatureRequestKey: string | null = null
+  let packAreaFeatureCacheKey: string | null = null
   let mapCameraGestureActive = false
   let appliedTheme: ThemeMode | null = null
   let appliedCameraKey: string | null = null
@@ -130,6 +132,8 @@
 
   const featureStore = createMapFeatureStore()
   const updateScheduler = createMapUpdateScheduler({ frameBudgetMs: 6 })
+  const deckLayerFactory = createOperationalDeckLayerFactory()
+  let lastOperationalRenderSignature: string | null = null
 
   const createNoopMapInputDebugController = (): MapInputDebugController => ({
     install: () => undefined,
@@ -165,6 +169,30 @@
     presentationFor: (object) => presentationFor(object),
     hasNewInfo: (object) => hasNewInfo(object),
   })
+
+  const createRenderPresentationFor = (): ((object: OperationalObject) => PackObjectPresentation) => {
+    const cache = new Map<string, PackObjectPresentation>()
+    return (object) => {
+      const key = `${object.id}:${object.revision}`
+      const cached = cache.get(key)
+      if (cached) return cached
+      const presentation = presentationFor(object)
+      cache.set(key, presentation)
+      return presentation
+    }
+  }
+
+  const createRenderHasNewInfo = (): ((object: OperationalObject) => boolean) => {
+    const cache = new Map<string, boolean>()
+    return (object) => {
+      const key = `${object.id}:${object.revision}`
+      const cached = cache.get(key)
+      if (cached !== undefined) return cached
+      const next = hasNewInfo(object)
+      cache.set(key, next)
+      return next
+    }
+  }
 
   const styleUrlFor = (mode: ThemeMode): string =>
     `/map/style.json?theme=${encodeURIComponent(mode)}`
@@ -211,6 +239,58 @@
     }
   }
 
+  const roundedKey = (value: number, digits: number): string =>
+    value.toFixed(digits)
+
+  const viewportKeyFor = (
+    viewport: GeoJsonPolygon,
+    zoom: number,
+  ): string => {
+    const coordinates = viewport.coordinates.flatMap(ring => ring)
+    const west = Math.min(...coordinates.map(coordinate => coordinate[0]))
+    const east = Math.max(...coordinates.map(coordinate => coordinate[0]))
+    const south = Math.min(...coordinates.map(coordinate => coordinate[1]))
+    const north = Math.max(...coordinates.map(coordinate => coordinate[1]))
+    const digits = zoom < 7 ? 2 : zoom < 10 ? 3 : 4
+    return [
+      roundedKey(west, digits),
+      roundedKey(south, digits),
+      roundedKey(east, digits),
+      roundedKey(north, digits),
+    ].join(',')
+  }
+
+  const weatherObjectRevisionKey = (): string => {
+    let count = 0
+    let checksum = 0
+    for (const object of objects) {
+      if (object.packId !== 'weather') continue
+      count += 1
+      for (let index = 0; index < object.id.length; index += 1) {
+        checksum = (checksum * 33 + object.id.charCodeAt(index)) >>> 0
+      }
+      checksum = (checksum * 33 + object.revision) >>> 0
+    }
+    return `${count}:${checksum}`
+  }
+
+  const timeBucketKey = (time: IsoTimestamp | undefined): string => {
+    if (!time) return 'none'
+    const epochMs = Date.parse(time)
+    if (!Number.isFinite(epochMs)) return String(time)
+    return String(Math.floor(epochMs / 2_000))
+  }
+
+  const packAreaFeatureKeyFor = (
+    viewport: GeoJsonPolygon,
+    zoom: number,
+  ): string => [
+    viewportKeyFor(viewport, zoom),
+    String(Math.floor(zoom * 4) / 4),
+    timeBucketKey(currentDisplayTime()),
+    weatherObjectRevisionKey(),
+  ].join('|')
+
   const isAbortError = (err: unknown): boolean =>
     err instanceof DOMException && err.name === 'AbortError'
 
@@ -219,6 +299,7 @@
     packAreaFeatureRequestSerial += 1
     packAreaFeatureAbortController.abort(new Error(reason))
     packAreaFeatureAbortController = null
+    packAreaFeatureRequestKey = null
   }
 
   const flushOperationalRender = (): void => {
@@ -226,38 +307,52 @@
     if (!currentRuntime) return
     const nowMs = performance.now()
     const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
+    const renderPresentationFor = createRenderPresentationFor()
+    const renderHasNewInfo = createRenderHasNewInfo()
     const snapshot = featureStore.update({
       objects: displayObjects,
       selectedControllerId,
       highlightedObjectIds,
       placementPoints,
       packAreaFeatures: cachedPackMapAreaFeatures,
-      hasNewInfo,
-      presentationFor,
+      hasNewInfo: renderHasNewInfo,
+      presentationFor: renderPresentationFor,
     })
-    currentRuntime.updateLayers({
-      deckLayers: createOperationalDeckLayers({
-        snapshot,
-        visibleFamilies: visibleFamilies(),
-        onObjectSelected: point => {
-          onObjectSelected(point.object)
-        },
-        onObjectSeen: point => {
-          onObjectSeen(point.object)
-        },
-        onObjectHover: point => {
-          const canvas = runtime?.map.getCanvas()
-          if (!point) {
-            if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : ''
-            popupController.hide()
-            return
-          }
-          if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : 'pointer'
-          onObjectSeen(point.object)
-          popupController.show(point.object)
-        },
-      }),
-    })
+    const families = visibleFamilies()
+    const renderSignature = [
+      snapshot.revisions.points,
+      snapshot.revisions.paths,
+      snapshot.revisions.areas,
+      snapshot.revisions.areaSymbols,
+      snapshot.revisions.placement,
+      visibleFamiliesKey(families),
+    ].join('|')
+    if (renderSignature !== lastOperationalRenderSignature) {
+      lastOperationalRenderSignature = renderSignature
+      currentRuntime.updateLayers({
+        deckLayers: deckLayerFactory.createLayers({
+          snapshot,
+          visibleFamilies: families,
+          onObjectSelected: point => {
+            onObjectSelected(point.object)
+          },
+          onObjectSeen: point => {
+            onObjectSeen(point.object)
+          },
+          onObjectHover: point => {
+            const canvas = runtime?.map.getCanvas()
+            if (!point) {
+              if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : ''
+              popupController.hide()
+              return
+            }
+            if (canvas) canvas.style.cursor = placementCursor ? 'crosshair' : 'pointer'
+            onObjectSeen(point.object)
+            popupController.show(point.object)
+          },
+        }),
+      })
+    }
     popupController.refresh(displayObjects)
   }
 
@@ -306,30 +401,38 @@
   const refreshPackMapAreaFeatures = async (): Promise<void> => {
     if (!mapLayerEnabled('weather')) {
       cachedPackMapAreaFeatures = []
+      packAreaFeatureCacheKey = null
+      packAreaFeatureRequestKey = null
       scheduleOperationalRender('operational-areas', 45)
-      return
-    }
-    if (packAreaFeatureRequestInFlight) {
-      packAreaFeatureRefreshQueued = true
       return
     }
     const current = runtime?.map
     const viewport = currentViewport()
     if (!current || !viewport) return
+    const zoom = current.getZoom()
+    const requestKey = packAreaFeatureKeyFor(viewport, zoom)
+    if (packAreaFeatureCacheKey === requestKey) return
+    if (packAreaFeatureRequestInFlight) {
+      if (packAreaFeatureRequestKey === requestKey) return
+      packAreaFeatureRefreshQueued = true
+      return
+    }
 
     const serial = ++packAreaFeatureRequestSerial
     const abortController = new AbortController()
     packAreaFeatureAbortController = abortController
+    packAreaFeatureRequestKey = requestKey
     packAreaFeatureRequestInFlight = true
     try {
       const features = await mapAreaFeaturesFor({
         viewport,
-        zoom: current.getZoom(),
+        zoom,
         currentTime: currentDisplayTime(),
         signal: abortController.signal,
       })
       if (serial !== packAreaFeatureRequestSerial) return
       cachedPackMapAreaFeatures = features
+      packAreaFeatureCacheKey = requestKey
       scheduleOperationalRender('operational-areas', 50)
     } catch (err) {
       if (serial !== packAreaFeatureRequestSerial || isAbortError(err)) return
@@ -338,6 +441,7 @@
       if (packAreaFeatureAbortController === abortController) {
         packAreaFeatureAbortController = null
       }
+      if (packAreaFeatureRequestKey === requestKey) packAreaFeatureRequestKey = null
       packAreaFeatureRequestInFlight = false
       if (packAreaFeatureRefreshQueued) {
         packAreaFeatureRefreshQueued = false
@@ -472,6 +576,7 @@
         return
       }
       runtime = nextRuntime
+      lastOperationalRenderSignature = null
       layerRegistry = createMapLayerRegistry()
       appliedTheme = theme
       appliedCameraKey = cameraKeyFor(mapConfig)
@@ -524,6 +629,10 @@
       layerRegistry = null
       runtime?.destroy()
       runtime = null
+      deckLayerFactory.reset()
+      lastOperationalRenderSignature = null
+      packAreaFeatureCacheKey = null
+      packAreaFeatureRequestKey = null
       appliedTheme = null
       appliedCameraKey = null
       mapReadyNotified = false
@@ -567,6 +676,8 @@
     if (!mapLayerEnabled('weather')) {
       abortPackAreaFeatureRequest('weather layer disabled')
       cachedPackMapAreaFeatures = []
+      packAreaFeatureCacheKey = null
+      packAreaFeatureRequestKey = null
       stopPackAreaRefresh()
       return
     }
@@ -585,6 +696,7 @@
         await currentRuntime.setStyleUrl(styleUrlFor(theme))
         registeredReferenceKey = null
         registerReferenceLayers()
+        lastOperationalRenderSignature = null
         flushOperationalRenderNow()
       } catch (err) {
         onMapError(err instanceof Error ? err.message : String(err))

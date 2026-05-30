@@ -213,8 +213,33 @@ const areaKindFor = (feature: PackMapAreaFeature): OperationalAreaFeature['kind'
   return 'weather-influence'
 }
 
-const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature => {
+const packAreaGeometrySignature = (
+  feature: PackMapAreaFeature,
+  kind: OperationalAreaFeature['kind'],
+): string =>
+  kind === 'weather-cell' || kind === 'weather-base'
+    ? feature.id
+    : polygonSignature(feature.geometry)
+
+const baseGridPathFor = (feature: PackMapAreaFeature): OperationalPathFeature | null => {
+  if (!feature.id.startsWith('weather-grid:')) return null
+  const ring = feature.geometry.coordinates[0] ?? []
+  return {
+    id: `weather-grid:${feature.id}`,
+    kind: 'weather-line',
+    path: ring.map(coordinate => [coordinate[0], coordinate[1]] as const),
+    color: colorWithAlpha(hexToRgba(feature.lineColor ?? feature.color), (feature.lineOpacity ?? 0.055) * 255),
+    casingColor: colorWithAlpha(hexToRgba(feature.lineColor ?? feature.color), 0),
+    widthPx: feature.lineWidth ?? 0.35,
+    selected: false,
+    priority: 5,
+    signature: `weather-grid:${feature.id}:${feature.lineColor ?? feature.color}:${feature.lineOpacity ?? 0.055}:${feature.lineWidth ?? 0.35}`,
+  }
+}
+
+const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature | null => {
   const kind = areaKindFor(feature)
+  if (kind === 'weather-base') return null
   const opacity = feature.opacity ?? (kind === 'weather-cell' ? 0.12 : 0.10)
   const lineColor = feature.lineColor ?? feature.color
   return {
@@ -224,9 +249,9 @@ const areaFor = (feature: PackMapAreaFeature): OperationalAreaFeature => {
     color: colorWithAlpha(hexToRgba(feature.color), opacity * 255),
     lineColor: colorWithAlpha(hexToRgba(lineColor), (feature.lineOpacity ?? 0.16) * 255),
     opacity,
-    lineWidthPx: feature.lineWidth ?? (kind === 'weather-base' ? 0.35 : 0.6),
+    lineWidthPx: feature.lineWidth ?? 0.6,
     sortKey: feature.sortKey ?? 0,
-    signature: `area:${feature.id}:${kind}:${feature.color}:${opacity}:${polygonSignature(feature.geometry)}`,
+    signature: `area:${feature.id}:${kind}:${feature.color}:${opacity}:${packAreaGeometrySignature(feature, kind)}`,
   }
 }
 
@@ -279,14 +304,21 @@ const projectFeatures = (input: OperationalRenderInput): {
     const area = trafficAreaFor(object, presentation)
     if (area) areas.push(area)
   }
-  const areaFeatures = input.packAreaFeatures.map(areaFor)
+  const packAreaPaths = input.packAreaFeatures.flatMap(feature => {
+    const path = baseGridPathFor(feature)
+    return path ? [path] : []
+  })
+  const areaFeatures = input.packAreaFeatures.flatMap(feature => {
+    const area = areaFor(feature)
+    return area ? [area] : []
+  })
   const areaSymbols = input.packAreaFeatures.flatMap(feature => {
     const symbol = areaSymbolFor(feature)
     return symbol ? [symbol] : []
   })
   return {
     points: points.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
-    paths: paths.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
+    paths: [...paths, ...packAreaPaths].sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id)),
     areas: [...areas, ...areaFeatures].sort((left, right) => left.sortKey - right.sortKey || left.id.localeCompare(right.id)),
     areaSymbols,
     placementPoints: input.placementPoints.map(placementPosition),
