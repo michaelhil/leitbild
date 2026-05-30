@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type ControlInstanceEvent, type ObjectId } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/control-instances/actors.ts'
-import { createHealthDetails } from '../src/core/api/server.ts'
+import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
 import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage } from '../src/core/api/realtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
@@ -78,6 +78,10 @@ const dispatchAmbulanceCommand = (controlInstanceId: ControlInstanceId, ambulanc
   }) as CommandEnvelope
 
 describe('server health', () => {
+  test('serves module worker assets with a JavaScript MIME type', () => {
+    expect(staticContentTypeForPath('/assets/maplibre-gl-worker-hash.mjs')).toBe('application/javascript')
+  })
+
   test('reports process, storage, control instance, and realtime details', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-health-test-'))
     const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-map-health-test-'))

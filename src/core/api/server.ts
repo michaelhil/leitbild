@@ -78,20 +78,22 @@ export const createHealthDetails = async (config: {
   mapArtifacts: await createMapArtifactStatus(config.mapArtifacts),
 })
 
+export const staticContentTypeForPath = (filePath: string): string =>
+  filePath.endsWith('.html')
+    ? 'text/html'
+    : filePath.endsWith('.css')
+      ? 'text/css'
+      : filePath.endsWith('.js') || filePath.endsWith('.mjs')
+        ? 'application/javascript'
+        : 'application/octet-stream'
+
 const serveStatic = async (pathname: string, uiDistPath: string): Promise<Response | null> => {
   const normalizedPath = pathname === '/' || pathname === '/i' || pathname.startsWith('/i/') ? '/index.html' : pathname
   const filePath = normalize(`${uiDistPath}${normalizedPath}`)
   if (!filePath.startsWith(uiDistPath)) return new Response('Forbidden', { status: 403 })
   const file = Bun.file(filePath)
   if (!await file.exists()) return null
-  const contentType = filePath.endsWith('.html')
-    ? 'text/html'
-    : filePath.endsWith('.css')
-      ? 'text/css'
-      : filePath.endsWith('.js')
-        ? 'application/javascript'
-        : 'application/octet-stream'
-  return new Response(file, { headers: { 'Content-Type': contentType } })
+  return new Response(file, { headers: { 'Content-Type': staticContentTypeForPath(filePath) } })
 }
 
 const discoveryEtag = async (manifest: ReturnType<typeof buildManifest>): Promise<string> => {
