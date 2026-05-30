@@ -62,7 +62,18 @@
     type StartupStepId,
   } from '../startup.ts'
   import { runtimeDiagnosticDetails } from '../map-runtime/map-diagnostics.ts'
+  import { mapPerformanceDiagnostics } from '../map-runtime/map-performance-diagnostics.ts'
   import type { MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
+  import {
+    browserDiagnostics,
+    createLongTaskDiagnosticsMonitor,
+    installInternalDiagnosticsGlobal,
+    resourceDiagnostics,
+    routeDiagnostics,
+    scenarioDiagnosticsFor,
+    type InternalDiagnosticsSnapshot,
+    type LongTaskDiagnosticsMonitor,
+  } from '../internal-diagnostics.ts'
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
@@ -105,6 +116,11 @@
   let startupDebugGeneration = 0
   let startupDebugReported = false
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
+  let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
+  let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
+  let presentationCacheObjects: ReadonlyArray<OperationalObject> | null = null
+  let presentationCacheContextKey = ''
+  const presentationCache = new Map<string, PackObjectPresentation>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -248,8 +264,22 @@
     return activePack
   }
 
-  const presentationFor = (object: OperationalObject): PackObjectPresentation =>
-    requireActivePack().presentObject(object, { objects, currentTime: currentPackTime() })
+  const presentationFor = (object: OperationalObject): PackObjectPresentation => {
+    const pack = requireActivePack()
+    const currentTime = currentPackTime()
+    const contextKey = `${pack.id}:${currentTime ?? 'no-time'}`
+    if (presentationCacheObjects !== objects || presentationCacheContextKey !== contextKey) {
+      presentationCache.clear()
+      presentationCacheObjects = objects
+      presentationCacheContextKey = contextKey
+    }
+    const key = `${object.id}:${object.revision}`
+    const cached = presentationCache.get(key)
+    if (cached) return cached
+    const presentation = pack.presentObject(object, { objects, currentTime })
+    presentationCache.set(key, presentation)
+    return presentation
+  }
 
   const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
@@ -260,7 +290,7 @@
 
   const hasNewInfo = (object: OperationalObject): boolean => {
     if (!activePack) return false
-    const presentation = activePack.presentObject(object, { objects, currentTime: currentPackTime() })
+    const presentation = presentationFor(object)
     if (presentation.noteworthyUpdates !== true) return false
     return (seenRevisions.get(object.id) ?? object.revision) < object.revision
   }
@@ -292,6 +322,65 @@
       step: mark.label,
       elapsedMs: Number(mark.deltaMs.toFixed(1)),
     })))
+  }
+
+  const currentInternalDiagnostics = (): InternalDiagnosticsSnapshot => {
+    const currentMapConfig = mapConfig
+    const center = currentMapConfig?.center.coordinates
+    return {
+      capturedAt: new Date().toISOString(),
+      appVersion,
+      route: routeDiagnostics(),
+      browser: browserDiagnostics(),
+      startup: {
+        status,
+        commandStatus,
+        dismissed: startupDismissed,
+        statusModalOpen: startupStatusModalOpen,
+        steps: startupSteps,
+        marks: startupDebugMarks,
+      },
+      controlInstance: {
+        id: controlInstanceId,
+        expectedScenarioId: expectedRealtimeScenarioId,
+        snapshotReady,
+        realtimeAttached,
+        mapReady,
+        selectedControllerId,
+      },
+      scenario: scenarioDiagnosticsFor(scenarioDefinition, objects),
+      map: {
+        visible: mapVisible,
+        ready: mapReady,
+        config: {
+          center: center ? [center[0], center[1]] : null,
+          zoom: currentMapConfig?.zoom ?? null,
+          layers: currentMapConfig?.layers ?? [],
+        },
+        layerGroups: activeMapLayerGroups.map(group => ({
+          id: group.id,
+          visible: mapLayerGroupVisibility[group.id] ?? group.defaultVisible,
+        })),
+        referenceDatasetIds: activeReferenceDatasetIds,
+        runtime: latestMapRuntimeDiagnostics,
+      },
+      performance: {
+        map: mapPerformanceDiagnostics.snapshot(),
+        longTasks: longTaskMonitor?.snapshot() ?? {
+          supported: false,
+          sampleCount: 0,
+          worst: null,
+          recent: [],
+        },
+        resources: resourceDiagnostics(),
+      },
+    }
+  }
+
+  const clearInternalDiagnostics = (): void => {
+    mapPerformanceDiagnostics.clear()
+    longTaskMonitor?.clear()
+    performance.clearResourceTimings()
   }
 
   const runWhenIdle = (task: () => void): void => {
@@ -416,8 +505,13 @@
         : phase.status,
     }))
     const details = runtimeDiagnosticDetails(snapshot).slice(0, 12)
+    const performanceDetails = snapshot.performance?.summaryDetails.slice(0, 7).map(detail => ({
+      label: `Perf ${detail.label}`,
+      value: detail.value,
+    })) ?? []
     return [
       ...phases,
+      ...performanceDetails,
       ...details,
       ...(snapshot.latestError
         ? [{ label: 'Latest error', value: snapshot.latestError.message }]
@@ -426,6 +520,7 @@
   }
 
   const handleMapDiagnostic = (snapshot: MapRuntimeDiagnosticsSnapshot): void => {
+    latestMapRuntimeDiagnostics = snapshot
     startupSteps = setStartupStepDetails(startupSteps, 'map', mapRuntimeDetails(snapshot))
   }
 
@@ -511,6 +606,7 @@
     surfaceLoadGeneration += 1
     postReadyPreloadStarted = false
     startupDismissed = false
+    latestMapRuntimeDiagnostics = null
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
   }
 
@@ -852,6 +948,11 @@
   }
 
   runOnMount(() => {
+    longTaskMonitor = createLongTaskDiagnosticsMonitor()
+    const cleanupInternalDiagnosticsGlobal = installInternalDiagnosticsGlobal({
+      snapshot: currentInternalDiagnostics,
+      clear: clearInternalDiagnostics,
+    })
     const nextTheme = initialTheme()
     theme = nextTheme
     if (getTheme() !== nextTheme) document.documentElement.classList.toggle('dark', nextTheme === 'dark')
@@ -868,6 +969,9 @@
     } catch (err) {
       failStep('route', err)
       return () => {
+        cleanupInternalDiagnosticsGlobal()
+        longTaskMonitor?.stop()
+        longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
         clearStartupAutoDismissTimer()
@@ -878,6 +982,9 @@
     if (route.mode === 'new-run') {
       void createScenarioRun(route.scenarioId, 'replace')
       return () => {
+        cleanupInternalDiagnosticsGlobal()
+        longTaskMonitor?.stop()
+        longTaskMonitor = null
         removePlacementGlobalEvents()
         railLayout.stopResize()
         clearStartupAutoDismissTimer()
@@ -886,6 +993,9 @@
     preloadOperationalMapModule()
     void joinControlInstance()
     return () => {
+      cleanupInternalDiagnosticsGlobal()
+      longTaskMonitor?.stop()
+      longTaskMonitor = null
       removePlacementGlobalEvents()
       railLayout.stopResize()
       realtimeConnection.disconnect()

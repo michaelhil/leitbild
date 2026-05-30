@@ -39,6 +39,11 @@
   import { createMapRuntime } from './map-runtime/map-runtime.ts'
   import { createMapUpdateScheduler } from './map-runtime/map-update-scheduler.ts'
   import { createOperationalDeckLayerFactory, visibleFamiliesKey } from './map-runtime/operational-deck-layers.ts'
+  import {
+    installMapPerformanceDiagnosticsGlobal,
+    mapPerformanceDiagnostics,
+    startFrameLagMonitor,
+  } from './map-runtime/map-performance-diagnostics.ts'
   import type {
     MapRuntimeDiagnosticsSnapshot,
     MapRuntimeHandle,
@@ -129,6 +134,7 @@
   let layerRegistry: MapLayerRegistry | null = null
   let referenceRegistrationSerial = 0
   let registeredReferenceKey: string | null = null
+  let lastPerformanceDiagnosticAtMs = 0
 
   const featureStore = createMapFeatureStore()
   const updateScheduler = createMapUpdateScheduler({ frameBudgetMs: 6 })
@@ -305,19 +311,33 @@
   const flushOperationalRender = (): void => {
     const currentRuntime = runtime
     if (!currentRuntime) return
-    const nowMs = performance.now()
-    const displayObjects = displayObjectsFor(objects, displayMotionState, nowMs)
+    const startedAtMs = performance.now()
+    const nowMs = startedAtMs
+    const displayObjects = mapPerformanceDiagnostics.measure(
+      'operational-dynamic',
+      'displayObjectsFor',
+      () => displayObjectsFor(objects, displayMotionState, nowMs),
+      { objects: objects.length },
+    )
     const renderPresentationFor = createRenderPresentationFor()
     const renderHasNewInfo = createRenderHasNewInfo()
-    const snapshot = featureStore.update({
-      objects: displayObjects,
-      selectedControllerId,
-      highlightedObjectIds,
-      placementPoints,
-      packAreaFeatures: cachedPackMapAreaFeatures,
-      hasNewInfo: renderHasNewInfo,
-      presentationFor: renderPresentationFor,
-    })
+    const snapshot = mapPerformanceDiagnostics.measure(
+      'operational-dynamic',
+      'featureStore.update',
+      () => featureStore.update({
+        objects: displayObjects,
+        selectedControllerId,
+        highlightedObjectIds,
+        placementPoints,
+        packAreaFeatures: cachedPackMapAreaFeatures,
+        hasNewInfo: renderHasNewInfo,
+        presentationFor: renderPresentationFor,
+      }),
+      {
+        objects: displayObjects.length,
+        packAreaFeatures: cachedPackMapAreaFeatures.length,
+      },
+    )
     const families = visibleFamilies()
     const renderSignature = [
       snapshot.revisions.points,
@@ -327,10 +347,13 @@
       snapshot.revisions.placement,
       visibleFamiliesKey(families),
     ].join('|')
-    if (renderSignature !== lastOperationalRenderSignature) {
+    const deckUpdated = renderSignature !== lastOperationalRenderSignature
+    if (deckUpdated) {
       lastOperationalRenderSignature = renderSignature
-      currentRuntime.updateLayers({
-        deckLayers: deckLayerFactory.createLayers({
+      const deckLayers = mapPerformanceDiagnostics.measure(
+        'operational-dynamic',
+        'deckLayerFactory.createLayers',
+        () => deckLayerFactory.createLayers({
           snapshot,
           visibleFamilies: families,
           onObjectSelected: point => {
@@ -351,9 +374,44 @@
             popupController.show(point.object)
           },
         }),
-      })
+        {
+          points: snapshot.points.length,
+          paths: snapshot.paths.length,
+          areas: snapshot.areas.length,
+          areaSymbols: snapshot.areaSymbols.length,
+          placementPoints: snapshot.placementPoints.length,
+        },
+      )
+      mapPerformanceDiagnostics.measure(
+        'operational-dynamic',
+        'runtime.updateLayers',
+        () => currentRuntime.updateLayers({ deckLayers }),
+        { deckLayers: deckLayers.length },
+      )
     }
-    popupController.refresh(displayObjects)
+    mapPerformanceDiagnostics.measure(
+      'ui-overlay',
+      'popupController.refresh',
+      () => popupController.refresh(displayObjects),
+      { objects: displayObjects.length },
+    )
+    const totalMs = performance.now() - startedAtMs
+    mapPerformanceDiagnostics.record('operational-dynamic', 'flushOperationalRender total', totalMs, {
+      points: snapshot.points.length,
+      paths: snapshot.paths.length,
+      areas: snapshot.areas.length,
+      deckUpdated,
+    })
+    emitPerformanceDiagnostic()
+  }
+
+  const emitPerformanceDiagnostic = (): void => {
+    const currentRuntime = runtime
+    if (!currentRuntime) return
+    const nowMs = performance.now()
+    if (nowMs - lastPerformanceDiagnosticAtMs < 750) return
+    lastPerformanceDiagnosticAtMs = nowMs
+    onMapDiagnostic(currentRuntime.diagnostics())
   }
 
   const scheduleOperationalRender = (
@@ -424,12 +482,17 @@
     packAreaFeatureRequestKey = requestKey
     packAreaFeatureRequestInFlight = true
     try {
-      const features = await mapAreaFeaturesFor({
-        viewport,
-        zoom,
-        currentTime: currentDisplayTime(),
-        signal: abortController.signal,
-      })
+      const features = await mapPerformanceDiagnostics.measureAsync(
+        'operational-static',
+        'mapAreaFeaturesFor',
+        async () => mapAreaFeaturesFor({
+          viewport,
+          zoom,
+          currentTime: currentDisplayTime(),
+          signal: abortController.signal,
+        }),
+        { zoom: Number(zoom.toFixed(2)) },
+      )
       if (serial !== packAreaFeatureRequestSerial) return
       cachedPackMapAreaFeatures = features
       packAreaFeatureCacheKey = requestKey
@@ -474,15 +537,23 @@
     if (referenceDatasetIds.length === 0 && mapLayerGroups.length === 0) return
     const run = async (): Promise<void> => {
       try {
-        const registration = await registry.registerReferenceLayers({
-          map: currentRuntime.map,
-          datasetIds: referenceDatasetIds,
-          layerGroups: mapLayerGroups,
-          visibility: mapLayerGroupVisibility,
-          logger: message => {
-            console.warn(message)
+        const registration = await mapPerformanceDiagnostics.measureAsync(
+          'reference',
+          'registerReferenceLayers',
+          async () => registry.registerReferenceLayers({
+            map: currentRuntime.map,
+            datasetIds: referenceDatasetIds,
+            layerGroups: mapLayerGroups,
+            visibility: mapLayerGroupVisibility,
+            logger: message => {
+              console.warn(message)
+            },
+          }),
+          {
+            datasetIds: referenceDatasetIds.length,
+            layerGroups: mapLayerGroups.length,
           },
-        })
+        )
         if (serial !== referenceRegistrationSerial) return
         currentRuntime.diagnostics()
         onMapDiagnostic({
@@ -543,6 +614,9 @@
   runOnMount(() => {
     if (!mapElement) throw new Error('Operational map element was not bound before map initialization')
     let cancelled = false
+    mapPerformanceDiagnostics.clear()
+    const cleanupMapPerformanceGlobal = installMapPerformanceDiagnosticsGlobal()
+    const stopFrameLagMonitor = startFrameLagMonitor(mapPerformanceDiagnostics)
 
     const initializeMap = async (): Promise<void> => {
       await installMapInputDebugController()
@@ -615,6 +689,8 @@
 
     return () => {
       cancelled = true
+      stopFrameLagMonitor()
+      cleanupMapPerformanceGlobal()
       resetMapInputDebugController()
       updateScheduler.stop()
       stopDisplayAnimation()

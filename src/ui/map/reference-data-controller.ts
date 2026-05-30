@@ -146,7 +146,9 @@ const registerOne = (
     if (!map.getSource(built.sourceId)) {
       map.addSource(built.sourceId, {
         type: built.source.type,
-        url: built.source.url,
+        tiles: [...built.source.tiles],
+        minzoom: built.source.minzoom,
+        maxzoom: built.source.maxzoom,
         attribution: built.source.attribution,
       })
     }

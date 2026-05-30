@@ -8,7 +8,13 @@ import {
   findBaseTileset,
   mapCapabilityManifestSchema,
 } from '../src/map/capabilities.ts'
-import { currentPmtilesResponse, mapGlyphResponse, referenceDatasetPmtilesResponse } from '../src/map/artifacts.ts'
+import {
+  currentPmtilesResponse,
+  currentVectorTileResponse,
+  mapGlyphResponse,
+  referenceDatasetPmtilesResponse,
+  referenceDatasetVectorTileResponse,
+} from '../src/map/artifacts.ts'
 import { createLeitbildMapStyle } from '../src/map/style.ts'
 
 const writeReferenceDataset = async (root: string, datasetId: string, buildId: string, bytes: string): Promise<void> => {
@@ -56,12 +62,15 @@ describe('vector map artifacts', () => {
     expect(base.layers.map(layer => layer.id)).toContain('landuse')
   })
 
-  test('style uses only the self-hosted PMTiles vector source', () => {
+  test('style uses only self-hosted vector tile sources', () => {
     const style = createLeitbildMapStyle()
 
     expect(style.sources['leitbild-osm']).toEqual({
       type: 'vector',
-      url: 'pmtiles:///map/tiles/current.pmtiles',
+      tiles: ['/map/tiles/current/{z}/{x}/{y}.mvt'],
+      minzoom: 0,
+      maxzoom: 14,
+      bounds: [-12, 57, 36, 82],
       attribution: '© OpenStreetMap contributors © OpenMapTiles',
     })
     expect(JSON.stringify(style)).not.toContain('"raster"')
@@ -114,6 +123,31 @@ describe('vector map artifacts', () => {
       'http://localhost/map/datasets/missing/current/missing.pmtiles',
     ), new URL('http://localhost/map/datasets/missing/current/missing.pmtiles'), { referenceRoot })
     expect(unknown?.status).toBe(404)
+  })
+
+  test('vector tile routes validate coordinates and dataset paths', async () => {
+    __clearManifestCacheForTests()
+    const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
+    const currentDir = join(rootDir, 'current')
+    await mkdir(currentDir)
+    await Bun.write(join(currentDir, 'norway.pmtiles'), 'not-a-real-pmtiles')
+
+    const invalidBase = await currentVectorTileResponse(new URL('http://localhost/map/tiles/current/27/0/0.mvt'), { rootDir })
+    expect(invalidBase?.status).toBe(400)
+
+    const referenceRoot = await mkdtemp(join(tmpdir(), 'leitbild-reference-test-'))
+    await writeReferenceDataset(referenceRoot, 'grid-norway', '20260530-120000', 'not-a-real-pmtiles')
+    const invalidReference = await referenceDatasetVectorTileResponse(
+      new URL('http://localhost/map/datasets/grid-norway/current/grid-norway/0/0/1.mvt'),
+      { referenceRoot },
+    )
+    expect(invalidReference?.status).toBe(400)
+
+    const unknownReference = await referenceDatasetVectorTileResponse(
+      new URL('http://localhost/map/datasets/missing/current/missing/0/0/0.mvt'),
+      { referenceRoot },
+    )
+    expect(unknownReference?.status).toBe(404)
   })
 
   test('reference dataset PMTiles route rejects unsafe paths', async () => {

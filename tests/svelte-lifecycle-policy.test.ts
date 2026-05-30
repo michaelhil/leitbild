@@ -51,6 +51,6 @@ describe('Svelte lifecycle policy', () => {
     expect(operationalMap).toContain('createMapRuntime')
     expect(mapRuntime).toContain('new MapLibre')
     expect(mapRuntime).toContain('ResizeObserver')
-    expect(mapRuntime).toContain('PmtilesProtocol')
+    expect(mapRuntime).not.toContain('PmtilesProtocol')
   })
 })

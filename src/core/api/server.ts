@@ -6,10 +6,12 @@ import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
   currentPmtilesResponse,
+  currentVectorTileResponse,
   mapGlyphResponse,
   mapCapabilitiesResponse,
   mapStyleResponse,
   referenceDatasetPmtilesResponse,
+  referenceDatasetVectorTileResponse,
   type MapArtifactConfig,
 } from '../../map/artifacts.ts'
 import { handleControlInstanceApi } from './control-instance-routes.ts'
@@ -182,8 +184,14 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (discoveryRouteResponse) return secure(discoveryRouteResponse)
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse())
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
+      if (url.pathname.startsWith('/map/tiles/current/')) {
+        const tileResponse = await currentVectorTileResponse(url, mapArtifacts)
+        if (tileResponse) return secure(tileResponse)
+      }
       if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
       if (url.pathname.startsWith('/map/datasets/')) {
+        const referenceVectorTileResponse = await referenceDatasetVectorTileResponse(url)
+        if (referenceVectorTileResponse) return secure(referenceVectorTileResponse)
         const referenceTilesResponse = await referenceDatasetPmtilesResponse(req, url)
         if (referenceTilesResponse) return secure(referenceTilesResponse)
       }

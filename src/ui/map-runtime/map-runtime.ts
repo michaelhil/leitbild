@@ -1,14 +1,11 @@
 import {
   Map as MapLibre,
   NavigationControl,
-  addProtocol,
-  removeProtocol,
   type IControl,
   type Map as MapLibreMap,
   type MapOptions,
 } from 'maplibre-gl'
 import { MapboxOverlay } from '@deck.gl/mapbox'
-import { Protocol as PmtilesProtocol } from 'pmtiles'
 import type { GeoJsonPoint } from '../../core/model/index.ts'
 import { geoPointFromLonLat } from '../../core/model/index.ts'
 import { assertCameraInteractionContract } from '../map/map-camera.ts'
@@ -19,6 +16,7 @@ import {
   waitForBaseMapReadiness,
 } from './base-map-readiness.ts'
 import { createMapDiagnostics } from './map-diagnostics.ts'
+import { mapPerformanceDiagnostics } from './map-performance-diagnostics.ts'
 import type {
   MapRuntimeDiagnosticDetail,
   MapRuntimeDiagnosticsSnapshot,
@@ -49,8 +47,6 @@ interface MapLibreErrorDetails {
   readonly sourceId: string | null
 }
 
-let pmtilesProtocolRefCount = 0
-
 const stringFromUnknown = (value: unknown): string | null =>
   typeof value === 'string' && value.length > 0 ? value : null
 
@@ -71,16 +67,6 @@ const mapLibreErrorDetails = (event: unknown): MapLibreErrorDetails => {
 
 const isReferenceDatasetError = (details: MapLibreErrorDetails): boolean =>
   details.sourceId?.startsWith('reference:') === true || details.message.includes('/map/datasets/')
-
-const installPmtilesProtocol = (): Cleanup => {
-  const protocol = new PmtilesProtocol({ metadata: true })
-  if (pmtilesProtocolRefCount === 0) addProtocol('pmtiles', protocol.tile)
-  pmtilesProtocolRefCount += 1
-  return () => {
-    pmtilesProtocolRefCount -= 1
-    if (pmtilesProtocolRefCount === 0) removeProtocol('pmtiles')
-  }
-}
 
 const containerDetails = (element: HTMLElement): ReadonlyArray<MapRuntimeDiagnosticDetail> => {
   const rect = element.getBoundingClientRect()
@@ -127,7 +113,11 @@ const waitForBase = async (
   isCancelled: () => boolean,
 ): Promise<void> => {
   try {
-    const readiness = await waitForBaseMapReadiness(map, { isCancelled })
+    const readiness = await mapPerformanceDiagnostics.measureAsync(
+      'base',
+      'waitForBaseMapReadiness',
+      async () => waitForBaseMapReadiness(map, { isCancelled }),
+    )
     diagnostics.ready(phase, 'Base map rendered', readiness.details)
   } catch (err) {
     if (isBaseMapReadinessFailure(err)) {
@@ -146,12 +136,16 @@ export const createMapRuntime = async (
 ): Promise<MapRuntimeHandle> => {
   const diagnostics = createMapDiagnostics()
   diagnostics.start('base', 'Creating vector map', containerDetails(config.element))
-  config.onDiagnostics(diagnostics.snapshot())
 
-  const cleanups: Cleanup[] = [installPmtilesProtocol()]
+  const cleanups: Cleanup[] = []
   let destroyed = false
   let operationalDiagnosticsReported = false
-  const emitDiagnostics = (): void => config.onDiagnostics(diagnostics.snapshot())
+  const snapshot = (): MapRuntimeDiagnosticsSnapshot => ({
+    ...diagnostics.snapshot(),
+    performance: mapPerformanceDiagnostics.snapshot(),
+  })
+  const emitDiagnostics = (): void => config.onDiagnostics(snapshot())
+  emitDiagnostics()
   const reportError = (error: MapRuntimeError): void => {
     diagnostics.fail(error.phase, error, diagnostics.snapshot().phases.find(phase => phase.phase === error.phase)?.details ?? [])
     emitDiagnostics()
@@ -173,22 +167,46 @@ export const createMapRuntime = async (
     cooperativeGestures: false,
     preserveDrawingBuffer: config.preserveDrawingBuffer === true,
   }
-  const current = new MapLibre(mapOptions)
+  const current = mapPerformanceDiagnostics.measure(
+    'base',
+    'MapLibre constructor',
+    () => new MapLibre(mapOptions),
+    { styleUrl: config.styleUrl },
+  )
   assertCameraInteractionContract(current)
 
-  const overlay = new MapboxOverlay({
-    interleaved: false,
-    layers: [],
-  })
-  current.addControl(overlay as unknown as IControl)
-  current.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right')
+  let overlay: MapboxOverlay | null = null
+  const installDeckOverlay = (): void => {
+    diagnostics.start('operational-dynamic', 'Installing deck overlay')
+    const nextOverlay = mapPerformanceDiagnostics.measure(
+      'operational-dynamic',
+      'Deck overlay constructor',
+      () => new MapboxOverlay({
+        interleaved: false,
+        layers: [],
+      }),
+    )
+    overlay = nextOverlay
+    mapPerformanceDiagnostics.measure(
+      'operational-dynamic',
+      'add Deck overlay control',
+      () => current.addControl(nextOverlay as unknown as IControl),
+    )
+    diagnostics.ready('operational-dynamic', 'Deck overlay installed')
+    emitDiagnostics()
+  }
+  mapPerformanceDiagnostics.measure(
+    'base',
+    'add navigation control',
+    () => current.addControl(new NavigationControl({ visualizePitch: true }), 'bottom-right'),
+  )
   cleanups.push(installResizeObserver(config.element, current))
   let resourcesDestroyed = false
   const destroyResources = (): void => {
     if (resourcesDestroyed) return
     resourcesDestroyed = true
     destroyed = true
-    overlay.setProps({ layers: [] })
+    overlay?.setProps({ layers: [] })
     current.remove()
     for (let index = cleanups.length - 1; index >= 0; index -= 1) {
       cleanups[index]?.()
@@ -271,11 +289,21 @@ export const createMapRuntime = async (
     throw err
   }
   emitDiagnostics()
+  installDeckOverlay()
 
   return {
     map: current,
     updateLayers: (layers: MapRuntimeLayers) => {
-      overlay.setProps({ layers: [...layers.deckLayers] })
+      const activeOverlay = overlay
+      if (activeOverlay === null) {
+        throw new Error('Deck overlay is not installed')
+      }
+      mapPerformanceDiagnostics.measure(
+        'operational-dynamic',
+        'deckOverlay.setProps',
+        () => activeOverlay.setProps({ layers: [...layers.deckLayers] }),
+        { deckLayers: layers.deckLayers.length },
+      )
       if (operationalDiagnosticsReported) return
       operationalDiagnosticsReported = true
       diagnostics.start('operational-dynamic', `Applying ${layers.deckLayers.length} deck layers`)
@@ -287,7 +315,12 @@ export const createMapRuntime = async (
     setStyleUrl: async (styleUrl: string): Promise<void> => {
       diagnostics.start('base', 'Changing vector map style')
       emitDiagnostics()
-      current.setStyle(styleUrl)
+      mapPerformanceDiagnostics.measure(
+        'base',
+        'MapLibre setStyle',
+        () => current.setStyle(styleUrl),
+        { styleUrl },
+      )
       try {
         await waitForBase(current, diagnostics, 'base', () => destroyed)
       } catch (err) {
@@ -299,7 +332,7 @@ export const createMapRuntime = async (
     resize: () => {
       current.resize({ source: 'leitbild-runtime-resize' })
     },
-    diagnostics: () => diagnostics.snapshot(),
+    diagnostics: snapshot,
     destroy: () => {
       destroyResources()
     },

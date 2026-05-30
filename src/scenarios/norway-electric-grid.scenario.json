@@ -4,8 +4,7 @@
   "title": "Norway electric-grid operations",
   "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology for the operational grid arena, with hydro generation, consumer zones, frequency/voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
   "packs": [
-    "electric-grid",
-    "weather"
+    "electric-grid"
   ],
   "runtimeOverrides": {},
   "world": {
@@ -35,94 +34,6 @@
         "sourceId": "source-derived-oslofjord-grid-arena-v1",
         "confidence": "medium"
       }
-    },
-    {
-      "pack": "weather",
-      "type": "weather_condition",
-      "id": "weather:grid-storm-band",
-      "label": "Coastal wind and icing band",
-      "truthResolution": 7,
-      "showAffectedCells": true,
-      "priority": 7,
-      "summary": "A coastal weather band highlights why future grid imports should support dynamic line-rating and outage coupling.",
-      "atmosphere": {
-        "airTemperatureC": -2,
-        "humidity": 0.92,
-        "windSpeedMps": 17,
-        "windDirectionDeg": 285,
-        "visibilityM": 4200,
-        "cloudCover": 0.9,
-        "precipitation": {
-          "type": "snow",
-          "intensityMmPerHour": 0.7
-        }
-      },
-      "surface": {
-        "groundTemperatureC": -1,
-        "wetness": 0.4,
-        "standingWater": 0,
-        "snow": 0.35,
-        "ice": 0.18,
-        "frost": 0.5
-      },
-      "keyframes": [
-        {
-          "atSeconds": 0,
-          "center": [
-            6.25,
-            61.15
-          ],
-          "semiMajorAxisM": 180000,
-          "semiMinorAxisM": 42000,
-          "rotationDeg": 40,
-          "falloffCurve": [
-            {
-              "x": 0,
-              "y": 1
-            },
-            {
-              "x": 0.8,
-              "y": 0.55
-            },
-            {
-              "x": 1,
-              "y": 0
-            }
-          ]
-        },
-        {
-          "atSeconds": 900,
-          "center": [
-            8.9,
-            62.6
-          ],
-          "semiMajorAxisM": 220000,
-          "semiMinorAxisM": 52000,
-          "rotationDeg": 34,
-          "atmosphere": {
-            "windSpeedMps": 21,
-            "visibilityM": 3000
-          },
-          "surface": {
-            "ice": 0.28,
-            "frost": 0.62
-          },
-          "falloffCurve": [
-            {
-              "x": 0,
-              "y": 1
-            },
-            {
-              "x": 0.8,
-              "y": 0.55
-            },
-            {
-              "x": 1,
-              "y": 0
-            }
-          ]
-        }
-      ]
     }
   ],
   "initialContexts": [],
@@ -149,7 +60,6 @@
           "zoom": 5,
           "layers": [
             "objects",
-            "weather",
             "grid",
             "highlights"
           ]

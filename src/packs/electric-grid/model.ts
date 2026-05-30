@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { OperationalObject } from '../../core/model/index.ts'
 
 export const electricGridPackId = 'electric-grid' as const
 
@@ -224,3 +225,34 @@ export type ElectricGridPackData = z.infer<typeof electricGridPackDataSchema>
 
 export const isElectricGridPackData = (value: unknown): value is ElectricGridPackData =>
   electricGridPackDataSchema.safeParse(value).success
+
+interface ElectricGridObjectDataCacheEntry {
+  readonly revision: number
+  readonly data: ElectricGridPackData | null
+}
+
+const objectDataCache = new Map<string, ElectricGridObjectDataCacheEntry>()
+const maxObjectDataCacheEntries = 2_000
+
+const pruneObjectDataCache = (): void => {
+  if (objectDataCache.size <= maxObjectDataCacheEntries) return
+  const deleteCount = objectDataCache.size - maxObjectDataCacheEntries
+  let deleted = 0
+  for (const key of objectDataCache.keys()) {
+    objectDataCache.delete(key)
+    deleted += 1
+    if (deleted >= deleteCount) return
+  }
+}
+
+export const parseElectricGridObjectData = (
+  object: Pick<OperationalObject, 'id' | 'revision' | 'packData'>,
+): ElectricGridPackData | null => {
+  const cached = objectDataCache.get(object.id)
+  if (cached?.revision === object.revision) return cached.data
+  const parsed = electricGridPackDataSchema.safeParse(object.packData)
+  const data = parsed.success ? parsed.data : null
+  objectDataCache.set(object.id, { revision: object.revision, data })
+  pruneObjectDataCache()
+  return data
+}

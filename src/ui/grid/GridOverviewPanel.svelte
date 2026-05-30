@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { OperationalObject } from '../../core/model/index.ts'
-  import { electricGridPackDataSchema } from '../../packs/electric-grid/model.ts'
+  import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
 
   interface Props {
     readonly objects: ReadonlyArray<OperationalObject>
@@ -9,8 +9,8 @@
   const { objects }: Props = $props()
 
   const gridItems = $derived(objects.flatMap(object => {
-    const parsed = electricGridPackDataSchema.safeParse(object.packData)
-    return parsed.success ? [{ object, data: parsed.data }] : []
+    const data = parseElectricGridObjectData(object)
+    return data ? [{ object, data }] : []
   }))
   const system = $derived(gridItems.find(item => item.data.type === 'grid_system')?.data)
   const branches = $derived(gridItems

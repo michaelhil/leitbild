@@ -50,7 +50,9 @@ export interface ReferenceLayerSpec {
 
 export interface ReferenceSourceSpec {
   readonly type: 'vector'
-  readonly url: string
+  readonly tiles: ReadonlyArray<string>
+  readonly minzoom: number
+  readonly maxzoom: number
   readonly attribution: string
 }
 
@@ -68,11 +70,24 @@ const layerIdFor = (datasetId: string, category: string, kind: 'fill' | 'line' |
 const categoryFilter = (category: string): ReadonlyArray<unknown> =>
   ['==', ['get', 'category'], category] as const
 
-const tileUrlFor = (datasetId: string, manifestPmtilesPath: string): string => {
+const sourceTilesFor = (datasetId: string, manifestPmtilesPath: string): ReadonlyArray<string> => {
   // Manifest writes pmtilesPath relative to the build dir. Browser fetches via
-  // Caddy under /map/datasets/<id>/current/<file>. We construct that URL.
+  // the Leitbild API under /map/datasets/<id>/current/<file-base>. We construct
+  // an ordinary HTTP MVT template so MapLibre does not depend on a browser-side
+  // PMTiles custom protocol during startup.
   // pmtilesPath is the file name only ("aero-norway.pmtiles") per A.1.
-  return `pmtiles:///map/datasets/${datasetId}/current/${manifestPmtilesPath}`
+  const pmtilesBaseName = manifestPmtilesPath.replace(/\.pmtiles$/, '')
+  return [`/map/datasets/${datasetId}/current/${pmtilesBaseName}/{z}/{x}/{y}.mvt`]
+}
+
+const sourceZoomRangeFor = (
+  categories: DatasetManifestForLayers['categories'],
+): { readonly minzoom: number; readonly maxzoom: number } => {
+  if (categories.length === 0) return { minzoom: 0, maxzoom: 14 }
+  return {
+    minzoom: Math.min(...categories.map(category => category.minZoom)),
+    maxzoom: Math.max(...categories.map(category => category.maxZoom)),
+  }
 }
 
 export const buildReferenceDatasetLayers = (
@@ -80,9 +95,12 @@ export const buildReferenceDatasetLayers = (
   style: DatasetStyleModule,
 ): ReferenceDatasetLayers => {
   const sourceId = sourceIdFor(manifest.datasetId)
+  const sourceZoomRange = sourceZoomRangeFor(manifest.categories)
   const source: ReferenceSourceSpec = {
     type: 'vector',
-    url: tileUrlFor(manifest.datasetId, manifest.artifact.pmtilesPath),
+    tiles: sourceTilesFor(manifest.datasetId, manifest.artifact.pmtilesPath),
+    minzoom: sourceZoomRange.minzoom,
+    maxzoom: sourceZoomRange.maxzoom,
     attribution: composeAttributionFromManifest(manifest),
   }
 
@@ -155,4 +173,4 @@ export const buildReferenceDatasetLayers = (
   }
 }
 
-export const __internals = { sourceIdFor, layerIdFor, tileUrlFor, categoryFilter }
+export const __internals = { sourceIdFor, layerIdFor, sourceTilesFor, categoryFilter }

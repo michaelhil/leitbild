@@ -1,5 +1,6 @@
 import { lstat, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
+import { PMTiles, TileType, type Source } from 'pmtiles'
 import { createBaseTileset, findReferenceTilesets, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
@@ -38,6 +39,7 @@ export interface MapArtifactStatus {
 }
 
 const pmtilesContentType = 'application/vnd.pmtiles'
+const vectorTileContentType = 'application/vnd.mapbox-vector-tile'
 const glyphContentType = 'application/x-protobuf'
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
@@ -45,6 +47,34 @@ const mapFontPathPrefix = '/map/fonts/'
 const mapDatasetPathPrefix = '/map/datasets/'
 const datasetIdPattern = /^[a-z0-9][a-z0-9-]*$/
 const pmtilesFilePattern = /^[a-z0-9][a-z0-9-]*\.pmtiles$/
+const pmtilesBaseNamePattern = /^[a-z0-9][a-z0-9-]*$/
+
+interface TileCoordinates {
+  readonly z: number
+  readonly x: number
+  readonly y: number
+}
+
+interface CachedPmtilesArchive {
+  readonly filePath: string
+  readonly mtimeMs: number
+  readonly sizeBytes: number
+  readonly archive: PMTiles
+}
+
+interface ReferenceDatasetArtifactResolution {
+  readonly ok: true
+  readonly filePath: string
+}
+
+interface ReferenceDatasetArtifactFailure {
+  readonly ok: false
+  readonly response: Response
+}
+
+type ReferenceDatasetArtifactResult = ReferenceDatasetArtifactResolution | ReferenceDatasetArtifactFailure
+
+const pmtilesArchiveCache = new Map<string, CachedPmtilesArchive>()
 
 export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
   rootDir: resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps'),
@@ -59,6 +89,144 @@ const glyphProbePath = (config: MapArtifactConfig): string =>
 const isWithin = (rootPath: string, candidatePath: string): boolean => {
   const relativePath = relative(rootPath, candidatePath)
   return relativePath.length > 0 && !relativePath.startsWith('..') && !isAbsolute(relativePath)
+}
+
+const parseTileCoordinate = (raw: string): number | null => {
+  if (!/^\d+$/.test(raw)) return null
+  const value = Number(raw)
+  return Number.isSafeInteger(value) ? value : null
+}
+
+const parseTileCoordinates = (zPart: string, xPart: string, yPart: string): TileCoordinates | null => {
+  const z = parseTileCoordinate(zPart)
+  const x = parseTileCoordinate(xPart)
+  const yMatch = yPart.match(/^(\d+)\.mvt$/)
+  const y = yMatch ? parseTileCoordinate(yMatch[1] ?? '') : null
+  if (z === null || x === null || y === null) return null
+  if (z < 0 || z > 26) return null
+  const maxTile = 2 ** z
+  if (x < 0 || x >= maxTile || y < 0 || y >= maxTile) return null
+  return { z, x, y }
+}
+
+const createBunFileSource = (filePath: string, key: string): Source => ({
+  getKey: (): string => key,
+  getBytes: async (
+    offset: number,
+    length: number,
+    signal?: AbortSignal,
+  ): Promise<{ readonly data: ArrayBuffer }> => {
+    signal?.throwIfAborted()
+    const data = await Bun.file(filePath).slice(offset, offset + length).arrayBuffer()
+    signal?.throwIfAborted()
+    return { data }
+  },
+})
+
+const pmtilesArchiveFor = async (filePath: string): Promise<PMTiles> => {
+  const info = await stat(filePath)
+  const cached = pmtilesArchiveCache.get(filePath)
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.sizeBytes === info.size) {
+    return cached.archive
+  }
+
+  const key = `${filePath}:${info.mtimeMs}:${info.size}`
+  const archive = new PMTiles(createBunFileSource(filePath, key))
+  pmtilesArchiveCache.set(filePath, {
+    filePath,
+    mtimeMs: info.mtimeMs,
+    sizeBytes: info.size,
+    archive,
+  })
+  return archive
+}
+
+const emptyVectorTileResponse = (): Response =>
+  new Response(new Uint8Array(), {
+    headers: {
+      'Content-Type': vectorTileContentType,
+      'Content-Length': '0',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  })
+
+const vectorTileResponse = async (
+  filePath: string,
+  coordinates: TileCoordinates,
+  missing: { readonly error: string; readonly status: number },
+): Promise<Response> => {
+  const file = Bun.file(filePath)
+  if (!await file.exists()) {
+    return Response.json({
+      ok: false,
+      error: missing.error,
+      expectedPath: filePath,
+    }, { status: missing.status })
+  }
+
+  const archive = await pmtilesArchiveFor(filePath)
+  const header = await archive.getHeader()
+  if (header.tileType !== TileType.Mvt) {
+    return Response.json({
+      ok: false,
+      error: 'map artifact is not an MVT PMTiles archive',
+      expectedPath: filePath,
+    }, { status: 415 })
+  }
+
+  const tile = await archive.getZxy(coordinates.z, coordinates.x, coordinates.y)
+  if (!tile) return emptyVectorTileResponse()
+
+  const bytes = tile.data
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': vectorTileContentType,
+      'Content-Length': String(bytes.byteLength),
+      'Cache-Control': tile.cacheControl ?? 'public, max-age=3600',
+    },
+  })
+}
+
+const referenceDatasetArtifactPath = async (
+  datasetId: string,
+  fileName: string,
+  config: ReferenceDatasetArtifactConfig,
+): Promise<ReferenceDatasetArtifactResult> => {
+  if (!datasetId || !fileName || !datasetIdPattern.test(datasetId) || !pmtilesFilePattern.test(fileName)) {
+    return {
+      ok: false,
+      response: Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 }),
+    }
+  }
+
+  const manifest = await loadMapCapabilityManifest({ referenceRoot: config.referenceRoot })
+  const tileset = findReferenceTilesets(manifest).find(candidate => candidate.datasetId === datasetId)
+  if (!tileset || tileset.artifact.pmtilesPath !== fileName) {
+    return {
+      ok: false,
+      response: Response.json({ ok: false, error: 'reference dataset not found' }, { status: 404 }),
+    }
+  }
+
+  const referenceRootRealPath = await realpath(config.referenceRoot)
+  const currentDir = resolve(config.referenceRoot, 'releases', datasetId, 'current')
+  const currentDirRealPath = await realpath(currentDir)
+  if (!isWithin(referenceRootRealPath, currentDirRealPath)) {
+    return {
+      ok: false,
+      response: Response.json({ ok: false, error: 'invalid reference dataset release path' }, { status: 503 }),
+    }
+  }
+
+  const filePath = resolve(currentDirRealPath, fileName)
+  if (!isWithin(currentDirRealPath, filePath)) {
+    return {
+      ok: false,
+      response: Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 }),
+    }
+  }
+
+  return { ok: true, filePath }
 }
 
 export const mapCapabilitiesResponse = async (): Promise<Response> => {
@@ -190,6 +358,26 @@ export const currentPmtilesResponse = async (req: Request, config: MapArtifactCo
     status: 503,
   })
 
+export const currentVectorTileResponse = async (
+  url: URL,
+  config: MapArtifactConfig,
+): Promise<Response | null> => {
+  const prefix = '/map/tiles/current/'
+  if (!url.pathname.startsWith(prefix)) return null
+  const parts = url.pathname.slice(prefix.length).split('/').map(part => decodeURIComponent(part))
+  if (parts.length !== 3) {
+    return Response.json({ ok: false, error: 'invalid map tile path' }, { status: 400 })
+  }
+  const coordinates = parseTileCoordinates(parts[0] ?? '', parts[1] ?? '', parts[2] ?? '')
+  if (!coordinates) {
+    return Response.json({ ok: false, error: 'invalid map tile coordinates' }, { status: 400 })
+  }
+  return vectorTileResponse(currentPmtilesPath(config), coordinates, {
+    error: 'vector map artifact unavailable',
+    status: 503,
+  })
+}
+
 export const referenceDatasetPmtilesResponse = async (
   req: Request,
   url: URL,
@@ -204,29 +392,38 @@ export const referenceDatasetPmtilesResponse = async (
   }
 
   const [datasetId, , fileName] = parts
-  if (!datasetId || !fileName || !datasetIdPattern.test(datasetId) || !pmtilesFilePattern.test(fileName)) {
-    return Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 })
+  const resolved = await referenceDatasetArtifactPath(datasetId ?? '', fileName ?? '', config)
+  if (!resolved.ok) return resolved.response
+
+  return pmtilesFileResponse(req, resolved.filePath, {
+    error: 'reference dataset artifact unavailable',
+    status: 503,
+  })
+}
+
+export const referenceDatasetVectorTileResponse = async (
+  url: URL,
+  config: ReferenceDatasetArtifactConfig = { referenceRoot: referenceRootFromEnv() },
+): Promise<Response | null> => {
+  if (!url.pathname.startsWith(mapDatasetPathPrefix)) return null
+
+  const encodedPath = url.pathname.slice(mapDatasetPathPrefix.length)
+  const parts = encodedPath.split('/').map(part => decodeURIComponent(part))
+  if (parts.length !== 6 || parts[1] !== 'current') return null
+
+  const [datasetId, , pmtilesBaseName, zPart, xPart, yPart] = parts
+  if (!datasetId || !pmtilesBaseName || !pmtilesBaseNamePattern.test(pmtilesBaseName)) {
+    return Response.json({ ok: false, error: 'invalid reference dataset tile path' }, { status: 400 })
+  }
+  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '')
+  if (!coordinates) {
+    return Response.json({ ok: false, error: 'invalid reference dataset tile coordinates' }, { status: 400 })
   }
 
-  const manifest = await loadMapCapabilityManifest({ referenceRoot: config.referenceRoot })
-  const tileset = findReferenceTilesets(manifest).find(candidate => candidate.datasetId === datasetId)
-  if (!tileset || tileset.artifact.pmtilesPath !== fileName) {
-    return Response.json({ ok: false, error: 'reference dataset not found' }, { status: 404 })
-  }
+  const resolved = await referenceDatasetArtifactPath(datasetId, `${pmtilesBaseName}.pmtiles`, config)
+  if (!resolved.ok) return resolved.response
 
-  const referenceRootRealPath = await realpath(config.referenceRoot)
-  const currentDir = resolve(config.referenceRoot, 'releases', datasetId, 'current')
-  const currentDirRealPath = await realpath(currentDir)
-  if (!isWithin(referenceRootRealPath, currentDirRealPath)) {
-    return Response.json({ ok: false, error: 'invalid reference dataset release path' }, { status: 503 })
-  }
-
-  const filePath = resolve(currentDirRealPath, fileName)
-  if (!isWithin(currentDirRealPath, filePath)) {
-    return Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 })
-  }
-
-  return pmtilesFileResponse(req, filePath, {
+  return vectorTileResponse(resolved.filePath, coordinates, {
     error: 'reference dataset artifact unavailable',
     status: 503,
   })

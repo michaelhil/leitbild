@@ -106,7 +106,7 @@ const operationalPointFor = (
   const position = pointPosition(point)
   const selected = object.id === context.selectedControllerId
   const highlighted = context.highlightedObjectIds.has(object.id)
-  const hasNewInfo = context.hasNewInfo(object)
+  const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
   const muted = presentation.muted === true
   const color = muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
   const signature = [

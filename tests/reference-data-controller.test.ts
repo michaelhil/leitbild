@@ -11,7 +11,9 @@ interface FakeLayer {
 
 interface FakeSource {
   readonly id: string
-  readonly url: string
+  readonly tiles: ReadonlyArray<string>
+  readonly minzoom: number
+  readonly maxzoom: number
   readonly attribution: string
 }
 
@@ -20,9 +22,15 @@ const makeFakeMap = () => {
   const sources = new Map<string, FakeSource>()
   const calls: Array<{ readonly type: string; readonly args: unknown[] }> = []
   const map = {
-    addSource: (id: string, spec: { url: string; attribution: string }) => {
+    addSource: (id: string, spec: { tiles: ReadonlyArray<string>; minzoom: number; maxzoom: number; attribution: string }) => {
       calls.push({ type: 'addSource', args: [id, spec] })
-      sources.set(id, { id, url: spec.url, attribution: spec.attribution })
+      sources.set(id, {
+        id,
+        tiles: spec.tiles,
+        minzoom: spec.minzoom,
+        maxzoom: spec.maxzoom,
+        attribution: spec.attribution,
+      })
     },
     getSource: (id: string) => sources.get(id) ?? null,
     addLayer: (spec: { id: string }, before?: string) => {
@@ -89,7 +97,7 @@ describe('createReferenceDataController', () => {
     expect(controller.registered.length).toBe(1)
     expect(controller.registered[0]!.datasetId).toBe('aero-norway')
     expect(sources.get('reference:aero-norway')).toBeDefined()
-    expect(sources.get('reference:aero-norway')!.url).toContain('pmtiles:///map/datasets/aero-norway/current/')
+    expect(sources.get('reference:aero-norway')!.tiles[0]).toContain('/map/datasets/aero-norway/current/')
     // tma + ctr each have fill + line; airport has fill + line + point + label.
     expect(layers.has('reference:aero-norway:tma:fill')).toBe(true)
     expect(layers.has('reference:aero-norway:tma:line')).toBe(true)
@@ -110,7 +118,7 @@ describe('createReferenceDataController', () => {
 
     expect(controller.registered.length).toBe(1)
     expect(controller.registered[0]!.datasetId).toBe('grid-norway')
-    expect(sources.get('reference:grid-norway')!.url).toContain('grid-norway.pmtiles')
+    expect(sources.get('reference:grid-norway')!.tiles[0]).toContain('/grid-norway/')
     expect(layers.has('reference:grid-norway:line:line')).toBe(true)
     expect(layers.has('reference:grid-norway:cable:line')).toBe(true)
     expect(layers.has('reference:grid-norway:substation:point')).toBe(true)

@@ -16,13 +16,12 @@ import {
 import { asDatasetId } from '../../reference-data/types.ts'
 import { electricGridScenarioSupport } from './scenario.ts'
 import { electricGridRuntimeId } from './sim/constants.ts'
-import { electricGridPackDataSchema, electricGridPackId, type ElectricGridPackData } from './model.ts'
+import { electricGridPackId, parseElectricGridObjectData, type ElectricGridPackData } from './model.ts'
 
 const gridNorwayDatasetIdValue = asDatasetId('grid-norway')
 
 const parseGridData = (object: OperationalObject): ElectricGridPackData | null => {
-  const parsed = electricGridPackDataSchema.safeParse(object.packData)
-  return parsed.success ? parsed.data : null
+  return parseElectricGridObjectData(object)
 }
 
 const mw = (value: number): string => `${Math.round(value).toLocaleString()} MW`

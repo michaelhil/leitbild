@@ -2,6 +2,7 @@ import type { Layer } from '@deck.gl/core'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
 import type { PackMapAreaFeature, PackObjectPresentation, PackObjectStatusTone } from '../../core/packs/protocol.ts'
+import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagnostics.ts'
 
 export type RenderPhase =
   | 'base'
@@ -128,6 +129,7 @@ export interface MapRuntimeDiagnostic {
 export interface MapRuntimeDiagnosticsSnapshot {
   readonly phases: ReadonlyArray<MapRuntimeDiagnostic>
   readonly latestError?: MapRuntimeError
+  readonly performance?: MapPerformanceDiagnosticsSnapshot
 }
 
 export interface MapRuntimeHandle {

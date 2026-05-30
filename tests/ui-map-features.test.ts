@@ -8,6 +8,7 @@ import {
   type PackId,
 } from '../src/core/model/index.ts'
 import type { PackMapAreaFeature, PackObjectPresentation } from '../src/core/packs/protocol.ts'
+import { inspectBaseMapReadiness } from '../src/ui/map-runtime/base-map-readiness.ts'
 import { createMapFeatureStore } from '../src/ui/map-runtime/map-feature-store.ts'
 
 const presentationFor = (object: OperationalObject): PackObjectPresentation => ({
@@ -21,6 +22,7 @@ const presentationFor = (object: OperationalObject): PackObjectPresentation => (
     label: object.operational.status,
     indicator: { shape: 'dot' },
   },
+  noteworthyUpdates: object.id === 'ambulance:1',
 })
 
 const makeObject = (
@@ -233,5 +235,58 @@ describe('map feature store', () => {
 
     expect(second.revisions.paths).toBe(first.revisions.paths)
     expect(second.paths[0]).toBe(first.paths[0])
+  })
+})
+
+describe('base map readiness diagnostics', () => {
+  test('does not call MapLibre v6 isSourceLoaded while tile managers are still settling', () => {
+    let sideEffectingProbeCalled = false
+    const fakeMap = {
+      style: {
+        tileManagers: {
+          'leitbild-osm': {
+            loaded: () => true,
+          },
+        },
+      },
+      getContainer: () => ({
+        getBoundingClientRect: () => ({ width: 800, height: 600 }),
+      }),
+      getCanvas: () => ({
+        getBoundingClientRect: () => ({ width: 800, height: 600 }),
+        width: 800,
+        height: 600,
+      }),
+      getLayer: () => ({}),
+      getSource: () => ({
+        type: 'vector',
+        minzoom: 0,
+        maxzoom: 14,
+        tiles: ['/map/tiles/current/{z}/{x}/{y}.mvt'],
+        vectorLayerIds: ['landcover', 'place', 'water'],
+      }),
+      isStyleLoaded: () => true,
+      loaded: () => false,
+      isSourceLoaded: () => {
+        sideEffectingProbeCalled = true
+        throw new Error('MapLibre would emit an error event here')
+      },
+      areTilesLoaded: () => true,
+    } as unknown as Parameters<typeof inspectBaseMapReadiness>[0]
+
+    const snapshot = inspectBaseMapReadiness(fakeMap, {}, { sawRender: true })
+
+    expect(sideEffectingProbeCalled).toBe(false)
+    expect(snapshot.baseSourceLoaded).toBe(true)
+    expect(snapshot.tileManager.present).toBe(true)
+    expect(snapshot.tileManager.ids).toEqual(['leitbild-osm'])
+    expect(snapshot.baseSource).toEqual({
+      type: 'vector',
+      minZoom: 0,
+      maxZoom: 14,
+      tileUrlCount: 1,
+      vectorLayerIds: ['landcover', 'place', 'water'],
+    })
+    expect(snapshot.healthy).toBe(true)
   })
 })

@@ -41,7 +41,7 @@ const validateMapLibrePaint = (
     sources: {
       reference: {
         type: 'vector',
-        url: 'pmtiles:///test.pmtiles',
+        tiles: ['/test/{z}/{x}/{y}.mvt'],
       },
     },
     layers: [{
@@ -82,10 +82,12 @@ describe('buildReferenceDatasetLayers', () => {
     expect(built.layers.find(l => l.id === 'reference:aero-norway:ctr:label')).toBeUndefined()
   })
 
-  test('source url uses pmtiles:// + Caddy path', () => {
+  test('source tiles use plain HTTP MVT templates', () => {
     const built = buildReferenceDatasetLayers(baseManifest, aeroNorwayStyleModule)
     expect(built.sourceId).toBe('reference:aero-norway')
-    expect(built.source.url).toBe('pmtiles:///map/datasets/aero-norway/current/aero-norway.pmtiles')
+    expect(built.source.tiles).toEqual(['/map/datasets/aero-norway/current/aero-norway/{z}/{x}/{y}.mvt'])
+    expect(built.source.minzoom).toBe(6)
+    expect(built.source.maxzoom).toBe(14)
     expect(built.source.type).toBe('vector')
   })
 
@@ -140,8 +142,8 @@ describe('reference-layer-factory internals', () => {
     expect(__internals.layerIdFor('aero-norway', 'tma', 'fill')).toBe('reference:aero-norway:tma:fill')
   })
 
-  test('tileUrlFor builds Caddy-served pmtiles path', () => {
-    expect(__internals.tileUrlFor('foo', 'foo.pmtiles')).toBe('pmtiles:///map/datasets/foo/current/foo.pmtiles')
+  test('sourceTilesFor builds the API-served MVT tile template', () => {
+    expect(__internals.sourceTilesFor('foo', 'foo.pmtiles')).toEqual(['/map/datasets/foo/current/foo/{z}/{x}/{y}.mvt'])
   })
 
   test('categoryFilter is the canonical MapLibre expression', () => {

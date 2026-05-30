@@ -11,6 +11,10 @@ export interface MapLibreStyle {
 export type MapTheme = 'light' | 'dark'
 
 const sourceId = 'leitbild-osm'
+const minBaseZoom = 0
+const maxBaseZoom = 14
+const norwayBounds = [-12, 57, 36, 82] as const
+const baseVectorTileUrlTemplate = '/map/tiles/current/{z}/{x}/{y}.mvt'
 
 const mapThemePalette = (theme: MapTheme) => {
   if (theme === 'dark') {
@@ -89,7 +93,10 @@ export const createLeitbildMapStyle = (theme: MapTheme = 'light'): MapLibreStyle
     sources: {
       [sourceId]: {
         type: 'vector',
-        url: `pmtiles://${base.artifact.currentTileUrl}`,
+        tiles: [baseVectorTileUrlTemplate],
+        minzoom: minBaseZoom,
+        maxzoom: maxBaseZoom,
+        bounds: [...norwayBounds],
         attribution: '© OpenStreetMap contributors © OpenMapTiles',
       },
     },
