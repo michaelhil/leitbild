@@ -27,7 +27,7 @@
   import { createMapLifecycle, type MapLifecycle } from './map/map-lifecycle.ts'
   import { addObjectInteractions as addMapObjectInteractions } from './map/map-object-interactions.ts'
   import { createMapPopupController } from './map/map-popup-controller.ts'
-  import { createMapSourceController } from './map/map-source-controller.ts'
+  import { createMapSourceController, type MapSourceLayer } from './map/map-source-controller.ts'
   import {
     fetchSamsinnScreenshotConfig,
     disabledSamsinnScreenshotConfig,
@@ -66,6 +66,7 @@
     readonly onMapReady: () => void
     readonly onMapError: (message: string) => void
     readonly controlInstanceId?: string | null
+    readonly activePackIds?: ReadonlyArray<string>
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceDatasetIds?: ReadonlyArray<string>
@@ -92,6 +93,7 @@
     onMapReady,
     onMapError,
     controlInstanceId = null,
+    activePackIds = [],
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
     referenceDatasetIds = [],
@@ -166,10 +168,26 @@
     hasNewInfo: (object) => hasNewInfo(object),
   })
 
+  const mapLayerEnabled = (layer: MapSourceLayer): boolean => {
+    if (!mapConfig.layers.includes(layer)) return false
+    if (layer === 'traffic') return activePackIds.includes('traffic')
+    if (layer === 'weather') return activePackIds.includes('weather')
+    if (layer === 'grid') return activePackIds.includes('electric-grid')
+    return true
+  }
+
+  const enabledOperationalLayers = (): SurfaceMapRegionConfig['layers'] =>
+    mapConfig.layers.filter(layer => {
+      if (layer === 'traffic') return activePackIds.includes('traffic')
+      if (layer === 'weather') return activePackIds.includes('weather')
+      if (layer === 'grid') return activePackIds.includes('electric-grid')
+      return true
+    })
+
   const applyConfiguredLayerVisibility = (): void => {
     const current = map
     if (!current || !loaded) return
-    applyConfiguredMapLayerVisibility({ map: current, enabledLayers: mapConfig.layers })
+    applyConfiguredMapLayerVisibility({ map: current, enabledLayers: enabledOperationalLayers() })
   }
 
   const styleUrlFor = (mode: ThemeMode): string =>
@@ -263,6 +281,7 @@
     hasNewInfo: (object) => hasNewInfo(object),
     presentationFor: (object) => presentationFor(object),
     getPackMapAreaFeatures: () => animatePackMapAreaFeatures(cachedPackMapAreaFeatures, currentDisplayTime()),
+    isLayerEnabled: mapLayerEnabled,
     updateMarkerPopup: (sourceObjects) => {
       popupController.refresh(sourceObjects)
     },
@@ -306,7 +325,7 @@
   const startPackAreaRefresh = (): void => {
     if (packAreaRefreshInterval !== null) return
     packAreaRefreshInterval = setInterval(() => {
-      if (!loaded || !mapConfig.layers.includes('weather')) return
+      if (!loaded || !mapLayerEnabled('weather')) return
       if (mapCameraGestureActive) return
       void refreshPackMapAreaFeatures()
     }, 2_000)
@@ -385,21 +404,6 @@
         trafficCasingColor: trafficCasingColor(),
         refreshSources,
       })
-      // Reference-data layers are inserted between the OSM base and the
-      // operational layer stack so airspace / airport context renders below
-      // routes, weather influences, and operational objects.
-      // Reference datasets (e.g. airspace + airports) get their source + layers
-      // registered here. Visibility now flows through the pack rail's layer-group
-      // controller — there is no free-floating panel any more.
-      try {
-        referenceController = await createReferenceDataController({
-          map: current,
-          beforeLayerId: mapLayerIds.weatherBaseGridOutline,
-          datasetIds: referenceDatasetIds,
-        })
-      } catch (err) {
-        console.warn('reference-data registration failed:', err)
-      }
       if (mapLayerGroups.length > 0) {
         packLayerGroupController = createPackLayerGroupController({
           map: current,
@@ -435,6 +439,22 @@
         mapInputDebugController.record('style:map-ready')
         onMapReady()
       }
+      void (async (): Promise<void> => {
+        // Reference context is optional map enrichment. It must not block the
+        // base map or operational object readiness.
+        try {
+          const controller = await createReferenceDataController({
+            map: current,
+            beforeLayerId: mapLayerIds.weatherBaseGridOutline,
+            datasetIds: referenceDatasetIds,
+          })
+          if (map !== current || !loaded) return
+          referenceController = controller
+          packLayerGroupController?.apply({ ...packLayerGroupController.defaults, ...mapLayerGroupVisibility })
+        } catch (err) {
+          console.warn('reference-data registration failed:', err)
+        }
+      })()
     } catch (err) {
       onMapError(err instanceof Error ? err.message : String(err))
     }
@@ -550,7 +570,13 @@
     const routesChanged = routeRevision !== lastRouteRevision || selectedControllerId !== lastSelectedControllerId
     lastRouteRevision = routeRevision
     lastSelectedControllerId = selectedControllerId
-    sourceController.schedule({ objects: true, routes: routesChanged, traffic: true, weather: true })
+    sourceController.schedule({
+      objects: true,
+      routes: routesChanged,
+      traffic: mapLayerEnabled('traffic'),
+      weather: mapLayerEnabled('weather'),
+      grid: mapLayerEnabled('grid'),
+    })
     popupController.refresh(displayObjectsFor(objects, displayMotionState, nowMs))
     if (hasActiveDisplayMotion(displayMotionState, nowMs)) {
       scheduleDisplayAnimation()
@@ -562,7 +588,7 @@
 
   $effect(() => {
     clock
-    if (!mapConfig.layers.includes('weather') || mapCameraGestureActive) return
+    if (!mapLayerEnabled('weather') || mapCameraGestureActive) return
     untrack(() => {
       schedulePackAreaFeatureAnimation()
     })
@@ -593,6 +619,7 @@
     const current = map
     if (!current) return
     mapConfig.layers
+    activePackIds
     applyConfiguredLayerVisibility()
   })
 

@@ -237,6 +237,7 @@ describe('server health', () => {
     const registry = createControlInstanceRegistry({
       dataDir,
       scenarioCatalog: createTestScenarioCatalog(),
+      idleRuntimeCloseDelayMs: 5,
       runtimeAdapters: [
         createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
         createLocalTrafficPackRuntimeAdapter(),
@@ -246,7 +247,6 @@ describe('server health', () => {
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
-      idleRuntimeCloseDelayMs: 5,
       send: (targetClient, message) => {
         targetClient.eventMessages.push(message)
         targetClient.events.push(...message.events)

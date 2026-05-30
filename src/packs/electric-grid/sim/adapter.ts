@@ -17,6 +17,7 @@ import type {
   PackRuntimeEventPersistence,
 } from '../../../simulation/protocol.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import { defaultControlInstanceRuntimePolicy } from '../../../core/control-instances/runtime-persistence-policy.ts'
 import {
   electricGridCommandKinds,
   gridClearDerateCommandKind,
@@ -36,7 +37,21 @@ import { electricGridPackDataSchema, type ElectricGridPackData } from '../model.
 import { solveGrid, type GridRuntimeState } from '../runtime/solver.ts'
 
 const updateIntervalMs = 2_000
-const runtimeStateFlushIntervalMs = 10_000
+const runtimeStateFlushIntervalMs = defaultControlInstanceRuntimePolicy.runtimePrivateStateFlushIntervalMs
+const projectedChangeThresholds = {
+  branchFlowMw: 50,
+  branchLoadingPercent: 5,
+  branchFrequencyHz: 0.05,
+  generatorMw: 1,
+  loadMw: 2,
+  shedMw: 1,
+  loadFrequencyHz: 0.02,
+  substationVoltagePu: 0.002,
+  substationLoadingPercent: 2,
+  storageMw: 1,
+  stateOfChargeFraction: 0.005,
+  marketAreaMw: 10,
+} as const
 
 const targetMwSchema = z.object({ targetMw: z.number().finite().nonnegative() })
 const availabilitySchema = z.object({ availableMw: z.number().finite().nonnegative() })
@@ -95,6 +110,70 @@ const updatedWithPackData = (
   timestamps: { ...object.timestamps, updatedAt: at },
   packData: data,
 })
+
+const changedByAtLeast = (left: number, right: number, threshold: number): boolean =>
+  Math.abs(left - right) >= threshold
+
+const projectedGridChangeIsMeaningful = (
+  previous: ElectricGridPackData,
+  next: ElectricGridPackData,
+): boolean => {
+  if (previous.type !== next.type) return true
+  if (next.type === 'grid_system') return true
+  if (previous.type === 'grid_branch' && next.type === 'grid_branch') {
+    return previous.state !== next.state
+      || changedByAtLeast(previous.flowMw, next.flowMw, projectedChangeThresholds.branchFlowMw)
+      || changedByAtLeast(previous.loadingPercent, next.loadingPercent, projectedChangeThresholds.branchLoadingPercent)
+      || changedByAtLeast(previous.frequencyHz, next.frequencyHz, projectedChangeThresholds.branchFrequencyHz)
+  }
+  if (previous.type === 'grid_generator' && next.type === 'grid_generator') {
+    return previous.state !== next.state
+      || changedByAtLeast(previous.dispatchMw, next.dispatchMw, projectedChangeThresholds.generatorMw)
+      || changedByAtLeast(previous.availableMw, next.availableMw, projectedChangeThresholds.generatorMw)
+      || changedByAtLeast(previous.targetMw, next.targetMw, projectedChangeThresholds.generatorMw)
+  }
+  if (previous.type === 'grid_load' && next.type === 'grid_load') {
+    return previous.serviceState !== next.serviceState
+      || changedByAtLeast(previous.demandMw, next.demandMw, projectedChangeThresholds.loadMw)
+      || changedByAtLeast(previous.servedMw, next.servedMw, projectedChangeThresholds.loadMw)
+      || changedByAtLeast(previous.shedMw, next.shedMw, projectedChangeThresholds.shedMw)
+      || changedByAtLeast(previous.frequencyHz, next.frequencyHz, projectedChangeThresholds.loadFrequencyHz)
+  }
+  if (previous.type === 'grid_substation' && next.type === 'grid_substation') {
+    return previous.state !== next.state
+      || changedByAtLeast(previous.voltagePu, next.voltagePu, projectedChangeThresholds.substationVoltagePu)
+      || changedByAtLeast(previous.loadingPercent, next.loadingPercent, projectedChangeThresholds.substationLoadingPercent)
+      || changedByAtLeast(previous.connectedBranchCount, next.connectedBranchCount, 1)
+  }
+  if (previous.type === 'grid_storage' && next.type === 'grid_storage') {
+    return previous.state !== next.state
+      || changedByAtLeast(previous.dispatchMw, next.dispatchMw, projectedChangeThresholds.storageMw)
+      || changedByAtLeast(
+        previous.stateOfChargeFraction,
+        next.stateOfChargeFraction,
+        projectedChangeThresholds.stateOfChargeFraction,
+      )
+  }
+  if (previous.type === 'grid_market_area' && next.type === 'grid_market_area') {
+    return previous.constrained !== next.constrained
+      || changedByAtLeast(previous.generationMw, next.generationMw, projectedChangeThresholds.marketAreaMw)
+      || changedByAtLeast(previous.loadMw, next.loadMw, projectedChangeThresholds.marketAreaMw)
+      || changedByAtLeast(previous.netExportMw, next.netExportMw, projectedChangeThresholds.marketAreaMw)
+  }
+  return JSON.stringify(previous) !== JSON.stringify(next)
+}
+
+const shouldEmitProjectedObjectUpdate = (
+  previous: OperationalObject | undefined,
+  next: OperationalObject,
+): boolean => {
+  if (!previous) return true
+  if (previous.revision === next.revision) return false
+  const previousData = electricGridPackDataSchema.safeParse(previous.packData)
+  const nextData = electricGridPackDataSchema.safeParse(next.packData)
+  if (!previousData.success || !nextData.success) return true
+  return projectedGridChangeIsMeaningful(previousData.data, nextData.data)
+}
 
 const applyCommandToObject = (
   object: OperationalObject,
@@ -257,7 +336,10 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       for (const next of solved.objects) {
         const previous = objects.get(next.id)
         objects.set(next.id, next)
-        if (!previous || previous.revision !== next.revision) {
+        const shouldEmit = persistence === 'durable'
+          ? (!previous || previous.revision !== next.revision)
+          : shouldEmitProjectedObjectUpdate(previous, next)
+        if (shouldEmit) {
           events.push({ type: 'object.upserted', object: next, at, provenance: next.provenance, persistence })
         }
       }

@@ -9,8 +9,22 @@ import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
 import { canIssueCommand, type Actor } from './actors.ts'
 import { persistenceDispositionFor, type ControlInstanceEventPersistenceDisposition } from './persistence-policy.ts'
 import { createScenarioScriptRunner, dueScenarioScriptSteps, type ScenarioScriptRunner } from './scenario-runner.ts'
+import {
+  createControlInstanceRuntimeMetricsRecorder,
+  type ControlInstanceRuntimeMetricsSnapshot,
+} from './runtime-metrics.ts'
+import { defaultControlInstanceRuntimePolicy } from './runtime-persistence-policy.ts'
 
-const projectedSnapshotFlushIntervalMs = 10_000
+const projectedSnapshotFlushIntervalMs = defaultControlInstanceRuntimePolicy.projectedSnapshotFlushIntervalMs
+
+interface PublishManyOptions {
+  readonly persistence?: ControlInstanceEventPersistenceDisposition
+  readonly persistenceForEvent?: (
+    event: ControlInstanceEvent,
+    previousObject: OperationalObject | undefined,
+    index: number,
+  ) => ControlInstanceEventPersistenceDisposition | undefined
+}
 
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
@@ -30,6 +44,7 @@ export interface ControlInstanceRuntime {
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
+  readonly metrics: () => ControlInstanceRuntimeMetricsSnapshot
   readonly close: () => Promise<void>
 }
 
@@ -61,6 +76,10 @@ export const createControlInstanceRuntime = async (config: {
   readonly capabilities?: Omit<ControlInstanceCapabilities, 'controlInstanceId'>
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
+  const metrics = createControlInstanceRuntimeMetricsRecorder({
+    controlInstanceId: config.id,
+    createdAt: nowIso(),
+  })
   const handlers = new Set<ControlInstanceEventHandler>()
   const durableEvents: ControlInstanceEvent[] = [...(config.restoredEvents ?? [])]
   const restoredEventSeq = durableEvents.reduce((max, event) => Math.max(max, event.seq), 0)
@@ -114,7 +133,14 @@ export const createControlInstanceRuntime = async (config: {
 
   const queueSnapshotSave = async (): Promise<void> => {
     const currentSave = snapshotSaveQueue.then(async () => {
-      await config.snapshotStore.save(snapshotWithCurrentClock())
+      const startedAt = performance.now()
+      try {
+        await config.snapshotStore.save(snapshotWithCurrentClock())
+        metrics.recordSnapshotSave(performance.now() - startedAt, nowIso())
+      } catch (err) {
+        metrics.recordSnapshotSaveFailure()
+        throw err
+      }
     })
     snapshotSaveQueue = currentSave.catch(() => undefined)
     await currentSave
@@ -123,16 +149,19 @@ export const createControlInstanceRuntime = async (config: {
   const saveSnapshotImmediately = async (): Promise<void> => {
     clearProjectedSnapshotTimer()
     projectedSnapshotDirty = false
+    metrics.recordImmediateSnapshotSave()
     await queueSnapshotSave()
   }
 
   const scheduleProjectedSnapshotSave = (): void => {
+    metrics.recordProjectedSnapshotScheduled()
     projectedSnapshotDirty = true
     if (projectedSnapshotTimer !== null) return
     projectedSnapshotTimer = setTimeout(() => {
       projectedSnapshotTimer = null
       if (!projectedSnapshotDirty) return
       projectedSnapshotDirty = false
+      metrics.recordProjectedSnapshotFlushed()
       void queueSnapshotSave().catch(err => {
         console.error('control instance projected snapshot save failed:', err)
       })
@@ -144,6 +173,7 @@ export const createControlInstanceRuntime = async (config: {
     clearProjectedSnapshotTimer()
     if (projectedSnapshotDirty) {
       projectedSnapshotDirty = false
+      metrics.recordProjectedSnapshotFlushed()
       await queueSnapshotSave()
       return
     }
@@ -152,19 +182,29 @@ export const createControlInstanceRuntime = async (config: {
 
   const publishManyNow = async (
     controlInstanceEvents: ReadonlyArray<ControlInstanceEvent>,
-    options?: { readonly persistence?: ControlInstanceEventPersistenceDisposition },
+    options?: PublishManyOptions,
   ): Promise<void> => {
     if (controlInstanceEvents.length === 0) return
     const eventsToPersist: ControlInstanceEvent[] = []
-    for (const event of controlInstanceEvents) {
+    let projectedEventCount = 0
+    for (const [index, event] of controlInstanceEvents.entries()) {
       const previousObject = event.type === 'object.upserted' ? state.getObject(event.object.id) : undefined
       state.apply(event)
-      const persistence = options?.persistence ?? persistenceDispositionFor(event, previousObject)
+      const persistence = options?.persistence
+        ?? options?.persistenceForEvent?.(event, previousObject, index)
+        ?? persistenceDispositionFor(event, previousObject)
       if (persistence === 'durable') {
         durableEvents.push(event)
         eventsToPersist.push(event)
+      } else {
+        projectedEventCount += 1
       }
     }
+    metrics.recordPublishedEvents({
+      eventCount: controlInstanceEvents.length,
+      durableEventCount: eventsToPersist.length,
+      projectedEventCount,
+    })
     await config.eventLog.appendMany(eventsToPersist)
     if (eventsToPersist.length > 0) {
       await saveSnapshotImmediately()
@@ -484,18 +524,31 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const publishPackRuntimeEmission = async (emission: PackRuntimeEmission): Promise<void> => {
+    metrics.recordPackEmission(emission.runtimeId, emission.events.length, emission.emittedAt)
     await enqueuePublish(async () => {
+      const pendingEvents: ControlInstanceEvent[] = []
+      const pendingPersistences: ControlInstanceEventPersistenceDisposition[] = []
+
+      const flushPendingEvents = async (): Promise<void> => {
+        if (pendingEvents.length === 0) return
+        const events = pendingEvents.splice(0, pendingEvents.length)
+        const persistences = pendingPersistences.splice(0, pendingPersistences.length)
+        await publishManyNow(events, {
+          persistenceForEvent: (_event, _previousObject, index) => persistences[index],
+        })
+      }
+
       for (const event of emission.events) {
         if (event.type === 'interaction.signal') {
+          await flushPendingEvents()
           await handleInteractionSignalNow(event.signal, event.provenance)
         } else {
           const persistence = persistenceForPackRuntimeEvent(event)
-          await publishManyNow(
-            [controlInstanceEventFromPackRuntimeEvent(event)],
-            persistence === undefined ? {} : { persistence },
-          )
+          pendingEvents.push(controlInstanceEventFromPackRuntimeEvent(event))
+          pendingPersistences.push(persistence ?? 'projected')
         }
       }
+      await flushPendingEvents()
     })
   }
 
@@ -730,12 +783,14 @@ export const createControlInstanceRuntime = async (config: {
         await handleInteractionSignalNow(signal, provenance)
       })
     },
+    metrics: () => metrics.snapshot(),
     close: async (): Promise<void> => {
       scenarioRunner?.close()
       unsubscribeRuntime()
       await config.runtimeConnection.close()
       await publishQueue
       await flushProjectedSnapshot()
+      metrics.markClosed(nowIso())
       handlers.clear()
     },
   }

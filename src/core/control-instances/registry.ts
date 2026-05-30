@@ -15,10 +15,20 @@ import { createJsonlEventLog } from './event-log.ts'
 import { createJsonRuntimeStateStore } from './runtime-state-store.ts'
 import { createControlInstanceRuntime, type ControlInstanceRuntime } from './runtime.ts'
 import type { ControlInstanceCapabilities } from './runtime.ts'
+import type { ControlInstanceRuntimeMetricsSnapshot } from './runtime-metrics.ts'
+import { defaultControlInstanceRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
 import type { ControlInstanceEvent } from '../model/index.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
+
+export type ControlInstanceLeaseKind = 'realtime' | 'api' | 'background'
+
+export interface ControlInstanceLeaseSummary {
+  readonly controlInstanceId: ControlInstanceId
+  readonly leaseCount: number
+  readonly leasesByKind: Readonly<Record<ControlInstanceLeaseKind, number>>
+}
 
 export interface ControlInstanceSummary {
   readonly id: ControlInstanceId
@@ -38,6 +48,8 @@ export interface ControlInstanceRegistryStatus {
     readonly directoryCount: number
   }
   readonly controlInstances: ReadonlyArray<ControlInstanceSummary>
+  readonly loadedRuntimeMetrics: ReadonlyArray<ControlInstanceRuntimeMetricsSnapshot>
+  readonly leases: ReadonlyArray<ControlInstanceLeaseSummary>
 }
 
 export interface ControlInstanceRegistry {
@@ -49,6 +61,7 @@ export interface ControlInstanceRegistry {
   readonly list: () => ReadonlyArray<ControlInstanceRuntime>
   readonly listKnown: () => Promise<ReadonlyArray<ControlInstanceSummary>>
   readonly status: () => Promise<ControlInstanceRegistryStatus>
+  readonly acquireLease: (id: ControlInstanceId, kind: ControlInstanceLeaseKind) => () => void
   readonly scenarios: () => ReadonlyArray<ScenarioDefinition>
   readonly scenario: (id: string) => ScenarioDefinition | undefined
   readonly defaultScenarioId: () => string
@@ -60,10 +73,78 @@ export const createControlInstanceRegistry = (config: {
   readonly runtimeAdapters: ReadonlyArray<PackRuntimeAdapter>
   readonly scenarioCatalog: ScenarioCatalog
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
+  readonly idleRuntimeCloseDelayMs?: number
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
   const creatingControlInstances = new Map<ControlInstanceId, Promise<ControlInstanceRuntime>>()
+  const leasesByControlInstance = new Map<ControlInstanceId, Map<string, ControlInstanceLeaseKind>>()
+  const idleRuntimeCloseTimers = new Map<ControlInstanceId, ReturnType<typeof setTimeout>>()
+  const idleRuntimeCloseDelayMs = config.idleRuntimeCloseDelayMs ?? defaultControlInstanceRuntimePolicy.idleRuntimeCloseDelayMs
+  let nextLeaseNumber = 0
   const controlInstanceRoot = join(config.dataDir, 'control-instances')
+
+  const clearIdleRuntimeCloseTimer = (id: ControlInstanceId): void => {
+    const timer = idleRuntimeCloseTimers.get(id)
+    if (!timer) return
+    clearTimeout(timer)
+    idleRuntimeCloseTimers.delete(id)
+  }
+
+  const leaseCountFor = (id: ControlInstanceId): number =>
+    leasesByControlInstance.get(id)?.size ?? 0
+
+  const scheduleIdleRuntimeCloseIfUnleased = (id: ControlInstanceId): void => {
+    clearIdleRuntimeCloseTimer(id)
+    if (idleRuntimeCloseDelayMs < 0) return
+    if (!controlInstances.has(id)) return
+    if (creatingControlInstances.has(id)) return
+    if (leaseCountFor(id) > 0) return
+    const timer = setTimeout(() => {
+      idleRuntimeCloseTimers.delete(id)
+      if (leaseCountFor(id) > 0) return
+      if (!controlInstances.has(id)) return
+      void close(id).catch(err => {
+        console.error(`idle control instance close failed for ${id}:`, err)
+      })
+    }, idleRuntimeCloseDelayMs)
+    timer.unref?.()
+    idleRuntimeCloseTimers.set(id, timer)
+  }
+
+  const leaseSummaries = (): ReadonlyArray<ControlInstanceLeaseSummary> =>
+    [...leasesByControlInstance.entries()]
+      .map(([controlInstanceId, leases]) => {
+        const leasesByKind: Record<ControlInstanceLeaseKind, number> = {
+          realtime: 0,
+          api: 0,
+          background: 0,
+        }
+        for (const kind of leases.values()) leasesByKind[kind] += 1
+        return {
+          controlInstanceId,
+          leaseCount: leases.size,
+          leasesByKind,
+        }
+      })
+      .sort((left, right) => left.controlInstanceId.localeCompare(right.controlInstanceId))
+
+  const acquireLease = (id: ControlInstanceId, kind: ControlInstanceLeaseKind): (() => void) => {
+    clearIdleRuntimeCloseTimer(id)
+    const leaseId = `${kind}:${++nextLeaseNumber}`
+    const leases = leasesByControlInstance.get(id) ?? new Map<string, ControlInstanceLeaseKind>()
+    leases.set(leaseId, kind)
+    leasesByControlInstance.set(id, leases)
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const current = leasesByControlInstance.get(id)
+      if (!current) return
+      current.delete(leaseId)
+      if (current.size === 0) leasesByControlInstance.delete(id)
+      scheduleIdleRuntimeCloseIfUnleased(id)
+    }
+  }
 
   const capabilitiesFor = (scenarioRuntime: ReturnType<ScenarioCatalog['runtimeFor']>): Omit<ControlInstanceCapabilities, 'controlInstanceId'> => {
     if (!scenarioRuntime) {
@@ -232,6 +313,7 @@ export const createControlInstanceRegistry = (config: {
       capabilities: capabilitiesFor(scenarioRuntime),
     })
     controlInstances.set(id, runtime)
+    scheduleIdleRuntimeCloseIfUnleased(id)
     return runtime
   }
 
@@ -279,6 +361,8 @@ export const createControlInstanceRegistry = (config: {
   const close = async (id: ControlInstanceId): Promise<boolean> => {
     const runtime = controlInstances.get(id)
     if (!runtime) return false
+    clearIdleRuntimeCloseTimer(id)
+    leasesByControlInstance.delete(id)
     await runtime.close()
     controlInstances.delete(id)
     return true
@@ -404,6 +488,8 @@ export const createControlInstanceRegistry = (config: {
     dataDir: config.dataDir,
     storage: await measureDirectory(config.dataDir),
     controlInstances: await listKnown(),
+    loadedRuntimeMetrics: [...controlInstances.values()].map(runtime => runtime.metrics()),
+    leases: leaseSummaries(),
   })
 
   return {
@@ -415,6 +501,7 @@ export const createControlInstanceRegistry = (config: {
     list: () => [...controlInstances.values()],
     listKnown,
     status,
+    acquireLease,
     scenarios: () => config.scenarioCatalog.listScenarios(),
     scenario: (id: string) => config.scenarioCatalog.getScenario(id),
     defaultScenarioId: () => config.scenarioCatalog.defaultScenarioId(),

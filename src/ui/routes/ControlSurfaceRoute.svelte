@@ -945,6 +945,7 @@
           onMapReady={handleMapReady}
           onMapError={handleMapError}
           {controlInstanceId}
+          activePackIds={scenarioDefinition?.packs ?? []}
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
           referenceDatasetIds={activeReferenceDatasetIds}

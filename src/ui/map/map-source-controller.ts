@@ -24,6 +24,8 @@ export interface MapSourceDirty {
   readonly weather?: boolean
 }
 
+export type MapSourceLayer = 'objects' | 'routes' | 'traffic' | 'grid' | 'weather'
+
 export interface MapSourceController {
   readonly refreshAll: () => void
   readonly refreshObjects: (sourceObjects?: ReadonlyArray<OperationalObject>) => void
@@ -48,6 +50,7 @@ interface MapSourceControllerConfig {
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
   readonly getPackMapAreaFeatures: () => ReadonlyArray<PackMapAreaFeature>
+  readonly isLayerEnabled: (layer: MapSourceLayer) => boolean
   readonly updateMarkerPopup: (sourceObjects: ReadonlyArray<OperationalObject>) => void
 }
 
@@ -76,6 +79,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   const refreshObjects = (
     sourceObjects: ReadonlyArray<OperationalObject> = config.getObjects(),
   ): void => {
+    if (!config.isLayerEnabled('objects')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const source = getGeoJsonSource(current, mapSourceIds.objects)
@@ -91,6 +95,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   }
 
   const refreshRoutes = (): void => {
+    if (!config.isLayerEnabled('routes')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const source = getGeoJsonSource(current, mapSourceIds.plannedRoutes)
@@ -103,6 +108,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   }
 
   const refreshTraffic = (): void => {
+    if (!config.isLayerEnabled('traffic')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const lineSource = getGeoJsonSource(current, mapSourceIds.trafficLines)
@@ -116,6 +122,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   }
 
   const refreshGrid = (): void => {
+    if (!config.isLayerEnabled('grid')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const lineSource = getGeoJsonSource(current, mapSourceIds.gridLines)
@@ -125,6 +132,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   }
 
   const refreshWeatherInfluences = (): void => {
+    if (!config.isLayerEnabled('weather')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const influenceSource = getGeoJsonSource(current, mapSourceIds.weatherInfluences)
@@ -139,6 +147,7 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   }
 
   const refreshWeather = (): void => {
+    if (!config.isLayerEnabled('weather')) return
     const current = currentMapForSourceUpdate()
     if (!current) return
     const lineSource = getGeoJsonSource(current, mapSourceIds.weatherLines)
@@ -185,9 +194,9 @@ export const createMapSourceController = (config: MapSourceControllerConfig): Ma
   const schedule = (dirty: MapSourceDirty): void => {
     objectSourceDirty = objectSourceDirty || dirty.objects === true
     routeSourceDirty = routeSourceDirty || dirty.routes === true
-    trafficSourceDirty = trafficSourceDirty || dirty.traffic === true
-    gridSourceDirty = gridSourceDirty || dirty.grid === true || dirty.objects === true
-    weatherSourceDirty = weatherSourceDirty || dirty.weather === true
+    trafficSourceDirty = trafficSourceDirty || (dirty.traffic === true && config.isLayerEnabled('traffic'))
+    gridSourceDirty = gridSourceDirty || (dirty.grid === true && config.isLayerEnabled('grid'))
+    weatherSourceDirty = weatherSourceDirty || (dirty.weather === true && config.isLayerEnabled('weather'))
     if (refreshFrame !== null) return
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = null

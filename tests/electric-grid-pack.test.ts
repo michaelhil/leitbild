@@ -263,4 +263,37 @@ describe('electric grid pack', () => {
       await connection.close()
     }
   })
+
+  test('coalesces steady-state projected emissions after the initial catch-up', async () => {
+    const scenario = gridScenario()
+    const gridObjectCount = scenario.initialObjects.filter(object => object.packId === 'electric-grid').length
+    const connection = await createLocalElectricGridPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: {
+        scenarioId: scenario.id,
+        runtimeIds: [electricGridRuntimeId],
+        world: scenario.world,
+        initialObjects: scenario.initialObjects,
+        runtimeConfigs: {},
+        runtimeConfig: {},
+      },
+    })
+
+    try {
+      const emitted: number[] = []
+      const unsubscribe = connection.subscribe(emission => {
+        emitted.push(emission.events.length)
+      })
+      await Bun.sleep(4_500)
+      unsubscribe()
+
+      expect(emitted.length).toBeGreaterThanOrEqual(2)
+      expect(emitted[0]).toBeLessThan(gridObjectCount)
+      const lastEmissionCount = emitted.at(-1)
+      if (lastEmissionCount === undefined) throw new Error('missing projected grid emission')
+      expect(lastEmissionCount).toBeLessThan(40)
+    } finally {
+      await connection.close()
+    }
+  })
 })

@@ -110,6 +110,11 @@ const styleFor = (category: string): GridCategoryStyle => styles[category] ?? st
 
 export const gridNorwayStyleModule: DatasetStyleModule = {
   outputLayer: 'grid',
+  labelMinZoomFor: (category, categoryMinZoom) => {
+    if (category === 'line' || category === 'cable') return Math.max(categoryMinZoom, 7)
+    if (category === 'substation' || category === 'plant') return Math.max(categoryMinZoom, 8)
+    return Math.max(categoryMinZoom, 9)
+  },
   fillFor: (category) => {
     const style = styleFor(category)
     return {

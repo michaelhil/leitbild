@@ -142,7 +142,6 @@
           "zoom": 5,
           "layers": [
             "objects",
-            "traffic",
             "weather",
             "grid",
             "highlights"

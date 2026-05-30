@@ -14,6 +14,7 @@ export interface DatasetStyleModule {
     readonly layout: Record<string, unknown>
     readonly paint: Record<string, unknown>
   } | null
+  readonly labelMinZoomFor?: (category: string, categoryMinZoom: number) => number
 }
 
 export interface DatasetManifestForLayers {
@@ -135,7 +136,7 @@ export const buildReferenceDatasetLayers = (
         type: 'symbol',
         source: sourceId,
         'source-layer': manifest.artifact.outputLayer,
-        minzoom: cat.minZoom,
+        minzoom: style.labelMinZoomFor?.(cat.category, cat.minZoom) ?? cat.minZoom,
         maxzoom: cat.maxZoom,
         filter: categoryFilter(cat.category),
         layout: { ...layout, ...labelSpec.layout },
