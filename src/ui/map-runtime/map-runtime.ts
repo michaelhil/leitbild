@@ -1,11 +1,14 @@
 import {
+  getWorkerUrl,
   Map as MapLibre,
   NavigationControl,
+  setWorkerUrl,
   type IControl,
   type Map as MapLibreMap,
   type MapOptions,
 } from 'maplibre-gl'
 import { MapboxOverlay } from '@deck.gl/mapbox'
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { GeoJsonPoint } from '../../core/model/index.ts'
 import { geoPointFromLonLat } from '../../core/model/index.ts'
 import { assertCameraInteractionContract } from '../map/map-camera.ts'
@@ -67,6 +70,13 @@ const mapLibreErrorDetails = (event: unknown): MapLibreErrorDetails => {
 
 const isReferenceDatasetError = (details: MapLibreErrorDetails): boolean =>
   details.sourceId?.startsWith('reference:') === true || details.message.includes('/map/datasets/')
+
+const configureMapLibreWorker = (): string => {
+  if (getWorkerUrl() !== maplibreWorkerUrl) {
+    setWorkerUrl(maplibreWorkerUrl)
+  }
+  return maplibreWorkerUrl
+}
 
 const containerDetails = (element: HTMLElement): ReadonlyArray<MapRuntimeDiagnosticDetail> => {
   const rect = element.getBoundingClientRect()
@@ -134,8 +144,12 @@ const waitForBase = async (
 export const createMapRuntime = async (
   config: CreateMapRuntimeConfig,
 ): Promise<MapRuntimeHandle> => {
+  const workerUrl = configureMapLibreWorker()
   const diagnostics = createMapDiagnostics()
-  diagnostics.start('base', 'Creating vector map', containerDetails(config.element))
+  diagnostics.start('base', 'Creating vector map', [
+    ...containerDetails(config.element),
+    { label: 'Worker', value: workerUrl },
+  ])
 
   const cleanups: Cleanup[] = []
   let destroyed = false
@@ -171,7 +185,7 @@ export const createMapRuntime = async (
     'base',
     'MapLibre constructor',
     () => new MapLibre(mapOptions),
-    { styleUrl: config.styleUrl },
+    { styleUrl: config.styleUrl, workerUrl },
   )
   assertCameraInteractionContract(current)
 

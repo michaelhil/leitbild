@@ -52,5 +52,7 @@ describe('Svelte lifecycle policy', () => {
     expect(mapRuntime).toContain('new MapLibre')
     expect(mapRuntime).toContain('ResizeObserver')
     expect(mapRuntime).not.toContain('PmtilesProtocol')
+    expect(mapRuntime).toContain('maplibre-gl/dist/maplibre-gl-worker.mjs?url')
+    expect(mapRuntime).toContain('setWorkerUrl')
   })
 })
