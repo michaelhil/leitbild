@@ -1,10 +1,14 @@
-import { lstat, readlink, stat } from 'node:fs/promises'
+import { lstat, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
-import { createBaseTileset, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
+import { createBaseTileset, findReferenceTilesets, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
 export interface MapArtifactConfig {
   readonly rootDir: string
+}
+
+export interface ReferenceDatasetArtifactConfig {
+  readonly referenceRoot: string
 }
 
 export interface MapArtifactFileStatus {
@@ -38,6 +42,9 @@ const glyphContentType = 'application/x-protobuf'
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
 const mapFontPathPrefix = '/map/fonts/'
+const mapDatasetPathPrefix = '/map/datasets/'
+const datasetIdPattern = /^[a-z0-9][a-z0-9-]*$/
+const pmtilesFilePattern = /^[a-z0-9][a-z0-9-]*\.pmtiles$/
 
 export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
   rootDir: resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps'),
@@ -146,15 +153,18 @@ const parseRange = (rangeHeader: string | null, size: number): { readonly start:
   return { start, end: Math.min(end, size - 1) }
 }
 
-export const currentPmtilesResponse = async (req: Request, config: MapArtifactConfig): Promise<Response> => {
-  const filePath = currentPmtilesPath(config)
+const pmtilesFileResponse = async (
+  req: Request,
+  filePath: string,
+  missing: { readonly error: string; readonly status: number },
+): Promise<Response> => {
   const file = Bun.file(filePath)
   if (!await file.exists()) {
     return Response.json({
       ok: false,
-      error: 'vector map artifact unavailable',
+      error: missing.error,
       expectedPath: filePath,
-    }, { status: 503 })
+    }, { status: missing.status })
   }
 
   const info = await stat(filePath)
@@ -172,6 +182,54 @@ export const currentPmtilesResponse = async (req: Request, config: MapArtifactCo
   headers.set('Content-Range', `bytes ${range.start}-${range.end}/${info.size}`)
   headers.set('Content-Length', String(range.end - range.start + 1))
   return new Response(file.slice(range.start, range.end + 1), { status: 206, headers })
+}
+
+export const currentPmtilesResponse = async (req: Request, config: MapArtifactConfig): Promise<Response> =>
+  pmtilesFileResponse(req, currentPmtilesPath(config), {
+    error: 'vector map artifact unavailable',
+    status: 503,
+  })
+
+export const referenceDatasetPmtilesResponse = async (
+  req: Request,
+  url: URL,
+  config: ReferenceDatasetArtifactConfig = { referenceRoot: referenceRootFromEnv() },
+): Promise<Response | null> => {
+  if (!url.pathname.startsWith(mapDatasetPathPrefix)) return null
+
+  const encodedPath = url.pathname.slice(mapDatasetPathPrefix.length)
+  const parts = encodedPath.split('/').map(part => decodeURIComponent(part))
+  if (parts.length !== 3 || parts[1] !== 'current') {
+    return Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 })
+  }
+
+  const [datasetId, , fileName] = parts
+  if (!datasetId || !fileName || !datasetIdPattern.test(datasetId) || !pmtilesFilePattern.test(fileName)) {
+    return Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 })
+  }
+
+  const manifest = await loadMapCapabilityManifest({ referenceRoot: config.referenceRoot })
+  const tileset = findReferenceTilesets(manifest).find(candidate => candidate.datasetId === datasetId)
+  if (!tileset || tileset.artifact.pmtilesPath !== fileName) {
+    return Response.json({ ok: false, error: 'reference dataset not found' }, { status: 404 })
+  }
+
+  const referenceRootRealPath = await realpath(config.referenceRoot)
+  const currentDir = resolve(config.referenceRoot, 'releases', datasetId, 'current')
+  const currentDirRealPath = await realpath(currentDir)
+  if (!isWithin(referenceRootRealPath, currentDirRealPath)) {
+    return Response.json({ ok: false, error: 'invalid reference dataset release path' }, { status: 503 })
+  }
+
+  const filePath = resolve(currentDirRealPath, fileName)
+  if (!isWithin(currentDirRealPath, filePath)) {
+    return Response.json({ ok: false, error: 'invalid reference dataset path' }, { status: 400 })
+  }
+
+  return pmtilesFileResponse(req, filePath, {
+    error: 'reference dataset artifact unavailable',
+    status: 503,
+  })
 }
 
 export const mapGlyphResponse = async (url: URL, config: MapArtifactConfig): Promise<Response | null> => {

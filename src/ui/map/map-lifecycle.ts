@@ -29,6 +29,33 @@ export interface MapLifecycle {
 
 let pmtilesProtocolRefCount = 0
 
+interface MapLibreErrorDetails {
+  readonly message: string
+  readonly sourceId: string | null
+}
+
+const stringFromUnknown = (value: unknown): string | null =>
+  typeof value === 'string' && value.length > 0 ? value : null
+
+const mapLibreErrorDetails = (event: unknown): MapLibreErrorDetails => {
+  const candidate = event as {
+    readonly error?: unknown
+    readonly sourceId?: unknown
+    readonly source?: { readonly id?: unknown }
+  }
+  const error = candidate.error
+  const message = error instanceof Error
+    ? error.message
+    : stringFromUnknown(error) ?? 'Vector map failed to load'
+  return {
+    message,
+    sourceId: stringFromUnknown(candidate.sourceId) ?? stringFromUnknown(candidate.source?.id),
+  }
+}
+
+const isReferenceDatasetMapError = (details: MapLibreErrorDetails): boolean =>
+  details.sourceId?.startsWith('reference:') === true || details.message.includes('/map/datasets/')
+
 const installPmtilesProtocol = (): Cleanup => {
   const protocol = new PmtilesProtocol({ metadata: true })
   if (pmtilesProtocolRefCount === 0) {
@@ -103,6 +130,7 @@ const installMapContainerResizeObserver = (
 
 export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => {
   const cleanups: Array<Cleanup> = [installPmtilesProtocol()]
+  const warnedReferenceErrors = new Set<string>()
   const mapOptions: maplibregl.MapOptions & { readonly preserveDrawingBuffer?: boolean } = {
     container: config.element,
     style: config.styleUrl,
@@ -123,8 +151,16 @@ export const createMapLifecycle = (config: MapLifecycleConfig): MapLifecycle => 
   cleanups.push(installMapContainerResizeObserver(config, current))
 
   current.on('error', (event) => {
-    const candidate = event as { readonly error?: unknown }
-    config.onError(candidate.error instanceof Error ? candidate.error.message : 'Vector map failed to load')
+    const details = mapLibreErrorDetails(event)
+    if (isReferenceDatasetMapError(details)) {
+      const key = `${details.sourceId ?? 'reference'}:${details.message}`
+      if (!warnedReferenceErrors.has(key)) {
+        warnedReferenceErrors.add(key)
+        console.warn(`Reference map overlay failed to load: ${details.message}`)
+      }
+      return
+    }
+    config.onError(details.message)
   })
   current.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right')
   current.on('click', (event) => {
