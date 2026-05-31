@@ -1,13 +1,15 @@
 <script lang="ts">
+  import { X } from 'lucide-svelte'
   import type { OperationalObject } from '../../core/model/index.ts'
   import { parseElectricGridObjectData } from '../../packs/electric-grid/model.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
 
   interface Props {
     readonly objects: ReadonlyArray<OperationalObject>
+    readonly onClose: () => void
   }
 
-  const { objects }: Props = $props()
+  const { objects, onClose }: Props = $props()
 
   interface PanelFrame {
     readonly left: number
@@ -222,22 +224,37 @@
     onpointerup={stopGesture}
     onpointercancel={stopGesture}
   >
-    <header
-      class="overview-titlebar"
-      role="button"
-      tabindex="0"
-      aria-label="Move grid overview panel"
-      onpointerdown={(event) => startGesture(event, 'move')}
-      onkeydown={moveFrameByKeyboard}
-    >
-      <div>
-        <p class="eyebrow">Electric grid</p>
-        <h2>Norway operating overview</h2>
+    <header class="overview-titlebar">
+      <div
+        class="overview-drag-handle"
+        role="button"
+        tabindex="0"
+        aria-label="Move grid overview panel"
+        onpointerdown={(event) => startGesture(event, 'move')}
+        onkeydown={moveFrameByKeyboard}
+      >
+        <div>
+          <p class="eyebrow">Electric grid</p>
+          <h2>Norway operating overview</h2>
+        </div>
+        <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
+          <span>{system.frequencyHz.toFixed(3)}</span>
+          <small>Hz</small>
+        </div>
       </div>
-      <div class="frequency" class:alert={frequencyClass === 'alert'} class:watch={frequencyClass === 'watch'}>
-        <span>{system.frequencyHz.toFixed(3)}</span>
-        <small>Hz</small>
-      </div>
+      <button
+        class="close-button"
+        type="button"
+        aria-label="Close grid overview panel"
+        title="Close grid overview panel"
+        onpointerdown={(event) => event.stopPropagation()}
+        onclick={(event) => {
+          event.stopPropagation()
+          onClose()
+        }}
+      >
+        <X size={17} strokeWidth={1.9} />
+      </button>
     </header>
 
     <div class="metric-grid">
@@ -326,15 +343,55 @@
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 18px;
+    gap: 8px;
     margin-bottom: 14px;
+  }
+
+  .overview-drag-handle {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
     cursor: grab;
     touch-action: none;
     user-select: none;
   }
 
-  .overview-titlebar:active {
+  .overview-drag-handle:active {
     cursor: grabbing;
+  }
+
+  .close-button {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    color: #64748b;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .close-button:hover,
+  .close-button:focus-visible {
+    color: #0f172a;
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(148, 163, 184, 0.28);
+    outline: none;
+  }
+
+  :global(.dark) .close-button {
+    color: #94a3b8;
+  }
+
+  :global(.dark) .close-button:hover,
+  :global(.dark) .close-button:focus-visible {
+    color: #f8fafc;
+    background: rgba(148, 163, 184, 0.16);
   }
 
   .eyebrow {

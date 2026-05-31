@@ -78,6 +78,7 @@
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
+  const gridOverviewCategoryId = 'grid-system'
   const emptyStringArray: ReadonlyArray<string> = []
   const emptyMapLayerGroups: NonNullable<LeitbildPack['mapLayerGroups']> = []
   const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['mapAreaFeatureLayers']> = []
@@ -154,12 +155,15 @@
   const railVisible = $derived(railConfig !== null)
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
-  const gridOverviewVisible = $derived(scenarioDefinition?.packs.includes('electric-grid') === true)
+  let categoryMapVisibility = $state<Record<string, boolean>>({})
+  const gridOverviewAvailable = $derived(scenarioDefinition?.packs.includes('electric-grid') === true)
+  const gridOverviewVisible = $derived(
+    gridOverviewAvailable && (categoryMapVisibility[gridOverviewCategoryId] ?? true),
+  )
   const richOperationalUiReady = $derived(!mapVisible || mapReady)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
-  let categoryMapVisibility = $state<Record<string, boolean>>({})
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -195,11 +199,20 @@
     weatherLayerVisible = !weatherLayerVisible
   }
 
-  const toggleCategoryMapVisibility = (categoryId: string): void => {
+  const setCategoryMapVisibility = (categoryId: string, visible: boolean): void => {
+    if ((categoryMapVisibility[categoryId] ?? true) === visible) return
     categoryMapVisibility = {
       ...categoryMapVisibility,
-      [categoryId]: !(categoryMapVisibility[categoryId] ?? true),
+      [categoryId]: visible,
     }
+  }
+
+  const toggleCategoryMapVisibility = (categoryId: string): void => {
+    setCategoryMapVisibility(categoryId, !(categoryMapVisibility[categoryId] ?? true))
+  }
+
+  const closeGridOverviewPanel = (): void => {
+    setCategoryMapVisibility(gridOverviewCategoryId, false)
   }
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
@@ -1168,7 +1181,7 @@
         <div class="surface-empty"></div>
       {/if}
       {#if gridOverviewVisible && richOperationalUiReady && GridOverviewPanel}
-        <GridOverviewPanel {objects} />
+        <GridOverviewPanel {objects} onClose={closeGridOverviewPanel} />
       {/if}
     </main>
 
