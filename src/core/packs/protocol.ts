@@ -38,6 +38,7 @@ export interface PackObjectPresentation {
   readonly status?: PackObjectStatusPresentation
   readonly muted?: boolean
   readonly mapIconVisible?: boolean
+  readonly mapIconSizePx?: number
   readonly noteworthyUpdates?: boolean
 }
 

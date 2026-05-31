@@ -49,11 +49,24 @@ const colorFor = (data: ElectricGridPackData): string => {
   return '#0f766e'
 }
 
-const iconFor = (data: ElectricGridPackData): 'grid' | 'plant' | 'hospital' | 'traffic' => {
-  if (data.type === 'grid_generator') return 'plant'
+const iconFor = (data: ElectricGridPackData): string => {
+  if (data.type === 'grid_generator') return 'generator'
+  if (data.type === 'grid_substation') return 'substation'
+  if (data.type === 'grid_storage') return 'storage'
   if (data.type === 'grid_load' && data.loadKind === 'hospital') return 'hospital'
   if (data.type === 'grid_load' && data.loadKind === 'ev_charging') return 'traffic'
+  if (data.type === 'grid_load') return 'load'
   return 'grid'
+}
+
+const mapIconSizeFor = (data: ElectricGridPackData): number | undefined => {
+  if (data.type === 'grid_substation') return data.nominalKv >= 300 ? 11 : 9
+  if (data.type === 'grid_generator') return Math.min(20, Math.max(14, 13 + Math.log10(Math.max(10, data.capacityMw)) * 2.2))
+  if (data.type === 'grid_storage') return 17
+  if (data.type === 'grid_load' && data.loadKind === 'hospital') return 18
+  if (data.type === 'grid_load' && data.loadKind === 'ev_charging') return 16
+  if (data.type === 'grid_load') return 15
+  return undefined
 }
 
 const fieldsFor = (data: ElectricGridPackData): ReadonlyArray<PackObjectField> => {
@@ -215,6 +228,7 @@ export const electricGridPack: LeitbildPack = {
       }
     }
     const tone = toneFor(data)
+    const mapIconSizePx = mapIconSizeFor(data)
     return {
       categoryId: data.assetKind === 'system'
         ? 'grid-system'
@@ -231,6 +245,7 @@ export const electricGridPack: LeitbildPack = {
       status: packStatus(tone, summaryFor(data)),
       fields: fieldsFor(data),
       mapIconVisible: data.assetKind !== 'system' && data.assetKind !== 'branch' && data.assetKind !== 'market_area',
+      ...(mapIconSizePx === undefined ? {} : { mapIconSizePx }),
       noteworthyUpdates: data.assetKind === 'system' || tone !== 'ready',
     }
   },

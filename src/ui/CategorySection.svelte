@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronDown, ChevronRight, Plus } from 'lucide-svelte'
+  import { ChevronDown, ChevronRight, Eye, EyeOff, Plus } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -17,9 +17,11 @@
     readonly fieldOptions: ReadonlyArray<FieldVisibilityOption>
     readonly presentedRows: ReadonlyArray<PresentedObjectRow>
     readonly selectedControllerId: string | null
+    readonly categoryMapVisible: boolean
     readonly isFieldVisible: (categoryId: string, field: string) => boolean
     readonly toggleField: (categoryId: string, field: string) => void
     readonly toggleFieldMenu: (categoryId: string) => void
+    readonly toggleCategoryMapVisibility: (categoryId: string) => void
     readonly toggleCategory: (categoryId: string) => void
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly markSeen: (object: OperationalObject) => void
@@ -36,9 +38,11 @@
     fieldOptions,
     presentedRows,
     selectedControllerId,
+    categoryMapVisible,
     isFieldVisible,
     toggleField,
     toggleFieldMenu,
+    toggleCategoryMapVisibility,
     toggleCategory,
     beginPlacement,
     markSeen,
@@ -56,6 +60,15 @@
       {/if}
       <h2>{row.category.label} <span>({row.objects.length})</span></h2>
       <span class="category-actions">
+        <IconButton
+          label="{categoryMapVisible ? 'Hide' : 'Show'} {row.category.label.toLowerCase()} on map"
+          title="{categoryMapVisible ? 'Hide' : 'Show'} {row.category.label.toLowerCase()} on map"
+          icon={categoryMapVisible ? Eye : EyeOff}
+          pressed={categoryMapVisible}
+          size={14}
+          variant="bare"
+          onClick={() => toggleCategoryMapVisibility(row.category.id)}
+        />
         <FieldVisibilityMenu
           categoryLabel={row.category.label}
           open={fieldMenuOpen}

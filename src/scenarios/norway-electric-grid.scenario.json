@@ -4,7 +4,8 @@
   "title": "Norway electric-grid operations",
   "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology for the operational grid arena, with hydro generation, consumer zones, frequency/voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
   "packs": [
-    "electric-grid"
+    "electric-grid",
+    "weather"
   ],
   "runtimeOverrides": {},
   "world": {
@@ -22,18 +23,129 @@
     {
       "pack": "electric-grid",
       "type": "regional_grid",
-      "id": "grid:source-derived-oslofjord-arena",
-      "label": "Source-derived Oslofjord grid arena",
+      "id": "grid:source-derived-norway-arena",
+      "label": "Source-derived Norway grid arena",
       "position": [
-        10.75,
-        59.9
+        15.5,
+        64.7
       ],
-      "arenaId": "source-derived-oslofjord-grid",
+      "arenaId": "source-derived-norway-grid",
       "provenance": {
         "method": "converted",
-        "sourceId": "source-derived-oslofjord-grid-arena-v1",
+        "sourceId": "source-derived-norway-grid-arena-v1",
         "confidence": "medium"
       }
+    },
+    {
+      "pack": "weather",
+      "type": "weather_condition",
+      "id": "weather:grid-atlantic-front",
+      "label": "Atlantic rain front",
+      "truthResolution": 5,
+      "showAffectedCells": true,
+      "showInfluenceShape": true,
+      "showIcon": true,
+      "priority": 4,
+      "summary": "A broad Atlantic rain front crossing the western transmission corridors.",
+      "atmosphere": {
+        "airTemperatureC": 5,
+        "humidity": 0.92,
+        "windSpeedMps": 13,
+        "windDirectionDeg": 235,
+        "visibilityM": 5500,
+        "cloudCover": 0.94,
+        "precipitation": { "type": "rain", "intensityMmPerHour": 2.1 }
+      },
+      "surface": {
+        "groundTemperatureC": 4,
+        "wetness": 0.62,
+        "standingWater": 0.12,
+        "snow": 0,
+        "ice": 0,
+        "frost": 0
+      },
+      "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.68, "y": 0.76 }, { "x": 1, "y": 0 }],
+      "keyframes": [
+        {
+          "atSeconds": 0,
+          "center": [6.2, 62.7],
+          "semiMajorAxisM": 760000,
+          "semiMinorAxisM": 145000,
+          "rotationDeg": 32
+        },
+        {
+          "atSeconds": 900,
+          "center": [8.4, 64.2],
+          "semiMajorAxisM": 790000,
+          "semiMinorAxisM": 160000,
+          "rotationDeg": 36,
+          "atmosphere": {
+            "windSpeedMps": 16,
+            "visibilityM": 4200,
+            "precipitation": { "type": "rain", "intensityMmPerHour": 3.0 }
+          },
+          "surface": {
+            "wetness": 0.74,
+            "standingWater": 0.18
+          }
+        }
+      ]
+    },
+    {
+      "pack": "weather",
+      "type": "weather_condition",
+      "id": "weather:grid-arctic-front",
+      "label": "Arctic snow front",
+      "truthResolution": 5,
+      "showAffectedCells": true,
+      "showInfluenceShape": true,
+      "showIcon": true,
+      "priority": 5,
+      "summary": "An arctic snow front affecting northern grid corridors and exposed substations.",
+      "atmosphere": {
+        "airTemperatureC": -6,
+        "humidity": 0.86,
+        "windSpeedMps": 11,
+        "windDirectionDeg": 25,
+        "visibilityM": 3800,
+        "cloudCover": 0.9,
+        "precipitation": { "type": "snow", "intensityMmPerHour": 1.4 }
+      },
+      "surface": {
+        "groundTemperatureC": -5,
+        "wetness": 0.08,
+        "standingWater": 0,
+        "snow": 0.28,
+        "ice": 0.18,
+        "frost": 0.55
+      },
+      "falloffCurve": [{ "x": 0, "y": 1 }, { "x": 0.72, "y": 0.7 }, { "x": 1, "y": 0 }],
+      "keyframes": [
+        {
+          "atSeconds": 0,
+          "center": [18.6, 68.4],
+          "semiMajorAxisM": 520000,
+          "semiMinorAxisM": 125000,
+          "rotationDeg": 76
+        },
+        {
+          "atSeconds": 900,
+          "center": [21.5, 69.1],
+          "semiMajorAxisM": 560000,
+          "semiMinorAxisM": 135000,
+          "rotationDeg": 82,
+          "atmosphere": {
+            "windSpeedMps": 14,
+            "visibilityM": 2600,
+            "precipitation": { "type": "snow", "intensityMmPerHour": 2.0 }
+          },
+          "surface": {
+            "snow": 0.38,
+            "ice": 0.24,
+            "frost": 0.62
+          }
+        }
+      ]
     }
   ],
   "initialContexts": [],
@@ -41,9 +153,10 @@
     "electric-grid": {
       "topology": {
         "kind": "built-in",
-        "arenaId": "source-derived-oslofjord-grid"
+        "arenaId": "source-derived-norway-grid"
       }
-    }
+    },
+    "weather": {}
   },
   "surface": {
     "schemaVersion": 1,
@@ -61,6 +174,7 @@
           "layers": [
             "objects",
             "grid",
+            "weather",
             "highlights"
           ]
         }

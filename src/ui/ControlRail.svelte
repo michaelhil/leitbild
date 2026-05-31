@@ -32,6 +32,7 @@
     readonly railConfig: SurfaceObjectRailRegionConfig
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
+    readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly markSeen: (object: OperationalObject) => void
@@ -43,6 +44,7 @@
     readonly openStatusModal: () => void
     readonly openSettings: () => void
     readonly toggleClockPaused: () => Promise<void>
+    readonly toggleCategoryMapVisibility?: (categoryId: string) => void
     readonly mapLayerGroups?: ReadonlyArray<PackMapLayerGroup>
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly onMapLayerGroupToggle?: (groupId: string) => void
@@ -65,6 +67,7 @@
     railConfig,
     placementMode,
     selectedControllerId,
+    categoryMapVisibility = {},
     presentationFor,
     hasNewInfo,
     markSeen,
@@ -76,6 +79,7 @@
     openStatusModal,
     openSettings,
     toggleClockPaused,
+    toggleCategoryMapVisibility = () => undefined,
     mapLayerGroups = [],
     mapLayerGroupVisibility = {},
     onMapLayerGroupToggle = () => undefined,
@@ -167,9 +171,11 @@
       fieldOptions={entry.fieldOptions}
       presentedRows={entry.presentedRows}
       {selectedControllerId}
+      categoryMapVisible={categoryMapVisibility[entry.row.category.id] ?? true}
       isFieldVisible={fieldVisible}
       {toggleField}
       toggleFieldMenu={(categoryId) => openFieldCategoryId = openFieldCategoryId === categoryId ? null : categoryId}
+      {toggleCategoryMapVisibility}
       {toggleCategory}
       {beginPlacement}
       {markSeen}

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 interface GeoJsonFeature {
   readonly id?: string
@@ -60,6 +61,19 @@ interface NveGenerationAugmentation {
   readonly priceArea: string | null
 }
 
+interface ExistingArenaDataModule {
+  readonly norwayGridArenaData?: {
+    readonly generators?: ReadonlyArray<{
+      readonly name: string
+      readonly capacityMw: number
+      readonly annualProductionGwh: number | null
+      readonly operator: string | null
+      readonly priceArea: string | null
+      readonly augmentationSourceId: string | null
+    }>
+  }
+}
+
 const inputPath = resolve(process.argv[2] ?? 'data/reference-local/builds/grid-norway/20260528-225211/grid-norway.features.geojson')
 const outputPath = resolve(process.argv[3] ?? 'src/packs/electric-grid/arena/norway-grid-arena-data.ts')
 
@@ -118,7 +132,14 @@ const lineLengthKm = (coordinates: ReadonlyArray<readonly [number, number]>): nu
 }
 
 const inArenaRegion = (coordinate: readonly [number, number]): boolean =>
-  coordinate[0] >= 7.5 && coordinate[0] <= 12.1 && coordinate[1] >= 58.7 && coordinate[1] <= 60.7
+  coordinate[0] >= 4.0 && coordinate[0] <= 31.5 && coordinate[1] >= 57.5 && coordinate[1] <= 71.5
+
+const backboneVoltageThresholdKv = 300
+const regionalNorthVoltageThresholdKv = 132
+const regionalEastVoltageThresholdKv = 220
+const northCoverageLatitude = 66
+const eastCoverageLongitude = 12
+const endpointSnapDistanceKm = 14
 
 const hasOperatorLabel = (name: string): boolean =>
   !/^(node|way|relation)\//.test(name)
@@ -133,6 +154,14 @@ const voltageCompatible = (branchVoltage: ReadonlyArray<number>, substation: Can
   branchVoltage.length === 0 ||
   substation.voltageKv.length === 0 ||
   branchVoltage.some(value => substation.voltageKv.some(candidate => Math.abs(value - candidate) < 1))
+
+const eligibleOperationalVoltage = (
+  maxVoltageKv: number,
+  coordinate: readonly [number, number],
+): boolean =>
+  maxVoltageKv >= backboneVoltageThresholdKv ||
+  (maxVoltageKv >= regionalNorthVoltageThresholdKv && coordinate[1] >= northCoverageLatitude) ||
+  (maxVoltageKv >= regionalEastVoltageThresholdKv && coordinate[0] >= eastCoverageLongitude)
 
 const simplifyPath = (
   coordinates: ReadonlyArray<readonly [number, number]>,
@@ -260,70 +289,95 @@ const fetchNveGenerationIndex = async (): Promise<ReadonlyMap<string, NveGenerat
   return index
 }
 
-const largestConnectedComponent = (
-  nodes: ReadonlyArray<CandidateSubstation>,
-  branches: ReadonlyArray<CandidateBranch>,
-): ReadonlySet<string> => {
-  const adjacency = new Map(nodes.map(node => [node.externalId, new Set<string>()]))
-  for (const branch of branches) {
-    adjacency.get(branch.fromExternalId)?.add(branch.toExternalId)
-    adjacency.get(branch.toExternalId)?.add(branch.fromExternalId)
-  }
-  const seen = new Set<string>()
-  let largest = new Set<string>()
-  for (const node of nodes) {
-    if (seen.has(node.externalId)) continue
-    const queue = [node.externalId]
-    const component = new Set<string>([node.externalId])
-    seen.add(node.externalId)
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      for (const next of adjacency.get(current) ?? []) {
-        if (seen.has(next)) continue
-        seen.add(next)
-        component.add(next)
-        queue.push(next)
+const cachedGenerationIndex = async (): Promise<ReadonlyMap<string, NveGenerationAugmentation>> => {
+  try {
+    const module = await import(pathToFileURL(outputPath).href) as ExistingArenaDataModule
+    const index = new Map<string, NveGenerationAugmentation>()
+    for (const generator of module.norwayGridArenaData?.generators ?? []) {
+      if (generator.augmentationSourceId === null) continue
+      const augmentation: NveGenerationAugmentation = {
+        sourceId: generator.augmentationSourceId,
+        capacityMw: generator.capacityMw,
+        annualProductionGwh: generator.annualProductionGwh,
+        operator: generator.operator,
+        priceArea: generator.priceArea,
+      }
+      for (const key of generationLookupKeys(generator.name)) {
+        index.set(key, augmentation)
       }
     }
-    if (component.size > largest.size) largest = component
+    return index
+  } catch {
+    // The generated arena file may not exist yet; live NVE fetch remains the authoritative path.
+    return new Map()
   }
-  return largest
+}
+
+const generationAugmentationIndex = async (): Promise<ReadonlyMap<string, NveGenerationAugmentation>> => {
+  const cached = await cachedGenerationIndex()
+  const fetched = await fetchNveGenerationIndex()
+  return new Map([...cached, ...fetched])
+}
+
+const branchEndpointIsKnown = (
+  branch: CandidateBranch,
+  substations: ReadonlySet<string>,
+): boolean =>
+  substations.has(branch.fromExternalId) && substations.has(branch.toExternalId)
+
+const nearestSubstation = (
+  substations: ReadonlyArray<CandidateSubstation>,
+  coordinate: readonly [number, number],
+): CandidateSubstation | null => {
+  let best: { readonly substation: CandidateSubstation; readonly distanceKm: number } | null = null
+  for (const substation of substations) {
+    const distanceKm = haversineKm(coordinate, [substation.lon, substation.lat])
+    if (!best || distanceKm < best.distanceKm) best = { substation, distanceKm }
+  }
+  return best?.substation ?? null
 }
 
 const loadZones = (substations: ReadonlyArray<CandidateSubstation>) => {
-  const byName = new Map(substations.map(substation => [substation.name, substation.externalId]))
-  const at = (name: string): string => {
-    const externalId = byName.get(name)
-    if (!externalId) throw new Error(`arena load references missing substation: ${name}`)
-    return externalId
-  }
-  return [
-    { id: 'oslo-west-urban', label: 'Oslo west urban load', loadKind: 'residential', busExternalId: at('Smestad trafostasjon'), lon: 10.68, lat: 59.94, demandMw: 280, criticalMw: 105, reactiveDemandMvar: 60, priority: 'normal' },
-    { id: 'oslo-north-urban', label: 'Oslo north urban load', loadKind: 'residential', busExternalId: at('Sogn trafostasjon'), lon: 10.75, lat: 59.96, demandMw: 320, criticalMw: 120, reactiveDemandMvar: 70, priority: 'normal' },
-    { id: 'oslo-east-urban', label: 'Oslo east urban load', loadKind: 'residential', busExternalId: at('Ulven trafostasjon'), lon: 10.84, lat: 59.93, demandMw: 320, criticalMw: 115, reactiveDemandMvar: 70, priority: 'normal' },
-    { id: 'oslo-hospital', label: 'Oslo hospital critical load', loadKind: 'hospital', busExternalId: at('Ullevål trafostasjon'), lon: 10.7387, lat: 59.9369, demandMw: 85, criticalMw: 70, reactiveDemandMvar: 22, priority: 'critical' },
-    { id: 'gardermoen-airport', label: 'Oslo airport load', loadKind: 'airport', busExternalId: at('Minne transformatorstasjon'), lon: 11.1004, lat: 60.1939, demandMw: 120, criticalMw: 55, reactiveDemandMvar: 34, priority: 'high' },
-    { id: 'grenland-industry', label: 'Grenland process industry', loadKind: 'industry', busExternalId: at('Rød transformatorstasjon'), lon: 9.66, lat: 59.12, demandMw: 650, criticalMw: 330, reactiveDemandMvar: 220, priority: 'high' },
-    { id: 'ostfold-industry', label: 'Østfold process industry', loadKind: 'industry', busExternalId: at('Vammafossen trafostasjon'), lon: 11.12, lat: 59.28, demandMw: 390, criticalMw: 210, reactiveDemandMvar: 120, priority: 'high' },
-    { id: 'drammen-urban', label: 'Drammen urban load', loadKind: 'residential', busExternalId: at('Hamang transformatorstasjon'), lon: 10.2, lat: 59.74, demandMw: 300, criticalMw: 110, reactiveDemandMvar: 65, priority: 'normal' },
-    { id: 'vestfold-consumer', label: 'Vestfold consumer supply', loadKind: 'commercial', busExternalId: at('Tveiten trafostasjon'), lon: 10.25, lat: 59.18, demandMw: 260, criticalMw: 95, reactiveDemandMvar: 60, priority: 'normal' },
-    { id: 'telemark-industry', label: 'Telemark industrial load', loadKind: 'industry', busExternalId: at('Flesaker koblingsstasjon'), lon: 9.65, lat: 59.65, demandMw: 330, criticalMw: 160, reactiveDemandMvar: 105, priority: 'high' },
-    { id: 'ringerike-consumer', label: 'Ringerike consumer supply', loadKind: 'commercial', busExternalId: at('Ringerike trafostasjon'), lon: 10.25, lat: 60.15, demandMw: 190, criticalMw: 70, reactiveDemandMvar: 44, priority: 'normal' },
-    { id: 'oslo-ev', label: 'Oslo EV fast-charging cluster', loadKind: 'ev_charging', busExternalId: at('Ulven trafostasjon'), lon: 10.85, lat: 59.94, demandMw: 145, criticalMw: 20, reactiveDemandMvar: 28, priority: 'low', controllable: true },
-    { id: 'e18-truck-depot', label: 'E18 truck charging depot', loadKind: 'ev_charging', busExternalId: at('Bærum trafostasjon'), lon: 10.49, lat: 59.9, demandMw: 95, criticalMw: 10, reactiveDemandMvar: 16, priority: 'low', controllable: true },
-    { id: 'oslo-data-center', label: 'Oslo data-center load', loadKind: 'data_center', busExternalId: at('Røykås trafostasjon'), lon: 10.98, lat: 59.96, demandMw: 230, criticalMw: 165, reactiveDemandMvar: 56, priority: 'high' },
-  ]
+  const templates = [
+    { id: 'oslo-west-urban', label: 'Oslo west urban load', loadKind: 'residential', lon: 10.68, lat: 59.94, demandMw: 280, criticalMw: 105, reactiveDemandMvar: 60, priority: 'normal' },
+    { id: 'oslo-north-urban', label: 'Oslo north urban load', loadKind: 'residential', lon: 10.75, lat: 59.96, demandMw: 320, criticalMw: 120, reactiveDemandMvar: 70, priority: 'normal' },
+    { id: 'oslo-east-urban', label: 'Oslo east urban load', loadKind: 'residential', lon: 10.84, lat: 59.93, demandMw: 320, criticalMw: 115, reactiveDemandMvar: 70, priority: 'normal' },
+    { id: 'oslo-hospital', label: 'Oslo hospital critical load', loadKind: 'hospital', lon: 10.7387, lat: 59.9369, demandMw: 85, criticalMw: 70, reactiveDemandMvar: 22, priority: 'critical' },
+    { id: 'gardermoen-airport', label: 'Oslo airport load', loadKind: 'airport', lon: 11.1004, lat: 60.1939, demandMw: 120, criticalMw: 55, reactiveDemandMvar: 34, priority: 'high' },
+    { id: 'bergen-urban', label: 'Bergen urban load', loadKind: 'residential', lon: 5.3221, lat: 60.3913, demandMw: 360, criticalMw: 135, reactiveDemandMvar: 82, priority: 'normal' },
+    { id: 'stavanger-urban', label: 'Stavanger urban load', loadKind: 'residential', lon: 5.7331, lat: 58.9701, demandMw: 310, criticalMw: 118, reactiveDemandMvar: 72, priority: 'normal' },
+    { id: 'trondheim-urban', label: 'Trondheim urban load', loadKind: 'residential', lon: 10.3951, lat: 63.4305, demandMw: 330, criticalMw: 130, reactiveDemandMvar: 76, priority: 'normal' },
+    { id: 'tromso-urban', label: 'Tromsø urban load', loadKind: 'residential', lon: 18.9553, lat: 69.6492, demandMw: 150, criticalMw: 65, reactiveDemandMvar: 36, priority: 'normal' },
+    { id: 'bodo-urban', label: 'Bodø urban load', loadKind: 'residential', lon: 14.4049, lat: 67.2804, demandMw: 125, criticalMw: 52, reactiveDemandMvar: 30, priority: 'normal' },
+    { id: 'kristiansand-urban', label: 'Kristiansand urban load', loadKind: 'residential', lon: 7.9956, lat: 58.1467, demandMw: 190, criticalMw: 72, reactiveDemandMvar: 44, priority: 'normal' },
+    { id: 'alesund-urban', label: 'Ålesund urban load', loadKind: 'residential', lon: 6.1495, lat: 62.4722, demandMw: 135, criticalMw: 58, reactiveDemandMvar: 32, priority: 'normal' },
+    { id: 'grenland-industry', label: 'Grenland process industry', loadKind: 'industry', lon: 9.66, lat: 59.12, demandMw: 650, criticalMw: 330, reactiveDemandMvar: 220, priority: 'high' },
+    { id: 'mo-rana-industry', label: 'Mo i Rana process industry', loadKind: 'industry', lon: 14.1428, lat: 66.3128, demandMw: 420, criticalMw: 230, reactiveDemandMvar: 126, priority: 'high' },
+    { id: 'narvik-industry', label: 'Narvik rail and industry load', loadKind: 'industry', lon: 17.4272, lat: 68.4385, demandMw: 260, criticalMw: 132, reactiveDemandMvar: 78, priority: 'high' },
+    { id: 'hammerfest-lng', label: 'Hammerfest LNG and port load', loadKind: 'industry', lon: 23.6821, lat: 70.6634, demandMw: 230, criticalMw: 150, reactiveDemandMvar: 70, priority: 'high' },
+    { id: 'oslo-ev', label: 'Oslo EV fast-charging cluster', loadKind: 'ev_charging', lon: 10.85, lat: 59.94, demandMw: 145, criticalMw: 20, reactiveDemandMvar: 28, priority: 'low', controllable: true },
+    { id: 'e18-truck-depot', label: 'E18 truck charging depot', loadKind: 'ev_charging', lon: 10.49, lat: 59.9, demandMw: 95, criticalMw: 10, reactiveDemandMvar: 16, priority: 'low', controllable: true },
+    { id: 'e39-west-charging', label: 'E39 west coast charging corridor', loadKind: 'ev_charging', lon: 5.95, lat: 60.55, demandMw: 105, criticalMw: 12, reactiveDemandMvar: 18, priority: 'low', controllable: true },
+    { id: 'e6-north-charging', label: 'E6 northern truck charging corridor', loadKind: 'ev_charging', lon: 15.4, lat: 67.15, demandMw: 80, criticalMw: 10, reactiveDemandMvar: 14, priority: 'low', controllable: true },
+    { id: 'oslo-data-center', label: 'Oslo data-center load', loadKind: 'data_center', lon: 10.98, lat: 59.96, demandMw: 230, criticalMw: 165, reactiveDemandMvar: 56, priority: 'high' },
+    { id: 'trondheim-data-center', label: 'Trondheim data-center load', loadKind: 'data_center', lon: 10.46, lat: 63.43, demandMw: 135, criticalMw: 95, reactiveDemandMvar: 32, priority: 'high' },
+  ] as const
+  return templates.flatMap(template => {
+    const substation = nearestSubstation(substations, [template.lon, template.lat])
+    if (!substation) return []
+    return [{ ...template, busExternalId: substation.externalId }]
+  })
 }
 
 const main = async (): Promise<void> => {
   const raw = JSON.parse(await readFile(inputPath, 'utf8')) as GeoJsonCollection
-  const nveGeneration = await fetchNveGenerationIndex()
+  const nveGeneration = await generationAugmentationIndex()
   const substations = raw.features.flatMap((feature): ReadonlyArray<CandidateSubstation> => {
     if (feature.properties.category !== 'substation') return []
     const maxVoltageKv = numberOrNull(feature.properties.maxVoltageKv) ?? 0
-    if (maxVoltageKv < 132) return []
     const coordinate = pointOf(feature.geometry)
     if (!coordinate || !inArenaRegion(coordinate)) return []
+    if (!eligibleOperationalVoltage(maxVoltageKv, coordinate)) return []
     const name = propertyName(feature)
     if (!hasOperatorLabel(name)) return []
     return [{
@@ -341,18 +395,18 @@ const main = async (): Promise<void> => {
   const branches = raw.features.flatMap((feature): ReadonlyArray<CandidateBranch> => {
     if (feature.properties.category !== 'line' && feature.properties.category !== 'cable') return []
     const nominalKv = numberOrNull(feature.properties.maxVoltageKv) ?? 0
-    if (nominalKv < 132) return []
     const coordinates = lineCoordinates(feature.geometry)
     if (coordinates.length < 2) return []
     const mid = coordinates[Math.floor(coordinates.length / 2)]!
     if (!inArenaRegion(mid)) return []
+    if (!eligibleOperationalVoltage(nominalKv, mid)) return []
     const voltageKv = numberArray(feature.properties.voltageKv)
     const nearest = (coordinate: readonly [number, number]): { readonly substation: CandidateSubstation; readonly distanceKm: number } | null => {
       let best: { readonly substation: CandidateSubstation; readonly distanceKm: number } | null = null
       for (const substation of substations) {
         if (!voltageCompatible(voltageKv, substation)) continue
         const distanceKm = haversineKm(coordinate, [substation.lon, substation.lat])
-        if (distanceKm > 8) continue
+        if (distanceKm > endpointSnapDistanceKm) continue
         if (!best || distanceKm < best.distanceKm) best = { substation, distanceKm }
       }
       return best
@@ -376,13 +430,11 @@ const main = async (): Promise<void> => {
     }]
   })
 
-  const largest = largestConnectedComponent(substations, branches)
   const arenaSubstations = substations
-    .filter(substation => largest.has(substation.externalId))
     .sort((left, right) => left.name.localeCompare(right.name))
   const arenaSubstationIds = new Set(arenaSubstations.map(substation => substation.externalId))
   const arenaBranches = branches
-    .filter(branch => arenaSubstationIds.has(branch.fromExternalId) && arenaSubstationIds.has(branch.toExternalId))
+    .filter(branch => branchEndpointIsKnown(branch, arenaSubstationIds))
     .sort((left, right) => right.nominalKv - left.nominalKv || right.lengthKm - left.lengthKm)
 
   const candidateGenerators = raw.features
@@ -419,17 +471,18 @@ const main = async (): Promise<void> => {
 
   const arenaGenerators = [...dedupeGenerators(candidateGenerators)]
     .sort((left, right) => right.capacityMw - left.capacityMw)
-    .slice(0, 34)
+    .slice(0, 70)
 
   const moduleText = `import type { SourceDerivedGridArenaData } from './types.ts'
 
 export const norwayGridArenaData: SourceDerivedGridArenaData = ${JSON.stringify({
     sourceBuild: {
-      id: 'source-derived-oslofjord-grid-arena-v1',
+      id: 'source-derived-norway-grid-arena-v1',
       generatedAt: new Date().toISOString(),
       sourceIds: ['osm:pbf-power:NO', 'nve:vannkraftdatabase', 'nve:vindkraftdatabase'],
       notes: [
-        'Operational arena generated from the grid-norway OSM PBF reference sidecar.',
+        'Operational arena generated from the grid-norway OSM PBF reference sidecar at national Norway scope.',
+        'The operational graph is transmission-focused: dense OSM reference segments remain reference map geometry, while the runtime arena keeps national 300 kV+ backbone assets, northern 132 kV+ regional assets, eastern 220 kV+ regional assets, major generation, and aggregate consumer zones.',
         'NVE hydropower and wind APIs are used to augment generator capacity, annual production, operator, and price-area provenance where names match.',
         'Co-located OSM plant/generator duplicates are collapsed when a larger plant-level feature covers smaller same-family unit nodes.',
         'Consumer load zones are inferred operational demand aggregates attached to real high-voltage buses.',

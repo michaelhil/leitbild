@@ -52,6 +52,7 @@
     readonly routeRevision: number
     readonly debugMapInput?: boolean
     readonly highlightedObjectIds?: ReadonlyArray<string>
+    readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
     readonly mapAreaFeaturesFor: (context: {
@@ -85,6 +86,7 @@
     routeRevision,
     debugMapInput = false,
     highlightedObjectIds = [],
+    hiddenObjectCategoryIds = [],
     hasNewInfo,
     presentationFor,
     mapAreaFeaturesFor,
@@ -160,6 +162,7 @@
       objects,
       selectedControllerId,
       highlightedObjectIds,
+      hiddenObjectCategoryIds,
       placementPoints,
       packAreaFeatures: cachedPackMapAreaFeatures,
       visibleFamilies: visibleFamilies(),
@@ -551,6 +554,11 @@
     highlightedObjectIds
     routeRevision
     operationalRenderController.syncObjects()
+  })
+
+  $effect(() => {
+    hiddenObjectCategoryIds
+    operationalRenderController.syncObjectVisibility()
   })
 
   $effect(() => {

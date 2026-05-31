@@ -21,6 +21,7 @@ export interface OperationalRenderControllerState {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
+  readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
   readonly packAreaFeatures: ReadonlyArray<PackMapAreaFeature>
   readonly visibleFamilies: ReadonlySet<string>
@@ -46,6 +47,7 @@ export interface OperationalRenderController {
   readonly syncPlacement: () => void
   readonly syncAreaFeatures: () => void
   readonly syncVisibility: () => void
+  readonly syncObjectVisibility: () => void
   readonly flushNow: () => void
   readonly destroy: () => void
 }
@@ -169,6 +171,7 @@ export const createOperationalRenderController = (
           objects: displayObjects,
           selectedControllerId: state.selectedControllerId,
           highlightedObjectIds: state.highlightedObjectIds,
+          hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,
           packAreaFeatures: state.packAreaFeatures,
           hasNewInfo: createRenderHasNewInfo(config.hasNewInfo),
@@ -319,6 +322,9 @@ export const createOperationalRenderController = (
     },
     syncVisibility: () => {
       schedule('diagnostics', 65)
+    },
+    syncObjectVisibility: () => {
+      scheduleMany(renderFamiliesForObjects, 70)
     },
     flushNow: () => {
       for (const family of fullRenderFamilies) pendingFamilies.add(family)

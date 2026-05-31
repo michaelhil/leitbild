@@ -580,6 +580,7 @@ export const solveGrid = (config: {
     const connectedBranchCount = solvedBranches.filter(branch => branch.fromBusId === busId || branch.toBusId === busId).length
     const loadingPercent = Math.max(0, roughBranchLoadingByBus.get(busId) ?? 0)
     const voltagePu = bus?.voltagePu ?? defaultBusVoltagePu
+    const isolatedBus = islands.length > 1 && connectedBranchCount === 0
     return [{
       ...item.data,
       voltagePu,
@@ -587,7 +588,7 @@ export const solveGrid = (config: {
       connectedBranchCount,
       loadingPercent,
       reactiveMarginMvar: Math.max(-200, 260 - (reactiveByBus.get(item.data.busId) ?? 0) - Math.max(0, loadingPercent - 80) * 2),
-      state: voltagePu < 0.9 ? 'constrained' : voltagePu < 0.95 ? 'voltage_watch' : islands.length > 1 ? 'islanded' : 'normal',
+      state: voltagePu < 0.9 ? 'constrained' : voltagePu < 0.95 ? 'voltage_watch' : isolatedBus ? 'islanded' : 'normal',
     } satisfies GridSubstationData]
   })
 

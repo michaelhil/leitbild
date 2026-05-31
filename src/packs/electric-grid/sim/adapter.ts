@@ -68,7 +68,7 @@ const persistedRuntimeStateSchema = z.object({
 const runtimeConfigSchema = z.object({
   topology: z.object({
     kind: z.literal('built-in'),
-    arenaId: z.literal('source-derived-oslofjord-grid'),
+    arenaId: z.literal('source-derived-norway-grid'),
   }).optional(),
 }).default({})
 
@@ -380,6 +380,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     }
 
     solveAndEmit(1, 'projected')
+    solveAndEmit(updateIntervalMs / 1000, 'projected')
     interval = setInterval(() => solveAndEmit(updateIntervalMs / 1000, 'projected'), updateIntervalMs)
 
     return {

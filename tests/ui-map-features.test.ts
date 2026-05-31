@@ -48,6 +48,7 @@ const updateStore = (
   extras: {
     readonly selectedControllerId?: string | null
     readonly highlightedObjectIds?: ReadonlyArray<string>
+    readonly hiddenObjectCategoryIds?: ReadonlyArray<string>
     readonly placementPoints?: ReadonlyArray<ReturnType<typeof geoPointFromLonLat>>
     readonly packAreaFeatures?: ReadonlyArray<PackMapAreaFeature>
     readonly hasNewInfo?: (object: OperationalObject) => boolean
@@ -56,6 +57,7 @@ const updateStore = (
   objects,
   selectedControllerId: extras.selectedControllerId ?? null,
   highlightedObjectIds: extras.highlightedObjectIds ?? [],
+  hiddenObjectCategoryIds: extras.hiddenObjectCategoryIds ?? [],
   placementPoints: extras.placementPoints ?? [],
   packAreaFeatures: extras.packAreaFeatures ?? [],
   hasNewInfo: extras.hasNewInfo ?? (() => false),
@@ -218,6 +220,7 @@ describe('map feature store', () => {
       objects: [grid],
       selectedControllerId: null,
       highlightedObjectIds: [],
+      hiddenObjectCategoryIds: [],
       placementPoints: [],
       packAreaFeatures: [],
       hasNewInfo: () => false,
@@ -227,6 +230,7 @@ describe('map feature store', () => {
       objects: [{ ...grid, revision: 2 }],
       selectedControllerId: null,
       highlightedObjectIds: [],
+      hiddenObjectCategoryIds: [],
       placementPoints: [],
       packAreaFeatures: [],
       hasNewInfo: () => false,
@@ -235,6 +239,25 @@ describe('map feature store', () => {
 
     expect(second.revisions.paths).toBe(first.revisions.paths)
     expect(second.paths[0]).toBe(first.paths[0])
+  })
+
+  test('filters hidden rail categories from operational map features only', () => {
+    const generator = makeObject('grid:generator', {
+      packId: 'electric-grid' as PackId,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.75, 59.91),
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+    })
+
+    const visible = updateStore([generator])
+    const hidden = updateStore([generator], { hiddenObjectCategoryIds: ['grid-branches'] })
+
+    expect(visible.points).toHaveLength(1)
+    expect(hidden.points).toHaveLength(0)
   })
 
   test('updates placement without re-projecting object presentations', () => {
@@ -253,6 +276,7 @@ describe('map feature store', () => {
       objects: [object],
       selectedControllerId: null,
       highlightedObjectIds: [],
+      hiddenObjectCategoryIds: [],
       placementPoints: [],
       packAreaFeatures: [],
       hasNewInfo: () => false,

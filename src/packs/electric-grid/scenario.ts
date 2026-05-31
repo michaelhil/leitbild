@@ -45,7 +45,7 @@ const systemSpecSchema = baseSpecSchema.extend({
 
 const regionalGridSpecSchema = baseSpecSchema.extend({
   type: z.literal('regional_grid'),
-  arenaId: z.literal('source-derived-oslofjord-grid').default('source-derived-oslofjord-grid'),
+  arenaId: z.literal('source-derived-norway-grid').default('source-derived-norway-grid'),
 })
 
 const substationSpecSchema = baseSpecSchema.extend({

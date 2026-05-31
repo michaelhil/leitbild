@@ -42,7 +42,7 @@ const objectIdToken = (value: string): string =>
     .slice(0, 80)
 
 const busIdFor = (name: string, nominalKv: number): string =>
-  `NO1-${objectIdToken(name).toUpperCase()}-${Math.round(nominalKv)}`
+  `NO-${objectIdToken(name).toUpperCase()}-${Math.round(nominalKv)}`
 
 const substationObjectIdFor = (substation: SourceDerivedGridArenaData['substations'][number]): string =>
   `grid:ss-${objectIdToken(substation.name)}-${Math.round(substation.maxVoltageKv)}-${objectIdToken(substation.externalId)}`
@@ -66,6 +66,15 @@ const provenance = (config: {
   ...(config.sourceUrl === undefined ? {} : { sourceUrl: config.sourceUrl }),
 })
 
+const scaledGeneratorSetpoint = (
+  value: number,
+  scale: number,
+  availableMw: number,
+): number =>
+  Math.min(availableMw, Math.max(0, Math.round(value * scale)))
+
+const initialDispatchLoadShapeFactor = 1.03
+
 export const norwayGridArenaSourceNotes = (): ReadonlyArray<string> =>
   norwayGridArenaData.sourceBuild.notes
 
@@ -83,7 +92,7 @@ export const norwayGridArenaObjectSpecs = (
       type: 'grid_system',
       id: 'grid:norway-system',
       label: 'Norway grid overview',
-      position: [10.75, 59.9],
+      position: [15.5, 64.7],
       provenance: provenance({
         method: 'converted',
         sourceId: data.sourceBuild.id,
@@ -93,14 +102,14 @@ export const norwayGridArenaObjectSpecs = (
     {
       pack: 'electric-grid',
       type: 'market_area',
-      id: 'grid:market-no1',
-      label: 'NO1 system area',
-      areaId: 'NO1',
-      position: [10.75, 59.9],
+      id: 'grid:market-norway',
+      label: 'Norway synchronous area',
+      areaId: 'NO',
+      position: [15.5, 64.7],
       priceNokPerMwh: 820,
       provenance: provenance({
         method: 'configured',
-        sourceId: 'entso-e:NO1:demo-price-profile',
+        sourceId: 'entso-e:NO:demo-price-profile',
         confidence: 'medium',
       }),
     },
@@ -162,10 +171,21 @@ export const norwayGridArenaObjectSpecs = (
     })
   }
 
+  const generatorProfiles = new Map(data.generators.map(generator => [
+    generator.externalId,
+    generatorDefaults(generator.generationKind, generator.capacityMw),
+  ]))
+  const availableGenerationMw = [...generatorProfiles.values()]
+    .reduce((sum, profile) => sum + profile.availableMw, 0)
+  const initialLoadMw = data.loads.reduce((sum, load) => sum + load.demandMw, 0) * initialDispatchLoadShapeFactor
+
   for (const generator of data.generators) {
     const nearest = nearestSubstation(data.substations, [generator.lon, generator.lat])
     if (!nearest) continue
-    const defaults = generatorDefaults(generator.generationKind, generator.capacityMw)
+    const defaults = generatorProfiles.get(generator.externalId) ?? generatorDefaults(generator.generationKind, generator.capacityMw)
+    const dispatchMw = availableGenerationMw > 0
+      ? scaledGeneratorSetpoint(initialLoadMw * defaults.availableMw / availableGenerationMw, 1, defaults.availableMw)
+      : defaults.dispatchMw
     specs.push({
       pack: 'electric-grid',
       type: 'generator',
@@ -175,8 +195,8 @@ export const norwayGridArenaObjectSpecs = (
       busId: busByExternalId.get(nearest.externalId) ?? busIdFor(nearest.name, nearest.maxVoltageKv),
       capacityMw: generator.capacityMw,
       availableMw: defaults.availableMw,
-      dispatchMw: defaults.dispatchMw,
-      targetMw: defaults.targetMw,
+      dispatchMw,
+      targetMw: dispatchMw,
       reserveMw: defaults.reserveMw,
       rampRateMwPerMinute: defaults.rampRateMwPerMinute,
       inertiaSeconds: defaults.inertiaSeconds,
@@ -223,7 +243,7 @@ export const norwayGridArenaObjectSpecs = (
     type: 'storage',
     id: 'grid:storage-oslo-battery',
     label: 'Oslo flexibility battery',
-    busId: busByExternalId.get(data.loads.find(load => load.id === 'oslo-north-urban')?.busExternalId ?? '') ?? 'NO1-SOGN-TRAFOSTASJON-300',
+    busId: busByExternalId.get(data.loads.find(load => load.id === 'oslo-north-urban')?.busExternalId ?? '') ?? 'NO-SOGN-TRAFOSTASJON-300',
     capacityMwh: 650,
     stateOfChargeFraction: 0.58,
     maxChargeMw: 180,

@@ -106,7 +106,7 @@ const iconShape = (id: LeitbildSymbolId, x: number, y: number): string => {
     case 'generator':
       return group(`${circle(24, 24, 20)}${path('M18 35 24 12 31 35H18Z')}${circle(24, 24, 6)}`)
     case 'substation':
-      return group(`${rect(7, 9, 34, 30, 3)}${rect(14, 15, 5, 18, 2)}${rect(22, 15, 5, 18, 2)}${rect(30, 15, 5, 18, 2)}${rect(11, 39, 4, 7, 1)}${rect(33, 39, 4, 7, 1)}`)
+      return group(`${rect(10, 12, 28, 24, 3)}${rect(14, 18, 20, 4, 1)}${rect(14, 27, 20, 4, 1)}${rect(20, 9, 8, 30, 2)}`)
     case 'load':
       return group(`${rect(10, 12, 28, 26, 4)}${rect(16, 18, 16, 6, 2)}${rect(16, 29, 16, 4, 2)}${path('M17 12V6H31V12Z')}`)
     case 'storage':

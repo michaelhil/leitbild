@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte'
-  import { Eye, EyeOff } from 'lucide-svelte'
+  import { Eye, EyeOff, Menu } from 'lucide-svelte'
   import IconButton from './components/IconButton.svelte'
   import type { FieldVisibilityOption } from './control-rail-presenter.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
@@ -58,9 +58,9 @@
 
 <span class="field-menu-wrap" bind:this={anchorElement}>
   <IconButton
-    label="Choose visible {categoryLabel.toLowerCase()} data"
-    title="Choose visible {categoryLabel.toLowerCase()} data"
-    icon={Eye}
+    label="Choose {categoryLabel.toLowerCase()} detail fields"
+    title="Choose {categoryLabel.toLowerCase()} detail fields"
+    icon={Menu}
     size={14}
     variant="bare"
     onClick={toggleOpen}

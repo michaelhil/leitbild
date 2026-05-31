@@ -18,7 +18,7 @@ const actorId = 'actor:electric-grid-test' as ActorId
 const sourceDerivedTopologyRuntimeConfig = {
   topology: {
     kind: 'built-in',
-    arenaId: 'source-derived-oslofjord-grid',
+    arenaId: 'source-derived-norway-grid',
   },
 } as const
 
@@ -126,7 +126,8 @@ describe('electric grid pack', () => {
       expect(system.servedLoadMw).toBeGreaterThan(0)
       expect(branches.some(branch => Math.abs(branch.flowMw) > 0)).toBe(true)
       expect(system.lowestVoltagePu).toBeGreaterThan(0.98)
-      expect(system.activeIslandCount).toBe(1)
+      expect(system.activeIslandCount).toBeGreaterThanOrEqual(1)
+      expect(system.activeAlarmCount).toBe(0)
     } finally {
       await connection.close()
     }

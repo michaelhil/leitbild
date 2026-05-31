@@ -100,11 +100,11 @@ const presentationTone = (presentation: PackObjectPresentation): NonNullable<Pac
 
 const operationalPointFor = (
   object: OperationalObject,
+  presentation: PackObjectPresentation,
   context: MapFeatureProjectionContext,
 ): OperationalPointFeature | null => {
   const point = pointOf(object)
   if (!point) return null
-  const presentation = context.presentationFor(object)
   if (presentation.mapIconVisible === false) return null
   const tone = presentationTone(presentation)
   const symbolId = normalizeSymbolId(presentation.icon)
@@ -114,10 +114,12 @@ const operationalPointFor = (
   const hasNewInfo = presentation.noteworthyUpdates === true && context.hasNewInfo(object)
   const muted = presentation.muted === true
   const color = muted ? colorWithAlpha(hexToRgba(presentation.color), 132) : hexToRgba(presentation.color)
+  const sizePx = presentation.mapIconSizePx ?? symbolSizePx(symbolId)
   const signature = [
     object.id,
     positionSignature(position),
     symbolId,
+    sizePx.toFixed(2),
     presentation.color,
     tone,
     selected ? 's' : '',
@@ -136,7 +138,7 @@ const operationalPointFor = (
     highlighted,
     hasNewInfo,
     muted,
-    sizePx: symbolSizePx(symbolId),
+    sizePx,
     rotationDeg: 0,
     priority: pointPriority(object, presentation),
     signature,
@@ -293,6 +295,7 @@ const projectionContextFor = (
 ): MapFeatureProjectionContext => ({
   selectedControllerId: input.selectedControllerId,
   highlightedObjectIds: new Set(input.highlightedObjectIds),
+  hiddenObjectCategoryIds: new Set(input.hiddenObjectCategoryIds),
   hasNewInfo: input.hasNewInfo,
   presentationFor: input.presentationFor,
 })
@@ -305,11 +308,12 @@ const projectObjects = (
   const objectPaths: OperationalPathFeature[] = []
   const objectAreas: OperationalAreaFeature[] = []
   for (const object of input.objects) {
-    const point = operationalPointFor(object, context)
+    const presentation = context.presentationFor(object)
+    if (context.hiddenObjectCategoryIds.has(presentation.categoryId)) continue
+    const point = operationalPointFor(object, presentation, context)
     if (point) points.push(point)
     const route = routePathFor(object, input.selectedControllerId)
     if (route) objectPaths.push(route)
-    const presentation = input.presentationFor(object)
     const line = lineObjectPathFor(object, presentation)
     if (line) objectPaths.push(line)
     const area = trafficAreaFor(object, presentation)

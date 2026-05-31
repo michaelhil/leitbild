@@ -80,6 +80,7 @@ export interface OperationalRenderInput {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlyArray<string>
+  readonly hiddenObjectCategoryIds: ReadonlyArray<string>
   readonly placementPoints: ReadonlyArray<GeoJsonPoint>
   readonly packAreaFeatures: ReadonlyArray<PackMapAreaFeature>
   readonly hasNewInfo: (object: OperationalObject) => boolean
@@ -157,6 +158,7 @@ export interface MapRuntimeHandle {
 export interface MapFeatureProjectionContext {
   readonly selectedControllerId: string | null
   readonly highlightedObjectIds: ReadonlySet<string>
+  readonly hiddenObjectCategoryIds: ReadonlySet<string>
   readonly hasNewInfo: (object: OperationalObject) => boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
 }

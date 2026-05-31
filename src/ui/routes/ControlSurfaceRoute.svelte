@@ -156,6 +156,24 @@
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
+  let categoryMapVisibility = $state<Record<string, boolean>>({})
+  $effect(() => {
+    const rows = categoryRows
+    untrack(() => {
+      const current = categoryMapVisibility
+      const next: Record<string, boolean> = {}
+      let changed = Object.keys(current).length !== rows.length
+      for (const row of rows) {
+        const value = current[row.category.id] ?? true
+        next[row.category.id] = value
+        if (current[row.category.id] === undefined) changed = true
+      }
+      if (changed) categoryMapVisibility = next
+    })
+  })
+  const hiddenObjectCategoryIds = $derived(
+    Object.entries(categoryMapVisibility).flatMap(([categoryId, visible]) => visible ? [] : [categoryId]),
+  )
   const placementCursor = $derived(activePack ? placementCursorFor(placementMode, activePack) : null)
   const systemStatusTone = $derived<StatusTone>(
     startupHasFailed(startupSteps) ? 'error' : startupIsReady(startupSteps) ? 'ready' : 'working',
@@ -172,6 +190,13 @@
 
   const toggleWeatherLayer = (): void => {
     weatherLayerVisible = !weatherLayerVisible
+  }
+
+  const toggleCategoryMapVisibility = (categoryId: string): void => {
+    categoryMapVisibility = {
+      ...categoryMapVisibility,
+      [categoryId]: !(categoryMapVisibility[categoryId] ?? true),
+    }
   }
 
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
@@ -1050,6 +1075,7 @@
         {railConfig}
         {placementMode}
         {selectedControllerId}
+        {categoryMapVisibility}
         {presentationFor}
         {hasNewInfo}
         {markSeen}
@@ -1061,6 +1087,7 @@
         {openStatusModal}
         {openSettings}
         {toggleClockPaused}
+        {toggleCategoryMapVisibility}
         mapLayerGroups={activeMapLayerGroups}
         {mapLayerGroupVisibility}
         onMapLayerGroupToggle={toggleMapLayerGroup}
@@ -1090,6 +1117,7 @@
           {routeRevision}
           {debugMapInput}
           highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
+          {hiddenObjectCategoryIds}
           {hasNewInfo}
           {presentationFor}
           {mapAreaFeaturesFor}
