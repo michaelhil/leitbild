@@ -59,7 +59,7 @@ Tradeoffs:
 - the query surface is another boundary that must be validated and documented
 - query kind names must remain disciplined and namespaced
 - UI code needs a small async cache for provider-backed map features
-- synchronous contextual fields still need separate design if they must depend on provider-private state
+- contextual fields are detail-tier enrichment only; if they depend on provider-private state, use a bounded pack query or a precomputed presentation index rather than map/rail summary rendering
 
 Rejected:
 

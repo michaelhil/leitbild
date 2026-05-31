@@ -179,8 +179,9 @@ Generic UI modules must not import pack-specific pack models, runtimes, geometry
 Pack-specific presentation belongs behind `LeitbildPack`:
 
 - `presentObject` owns the category, icon, color, summary, object fields, status indicator, and noteworthy-update policy for one object.
-- `contextualFields` lets a pack add derived fields to other packs' objects without teaching the generic rail or map about that pack. For example, a weather pack may add a `Weather` field to an ambulance by sampling active weather objects at the ambulance position.
+- `contextualFields` is detail-tier enrichment only. It lets a pack add derived fields to another pack's object for inspectors, hover detail, or selected-object detail without making map and rail summaries pay for cross-pack inference. Contextual enrichment must use the presentation object index or a bounded pack query rather than scanning the full Control Instance object list on every row render.
 - `mapAreaFeatures` lets a pack synchronously project object-derived spatial features into generic rendered areas when the current object snapshot is sufficient.
+- `mapAreaFeatureLayers` declares which surface map layers activate pack area features so generic map lifecycle code does not hard-code a concrete pack such as weather.
 - `mapAreaFeatureQueries` lets a pack request runtime-backed spatial features when rendering depends on runtime-owned private state. Weather uses this for H3 map features because the weather sparse field lives inside the weather pack runtime, not in generic UI state.
 - `PackMapAreaFeature.anchorPoint` and `symbol` let pack runtime-projected areas carry an attached MapLibre symbol without rendering the same concept as an ordinary operational-object marker. Weather uses this for cloud icons that follow influence ovals.
 - `PackMapAreaFeature.animation` is optional presentation metadata for smooth visual interpolation between pack runtime query refreshes. It may move rendered geometry and attached symbol anchors between two pack runtime-computed states, but it must not be treated as canonical simulation truth or used to update pack state.

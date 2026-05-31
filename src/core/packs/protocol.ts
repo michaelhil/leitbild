@@ -1,4 +1,4 @@
-import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject } from '../model/index.ts'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, InteractionHandler, IsoTimestamp, ObjectId, OperationalObject, SurfaceMapLayer } from '../model/index.ts'
 import type { RoutingAdapter } from '../../routing/protocol.ts'
 import type { DatasetConfig, DatasetId } from '../../reference-data/types.ts'
 
@@ -121,11 +121,14 @@ export type PackCreationGeometry =
       readonly polygon: GeoJsonPolygon
     }
 
+export type PackObjectPresentationTier = 'summary' | 'map' | 'detail'
+
 export interface PackObjectPresentationContext {
   readonly objects: ReadonlyArray<OperationalObject>
+  readonly objectsForPack?: (packId: string) => ReadonlyArray<OperationalObject>
   readonly currentTime?: IsoTimestamp
   readonly map?: PackMapRenderContext
-  readonly includeContextualFields?: boolean
+  readonly tier?: PackObjectPresentationTier
 }
 
 export interface PackMapRenderContext {
@@ -286,6 +289,7 @@ export interface LeitbildPack {
   readonly mapAreaFeatures?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackMapAreaFeature>
+  readonly mapAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
   readonly mapAreaFeatureQueries?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackQueryRequest>

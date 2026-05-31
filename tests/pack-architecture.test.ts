@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { confirmedFact, geoPointFromLonLat, nowIso, type AdapterId, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
 import { createCompositePack } from '../src/core/packs/composite.ts'
+import { createPackPresentationComposer } from '../src/core/packs/presentation-composer.ts'
 import { packField, packStatus } from '../src/core/packs/presentation.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
@@ -168,7 +169,7 @@ describe('pack architecture', () => {
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
   })
 
-  test('composite contextual fields are opt-in so map and rail summaries stay cheap', () => {
+  test('composite contextual fields are detail-tier only so map and rail summaries stay cheap', () => {
     const at = nowIso()
     const object: OperationalObject = {
       id: 'object:contextual-field-target' as ObjectId,
@@ -248,12 +249,131 @@ describe('pack architecture', () => {
     expect(contextualFieldCalls).toBe(0)
     expect(summaryPresentation.fields.map(field => field.key)).toEqual(['base'])
 
+    const mapPresentation = composite.presentObject(object, {
+      objects: [object],
+      tier: 'map',
+    })
+    expect(contextualFieldCalls).toBe(0)
+    expect(mapPresentation.fields.map(field => field.key)).toEqual(['base'])
+
     const detailPresentation = composite.presentObject(object, {
       objects: [object],
-      includeContextualFields: true,
+      tier: 'detail',
     })
     expect(contextualFieldCalls).toBe(1)
     expect(detailPresentation.fields.map(field => field.key)).toEqual(['base', 'contextual'])
+  })
+
+  test('composite packs aggregate map-area feature activation layers once', () => {
+    const packWithWeatherLayer: LeitbildPack = {
+      ...ambulancePack,
+      id: 'weather-layer-one',
+      name: 'Weather Layer One',
+      categories: [],
+      mapAreaFeatureLayers: ['weather'],
+    }
+    const secondPackWithWeatherLayer: LeitbildPack = {
+      ...trafficPack,
+      id: 'weather-layer-two',
+      name: 'Weather Layer Two',
+      categories: [],
+      mapAreaFeatureLayers: ['weather'],
+    }
+
+    const composite = createCompositePack({
+      id: 'map-area-layer-composite',
+      name: 'Map Area Layer Composite',
+      packs: [packWithWeatherLayer, secondPackWithWeatherLayer],
+    })
+
+    expect(composite.mapAreaFeatureLayers).toEqual(['weather'])
+  })
+
+  test('presentation composer caches by tier and exposes pack object indexes', () => {
+    let presentCalls = 0
+    let indexedWeatherObjectCount = -1
+    const object = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
+    if (!object) throw new Error('scenario missing ambulance object')
+    const weatherObject = {
+      ...object,
+      id: 'weather:indexed-presenter' as ObjectId,
+      packId: 'weather' as PackId,
+    }
+    const objects = [object, weatherObject]
+    const currentTime = nowIso()
+    const pack: LeitbildPack = {
+      id: 'indexed-presenter',
+      name: 'Indexed Presenter',
+      categories: [{
+        id: 'ambulances',
+        label: 'Ambulances',
+        emptyLabel: 'No ambulances',
+        matches: candidate => candidate.id === object.id,
+      }],
+      createObjectTypes: [],
+      presentObject: (_candidate, context): PackObjectPresentation => {
+        presentCalls += 1
+        indexedWeatherObjectCount = context.objectsForPack?.('weather').length ?? -1
+        return {
+          categoryId: 'ambulances',
+          icon: 'ambulance',
+          color: '#16834f',
+          summary: context.tier ?? 'summary',
+          fields: [packField('tier', 'Tier', context.tier ?? 'summary')],
+        }
+      },
+      defaultObjectLabel: () => 'Unused',
+      buildCreateObjectCommand: () => {
+        throw new Error('not used')
+      },
+      isController: () => false,
+      isTarget: () => false,
+      buildSetTargetCommand: () => {
+        throw new Error('not used')
+      },
+      buildCancelTargetCommand: () => {
+        throw new Error('not used')
+      },
+    }
+    const composer = createPackPresentationComposer({
+      getContext: () => ({
+        pack,
+        objects,
+        currentTime,
+      }),
+      nowMs: () => 0,
+    })
+
+    expect(composer.present(object).summary).toBe('summary')
+    expect(composer.present(object).summary).toBe('summary')
+    expect(composer.present(object, { tier: 'map' }).summary).toBe('map')
+    expect(presentCalls).toBe(2)
+    expect(indexedWeatherObjectCount).toBe(1)
+    expect(composer.diagnostics().tiers.summary.cacheHits).toBe(1)
+    expect(composer.diagnostics().tiers.map.cacheMisses).toBe(1)
+    composer.reset()
+    expect(composer.diagnostics().cacheSize).toBe(0)
+    expect(composer.diagnostics().tiers.summary.calls).toBe(0)
+  })
+
+  test('weather contextual fields use the presentation object index instead of scanning all objects', () => {
+    const object = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'ambulance')
+    const weatherObject = osloAmbulanceScenario.initialObjects.find(candidate => candidate.packId === 'weather')
+    if (!object || !weatherObject) throw new Error('scenario missing ambulance or weather object')
+    let requestedPackId = ''
+
+    const fields = weatherPack.contextualFields?.(object, {
+      objects: [object],
+      objectsForPack: packId => {
+        requestedPackId = packId
+        return [weatherObject]
+      },
+      currentTime: osloAmbulanceScenario.world.startsAt ?? nowIso(),
+      tier: 'detail',
+    }) ?? []
+
+    expect(requestedPackId).toBe('weather')
+    expect(fields.map(field => field.key)).toEqual(['weather'])
   })
 
   test('scenario catalog resolves scenario packs to internal pack runtimes', () => {

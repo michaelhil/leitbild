@@ -1,4 +1,5 @@
 import type { OperationalObject, ScenarioDefinition } from '../core/model/index.ts'
+import type { PackPresentationDiagnosticsSnapshot } from '../core/packs/presentation-composer.ts'
 import type { StartupStep } from './startup.ts'
 import type { MapPerformanceDiagnosticsSnapshot } from './map-runtime/map-performance-diagnostics.ts'
 import type { MapRuntimeDiagnosticsSnapshot } from './map-runtime/types.ts'
@@ -118,6 +119,7 @@ export interface InternalDiagnosticsSnapshot {
   readonly startup: InternalDiagnosticsStartupSnapshot
   readonly controlInstance: InternalDiagnosticsControlInstanceSnapshot
   readonly scenario: InternalDiagnosticsScenarioSnapshot
+  readonly presentation: PackPresentationDiagnosticsSnapshot
   readonly map: InternalDiagnosticsMapSnapshot
   readonly performance: InternalDiagnosticsPerformanceSnapshot
 }

@@ -138,6 +138,7 @@ export const weatherPack: LeitbildPack = {
     },
   ],
   createObjectTypes: [],
+  mapAreaFeatureLayers: ['weather'],
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const severity = data ? weatherPresentationSeverityForState(data.state) : undefined
@@ -169,7 +170,9 @@ export const weatherPack: LeitbildPack = {
   contextualFields: (object, context): ReadonlyArray<PackObjectField> => {
     const point = samplePointFor(object)
     if (!point) return []
-    const sample = weatherSampleAtPoint(context.objects, point, context.currentTime ?? nowIso())
+    const weatherObjects = context.objectsForPack?.(weatherPackId)
+      ?? context.objects.filter(candidate => candidate.packId === weatherPackId)
+    const sample = weatherSampleAtPoint(weatherObjects, point, context.currentTime ?? nowIso())
     return [packField('weather', 'Weather', weatherValue(sample.state))]
   },
   defaultObjectLabel: (typeId, context): string => {

@@ -3,7 +3,8 @@
   import { tick, untrack } from 'svelte'
   import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation } from '../../core/packs/protocol.ts'
+  import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier } from '../../core/packs/protocol.ts'
   import {
     fetchScenario,
     joinControlInstance as joinControlInstanceClient,
@@ -119,9 +120,6 @@
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
-  let presentationCacheObjects: ReadonlyArray<OperationalObject> | null = null
-  let presentationCacheContextKey = ''
-  const presentationCache = new Map<string, PackObjectPresentation>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -205,6 +203,7 @@
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
   // toggles and writes here; OperationalMap re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
+  const activePackAreaFeatureLayers = $derived(activePack?.mapAreaFeatureLayers ?? [])
   const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? [])
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
@@ -291,33 +290,26 @@
     return activePack
   }
 
+  const presentationComposer = createPackPresentationComposer({
+    getContext: () => ({
+      pack: activePack,
+      objects,
+      currentTime: currentPackTime(),
+    }),
+  })
+
   const presentationFor = (
     object: OperationalObject,
-    options: { readonly includeContextualFields?: boolean } = {},
+    options: { readonly tier?: PackObjectPresentationTier } = {},
   ): PackObjectPresentation => {
-    const pack = requireActivePack()
-    const currentTime = currentPackTime()
-    const contextKey = `${pack.id}:${currentTime ?? 'no-time'}`
-    if (presentationCacheObjects !== objects || presentationCacheContextKey !== contextKey) {
-      presentationCache.clear()
-      presentationCacheObjects = objects
-      presentationCacheContextKey = contextKey
-    }
-    const includeContextualFields = options.includeContextualFields === true
-    const key = `${object.id}:${object.revision}:${includeContextualFields ? 'detail' : 'summary'}`
-    const cached = presentationCache.get(key)
-    if (cached) return cached
-    const presentation = pack.presentObject(object, {
-      objects,
-      currentTime,
-      includeContextualFields,
-    })
-    presentationCache.set(key, presentation)
-    return presentation
+    return presentationComposer.present(object, options)
   }
 
   const detailPresentationFor = (object: OperationalObject): PackObjectPresentation =>
-    presentationFor(object, { includeContextualFields: true })
+    presentationFor(object, { tier: 'detail' })
+
+  const mapPresentationFor = (object: OperationalObject): PackObjectPresentation =>
+    presentationFor(object, { tier: 'map' })
 
   const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
@@ -387,6 +379,7 @@
         selectedControllerId,
       },
       scenario: scenarioDiagnosticsFor(scenarioDefinition, objects),
+      presentation: presentationComposer.diagnostics(),
       map: {
         visible: mapVisible,
         ready: mapReady,
@@ -417,6 +410,7 @@
 
   const clearInternalDiagnostics = (): void => {
     mapPerformanceDiagnostics.clear()
+    presentationComposer.reset()
     longTaskMonitor?.clear()
     performance.clearResourceTimings()
   }
@@ -1150,7 +1144,7 @@
           highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
           {hiddenObjectCategoryIds}
           {hasNewInfo}
-          {presentationFor}
+          presentationFor={mapPresentationFor}
           {mapAreaFeaturesFor}
           onObjectSelected={selectObject}
           onPlacementPoint={placement.placePoint}
@@ -1163,6 +1157,7 @@
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
           referenceDatasetIds={activeReferenceDatasetIds}
+          packAreaFeatureLayers={activePackAreaFeatureLayers}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>

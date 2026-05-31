@@ -73,7 +73,7 @@ export const createCompositePack = (config: {
     presentObject: (object, context): PackObjectPresentation => {
       const pack = packForObject(config.packs, object)
       const presentation = pack ? pack.presentObject(object, context) : primaryPack.presentObject(object, context)
-      if (context.includeContextualFields !== true) return presentation
+      if (context.tier !== 'detail') return presentation
       const contextualFields = config.packs.flatMap(candidate =>
         candidate.contextualFields?.(object, context) ?? []
       )
@@ -89,6 +89,18 @@ export const createCompositePack = (config: {
     },
     mapAreaFeatures: (context): ReadonlyArray<PackMapAreaFeature> =>
       config.packs.flatMap(pack => pack.mapAreaFeatures?.(context) ?? []),
+    mapAreaFeatureLayers: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['mapAreaFeatureLayers']>[number][] = []
+      for (const pack of config.packs) {
+        for (const layer of pack.mapAreaFeatureLayers ?? []) {
+          if (seen.has(layer)) continue
+          seen.add(layer)
+          out.push(layer)
+        }
+      }
+      return out
+    })(),
     mapAreaFeatureQueries: (context): ReadonlyArray<PackQueryRequest> =>
       config.packs.flatMap(pack => pack.mapAreaFeatureQueries?.(context) ?? []),
     defaultObjectLabel: (typeId, context): string => {
