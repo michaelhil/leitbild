@@ -96,17 +96,19 @@ export const createPackOverlayController = (
 
   const clearFeatures = (): void => {
     if (!featuresApplied && disabledReadyReported) return
+    const runtime = config.getRuntime()
+    if (!featuresApplied && !runtime) return
     config.setFeatures([])
     featuresApplied = false
     cacheKey = null
     requestKey = null
-    config.getRuntime()?.reportDiagnosticPhase({
+    runtime?.reportDiagnosticPhase({
       phase: 'operational-static',
       status: 'ready',
       message: 'No pack area features active',
       details: [],
     })
-    disabledReadyReported = true
+    disabledReadyReported = Boolean(runtime)
     config.onFeaturesChanged()
   }
 
