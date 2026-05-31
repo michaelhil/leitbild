@@ -111,6 +111,7 @@ describe('electric grid pack', () => {
 
     try {
       const snapshot = await connection.getSnapshot()
+      if (!scenario.world.startsAt) throw new Error('grid scenario must declare a deterministic start time')
       const systemObject = snapshot.objects.find(object => object.id === 'grid:norway-system')
       if (!systemObject) throw new Error('missing grid system object')
       const system = parsedPackData(systemObject, 'grid_system') as GridSystemData
@@ -125,6 +126,7 @@ describe('electric grid pack', () => {
       expect(system.totalGenerationMw).toBeGreaterThan(0)
       expect(system.servedLoadMw).toBeGreaterThan(0)
       expect(branches.some(branch => Math.abs(branch.flowMw) > 0)).toBe(true)
+      expect(system.updatedAt).toBe(scenario.world.startsAt)
       expect(system.lowestVoltagePu).toBeGreaterThan(0.98)
       expect(system.activeIslandCount).toBeGreaterThanOrEqual(1)
       expect(system.activeAlarmCount).toBe(0)

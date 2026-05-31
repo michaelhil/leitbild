@@ -257,8 +257,11 @@ const applyCommandToObject = (
   return null
 }
 
-const currentSimulationTime = (clock: SimulationClockState | null): IsoTimestamp => {
-  if (!clock) return nowIso()
+const currentSimulationTime = (
+  clock: SimulationClockState | null,
+  fallbackTime?: IsoTimestamp,
+): IsoTimestamp => {
+  if (!clock) return fallbackTime ?? nowIso()
   if (clock.paused) return clock.currentTime
   const currentTimeMs = Date.parse(clock.currentTime)
   const updatedAtMs = Date.parse(clock.updatedAt)
@@ -291,6 +294,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
     let runtimeStateSaveDirty = false
     let runtimeStateSaveTimer: ReturnType<typeof setTimeout> | null = null
     let runtimeStateSaveQueue: Promise<void> = Promise.resolve()
+    const initialScenarioTime = config.scenario?.world.startsAt
 
     const clearRuntimeStateSaveTimer = (): void => {
       if (runtimeStateSaveTimer === null) return
@@ -361,7 +365,7 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       persistence: PackRuntimeEventPersistence = 'projected',
     ): void => {
       if (closed || clock?.paused) return
-      const at = currentSimulationTime(clock)
+      const at = currentSimulationTime(clock, initialScenarioTime)
       const solved = solveGrid({ objects: [...objects.values()], runtimeState, topology, dtSeconds, at })
       runtimeState = solved.runtimeState
       const events: PackRuntimeEvent[] = []
