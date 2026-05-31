@@ -77,6 +77,36 @@ describe('PackOverlayController', () => {
     controller.destroy()
   })
 
+  test('disabled sync is idempotent when no overlay features are active', () => {
+    const reports: MapRuntimeDiagnosticPhaseReport[] = []
+    let features: ReadonlyArray<PackMapAreaFeature> = []
+    let changed = 0
+    const controller = createPackOverlayController({
+      getRuntime: () => createRuntime(reports),
+      getViewport: () => viewport,
+      getCurrentTime: () => undefined,
+      getSourceRevisionKey: () => 'r1',
+      enabled: () => false,
+      loadFeatures: async () => [featureFor('unused')],
+      setFeatures: next => {
+        features = next
+      },
+      onFeaturesChanged: () => {
+        changed += 1
+      },
+      onError: () => undefined,
+      performanceDiagnostics: createMapPerformanceDiagnostics(() => 0),
+    })
+
+    controller.syncEnabled()
+    controller.syncEnabled()
+
+    expect(features).toEqual([])
+    expect(changed).toBe(1)
+    expect(reports.filter(report => report.message === 'No pack area features active')).toHaveLength(1)
+    controller.destroy()
+  })
+
   test('caches enabled overlay results by viewport, zoom, time bucket, and source revision', async () => {
     const reports: MapRuntimeDiagnosticPhaseReport[] = []
     let loadCalls = 0

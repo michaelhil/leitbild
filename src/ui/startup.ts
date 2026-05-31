@@ -40,8 +40,16 @@ const updateStep = (
   steps: ReadonlyArray<StartupStep>,
   id: StartupStepId,
   update: (step: StartupStep) => StartupStep,
-): ReadonlyArray<StartupStep> =>
-  steps.map(step => step.id === id ? update(step) : step)
+): ReadonlyArray<StartupStep> => {
+  let changed = false
+  const next = steps.map(step => {
+    if (step.id !== id) return step
+    const updated = update(step)
+    if (updated !== step) changed = true
+    return updated
+  })
+  return changed ? next : steps
+}
 
 export const startStartupStep = (
   steps: ReadonlyArray<StartupStep>,
@@ -92,10 +100,15 @@ export const setStartupStepDetails = (
   id: StartupStepId,
   details: ReadonlyArray<StartupStepDetail>,
 ): ReadonlyArray<StartupStep> =>
-  updateStep(steps, id, step => ({
-    ...step,
-    details,
-  }))
+  updateStep(steps, id, step => {
+    const existing = step.details ?? []
+    const unchanged = existing.length === details.length
+      && existing.every((detail, index) => (
+        detail.label === details[index]?.label
+        && detail.value === details[index]?.value
+      ))
+    return unchanged ? step : { ...step, details }
+  })
 
 export const resetStartupStepsAfter = (
   steps: ReadonlyArray<StartupStep>,

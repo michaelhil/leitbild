@@ -85,6 +85,8 @@ export const createPackOverlayController = (
   let requestKey: string | null = null
   let cacheKey: string | null = null
   let cameraGestureActive = false
+  let featuresApplied = false
+  let disabledReadyReported = false
 
   const stopAutoRefresh = (): void => {
     if (refreshInterval === null) return
@@ -93,7 +95,9 @@ export const createPackOverlayController = (
   }
 
   const clearFeatures = (): void => {
+    if (!featuresApplied && disabledReadyReported) return
     config.setFeatures([])
+    featuresApplied = false
     cacheKey = null
     requestKey = null
     config.getRuntime()?.reportDiagnosticPhase({
@@ -102,6 +106,7 @@ export const createPackOverlayController = (
       message: 'No pack area features active',
       details: [],
     })
+    disabledReadyReported = true
     config.onFeaturesChanged()
   }
 
@@ -121,6 +126,7 @@ export const createPackOverlayController = (
     const runtime = config.getRuntime()
     const viewport = config.getViewport()
     if (!runtime || !viewport) return
+    disabledReadyReported = false
     const zoom = runtime.map.getZoom()
     const currentTime = config.getCurrentTime()
     const nextRequestKey = requestKeyFor({
@@ -163,6 +169,7 @@ export const createPackOverlayController = (
       )
       if (serial !== requestSerial) return
       config.setFeatures(features)
+      featuresApplied = features.length > 0
       cacheKey = nextRequestKey
       runtime.reportDiagnosticPhase({
         phase: 'operational-static',
@@ -231,6 +238,8 @@ export const createPackOverlayController = (
       cacheKey = null
       requestKey = null
       cameraGestureActive = false
+      featuresApplied = false
+      disabledReadyReported = false
     },
   }
 }

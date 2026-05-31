@@ -4,6 +4,7 @@ import {
   createStartupSteps,
   failStartupStep,
   resetStartupStepsAfter,
+  setStartupStepDetails,
   startupHasFailed,
   startupIsReady,
   startupModalShouldShow,
@@ -48,6 +49,16 @@ describe('startup progress model', () => {
 
     expect(startupIsReady(failed)).toBe(false)
     expect(startupHasFailed(failed)).toBe(true)
+  })
+
+  test('does not create a new startup step array when diagnostic details are unchanged', () => {
+    let steps = createStartupSteps(10)
+    const details = [{ label: 'base', value: 'ready' }]
+    steps = setStartupStepDetails(steps, 'map', details)
+
+    const unchanged = setStartupStepDetails(steps, 'map', details)
+
+    expect(unchanged).toBe(steps)
   })
 
   test('does not report readiness after a map failure', () => {

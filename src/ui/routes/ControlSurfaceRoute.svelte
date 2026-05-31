@@ -78,6 +78,9 @@
   import type { CategoryRow, ControlInstanceResponse, CreateDraft, ScenarioListItem } from '../types.ts'
 
   const appVersion = __LEITBILD_VERSION__
+  const emptyStringArray: ReadonlyArray<string> = []
+  const emptyMapLayerGroups: NonNullable<LeitbildPack['mapLayerGroups']> = []
+  const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['mapAreaFeatureLayers']> = []
   let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -202,9 +205,9 @@
   // Pack-rail layer-group visibility. Active pack contributes mapLayerGroups
   // (e.g. aviation pack: airspace, airports, aircraft); the rail renders
   // toggles and writes here; OperationalMap re-applies on change.
-  const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? [])
-  const activePackAreaFeatureLayers = $derived(activePack?.mapAreaFeatureLayers ?? [])
-  const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? [])
+  const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? emptyMapLayerGroups)
+  const activePackAreaFeatureLayers = $derived(activePack?.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
+  const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? emptyStringArray)
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
   // re-triggering this effect (a new object literal every time would otherwise
@@ -1141,7 +1144,7 @@
           {clock}
           {routeRevision}
           {debugMapInput}
-          highlightedObjectIds={scenarioState?.highlightedObjectIds ?? []}
+          highlightedObjectIds={scenarioState?.highlightedObjectIds ?? emptyStringArray}
           {hiddenObjectCategoryIds}
           {hasNewInfo}
           presentationFor={mapPresentationFor}
@@ -1153,7 +1156,7 @@
           onMapError={handleMapError}
           onMapDiagnostic={handleMapDiagnostic}
           {controlInstanceId}
-          activePackIds={scenarioDefinition?.packs ?? []}
+          activePackIds={scenarioDefinition?.packs ?? emptyStringArray}
           mapLayerGroups={activeMapLayerGroups}
           {mapLayerGroupVisibility}
           referenceDatasetIds={activeReferenceDatasetIds}
