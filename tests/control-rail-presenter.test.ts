@@ -67,4 +67,25 @@ describe('control rail presenter', () => {
       { key: 'capacity', label: 'Capacity', value: '2 / 4' },
     ])
   })
+
+  test('can defer object row presentation while preserving category headers', () => {
+    let presentationCalls = 0
+    const deferred = buildPresentedCategoryRows({
+      categoryRows: [row],
+      collapsedCategoryIds: {},
+      openFieldCategoryId: null,
+      visibleFieldsByCategory: { facilities: ['capacity'] },
+      includeRows: false,
+      presentationFor: () => {
+        presentationCalls += 1
+        return presentation
+      },
+      hasNewInfo: () => false,
+    })
+
+    expect(deferred[0]?.row.objects.length).toBe(1)
+    expect(deferred[0]?.presentedRows).toEqual([])
+    expect(deferred[0]?.fieldOptions).toEqual([])
+    expect(presentationCalls).toBe(0)
+  })
 })

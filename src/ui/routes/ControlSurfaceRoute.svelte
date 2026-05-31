@@ -111,6 +111,7 @@
   let operationalMapLoadPromise: Promise<Component> | null = null
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
+  let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
   let startupDebugGeneration = 0
@@ -153,6 +154,7 @@
   const footerVisible = $derived(surfaceHasPrimitive(surface, 'systemFooter'))
   const guidanceOverlayVisible = $derived(surfaceHasPrimitive(surface, 'guidanceOverlay'))
   const gridOverviewVisible = $derived(scenarioDefinition?.packs.includes('electric-grid') === true)
+  const richOperationalUiReady = $derived(!mapVisible || mapReady)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
@@ -632,6 +634,7 @@
     postReadyPreloadStarted = false
     startupDismissed = false
     latestMapRuntimeDiagnostics = null
+    pendingRealtimeControlInstanceId = null
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
   }
 
@@ -753,6 +756,13 @@
   }
 
   const connectWebSocket = (id: ControlInstanceId): void => {
+    if (mapVisible && !mapReady) {
+      pendingRealtimeControlInstanceId = id
+      startStep('realtime')
+      status = 'Waiting for map first frame before realtime updates'
+      return
+    }
+    pendingRealtimeControlInstanceId = null
     startStep('realtime')
     if (realtimeConnection.canCarry(id)) {
       status = realtimeConnection.statusFor(id) === 'open' ? 'Realtime channel open' : 'Connecting'
@@ -813,6 +823,13 @@
         }
       },
     })
+  }
+
+  const connectPendingRealtime = (): void => {
+    const id = pendingRealtimeControlInstanceId
+    if (!id) return
+    pendingRealtimeControlInstanceId = null
+    connectWebSocket(id)
   }
 
   const controlInstanceIdFromPath = (): ControlInstanceId => {
@@ -960,6 +977,7 @@
     markStartup('map:ready')
     if (startupSteps.find(step => step.id === 'map')?.status !== 'done') completeStep('map')
     if (startupSteps.find(step => step.id === 'objects')?.status === 'pending') startStep('objects')
+    connectPendingRealtime()
     void completeObjectsWhenReady()
     preloadOptionalUiAfterReady()
   }
@@ -1050,7 +1068,7 @@
   })
 
   $effect(() => {
-    if (gridOverviewVisible) void loadGridOverviewPanel()
+    if (gridOverviewVisible && richOperationalUiReady) void loadGridOverviewPanel()
   })
 </script>
 
@@ -1076,6 +1094,7 @@
         {placementMode}
         {selectedControllerId}
         {categoryMapVisibility}
+        deferObjectRows={!richOperationalUiReady}
         {presentationFor}
         {hasNewInfo}
         {markSeen}
@@ -1138,7 +1157,7 @@
       {:else}
         <div class="surface-empty"></div>
       {/if}
-      {#if gridOverviewVisible && GridOverviewPanel}
+      {#if gridOverviewVisible && richOperationalUiReady && GridOverviewPanel}
         <GridOverviewPanel {objects} />
       {/if}
     </main>

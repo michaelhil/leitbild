@@ -379,7 +379,6 @@ export const createLocalElectricGridPackRuntimeAdapter = (): PackRuntimeAdapter 
       emit(handlers, events, at)
     }
 
-    solveAndEmit(1, 'projected')
     solveAndEmit(updateIntervalMs / 1000, 'projected')
     interval = setInterval(() => solveAndEmit(updateIntervalMs / 1000, 'projected'), updateIntervalMs)
 

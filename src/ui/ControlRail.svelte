@@ -33,6 +33,7 @@
     readonly placementMode: PackCreateObjectType | null
     readonly selectedControllerId: string | null
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
+    readonly deferObjectRows?: boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly markSeen: (object: OperationalObject) => void
@@ -68,6 +69,7 @@
     placementMode,
     selectedControllerId,
     categoryMapVisibility = {},
+    deferObjectRows = false,
     presentationFor,
     hasNewInfo,
     markSeen,
@@ -149,6 +151,7 @@
     collapsedCategoryIds,
     openFieldCategoryId,
     visibleFieldsByCategory,
+    includeRows: !deferObjectRows,
     presentationFor,
     hasNewInfo,
   }))

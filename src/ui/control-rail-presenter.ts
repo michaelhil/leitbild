@@ -90,24 +90,27 @@ export const buildPresentedCategoryRows = (config: {
   readonly collapsedCategoryIds: Record<string, boolean>
   readonly openFieldCategoryId: string | null
   readonly visibleFieldsByCategory: FieldVisibilityState
+  readonly includeRows?: boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
   readonly hasNewInfo: (object: OperationalObject) => boolean
 }): ReadonlyArray<PresentedCategoryRow> =>
   config.categoryRows.map(row => {
     const visibleFields = visibleFieldsFor(config.visibleFieldsByCategory, row.category.id)
-    const presentedRows = presentedRowsFor({
-      row,
-      visibleFields,
-      presentationFor: config.presentationFor,
-      hasNewInfo: config.hasNewInfo,
-    })
+    const presentedRows = config.includeRows === false
+      ? []
+      : presentedRowsFor({
+          row,
+          visibleFields,
+          presentationFor: config.presentationFor,
+          hasNewInfo: config.hasNewInfo,
+        })
     return {
       row,
       headerIcon: categoryIcon(row),
       collapsed: config.collapsedCategoryIds[row.category.id] === true,
       fieldMenuOpen: config.openFieldCategoryId === row.category.id,
       visibleFields,
-      fieldOptions: fieldOptionsFor(presentedRows),
+      fieldOptions: config.includeRows === false ? [] : fieldOptionsFor(presentedRows),
       presentedRows,
     }
   })
