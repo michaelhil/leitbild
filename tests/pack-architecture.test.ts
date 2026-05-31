@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { confirmedFact, geoPointFromLonLat, nowIso, type ObjectId, type OperationalObject } from '../src/core/model/index.ts'
+import { confirmedFact, geoPointFromLonLat, nowIso, type AdapterId, type ObjectId, type OperationalObject, type PackId } from '../src/core/model/index.ts'
 import { createCompositePack } from '../src/core/packs/composite.ts'
+import { packField, packStatus } from '../src/core/packs/presentation.ts'
 import { createPackRegistry } from '../src/core/packs/registry.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { ambulancePack } from '../src/packs/ambulance/pack.ts'
@@ -20,6 +21,7 @@ import { createAmbulanceSimEngine } from '../src/packs/ambulance/sim/engine.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { LeitbildPack, PackObjectPresentation } from '../src/core/packs/protocol.ts'
 
 describe('pack architecture', () => {
   test('registers static packs by unique id', () => {
@@ -164,6 +166,94 @@ describe('pack architecture', () => {
       'traffic_road_segment',
     ].sort())
     expect(() => composite.defaultObjectLabel('missing', { objects: [] })).toThrow('unknown create object type')
+  })
+
+  test('composite contextual fields are opt-in so map and rail summaries stay cheap', () => {
+    const at = nowIso()
+    const object: OperationalObject = {
+      id: 'object:contextual-field-target' as ObjectId,
+      kind: 'facility',
+      packId: 'base-pack' as PackId,
+      label: 'Contextual field target',
+      lifecycle: 'active',
+      revision: 0,
+      spatial: {
+        position: {
+          point: geoPointFromLonLat(10, 59),
+          observedAt: at,
+        },
+        frame: { kind: 'wgs84' },
+      },
+      operational: {
+        status: 'nominal',
+        priority: 'normal',
+        mode: 'simulated',
+      },
+      alerts: [],
+      provenance: {
+        source: 'simulator',
+        adapterId: 'adapter:test' as AdapterId,
+        externalId: 'object:contextual-field-target',
+      },
+      timestamps: {
+        createdAt: at,
+        updatedAt: at,
+      },
+      packData: {},
+    }
+    let contextualFieldCalls = 0
+    const basePack: LeitbildPack = {
+      id: 'base-pack',
+      name: 'Base Pack',
+      categories: [{ id: 'base', label: 'Base', emptyLabel: 'No base objects', matches: candidate => candidate.packId === 'base-pack' }],
+      createObjectTypes: [],
+      presentObject: (): PackObjectPresentation => ({
+        categoryId: 'base',
+        icon: 'grid',
+        color: '#64748b',
+        summary: 'base',
+        status: packStatus('ready', 'Ready'),
+        fields: [packField('base', 'Base', 'yes')],
+      }),
+      defaultObjectLabel: () => 'Base object',
+      buildCreateObjectCommand: () => {
+        throw new Error('not used')
+      },
+      isController: () => false,
+      isTarget: () => false,
+      buildSetTargetCommand: () => {
+        throw new Error('not used')
+      },
+      buildCancelTargetCommand: () => {
+        throw new Error('not used')
+      },
+    }
+    const enrichmentPack: LeitbildPack = {
+      ...basePack,
+      id: 'enrichment-pack',
+      name: 'Enrichment Pack',
+      categories: [],
+      contextualFields: () => {
+        contextualFieldCalls += 1
+        return [packField('contextual', 'Contextual', 'yes')]
+      },
+    }
+    const composite = createCompositePack({
+      id: 'contextual-field-composite',
+      name: 'Contextual Field Composite',
+      packs: [basePack, enrichmentPack],
+    })
+
+    const summaryPresentation = composite.presentObject(object, { objects: [object] })
+    expect(contextualFieldCalls).toBe(0)
+    expect(summaryPresentation.fields.map(field => field.key)).toEqual(['base'])
+
+    const detailPresentation = composite.presentObject(object, {
+      objects: [object],
+      includeContextualFields: true,
+    })
+    expect(contextualFieldCalls).toBe(1)
+    expect(detailPresentation.fields.map(field => field.key)).toEqual(['base', 'contextual'])
   })
 
   test('scenario catalog resolves scenario packs to internal pack runtimes', () => {

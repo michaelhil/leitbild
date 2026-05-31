@@ -73,6 +73,7 @@ export const createCompositePack = (config: {
     presentObject: (object, context): PackObjectPresentation => {
       const pack = packForObject(config.packs, object)
       const presentation = pack ? pack.presentObject(object, context) : primaryPack.presentObject(object, context)
+      if (context.includeContextualFields !== true) return presentation
       const contextualFields = config.packs.flatMap(candidate =>
         candidate.contextualFields?.(object, context) ?? []
       )

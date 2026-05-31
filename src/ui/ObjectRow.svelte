@@ -15,6 +15,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
+    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
   }
 
@@ -28,18 +29,33 @@
     markSeen,
     selectObject,
     deleteObject,
+    detailPresentationFor,
     openProcessSurface,
   }: Props = $props()
 
   let newInfoBadge: HTMLButtonElement | null = $state(null)
   let newInfoTooltipVisible = $state(false)
   let newInfoTooltipPosition = $state({ left: 0, top: 0, width: 250 })
+  let detailPresentation: PackObjectPresentation | null = $state(null)
+  let detailPresentationKey: string | null = $state(null)
 
   const newInfoSummary = $derived(
     presentation.fields.length === 0
       ? presentation.summary
       : presentation.fields.map(field => `${field.label}: ${field.value}`).join(' · '),
   )
+  const currentPresentationKey = $derived(`${object.id}:${object.revision}`)
+  const activeDetailPresentation = $derived(
+    detailPresentationKey === currentPresentationKey && detailPresentation !== null
+      ? detailPresentation
+      : presentation,
+  )
+
+  const loadDetailPresentation = (): void => {
+    if (detailPresentationKey === currentPresentationKey && detailPresentation !== null) return
+    detailPresentation = detailPresentationFor?.(object) ?? presentation
+    detailPresentationKey = currentPresentationKey
+  }
 
   const showNewInfoTooltip = (): void => {
     if (!newInfoBadge) return
@@ -107,11 +123,18 @@
       </span>
     </span>
   </div>
-  <button class="row-info" type="button" aria-label="Show {object.label} details" onclick={(event) => event.stopPropagation()}>
+  <button
+    class="row-info"
+    type="button"
+    aria-label="Show {object.label} details"
+    onmouseenter={loadDetailPresentation}
+    onfocus={loadDetailPresentation}
+    onclick={(event) => event.stopPropagation()}
+  >
     ?
     <span class="row-tooltip">
       <strong>{object.label}</strong>
-      {#each presentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
+      {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
     </span>
   </button>
   {#if processSurfaceAvailable}

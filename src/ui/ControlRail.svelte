@@ -35,6 +35,7 @@
     readonly categoryMapVisibility?: Readonly<Record<string, boolean>>
     readonly deferObjectRows?: boolean
     readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly hasNewInfo: (object: OperationalObject) => boolean
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
@@ -71,6 +72,7 @@
     categoryMapVisibility = {},
     deferObjectRows = false,
     presentationFor,
+    detailPresentationFor,
     hasNewInfo,
     markSeen,
     selectObject,
@@ -184,6 +186,7 @@
       {markSeen}
       {selectObject}
       {deleteObject}
+      {detailPresentationFor}
       {openProcessSurface}
     />
   {/each}

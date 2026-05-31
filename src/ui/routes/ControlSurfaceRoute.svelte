@@ -291,7 +291,10 @@
     return activePack
   }
 
-  const presentationFor = (object: OperationalObject): PackObjectPresentation => {
+  const presentationFor = (
+    object: OperationalObject,
+    options: { readonly includeContextualFields?: boolean } = {},
+  ): PackObjectPresentation => {
     const pack = requireActivePack()
     const currentTime = currentPackTime()
     const contextKey = `${pack.id}:${currentTime ?? 'no-time'}`
@@ -300,13 +303,21 @@
       presentationCacheObjects = objects
       presentationCacheContextKey = contextKey
     }
-    const key = `${object.id}:${object.revision}`
+    const includeContextualFields = options.includeContextualFields === true
+    const key = `${object.id}:${object.revision}:${includeContextualFields ? 'detail' : 'summary'}`
     const cached = presentationCache.get(key)
     if (cached) return cached
-    const presentation = pack.presentObject(object, { objects, currentTime })
+    const presentation = pack.presentObject(object, {
+      objects,
+      currentTime,
+      includeContextualFields,
+    })
     presentationCache.set(key, presentation)
     return presentation
   }
+
+  const detailPresentationFor = (object: OperationalObject): PackObjectPresentation =>
+    presentationFor(object, { includeContextualFields: true })
 
   const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
@@ -1096,6 +1107,7 @@
         {categoryMapVisibility}
         deferObjectRows={!richOperationalUiReady}
         {presentationFor}
+        {detailPresentationFor}
         {hasNewInfo}
         {markSeen}
         {selectObject}

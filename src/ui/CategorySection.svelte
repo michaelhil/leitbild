@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ChevronDown, ChevronRight, Eye, EyeOff, Plus } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
-  import type { PackCreateObjectType } from '../core/packs/protocol.ts'
+  import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
   import FieldVisibilityMenu from './FieldVisibilityMenu.svelte'
   import ObjectRow from './ObjectRow.svelte'
@@ -27,6 +27,7 @@
     readonly markSeen: (object: OperationalObject) => void
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
+    readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
   }
 
@@ -48,6 +49,7 @@
     markSeen,
     selectObject,
     deleteObject,
+    detailPresentationFor,
     openProcessSurface,
   }: Props = $props()
 </script>
@@ -113,6 +115,7 @@
         {markSeen}
         {selectObject}
         {deleteObject}
+        {detailPresentationFor}
         {openProcessSurface}
       />
     {/each}

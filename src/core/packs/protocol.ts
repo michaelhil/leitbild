@@ -125,6 +125,7 @@ export interface PackObjectPresentationContext {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly currentTime?: IsoTimestamp
   readonly map?: PackMapRenderContext
+  readonly includeContextualFields?: boolean
 }
 
 export interface PackMapRenderContext {
