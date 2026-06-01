@@ -67,8 +67,10 @@
   import type { MapRuntimeDiagnosticsSnapshot } from '../map-runtime/types.ts'
   import {
     browserDiagnostics,
+    clearPackQueryDiagnostics,
     createLongTaskDiagnosticsMonitor,
     installInternalDiagnosticsGlobal,
+    packQueryDiagnostics,
     resourceDiagnostics,
     routeDiagnostics,
     scenarioDiagnosticsFor,
@@ -221,6 +223,7 @@
   // toggles and writes here; OperationalMap re-applies on change.
   const activeMapLayerGroups = $derived(activePack?.mapLayerGroups ?? emptyMapLayerGroups)
   const activePackAreaFeatureLayers = $derived(activePack?.mapAreaFeatureLayers ?? emptyMapAreaFeatureLayers)
+  const activePackAreaFeatureSourcePackIds = $derived(activePack?.mapAreaFeatureSourcePackIds ?? emptyStringArray)
   const activeReferenceDatasetIds = $derived(activePack?.referenceDatasetIds?.map(String) ?? emptyStringArray)
   let mapLayerGroupVisibility = $state<Record<string, boolean>>({})
   // Re-seed when the group list changes. `untrack` keeps the write from
@@ -421,6 +424,7 @@
           recent: [],
         },
         resources: resourceDiagnostics(),
+        packQueries: packQueryDiagnostics(),
       },
     }
   }
@@ -429,6 +433,7 @@
     mapPerformanceDiagnostics.clear()
     presentationComposer.reset()
     longTaskMonitor?.clear()
+    clearPackQueryDiagnostics()
     performance.clearResourceTimings()
   }
 
@@ -1178,6 +1183,7 @@
           {mapLayerGroupVisibility}
           referenceDatasetIds={activeReferenceDatasetIds}
           packAreaFeatureLayers={activePackAreaFeatureLayers}
+          packAreaFeatureSourcePackIds={activePackAreaFeatureSourcePackIds}
         />
       {:else if mapVisible}
         <div class="map-loading">Starting map...</div>

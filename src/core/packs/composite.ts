@@ -101,6 +101,20 @@ export const createCompositePack = (config: {
       }
       return out
     })(),
+    mapAreaFeatureSourcePackIds: (() => {
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const pack of config.packs) {
+        if (pack.mapAreaFeatures === undefined && pack.mapAreaFeatureQueries === undefined) continue
+        const sourcePackIds = pack.mapAreaFeatureSourcePackIds ?? [pack.id]
+        for (const packId of sourcePackIds) {
+          if (seen.has(packId)) continue
+          seen.add(packId)
+          out.push(packId)
+        }
+      }
+      return out
+    })(),
     mapAreaFeatureQueries: (context): ReadonlyArray<PackQueryRequest> =>
       config.packs.flatMap(pack => pack.mapAreaFeatureQueries?.(context) ?? []),
     defaultObjectLabel: (typeId, context): string => {

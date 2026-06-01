@@ -139,6 +139,7 @@ export const weatherPack: LeitbildPack = {
   ],
   createObjectTypes: [],
   mapAreaFeatureLayers: ['weather'],
+  mapAreaFeatureSourcePackIds: [weatherPackId],
   presentObject: (object): PackObjectPresentation => {
     const data = parseWeatherData(object)
     const severity = data ? weatherPresentationSeverityForState(data.state) : undefined

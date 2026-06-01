@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { ClipboardList, Eye, FileText, GitBranch } from 'lucide-svelte'
+  import { ClipboardList, Eye, FileText, GitBranch, X } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
@@ -430,7 +430,15 @@
       >
         <ClipboardList size={17} aria-hidden="true" />
       </button>
-      <button type="button" aria-label="Close process display" onclick={close}>×</button>
+      <button
+        type="button"
+        class="process-surface-icon-button"
+        aria-label="Close process display"
+        title="Close process display"
+        onclick={close}
+      >
+        <X size={19} aria-hidden="true" />
+      </button>
     </header>
     <div class="process-surface-window-body">
       {#if loading}
@@ -503,7 +511,9 @@
             <strong>Computer-based procedures</strong>
             <span>{procedureModalError ?? 'Loading procedure system...'}</span>
           </div>
-          <button type="button" aria-label="Close procedures" onclick={() => { procedureModalOpen = false }}>×</button>
+          <button type="button" aria-label="Close procedures" title="Close procedures" onclick={() => { procedureModalOpen = false }}>
+            <X size={20} aria-hidden="true" />
+          </button>
         </header>
       </div>
     </div>

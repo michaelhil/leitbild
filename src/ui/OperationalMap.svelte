@@ -1,5 +1,6 @@
 <script lang="ts">
   import 'maplibre-gl/dist/maplibre-gl.css'
+  import { untrack } from 'svelte'
   import type {
     GeoJsonPoint,
     GeoJsonPolygon,
@@ -73,6 +74,7 @@
     readonly mapLayerGroupVisibility?: Readonly<Record<string, boolean>>
     readonly referenceDatasetIds?: ReadonlyArray<string>
     readonly packAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
+    readonly packAreaFeatureSourcePackIds?: ReadonlyArray<string>
   }
 
   const {
@@ -103,6 +105,7 @@
     mapLayerGroupVisibility = {},
     referenceDatasetIds = [],
     packAreaFeatureLayers = [],
+    packAreaFeatureSourcePackIds = [],
   }: Props = $props()
 
   let mapElement = $state<HTMLDivElement | null>(null)
@@ -238,9 +241,13 @@
   }
 
   const packAreaFeatureSourceRevisionKey = (): string => {
+    const sourcePackIds = packAreaFeatureSourcePackIds
+    const includeAllPacks = sourcePackIds.length === 0 || sourcePackIds.includes('*')
+    const relevantPackIds = includeAllPacks ? null : new Set(sourcePackIds)
     let count = 0
     let checksum = 0
     for (const object of objects) {
+      if (relevantPackIds && !relevantPackIds.has(object.packId)) continue
       count += 1
       for (let index = 0; index < object.id.length; index += 1) {
         checksum = (checksum * 33 + object.id.charCodeAt(index)) >>> 0
@@ -403,30 +410,33 @@
     selectedControllerId
     highlightedObjectIds
     routeRevision
-    operationalRenderController.syncObjects()
+    untrack(() => operationalRenderController.syncObjects())
   })
 
   $effect(() => {
     hiddenObjectCategoryIds
-    operationalRenderController.syncObjectVisibility()
+    untrack(() => operationalRenderController.syncObjectVisibility())
   })
 
   $effect(() => {
     placementPoints
-    operationalRenderController.syncPlacement()
+    untrack(() => operationalRenderController.syncPlacement())
   })
 
   $effect(() => {
     cachedPackMapAreaFeatures
-    operationalRenderController.syncAreaFeatures()
+    untrack(() => operationalRenderController.syncAreaFeatures())
   })
 
   $effect(() => {
-    mapConfig.layers
-    activePackIds
-    packAreaFeatureLayers
-    operationalRenderController.syncVisibility()
-    packOverlayController.syncEnabled()
+    mapConfig.layers.join('|')
+    activePackIds.join('|')
+    packAreaFeatureLayers.join('|')
+    packAreaFeatureSourcePackIds.join('|')
+    untrack(() => {
+      operationalRenderController.syncVisibility()
+      packOverlayController.syncEnabled()
+    })
   })
 
   $effect(() => {
@@ -459,12 +469,12 @@
     referenceDatasetIds
     mapLayerGroups
     controlInstanceId
-    registerReferenceLayers()
+    untrack(() => registerReferenceLayers())
   })
 
   $effect(() => {
     mapLayerGroupVisibility
-    referenceLayerController.applyVisibility(mapLayerGroupVisibility)
+    untrack(() => referenceLayerController.applyVisibility(mapLayerGroupVisibility))
   })
 </script>
 

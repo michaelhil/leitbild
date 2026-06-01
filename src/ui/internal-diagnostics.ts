@@ -100,6 +100,31 @@ export interface InternalDiagnosticsResourceSample {
   readonly responseStatus?: number
 }
 
+export interface InternalDiagnosticsPackQuerySample {
+  readonly packId: string
+  readonly kind: string
+  readonly startedAtMs: number
+  readonly durationMs: number
+  readonly requestBytes: number
+  readonly responseBytes: number
+  readonly status?: number
+  readonly ok: boolean
+  readonly error?: string
+}
+
+export interface InternalDiagnosticsPackQueryKindSummary {
+  readonly count: number
+  readonly totalResponseBytes: number
+  readonly maxResponseBytes: number
+  readonly maxDurationMs: number
+}
+
+export interface InternalDiagnosticsPackQuerySnapshot {
+  readonly sampleCount: number
+  readonly recent: ReadonlyArray<InternalDiagnosticsPackQuerySample>
+  readonly byKind: Readonly<Record<string, InternalDiagnosticsPackQueryKindSummary>>
+}
+
 export interface InternalDiagnosticsPerformanceSnapshot {
   readonly map: MapPerformanceDiagnosticsSnapshot
   readonly longTasks: {
@@ -109,6 +134,7 @@ export interface InternalDiagnosticsPerformanceSnapshot {
     readonly recent: ReadonlyArray<InternalDiagnosticsLongTaskSample>
   }
   readonly resources: ReadonlyArray<InternalDiagnosticsResourceSample>
+  readonly packQueries: InternalDiagnosticsPackQuerySnapshot
 }
 
 export interface InternalDiagnosticsSnapshot {
@@ -144,6 +170,8 @@ declare global {
 
 const maxLongTaskSamples = 120
 const maxResourceSamples = 120
+const maxPackQuerySamples = 160
+const packQuerySamples: InternalDiagnosticsPackQuerySample[] = []
 
 const pushRing = <T>(items: T[], item: T, limit: number): void => {
   items.push(item)
@@ -305,6 +333,37 @@ export const resourceDiagnostics = (): ReadonlyArray<InternalDiagnosticsResource
       decodedBodySize: entry.decodedBodySize,
       ...(entry.responseStatus === 0 ? {} : { responseStatus: entry.responseStatus }),
     }))
+
+export const recordPackQueryDiagnostics = (sample: InternalDiagnosticsPackQuerySample): void => {
+  pushRing(packQuerySamples, sample, maxPackQuerySamples)
+}
+
+export const packQueryDiagnostics = (): InternalDiagnosticsPackQuerySnapshot => {
+  const byKind: Record<string, InternalDiagnosticsPackQueryKindSummary> = {}
+  for (const sample of packQuerySamples) {
+    const current = byKind[sample.kind] ?? {
+      count: 0,
+      totalResponseBytes: 0,
+      maxResponseBytes: 0,
+      maxDurationMs: 0,
+    }
+    byKind[sample.kind] = {
+      count: current.count + 1,
+      totalResponseBytes: current.totalResponseBytes + sample.responseBytes,
+      maxResponseBytes: Math.max(current.maxResponseBytes, sample.responseBytes),
+      maxDurationMs: Math.max(current.maxDurationMs, sample.durationMs),
+    }
+  }
+  return {
+    sampleCount: packQuerySamples.length,
+    recent: packQuerySamples.slice(-40),
+    byKind,
+  }
+}
+
+export const clearPackQueryDiagnostics = (): void => {
+  packQuerySamples.splice(0, packQuerySamples.length)
+}
 
 export const installInternalDiagnosticsGlobal = (
   config: {

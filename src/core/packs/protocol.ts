@@ -290,6 +290,12 @@ export interface LeitbildPack {
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackMapAreaFeature>
   readonly mapAreaFeatureLayers?: ReadonlyArray<SurfaceMapLayer>
+  /**
+   * Object pack ids whose object revisions can invalidate map-area features.
+   * Defaults to the contributing pack id when omitted. Use ['*'] only for
+   * genuinely cross-pack area features that depend on every object revision.
+   */
+  readonly mapAreaFeatureSourcePackIds?: ReadonlyArray<string>
   readonly mapAreaFeatureQueries?: (
     context: PackObjectPresentationContext,
   ) => ReadonlyArray<PackQueryRequest>

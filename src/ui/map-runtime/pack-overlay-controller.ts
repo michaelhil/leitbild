@@ -87,6 +87,7 @@ export const createPackOverlayController = (
   let cameraGestureActive = false
   let featuresApplied = false
   let disabledReadyReported = false
+  let enabledActive = false
 
   const stopAutoRefresh = (): void => {
     if (refreshInterval === null) return
@@ -220,13 +221,16 @@ export const createPackOverlayController = (
     refresh,
     syncEnabled: () => {
       if (!config.enabled()) {
+        enabledActive = false
         abort('pack area features disabled')
         stopAutoRefresh()
         clearFeatures()
         return
       }
+      const firstEnable = !enabledActive
+      enabledActive = true
       startAutoRefresh()
-      void refresh()
+      if (firstEnable || (!requestInFlight && cacheKey === null)) void refresh()
     },
     setCameraGestureActive: active => {
       cameraGestureActive = active
@@ -242,6 +246,7 @@ export const createPackOverlayController = (
       cameraGestureActive = false
       featuresApplied = false
       disabledReadyReported = false
+      enabledActive = false
     },
   }
 }

@@ -9,6 +9,7 @@ import type {
   ScenarioResponse,
 } from './types.ts'
 import type { PackQueryRequest } from '../core/packs/protocol.ts'
+import { recordPackQueryDiagnostics } from './internal-diagnostics.ts'
 
 export interface ControlInstanceCommandRequest {
   readonly kind: string
@@ -128,11 +129,46 @@ export const queryControlInstancePack = async (
   request: PackQueryRequest,
   options: ControlInstanceRequestOptions = {},
 ): Promise<PackQueryApiResponse> => {
-  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/queries`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-  })
-  return await readJsonResponse<PackQueryApiResponse>(response, 'pack query failed')
+  const body = JSON.stringify(request)
+  const startedAtMs = performance.now()
+  let responseStatus: number | undefined
+  let recorded = false
+  try {
+    const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/queries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+    responseStatus = response.status
+    const text = await response.text()
+    recordPackQueryDiagnostics({
+      packId: request.packId,
+      kind: request.kind,
+      startedAtMs,
+      durationMs: performance.now() - startedAtMs,
+      requestBytes: body.length,
+      responseBytes: text.length,
+      status: response.status,
+      ok: response.ok,
+    })
+    recorded = true
+    if (!response.ok) throw new Error(`pack query failed: ${response.status}`)
+    return JSON.parse(text) as PackQueryApiResponse
+  } catch (err) {
+    if (!recorded) {
+      recordPackQueryDiagnostics({
+        packId: request.packId,
+        kind: request.kind,
+        startedAtMs,
+        durationMs: performance.now() - startedAtMs,
+        requestBytes: body.length,
+        responseBytes: 0,
+        ...(responseStatus === undefined ? {} : { status: responseStatus }),
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    throw err
+  }
 }
