@@ -109,6 +109,31 @@ const procedureCsfDefinitions: Readonly<Record<string, {
   },
 }
 
+const normalizeProcedureSourceKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/[-_.\s]/g, '')
+
+const normalizeProcedureUnit = (value: string): string =>
+  value.trim().toLowerCase().replace(/\s/g, '')
+
+const procedureUnitsCompatible = (procedureUnit: string | undefined, processUnit: string): boolean => {
+  if (procedureUnit === undefined) return true
+  const normalizedProcedureUnit = normalizeProcedureUnit(procedureUnit)
+  const normalizedProcessUnit = normalizeProcedureUnit(processUnit)
+  if (normalizedProcedureUnit === normalizedProcessUnit) return true
+  if ((normalizedProcedureUnit === 'bool' || normalizedProcedureUnit === 'boolean') && normalizedProcessUnit === 'boolean') return true
+  return false
+}
+
+const procedureEquipmentCompatible = (config: {
+  readonly procedureEquipment: string | undefined
+  readonly processEquipment: string | undefined
+  readonly resolvedByExternalReference: boolean
+}): boolean => {
+  if (config.procedureEquipment === undefined || config.processEquipment === undefined) return true
+  if (normalizeProcedureSourceKey(config.procedureEquipment) === normalizeProcedureSourceKey(config.processEquipment)) return true
+  return config.resolvedByExternalReference
+}
+
 const validateProcedureTags = (
   system: ProcessPlantSystemRuntime,
   payload: z.infer<typeof procedureTagValidateQuerySchema>,
@@ -124,17 +149,21 @@ const validateProcedureTags = (
       }
     }
     const view = processPlantSignalView(binding)
+    const externalRefs = binding.externalRefs ?? []
+    const resolvedByExternalReference = externalRefs.includes(tag.id)
+      || (tag.simPath !== undefined && externalRefs.includes(tag.simPath))
     const warnings = [
-      ...(binding.tagId !== tag.id && (binding.externalRefs ?? []).includes(tag.id)
-        ? [`procedure tag ${tag.id} resolves through external reference to ${binding.tagId ?? binding.path}`]
-        : []),
-      ...(tag.simPath !== undefined && tag.simPath !== String(binding.path) && !(binding.externalRefs ?? []).includes(tag.simPath)
+      ...(tag.simPath !== undefined && tag.simPath !== String(binding.path) && !externalRefs.includes(tag.simPath)
         ? [`sim-path ${tag.simPath} does not match process path ${binding.path}`]
         : []),
-      ...(tag.units !== undefined && tag.units !== binding.unit
+      ...(!resolvedByExternalReference && !procedureUnitsCompatible(tag.units, binding.unit)
         ? [`units ${tag.units} do not match process unit ${binding.unit}`]
         : []),
-      ...(tag.equipment !== undefined && binding.equipmentId !== undefined && tag.equipment !== binding.equipmentId
+      ...(!procedureEquipmentCompatible({
+        procedureEquipment: tag.equipment,
+        processEquipment: binding.equipmentId,
+        resolvedByExternalReference,
+      })
         ? [`equipment ${tag.equipment} does not match process equipment ${binding.equipmentId}`]
         : []),
     ]

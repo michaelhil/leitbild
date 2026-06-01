@@ -1202,6 +1202,12 @@ describe('process plant pack runtime', () => {
           equipment: 'nuclear-instrumentation',
         },
         {
+          id: 'SG-D-LVL-NR',
+          simPath: 'secondary.sg.d.level_nr',
+          units: 'percent',
+          equipment: 'sg-d',
+        },
+        {
           id: 'BUS-A-EMERG',
           simPath: 'electrical.bus.emerg_a.energized',
           units: 'bool',
@@ -1224,9 +1230,10 @@ describe('process plant pack runtime', () => {
     expect(tags.find(tag => tag.id === 'SG-A-N16')?.status).toBe('resolved-with-warnings')
     expect(tags.find(tag => tag.id === 'SG-A-N16')?.warnings.join(' ')).toContain('sim-path wrong.path')
     expect(tags.find(tag => tag.id === 'NO-SUCH-TAG')?.status).toBe('missing')
-    expect(tags.find(tag => tag.id === 'NIS-PR-AVG')?.status).toBe('resolved-with-warnings')
-    expect(tags.find(tag => tag.id === 'BUS-A-EMERG')?.status).toBe('resolved-with-warnings')
-    expect(tags.find(tag => tag.id === 'DG-A')?.status).toBe('resolved-with-warnings')
+    expect(tags.find(tag => tag.id === 'NIS-PR-AVG')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'SG-D-LVL-NR')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'BUS-A-EMERG')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'DG-A')?.status).toBe('resolved')
 
     const aliasRead = await connection.query(query('process-plant.signals.read', {
       systemId: 'plant',

@@ -61,7 +61,44 @@
         "referencePrimaryCoolantTemperatureC": 306,
         "normalLetdownFlowKgPerS": 90,
         "initialBoronConcentrationPpm": 1200
-      }
+      },
+      "variables": [
+        {
+          "path": "meanPrimaryCoolantTemperatureC",
+          "tagId": "TAVG",
+          "equipmentId": "vessel",
+          "description": "Average reactor coolant system temperature",
+          "externalRefs": ["rcs.t_avg"]
+        },
+        {
+          "path": "chargingFlowKgPerS",
+          "tagId": "CHG-FLOW",
+          "equipmentId": "vessel",
+          "description": "Charging flow into reactor coolant system",
+          "externalRefs": ["cvcs.charging.flow"]
+        },
+        {
+          "path": "letdownFlowKgPerS",
+          "tagId": "LET-FLOW",
+          "equipmentId": "vessel",
+          "description": "Letdown flow from reactor coolant system",
+          "externalRefs": ["cvcs.letdown.flow"]
+        },
+        {
+          "path": "safetyInjectionFlowKgPerS",
+          "tagId": "SI-FLOW",
+          "equipmentId": "vessel",
+          "description": "Safety injection flow into reactor coolant system",
+          "externalRefs": ["ess.si.header_flow"]
+        },
+        {
+          "path": "boronConcentrationPpm",
+          "tagId": "RCS-BORON",
+          "equipmentId": "vessel",
+          "description": "Reactor coolant boron concentration",
+          "externalRefs": ["rcs.boron.concentration"]
+        }
+      ]
     },
     {
       "id": "pressurizer",
@@ -168,13 +205,15 @@
           "path": "levelPercent",
           "tagId": "SG-A-LVL-NR",
           "equipmentId": "sgA",
-          "description": "Steam generator A narrow-range level"
+          "description": "Steam generator A narrow-range level",
+          "externalRefs": ["secondary.sg.a.level_nr"]
         },
         {
           "path": "pressureMPa",
           "tagId": "SG-A-PRESS",
           "equipmentId": "sgA",
-          "description": "Steam generator A pressure"
+          "description": "Steam generator A pressure",
+          "externalRefs": ["SG-A-PR", "secondary.sg.a.steam_pressure"]
         },
         {
           "path": "secondaryRadiationMSvPerH",
@@ -224,13 +263,15 @@
           "path": "levelPercent",
           "tagId": "SG-B-LVL-NR",
           "equipmentId": "sgB",
-          "description": "Steam generator B narrow-range level"
+          "description": "Steam generator B narrow-range level",
+          "externalRefs": ["secondary.sg.b.level_nr"]
         },
         {
           "path": "pressureMPa",
           "tagId": "SG-B-PRESS",
           "equipmentId": "sgB",
-          "description": "Steam generator B pressure"
+          "description": "Steam generator B pressure",
+          "externalRefs": ["SG-B-PR", "secondary.sg.b.steam_pressure"]
         },
         {
           "path": "secondaryRadiationMSvPerH",
@@ -280,13 +321,15 @@
           "path": "levelPercent",
           "tagId": "SG-C-LVL-NR",
           "equipmentId": "sgC",
-          "description": "Steam generator C narrow-range level"
+          "description": "Steam generator C narrow-range level",
+          "externalRefs": ["secondary.sg.c.level_nr"]
         },
         {
           "path": "pressureMPa",
           "tagId": "SG-C-PRESS",
           "equipmentId": "sgC",
-          "description": "Steam generator C pressure"
+          "description": "Steam generator C pressure",
+          "externalRefs": ["SG-C-PR", "secondary.sg.c.steam_pressure"]
         },
         {
           "path": "secondaryRadiationMSvPerH",
@@ -336,13 +379,15 @@
           "path": "levelPercent",
           "tagId": "SG-D-LVL-NR",
           "equipmentId": "sgD",
-          "description": "Steam generator D narrow-range level"
+          "description": "Steam generator D narrow-range level",
+          "externalRefs": ["secondary.sg.d.level_nr"]
         },
         {
           "path": "pressureMPa",
           "tagId": "SG-D-PRESS",
           "equipmentId": "sgD",
-          "description": "Steam generator D pressure"
+          "description": "Steam generator D pressure",
+          "externalRefs": ["SG-D-PR", "secondary.sg.d.steam_pressure"]
         },
         {
           "path": "secondaryRadiationMSvPerH",
@@ -376,7 +421,8 @@
           "path": "running",
           "tagId": "RCP-A-RUN",
           "equipmentId": "rcpA",
-          "description": "Reactor coolant pump A running command/status"
+          "description": "Reactor coolant pump A running command/status",
+          "externalRefs": ["RCP-1", "rcs.rcp.1.status"]
         },
         {
           "path": "speedFraction",
@@ -410,7 +456,8 @@
           "path": "running",
           "tagId": "RCP-B-RUN",
           "equipmentId": "rcpB",
-          "description": "Reactor coolant pump B running command/status"
+          "description": "Reactor coolant pump B running command/status",
+          "externalRefs": ["RCP-2", "rcs.rcp.2.status"]
         },
         {
           "path": "speedFraction",
@@ -444,7 +491,8 @@
           "path": "running",
           "tagId": "RCP-C-RUN",
           "equipmentId": "rcpC",
-          "description": "Reactor coolant pump C running command/status"
+          "description": "Reactor coolant pump C running command/status",
+          "externalRefs": ["RCP-3", "rcs.rcp.3.status"]
         },
         {
           "path": "speedFraction",
@@ -478,7 +526,8 @@
           "path": "running",
           "tagId": "RCP-D-RUN",
           "equipmentId": "rcpD",
-          "description": "Reactor coolant pump D running command/status"
+          "description": "Reactor coolant pump D running command/status",
+          "externalRefs": ["RCP-4", "rcs.rcp.4.status"]
         },
         {
           "path": "speedFraction",
@@ -570,7 +619,16 @@
           "maxPositionFraction": 1,
           "timeConstantS": 6
         }
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MFW-A-CV",
+          "equipmentId": "feedwaterControlValveA",
+          "description": "Main feedwater control valve A position",
+          "externalRefs": ["secondary.mfw.a.cv_position"]
+        }
+      ]
     },
     {
       "id": "feedwaterControlValveB",
@@ -644,7 +702,16 @@
         "maxOutletFlowKgPerS": 420,
         "thermalTimeConstantS": 180,
         "initialSoluteConcentrationPpm": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "CST-LVL",
+          "equipmentId": "auxFeedwaterTank",
+          "description": "Condensate storage / auxiliary feedwater tank level",
+          "externalRefs": ["secondary.cst.level"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterPumpMotor",
@@ -692,7 +759,16 @@
       "id": "auxFeedwaterHeader",
       "kind": "processHeader",
       "label": "Auxiliary Feedwater Header",
-      "parameters": {}
+      "parameters": {},
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "AFW-FLOW",
+          "equipmentId": "auxFeedwaterHeader",
+          "description": "Auxiliary feedwater header flow",
+          "externalRefs": ["afw.header.flow"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterValveA",
@@ -700,7 +776,16 @@
       "label": "Auxiliary Feedwater Valve A",
       "parameters": {
         "initialPositionFraction": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "AFW-A-CV",
+          "equipmentId": "auxFeedwaterValveA",
+          "description": "Auxiliary feedwater valve A position",
+          "externalRefs": ["afw.a.cv_position"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterValveB",
@@ -708,7 +793,16 @@
       "label": "Auxiliary Feedwater Valve B",
       "parameters": {
         "initialPositionFraction": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "AFW-B-CV",
+          "equipmentId": "auxFeedwaterValveB",
+          "description": "Auxiliary feedwater valve B position",
+          "externalRefs": ["afw.b.cv_position"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterValveC",
@@ -716,7 +810,16 @@
       "label": "Auxiliary Feedwater Valve C",
       "parameters": {
         "initialPositionFraction": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "AFW-C-CV",
+          "equipmentId": "auxFeedwaterValveC",
+          "description": "Auxiliary feedwater valve C position",
+          "externalRefs": ["afw.c.cv_position"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterValveD",
@@ -724,7 +827,16 @@
       "label": "Auxiliary Feedwater Valve D",
       "parameters": {
         "initialPositionFraction": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "AFW-D-CV",
+          "equipmentId": "auxFeedwaterValveD",
+          "description": "Auxiliary feedwater valve D position",
+          "externalRefs": ["afw.d.cv_position"]
+        }
+      ]
     },
     {
       "id": "mainSteamIsolationValveA",
@@ -732,7 +844,16 @@
       "label": "Main Steam Isolation Valve A",
       "parameters": {
         "initialPositionFraction": 1
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MSIV-A",
+          "equipmentId": "mainSteamIsolationValveA",
+          "description": "Main steam isolation valve A position",
+          "externalRefs": ["secondary.msiv.a.position"]
+        }
+      ]
     },
     {
       "id": "mainSteamIsolationValveB",
@@ -740,7 +861,16 @@
       "label": "Main Steam Isolation Valve B",
       "parameters": {
         "initialPositionFraction": 1
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MSIV-B",
+          "equipmentId": "mainSteamIsolationValveB",
+          "description": "Main steam isolation valve B position",
+          "externalRefs": ["secondary.msiv.b.position"]
+        }
+      ]
     },
     {
       "id": "mainSteamIsolationValveC",
@@ -748,7 +878,16 @@
       "label": "Main Steam Isolation Valve C",
       "parameters": {
         "initialPositionFraction": 1
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MSIV-C",
+          "equipmentId": "mainSteamIsolationValveC",
+          "description": "Main steam isolation valve C position",
+          "externalRefs": ["secondary.msiv.c.position"]
+        }
+      ]
     },
     {
       "id": "mainSteamIsolationValveD",
@@ -756,7 +895,16 @@
       "label": "Main Steam Isolation Valve D",
       "parameters": {
         "initialPositionFraction": 1
-      }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "MSIV-D",
+          "equipmentId": "mainSteamIsolationValveD",
+          "description": "Main steam isolation valve D position",
+          "externalRefs": ["secondary.msiv.d.position"]
+        }
+      ]
     },
     {
       "id": "mainSteamHeader",
@@ -936,6 +1084,20 @@
           "equipmentId": "containment",
           "description": "Containment building pressure",
           "externalRefs": ["containment.pressure"]
+        },
+        {
+          "path": "temperatureC",
+          "tagId": "CTMT-TEMP",
+          "equipmentId": "containment",
+          "description": "Containment average temperature",
+          "externalRefs": ["containment.temperature.avg"]
+        },
+        {
+          "path": "radiationSourceTermMSvPerH",
+          "tagId": "CTMT-RAD",
+          "equipmentId": "containment",
+          "description": "Containment high-range radiation indication",
+          "externalRefs": ["rad.containment.high_range"]
         }
       ]
     },
@@ -1513,7 +1675,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 322
+          "initialValue": 322,
+          "tagId": "TE-411-HOT",
+          "externalRefs": ["rcs.loop1.t_hot"],
+          "equipmentId": "rcs-hot-leg-a",
+          "description": "RCS loop 1 hot-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -1599,7 +1765,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 290
+          "initialValue": 290,
+          "tagId": "TE-411-COLD",
+          "externalRefs": ["rcs.loop1.t_cold"],
+          "equipmentId": "rcs-cold-leg-a",
+          "description": "RCS loop 1 cold-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -1767,7 +1937,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 322
+          "initialValue": 322,
+          "tagId": "TE-421-HOT",
+          "externalRefs": ["rcs.loop2.t_hot"],
+          "equipmentId": "rcs-hot-leg-b",
+          "description": "RCS loop 2 hot-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -1853,7 +2027,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 290
+          "initialValue": 290,
+          "tagId": "TE-421-COLD",
+          "externalRefs": ["rcs.loop2.t_cold"],
+          "equipmentId": "rcs-cold-leg-b",
+          "description": "RCS loop 2 cold-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -2021,7 +2199,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 322
+          "initialValue": 322,
+          "tagId": "TE-431-HOT",
+          "externalRefs": ["rcs.loop3.t_hot"],
+          "equipmentId": "rcs-hot-leg-c",
+          "description": "RCS loop 3 hot-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -2107,7 +2289,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 290
+          "initialValue": 290,
+          "tagId": "TE-431-COLD",
+          "externalRefs": ["rcs.loop3.t_cold"],
+          "equipmentId": "rcs-cold-leg-c",
+          "description": "RCS loop 3 cold-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -2275,7 +2461,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 322
+          "initialValue": 322,
+          "tagId": "TE-441-HOT",
+          "externalRefs": ["rcs.loop4.t_hot"],
+          "equipmentId": "rcs-hot-leg-d",
+          "description": "RCS loop 4 hot-leg temperature"
         },
         {
           "path": "pressureMPa",
@@ -2361,7 +2551,11 @@
           "publish": "telemetry",
           "quantity": "temperature",
           "unit": "degC",
-          "initialValue": 290
+          "initialValue": 290,
+          "tagId": "TE-441-COLD",
+          "externalRefs": ["rcs.loop4.t_cold"],
+          "equipmentId": "rcs-cold-leg-d",
+          "description": "RCS loop 4 cold-leg temperature"
         },
         {
           "path": "pressureMPa",
