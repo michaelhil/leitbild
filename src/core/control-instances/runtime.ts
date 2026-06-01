@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
+import type { CommandEnvelope, CommandResult, ControlInstanceEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent } from '../../simulation/protocol.ts'
@@ -14,6 +14,8 @@ import {
   type ControlInstanceRuntimeMetricsSnapshot,
 } from './runtime-metrics.ts'
 import { defaultControlInstanceRuntimePolicy } from './runtime-persistence-policy.ts'
+import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
+import { procedureCommandEvents } from '../procedures/run-state.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultControlInstanceRuntimePolicy.projectedSnapshotFlushIntervalMs
 
@@ -43,6 +45,8 @@ export interface ControlInstanceRuntime {
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<ControlInstanceEvent>
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
+  readonly procedureCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
+  readonly procedureDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
   readonly metrics: () => ControlInstanceRuntimeMetricsSnapshot
   readonly close: () => Promise<void>
@@ -74,6 +78,7 @@ export const createControlInstanceRuntime = async (config: {
     readonly script?: ScenarioScript
   }
   readonly capabilities?: Omit<ControlInstanceCapabilities, 'controlInstanceId'>
+  readonly procedureSourceService?: ProcedureSourceService
 }): Promise<ControlInstanceRuntime> => {
   const state = createControlInstanceStateStore()
   const metrics = createControlInstanceRuntimeMetricsRecorder({
@@ -90,6 +95,7 @@ export const createControlInstanceRuntime = async (config: {
   let projectedSnapshotTimer: ReturnType<typeof setTimeout> | null = null
   const interactionHandlers = [...(config.interactionHandlers ?? [])]
     .sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id))
+  const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
 
   const keepQueueOpenAfter = async (publish: Promise<void>): Promise<void> => {
     await Promise.allSettled([publish])
@@ -485,8 +491,36 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const handleCoreCommand = async (command: CommandEnvelope): Promise<CommandResult | null> => {
-    if (command.kind !== deleteObjectCommandKind) return null
     const at = nowIso()
+    if (command.kind !== deleteObjectCommandKind) {
+      try {
+        const events = await procedureCommandEvents({
+          controlInstanceId: config.id,
+          at,
+          command,
+          procedures: state.snapshot().procedures,
+          factory: {
+            eventId,
+            nextSeq: () => ++seq,
+          },
+          readDocument: async (sourceId, procedureId) =>
+            await procedureSourceService.readDocument({
+              sourceId,
+              procedureId,
+            }),
+        })
+        if (events === null) return null
+        await publishGenerated(() => events)
+        return { ok: true, commandId: command.id, acceptedAt: at }
+      } catch (error) {
+        return {
+          ok: false,
+          commandId: command.id,
+          rejectedAt: at,
+          reason: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }
     try {
       const events = await publishGenerated(() => coreDeleteEvents(command, at))
       await config.runtimeConnection.observeCommittedEvents(events)
@@ -796,6 +830,8 @@ export const createControlInstanceRuntime = async (config: {
     publishResetBoundary,
     issueCommand,
     queryPack,
+    procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
+    procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {
       await enqueuePublish(async () => {
         await handleInteractionSignalNow(signal, provenance)

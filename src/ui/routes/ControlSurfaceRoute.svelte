@@ -96,6 +96,7 @@
   let expectedRealtimeScenarioId = $state<string | null>(null)
   let realtimeAttached = $state(false)
   let routeRevision = $state(0)
+  let procedureRevision = $state(0)
   let startupSteps = $state<ReadonlyArray<StartupStep>>(createStartupSteps())
   let mapReady = $state(false)
   let snapshotReady = $state(false)
@@ -842,6 +843,9 @@
         if (applied.routesChanged) {
           routeRevision += 1
         }
+        if (parsed.events.some(event => event.type.startsWith('procedure.'))) {
+          procedureRevision += 1
+        }
       },
     })
   }
@@ -1202,6 +1206,7 @@
   <ProcessSurfaceModal
     {controlInstanceId}
     object={processSurfaceObject}
+    {procedureRevision}
     close={closeProcessSurface}
   />
 {/if}

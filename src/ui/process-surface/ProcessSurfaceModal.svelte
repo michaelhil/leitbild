@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Eye, FileText, GitBranch } from 'lucide-svelte'
+  import type { Component } from 'svelte'
+  import { ClipboardList, Eye, FileText, GitBranch } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
@@ -27,10 +28,11 @@
   interface Props {
     readonly controlInstanceId: ControlInstanceId
     readonly object: OperationalObject
+    readonly procedureRevision: number
     readonly close: () => void
   }
 
-  let { controlInstanceId, object, close }: Props = $props()
+  let { controlInstanceId, object, procedureRevision, close }: Props = $props()
 
   type WindowDragMode = 'move' | 'resize-east' | 'resize-south' | 'resize-corner'
 
@@ -53,11 +55,15 @@
   let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
   let artifactModal = $state<ProcessPlantArtifactKind | null>(null)
+  let procedureModalOpen = $state(false)
+  let procedureModalError = $state<string | null>(null)
+  let ProcedureSystemModal = $state<Component | null>(null)
   let widgetPositions = $state<ProcessSurfaceLayout>({})
   let loadedSystemId = $state<string | null>(null)
   let windowBounds = $state<ProcessSurfaceWindowBounds>({ x: 72, y: 72, width: 1120, height: 720 })
   let windowDragState = $state<WindowDragState | null>(null)
   let boundsInitialized = false
+  let procedureModalLoadPromise: Promise<Component> | null = null
 
   const defaultWindowBounds = (): ProcessSurfaceWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
@@ -130,6 +136,30 @@
 
   const openArtifact = (artifact: ProcessPlantArtifactKind): void => {
     artifactModal = artifact
+  }
+
+  const loadProcedureSystemModal = async (): Promise<void> => {
+    if (ProcedureSystemModal) return
+    procedureModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../procedures/ProcedureSystemModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcedureSystemModal = await procedureModalLoadPromise
+    } catch (err) {
+      procedureModalLoadPromise = null
+      throw err
+    }
+  }
+
+  const openProcedureSystem = async (): Promise<void> => {
+    procedureModalOpen = true
+    procedureModalError = null
+    try {
+      await loadProcedureSystemModal()
+    } catch (err) {
+      procedureModalError = err instanceof Error ? err.message : String(err)
+    }
   }
 
   const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
@@ -391,6 +421,15 @@
       >
         <GitBranch size={17} aria-hidden="true" />
       </button>
+      <button
+        type="button"
+        class="process-surface-icon-button"
+        aria-label="Open computer-based procedures"
+        title="Computer-based procedures"
+        onclick={() => void openProcedureSystem()}
+      >
+        <ClipboardList size={17} aria-hidden="true" />
+      </button>
       <button type="button" aria-label="Close process display" onclick={close}>×</button>
     </header>
     <div class="process-surface-window-body">
@@ -448,5 +487,25 @@
       artifact={artifactModal}
       close={() => { artifactModal = null }}
     />
+  {/if}
+  {#if procedureModalOpen && loadedSystemId && ProcedureSystemModal}
+    <ProcedureSystemModal
+      {controlInstanceId}
+      systemId={loadedSystemId}
+      realtimeRevision={procedureRevision}
+      close={() => { procedureModalOpen = false }}
+    />
+  {:else if procedureModalOpen}
+    <div class="procedure-backdrop" role="presentation" onmousedown={() => { procedureModalOpen = false }}>
+      <div class="procedure-modal loading" role="dialog" aria-modal="true" aria-label="Computer-based procedure system loading" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
+        <header class="procedure-header">
+          <div>
+            <strong>Computer-based procedures</strong>
+            <span>{procedureModalError ?? 'Loading procedure system...'}</span>
+          </div>
+          <button type="button" aria-label="Close procedures" onclick={() => { procedureModalOpen = false }}>×</button>
+        </header>
+      </div>
+    </div>
   {/if}
 </div>

@@ -6,7 +6,9 @@ import {
   controlInstanceIdSchema,
   createGeneratedScenarioRunId,
   createScenarioRunControlInstanceId,
+  deleteObjectCommandKind,
   parseScenarioRunControlInstanceId,
+  procedureCommandKindSchema,
 } from '../model/index.ts'
 import type { PackRuntimeAdapter } from '../../simulation/protocol.ts'
 import { createRuntimeHub } from '../../simulation/runtime-hub.ts'
@@ -19,6 +21,7 @@ import type { ControlInstanceRuntimeMetricsSnapshot } from './runtime-metrics.ts
 import { defaultControlInstanceRuntimePolicy } from './runtime-persistence-policy.ts'
 import { createControlInstanceSnapshotStore } from './snapshot-store.ts'
 import type { ControlInstanceEvent } from '../model/index.ts'
+import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
 
 const maxRestoredEventHistoryBytes = 8 * 1024 * 1024
 
@@ -74,8 +77,10 @@ export const createControlInstanceRegistry = (config: {
   readonly scenarioCatalog: ScenarioCatalog
   readonly interactionHandlers?: ReadonlyArray<InteractionHandler>
   readonly idleRuntimeCloseDelayMs?: number
+  readonly procedureSourceService?: ProcedureSourceService
 }): ControlInstanceRegistry => {
   const controlInstances = new Map<ControlInstanceId, ControlInstanceRuntime>()
+  const procedureSourceService = config.procedureSourceService ?? createProcedureSourceService()
   const creatingControlInstances = new Map<ControlInstanceId, Promise<ControlInstanceRuntime>>()
   const leasesByControlInstance = new Map<ControlInstanceId, Map<string, ControlInstanceLeaseKind>>()
   const idleRuntimeCloseTimers = new Map<ControlInstanceId, ReturnType<typeof setTimeout>>()
@@ -175,7 +180,11 @@ export const createControlInstanceRegistry = (config: {
     return {
       scenarioId: scenarioRuntime.scenarioId,
       activePackIds: [...scenarioRuntime.scenario.packs],
-      acceptedCommandKinds: [...new Set(activeAdapters.flatMap(adapter => adapter.acceptedCommandKinds))].sort(),
+      acceptedCommandKinds: [...new Set([
+        deleteObjectCommandKind,
+        ...procedureCommandKindSchema.options,
+        ...activeAdapters.flatMap(adapter => adapter.acceptedCommandKinds),
+      ])].sort(),
       queryKinds,
       wikiRefs: scenarioRuntime.packs.flatMap(pack => pack.wikiRefs ?? []),
     }
@@ -316,6 +325,7 @@ export const createControlInstanceRegistry = (config: {
             },
           }),
       capabilities: capabilitiesFor(scenarioRuntime),
+      procedureSourceService,
     })
     controlInstances.set(id, runtime)
     scheduleIdleRuntimeCloseIfUnleased(id)

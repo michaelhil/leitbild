@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { operationalObjectSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type ControlInstanceEvent, type ObjectId, type OperationalObject, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
+import { operationalObjectSchema, procedureControlStateSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type ControlInstanceEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureRunState, type ProcedureStepRunState, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
 
 export interface ControlInstanceStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
   readonly seq: number
   readonly scenario?: ScenarioInstanceState
   readonly clock?: SimulationClockState
+  readonly procedures?: ProcedureControlState
 }
 
 export const controlInstanceStateSnapshotSchema = z.object({
@@ -13,6 +14,7 @@ export const controlInstanceStateSnapshotSchema = z.object({
   seq: z.number().int().nonnegative(),
   scenario: scenarioInstanceStateSchema.optional(),
   clock: simulationClockStateSchema.optional(),
+  procedures: procedureControlStateSchema.optional(),
 })
 
 export interface ControlInstanceStateStore {
@@ -27,6 +29,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
   let seq = 0
   let scenario: ScenarioInstanceState | undefined
   let clock: SimulationClockState | undefined
+  let procedures: ProcedureControlState | undefined
 
   const updateScenario = (update: (current: ScenarioInstanceState) => ScenarioInstanceState): void => {
     if (!scenario) throw new Error('scenario event received before scenario state was initialized')
@@ -97,6 +100,44 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
           ? []
           : current.highlightedObjectIds.filter(objectId => !event.objectIds?.includes(objectId)),
       }))
+      return
+    }
+    if (event.type === 'procedure.run.started') {
+      const current = procedures ?? { runs: [] }
+      procedures = {
+        runs: [
+          ...current.runs.filter(run => run.runId !== event.run.runId),
+          event.run,
+        ],
+      }
+      return
+    }
+    if (event.type === 'procedure.step.updated') {
+      const current = procedures ?? { runs: [] }
+      procedures = {
+        runs: current.runs.map(run => run.runId === event.runId
+          ? updateProcedureRunStep(run, {
+              stepId: event.stepId,
+              update: event.update,
+              updatedAt: event.updatedAt,
+              updatedBy: event.updatedBy,
+            })
+          : run),
+      }
+      return
+    }
+    if (event.type === 'procedure.run.closed') {
+      const current = procedures ?? { runs: [] }
+      procedures = {
+        runs: current.runs.map(run => run.runId === event.runId
+          ? {
+              ...run,
+              status: event.status,
+              closedAt: event.closedAt,
+              closedBy: event.closedBy,
+            }
+          : run),
+      }
     }
   }
 
@@ -106,6 +147,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
     seq = snapshot.seq
     scenario = snapshot.scenario
     clock = snapshot.clock
+    procedures = snapshot.procedures
   }
 
   return {
@@ -116,7 +158,40 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
       seq,
       ...(scenario === undefined ? {} : { scenario }),
       ...(clock === undefined ? {} : { clock }),
+      ...(procedures === undefined ? {} : { procedures }),
     }),
     getObject: (id: ObjectId) => objects.get(id),
+  }
+}
+
+const updateProcedureRunStep = (
+  run: ProcedureRunState,
+  config: {
+    readonly stepId: string
+    readonly update: {
+      readonly assessment?: ProcedureStepRunState['assessment']
+      readonly comment?: string
+      readonly favorite?: boolean
+    }
+    readonly updatedAt: ProcedureStepRunState['updatedAt']
+    readonly updatedBy: ProcedureStepRunState['updatedBy']
+  },
+): ProcedureRunState => {
+  const existing = run.stepStates.find(step => step.stepId === config.stepId)
+  const nextStep: ProcedureStepRunState = {
+    stepId: config.stepId as ProcedureStepRunState['stepId'],
+    assessment: config.update.assessment ?? existing?.assessment ?? 'blank',
+    ...(config.update.comment === undefined
+      ? existing?.comment === undefined ? {} : { comment: existing.comment }
+      : config.update.comment.trim().length === 0 ? {} : { comment: config.update.comment }),
+    favorite: config.update.favorite ?? existing?.favorite ?? false,
+    updatedAt: config.updatedAt,
+    updatedBy: config.updatedBy,
+  }
+  return {
+    ...run,
+    stepStates: existing === undefined
+      ? [...run.stepStates, nextStep]
+      : run.stepStates.map(step => step.stepId === config.stepId ? nextStep : step),
   }
 }

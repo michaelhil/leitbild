@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, simulationClockUpdateSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, commandEnvelopeSchema, controlInstanceIdSchema, interactionEndpointSchema, interactionSignalSchema, nowIso, objectIdSchema, procedureIdSchema, procedureSourceIdSchema, simulationClockUpdateSchema, type CommandEnvelope, type ControlInstanceId, type InteractionSignal } from '../model/index.ts'
 import type { Actor } from '../control-instances/actors.ts'
 import type { PackQueryRequest } from '../packs/protocol.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
@@ -281,6 +281,44 @@ const handleControlInstanceApiInner = async (
     const query = buildPackQuery(raw)
     const response = await runtime.queryPack(query)
     return json({ response }, { status: response.ok ? 200 : 400 })
+  }
+
+  const procedureCatalogMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/procedures$/)
+  if (procedureCatalogMatch && req.method === 'GET') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(procedureCatalogMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const sourceIdParam = url.searchParams.get('sourceId')
+    const refresh = url.searchParams.get('refresh') === 'true'
+    const catalog = await runtime.procedureCatalog({
+      ...(sourceIdParam === null ? {} : { sourceId: procedureSourceIdSchema.parse(sourceIdParam) }),
+      refresh,
+    })
+    return json({ catalog })
+  }
+
+  const procedureDocumentMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/procedures\/([^/]+)$/)
+  if (procedureDocumentMatch && req.method === 'GET') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(procedureDocumentMatch[1] ?? ''))
+    const procedureId = procedureIdSchema.parse(decodeURIComponent(procedureDocumentMatch[2] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const sourceIdParam = url.searchParams.get('sourceId')
+    const refresh = url.searchParams.get('refresh') === 'true'
+    const procedure = await runtime.procedureDocument({
+      procedureId,
+      ...(sourceIdParam === null ? {} : { sourceId: procedureSourceIdSchema.parse(sourceIdParam) }),
+      refresh,
+    })
+    return json({ procedure })
+  }
+
+  const procedureRunsMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/procedure-runs$/)
+  if (procedureRunsMatch && req.method === 'GET') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(procedureRunsMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    return json({ procedures: runtime.snapshot().procedures ?? { runs: [] } })
   }
 
   const clockMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/clock$/)

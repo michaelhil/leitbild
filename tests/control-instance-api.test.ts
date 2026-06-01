@@ -2,11 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { ControlInstanceId, ControlInstanceEvent, OperationalObject, SimulationClockState } from '../src/core/model/index.ts'
+import type { ControlInstanceId, ControlInstanceEvent, IsoTimestamp, OperationalObject, ProcedureCatalog, ProcedureDocument, SimulationClockState } from '../src/core/model/index.ts'
 import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/index.ts'
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
+import type { ProcedureSourceService } from '../src/core/procedures/source.ts'
+import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -24,7 +26,83 @@ interface ApiResponse<T> {
   readonly body: T
 }
 
-const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
+const procedureSource = {
+  sourceId: 'pwr-ops',
+  label: 'PWR operations procedures',
+  repository: 'samsinn-wikis/pwr-ops',
+  ref: 'main',
+  path: 'wiki/procedures',
+  commitSha: 'api-test-revision',
+  fetchedAt: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+  sourceUrl: 'https://github.com/samsinn-wikis/pwr-ops/tree/main/wiki/procedures',
+}
+
+const procedureMarkdown = `---
+type: procedure
+procedure-md: 0.7
+procedure-id: E-0
+title: Reactor Trip or Safety Injection
+profile: nuclear-erg
+category: diagnostic-eop
+csfs-monitored: [subcriticality]
+entry-triggers: [reactor-trip-signal]
+---
+
+# E-0 — Reactor Trip or Safety Injection
+
+## Step 1 [id: verify-reactor-trip]
+Check: reactor trip breakers «TRIP-BKR-A» OPEN
+- Verified → END
+
+## Tags
+
+- id: TRIP-BKR-A
+  description: reactor trip breaker A position
+  sim-path: rps.trip_breaker.a.position
+  units: enum[OPEN,CLOSED]
+`
+
+const createProcedureDocument = (): ProcedureDocument =>
+  parseProcedureMarkdown({
+    source: procedureSource,
+    sourcePath: 'wiki/procedures/E-0.md',
+    sourceUrl: 'https://github.com/samsinn-wikis/pwr-ops/blob/main/wiki/procedures/E-0.md',
+    rawMarkdown: procedureMarkdown,
+  })
+
+const createProcedureSourceService = (document = createProcedureDocument()): ProcedureSourceService => ({
+  listSources: () => [{
+    sourceId: document.source.sourceId,
+    label: document.source.label,
+    repository: document.source.repository,
+    ref: document.source.ref,
+    path: document.source.path,
+  }],
+  readCatalog: async (): Promise<ProcedureCatalog> => ({
+    source: document.source,
+    procedures: [{
+      sourceId: document.source.sourceId,
+      procedureId: document.procedureId,
+      title: document.title,
+      ...(document.profile === undefined ? {} : { profile: document.profile }),
+      ...(document.category === undefined ? {} : { category: document.category }),
+      csfsMonitored: document.csfsMonitored,
+      entryTriggers: document.entryTriggers,
+      stepCount: document.steps.length,
+      tagCount: document.tags.length,
+      sourcePath: document.sourcePath,
+      sourceUrl: document.sourceUrl,
+    }],
+  }),
+  readDocument: async (config): Promise<ProcedureDocument> => {
+    if (config.procedureId !== document.procedureId) throw new Error(`unknown procedure ${config.procedureId}`)
+    return document
+  },
+})
+
+const createTestRegistry = async (config: {
+  readonly procedureSourceService?: ProcedureSourceService
+} = {}): Promise<ControlInstanceRegistry> => {
   const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-api-test-'))
   return createControlInstanceRegistry({
     dataDir,
@@ -35,6 +113,7 @@ const createTestRegistry = async (): Promise<ControlInstanceRegistry> => {
       createLocalWeatherPackRuntimeAdapter(),
     ],
     interactionHandlers: [ambulancePack, trafficPack, weatherPack].flatMap(pack => pack.interactionHandlers ?? []),
+    ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
   })
 }
 
@@ -526,6 +605,102 @@ describe('control instance API', () => {
       expect(updatedAmbulance?.spatial.route?.planned).toBeDefined()
     } finally {
       await registry.close('sandbox' as ControlInstanceId)
+    }
+  })
+
+  test('exposes procedure source endpoints and synchronizes procedure run state through commands', async () => {
+    const registry = await createTestRegistry({ procedureSourceService: createProcedureSourceService() })
+    try {
+      await callRoute(registry, '/api/control-instances/procedure-sandbox', { method: 'POST' })
+
+      const catalog = await callRoute<{ readonly catalog: ProcedureCatalog }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedures',
+      )
+      expect(catalog.status).toBe(200)
+      expect(catalog.body.catalog.procedures.map(procedure => procedure.procedureId)).toEqual(['E-0'])
+
+      const document = await callRoute<{ readonly procedure: ProcedureDocument }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedures/E-0',
+      )
+      expect(document.body.procedure.steps.map(step => step.id)).toEqual(['verify-reactor-trip'])
+
+      const started = await callRoute<{ readonly result: { readonly ok: boolean } }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/commands',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            actorId: 'actor:test-api-operator',
+            kind: 'procedure.run.start',
+            targetObjectIds: [],
+            payload: {
+              sourceId: 'pwr-ops',
+              procedureId: 'E-0',
+            },
+          }),
+        },
+      )
+      expect(started.body.result.ok).toBe(true)
+
+      const activeRuns = await callRoute<{
+        readonly procedures: {
+          readonly runs: readonly {
+            readonly runId: string
+            readonly status: string
+            readonly procedureId: string
+            readonly stepStates: readonly { readonly stepId: string; readonly assessment: string; readonly favorite: boolean }[]
+          }[]
+        }
+      }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedure-runs',
+      )
+      const runId = activeRuns.body.procedures.runs[0]?.runId
+      expect(activeRuns.body.procedures.runs[0]?.status).toBe('active')
+      expect(activeRuns.body.procedures.runs[0]?.procedureId).toBe('E-0')
+      if (!runId) throw new Error('missing procedure run id')
+
+      const updated = await callRoute<{ readonly result: { readonly ok: boolean } }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/commands',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            actorId: 'actor:test-api-operator',
+            kind: 'procedure.step.update',
+            targetObjectIds: [],
+            payload: {
+              runId,
+              stepId: 'verify-reactor-trip',
+              assessment: 'complete',
+              favorite: true,
+            },
+          }),
+        },
+      )
+      expect(updated.body.result.ok).toBe(true)
+
+      const updatedRuns = await callRoute<{
+        readonly procedures: {
+          readonly runs: readonly {
+            readonly stepStates: readonly { readonly stepId: string; readonly assessment: string; readonly favorite: boolean }[]
+          }[]
+        }
+      }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedure-runs',
+      )
+      expect(updatedRuns.body.procedures.runs[0]?.stepStates[0]).toMatchObject({
+        stepId: 'verify-reactor-trip',
+        assessment: 'complete',
+        favorite: true,
+      })
+    } finally {
+      await registry.close('procedure-sandbox' as ControlInstanceId)
     }
   })
 

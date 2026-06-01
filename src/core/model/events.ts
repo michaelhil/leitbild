@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { commandEnvelopeSchema, commandResultSchema, type CommandEnvelope, type CommandResult } from './commands.ts'
-import { eventIdSchema, objectIdSchema, controlInstanceIdSchema, type EventId, type ObjectId, type ControlInstanceId } from './ids.ts'
+import { eventIdSchema, objectIdSchema, controlInstanceIdSchema, type ActorId, type EventId, type ObjectId, type ControlInstanceId } from './ids.ts'
 import { operationalObjectSchema, type OperationalObject } from './object.ts'
 import { provenanceSchema, type Provenance } from './provenance.ts'
 import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type SimulationClockState } from './time.ts'
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 import { scenarioGuidanceSchema, type ScenarioGuidance } from './scenario.ts'
+import { procedureRunClosedEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment } from './procedures.ts'
 
 export interface EventEnvelopeBase {
   readonly id: EventId
@@ -75,6 +76,29 @@ export type ControlInstanceEvent =
       readonly previousSeq: number
       readonly previousScenarioId?: string
       readonly scenarioId?: string
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'procedure.run.started'
+      readonly run: ProcedureRunState
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'procedure.step.updated'
+      readonly runId: ProcedureRunId
+      readonly stepId: ProcedureStepId
+      readonly update: {
+        readonly assessment?: ProcedureAssessment
+        readonly comment?: string
+        readonly favorite?: boolean
+      }
+      readonly updatedAt: IsoTimestamp
+      readonly updatedBy: ActorId
+    })
+  | (EventEnvelopeBase & {
+      readonly type: 'procedure.run.closed'
+      readonly runId: ProcedureRunId
+      readonly status: Exclude<ProcedureRunStatus, 'active'>
+      readonly closedAt: IsoTimestamp
+      readonly closedBy: ActorId
     })
 
 const eventBaseSchema = z.object({
@@ -145,4 +169,7 @@ export const controlInstanceEventSchema = z.discriminatedUnion('type', [
     previousScenarioId: z.string().min(1).optional(),
     scenarioId: z.string().min(1).optional(),
   }),
+  eventBaseSchema.merge(procedureRunStartedEventSchema),
+  eventBaseSchema.merge(procedureStepUpdatedEventSchema),
+  eventBaseSchema.merge(procedureRunClosedEventSchema),
 ])
