@@ -540,5 +540,6 @@ export interface CompiledPlantGraph {
   readonly signalBindings: ReadonlyArray<ProcessSignalBinding>
   readonly signalBindingByPath: ReadonlyMap<VariablePath, ProcessSignalBinding>
   readonly signalBindingByTagId: ReadonlyMap<ProcessSignalTagId, ProcessSignalBinding>
+  readonly signalBindingByExternalRef: ReadonlyMap<string, ProcessSignalBinding>
   readonly displayProfiles: ReadonlyArray<ProcessPlantDisplayProfile>
 }

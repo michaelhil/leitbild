@@ -997,6 +997,34 @@ describe('process plant pack runtime', () => {
     await connection.close()
   })
 
+  test('evaluates procedure CSF monitor status from typed plant conditions', async () => {
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig(),
+      runtimeStateStore: createMemoryStateStore(),
+    })
+
+    const result = await connection.query(query('process-plant.procedure-csfs.evaluate', {
+      systemId: 'plant',
+      csfs: ['subcriticality', 'core-cooling', 'heat-sink', 'not-modeled-yet'],
+    }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.reason)
+    const body = result.result as {
+      readonly csfs: ReadonlyArray<{
+        readonly id: string
+        readonly status: string
+        readonly signalsRead: ReadonlyArray<unknown>
+      }>
+    }
+
+    expect(body.csfs.find(csf => csf.id === 'subcriticality')?.status).toBe('challenged')
+    expect(body.csfs.find(csf => csf.id === 'core-cooling')?.signalsRead.length).toBeGreaterThan(0)
+    expect(body.csfs.find(csf => csf.id === 'not-modeled-yet')?.status).toBe('unknown')
+
+    await connection.close()
+  })
+
   test('blocks process writes through explicit I&C permissives and interlocks', async () => {
     const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
       controlInstanceId,
@@ -1167,6 +1195,24 @@ describe('process plant pack runtime', () => {
           units: 'MPa',
           equipment: 'missing',
         },
+        {
+          id: 'NIS-PR-AVG',
+          simPath: 'nis.power_range.avg',
+          units: 'percent',
+          equipment: 'nuclear-instrumentation',
+        },
+        {
+          id: 'BUS-A-EMERG',
+          simPath: 'electrical.bus.emerg_a.energized',
+          units: 'bool',
+          equipment: 'bus-a-emerg',
+        },
+        {
+          id: 'DG-A',
+          simPath: 'electrical.dg.a.status',
+          units: 'enum[STOPPED,STARTING,RUNNING,LOADED,FAULT]',
+          equipment: 'emergency-dg-a',
+        },
       ],
     }))
     expect(validation.ok).toBe(true)
@@ -1178,6 +1224,19 @@ describe('process plant pack runtime', () => {
     expect(tags.find(tag => tag.id === 'SG-A-N16')?.status).toBe('resolved-with-warnings')
     expect(tags.find(tag => tag.id === 'SG-A-N16')?.warnings.join(' ')).toContain('sim-path wrong.path')
     expect(tags.find(tag => tag.id === 'NO-SUCH-TAG')?.status).toBe('missing')
+    expect(tags.find(tag => tag.id === 'NIS-PR-AVG')?.status).toBe('resolved-with-warnings')
+    expect(tags.find(tag => tag.id === 'BUS-A-EMERG')?.status).toBe('resolved-with-warnings')
+    expect(tags.find(tag => tag.id === 'DG-A')?.status).toBe('resolved-with-warnings')
+
+    const aliasRead = await connection.query(query('process-plant.signals.read', {
+      systemId: 'plant',
+      signals: [{ tagId: 'NIS-PR-AVG' }],
+    }))
+    expect(aliasRead.ok).toBe(true)
+    if (!aliasRead.ok) throw new Error(aliasRead.reason)
+    expect((aliasRead.result as {
+      readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string } }>
+    }).signals[0]?.signal.path).toBe('core.powerMw')
 
     await connection.close()
   })

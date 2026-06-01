@@ -73,6 +73,11 @@ export const write = (id: string, signal: SignalRef, value: number | boolean): R
   value,
 })
 
+export const reactorTripBreakerWrites = (idPrefix: string): ReadonlyArray<ReferenceIcEffect> => [
+  write(`${idPrefix}-open-trip-breaker-a`, { tagId: 'TRIP-BKR-A' }, false),
+  write(`${idPrefix}-open-trip-breaker-b`, { tagId: 'TRIP-BKR-B' }, false),
+]
+
 export const rule = (config: {
   readonly id: string
   readonly label?: string

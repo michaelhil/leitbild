@@ -15,6 +15,7 @@
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     closeProcedureRun,
+    evaluateProcedureCsfs,
     readProcedureCatalog,
     readProcedureDocument,
     readProcedureRuns,
@@ -22,6 +23,7 @@
     startProcedureRun,
     updateProcedureStep,
     validateProcedureTags,
+    type ProcedureCsfEvaluation,
     type ProcedureTagValidation,
     type ProcedureTagValue,
   } from './procedure-client.ts'
@@ -49,12 +51,15 @@
   let selectedProcedureId = $state<string | null>(null)
   let mode = $state<'read' | 'run'>('read')
   let tagValidation = $state<ReadonlyMap<string, ProcedureTagValidation>>(new Map())
+  let csfEvaluations = $state<ReadonlyMap<string, ProcedureCsfEvaluation>>(new Map())
+  let csfError = $state<string | null>(null)
   let hoveredTagId = $state<ProcedureTagId | null>(null)
   let hoveredTagValue = $state<ProcedureTagValue | null>(null)
   let hoveredTagError = $state<string | null>(null)
   let commentOpen = $state<Record<string, boolean>>({})
   let commentDrafts = $state<Record<string, string>>({})
   let lastRealtimeRevision = 0
+  let csfRefreshInFlight = false
 
   const activeRuns = $derived(runs.filter(run => run.status === 'active'))
   const activeRun = $derived(document
@@ -139,7 +144,12 @@
         refresh,
       })
       document = nextDocument
-      tagValidation = await validateProcedureTags(controlInstanceId, systemId, nextDocument.tags)
+      const [nextTagValidation, nextCsfEvaluations] = await Promise.all([
+        validateProcedureTags(controlInstanceId, systemId, nextDocument.tags),
+        evaluateProcedureCsfs(controlInstanceId, systemId, nextDocument.csfsMonitored),
+      ])
+      tagValidation = nextTagValidation
+      csfEvaluations = nextCsfEvaluations
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     } finally {
@@ -216,10 +226,34 @@
   const validationFor = (tagId: ProcedureTagId): ProcedureTagValidation | undefined =>
     tagValidation.get(tagId)
 
+  const csfEvaluationFor = (csf: string): ProcedureCsfEvaluation | undefined =>
+    csfEvaluations.get(csf)
+
+  const csfTitleFor = (csf: string): string => {
+    const evaluation = csfEvaluationFor(csf)
+    if (!evaluation) return 'CSF status has not been evaluated yet.'
+    if (evaluation.reason) return evaluation.reason
+    return `${evaluation.label}: ${evaluation.status}; ${evaluation.signalCount} plant signals read.`
+  }
+
+  const refreshCsfStatus = async (csfs = csfIds): Promise<void> => {
+    if (csfs.length === 0 || csfRefreshInFlight) return
+    try {
+      csfRefreshInFlight = true
+      csfError = null
+      csfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, csfs)
+    } catch (err) {
+      csfError = err instanceof Error ? err.message : String(err)
+    } finally {
+      csfRefreshInFlight = false
+    }
+  }
+
   const showTag = async (tagId: ProcedureTagId): Promise<void> => {
     hoveredTagId = tagId
     hoveredTagValue = null
     hoveredTagError = null
+    if (validationFor(tagId)?.status === 'missing') return
     try {
       hoveredTagValue = await readProcedureTagValue(controlInstanceId, systemId, tagId)
     } catch (err) {
@@ -267,12 +301,21 @@
 
   runOnMount(() => {
     void loadCatalogAndRuns()
+    const interval = window.setInterval(() => {
+      void refreshCsfStatus()
+    }, 2_000)
+    return () => {
+      window.clearInterval(interval)
+    }
   })
 
   $effect(() => {
     if (realtimeRevision === lastRealtimeRevision) return
     lastRealtimeRevision = realtimeRevision
-    if (!loading) void refreshRuns()
+    if (!loading) {
+      void refreshRuns()
+      void refreshCsfStatus()
+    }
   })
 </script>
 
@@ -298,12 +341,17 @@
         <div class="procedure-csf unknown"><Circle size={12} /> CSF status unavailable until a procedure is selected</div>
       {:else}
         {#each csfIds as csf}
-          <div class="procedure-csf unknown" title="No explicit typed CSF evaluation mapping yet">
-            <Circle size={12} /> {csf.replaceAll('-', ' ')}
+          {@const evaluation = csfEvaluationFor(csf)}
+          <div class="procedure-csf {evaluation?.status ?? 'unknown'}" title={csfTitleFor(csf)}>
+            <Circle size={12} /> {evaluation?.label ?? csf.replaceAll('-', ' ')}
           </div>
         {/each}
       {/if}
     </div>
+
+    {#if csfError}
+      <div class="procedure-error">{csfError}</div>
+    {/if}
 
     {#if error}
       <div class="procedure-error">{error}</div>
@@ -457,14 +505,14 @@
         {#if hoveredTagValue}
           <b>{hoveredTagValue.formatted}</b>
           {#if hoveredTagValue.path}<small>{hoveredTagValue.path}</small>{/if}
+        {:else if validationFor(hoveredTagId)?.status === 'missing'}
+          <em>Not resolved to a Leitbild signal.</em>
         {:else if hoveredTagError}
           <em>{hoveredTagError}</em>
         {:else}
           <small>Reading live value...</small>
         {/if}
-        {#if validationFor(hoveredTagId)?.status === 'missing'}
-          <em>Not resolved to a Leitbild signal.</em>
-        {:else if validationFor(hoveredTagId)?.warnings.length}
+        {#if validationFor(hoveredTagId)?.status !== 'missing' && validationFor(hoveredTagId)?.warnings.length}
           <em>{validationFor(hoveredTagId)?.warnings.join('; ')}</em>
         {/if}
       </div>

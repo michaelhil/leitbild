@@ -1874,6 +1874,28 @@ body.rail-resizing {
   color: #94a3b8;
 }
 
+.procedure-csf.satisfied {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.procedure-csf.satisfied svg {
+  color: #15803d;
+  fill: #15803d;
+}
+
+.procedure-csf.challenged {
+  border-color: #fecaca;
+  color: #991b1b;
+  background: #fff1f2;
+}
+
+.procedure-csf.challenged svg {
+  color: #dc2626;
+  fill: #dc2626;
+}
+
 .procedure-error {
   padding: 10px 20px;
   color: #b42318;

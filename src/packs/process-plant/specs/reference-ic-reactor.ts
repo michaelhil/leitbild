@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, rule, trip, vote, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, reactorTripBreakerWrites, rule, trip, vote, write } from './reference-ic-helpers.ts'
 
 const reactorAlarm = annunciator({
   system: 'reactor protection',
@@ -48,6 +48,7 @@ export const reactorReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => 
         message: 'Core fission power is above the reference trip threshold.',
         annunciator: reactorAction,
       }),
+      ...reactorTripBreakerWrites('high-power-trip'),
       write('insert-control-rods', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),
@@ -66,6 +67,7 @@ export const reactorReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => 
         message: 'Primary inventory loss exceeds the reference low-flow trip threshold.',
         annunciator: reactorAction,
       }),
+      ...reactorTripBreakerWrites('low-flow-trip'),
       write('insert-control-rods-low-flow', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),
@@ -89,6 +91,7 @@ export const reactorReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => 
         message: 'Three or more reactor coolant pump loops are below the reference low-flow trip threshold.',
         annunciator: reactorAction,
       }),
+      ...reactorTripBreakerWrites('low-rcp-flow-trip'),
       write('insert-control-rods-low-rcp-flow', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),

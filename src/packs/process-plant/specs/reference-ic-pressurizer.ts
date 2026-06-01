@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, annunciator, comparison, deadbandController, rule, trip, write } from './reference-ic-helpers.ts'
+import { alarm, annunciator, comparison, deadbandController, reactorTripBreakerWrites, rule, trip, write } from './reference-ic-helpers.ts'
 
 const pzrAlarm = annunciator({
   system: 'reactor coolant system',
@@ -85,6 +85,7 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
         message: 'Pressurizer pressure is below the reference reactor-trip threshold.',
         annunciator: pzrAction,
       }),
+      ...reactorTripBreakerWrites('low-pzr-pressure-trip'),
       write('insert-control-rods-low-pzr-pressure', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),
@@ -103,6 +104,7 @@ export const pressurizerReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule>
         message: 'Pressurizer pressure is above the reference reactor-trip threshold.',
         annunciator: pzrAction,
       }),
+      ...reactorTripBreakerWrites('high-pzr-pressure-trip'),
       write('insert-control-rods-high-pzr-pressure', { path: 'core.rodInsertionFraction' }, 1),
     ],
   }),

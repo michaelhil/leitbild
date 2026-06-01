@@ -412,8 +412,14 @@ export const compilePlantGraph = (
   const signalBindings = variables.map(signalBindingFor)
   const signalBindingByPath = new Map(signalBindings.map(binding => [binding.path, binding]))
   const signalBindingByTagId = new Map<ProcessSignalTagId, ProcessSignalBinding>()
+  const signalBindingByExternalRef = new Map<string, ProcessSignalBinding>()
   for (const binding of signalBindings) {
     if (binding.tagId !== undefined) signalBindingByTagId.set(binding.tagId, binding)
+    for (const externalRef of binding.externalRefs ?? []) {
+      const existing = signalBindingByExternalRef.get(externalRef)
+      if (existing !== undefined) throw new Error(`duplicate process signal external ref: ${externalRef}`)
+      signalBindingByExternalRef.set(externalRef, binding)
+    }
   }
 
   return {
@@ -431,6 +437,7 @@ export const compilePlantGraph = (
     signalBindings,
     signalBindingByPath,
     signalBindingByTagId,
+    signalBindingByExternalRef,
     displayProfiles: spec.displayProfiles,
   }
 }

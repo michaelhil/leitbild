@@ -236,6 +236,8 @@ describe('process plant runtime', () => {
       const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 3_000 })
       expect(activeLifecycleIds(snapshot).trips).toContain(expectedTrip)
       expect(Number(runtime.readVariable(valueOf('core.rodInsertionFraction')))).toBe(1)
+      expect(runtime.readVariable(valueOf('reactorTripBreakerA.closed'))).toBe(false)
+      expect(runtime.readVariable(valueOf('reactorTripBreakerB.closed'))).toBe(false)
     }
   })
 

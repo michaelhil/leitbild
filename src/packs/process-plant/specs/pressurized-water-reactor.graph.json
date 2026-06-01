@@ -32,7 +32,20 @@
         "fuelThermalCapacityMjPerC": 45000,
         "nominalPrimaryFlowKgPerS": 17000,
         "minimumNaturalCirculationCoolingFraction": 0.08
-      }
+      },
+      "variables": [
+        {
+          "path": "powerMw",
+          "description": "Core fission power; procedure-facing proxy for power-range nuclear instrumentation average",
+          "externalRefs": ["NIS-PR-AVG", "nis.power_range.avg"],
+          "capabilities": { "procedureRelevant": true }
+        },
+        {
+          "path": "rodInsertionFraction",
+          "description": "Rod insertion fraction; procedure-facing proxy for rod-bottom verification",
+          "capabilities": { "procedureRelevant": true }
+        }
+      ]
     },
     {
       "id": "vessel",
@@ -643,7 +656,16 @@
         "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "AFW-PUMP-A",
+          "equipmentId": "auxFeedwaterPumpMotor",
+          "description": "Motor-driven auxiliary feedwater pump running status",
+          "externalRefs": ["afw.pump.a.status"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterPumpTurbine",
@@ -655,7 +677,16 @@
         "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "AFW-PUMP-T",
+          "equipmentId": "auxFeedwaterPumpTurbine",
+          "description": "Turbine-driven auxiliary feedwater pump running status",
+          "externalRefs": ["afw.pump.tdafw.status"]
+        }
+      ]
     },
     {
       "id": "auxFeedwaterHeader",
@@ -864,7 +895,16 @@
       "parameters": {
         "nominalFlowKgPerS": 90,
         "nominalHeadPa": 1600000
-      }
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "CHG-PUMP-A",
+          "equipmentId": "chargingPump",
+          "description": "Charging pump running status",
+          "externalRefs": ["cvcs.charging_pump.a.status"]
+        }
+      ]
     },
     {
       "id": "letdownValve",
@@ -888,7 +928,16 @@
         "designPressureMPa": 0.42,
         "ventSetpointMPa": 0.5,
         "ventCapacityKgPerS": 0
-      }
+      },
+      "variables": [
+        {
+          "path": "pressureMPa",
+          "tagId": "CTMT-PR",
+          "equipmentId": "containment",
+          "description": "Containment building pressure",
+          "externalRefs": ["containment.pressure"]
+        }
+      ]
     },
     {
       "id": "safetyAccumulatorA",
@@ -1026,7 +1075,8 @@
           "path": "energized",
           "tagId": "BUS-A-ENERGIZED",
           "equipmentId": "safetyBusA",
-          "description": "Safety bus A energized status"
+          "description": "Safety bus A energized status",
+          "externalRefs": ["BUS-A-EMERG", "electrical.bus.emerg_a.energized"]
         },
         {
           "path": "marginMw",
@@ -1061,7 +1111,8 @@
           "path": "energized",
           "tagId": "BUS-B-ENERGIZED",
           "equipmentId": "safetyBusB",
-          "description": "Safety bus B energized status"
+          "description": "Safety bus B energized status",
+          "externalRefs": ["BUS-B-EMERG", "electrical.bus.emerg_b.energized"]
         },
         {
           "path": "marginMw",
@@ -1138,7 +1189,8 @@
           "path": "running",
           "tagId": "EDG-A-RUN",
           "equipmentId": "dieselGeneratorA",
-          "description": "Emergency diesel generator A running status"
+          "description": "Emergency diesel generator A running status",
+          "externalRefs": ["DG-A", "electrical.dg.a.status"]
         }
       ]
     },
@@ -1163,7 +1215,8 @@
           "path": "running",
           "tagId": "EDG-B-RUN",
           "equipmentId": "dieselGeneratorB",
-          "description": "Emergency diesel generator B running status"
+          "description": "Emergency diesel generator B running status",
+          "externalRefs": ["DG-B", "electrical.dg.b.status"]
         }
       ]
     },
@@ -1258,6 +1311,42 @@
           "tagId": "CTRL-B-ENERGIZED",
           "equipmentId": "plantControlsLoadB",
           "description": "Plant controls load B energized status"
+        }
+      ]
+    },
+    {
+      "id": "reactorTripBreakerA",
+      "kind": "electricalBreaker",
+      "label": "Reactor Trip Breaker A",
+      "parameters": {
+        "nominalPowerMw": 5,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "TRIP-BKR-A",
+          "equipmentId": "reactorTripBreakerA",
+          "description": "Reactor trip breaker A closed status",
+          "externalRefs": ["rps.trip_breaker.a.position"]
+        }
+      ]
+    },
+    {
+      "id": "reactorTripBreakerB",
+      "kind": "electricalBreaker",
+      "label": "Reactor Trip Breaker B",
+      "parameters": {
+        "nominalPowerMw": 5,
+        "initialClosed": true
+      },
+      "variables": [
+        {
+          "path": "closed",
+          "tagId": "TRIP-BKR-B",
+          "equipmentId": "reactorTripBreakerB",
+          "description": "Reactor trip breaker B closed status",
+          "externalRefs": ["rps.trip_breaker.b.position"]
         }
       ]
     }

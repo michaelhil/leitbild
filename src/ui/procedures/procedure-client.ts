@@ -31,6 +31,14 @@ export interface ProcedureTagValue {
   readonly path?: string
 }
 
+export interface ProcedureCsfEvaluation {
+  readonly id: string
+  readonly label: string
+  readonly status: 'satisfied' | 'challenged' | 'unknown'
+  readonly reason?: string
+  readonly signalCount: number
+}
+
 const assertRecord = (value: unknown, message: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(message)
   return value as Record<string, unknown>
@@ -197,4 +205,35 @@ export const readProcedureTagValue = async (
     ...(typeof first.quality === 'string' ? { quality: first.quality } : {}),
     ...(typeof signal.path === 'string' ? { path: signal.path } : {}),
   }
+}
+
+export const evaluateProcedureCsfs = async (
+  controlInstanceId: ControlInstanceId,
+  systemId: string,
+  csfs: ReadonlyArray<string>,
+): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
+  if (csfs.length === 0) return new Map()
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.procedure-csfs.evaluate',
+    payload: {
+      systemId,
+      csfs,
+    },
+  })
+  const result = requireOkPackResult(body.response, 'procedure CSF evaluation failed')
+  return new Map(assertArray(result.csfs, 'procedure CSF evaluation returned no statuses').map(item => {
+    const row = assertRecord(item, 'procedure CSF row is malformed')
+    const id = assertString(row.id, 'procedure CSF row requires id')
+    const label = assertString(row.label, 'procedure CSF row requires label')
+    const status = assertString(row.status, 'procedure CSF row requires status')
+    const signalsRead = assertArray(row.signalsRead, 'procedure CSF row requires signalsRead')
+    return [id, {
+      id,
+      label,
+      status: status === 'satisfied' || status === 'challenged' ? status : 'unknown',
+      ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
+      signalCount: signalsRead.length,
+    }]
+  }))
 }

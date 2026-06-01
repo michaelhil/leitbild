@@ -805,7 +805,10 @@ describe('process plant graph foundation', () => {
   test('keeps reference graph procedure tags mapped to stable process variables', () => {
     const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const expectedProcedureTags = [
+      ['TRIP-BKR-A', 'reactorTripBreakerA.closed'],
+      ['TRIP-BKR-B', 'reactorTripBreakerB.closed'],
       ['PT-455', 'pressurizer.pressureMPa'],
+      ['CTMT-PR', 'containment.pressureMPa'],
       ['PZR-LVL', 'pressurizer.levelPercent'],
       ['PZR-HTR', 'pressurizer.heaterPowerMw'],
       ['PZR-SPRAY', 'pressurizer.sprayFlowKgPerS'],
@@ -819,6 +822,9 @@ describe('process plant graph foundation', () => {
       ['RCP-A-FLOW', 'rcpA.loopFlowKgPerS'],
       ['MFW-PUMP-A-RUN', 'mainFeedwaterPumpA.running'],
       ['MFW-PUMP-B-RUN', 'mainFeedwaterPumpB.running'],
+      ['AFW-PUMP-A', 'auxFeedwaterPumpMotor.running'],
+      ['AFW-PUMP-T', 'auxFeedwaterPumpTurbine.running'],
+      ['CHG-PUMP-A', 'chargingPump.running'],
       ['FT-SG-A-001', 'sg-a-steam-to-msiv-a.flowKgPerS'],
     ] as const
 
@@ -827,6 +833,26 @@ describe('process plant graph foundation', () => {
       expect(String(binding?.path)).toBe(expectedPath)
       expect(binding?.capabilities?.procedureRelevant).toBe(true)
       expect(binding?.capabilities?.aiVisible).toBe(true)
+    }
+  })
+
+  test('indexes procedure source aliases as graph-owned external references', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    const expectedAliases = [
+      ['NIS-PR-AVG', 'core.powerMw'],
+      ['nis.power_range.avg', 'core.powerMw'],
+      ['BUS-A-EMERG', 'safetyBusA.energized'],
+      ['BUS-B-EMERG', 'safetyBusB.energized'],
+      ['DG-A', 'dieselGeneratorA.running'],
+      ['DG-B', 'dieselGeneratorB.running'],
+      ['afw.pump.a.status', 'auxFeedwaterPumpMotor.running'],
+      ['afw.pump.tdafw.status', 'auxFeedwaterPumpTurbine.running'],
+    ] as const
+
+    for (const [externalRef, expectedPath] of expectedAliases) {
+      const binding = graph.signalBindingByExternalRef.get(externalRef)
+      expect(String(binding?.path)).toBe(expectedPath)
+      expect(binding?.capabilities?.procedureRelevant).toBe(true)
     }
   })
 

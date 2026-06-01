@@ -53,10 +53,23 @@ export const resolveProcessPlantSignalBinding = (
   }
   if (reference.tagId !== undefined) {
     const binding = graph.signalBindingByTagId.get(reference.tagId)
+      ?? graph.signalBindingByExternalRef.get(reference.tagId)
     if (!binding) throw new Error(`unknown process plant signal tagId: ${reference.tagId}`)
     return binding
   }
   throw new Error('process signal reference must define path or tagId')
+}
+
+export const findProcessPlantSignalBinding = (
+  graph: CompiledPlantGraph,
+  reference: ProcessPlantSignalReference,
+): ProcessSignalBinding | undefined => {
+  if (reference.path !== undefined) return graph.signalBindingByPath.get(reference.path)
+  if (reference.tagId !== undefined) {
+    return graph.signalBindingByTagId.get(reference.tagId)
+      ?? graph.signalBindingByExternalRef.get(reference.tagId)
+  }
+  return undefined
 }
 
 export const resolveProcessPlantSignalPath = (
