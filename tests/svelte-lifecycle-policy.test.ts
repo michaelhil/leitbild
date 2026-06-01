@@ -55,4 +55,15 @@ describe('Svelte lifecycle policy', () => {
     expect(mapRuntime).toContain('maplibre-gl/dist/maplibre-gl-worker.mjs?url')
     expect(mapRuntime).toContain('setWorkerUrl')
   })
+
+  test('process-surface child modals opt back into pointer events', () => {
+    const css = readFileSync(join(uiRoot, 'style.css'), 'utf8')
+    const processLayer = css.match(/\.process-surface-window-layer\s*\{[^}]*\}/)?.[0] ?? ''
+    const artifactBackdrop = css.match(/\.process-artifact-backdrop\s*\{[^}]*\}/)?.[0] ?? ''
+    const procedureBackdrop = css.match(/\.procedure-backdrop\s*\{[^}]*\}/)?.[0] ?? ''
+
+    expect(processLayer).toContain('pointer-events: none')
+    expect(artifactBackdrop).toContain('pointer-events: auto')
+    expect(procedureBackdrop).toContain('pointer-events: auto')
+  })
 })

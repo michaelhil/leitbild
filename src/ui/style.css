@@ -1783,6 +1783,7 @@ body.rail-resizing {
   display: grid;
   place-items: center;
   padding: 24px;
+  pointer-events: auto;
 }
 
 .procedure-modal {
