@@ -24,6 +24,7 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'atmosphereMassKg',
       'steamMassKg',
       'sumpInventoryKg',
+      'sumpLevelPercent',
       'pressureMPa',
       'temperatureC',
       'humidityFraction',
@@ -71,6 +72,8 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         minInventory: 0,
         maxInventory: Number.POSITIVE_INFINITY,
       })
+      const sumpLevelReferenceInventory = optionalParameterNumber(component, 'sumpLevelReferenceInventoryKg', 100_000)
+      const sumpLevelPercent = clamp(nextSumpInventory / sumpLevelReferenceInventory * 100, 0, 100)
       const airMass = context.readNumber(componentVariablePath(component, 'airMassKg'))
       const pressure = gasPressureMPa({
         airMassKg: airMass,
@@ -90,6 +93,7 @@ export const containmentBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       context.write(componentVariablePath(component, 'atmosphereMassKg'), atmosphereMass)
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       context.write(componentVariablePath(component, 'sumpInventoryKg'), nextSumpInventory)
+      context.write(componentVariablePath(component, 'sumpLevelPercent'), sumpLevelPercent)
       context.write(componentVariablePath(component, 'pressureMPa'), Math.max(0.01, pressure))
       context.write(componentVariablePath(component, 'temperatureC'), nextTemperature)
       context.write(componentVariablePath(component, 'humidityFraction'), humidity)

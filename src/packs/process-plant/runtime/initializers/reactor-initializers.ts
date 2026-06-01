@@ -26,8 +26,17 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       if (localPath === 'boronFeedbackPcm') return 0
       if (localPath === 'effectiveReactivityPcm') return 0
       if (localPath === 'rodInsertionFraction') return optionalParameterNumber(component, 'criticalRodInsertionFraction', clamp(1 - initialPowerFraction, 0, 1))
+      if (localPath === 'sourceRangeCountRateCps') return Math.min(
+        optionalParameterNumber(component, 'nominalSourceRangeCountRateCps', 100_000),
+        10 + Math.pow(Math.max(initialPowerFraction, 0), 0.35) * optionalParameterNumber(component, 'nominalSourceRangeCountRateCps', 100_000),
+      )
+      if (localPath === 'intermediateRangeCurrentAmps') return Math.min(
+        optionalParameterNumber(component, 'nominalIntermediateRangeCurrentAmps', 1e-5),
+        Math.pow(Math.max(initialPowerFraction, 0), 0.8) * optionalParameterNumber(component, 'nominalIntermediateRangeCurrentAmps', 1e-5),
+      )
       if (localPath === 'coolantInletTemperatureC') return initialCoolantInlet
       if (localPath === 'coolantOutletTemperatureC') return initialCoolantOutlet
+      if (localPath === 'averageHotLegFlowKgPerS') return optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', 0)
       if (localPath === 'fuelTemperatureC') return initialFuelAverage
       if (localPath === 'fuelLowerTemperatureC') return initialFuelLower
       if (localPath === 'fuelMidTemperatureC') return initialFuelMid
@@ -48,7 +57,9 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       const initialFraction = parameterNumber(component, 'initialPrimaryCoolantInventoryFraction')
       if (localPath === 'primaryCoolantInventoryKg') return nominalInventory * initialFraction
       if (localPath === 'primaryCoolantInventoryDeviationKg') return nominalInventory * (initialFraction - 1)
+      if (localPath === 'collapsedLiquidLevelPercent') return clamp(initialFraction / optionalParameterNumber(component, 'collapsedLevelReferenceInventoryFraction', 1) * 100, 0, 100)
       if (localPath === 'meanPrimaryCoolantTemperatureC') return parameterNumber(component, 'referencePrimaryCoolantTemperatureC')
+      if (localPath === 'subcoolingMarginC') return 0
       if (localPath === 'compressibilityPressureBiasMPa') return 0
       if (localPath === 'thermalExpansionPressureBiasMPa') return 0
       if (localPath === 'primaryPressureBiasMPa') return 0
@@ -72,6 +83,7 @@ export const reactorInitialValueDefinitions: ReadonlyArray<ComponentInitialValue
       const primaryLoopId = primaryLoopIdForPump(component)
       if (localPath === 'running') return running
       if (localPath === 'speedFraction') return 1
+      if (localPath === 'speedRpm') return running ? optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0
       if (localPath === 'flowKgPerS') return running ? parameterNumber(component, 'nominalFlowKgPerS') : 0
       if (localPath === 'developedHeadPa') return running ? parameterNumber(component, 'nominalHeadPa') : 0
       if (localPath === 'loopFlowTargetKgPerS') return primaryLoopId === null ? 0 : running ? parameterNumber(component, 'nominalFlowKgPerS') : optionalParameterNumber(component, 'minimumNaturalCirculationFlowKgPerS', 0)

@@ -1,4 +1,4 @@
-import { optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
+import { optionalParameterBoolean, optionalParameterNumber, parameterNumber } from '../component-helpers.ts'
 import type { ComponentInitialValueDefinition } from './model.ts'
 
 export const supportSystemInitialValueDefinitions: ReadonlyArray<ComponentInitialValueDefinition> = [
@@ -37,6 +37,10 @@ export const supportSystemInitialValueDefinitions: ReadonlyArray<ComponentInitia
       if (localPath === 'airMassKg') return airMass
       if (localPath === 'steamMassKg') return steamMass
       if (localPath === 'sumpInventoryKg') return optionalParameterNumber(component, 'initialSumpInventoryKg', 0)
+      if (localPath === 'sumpLevelPercent') {
+        const referenceInventory = optionalParameterNumber(component, 'sumpLevelReferenceInventoryKg', 100_000)
+        return optionalParameterNumber(component, 'initialSumpInventoryKg', 0) / referenceInventory * 100
+      }
       if (localPath === 'pressureMPa') return pressure
       if (localPath === 'temperatureC') return temperatureC
       if (localPath === 'humidityFraction') return optionalParameterNumber(component, 'initialHumidityFraction', 0.35)
@@ -58,6 +62,7 @@ export const supportSystemInitialValueDefinitions: ReadonlyArray<ComponentInitia
       const totalVolume = parameterNumber(component, 'totalVolumeM3')
       const liquidVolume = liquidInventory / density
       const gasVolume = Math.max(0.001, totalVolume - liquidVolume)
+      if (localPath === 'dischargeIsolationOpen') return optionalParameterBoolean(component, 'initialDischargeIsolationOpen', true)
       if (localPath === 'liquidInventoryKg') return liquidInventory
       if (localPath === 'gasVolumeM3') return gasVolume
       if (localPath === 'gasPressureMPa') return parameterNumber(component, 'initialGasPressureMPa')

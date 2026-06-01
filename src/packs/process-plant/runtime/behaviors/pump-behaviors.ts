@@ -15,11 +15,12 @@ export const pumpBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition>
     phase: 'solveFluidFlowComponents',
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction', 'incoming electrical energized?'],
-    writes: ['flowKgPerS'],
+    writes: ['flowKgPerS', 'speedRpm'],
     update: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
         && componentHasElectricalPower(system, component, context)
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
+      context.write(componentVariablePath(component, 'speedRpm'), running ? speed * optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0)
       const targetFlow = running ? parameterNumber(component, 'nominalFlowKgPerS') * speed : 0
       const currentFlow = context.readNumber(componentVariablePath(component, 'flowKgPerS'))
       const timeConstant = optionalParameterNumber(component, 'flowTimeConstantS', 0)
@@ -81,7 +82,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
     id: 'centrifugal-pump-initial-state',
     componentKind: 'centrifugalPump',
     reads: ['running', 'speedFraction'],
-    writes: ['flowKgPerS', 'developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
+    writes: ['flowKgPerS', 'speedRpm', 'developedHeadPa', 'loopFlowTargetKgPerS', 'loopFlowKgPerS'],
     reconcile: ({ system, component, context }): void => {
       const running = context.readBoolean(componentVariablePath(component, 'running'))
       const speed = clamp(context.readNumber(componentVariablePath(component, 'speedFraction')), 0, 1.2)
@@ -90,6 +91,7 @@ export const pumpInitialReconciliationDefinitions: ReadonlyArray<ComponentInitia
       const developedHead = running ? nominalHead * speed * speed : 0
       const componentFlow = running ? nominalFlow * speed : 0
       context.write(componentVariablePath(component, 'flowKgPerS'), componentFlow)
+      context.write(componentVariablePath(component, 'speedRpm'), running ? speed * optionalParameterNumber(component, 'nominalSpeedRpm', 3600) : 0)
       context.write(componentVariablePath(component, 'developedHeadPa'), developedHead)
 
       const primaryLoopId = primaryLoopIdForPump(component)

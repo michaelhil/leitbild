@@ -125,11 +125,13 @@ export const electricalComponentDefinitions: ReadonlyArray<ComponentDefinition> 
     },
     parametersSchema: z.object({
       nominalPowerMw: positivePower,
+      nominalVoltageVdc: z.number().finite().positive().optional(),
       dischargeTimeS: z.number().finite().positive(),
       initialStateOfChargeFraction: normalized.optional(),
     }).strict(),
     variables: [
       variable({ path: 'stateOfChargeFraction', label: 'Battery state of charge', kind: 'state', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'ratio', unit: 'fraction' }),
+      variable({ path: 'voltageVdc', label: 'Battery DC voltage', kind: 'derived', discipline: 'electrical', writable: false, publish: 'telemetry', quantity: 'voltage', unit: 'volts_dc' }),
       ...energizedVariables('Battery'),
     ],
   }),

@@ -209,7 +209,7 @@ const batteryBehavior: ComponentBehaviorDefinition = {
   phase: 'solveElectrical',
   componentKind: 'battery',
   reads: ['stateOfChargeFraction'],
-  writes: ['stateOfChargeFraction', 'energized', 'availablePowerMw', 'voltageFraction'],
+  writes: ['stateOfChargeFraction', 'energized', 'availablePowerMw', 'voltageFraction', 'voltageVdc'],
   update: ({ system, component, context }): void => {
     const demand = outgoingLoadDemand(system, component, context)
     const dischargeTime = parameterNumber(component, 'dischargeTimeS')
@@ -223,6 +223,7 @@ const batteryBehavior: ComponentBehaviorDefinition = {
     context.write(componentVariablePath(component, 'energized'), nextCharge > 0)
     context.write(componentVariablePath(component, 'availablePowerMw'), nextCharge > 0 ? nominalPower : 0)
     context.write(componentVariablePath(component, 'voltageFraction'), nextCharge > 0 ? 1 : 0)
+    context.write(componentVariablePath(component, 'voltageVdc'), nextCharge > 0 ? optionalParameterNumber(component, 'nominalVoltageVdc', 125) : 0)
   },
 }
 

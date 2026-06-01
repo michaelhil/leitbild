@@ -254,8 +254,13 @@
     hoveredTagValue = null
     hoveredTagError = null
     if (validationFor(tagId)?.status === 'missing') return
+    const tag = tagFor(tagId)
+    if (!tag) {
+      hoveredTagError = 'Procedure tag metadata not found.'
+      return
+    }
     try {
-      hoveredTagValue = await readProcedureTagValue(controlInstanceId, systemId, tagId)
+      hoveredTagValue = await readProcedureTagValue(controlInstanceId, systemId, tag)
     } catch (err) {
       hoveredTagError = err instanceof Error ? err.message : String(err)
     }

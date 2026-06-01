@@ -6,6 +6,7 @@ export const processPlantServices = {
   auxFeedwater: service('auxFeedwater'),
   charging: service('charging'),
   condensate: service('condensate'),
+  containmentSpray: service('containmentSpray'),
   coolingWater: service('coolingWater'),
   exhaustSteam: service('exhaustSteam'),
   feedwater: service('feedwater'),
@@ -15,6 +16,7 @@ export const processPlantServices = {
   primaryInjection: service('primaryInjection'),
   primaryRelease: service('primaryRelease'),
   primaryRelief: service('primaryRelief'),
+  safetyInjection: service('safetyInjection'),
 } as const
 
 const downstreamDemandServices: ReadonlySet<ConnectionService> = new Set([

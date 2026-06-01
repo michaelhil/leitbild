@@ -4,7 +4,7 @@ import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
 import { processPlantControlWritePayloadSchema } from '../commands.ts'
 import { validateProcessPlantControlWrite } from '../control-write-validation.ts'
-import { processSignalTagIdSchema, variablePathSchema } from '../graph/index.ts'
+import { processSignalTagIdSchema, variablePathSchema, type ProcessQuantity } from '../graph/index.ts'
 import { evaluateProcessPlantIcCondition, processPlantIcConditionSchema, type ProcessPlantIcCondition } from '../runtime/index.ts'
 import { findProcessPlantSignalBinding, processPlantSignalView } from '../signals.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
@@ -26,6 +26,8 @@ const procedureTagValidateQuerySchema = z.object({
   }).strict()).min(1),
 }).strict()
 
+const procedureTagsReadQuerySchema = procedureTagValidateQuerySchema
+
 const procedureCsfEvaluateQuerySchema = z.object({
   systemId: idSchema,
   csfs: z.array(z.string().min(1)).min(1),
@@ -34,6 +36,7 @@ const procedureCsfEvaluateQuerySchema = z.object({
 export const processPlantControlQueryKinds = [
   'process-plant.conditions.evaluate',
   'process-plant.procedure-csfs.evaluate',
+  'process-plant.procedure-tags.read',
   'process-plant.procedure-tags.validate',
   'process-plant.control.validate',
 ] as const
@@ -121,7 +124,120 @@ const procedureUnitsCompatible = (procedureUnit: string | undefined, processUnit
   const normalizedProcessUnit = normalizeProcedureUnit(processUnit)
   if (normalizedProcedureUnit === normalizedProcessUnit) return true
   if ((normalizedProcedureUnit === 'bool' || normalizedProcedureUnit === 'boolean') && normalizedProcessUnit === 'boolean') return true
+  if (normalizedProcedureUnit.startsWith('enum[') && (normalizedProcessUnit === 'boolean' || normalizedProcessUnit === 'fraction' || normalizedProcessUnit === 'percent')) return true
+  if (normalizedProcedureUnit === 'degf' && normalizedProcessUnit === 'degc') return true
+  if (normalizedProcedureUnit === 'gpm' && normalizedProcessUnit === 'kg/s') return true
+  if (normalizedProcedureUnit === 'psig' && (normalizedProcessUnit === 'mpa' || normalizedProcessUnit === 'pa')) return true
+  if (normalizedProcedureUnit === 'inhga' && normalizedProcessUnit === 'pa') return true
+  if (normalizedProcedureUnit === 'percent_collapsed_liquid' && normalizedProcessUnit === 'percent') return true
+  if (normalizedProcedureUnit === 'steps_withdrawn' && normalizedProcessUnit === 'fraction') return true
+  if (normalizedProcedureUnit === 'rpm' && normalizedProcessUnit === 'rpm') return true
+  if (normalizedProcedureUnit === 'cps' && normalizedProcessUnit === 'cps') return true
+  if (normalizedProcedureUnit === 'amps' && normalizedProcessUnit === 'amps') return true
+  if (normalizedProcedureUnit === 'volts_dc' && normalizedProcessUnit === 'volts_dc') return true
   return false
+}
+
+const formatNumber = (value: number, digits: number): string => {
+  if (Number.isInteger(value)) return value.toFixed(0)
+  const magnitude = Math.abs(value)
+  if (magnitude > 0 && magnitude < 0.001) return value.toExponential(3)
+  return value.toFixed(digits)
+}
+
+const enumStateFor = (config: {
+  readonly procedureUnit: string
+  readonly value: number | boolean
+}): string | undefined => {
+  const options = config.procedureUnit.slice(5, -1).split(',').map(option => option.trim()).filter(Boolean)
+  if (options.length === 0) return undefined
+  if (typeof config.value === 'boolean') {
+    if (options.includes('RUNNING') || options.includes('STOPPED')) return config.value ? 'RUNNING' : 'STOPPED'
+    if (options.includes('OPEN') || options.includes('CLOSED')) return config.value ? 'OPEN' : 'CLOSED'
+    if (options.includes('ALIGNED') || options.includes('ISOLATED')) return config.value ? 'ALIGNED' : 'ISOLATED'
+    if (options.includes('DEPRESSED') || options.includes('NORMAL')) return config.value ? 'DEPRESSED' : 'NORMAL'
+    return config.value ? 'TRUE' : 'FALSE'
+  }
+  const bounded = Math.max(0, Math.min(1, config.value))
+  if (options.includes('OPEN') && options.includes('CLOSED')) {
+    if (bounded >= 0.95) return 'OPEN'
+    if (bounded <= 0.05) return 'CLOSED'
+    return options.includes('INTERMEDIATE') ? 'INTERMEDIATE' : `${formatNumber(bounded * 100, 1)} percent`
+  }
+  if (options.includes('ALIGNED') && options.includes('ISOLATED')) {
+    if (bounded >= 0.95) return 'ALIGNED'
+    if (bounded <= 0.05) return 'ISOLATED'
+    return options.includes('FAULT') ? 'FAULT' : `${formatNumber(bounded * 100, 1)} percent`
+  }
+  if (options.includes('VENTING') && options.includes('ISOLATED')) {
+    if (bounded >= 0.05) return 'VENTING'
+    return 'ISOLATED'
+  }
+  return `${formatNumber(config.value, 3)} ${config.procedureUnit}`
+}
+
+const procedureFormattedValue = (config: {
+  readonly tagId: string
+  readonly procedureUnit: string | undefined
+  readonly processQuantity: ProcessQuantity
+  readonly processUnit: string
+  readonly value: number | boolean
+}): { readonly value: number | boolean | string; readonly formatted: string; readonly unit?: string; readonly conversion?: string } => {
+  const procedureUnit = config.procedureUnit === undefined ? undefined : normalizeProcedureUnit(config.procedureUnit)
+  const outputUnit = config.procedureUnit ?? config.processUnit
+  if (procedureUnit?.startsWith('enum[') === true) {
+    const state = enumStateFor({
+      procedureUnit: config.procedureUnit ?? '',
+      value: config.value,
+    })
+    if (state !== undefined) return { value: state, formatted: state, unit: outputUnit, conversion: `interpreted from ${config.processUnit}` }
+  }
+  if (typeof config.value !== 'number') {
+    return {
+      value: config.value,
+      formatted: `${String(config.value)} ${outputUnit}`,
+      unit: outputUnit,
+    }
+  }
+  if (procedureUnit === 'degf' && config.processUnit === 'degC') {
+    const value = config.processQuantity === 'temperatureDelta'
+      ? config.value * 9 / 5
+      : config.value * 9 / 5 + 32
+    return {
+      value,
+      formatted: `${formatNumber(value, 1)} degF`,
+      unit: outputUnit,
+      conversion: config.processQuantity === 'temperatureDelta' ? 'converted from degC delta' : 'converted from degC',
+    }
+  }
+  if (procedureUnit === 'gpm' && config.processUnit === 'kg/s') {
+    const value = config.value * 15.850323
+    return { value, formatted: `${formatNumber(value, 1)} gpm`, unit: outputUnit, conversion: 'converted from kg/s using water density approximation' }
+  }
+  if (procedureUnit === 'psig' && config.processUnit === 'MPa') {
+    const value = config.value * 145.037738 - 14.6959
+    return { value, formatted: `${formatNumber(value, 1)} psig`, unit: outputUnit, conversion: 'converted from MPa absolute' }
+  }
+  if (procedureUnit === 'psig' && config.processUnit === 'Pa') {
+    const value = config.value * 0.000145037738 - 14.6959
+    return { value, formatted: `${formatNumber(value, 1)} psig`, unit: outputUnit, conversion: 'converted from Pa absolute' }
+  }
+  if (procedureUnit === 'inhga' && config.processUnit === 'Pa') {
+    const value = config.value * 0.000295299875
+    return { value, formatted: `${formatNumber(value, 2)} inHgA`, unit: outputUnit, conversion: 'converted from Pa absolute' }
+  }
+  if (procedureUnit === 'steps_withdrawn' && config.processUnit === 'fraction') {
+    const value = Math.max(0, Math.min(1, 1 - config.value)) * 228
+    return { value, formatted: `${formatNumber(value, 0)} steps withdrawn`, unit: outputUnit, conversion: 'derived from rod insertion fraction' }
+  }
+  if (procedureUnit === 'percent_collapsed_liquid' && config.processUnit === 'percent') {
+    return { value: config.value, formatted: `${formatNumber(config.value, 1)} percent collapsed liquid`, unit: outputUnit }
+  }
+  return {
+    value: config.value,
+    formatted: `${formatNumber(config.value, 3)} ${outputUnit}`,
+    unit: outputUnit,
+  }
 }
 
 const procedureEquipmentCompatible = (config: {
@@ -172,6 +288,37 @@ const validateProcedureTags = (
       status: warnings.length === 0 ? 'resolved' : 'resolved-with-warnings',
       signal: view,
       warnings,
+    }
+  }),
+})
+
+const readProcedureTags = (
+  system: ProcessPlantSystemRuntime,
+  payload: z.infer<typeof procedureTagsReadQuerySchema>,
+): unknown => ({
+  systemId: payload.systemId,
+  tags: payload.tags.map(tag => {
+    const binding = findProcessPlantSignalBinding(system.system.graph, { tagId: tag.id })
+    if (!binding) {
+      return {
+        id: tag.id,
+        status: 'missing',
+      }
+    }
+    const signal = processPlantSignalView(binding)
+    const variable = system.runtime.readVariableSnapshot(binding.path)
+    return {
+      id: tag.id,
+      status: 'resolved',
+      signal,
+      variable,
+      procedureValue: procedureFormattedValue({
+        tagId: tag.id,
+        procedureUnit: tag.units,
+        processQuantity: binding.quantity,
+        processUnit: binding.unit,
+        value: variable.value,
+      }),
     }
   }),
 })
@@ -240,6 +387,11 @@ export const answerProcessPlantControlQuery = (config: {
     const payload = procedureCsfEvaluateQuerySchema.parse(config.request.payload)
     const system = requireSystem(config.systems, payload.systemId)
     return success(config.request, evaluateProcedureCsfs(system, payload), config.at)
+  }
+  if (config.request.kind === 'process-plant.procedure-tags.read') {
+    const payload = procedureTagsReadQuerySchema.parse(config.request.payload)
+    const system = requireSystem(config.systems, payload.systemId)
+    return success(config.request, readProcedureTags(system, payload), config.at)
   }
   if (config.request.kind === 'process-plant.procedure-tags.validate') {
     const payload = procedureTagValidateQuerySchema.parse(config.request.payload)

@@ -21,9 +21,11 @@ export const accumulatorComponentDefinitions: ReadonlyArray<ComponentDefinition>
       outletCvKgPerSPerSqrtMPa: z.number().finite().nonnegative(),
       minimumUsableInventoryKg: z.number().finite().nonnegative().optional(),
       checkValveEnabled: z.boolean().optional(),
+      initialDischargeIsolationOpen: z.boolean().optional(),
       initialTemperatureC: z.number().finite().optional(),
     }).strict(),
     variables: [
+      variable({ path: 'dischargeIsolationOpen', label: 'Accumulator discharge isolation open', kind: 'control', discipline: 'control', writable: true, publish: 'telemetry', quantity: 'boolean', unit: 'boolean' }),
       variable({ path: 'liquidInventoryKg', label: 'Accumulator liquid inventory', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'mass', unit: 'kg' }),
       variable({ path: 'gasVolumeM3', label: 'Accumulator gas volume', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'volume', unit: 'm3' }),
       variable({ path: 'gasPressureMPa', label: 'Accumulator gas pressure', kind: 'state', discipline: 'hydraulic', writable: false, publish: 'telemetry', quantity: 'pressure', unit: 'MPa' }),

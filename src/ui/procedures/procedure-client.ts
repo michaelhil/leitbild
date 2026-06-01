@@ -179,29 +179,42 @@ export const validateProcedureTags = async (
 export const readProcedureTagValue = async (
   controlInstanceId: ControlInstanceId,
   systemId: string,
-  tagId: ProcedureTagId,
+  tag: ProcedureTag,
 ): Promise<ProcedureTagValue> => {
   const body = await queryControlInstancePack(controlInstanceId, {
     packId: 'process-plant',
-    kind: 'process-plant.signals.read',
+    kind: 'process-plant.procedure-tags.read',
     payload: {
       systemId,
-      signals: [{ tagId }],
+      tags: [{
+        id: tag.id,
+        ...(tag.description === undefined ? {} : { description: tag.description }),
+        ...(tag.simPath === undefined ? {} : { simPath: tag.simPath }),
+        ...(tag.units === undefined ? {} : { units: tag.units }),
+        ...(tag.equipment === undefined ? {} : { equipment: tag.equipment }),
+      }],
     },
   })
   const result = requireOkPackResult(body.response, 'procedure tag read failed')
-  const rows = assertArray(result.signals, 'procedure tag read returned no signals')
+  const rows = assertArray(result.tags, 'procedure tag read returned no tags')
   const first = assertRecord(rows[0], 'procedure tag read row is malformed')
+  const status = assertString(first.status, 'procedure tag read row requires status')
+  if (status === 'missing') throw new Error('not resolved to a Leitbild signal')
   const signal = assertRecord(first.signal, 'procedure tag read row requires signal')
   const variable = assertRecord(first.variable, 'procedure tag read row requires variable')
+  const procedureValue = typeof first.procedureValue === 'object' && first.procedureValue !== null
+    ? assertRecord(first.procedureValue, 'procedure tag read row has malformed procedure value')
+    : null
   return {
-    tagId,
-    label: typeof signal.label === 'string' ? signal.label : tagId,
-    value: variable.value,
-    formatted: typeof variable.formatted === 'string'
-      ? variable.formatted
+    tagId: tag.id,
+    label: typeof signal.label === 'string' ? signal.label : tag.id,
+    value: procedureValue?.value ?? variable.value,
+    formatted: typeof procedureValue?.formatted === 'string'
+      ? procedureValue.formatted
       : `${String(variable.value)}${typeof signal.unit === 'string' ? ` ${signal.unit}` : ''}`,
-    ...(typeof signal.unit === 'string' ? { unit: signal.unit } : {}),
+    ...(typeof procedureValue?.unit === 'string'
+      ? { unit: procedureValue.unit }
+      : typeof signal.unit === 'string' ? { unit: signal.unit } : {}),
     ...(typeof first.quality === 'string' ? { quality: first.quality } : {}),
     ...(typeof signal.path === 'string' ? { path: signal.path } : {}),
   }

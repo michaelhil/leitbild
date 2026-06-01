@@ -69,6 +69,7 @@ export const electricalInitialValueDefinitions: ReadonlyArray<ComponentInitialVa
       if (localPath === 'energized') return charge > 0
       if (localPath === 'availablePowerMw') return charge > 0 ? parameterNumber(component, 'nominalPowerMw') : 0
       if (localPath === 'voltageFraction') return charge > 0 ? 1 : 0
+      if (localPath === 'voltageVdc') return charge > 0 ? optionalParameterNumber(component, 'nominalVoltageVdc', 125) : 0
       return undefined
     },
   },

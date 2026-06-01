@@ -24,7 +24,7 @@ export const accumulatorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
     id: 'accumulator-pressure-driven-discharge',
     phase: 'solveFluidFlowComponents',
     componentKind: 'accumulator',
-    reads: ['incoming:flowKgPerS', 'incoming:pressureMPa', 'liquidInventoryKg', 'gasPressureMPa', 'gasVolumeM3'],
+    reads: ['incoming:flowKgPerS', 'incoming:pressureMPa', 'dischargeIsolationOpen', 'liquidInventoryKg', 'gasPressureMPa', 'gasVolumeM3'],
     writes: [
       'liquidInventoryKg',
       'gasVolumeM3',
@@ -51,9 +51,10 @@ export const accumulatorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         ?? parameterNumber(component, 'injectionSetpointMPa')
       const injectionSetpoint = parameterNumber(component, 'injectionSetpointMPa')
       const availableHead = gasPressure - Math.max(downstreamPressure, injectionSetpoint)
+      const dischargeIsolationOpen = context.readBoolean(componentVariablePath(component, 'dischargeIsolationOpen'))
       const checkValveOpen = optionalParameterBoolean(component, 'checkValveEnabled', true)
-        ? availableHead > 0 && currentInventory > minimumInventory
-        : currentInventory > minimumInventory
+        ? dischargeIsolationOpen && availableHead > 0 && currentInventory > minimumInventory
+        : dischargeIsolationOpen && currentInventory > minimumInventory
       const outletFlow = checkValveOpen
         ? parameterNumber(component, 'outletCvKgPerSPerSqrtMPa') * Math.sqrt(Math.max(0, availableHead))
         : 0

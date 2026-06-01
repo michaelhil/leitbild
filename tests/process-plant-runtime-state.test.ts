@@ -1202,6 +1202,42 @@ describe('process plant pack runtime', () => {
           equipment: 'nuclear-instrumentation',
         },
         {
+          id: 'ROD-POS-AVG',
+          simPath: 'rcs.rod.position.avg',
+          units: 'steps_withdrawn',
+          equipment: 'rod-control-system',
+        },
+        {
+          id: 'NIS-SR',
+          simPath: 'nis.source_range.count_rate',
+          units: 'cps',
+          equipment: 'nuclear-instrumentation',
+        },
+        {
+          id: 'NIS-IR',
+          simPath: 'nis.intermediate_range.avg',
+          units: 'amps',
+          equipment: 'nuclear-instrumentation',
+        },
+        {
+          id: 'CET-AVG',
+          simPath: 'rcs.core_exit.thermocouple.avg',
+          units: 'degF',
+          equipment: 'rcs',
+        },
+        {
+          id: 'RVLS-DYN',
+          simPath: 'rcs.rvls.dynamic.level',
+          units: 'percent_collapsed_liquid',
+          equipment: 'rcs',
+        },
+        {
+          id: 'SUB-MARGIN',
+          simPath: 'rcs.subcooling_margin',
+          units: 'degF',
+          equipment: 'rcs',
+        },
+        {
           id: 'SG-D-LVL-NR',
           simPath: 'secondary.sg.d.level_nr',
           units: 'percent',
@@ -1219,6 +1255,54 @@ describe('process plant pack runtime', () => {
           units: 'enum[STOPPED,STARTING,RUNNING,LOADED,FAULT]',
           equipment: 'emergency-dg-a',
         },
+        {
+          id: 'PORV-456A',
+          simPath: 'rcs.pressurizer.porv.456a.position',
+          units: 'enum[OPEN,CLOSED,INTERMEDIATE]',
+          equipment: 'pressurizer',
+        },
+        {
+          id: 'SI-PUMP-A',
+          simPath: 'ess.si_pump.a.status',
+          units: 'enum[STOPPED,RUNNING,FAULT]',
+          equipment: 'safetyInjectionPumpA',
+        },
+        {
+          id: 'CTMT-SUMP-LVL',
+          simPath: 'containment.sump.level',
+          units: 'percent',
+          equipment: 'containment',
+        },
+        {
+          id: 'CONDENSER-VAC',
+          simPath: 'secondary.condenser.vacuum',
+          units: 'inHgA',
+          equipment: 'condenser',
+        },
+        {
+          id: 'TDAFW-SPEED',
+          simPath: 'afw.tdafw.turbine_speed',
+          units: 'rpm',
+          equipment: 'afw-system',
+        },
+        {
+          id: 'DC-BUS-LVL',
+          simPath: 'electrical.dc_bus.voltage',
+          units: 'volts_dc',
+          equipment: 'dc-bus',
+        },
+        {
+          id: 'BAT-LVL',
+          simPath: 'cvcs.bat.level',
+          units: 'percent',
+          equipment: 'charging-system',
+        },
+        {
+          id: 'BORATE-FLOW',
+          simPath: 'cvcs.borate.flow',
+          units: 'gpm',
+          equipment: 'charging-system',
+        },
       ],
     }))
     expect(validation.ok).toBe(true)
@@ -1234,6 +1318,20 @@ describe('process plant pack runtime', () => {
     expect(tags.find(tag => tag.id === 'SG-D-LVL-NR')?.status).toBe('resolved')
     expect(tags.find(tag => tag.id === 'BUS-A-EMERG')?.status).toBe('resolved')
     expect(tags.find(tag => tag.id === 'DG-A')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'PORV-456A')?.status).not.toBe('missing')
+    expect(tags.find(tag => tag.id === 'SI-PUMP-A')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'CTMT-SUMP-LVL')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'CONDENSER-VAC')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'ROD-POS-AVG')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'NIS-SR')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'NIS-IR')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'CET-AVG')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'RVLS-DYN')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'SUB-MARGIN')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'TDAFW-SPEED')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'DC-BUS-LVL')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'BAT-LVL')?.status).toBe('resolved')
+    expect(tags.find(tag => tag.id === 'BORATE-FLOW')?.status).toBe('resolved')
 
     const aliasRead = await connection.query(query('process-plant.signals.read', {
       systemId: 'plant',
@@ -1244,6 +1342,115 @@ describe('process plant pack runtime', () => {
     expect((aliasRead.result as {
       readonly signals: ReadonlyArray<{ readonly signal: { readonly path: string } }>
     }).signals[0]?.signal.path).toBe('core.powerMw')
+
+    const procedureRead = await connection.query(query('process-plant.procedure-tags.read', {
+      systemId: 'plant',
+      tags: [
+        {
+          id: 'PT-455',
+          simPath: 'pressurizer.pressureMPa',
+          units: 'psig',
+          equipment: 'pressurizer',
+        },
+        {
+          id: 'PORV-456A',
+          simPath: 'rcs.pressurizer.porv.456a.position',
+          units: 'enum[OPEN,CLOSED,INTERMEDIATE]',
+          equipment: 'pressurizer',
+        },
+        {
+          id: 'SI-PUMP-A',
+          simPath: 'ess.si_pump.a.status',
+          units: 'enum[STOPPED,RUNNING,FAULT]',
+          equipment: 'safetyInjectionPumpA',
+        },
+        {
+          id: 'CONDENSER-VAC',
+          simPath: 'secondary.condenser.vacuum',
+          units: 'inHgA',
+          equipment: 'condenser',
+        },
+        {
+          id: 'ROD-POS-AVG',
+          simPath: 'rcs.rod.position.avg',
+          units: 'steps_withdrawn',
+          equipment: 'rod-control-system',
+        },
+        {
+          id: 'NIS-SR',
+          simPath: 'nis.source_range.count_rate',
+          units: 'cps',
+          equipment: 'nuclear-instrumentation',
+        },
+        {
+          id: 'NIS-IR',
+          simPath: 'nis.intermediate_range.avg',
+          units: 'amps',
+          equipment: 'nuclear-instrumentation',
+        },
+        {
+          id: 'CET-AVG',
+          simPath: 'rcs.core_exit.thermocouple.avg',
+          units: 'degF',
+          equipment: 'rcs',
+        },
+        {
+          id: 'RVLS-DYN',
+          simPath: 'rcs.rvls.dynamic.level',
+          units: 'percent_collapsed_liquid',
+          equipment: 'rcs',
+        },
+        {
+          id: 'SUB-MARGIN',
+          simPath: 'rcs.subcooling_margin',
+          units: 'degF',
+          equipment: 'rcs',
+        },
+        {
+          id: 'TDAFW-SPEED',
+          simPath: 'afw.tdafw.turbine_speed',
+          units: 'rpm',
+          equipment: 'afw-system',
+        },
+        {
+          id: 'DC-BUS-LVL',
+          simPath: 'electrical.dc_bus.voltage',
+          units: 'volts_dc',
+          equipment: 'dc-bus',
+        },
+        {
+          id: 'BAT-LVL',
+          simPath: 'cvcs.bat.level',
+          units: 'percent',
+          equipment: 'charging-system',
+        },
+        {
+          id: 'BORATE-FLOW',
+          simPath: 'cvcs.borate.flow',
+          units: 'gpm',
+          equipment: 'charging-system',
+        },
+      ],
+    }))
+    expect(procedureRead.ok).toBe(true)
+    if (!procedureRead.ok) throw new Error(procedureRead.reason)
+    const procedureTags = (procedureRead.result as {
+      readonly tags: ReadonlyArray<{ readonly id: string; readonly procedureValue?: { readonly formatted: string; readonly unit?: string; readonly conversion?: string } }>
+    }).tags
+    expect(procedureTags.find(tag => tag.id === 'PT-455')?.procedureValue?.unit).toBe('psig')
+    expect(procedureTags.find(tag => tag.id === 'PORV-456A')?.procedureValue?.formatted).toBe('CLOSED')
+    expect(procedureTags.find(tag => tag.id === 'SI-PUMP-A')?.procedureValue?.formatted).toBe('STOPPED')
+    expect(procedureTags.find(tag => tag.id === 'CONDENSER-VAC')?.procedureValue?.unit).toBe('inHgA')
+    expect(procedureTags.find(tag => tag.id === 'ROD-POS-AVG')?.procedureValue?.conversion).toBe('derived from rod insertion fraction')
+    expect(procedureTags.find(tag => tag.id === 'NIS-SR')?.procedureValue?.unit).toBe('cps')
+    expect(procedureTags.find(tag => tag.id === 'NIS-IR')?.procedureValue?.formatted).toContain('e-')
+    expect(procedureTags.find(tag => tag.id === 'CET-AVG')?.procedureValue?.conversion).toBe('converted from degC')
+    expect(procedureTags.find(tag => tag.id === 'RVLS-DYN')?.procedureValue?.unit).toBe('percent_collapsed_liquid')
+    expect(procedureTags.find(tag => tag.id === 'SUB-MARGIN')?.procedureValue?.conversion).toBe('converted from degC delta')
+    expect(procedureTags.find(tag => tag.id === 'TDAFW-SPEED')?.procedureValue?.formatted).toBe('0 rpm')
+    expect(procedureTags.find(tag => tag.id === 'DC-BUS-LVL')?.procedureValue?.unit).toBe('volts_dc')
+    expect(procedureTags.find(tag => tag.id === 'BAT-LVL')?.procedureValue?.unit).toBe('percent')
+    expect(procedureTags.find(tag => tag.id === 'BORATE-FLOW')?.procedureValue?.unit).toBe('gpm')
 
     await connection.close()
   })

@@ -31,6 +31,8 @@
         "maxPowerRampFractionPerS": 0.18,
         "fuelThermalCapacityMjPerC": 45000,
         "nominalPrimaryFlowKgPerS": 17000,
+        "nominalSourceRangeCountRateCps": 100000,
+        "nominalIntermediateRangeCurrentAmps": 0.00001,
         "minimumNaturalCirculationCoolingFraction": 0.08
       },
       "variables": [
@@ -42,8 +44,32 @@
         },
         {
           "path": "rodInsertionFraction",
-          "description": "Rod insertion fraction; procedure-facing proxy for rod-bottom verification",
+          "tagId": "ROD-POS-AVG",
+          "equipmentId": "rod-control-system",
+          "description": "Average control rod insertion used to derive steps withdrawn for procedure checks",
+          "externalRefs": ["rcs.rod.position.avg"],
           "capabilities": { "procedureRelevant": true }
+        },
+        {
+          "path": "sourceRangeCountRateCps",
+          "tagId": "NIS-SR",
+          "equipmentId": "nuclear-instrumentation",
+          "description": "Source-range nuclear instrumentation count rate",
+          "externalRefs": ["nis.source_range.count_rate"]
+        },
+        {
+          "path": "intermediateRangeCurrentAmps",
+          "tagId": "NIS-IR",
+          "equipmentId": "nuclear-instrumentation",
+          "description": "Intermediate-range nuclear instrumentation current",
+          "externalRefs": ["nis.intermediate_range.avg"]
+        },
+        {
+          "path": "coolantOutletTemperatureC",
+          "tagId": "CET-AVG",
+          "equipmentId": "rcs",
+          "description": "Core-exit thermocouple average represented by core coolant outlet temperature",
+          "externalRefs": ["rcs.core_exit.thermocouple.avg"]
         }
       ]
     },
@@ -60,7 +86,8 @@
         "thermalExpansionCoefficientPerC": 0.0003,
         "referencePrimaryCoolantTemperatureC": 306,
         "normalLetdownFlowKgPerS": 90,
-        "initialBoronConcentrationPpm": 1200
+        "initialBoronConcentrationPpm": 1200,
+        "collapsedLevelReferenceInventoryFraction": 1
       },
       "variables": [
         {
@@ -97,6 +124,20 @@
           "equipmentId": "vessel",
           "description": "Reactor coolant boron concentration",
           "externalRefs": ["rcs.boron.concentration"]
+        },
+        {
+          "path": "collapsedLiquidLevelPercent",
+          "tagId": "RVLS-DYN",
+          "equipmentId": "rcs",
+          "description": "Reactor vessel dynamic collapsed liquid level",
+          "externalRefs": ["rcs.rvls.dynamic.level"]
+        },
+        {
+          "path": "subcoolingMarginC",
+          "tagId": "SUB-MARGIN",
+          "equipmentId": "rcs",
+          "description": "RCS subcooling margin, saturation temperature at pressurizer pressure minus mean primary coolant temperature",
+          "externalRefs": ["rcs.subcooling_margin"]
         }
       ]
     },
@@ -720,6 +761,7 @@
       "parameters": {
         "nominalFlowKgPerS": 170,
         "nominalHeadPa": 1200000,
+        "nominalSpeedRpm": 4500,
         "initialRunning": false,
         "flowTimeConstantS": 4,
         "maxFlowRampKgPerS2": 90
@@ -731,6 +773,27 @@
           "equipmentId": "auxFeedwaterPumpMotor",
           "description": "Motor-driven auxiliary feedwater pump running status",
           "externalRefs": ["afw.pump.a.status"]
+        }
+      ]
+    },
+    {
+      "id": "auxFeedwaterPumpMotorB",
+      "kind": "centrifugalPump",
+      "label": "Motor-Driven Auxiliary Feedwater Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 220,
+        "nominalHeadPa": 1400000,
+        "flowTimeConstantS": 6,
+        "maxFlowRampKgPerS2": 45,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "AFW-PUMP-B",
+          "equipmentId": "auxFeedwaterPumpMotorB",
+          "description": "Motor-driven auxiliary feedwater pump B running status",
+          "externalRefs": ["afw.pump.b.status"]
         }
       ]
     },
@@ -752,6 +815,13 @@
           "equipmentId": "auxFeedwaterPumpTurbine",
           "description": "Turbine-driven auxiliary feedwater pump running status",
           "externalRefs": ["afw.pump.tdafw.status"]
+        },
+        {
+          "path": "speedRpm",
+          "tagId": "TDAFW-SPEED",
+          "equipmentId": "afw-system",
+          "description": "Turbine-driven auxiliary feedwater pump turbine speed",
+          "externalRefs": ["afw.tdafw.turbine_speed"]
         }
       ]
     },
@@ -910,7 +980,16 @@
       "id": "mainSteamHeader",
       "kind": "steamHeader",
       "label": "Main Steam Header",
-      "parameters": {}
+      "parameters": {},
+      "variables": [
+        {
+          "path": "mixedPressureMPa",
+          "tagId": "MS-HEADER-PR",
+          "equipmentId": "mainSteamHeader",
+          "description": "Main steam header pressure",
+          "externalRefs": ["secondary.ms_header.pressure"]
+        }
+      ]
     },
     {
       "id": "turbineStopValve",
@@ -959,7 +1038,16 @@
         "condenserThermalTimeConstantS": 12,
         "nominalCoolingWaterFlowKgPerS": 43000,
         "coolingWaterDesignDeltaTK": 14
-      }
+      },
+      "variables": [
+        {
+          "path": "backPressurePa",
+          "tagId": "CONDENSER-VAC",
+          "equipmentId": "condenser",
+          "description": "Main condenser vacuum absolute pressure",
+          "externalRefs": ["secondary.condenser.vacuum"]
+        }
+      ]
     },
     {
       "id": "ultimateHeatSink",
@@ -1037,6 +1125,29 @@
       }
     },
     {
+      "id": "boricAcidTank",
+      "kind": "processTank",
+      "label": "Boric Acid Tank",
+      "parameters": {
+        "nominalInventoryKg": 80000,
+        "initialInventoryFraction": 0.85,
+        "initialTemperatureC": 35,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 80,
+        "thermalTimeConstantS": 120,
+        "initialSoluteConcentrationPpm": 12000
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "BAT-LVL",
+          "equipmentId": "charging-system",
+          "description": "Boric acid tank level",
+          "externalRefs": ["cvcs.bat.level"]
+        }
+      ]
+    },
+    {
       "id": "chargingPump",
       "kind": "centrifugalPump",
       "label": "Charging Pump",
@@ -1055,12 +1166,287 @@
       ]
     },
     {
+      "id": "chargingPumpB",
+      "kind": "centrifugalPump",
+      "label": "Charging Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 90,
+        "nominalHeadPa": 1600000,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "CHG-PUMP-B",
+          "equipmentId": "chargingPumpB",
+          "description": "Charging pump B running status",
+          "externalRefs": ["cvcs.charging_pump.b.status"]
+        }
+      ]
+    },
+    {
       "id": "letdownValve",
       "kind": "processValve",
       "label": "Letdown Valve",
       "parameters": {
         "initialPositionFraction": 0.5
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "LET-ISOL",
+          "equipmentId": "letdownValve",
+          "description": "CVCS letdown isolation valve position",
+          "externalRefs": ["cvcs.letdown.isolation"]
+        }
+      ]
+    },
+    {
+      "id": "boricAcidInjectionValve",
+      "kind": "processValve",
+      "label": "Boric Acid Injection Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 3,
+        "strokeCloseTimeS": 3,
+        "cvKgPerSPerSqrtMPa": 220,
+        "reverseFlowAllowed": false
       }
+    },
+    {
+      "id": "rwst",
+      "kind": "processTank",
+      "label": "Refueling Water Storage Tank",
+      "parameters": {
+        "nominalInventoryKg": 2200000,
+        "initialInventoryFraction": 0.92,
+        "initialTemperatureC": 25,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 1800,
+        "thermalTimeConstantS": 1800,
+        "initialSoluteConcentrationPpm": 2200
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "RWST-LVL",
+          "equipmentId": "rwst",
+          "description": "Refueling water storage tank level",
+          "externalRefs": ["rwst.level"]
+        }
+      ]
+    },
+    {
+      "id": "containmentSprayAdditiveTank",
+      "kind": "processTank",
+      "label": "Containment Spray Sodium Hydroxide Additive Tank",
+      "parameters": {
+        "nominalInventoryKg": 35000,
+        "initialInventoryFraction": 0.9,
+        "initialTemperatureC": 25,
+        "makeupFlowKgPerS": 0,
+        "maxOutletFlowKgPerS": 0,
+        "thermalTimeConstantS": 1800,
+        "initialSoluteConcentrationPpm": 50000
+      },
+      "variables": [
+        {
+          "path": "levelPercent",
+          "tagId": "NAOH-LVL",
+          "equipmentId": "containmentSprayAdditiveTank",
+          "description": "Containment spray sodium hydroxide additive tank level",
+          "externalRefs": ["ess.cspray.additive_tank.level"]
+        }
+      ]
+    },
+    {
+      "id": "safetyInjectionPumpA",
+      "kind": "centrifugalPump",
+      "label": "High-Head Safety Injection Pump A",
+      "parameters": {
+        "nominalFlowKgPerS": 320,
+        "nominalHeadPa": 1700000,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 80,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "SI-PUMP-A",
+          "equipmentId": "safetyInjectionPumpA",
+          "description": "High-head safety injection pump A running status",
+          "externalRefs": ["ess.si_pump.a.status"]
+        }
+      ]
+    },
+    {
+      "id": "safetyInjectionPumpB",
+      "kind": "centrifugalPump",
+      "label": "High-Head Safety Injection Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 320,
+        "nominalHeadPa": 1700000,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 80,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "SI-PUMP-B",
+          "equipmentId": "safetyInjectionPumpB",
+          "description": "High-head safety injection pump B running status",
+          "externalRefs": ["ess.si_pump.b.status"]
+        }
+      ]
+    },
+    {
+      "id": "safetyInjectionHeader",
+      "kind": "processHeader",
+      "label": "Safety Injection Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 1.2,
+        "headerVolumeM3": 8,
+        "distributionMode": "pressureWeighted"
+      }
+    },
+    {
+      "id": "containmentSprayPumpA",
+      "kind": "centrifugalPump",
+      "label": "Containment Spray Pump A",
+      "parameters": {
+        "nominalFlowKgPerS": 430,
+        "nominalHeadPa": 900000,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "CSPRAY-A",
+          "equipmentId": "containmentSprayPumpA",
+          "description": "Containment spray pump A running status",
+          "externalRefs": ["ess.cspray_pump.a.status"]
+        }
+      ]
+    },
+    {
+      "id": "containmentSprayPumpB",
+      "kind": "centrifugalPump",
+      "label": "Containment Spray Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 430,
+        "nominalHeadPa": 900000,
+        "flowTimeConstantS": 5,
+        "maxFlowRampKgPerS2": 100,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "CSPRAY-B",
+          "equipmentId": "containmentSprayPumpB",
+          "description": "Containment spray pump B running status",
+          "externalRefs": ["ess.cspray_pump.b.status"]
+        }
+      ]
+    },
+    {
+      "id": "containmentSprayHeader",
+      "kind": "processHeader",
+      "label": "Containment Spray Header",
+      "parameters": {
+        "initialTemperatureC": 25,
+        "initialPressureMPa": 0.9,
+        "headerVolumeM3": 6,
+        "distributionMode": "pressureWeighted"
+      }
+    },
+    {
+      "id": "rhrPumpA",
+      "kind": "centrifugalPump",
+      "label": "Residual Heat Removal Pump A",
+      "parameters": {
+        "nominalFlowKgPerS": 520,
+        "nominalHeadPa": 800000,
+        "flowTimeConstantS": 8,
+        "maxFlowRampKgPerS2": 80,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RHR-PUMP-A",
+          "equipmentId": "rhrPumpA",
+          "description": "Residual heat removal pump A running status",
+          "externalRefs": ["ess.rhr_pump.a.status"]
+        }
+      ]
+    },
+    {
+      "id": "rhrPumpB",
+      "kind": "centrifugalPump",
+      "label": "Residual Heat Removal Pump B",
+      "parameters": {
+        "nominalFlowKgPerS": 520,
+        "nominalHeadPa": 800000,
+        "flowTimeConstantS": 8,
+        "maxFlowRampKgPerS2": 80,
+        "initialRunning": false
+      },
+      "variables": [
+        {
+          "path": "running",
+          "tagId": "RHR-PUMP-B",
+          "equipmentId": "rhrPumpB",
+          "description": "Residual heat removal pump B running status",
+          "externalRefs": ["ess.rhr_pump.b.status"]
+        }
+      ]
+    },
+    {
+      "id": "rhrHeader",
+      "kind": "processHeader",
+      "label": "Residual Heat Removal Header",
+      "parameters": {
+        "initialTemperatureC": 45,
+        "initialPressureMPa": 0.9,
+        "headerVolumeM3": 10,
+        "distributionMode": "pressureWeighted"
+      },
+      "variables": [
+        {
+          "path": "outletFlowKgPerS",
+          "tagId": "LO-HEAD-FLOW",
+          "equipmentId": "rhrHeader",
+          "description": "Low-head SI / RHR header flow",
+          "externalRefs": ["ess.lo_head.header_flow"]
+        }
+      ]
+    },
+    {
+      "id": "rhrIsolationValve",
+      "kind": "processValve",
+      "label": "RHR Isolation Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "isolation",
+        "strokeOpenTimeS": 8,
+        "strokeCloseTimeS": 8
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "RHR-ISOL",
+          "equipmentId": "rhrIsolationValve",
+          "description": "Residual heat removal isolation valve position",
+          "externalRefs": ["ess.rhr.isolation_valve"]
+        }
+      ]
     },
     {
       "id": "containment",
@@ -1072,6 +1458,8 @@
         "initialTemperatureC": 35,
         "initialHumidityFraction": 0.45,
         "initialSumpInventoryKg": 0,
+        "sumpLevelReferenceInventoryKg": 100000,
+        "maxSumpOutflowKgPerS": 1200,
         "heatLossMwPerC": 0.04,
         "designPressureMPa": 0.42,
         "ventSetpointMPa": 0.5,
@@ -1098,6 +1486,20 @@
           "equipmentId": "containment",
           "description": "Containment high-range radiation indication",
           "externalRefs": ["rad.containment.high_range"]
+        },
+        {
+          "path": "sumpLevelPercent",
+          "tagId": "CTMT-SUMP-LVL",
+          "equipmentId": "containment",
+          "description": "Containment recirculation sump level",
+          "externalRefs": ["containment.sump.level"]
+        },
+        {
+          "path": "sprayFlowKgPerS",
+          "tagId": "SPRAY-FLOW",
+          "equipmentId": "containmentSprayHeader",
+          "description": "Containment spray total flow",
+          "externalRefs": ["ess.cspray.header_flow"]
         }
       ]
     },
@@ -1116,7 +1518,16 @@
         "minimumUsableInventoryKg": 1500,
         "checkValveEnabled": true,
         "initialTemperatureC": 35
-      }
+      },
+      "variables": [
+        {
+          "path": "dischargeIsolationOpen",
+          "tagId": "ACCUM-1",
+          "equipmentId": "safetyAccumulatorA",
+          "description": "Accumulator A discharge isolation open",
+          "externalRefs": ["ess.accumulator.1.discharge_valve"]
+        }
+      ]
     },
     {
       "id": "safetyAccumulatorB",
@@ -1133,7 +1544,16 @@
         "minimumUsableInventoryKg": 1500,
         "checkValveEnabled": true,
         "initialTemperatureC": 35
-      }
+      },
+      "variables": [
+        {
+          "path": "dischargeIsolationOpen",
+          "tagId": "ACCUM-2",
+          "equipmentId": "safetyAccumulatorB",
+          "description": "Accumulator B discharge isolation open",
+          "externalRefs": ["ess.accumulator.2.discharge_valve"]
+        }
+      ]
     },
     {
       "id": "safetyAccumulatorC",
@@ -1150,7 +1570,16 @@
         "minimumUsableInventoryKg": 1500,
         "checkValveEnabled": true,
         "initialTemperatureC": 35
-      }
+      },
+      "variables": [
+        {
+          "path": "dischargeIsolationOpen",
+          "tagId": "ACCUM-3",
+          "equipmentId": "safetyAccumulatorC",
+          "description": "Accumulator C discharge isolation open",
+          "externalRefs": ["ess.accumulator.3.discharge_valve"]
+        }
+      ]
     },
     {
       "id": "safetyAccumulatorD",
@@ -1167,7 +1596,16 @@
         "minimumUsableInventoryKg": 1500,
         "checkValveEnabled": true,
         "initialTemperatureC": 35
-      }
+      },
+      "variables": [
+        {
+          "path": "dischargeIsolationOpen",
+          "tagId": "ACCUM-4",
+          "equipmentId": "safetyAccumulatorD",
+          "description": "Accumulator D discharge isolation open",
+          "externalRefs": ["ess.accumulator.4.discharge_valve"]
+        }
+      ]
     },
     {
       "id": "mainSteamSafetyValve",
@@ -1408,10 +1846,19 @@
       "label": "Vital Battery A",
       "parameters": {
         "nominalPowerMw": 2,
+        "nominalVoltageVdc": 125,
         "dischargeTimeS": 14400,
         "initialStateOfChargeFraction": 1
       },
-      "variables": []
+      "variables": [
+        {
+          "path": "voltageVdc",
+          "tagId": "DC-BUS-LVL",
+          "equipmentId": "dc-bus",
+          "description": "Representative vital DC bus voltage from battery A",
+          "externalRefs": ["electrical.dc_bus.voltage"]
+        }
+      ]
     },
     {
       "id": "vitalBatteryB",
@@ -1419,6 +1866,7 @@
       "label": "Vital Battery B",
       "parameters": {
         "nominalPowerMw": 2,
+        "nominalVoltageVdc": 125,
         "dischargeTimeS": 14400,
         "initialStateOfChargeFraction": 1
       },
@@ -4423,6 +4871,100 @@
       ]
     },
     {
+      "id": "boric-acid-tank-to-injection-valve",
+      "from": "boricAcidTank.outlet",
+      "to": "boricAcidInjectionValve.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Boric acid tank outlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Boric acid tank outlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Boric acid tank outlet boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 12000
+        }
+      ]
+    },
+    {
+      "id": "boric-acid-injection-to-charging-pump",
+      "from": "boricAcidInjectionValve.outlet",
+      "to": "chargingPump.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Emergency boration flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "tagId": "BORATE-FLOW",
+          "equipmentId": "charging-system",
+          "description": "Emergency boration flow rate into the charging path",
+          "externalRefs": ["cvcs.borate.flow"],
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Emergency boration temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 35
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Emergency boration boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 12000
+        }
+      ]
+    },
+    {
       "id": "charging-pump-to-cold-leg-a",
       "from": "chargingPump.outlet",
       "to": "core.coldLegA",
@@ -4509,6 +5051,898 @@
           "quantity": "concentration",
           "unit": "ppm",
           "initialValue": 1200
+        }
+      ]
+    },
+    {
+      "id": "aux-feedwater-tank-to-motor-pump-b",
+      "from": "auxFeedwaterTank.outlet",
+      "to": "auxFeedwaterPumpMotorB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Motor AFW pump B suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Motor AFW pump B suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "motor-afw-pump-b-to-header",
+      "from": "auxFeedwaterPumpMotorB.outlet",
+      "to": "auxFeedwaterHeader.inletC",
+      "connectionKind": "fluidFlow",
+      "service": "auxFeedwater",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Motor AFW pump B discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Motor AFW pump B discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "vct-to-charging-pump-b",
+      "from": "volumeControlTank.outlet",
+      "to": "chargingPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Charging pump B suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Charging pump B suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 40
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "vct-to-charging-pump-b solute concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
+        }
+      ]
+    },
+    {
+      "id": "charging-pump-b-to-cold-leg-b",
+      "from": "chargingPumpB.outlet",
+      "to": "core.coldLegB",
+      "connectionKind": "fluidFlow",
+      "service": "charging",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Charging pump B to cold leg B flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Charging pump B to cold leg B temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 40
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "charging-pump-b-to-cold-leg-b solute concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 1200
+        }
+      ]
+    },
+    {
+      "id": "rwst-to-safety-injection-pump-a",
+      "from": "rwst.outlet",
+      "to": "safetyInjectionPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection pump A suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection pump A suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection pump A boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "rwst-to-safety-injection-pump-b",
+      "from": "rwst.outlet",
+      "to": "safetyInjectionPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection pump B suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection pump B suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection pump B boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-pump-a-to-header",
+      "from": "safetyInjectionPumpA.outlet",
+      "to": "safetyInjectionHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection pump A discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection pump A discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection pump A discharge boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-pump-b-to-header",
+      "from": "safetyInjectionPumpB.outlet",
+      "to": "safetyInjectionHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection pump B discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection pump B discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection pump B discharge boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-header-to-cold-leg-a",
+      "from": "safetyInjectionHeader.outletA",
+      "to": "core.coldLegA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection to cold leg A flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection to cold leg A temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection to cold leg A boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-header-to-cold-leg-b",
+      "from": "safetyInjectionHeader.outletB",
+      "to": "core.coldLegB",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection to cold leg B flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection to cold leg B temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection to cold leg B boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-header-to-cold-leg-c",
+      "from": "safetyInjectionHeader.outletC",
+      "to": "core.coldLegC",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection to cold leg C flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection to cold leg C temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection to cold leg C boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "safety-injection-header-to-cold-leg-d",
+      "from": "safetyInjectionHeader.outletD",
+      "to": "core.coldLegD",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Safety injection to cold leg D flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Safety injection to cold leg D temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        },
+        {
+          "path": "soluteConcentrationPpm",
+          "label": "Safety injection to cold leg D boron concentration",
+          "kind": "derived",
+          "discipline": "chemical",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "concentration",
+          "unit": "ppm",
+          "initialValue": 2200
+        }
+      ]
+    },
+    {
+      "id": "rwst-to-containment-spray-pump-a",
+      "from": "rwst.outlet",
+      "to": "containmentSprayPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "containmentSpray",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Containment spray pump A suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Containment spray pump A suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "rwst-to-containment-spray-pump-b",
+      "from": "rwst.outlet",
+      "to": "containmentSprayPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "containmentSpray",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Containment spray pump B suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Containment spray pump B suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "containment-spray-pump-a-to-header",
+      "from": "containmentSprayPumpA.outlet",
+      "to": "containmentSprayHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "containmentSpray",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Containment spray pump A discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Containment spray pump A discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "containment-spray-pump-b-to-header",
+      "from": "containmentSprayPumpB.outlet",
+      "to": "containmentSprayHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "containmentSpray",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Containment spray pump B discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Containment spray pump B discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "containment-spray-header-to-containment",
+      "from": "containmentSprayHeader.outletA",
+      "to": "containment.sprayIn",
+      "connectionKind": "fluidFlow",
+      "service": "containmentSpray",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Containment spray header discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Containment spray header discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 25
+        }
+      ]
+    },
+    {
+      "id": "containment-sump-to-rhr-pump-a",
+      "from": "containment.sumpOut",
+      "to": "rhrPumpA.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR pump A sump suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR pump A sump suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        }
+      ]
+    },
+    {
+      "id": "containment-sump-to-rhr-pump-b",
+      "from": "containment.sumpOut",
+      "to": "rhrPumpB.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "sourceSink",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR pump B sump suction flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR pump B sump suction temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        }
+      ]
+    },
+    {
+      "id": "rhr-pump-a-to-header",
+      "from": "rhrPumpA.outlet",
+      "to": "rhrHeader.inletA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR pump A discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR pump A discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        }
+      ]
+    },
+    {
+      "id": "rhr-pump-b-to-header",
+      "from": "rhrPumpB.outlet",
+      "to": "rhrHeader.inletB",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR pump B discharge flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR pump B discharge temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        }
+      ]
+    },
+    {
+      "id": "rhr-header-to-isolation-valve",
+      "from": "rhrHeader.outletA",
+      "to": "rhrIsolationValve.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR isolation valve inlet flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR isolation valve inlet temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
+        }
+      ]
+    },
+    {
+      "id": "rhr-isolation-valve-to-cold-leg-a",
+      "from": "rhrIsolationValve.outlet",
+      "to": "core.coldLegA",
+      "connectionKind": "fluidFlow",
+      "service": "safetyInjection",
+      "nominalFluid": "water",
+      "designPhase": "liquid",
+      "solverModel": "incompressibleLiquid",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "RHR injection to cold leg A flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "RHR injection to cold leg A temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 45
         }
       ]
     },
@@ -5192,6 +6626,12 @@
       "connectionKind": "electricalPower"
     },
     {
+      "id": "safety-bus-b-to-auxFeedwaterPumpMotorB",
+      "from": "safetyBusB.outlet",
+      "to": "auxFeedwaterPumpMotorB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
       "id": "safety-bus-a-to-condensatePumpA",
       "from": "safetyBusA.outlet",
       "to": "condensatePumpA.power",
@@ -5237,6 +6677,48 @@
       "id": "safety-bus-a-to-chargingPump",
       "from": "safetyBusA.outlet",
       "to": "chargingPump.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-chargingPumpB",
+      "from": "safetyBusB.outlet",
+      "to": "chargingPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-safetyInjectionPumpA",
+      "from": "safetyBusA.outlet",
+      "to": "safetyInjectionPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-safetyInjectionPumpB",
+      "from": "safetyBusB.outlet",
+      "to": "safetyInjectionPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-containmentSprayPumpA",
+      "from": "safetyBusA.outlet",
+      "to": "containmentSprayPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-containmentSprayPumpB",
+      "from": "safetyBusB.outlet",
+      "to": "containmentSprayPumpB.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-a-to-rhrPumpA",
+      "from": "safetyBusA.outlet",
+      "to": "rhrPumpA.power",
+      "connectionKind": "electricalPower"
+    },
+    {
+      "id": "safety-bus-b-to-rhrPumpB",
+      "from": "safetyBusB.outlet",
+      "to": "rhrPumpB.power",
       "connectionKind": "electricalPower"
     },
     {
@@ -5312,6 +6794,9 @@
     "core.promptReactivityPcm",
     "core.temperatureFeedbackPcm",
     "core.effectiveReactivityPcm",
+    "core.rodInsertionFraction",
+    "core.sourceRangeCountRateCps",
+    "core.intermediateRangeCurrentAmps",
     "core.fuelTemperatureC",
     "core.fuelLowerTemperatureC",
     "core.fuelMidTemperatureC",
@@ -5323,6 +6808,7 @@
     "core.decayHeatMw",
     "core.coolantInletTemperatureC",
     "core.coolantOutletTemperatureC",
+    "core.averageHotLegFlowKgPerS",
     "core.heatToCoolantMw",
     "pressurizer.pressureMPa",
     "pressurizer.levelPercent",
@@ -5458,8 +6944,11 @@
     "feedwaterTank.makeupFlowKgPerS",
     "feedwaterTank.availableOutletFlowKgPerS",
     "auxFeedwaterPumpMotor.running",
+    "auxFeedwaterPumpMotorB.running",
     "auxFeedwaterPumpTurbine.running",
+    "auxFeedwaterPumpTurbine.speedRpm",
     "auxFeedwaterPumpMotor.flowKgPerS",
+    "auxFeedwaterPumpMotorB.flowKgPerS",
     "auxFeedwaterPumpTurbine.flowKgPerS",
     "auxFeedwaterTank.inventoryKg",
     "auxFeedwaterTank.levelPercent",
@@ -5486,7 +6975,9 @@
     "turbine-exhaust-to-condenser.temperatureC",
     "vessel.primaryCoolantInventoryKg",
     "vessel.primaryCoolantInventoryDeviationKg",
+    "vessel.collapsedLiquidLevelPercent",
     "vessel.meanPrimaryCoolantTemperatureC",
+    "vessel.subcoolingMarginC",
     "vessel.compressibilityPressureBiasMPa",
     "vessel.thermalExpansionPressureBiasMPa",
     "vessel.primaryPressureBiasMPa",
@@ -5718,11 +7209,39 @@
     "letdownValve.flowBalanceResidualKgPerS",
     "vessel.safetyInjectionFlowKgPerS",
     "vessel.primaryReleaseRadiationMSvPerH",
+    "boricAcidTank.inventoryKg",
+    "boricAcidTank.levelPercent",
+    "boricAcidTank.availableOutletFlowKgPerS",
+    "rwst.inventoryKg",
+    "rwst.levelPercent",
+    "rwst.availableOutletFlowKgPerS",
+    "safetyInjectionPumpA.running",
+    "safetyInjectionPumpA.flowKgPerS",
+    "safetyInjectionPumpB.running",
+    "safetyInjectionPumpB.flowKgPerS",
+    "safetyInjectionHeader.outletFlowKgPerS",
+    "containmentSprayAdditiveTank.levelPercent",
+    "containmentSprayPumpA.running",
+    "containmentSprayPumpA.flowKgPerS",
+    "containmentSprayPumpB.running",
+    "containmentSprayPumpB.flowKgPerS",
+    "containmentSprayHeader.outletFlowKgPerS",
+    "rhrPumpA.running",
+    "rhrPumpA.flowKgPerS",
+    "rhrPumpB.running",
+    "rhrPumpB.flowKgPerS",
+    "rhrHeader.outletFlowKgPerS",
+    "rhrIsolationValve.positionFraction",
+    "boricAcidInjectionValve.positionFraction",
+    "boricAcidInjectionValve.effectivePositionFraction",
     "containment.pressureMPa",
     "containment.temperatureC",
     "containment.steamMassKg",
     "containment.sumpInventoryKg",
+    "containment.sumpLevelPercent",
     "containment.incomingMassKgPerS",
+    "containment.sprayFlowKgPerS",
+    "containment.sumpOutflowKgPerS",
     "containment.radiationSourceTermMSvPerH",
     "containment.contaminationInventory",
     "vessel-release-to-containment.flowKgPerS",
@@ -5733,6 +7252,7 @@
     "safetyAccumulatorA.outletFlowKgPerS",
     "safetyAccumulatorA.availableInjectionHeadMPa",
     "safetyAccumulatorA.depletedFraction",
+    "safetyAccumulatorA.dischargeIsolationOpen",
     "safety-accumulator-a-to-cold-leg-a.flowKgPerS",
     "safety-accumulator-a-to-cold-leg-a.pressureMPa",
     "safetyAccumulatorB.liquidInventoryKg",
@@ -5740,6 +7260,7 @@
     "safetyAccumulatorB.outletFlowKgPerS",
     "safetyAccumulatorB.availableInjectionHeadMPa",
     "safetyAccumulatorB.depletedFraction",
+    "safetyAccumulatorB.dischargeIsolationOpen",
     "safety-accumulator-b-to-cold-leg-b.flowKgPerS",
     "safety-accumulator-b-to-cold-leg-b.pressureMPa",
     "safetyAccumulatorC.liquidInventoryKg",
@@ -5747,6 +7268,7 @@
     "safetyAccumulatorC.outletFlowKgPerS",
     "safetyAccumulatorC.availableInjectionHeadMPa",
     "safetyAccumulatorC.depletedFraction",
+    "safetyAccumulatorC.dischargeIsolationOpen",
     "safety-accumulator-c-to-cold-leg-c.flowKgPerS",
     "safety-accumulator-c-to-cold-leg-c.pressureMPa",
     "safetyAccumulatorD.liquidInventoryKg",
@@ -5754,6 +7276,7 @@
     "safetyAccumulatorD.outletFlowKgPerS",
     "safetyAccumulatorD.availableInjectionHeadMPa",
     "safetyAccumulatorD.depletedFraction",
+    "safetyAccumulatorD.dischargeIsolationOpen",
     "safety-accumulator-d-to-cold-leg-d.flowKgPerS",
     "safety-accumulator-d-to-cold-leg-d.pressureMPa",
     "mainSteamSafetyValve.positionFraction",
@@ -5811,9 +7334,15 @@
     "plantControlsLoadB.energized",
     "chargingPump.running",
     "chargingPump.flowKgPerS",
+    "chargingPumpB.running",
+    "chargingPumpB.flowKgPerS",
+    "vitalBatteryA.voltageVdc",
     "vessel.boronConcentrationPpm",
     "volumeControlTank.soluteConcentrationPpm",
+    "boric-acid-injection-to-charging-pump.flowKgPerS",
+    "boric-acid-injection-to-charging-pump.soluteConcentrationPpm",
     "charging-pump-to-cold-leg-a.soluteConcentrationPpm",
+    "charging-pump-b-to-cold-leg-b.soluteConcentrationPpm",
     "letdown-to-vct.soluteConcentrationPpm"
   ]
 }

@@ -152,6 +152,8 @@ export type ProcessVariableLimits = z.infer<typeof processVariableLimitsSchema>
 export const processQuantitySchema = z.enum([
   'boolean',
   'concentration',
+  'countRate',
+  'electricalCurrent',
   'energy',
   'energyPerMass',
   'flowRate',
@@ -166,15 +168,20 @@ export const processQuantitySchema = z.enum([
   'radiationDoseRate',
   'ratio',
   'reactivity',
+  'rotationalSpeed',
+  'temperatureDelta',
   'temperature',
   'temperatureRate',
   'time',
+  'voltage',
   'volume',
 ])
 export type ProcessQuantity = z.infer<typeof processQuantitySchema>
 
 export const processUnitSchema = z.enum([
   'boolean',
+  'amps',
+  'cps',
   'degC',
   'degC/s',
   'fraction',
@@ -190,13 +197,17 @@ export const processUnitSchema = z.enum([
   'pcm',
   'percent',
   'ppm',
+  'rpm',
   's',
+  'volts_dc',
 ])
 export type ProcessUnit = z.infer<typeof processUnitSchema>
 
 const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<ProcessUnit>>> = {
   boolean: new Set(['boolean']),
   concentration: new Set(['ppm']),
+  countRate: new Set(['cps']),
+  electricalCurrent: new Set(['amps']),
   energy: new Set(['MJ']),
   energyPerMass: new Set(['kJ/kg']),
   flowRate: new Set(['kg/s']),
@@ -211,9 +222,12 @@ const allowedUnitsByQuantity: Readonly<Record<ProcessQuantity, ReadonlySet<Proce
   radiationDoseRate: new Set(['mSv/h']),
   ratio: new Set(['fraction', 'percent']),
   reactivity: new Set(['pcm']),
+  rotationalSpeed: new Set(['rpm']),
   temperature: new Set(['degC']),
+  temperatureDelta: new Set(['degC']),
   temperatureRate: new Set(['degC/s']),
   time: new Set(['s']),
+  voltage: new Set(['volts_dc']),
   volume: new Set(['m3']),
 }
 
@@ -283,11 +297,15 @@ const validateInitialValueBounds = (
   if (
     (descriptor.quantity === 'flowRate'
       || descriptor.quantity === 'concentration'
+      || descriptor.quantity === 'countRate'
+      || descriptor.quantity === 'electricalCurrent'
       || descriptor.quantity === 'head'
       || descriptor.quantity === 'mass'
       || descriptor.quantity === 'power'
       || descriptor.quantity === 'pressure'
-      || descriptor.quantity === 'radiationDoseRate')
+      || descriptor.quantity === 'radiationDoseRate'
+      || descriptor.quantity === 'rotationalSpeed'
+      || descriptor.quantity === 'voltage')
     && descriptor.initialValue < 0
   ) {
     ctx.addIssue({

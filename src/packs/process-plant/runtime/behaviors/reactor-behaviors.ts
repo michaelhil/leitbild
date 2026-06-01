@@ -21,8 +21,8 @@ import {
   primaryCoolantThermalExpansionPressureBiasMPa,
   reactorKineticsPowerStep,
 } from '../physics.ts'
-import { primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
-import { waterDeltaTFromHeatMw } from '../thermophysics.ts'
+import { primarySystemPressurizer, primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
+import { saturationTemperatureCFromPressureMPa, waterDeltaTFromHeatMw } from '../thermophysics.ts'
 
 export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
@@ -83,6 +83,9 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       'coreHeatRemovalDeficitMw',
       'fuelHeatupRateCPerS',
       'decayHeatMw',
+      'averageHotLegFlowKgPerS',
+      'sourceRangeCountRateCps',
+      'intermediateRangeCurrentAmps',
     ],
     update: ({ system, component, context }): void => {
       const ratedPower = parameterNumber(component, 'ratedPowerMw')
@@ -128,6 +131,7 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const primaryFlow = sumIncomingLinkValue(system, component.index, 'flowKgPerS', context, link => link.service === 'primaryCoolant')
       const nominalPrimaryFlow = optionalParameterNumber(component, 'nominalPrimaryFlowKgPerS', Math.max(1, primaryFlow))
       const minimumCooling = optionalParameterNumber(component, 'minimumNaturalCirculationCoolingFraction', 0.08)
+      context.write(componentVariablePath(component, 'averageHotLegFlowKgPerS'), primaryFlow)
       const coolingAvailability = clamp(primaryFlow / Math.max(1, nominalPrimaryFlow), minimumCooling, 1.2)
       const creditedCooling = clamp(coolingAvailability, 0, 1)
       const totalThermalPower = nextPower + nextDecayHeat
@@ -149,6 +153,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'coreCoolingAvailabilityFraction'), coolingAvailability)
       context.write(componentVariablePath(component, 'coreHeatRemovalDeficitMw'), heatRemovalDeficit)
       context.write(componentVariablePath(component, 'fuelHeatupRateCPerS'), (nextAverageFuelTemperature - currentFuelTemperature) / Math.max(context.dtSeconds, 1e-9))
+      const powerFraction = clamp(nextPower / ratedPower, 0, 1.2)
+      const sourceRangeNominal = optionalParameterNumber(component, 'nominalSourceRangeCountRateCps', 100_000)
+      const intermediateRangeNominal = optionalParameterNumber(component, 'nominalIntermediateRangeCurrentAmps', 1e-5)
+      context.write(componentVariablePath(component, 'sourceRangeCountRateCps'), Math.min(sourceRangeNominal, 10 + Math.pow(powerFraction, 0.35) * sourceRangeNominal))
+      context.write(componentVariablePath(component, 'intermediateRangeCurrentAmps'), Math.min(intermediateRangeNominal, Math.pow(powerFraction, 0.8) * intermediateRangeNominal))
     },
   },
   {
@@ -179,11 +188,13 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     id: 'reactor-vessel-primary-inventory-state',
     phase: 'updateComponentState',
     componentKind: 'reactorVessel',
-    reads: ['primaryCoolantInventoryKg', 'boronConcentrationPpm', 'charging:flowKgPerS', 'charging:soluteConcentrationPpm', 'primaryInjection:flowKgPerS', 'primaryInjection:soluteConcentrationPpm', 'safetyInjection:flowKgPerS', 'safetyInjection:soluteConcentrationPpm', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS'],
+    reads: ['primaryCoolantInventoryKg', 'boronConcentrationPpm', 'charging:flowKgPerS', 'charging:soluteConcentrationPpm', 'primaryInjection:flowKgPerS', 'primaryInjection:soluteConcentrationPpm', 'safetyInjection:flowKgPerS', 'safetyInjection:soluteConcentrationPpm', 'letdown:flowKgPerS', 'primaryRelief:flowKgPerS', 'primaryCoolant:leakFlowKgPerS', 'steamGenerator.primaryToSecondaryLeakKgPerS', 'pressurizer.pressureMPa'],
     writes: [
       'primaryCoolantInventoryKg',
       'primaryCoolantInventoryDeviationKg',
+      'collapsedLiquidLevelPercent',
       'meanPrimaryCoolantTemperatureC',
+      'subcoolingMarginC',
       'compressibilityPressureBiasMPa',
       'thermalExpansionPressureBiasMPa',
       'primaryPressureBiasMPa',
@@ -251,6 +262,8 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
             20_000,
           )
       const deviation = nextInventory - nominalInventory
+      const collapsedLevelReference = nominalInventory * optionalParameterNumber(component, 'collapsedLevelReferenceInventoryFraction', 1)
+      const collapsedLiquidLevelPercent = clamp(nextInventory / Math.max(1, collapsedLevelReference) * 100, 0, 100)
       const core = primarySystemReactorCore(system)
       const meanPrimaryCoolantTemperature = core === null
         ? parameterNumber(component, 'referencePrimaryCoolantTemperatureC')
@@ -273,6 +286,11 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const primaryReleaseRadiation = primaryLeakFlow <= 0
         ? 0.02
         : optionalParameterNumber(component, 'primaryReleaseRadiationMSvPerH', 4)
+      const pressurizer = primarySystemPressurizer(system)
+      const pressureMPa = pressurizer === null
+        ? 15.5
+        : context.readNumber(componentVariablePath(pressurizer, 'pressureMPa'))
+      const subcoolingMargin = saturationTemperatureCFromPressureMPa(pressureMPa) - meanPrimaryCoolantTemperature
       context.write(componentVariablePath(component, 'chargingFlowKgPerS'), chargingFlow)
       context.write(componentVariablePath(component, 'safetyInjectionFlowKgPerS'), primaryInjectionFlow)
       context.write(componentVariablePath(component, 'letdownFlowKgPerS'), letdownFlow)
@@ -284,7 +302,9 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       context.write(componentVariablePath(component, 'primaryCoolantInventoryKg'), nextInventory)
       context.write(componentVariablePath(component, 'boronConcentrationPpm'), nextBoron)
       context.write(componentVariablePath(component, 'primaryCoolantInventoryDeviationKg'), deviation)
+      context.write(componentVariablePath(component, 'collapsedLiquidLevelPercent'), collapsedLiquidLevelPercent)
       context.write(componentVariablePath(component, 'meanPrimaryCoolantTemperatureC'), meanPrimaryCoolantTemperature)
+      context.write(componentVariablePath(component, 'subcoolingMarginC'), subcoolingMargin)
       context.write(componentVariablePath(component, 'compressibilityPressureBiasMPa'), compressibilityPressureBias)
       context.write(componentVariablePath(component, 'thermalExpansionPressureBiasMPa'), thermalExpansionPressureBias)
       context.write(componentVariablePath(component, 'primaryPressureBiasMPa'), compressibilityPressureBias + thermalExpansionPressureBias)
