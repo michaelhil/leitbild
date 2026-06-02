@@ -144,8 +144,8 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
         + (averageIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'auxFeedwater') ?? 0)
       const tubeLeakFlow = context.readNumber(componentVariablePath(component, 'primaryToSecondaryLeakKgPerS'))
       context.write(componentVariablePath(component, 'feedwaterFlowKgPerS'), feedwaterFlow)
-      const turbineSteamFlow = averageOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'mainSteam') ?? 0
-      context.write(componentVariablePath(component, 'steamOutflowKgPerS'), turbineSteamFlow)
+      const mainSteamOutflow = averageOutgoingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'mainSteam') ?? 0
+      context.write(componentVariablePath(component, 'steamOutflowKgPerS'), mainSteamOutflow)
       const pressurePath = componentVariablePath(component, 'pressureMPa')
       const levelPath = componentVariablePath(component, 'levelPercent')
       const heatTransfer = context.readNumber(componentVariablePath(component, 'heatTransferMw'))
@@ -185,7 +185,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const steamMassTarget = inventoryBalanceStep({
         currentInventory: currentSteamMass,
         inflowKgPerS: boilingRate,
-        outflowKgPerS: turbineSteamFlow,
+        outflowKgPerS: mainSteamOutflow,
         dtSeconds: context.dtSeconds,
         minInventory: nominalSteamMass * 0.15,
         maxInventory: nominalSteamMass * 2.5,
@@ -194,11 +194,11 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       context.write(componentVariablePath(component, 'steamMassKg'), nextSteamMass)
       context.write(
         componentVariablePath(component, 'steamMassBalanceResidualKg'),
-        nextSteamMass - currentSteamMass - (boilingRate - turbineSteamFlow) * context.dtSeconds,
+        nextSteamMass - currentSteamMass - (boilingRate - mainSteamOutflow) * context.dtSeconds,
       )
-      const steamQualityTarget = turbineSteamFlow <= 0
+      const steamQualityTarget = mainSteamOutflow <= 0
         ? 1
-        : clamp(boilingRate / Math.max(1, turbineSteamFlow), 0.78, 1)
+        : clamp(boilingRate / Math.max(1, mainSteamOutflow), 0.78, 1)
       context.write(
         componentVariablePath(component, 'steamQualityFraction'),
         relaxToward(
@@ -213,7 +213,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const nextInventory = inventoryBalanceStep({
         currentInventory,
         inflowKgPerS: feedwaterFlow + tubeLeakFlow,
-        outflowKgPerS: turbineSteamFlow,
+        outflowKgPerS: boilingRate,
         dtSeconds: context.dtSeconds,
         minInventory: 0,
         maxInventory: nominalInventory,
@@ -221,7 +221,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       context.write(componentVariablePath(component, 'secondaryInventoryKg'), nextInventory)
       context.write(
         componentVariablePath(component, 'secondaryInventoryBalanceResidualKg'),
-        nextInventory - currentInventory - (feedwaterFlow + tubeLeakFlow - turbineSteamFlow) * context.dtSeconds,
+        nextInventory - currentInventory - (feedwaterFlow + tubeLeakFlow - boilingRate) * context.dtSeconds,
       )
       const collapsedLevel = clamp((nextInventory / nominalInventory) * 100, 0, 100)
       context.write(componentVariablePath(component, 'collapsedLevelPercent'), collapsedLevel)
@@ -249,7 +249,7 @@ export const steamGeneratorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
         * nominalPressure
         * (clamp(nextSteamMass / nominalSteamMass, 0.2, 1.6) - 1)
       const inventoryPressureBias = ((nextInventory / nominalInventory) - parameterNumber(component, 'nominalLevelPercent')) * optionalParameterNumber(component, 'pressureInventoryGainMPaPerFraction', 0.6)
-      const demandPressureBias = (boilingRate - turbineSteamFlow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
+      const demandPressureBias = (boilingRate - mainSteamOutflow) * optionalParameterNumber(component, 'steamPressureGainMPaPerKgS', 0.006)
       const pressureTarget = nominalPressure + steamMassPressureBias + demandPressureBias + temperaturePressureBias + inventoryPressureBias
       context.write(componentVariablePath(component, 'steamMassPressureBiasMPa'), steamMassPressureBias)
       context.write(componentVariablePath(component, 'temperaturePressureBiasMPa'), temperaturePressureBias)

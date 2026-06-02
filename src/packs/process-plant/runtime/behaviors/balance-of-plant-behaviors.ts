@@ -45,7 +45,7 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       const backPressurePa = downstreamCondenserBackPressurePa(system, component, context)
       const backPressureAvailability = condenserBackPressureAvailability(backPressurePa)
       const steamDemand = nominalSteamFlow * load * backPressureAvailability
-      const steamAvailability = clamp(inletSteamFlow / nominalSteamFlow, 0, 1.2)
+      const steamAvailability = clamp(inletSteamFlow / Math.max(1, steamDemand), 0, 1.2)
       const pressureAvailability = clamp((averageSteamPressure ?? 6.9) / 6.9, 0, 1.2)
       const target = parameterNumber(component, 'nominalElectricMw') * load * Math.min(steamAvailability, pressureAvailability, backPressureAvailability)
       const current = context.readNumber(componentVariablePath(component, 'electricMw'))
@@ -152,8 +152,8 @@ export const balanceOfPlantBehaviorDefinitions: ReadonlyArray<ComponentBehaviorD
       'coolingWaterAvailabilityFraction',
     ],
     update: ({ system, component, context }): void => {
-      const steamFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'exhaustSteam')
-      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'exhaustSteam')
+      const steamFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'exhaustSteam' || link.service === 'mainSteam')
+      const steamTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'exhaustSteam' || link.service === 'mainSteam')
         ?? optionalParameterNumber(component, 'exhaustCondensationTemperatureC', 120)
       const nominalSteamFlow = parameterNumber(component, 'nominalSteamFlowKgPerS')
       const coolingWaterFlow = sumIncomingLinkValue(system, component, 'flowKgPerS', context, link => link.service === 'coolingWater')

@@ -9,7 +9,7 @@ import {
 } from '../../component-link-helpers.ts'
 import { clamp, optionalParameterNumber, optionalParameterString, relaxToward } from '../../component-helpers.ts'
 
-type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle'
+type ValveMode = 'control' | 'isolation' | 'check' | 'relief' | 'safety' | 'throttle' | 'bypass'
 type ValvePositionControllerDirection = 'direct' | 'reverse'
 
 interface ValvePositionController {
@@ -25,7 +25,7 @@ interface ValvePositionController {
   readonly timeConstantS: number
 }
 
-const valveModes: ReadonlySet<ValveMode> = new Set(['control', 'isolation', 'check', 'relief', 'safety', 'throttle'])
+const valveModes: ReadonlySet<ValveMode> = new Set(['control', 'isolation', 'check', 'relief', 'safety', 'throttle', 'bypass'])
 const valveControllerByComponent = new WeakMap<CompiledComponent, ValvePositionController | null>()
 
 const valvePositionControllerFor = (component: CompiledComponent): ValvePositionController | null => {

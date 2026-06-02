@@ -455,7 +455,7 @@
         "loopInertiaTimeConstantS": 7,
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
-        "minimumNaturalCirculationFlowKgPerS": 0
+        "minimumNaturalCirculationFlowKgPerS": 260
       },
       "variables": [
         {
@@ -490,7 +490,7 @@
         "loopInertiaTimeConstantS": 7,
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
-        "minimumNaturalCirculationFlowKgPerS": 0
+        "minimumNaturalCirculationFlowKgPerS": 260
       },
       "variables": [
         {
@@ -525,7 +525,7 @@
         "loopInertiaTimeConstantS": 7,
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
-        "minimumNaturalCirculationFlowKgPerS": 0
+        "minimumNaturalCirculationFlowKgPerS": 260
       },
       "variables": [
         {
@@ -560,7 +560,7 @@
         "loopInertiaTimeConstantS": 7,
         "coastdownTimeConstantS": 18,
         "loopResistanceCoefficient": 0,
-        "minimumNaturalCirculationFlowKgPerS": 0
+        "minimumNaturalCirculationFlowKgPerS": 260
       },
       "variables": [
         {
@@ -589,7 +589,7 @@
       "kind": "centrifugalPump",
       "label": "Main Feedwater Pump A",
       "parameters": {
-        "nominalFlowKgPerS": 570,
+        "nominalFlowKgPerS": 670,
         "nominalHeadPa": 1100000,
         "flowTimeConstantS": 6,
         "maxFlowRampKgPerS2": 220
@@ -608,7 +608,7 @@
       "kind": "centrifugalPump",
       "label": "Main Feedwater Pump B",
       "parameters": {
-        "nominalFlowKgPerS": 570,
+        "nominalFlowKgPerS": 670,
         "nominalHeadPa": 1100000,
         "flowTimeConstantS": 6,
         "maxFlowRampKgPerS2": 220
@@ -631,7 +631,7 @@
         "initialInventoryFraction": 0.82,
         "initialTemperatureC": 220,
         "makeupFlowKgPerS": 1200,
-        "maxOutletFlowKgPerS": 1300,
+        "maxOutletFlowKgPerS": 1500,
         "thermalTimeConstantS": 90,
         "initialSoluteConcentrationPpm": 0
       }
@@ -647,13 +647,13 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve A",
       "parameters": {
-        "initialPositionFraction": 0.79,
+        "initialPositionFraction": 0.82,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgA.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.79,
-          "gainPerUnit": 0.018,
+          "biasPositionFraction": 0.82,
+          "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
           "minPositionFraction": 0.05,
@@ -676,13 +676,13 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve B",
       "parameters": {
-        "initialPositionFraction": 0.79,
+        "initialPositionFraction": 0.82,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgB.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.79,
-          "gainPerUnit": 0.018,
+          "biasPositionFraction": 0.82,
+          "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
           "minPositionFraction": 0.05,
@@ -696,13 +696,13 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve C",
       "parameters": {
-        "initialPositionFraction": 0.79,
+        "initialPositionFraction": 0.82,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgC.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.79,
-          "gainPerUnit": 0.018,
+          "biasPositionFraction": 0.82,
+          "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
           "minPositionFraction": 0.05,
@@ -716,13 +716,13 @@
       "kind": "processValve",
       "label": "Feedwater Control Valve D",
       "parameters": {
-        "initialPositionFraction": 0.79,
+        "initialPositionFraction": 0.82,
         "controller": {
           "kind": "proportionalPosition",
           "measuredPath": "sgD.levelPercent",
           "setpoint": 55,
-          "biasPositionFraction": 0.79,
-          "gainPerUnit": 0.018,
+          "biasPositionFraction": 0.82,
+          "gainPerUnit": 0.03,
           "direction": "reverse",
           "deadband": 0.5,
           "minPositionFraction": 0.05,
@@ -998,6 +998,37 @@
       "parameters": {
         "initialPositionFraction": 1
       }
+    },
+    {
+      "id": "turbineBypassValve",
+      "kind": "steamValve",
+      "label": "Turbine Bypass Valve",
+      "parameters": {
+        "initialPositionFraction": 0,
+        "valveMode": "bypass",
+        "strokeOpenTimeS": 4,
+        "strokeCloseTimeS": 8,
+        "controller": {
+          "kind": "proportionalPosition",
+          "measuredPath": "main-steam-header-to-turbine-bypass-valve.pressureMPa",
+          "setpoint": 8.2,
+          "biasPositionFraction": 0,
+          "gainPerUnit": 0.8,
+          "direction": "direct",
+          "deadband": 0.05,
+          "minPositionFraction": 0,
+          "maxPositionFraction": 0.75,
+          "timeConstantS": 2
+        }
+      },
+      "variables": [
+        {
+          "path": "positionFraction",
+          "tagId": "TURB-BYP",
+          "equipmentId": "turbineBypassValve",
+          "description": "Turbine bypass valve position"
+        }
+      ]
     },
     {
       "id": "turbine",
@@ -4203,6 +4234,96 @@
       ]
     },
     {
+      "id": "main-steam-header-to-turbine-bypass-valve",
+      "from": "mainSteamHeader.outletC",
+      "to": "turbineBypassValve.inlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Main steam to turbine bypass valve flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Main steam to turbine bypass valve temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Turbine bypass valve inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
+      "id": "turbine-bypass-valve-to-condenser",
+      "from": "turbineBypassValve.outlet",
+      "to": "condenser.steamInlet",
+      "connectionKind": "fluidFlow",
+      "service": "mainSteam",
+      "nominalFluid": "steam",
+      "designPhase": "steam",
+      "solverModel": "compressibleSteam",
+      "variables": [
+        {
+          "path": "flowKgPerS",
+          "label": "Turbine bypass steam to condenser flow",
+          "kind": "derived",
+          "discipline": "hydraulic",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "flowRate",
+          "unit": "kg/s",
+          "initialValue": 0
+        },
+        {
+          "path": "temperatureC",
+          "label": "Turbine bypass steam to condenser temperature",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "temperature",
+          "unit": "degC",
+          "initialValue": 285
+        },
+        {
+          "path": "pressureMPa",
+          "label": "Turbine bypass condenser inlet pressure",
+          "kind": "derived",
+          "discipline": "thermal",
+          "writable": false,
+          "publish": "telemetry",
+          "quantity": "pressure",
+          "unit": "MPa",
+          "initialValue": 6.9
+        }
+      ]
+    },
+    {
       "id": "turbine-stop-valve-to-turbine",
       "from": "turbineStopValve.outlet",
       "to": "turbine.steamInlet",
@@ -6967,8 +7088,16 @@
     "condenser.availableCondensateOutletFlowKgPerS",
     "condenser.condensateTemperatureC",
     "condenser.backPressurePa",
+    "turbineBypassValve.positionFraction",
+    "turbineBypassValve.effectivePositionFraction",
+    "turbineBypassValve.inletFlowKgPerS",
+    "turbineBypassValve.outletFlowKgPerS",
     "main-steam-header-to-turbine-stop-valve.flowKgPerS",
     "main-steam-header-to-turbine-stop-valve.pressureMPa",
+    "main-steam-header-to-turbine-bypass-valve.flowKgPerS",
+    "main-steam-header-to-turbine-bypass-valve.pressureMPa",
+    "turbine-bypass-valve-to-condenser.flowKgPerS",
+    "turbine-bypass-valve-to-condenser.pressureMPa",
     "turbine-stop-valve-to-turbine.flowKgPerS",
     "turbine-stop-valve-to-turbine.pressureMPa",
     "turbine-exhaust-to-condenser.flowKgPerS",

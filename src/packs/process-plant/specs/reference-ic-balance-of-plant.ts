@@ -1,5 +1,5 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
-import { alarm, all, annunciator, any, comparison, rule } from './reference-ic-helpers.ts'
+import { alarm, all, annunciator, any, comparison, rule, write } from './reference-ic-helpers.ts'
 
 const feedwaterAlarm = annunciator({
   system: 'feedwater',
@@ -18,6 +18,37 @@ const turbineAlarm = annunciator({
 })
 
 export const balanceOfPlantReferenceIcRules = (): ReadonlyArray<ProcessPlantIcRule> => [
+  rule({
+    id: 'reactor-trip-turbine-trip',
+    label: 'Reactor trip turbine trip',
+    ruleClass: 'normalControl',
+    condition: any([
+      comparison({ tagId: 'TRIP-BKR-A' }, '==', false),
+      comparison({ tagId: 'TRIP-BKR-B' }, '==', false),
+    ]),
+    latch: false,
+    resetWhenClear: true,
+    effects: [
+      write('close-turbine-stop-valve-on-reactor-trip', { path: 'turbineStopValve.positionFraction' }, 0),
+      write('reject-turbine-load-on-reactor-trip', { tagId: 'TURB-LOAD' }, 0),
+    ],
+  }),
+  rule({
+    id: 'reactor-trip-main-feedwater-isolation',
+    label: 'Reactor trip main feedwater isolation',
+    ruleClass: 'normalControl',
+    condition: any([
+      comparison({ tagId: 'TRIP-BKR-A' }, '==', false),
+      comparison({ tagId: 'TRIP-BKR-B' }, '==', false),
+    ]),
+    delayMs: 45_000,
+    latch: false,
+    resetWhenClear: true,
+    effects: [
+      write('trip-main-feedwater-pump-a-on-reactor-trip', { tagId: 'MFW-PUMP-A-RUN' }, false),
+      write('trip-main-feedwater-pump-b-on-reactor-trip', { tagId: 'MFW-PUMP-B-RUN' }, false),
+    ],
+  }),
   rule({
     id: 'main-feedwater-pump-trip',
     label: 'Main feedwater pump unavailable',

@@ -65,10 +65,21 @@ export const topologyAwareMainSteamDemandForSourceLink = (
   return demand
 }
 
-const isReliefOrSafetyValve = (component: CompiledComponent | undefined): boolean => {
+const isSteamReleaseValve = (component: CompiledComponent | undefined): boolean => {
   if (component?.kind !== 'steamValve') return false
   const mode = (component.parameters as Record<string, unknown>).valveMode
-  return mode === 'relief' || mode === 'safety'
+  return mode === 'relief' || mode === 'safety' || mode === 'bypass'
+}
+
+const isSteamReleaseTerminal = (component: CompiledComponent | undefined): boolean =>
+  component?.kind === 'containmentVolume' || component?.kind === 'condenserSink'
+
+const matchingSteamReleaseService = (
+  link: CompiledProcessLink,
+  hasReleaseValve: boolean,
+): boolean => {
+  if (link.service === processPlantServices.mainSteam) return true
+  return hasReleaseValve && link.service === processPlantServices.exhaustSteam
 }
 
 const collectReleasePaths = (
@@ -79,16 +90,16 @@ const collectReleasePaths = (
 ): ReadonlyArray<ProcessLinkPath> => {
   if (visited.has(fromComponentIndex)) return []
   const component = system.graph.components[fromComponentIndex]
-  if (component?.kind === 'containmentVolume' && hasReleaseValve) return [[]]
+  if (hasReleaseValve && isSteamReleaseTerminal(component)) return [[]]
 
   const nextVisited = new Set(visited)
   nextVisited.add(fromComponentIndex)
   const paths: ProcessLinkPath[] = []
   for (const linkIndex of system.graph.outgoingLinksByComponent[fromComponentIndex] ?? []) {
     const link = system.graph.links[linkIndex]
-    if (!link || link.kind !== 'fluidFlow' || link.service !== processPlantServices.mainSteam) continue
+    if (!link || link.kind !== 'fluidFlow' || !matchingSteamReleaseService(link, hasReleaseValve)) continue
     const toComponent = system.graph.components[link.toComponentIndex]
-    const nextHasReleaseValve = hasReleaseValve || isReliefOrSafetyValve(toComponent)
+    const nextHasReleaseValve = hasReleaseValve || isSteamReleaseValve(toComponent)
     for (const downstreamPath of collectReleasePaths(system, link.toComponentIndex, nextVisited, nextHasReleaseValve)) {
       paths.push([link, ...downstreamPath])
     }

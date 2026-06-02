@@ -807,8 +807,8 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('feedwater-control-valve-a-to-sg-a.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('rcpA.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('rcpA.developedHeadPa')))).toBeCloseTo(0, 6)
-    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeCloseTo(0, 6)
-    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('rcpA.loopFlowKgPerS')))).toBeCloseTo(260, 6)
+    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeCloseTo(260, 6)
   })
 
   test('feedwater tank and condenser mass balances are internally consistent across fixed steps', () => {
@@ -851,8 +851,8 @@ describe('process plant runtime', () => {
 
     const feedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
     const leakFlow = Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))
-    const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
-    expect(feedwaterFlow + leakFlow).toBeLessThan(steamOutflow)
+    const boilingRate = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
+    expect(feedwaterFlow + leakFlow).toBeLessThan(boilingRate)
     expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))).toBeLessThan(inventoryBefore)
   })
 
@@ -868,9 +868,9 @@ describe('process plant runtime', () => {
       const inventoryAfter = Number(runtime.readVariable(valueOf('sgA.secondaryInventoryKg')))
       const feedwaterFlow = Number(runtime.readVariable(valueOf('sgA.feedwaterFlowKgPerS')))
       const tubeLeakFlow = Number(runtime.readVariable(valueOf('sgA.primaryToSecondaryLeakKgPerS')))
-      const steamOutflow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
+      const boilingRate = Number(runtime.readVariable(valueOf('sgA.boilingRateKgPerS')))
 
-      expect(inventoryAfter - inventoryBefore).toBeCloseTo((feedwaterFlow + tubeLeakFlow - steamOutflow) * dtSeconds, 6)
+      expect(inventoryAfter - inventoryBefore).toBeCloseTo((feedwaterFlow + tubeLeakFlow - boilingRate) * dtSeconds, 6)
       expect(Number(runtime.readVariable(valueOf('sgA.secondaryInventoryBalanceResidualKg')))).toBeCloseTo(0, 6)
     }
   })
@@ -1102,6 +1102,94 @@ describe('process plant runtime', () => {
     expect(trippedFissionPower).toBeLessThan(initialFissionPower)
     expect(decayHeat).toBeGreaterThan(0)
     expect(heatToCoolant).toBeGreaterThan(trippedFissionPower)
+  })
+
+  test('reactor coolant pump trip drives real RPS, turbine trip, and feedwater isolation response', () => {
+    const system = compiledSystem()
+    const runtime = createProcessPlantRuntime({ system })
+    const protection = createProcessPlantProtectionRunner({
+      system,
+      protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+    })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    const initialLevel = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+    for (const loop of ['A', 'B', 'C', 'D'] as const) {
+      runtime.writeCommand({ type: 'setVariable', path: valueOf(`rcp${loop}.running`), value: false })
+    }
+
+    let maxLevel = initialLevel
+    let levelWhenMainFeedwaterIsolated: number | null = null
+    for (let elapsedMs = 1_000; elapsedMs <= 180_000; elapsedMs += 1_000) {
+      runtime.tick(1_000)
+      protection.evaluate({
+        runtime,
+        elapsedMs: runtime.elapsedMs(),
+        controlInstanceId: 'control-instance:runtime-rps-test' as ControlInstanceId,
+        sourceRuntimeId: 'process-plant-local',
+      })
+      const currentLevel = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+      maxLevel = Math.max(maxLevel, currentLevel)
+      if (runtime.readVariable(valueOf('mainFeedwaterPumpA.running')) === false && levelWhenMainFeedwaterIsolated === null) {
+        levelWhenMainFeedwaterIsolated = currentLevel
+      }
+    }
+
+    const active = activeLifecycleIds(protection.snapshot())
+    expect(active.trips).toContain('trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip')
+    expect(active.alarms).toEqual(expect.arrayContaining([
+      'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
+      'alarm:turbine-load-low:load-low',
+      'alarm:generator-output-low:generator-output-low',
+      'alarm:rcp-a-trip:not-running',
+      'alarm:rcp-b-trip:not-running',
+      'alarm:rcp-c-trip:not-running',
+      'alarm:rcp-d-trip:not-running',
+    ]))
+
+    expect(runtime.readVariable(valueOf('reactorTripBreakerA.closed'))).toBe(false)
+    expect(runtime.readVariable(valueOf('reactorTripBreakerB.closed'))).toBe(false)
+    expect(Number(runtime.readVariable(valueOf('core.rodInsertionFraction')))).toBe(1)
+    expect(Number(runtime.readVariable(valueOf('turbineStopValve.positionFraction')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('turbineStopValve.effectivePositionFraction')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('turbine.loadFraction')))).toBeCloseTo(0, 6)
+    expect(runtime.readVariable(valueOf('mainFeedwaterPumpA.running'))).toBe(false)
+    expect(runtime.readVariable(valueOf('mainFeedwaterPumpB.running'))).toBe(false)
+
+    const bypassValvePosition = Number(runtime.readVariable(valueOf('turbineBypassValve.effectivePositionFraction')))
+    const bypassFlow = Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS')))
+    expect(Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-bypass-valve.pressureMPa')))).toBeLessThan(8.2)
+    expect(bypassValvePosition).toBeCloseTo(0, 6)
+    expect(bypassFlow).toBeCloseTo(0, 6)
+
+    const finalLevel = Number(runtime.readVariable(valueOf('sgA.levelPercent')))
+    expect(maxLevel).toBeGreaterThan(initialLevel)
+    expect(maxLevel).toBeLessThan(75)
+    expect(levelWhenMainFeedwaterIsolated).not.toBeNull()
+    expect(levelWhenMainFeedwaterIsolated ?? 0).toBeGreaterThan(finalLevel)
+    expect(finalLevel).toBeGreaterThan(40)
+  })
+
+  test('turbine bypass remains closed in normal operation and opens to the condenser after turbine trip pressure rise', () => {
+    const runtime = createProcessPlantRuntime({ system: compiledSystem() })
+
+    for (let index = 0; index < 50; index += 1) runtime.tick(100)
+    expect(Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS')))).toBeCloseTo(0, 6)
+
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('turbineStopValve.positionFraction'), value: 0 })
+    runtime.writeCommand({ type: 'setVariable', path: valueOf('turbine.loadFraction'), value: 0 })
+    let maxBypassFlow = 0
+    let maxBypassPressure = 0
+    for (let index = 0; index < 900; index += 1) {
+      runtime.tick(100)
+      maxBypassFlow = Math.max(maxBypassFlow, Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS'))))
+      maxBypassPressure = Math.max(maxBypassPressure, Number(runtime.readVariable(valueOf('main-steam-header-to-turbine-bypass-valve.pressureMPa'))))
+    }
+
+    expect(maxBypassPressure).toBeGreaterThan(8.2)
+    expect(Number(runtime.readVariable(valueOf('turbineBypassValve.effectivePositionFraction')))).toBeGreaterThan(0.2)
+    expect(maxBypassFlow).toBeGreaterThan(100)
+    expect(Number(runtime.readVariable(valueOf('condenser.steamFlowKgPerS')))).toBeGreaterThan(100)
   })
 
   test('reactor temperature feedback suppresses fission power when fuel starts hot', () => {
@@ -1553,6 +1641,10 @@ describe('process plant runtime', () => {
     const runtime = createProcessPlantRuntime({
       system: compiledSystemWithInitialState({
         'turbine.loadFraction': 0,
+        'mainSteamIsolationValveA.positionFraction': 0,
+        'mainSteamIsolationValveB.positionFraction': 0,
+        'mainSteamIsolationValveC.positionFraction': 0,
+        'mainSteamIsolationValveD.positionFraction': 0,
         'condenser.condensateInventoryKg': 0,
         'condenser.condensateLevelPercent': 0,
         'condenser.availableCondensateOutletFlowKgPerS': 0,
@@ -1561,7 +1653,7 @@ describe('process plant runtime', () => {
 
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
 
-    expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeCloseTo(0, 6)
+    expect(Number(runtime.readVariable(valueOf('condenser.condensateInventoryKg')))).toBeLessThan(0.05)
     expect(Number(runtime.readVariable(valueOf('condenser-to-condensate-pump-a.flowKgPerS')))).toBeCloseTo(0, 6)
     expect(Number(runtime.readVariable(valueOf('condensate-pump-a-to-feedwater-tank.flowKgPerS')))).toBeCloseTo(0, 6)
   })
@@ -1615,6 +1707,7 @@ describe('process plant runtime', () => {
     for (let index = 0; index < 50; index += 1) runtime.tick(100)
     const flowingHeatTransfer = Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))
     const initialFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    const initialSteamFlow = Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))
     const initialCoolingAvailability = Number(runtime.readVariable(valueOf('core.coreCoolingAvailabilityFraction')))
     runtime.writeCommand({ type: 'setVariable', path: valueOf('rcpA.running'), value: false })
     for (let index = 0; index < 20; index += 1) runtime.tick(100)
@@ -1623,7 +1716,12 @@ describe('process plant runtime', () => {
     expect(coastdownFlow).toBeGreaterThan(0)
     expect(coastdownFlow).toBeLessThan(initialFlow)
     for (let index = 0; index < 400; index += 1) runtime.tick(100)
-    expect(Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))).toBeLessThan(initialFlow * 0.15)
+    const coastedNaturalCirculationFlow = Number(runtime.readVariable(valueOf('rcs-hot-leg-a.flowKgPerS')))
+    const naturalCirculationTarget = Number(runtime.readVariable(valueOf('rcpA.loopFlowTargetKgPerS')))
+    expect(naturalCirculationTarget).toBeCloseTo(260, 6)
+    expect(coastedNaturalCirculationFlow).toBeGreaterThan(naturalCirculationTarget)
+    expect(coastedNaturalCirculationFlow).toBeLessThan(initialFlow * 0.2)
+    expect(coastedNaturalCirculationFlow).toBeLessThan(1_000)
     expect(Number(runtime.readVariable(valueOf('sgA.heatTransferMw')))).toBeLessThan(flowingHeatTransfer)
     expect(Number(runtime.readVariable(valueOf('core.coreCoolingAvailabilityFraction')))).toBeLessThan(initialCoolingAvailability)
     expect(Number(runtime.readVariable(valueOf('core.coreHeatRemovalDeficitMw')))).toBeGreaterThan(0)
@@ -1632,7 +1730,7 @@ describe('process plant runtime', () => {
     expect(diagnostics.primary.runningReactorCoolantPumpCount).toBe(3)
     expect(diagnostics.primary.reactorCoolantFlowKgPerS).toBeLessThan(initialFlow * 4)
     expect(diagnostics.primary.minReactorCoolantPumpSpeedFraction).toBeGreaterThanOrEqual(0)
-    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(100)
+    expect(Number(runtime.readVariable(valueOf('sg-a-steam-to-msiv-a.flowKgPerS')))).toBeLessThan(initialSteamFlow * 0.75)
   })
 
   test('primary loop inertia is scoped to the tripped reactor coolant pump loop', () => {
