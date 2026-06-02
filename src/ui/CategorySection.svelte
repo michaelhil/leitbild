@@ -29,6 +29,7 @@
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcedureSystem?: (object: OperationalObject) => void
   }
 
   let {
@@ -51,6 +52,7 @@
     deleteObject,
     detailPresentationFor,
     openProcessSurface,
+    openProcedureSystem,
   }: Props = $props()
 </script>
 
@@ -117,6 +119,7 @@
         {deleteObject}
         {detailPresentationFor}
         {openProcessSurface}
+        {openProcedureSystem}
       />
     {/each}
   {/if}

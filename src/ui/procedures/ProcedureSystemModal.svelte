@@ -19,11 +19,13 @@
     readProcedureCatalog,
     readProcedureDocument,
     readProcedureRuns,
+    readProcedureSourceStatus,
     readProcedureTagValue,
     startProcedureRun,
     updateProcedureStep,
     validateProcedureTags,
     type ProcedureCsfEvaluation,
+    type ProcedureSourceLoadStatus,
     type ProcedureTagValidation,
     type ProcedureTagValue,
   } from './procedure-client.ts'
@@ -38,6 +40,16 @@
   interface TextSegment {
     readonly kind: 'text' | 'tag'
     readonly text: string
+  }
+
+  type LoadStageId = 'source' | 'runs' | 'document' | 'tags' | 'csfs'
+  type LoadStageStatus = 'pending' | 'running' | 'done' | 'failed'
+
+  interface LoadStage {
+    readonly id: LoadStageId
+    readonly label: string
+    readonly status: LoadStageStatus
+    readonly detail?: string
   }
 
   let { controlInstanceId, systemId, realtimeRevision, close }: Props = $props()
@@ -58,6 +70,8 @@
   let hoveredTagError = $state<string | null>(null)
   let commentOpen = $state<Record<string, boolean>>({})
   let commentDrafts = $state<Record<string, string>>({})
+  let procedureSourceStatus = $state<ProcedureSourceLoadStatus | null>(null)
+  let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
   let lastRealtimeRevision = 0
   let csfRefreshInFlight = false
 
@@ -66,6 +80,7 @@
     ? activeRuns.find(run => run.procedureId === document.procedureId) ?? null
     : null)
   const selectedRun = $derived(mode === 'run' ? activeRun : null)
+  const procedureLoadPanelVisible = $derived(loading || (error !== null && (catalog === null || document === null)))
   const stepStates = $derived(new Map((selectedRun?.stepStates ?? []).map(state => [state.stepId, state])))
   const selectedProcedure = $derived(catalog?.procedures.find(item => item.procedureId === selectedProcedureId) ?? null)
   const procedureFamilies = $derived(groupCatalog(catalog?.procedures ?? []))
@@ -74,6 +89,64 @@
     : 'Procedure source')
   const csfIds = $derived(document?.csfsMonitored ?? [])
   const primaryBlockKinds = new Set(['check', 'action', 'when', 'until', 'within', 'concurrent'])
+
+  function createLoadStages(): Record<LoadStageId, LoadStage> {
+    return {
+      source: { id: 'source', label: 'Load procedure source', status: 'pending' },
+      runs: { id: 'runs', label: 'Read active runs', status: 'pending' },
+      document: { id: 'document', label: 'Load selected procedure', status: 'pending' },
+      tags: { id: 'tags', label: 'Resolve plant tags', status: 'pending' },
+      csfs: { id: 'csfs', label: 'Evaluate critical safety functions', status: 'pending' },
+    }
+  }
+
+  const setLoadStage = (id: LoadStageId, status: LoadStageStatus, detail?: string): void => {
+    loadStages = {
+      ...loadStages,
+      [id]: {
+        ...loadStages[id],
+        status,
+        ...(detail === undefined ? {} : { detail }),
+      },
+    }
+  }
+
+  const errorMessage = (err: unknown): string =>
+    err instanceof Error ? err.message : String(err)
+
+  const sourceProgressDetail = (status: ProcedureSourceLoadStatus | null): string | undefined => {
+    if (!status) return undefined
+    if (status.stage === 'listing') return `Reading ${status.repository}/${status.path}`
+    if (status.stage === 'loading-documents') {
+      const count = status.totalItems === undefined
+        ? `${status.loadedItems}`
+        : `${status.loadedItems}/${status.totalItems}`
+      return status.currentItem ? `${count} Markdown files · ${status.currentItem}` : `${count} Markdown files`
+    }
+    if (status.stage === 'ready') return `${status.loadedItems} procedures available`
+    if (status.stage === 'failed') return status.error ?? 'Procedure source failed'
+    return 'Waiting for source loader'
+  }
+
+  const sourceStageStatus = (status: ProcedureSourceLoadStatus | null): LoadStageStatus => {
+    if (!status) return loadStages.source.status
+    if (status.stage === 'ready') return 'done'
+    if (status.stage === 'failed') return 'failed'
+    if (status.stage === 'idle') return loadStages.source.status
+    return 'running'
+  }
+
+  const procedureLoadRows = $derived<ReadonlyArray<LoadStage>>([
+    {
+      ...loadStages.source,
+      status: sourceStageStatus(procedureSourceStatus),
+      ...(sourceProgressDetail(procedureSourceStatus) === undefined ? {} : { detail: sourceProgressDetail(procedureSourceStatus) }),
+    },
+    loadStages.runs,
+    loadStages.document,
+    loadStages.tags,
+    loadStages.csfs,
+  ])
 
   const familyLabel = (id: string): string => {
     if (id === 'E') return 'Emergency operating procedures'
@@ -103,24 +176,77 @@
   const assessmentClass = (state: ProcedureStepRunState | undefined): string =>
     state?.assessment ?? 'blank'
 
+  const machineStatusFor = (_step: ProcedureStep): 'met' | 'not-met' | 'unknown' =>
+    'unknown'
+
+  const machineStatusTitleFor = (step: ProcedureStep): string => {
+    const status = machineStatusFor(step)
+    if (status === 'met') return 'Machine evaluation: conditions met'
+    if (status === 'not-met') return 'Machine evaluation: conditions not met'
+    return 'Machine evaluation unavailable for this step; checkbox is the human placekeeping state'
+  }
+
   const completedStepCount = (run: ProcedureRunState): number =>
     run.stepStates.filter(step => step.assessment === 'complete').length
 
+  const pollProcedureSourceStatus = (sourceId?: string): (() => void) => {
+    let stopped = false
+    let inFlight = false
+    const poll = async (): Promise<void> => {
+      if (stopped || inFlight) return
+      try {
+        inFlight = true
+        procedureSourceStatus = await readProcedureSourceStatus(controlInstanceId, { sourceId })
+      } catch (err) {
+        setLoadStage('source', 'failed', errorMessage(err))
+      } finally {
+        inFlight = false
+      }
+    }
+    void poll()
+    const interval = window.setInterval(() => {
+      void poll()
+    }, 500)
+    return () => {
+      stopped = true
+      window.clearInterval(interval)
+    }
+  }
+
   const loadCatalogAndRuns = async (refresh = false): Promise<void> => {
+    let stopSourceStatusPolling: (() => void) | null = null
     try {
+      loading = true
       refreshing = refresh
       error = null
+      loadStages = createLoadStages()
+      procedureSourceStatus = null
+      setLoadStage('source', 'running', refresh ? 'Refreshing source files' : 'Starting source loader')
+      stopSourceStatusPolling = pollProcedureSourceStatus(catalog?.source.sourceId)
       const nextCatalog = await readProcedureCatalog(controlInstanceId, { refresh })
+      stopSourceStatusPolling()
+      stopSourceStatusPolling = null
+      procedureSourceStatus = await readProcedureSourceStatus(controlInstanceId, { sourceId: nextCatalog.source.sourceId })
+      setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
+      setLoadStage('runs', 'running')
       const nextRuns = await readProcedureRuns(controlInstanceId)
       catalog = nextCatalog
       runs = nextRuns.runs
+      setLoadStage('runs', 'done', `${nextRuns.runs.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
       if (selectedProcedureId && (!document || document.procedureId !== selectedProcedureId || refresh)) {
         await loadProcedure(selectedProcedureId, refresh)
+      } else {
+        setLoadStage('document', 'done', document ? `${document.procedureId} already loaded` : 'No procedure selected')
+        setLoadStage('tags', 'done', document ? `${document.tags.length} tags already resolved` : 'No tags')
+        setLoadStage('csfs', 'done', document ? `${document.csfsMonitored.length} CSFs already evaluated` : 'No CSFs')
       }
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err)
+      error = errorMessage(err)
+      const activeStage = procedureLoadRows.find(stage => stage.status === 'running')
+      if (activeStage) setLoadStage(activeStage.id, 'failed', error)
     } finally {
+      stopSourceStatusPolling?.()
       loading = false
       refreshing = false
     }
@@ -139,19 +265,46 @@
       loading = true
       error = null
       selectedProcedureId = procedureId
+      setLoadStage('document', 'running', procedureId)
       const nextDocument = await readProcedureDocument(controlInstanceId, procedureId, {
         sourceId: catalog?.source.sourceId,
         refresh,
       })
       document = nextDocument
+      setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
+      const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
+        try {
+          setLoadStage('tags', 'running', `${nextDocument.tags.length} tags`)
+          const nextTagValidation = await validateProcedureTags(controlInstanceId, systemId, nextDocument.tags)
+          const missingCount = [...nextTagValidation.values()].filter(validation => validation.status === 'missing').length
+          setLoadStage('tags', 'done', missingCount === 0
+            ? `${nextDocument.tags.length} tags resolved`
+            : `${nextDocument.tags.length - missingCount}/${nextDocument.tags.length} tags resolved`)
+          return nextTagValidation
+        } catch (err) {
+          setLoadStage('tags', 'failed', errorMessage(err))
+          throw err
+        }
+      }
+      const loadCsfEvaluations = async (): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
+        try {
+          setLoadStage('csfs', 'running', `${nextDocument.csfsMonitored.length} functions`)
+          const nextCsfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, nextDocument.csfsMonitored)
+          setLoadStage('csfs', 'done', `${nextCsfEvaluations.size} functions evaluated`)
+          return nextCsfEvaluations
+        } catch (err) {
+          setLoadStage('csfs', 'failed', errorMessage(err))
+          throw err
+        }
+      }
       const [nextTagValidation, nextCsfEvaluations] = await Promise.all([
-        validateProcedureTags(controlInstanceId, systemId, nextDocument.tags),
-        evaluateProcedureCsfs(controlInstanceId, systemId, nextDocument.csfsMonitored),
+        loadTagValidation(),
+        loadCsfEvaluations(),
       ])
       tagValidation = nextTagValidation
       csfEvaluations = nextCsfEvaluations
     } catch (err) {
-      error = err instanceof Error ? err.message : String(err)
+      error = errorMessage(err)
     } finally {
       loading = false
     }
@@ -362,34 +515,45 @@
       <div class="procedure-error">{error}</div>
     {/if}
 
-    <div class="procedure-layout">
-      <aside class="procedure-list" aria-label="Procedure list">
-        {#if loading && !catalog}
-          <div class="procedure-loading">Loading procedures...</div>
-        {:else}
-          {#each procedureFamilies as family (family.id)}
-            <section>
-              <h3>{family.label}</h3>
-              {#each family.procedures as item (item.procedureId)}
-                <button
-                  type="button"
-                  class:active={selectedProcedureId === item.procedureId}
-                  onclick={() => void loadProcedure(item.procedureId)}
-                >
-                  <BookOpen size={15} aria-hidden="true" />
-                  <span>{item.procedureId}</span>
-                  <small>{item.title}</small>
-                </button>
-              {/each}
-            </section>
+    {#if procedureLoadPanelVisible}
+      <section class="procedure-loading-panel" aria-live="polite" aria-label="Procedure system loading status">
+        <div>
+          <h2>{refreshing ? 'Refreshing procedure system' : 'Loading procedure system'}</h2>
+          <p>{sourceLabel}</p>
+        </div>
+        <div class="procedure-load-steps">
+          {#each procedureLoadRows as stage (stage.id)}
+            <div class="procedure-load-step {stage.status}">
+              <span class="procedure-load-dot" aria-hidden="true"></span>
+              <strong>{stage.label}</strong>
+              <small>{stage.detail ?? (stage.status === 'pending' ? 'Pending' : stage.status)}</small>
+            </div>
           {/each}
-        {/if}
-      </aside>
+        </div>
+      </section>
+    {:else}
+      <div class="procedure-layout">
+        <aside class="procedure-list" aria-label="Procedure list">
+            {#each procedureFamilies as family (family.id)}
+              <section>
+                <h3>{family.label}</h3>
+                {#each family.procedures as item (item.procedureId)}
+                  <button
+                    type="button"
+                    class:active={selectedProcedureId === item.procedureId}
+                    onclick={() => void loadProcedure(item.procedureId)}
+                  >
+                    <BookOpen size={15} aria-hidden="true" />
+                    <span>{item.procedureId}</span>
+                    <small>{item.title}</small>
+                  </button>
+                {/each}
+              </section>
+            {/each}
+        </aside>
 
-      <main class="procedure-document">
-        {#if loading && !document}
-          <div class="procedure-loading">Loading procedure...</div>
-        {:else if document}
+        <main class="procedure-document">
+          {#if document}
           <div class="procedure-document-toolbar">
             <div>
               <h2>{document.procedureId} — {document.title}</h2>
@@ -423,19 +587,14 @@
           <div class="procedure-steps">
             {#each document.steps as step (step.id)}
               {@const state = stepStates.get(step.id)}
+              {@const machineStatus = machineStatusFor(step)}
               <article class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
                 <div class="procedure-step-main">
                   <button
                     type="button"
-                    class="procedure-condition unknown"
-                    title="Machine evaluation unavailable for this step"
-                    aria-label="Machine evaluation unavailable"
-                  ></button>
-                  <button
-                    type="button"
-                    class="procedure-assessment {assessmentClass(state)}"
+                    class="procedure-assessment {assessmentClass(state)} machine-{machineStatus}"
                     disabled={!selectedRun}
-                    title="Cycle human assessment"
+                    title={machineStatusTitleFor(step)}
                     aria-label="Cycle human assessment"
                     onclick={() => void cycleStepAssessment(step)}
                   >
@@ -500,8 +659,9 @@
         {:else}
           <div class="procedure-loading">No procedure selected.</div>
         {/if}
-      </main>
-    </div>
+        </main>
+      </div>
+    {/if}
 
     {#if hoveredTagId}
       <div class="procedure-tag-popover">

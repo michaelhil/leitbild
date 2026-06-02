@@ -110,7 +110,9 @@
   let SettingsModal = $state<Component | null>(null)
   let ProcessSurfaceModal = $state<Component | null>(null)
   let GridOverviewPanel = $state<Component | null>(null)
+  let ProcedureSystemModal = $state<Component | null>(null)
   let processSurfaceObject = $state<OperationalObject | null>(null)
+  let procedureSystemObject = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
@@ -119,6 +121,7 @@
   let operationalMapLoadPromise: Promise<Component> | null = null
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
+  let procedureSystemModalLoadPromise: Promise<Component> | null = null
   let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -533,6 +536,20 @@
     }
   }
 
+  const loadProcedureSystemModal = async (): Promise<void> => {
+    if (ProcedureSystemModal) return
+    procedureSystemModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../procedures/ProcedureSystemModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcedureSystemModal = await procedureSystemModalLoadPromise
+    } catch (err) {
+      procedureSystemModalLoadPromise = null
+      throw err
+    }
+  }
+
   const startStep = (id: StartupStepId): void => {
     markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
@@ -649,6 +666,28 @@
 
   const closeProcessSurface = (): void => {
     processSurfaceObject = null
+  }
+
+  const processPlantSystemIdFor = (object: OperationalObject): string | null => {
+    if (object.packId !== 'process-plant') return null
+    const data = object.packData
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return null
+    const systemId = (data as Record<string, unknown>).systemId
+    return typeof systemId === 'string' && systemId.length > 0 ? systemId : null
+  }
+
+  const procedureSystemId = $derived(procedureSystemObject === null
+    ? null
+    : processPlantSystemIdFor(procedureSystemObject))
+
+  const openProcedureSystem = (object: OperationalObject): void => {
+    if (processPlantSystemIdFor(object) === null) return
+    procedureSystemObject = object
+    void loadProcedureSystemModal()
+  }
+
+  const closeProcedureSystem = (): void => {
+    procedureSystemObject = null
   }
 
   const closeSettings = (): void => {
@@ -1132,6 +1171,7 @@
         {selectObject}
         {deleteObject}
         {openProcessSurface}
+        {openProcedureSystem}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
         {openStatusModal}
@@ -1214,6 +1254,15 @@
     object={processSurfaceObject}
     {procedureRevision}
     close={closeProcessSurface}
+  />
+{/if}
+
+{#if procedureSystemObject && procedureSystemId && ProcedureSystemModal && controlInstanceId}
+  <ProcedureSystemModal
+    {controlInstanceId}
+    systemId={procedureSystemId}
+    realtimeRevision={procedureRevision}
+    close={closeProcedureSystem}
   />
 {/if}
 

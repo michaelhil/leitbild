@@ -297,6 +297,18 @@ const handleControlInstanceApiInner = async (
     return json({ catalog })
   }
 
+  const procedureSourceStatusMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/procedure-source-status$/)
+  if (procedureSourceStatusMatch && req.method === 'GET') {
+    const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(procedureSourceStatusMatch[1] ?? ''))
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
+    const sourceIdParam = url.searchParams.get('sourceId')
+    const status = runtime.procedureSourceStatus({
+      ...(sourceIdParam === null ? {} : { sourceId: procedureSourceIdSchema.parse(sourceIdParam) }),
+    })
+    return json({ status })
+  }
+
   const procedureDocumentMatch = url.pathname.match(/^\/api\/control-instances\/([^/]+)\/procedures\/([^/]+)$/)
   if (procedureDocumentMatch && req.method === 'GET') {
     const controlInstanceId = controlInstanceIdSchema.parse(decodeURIComponent(procedureDocumentMatch[1] ?? ''))

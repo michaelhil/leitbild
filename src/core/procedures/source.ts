@@ -33,8 +33,28 @@ interface ProcedureSourceItem {
   readonly sha: string
 }
 
+export type ProcedureSourceLoadStage = 'idle' | 'listing' | 'loading-documents' | 'ready' | 'failed'
+
+export interface ProcedureSourceLoadStatus {
+  readonly sourceId: ProcedureSourceId
+  readonly label: string
+  readonly repository: string
+  readonly ref: string
+  readonly path: string
+  readonly stage: ProcedureSourceLoadStage
+  readonly loadedItems: number
+  readonly totalItems?: number
+  readonly currentItem?: string
+  readonly startedAt?: IsoTimestamp
+  readonly updatedAt?: IsoTimestamp
+  readonly completedAt?: IsoTimestamp
+  readonly cached: boolean
+  readonly error?: string
+}
+
 export interface ProcedureSourceService {
   readonly listSources: () => ReadonlyArray<ProcedureSourceConfig>
+  readonly readStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
   readonly readCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
   readonly readDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
 }
@@ -72,6 +92,25 @@ const corpusRevisionFor = (items: ReadonlyArray<ProcedureSourceItem>): string =>
 
 const apiUrlFor = (source: ProcedureSourceConfig): string =>
   `https://api.github.com/repos/${source.repository}/contents/${source.path}?ref=${encodeURIComponent(source.ref)}`
+
+const idleStatusFor = (source: ProcedureSourceConfig): ProcedureSourceLoadStatus => ({
+  sourceId: source.sourceId,
+  label: source.label,
+  repository: source.repository,
+  ref: source.ref,
+  path: source.path,
+  stage: 'idle',
+  loadedItems: 0,
+  cached: false,
+})
+
+const sourceStatusFor = (
+  source: ProcedureSourceConfig,
+  overrides: Omit<ProcedureSourceLoadStatus, 'sourceId' | 'label' | 'repository' | 'ref' | 'path'>,
+): ProcedureSourceLoadStatus => ({
+  ...idleStatusFor(source),
+  ...overrides,
+})
 
 const sourceFrom = (source: ProcedureSourceConfig, fetchedAt: IsoTimestamp, commitSha?: string): ProcedureSource => ({
   sourceId: source.sourceId,
@@ -112,44 +151,103 @@ const readProcedureItems = async (source: ProcedureSourceConfig): Promise<Readon
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
-const loadSource = async (source: ProcedureSourceConfig): Promise<ProcedureSourceCacheEntry> => {
-  const fetchedAt = nowIso()
-  const items = await readProcedureItems(source)
-  const sourceMetadata = sourceFrom(source, fetchedAt, corpusRevisionFor(items))
-  const documents = new Map<ProcedureId, ProcedureDocument>()
-  for (const item of items) {
-    const rawMarkdown = await fetchText(item.downloadUrl)
-    const parsed = parseProcedureMarkdown({
-      source: sourceMetadata,
-      sourcePath: item.path,
-      sourceUrl: item.htmlUrl,
-      rawMarkdown,
-    })
-    if (documents.has(parsed.procedureId)) throw new Error(`duplicate procedure id in source ${source.sourceId}: ${parsed.procedureId}`)
-    documents.set(parsed.procedureId, procedureDocumentSchema.parse(parsed) as ProcedureDocument)
-  }
-  const procedures: ProcedureCatalogItem[] = [...documents.values()]
-    .map(document => ({
-      sourceId: document.source.sourceId,
-      procedureId: document.procedureId,
-      title: document.title,
-      ...(document.profile === undefined ? {} : { profile: document.profile }),
-      ...(document.category === undefined ? {} : { category: document.category }),
-      csfsMonitored: document.csfsMonitored,
-      entryTriggers: document.entryTriggers,
-      stepCount: document.steps.length,
-      tagCount: document.tags.length,
-      sourcePath: document.sourcePath,
-      sourceUrl: document.sourceUrl,
+const loadSource = async (
+  source: ProcedureSourceConfig,
+  updateStatus: (status: ProcedureSourceLoadStatus) => void,
+): Promise<ProcedureSourceCacheEntry> => {
+  const startedAt = nowIso()
+  try {
+    updateStatus(sourceStatusFor(source, {
+      stage: 'listing',
+      loadedItems: 0,
+      startedAt,
+      updatedAt: startedAt,
+      cached: false,
     }))
-    .sort((left, right) => left.procedureId.localeCompare(right.procedureId))
-  return {
-    loadedAtMs: Date.now(),
-    catalog: procedureCatalogSchema.parse({
-      source: sourceMetadata,
-      procedures,
-    }) as ProcedureCatalog,
-    documents,
+    const fetchedAt = nowIso()
+    const items = await readProcedureItems(source)
+    updateStatus(sourceStatusFor(source, {
+      stage: 'loading-documents',
+      loadedItems: 0,
+      totalItems: items.length,
+      startedAt,
+      updatedAt: nowIso(),
+      cached: false,
+    }))
+    const sourceMetadata = sourceFrom(source, fetchedAt, corpusRevisionFor(items))
+    const documents = new Map<ProcedureId, ProcedureDocument>()
+    for (const [index, item] of items.entries()) {
+      updateStatus(sourceStatusFor(source, {
+        stage: 'loading-documents',
+        loadedItems: index,
+        totalItems: items.length,
+        currentItem: item.name,
+        startedAt,
+        updatedAt: nowIso(),
+        cached: false,
+      }))
+      const rawMarkdown = await fetchText(item.downloadUrl)
+      const parsed = parseProcedureMarkdown({
+        source: sourceMetadata,
+        sourcePath: item.path,
+        sourceUrl: item.htmlUrl,
+        rawMarkdown,
+      })
+      if (documents.has(parsed.procedureId)) throw new Error(`duplicate procedure id in source ${source.sourceId}: ${parsed.procedureId}`)
+      documents.set(parsed.procedureId, procedureDocumentSchema.parse(parsed) as ProcedureDocument)
+      updateStatus(sourceStatusFor(source, {
+        stage: 'loading-documents',
+        loadedItems: index + 1,
+        totalItems: items.length,
+        currentItem: item.name,
+        startedAt,
+        updatedAt: nowIso(),
+        cached: false,
+      }))
+    }
+    const procedures: ProcedureCatalogItem[] = [...documents.values()]
+      .map(document => ({
+        sourceId: document.source.sourceId,
+        procedureId: document.procedureId,
+        title: document.title,
+        ...(document.profile === undefined ? {} : { profile: document.profile }),
+        ...(document.category === undefined ? {} : { category: document.category }),
+        csfsMonitored: document.csfsMonitored,
+        entryTriggers: document.entryTriggers,
+        stepCount: document.steps.length,
+        tagCount: document.tags.length,
+        sourcePath: document.sourcePath,
+        sourceUrl: document.sourceUrl,
+      }))
+      .sort((left, right) => left.procedureId.localeCompare(right.procedureId))
+    const completedAt = nowIso()
+    updateStatus(sourceStatusFor(source, {
+      stage: 'ready',
+      loadedItems: items.length,
+      totalItems: items.length,
+      startedAt,
+      updatedAt: completedAt,
+      completedAt,
+      cached: true,
+    }))
+    return {
+      loadedAtMs: Date.now(),
+      catalog: procedureCatalogSchema.parse({
+        source: sourceMetadata,
+        procedures,
+      }) as ProcedureCatalog,
+      documents,
+    }
+  } catch (err) {
+    updateStatus(sourceStatusFor(source, {
+      stage: 'failed',
+      loadedItems: 0,
+      startedAt,
+      updatedAt: nowIso(),
+      error: err instanceof Error ? err.message : String(err),
+      cached: false,
+    }))
+    throw err
   }
 }
 
@@ -160,6 +258,7 @@ export const createProcedureSourceService = (config: {
   const sources = config.sources ?? defaultProcedureSources
   const cacheTtlMs = config.cacheTtlMs ?? defaultCacheTtlMs
   const cache = new Map<ProcedureSourceId, Promise<ProcedureSourceCacheEntry>>()
+  const statuses = new Map<ProcedureSourceId, ProcedureSourceLoadStatus>()
 
   const sourceFor = (sourceId?: ProcedureSourceId): ProcedureSourceConfig => {
     const id = sourceId ?? sources[0]?.sourceId
@@ -168,18 +267,33 @@ export const createProcedureSourceService = (config: {
     return source
   }
 
+  const setStatus = (source: ProcedureSourceConfig, status: ProcedureSourceLoadStatus): void => {
+    statuses.set(source.sourceId, status)
+  }
+
   const readEntry = async (sourceId?: ProcedureSourceId, refresh = false): Promise<ProcedureSourceCacheEntry> => {
     const source = sourceFor(sourceId)
     const existing = cache.get(source.sourceId)
     if (existing && !refresh) {
       try {
         const resolved = await existing
-        if (Date.now() - resolved.loadedAtMs < cacheTtlMs) return resolved
+        if (Date.now() - resolved.loadedAtMs < cacheTtlMs) {
+          const completedAt = nowIso()
+          setStatus(source, sourceStatusFor(source, {
+            stage: 'ready',
+            loadedItems: resolved.documents.size,
+            totalItems: resolved.documents.size,
+            updatedAt: completedAt,
+            completedAt,
+            cached: true,
+          }))
+          return resolved
+        }
       } catch {
         cache.delete(source.sourceId)
       }
     }
-    const loading = loadSource(source)
+    const loading = loadSource(source, status => setStatus(source, status))
     cache.set(source.sourceId, loading)
     try {
       return await loading
@@ -191,6 +305,10 @@ export const createProcedureSourceService = (config: {
 
   return {
     listSources: () => [...sources],
+    readStatus: (statusConfig = {}) => {
+      const source = sourceFor(statusConfig.sourceId)
+      return statuses.get(source.sourceId) ?? idleStatusFor(source)
+    },
     readCatalog: async (readConfig = {}) => (await readEntry(readConfig.sourceId, readConfig.refresh)).catalog,
     readDocument: async (readConfig) => {
       const entry = await readEntry(readConfig.sourceId, readConfig.refresh)

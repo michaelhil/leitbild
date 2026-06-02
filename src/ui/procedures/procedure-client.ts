@@ -14,6 +14,23 @@ export interface ProcedureRunsResponse {
   readonly runs: ReadonlyArray<ProcedureRunState>
 }
 
+export interface ProcedureSourceLoadStatus {
+  readonly sourceId: string
+  readonly label: string
+  readonly repository: string
+  readonly ref: string
+  readonly path: string
+  readonly stage: 'idle' | 'listing' | 'loading-documents' | 'ready' | 'failed'
+  readonly loadedItems: number
+  readonly totalItems?: number
+  readonly currentItem?: string
+  readonly startedAt?: string
+  readonly updatedAt?: string
+  readonly completedAt?: string
+  readonly cached: boolean
+  readonly error?: string
+}
+
 export interface ProcedureTagValidation {
   readonly id: string
   readonly status: 'resolved' | 'resolved-with-warnings' | 'missing'
@@ -70,6 +87,18 @@ export const readProcedureCatalog = async (
   const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedures${suffix}`, { cache: 'no-store' })
   const body = await readJson<{ readonly catalog: ProcedureCatalog }>(response, 'procedure catalog fetch failed')
   return body.catalog
+}
+
+export const readProcedureSourceStatus = async (
+  controlInstanceId: ControlInstanceId,
+  config: { readonly sourceId?: string } = {},
+): Promise<ProcedureSourceLoadStatus> => {
+  const params = new URLSearchParams()
+  if (config.sourceId) params.set('sourceId', config.sourceId)
+  const suffix = params.size > 0 ? `?${params.toString()}` : ''
+  const response = await fetch(`/api/control-instances/${encodeURIComponent(controlInstanceId)}/procedure-source-status${suffix}`, { cache: 'no-store' })
+  const body = await readJson<{ readonly status: ProcedureSourceLoadStatus }>(response, 'procedure source status fetch failed')
+  return body.status
 }
 
 export const readProcedureDocument = async (

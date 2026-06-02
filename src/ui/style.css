@@ -1252,7 +1252,7 @@ body.rail-resizing {
 .process-surface-statusbar {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 0 10px 0 14px;
@@ -1268,6 +1268,7 @@ body.rail-resizing {
   grid-template-columns: minmax(120px, auto) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
+  overflow: hidden;
   cursor: move;
   touch-action: none;
 }
@@ -1332,8 +1333,16 @@ body.rail-resizing {
   position: relative;
   display: grid;
   place-items: center;
+  width: 30px;
+  height: 30px;
   cursor: default;
   touch-action: auto;
+}
+
+.process-surface-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .process-surface-statusbar .process-surface-icon-button {
@@ -1904,6 +1913,86 @@ body.rail-resizing {
   font-weight: 700;
 }
 
+.procedure-loading-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto;
+  align-content: start;
+  gap: 18px;
+  padding: 28px 32px;
+  background: #f8fafc;
+}
+
+.procedure-loading-panel h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 22px;
+}
+
+.procedure-loading-panel p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.procedure-load-steps {
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+
+.procedure-load-step {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 0.5fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border: 1px solid #d8e0ea;
+  background: #ffffff;
+}
+
+.procedure-load-step strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.procedure-load-step small {
+  min-width: 0;
+  overflow: hidden;
+  color: #64748b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.procedure-load-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.procedure-load-step.running .procedure-load-dot {
+  border-color: #2563eb;
+  border-top-color: #bfdbfe;
+}
+
+.procedure-load-step.done .procedure-load-dot {
+  border-color: #15803d;
+  background: #15803d;
+}
+
+.procedure-load-step.failed .procedure-load-dot {
+  border-color: #dc2626;
+  background: #dc2626;
+}
+
+.procedure-load-step.failed strong,
+.procedure-load-step.failed small {
+  color: #b42318;
+}
+
 .procedure-layout {
   min-height: 0;
   display: grid;
@@ -2053,18 +2142,8 @@ body.rail-resizing {
 .procedure-step-main {
   min-width: 0;
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto 1fr;
   gap: 10px;
-}
-
-.procedure-condition {
-  width: 13px;
-  height: 13px;
-  margin-top: 9px;
-  padding: 0;
-  border-radius: 50%;
-  border: 1px solid #94a3b8;
-  background: #cbd5e1;
 }
 
 .procedure-assessment {
@@ -2073,6 +2152,21 @@ body.rail-resizing {
   display: grid;
   place-items: center;
   padding: 0;
+}
+
+.procedure-assessment.machine-met {
+  outline: 2px solid #15803d;
+  outline-offset: 2px;
+}
+
+.procedure-assessment.machine-not-met {
+  outline: 2px solid #dc2626;
+  outline-offset: 2px;
+}
+
+.procedure-assessment.machine-unknown {
+  outline: 2px solid #94a3b8;
+  outline-offset: 2px;
 }
 
 .procedure-assessment.complete {

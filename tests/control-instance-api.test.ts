@@ -7,7 +7,7 @@ import { deleteObjectCommandKind, geoPointFromLonLat } from '../src/core/model/i
 import { handleControlInstanceApi } from '../src/core/api/control-instance-routes.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
-import type { ProcedureSourceService } from '../src/core/procedures/source.ts'
+import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/core/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
@@ -78,6 +78,18 @@ const createProcedureSourceService = (document = createProcedureDocument()): Pro
     ref: document.source.ref,
     path: document.source.path,
   }],
+  readStatus: (): ProcedureSourceLoadStatus => ({
+    sourceId: document.source.sourceId,
+    label: document.source.label,
+    repository: document.source.repository,
+    ref: document.source.ref,
+    path: document.source.path,
+    stage: 'ready',
+    loadedItems: 1,
+    totalItems: 1,
+    completedAt: document.source.fetchedAt,
+    cached: true,
+  }),
   readCatalog: async (): Promise<ProcedureCatalog> => ({
     source: document.source,
     procedures: [{
@@ -619,6 +631,18 @@ describe('control instance API', () => {
       )
       expect(catalog.status).toBe(200)
       expect(catalog.body.catalog.procedures.map(procedure => procedure.procedureId)).toEqual(['E-0'])
+
+      const sourceStatus = await callRoute<{ readonly status: ProcedureSourceLoadStatus }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedure-source-status?sourceId=pwr-ops',
+      )
+      expect(sourceStatus.body.status).toMatchObject({
+        sourceId: 'pwr-ops',
+        stage: 'ready',
+        loadedItems: 1,
+        totalItems: 1,
+        cached: true,
+      })
 
       const document = await callRoute<{ readonly procedure: ProcedureDocument }>(
         registry,

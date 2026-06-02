@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { MonitorCog, X } from 'lucide-svelte'
+  import { ClipboardList, MonitorCog, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -17,6 +17,7 @@
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcedureSystem?: (object: OperationalObject) => void
   }
 
   let {
@@ -31,6 +32,7 @@
     deleteObject,
     detailPresentationFor,
     openProcessSurface,
+    openProcedureSystem,
   }: Props = $props()
 
   let newInfoBadge: HTMLButtonElement | null = $state(null)
@@ -79,6 +81,18 @@
   }
 
   const processSurfaceAvailable = $derived(object.packId === 'process-plant' && openProcessSurface !== undefined)
+  const processSystemIdAvailable = $derived.by((): boolean => {
+    const data = object.packData
+    return typeof data === 'object'
+      && data !== null
+      && !Array.isArray(data)
+      && typeof (data as Record<string, unknown>).systemId === 'string'
+  })
+  const procedureSystemAvailable = $derived(
+    object.packId === 'process-plant'
+      && openProcedureSystem !== undefined
+      && processSystemIdAvailable,
+  )
 </script>
 
 <div
@@ -145,6 +159,16 @@
       size={13}
       variant="bare"
       onClick={() => openProcessSurface?.(object)}
+    />
+  {/if}
+  {#if procedureSystemAvailable}
+    <IconButton
+      label="Open procedures for {object.label}"
+      title="Open procedures"
+      icon={ClipboardList}
+      size={13}
+      variant="bare"
+      onClick={() => openProcedureSystem?.(object)}
     />
   {/if}
   <IconButton

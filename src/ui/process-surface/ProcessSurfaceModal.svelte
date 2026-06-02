@@ -368,77 +368,79 @@
           {/each}
         </div>
       </div>
-      <div class="process-surface-lens-control">
+      <div class="process-surface-window-actions">
+        <div class="process-surface-lens-control">
+          <button
+            type="button"
+            class="process-surface-icon-button"
+            aria-label="Choose process display layer"
+            aria-expanded={lensMenuOpen}
+            onclick={() => { lensMenuOpen = !lensMenuOpen }}
+          >
+            <Eye size={18} aria-hidden="true" />
+          </button>
+          {#if lensMenuOpen && surface && loadedSystemId}
+            <div class="process-surface-lens-menu">
+              {#each lensOptions as option (option.id)}
+                <button
+                  type="button"
+                  class:active={activeLensId === option.id}
+                  onclick={async () => {
+                    lensMenuOpen = false
+                    try {
+                      const currentSurface = surface
+                      const systemId = loadedSystemId
+                      if (!currentSurface || !systemId) throw new Error('process display is not ready')
+                      await applyLens(option, systemId, currentSurface.id)
+                    } catch (err) {
+                      error = err instanceof Error ? err.message : String(err)
+                    }
+                  }}
+                >
+                  <strong>{option.label}</strong>
+                  <span>{option.description}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
         <button
           type="button"
           class="process-surface-icon-button"
-          aria-label="Choose process display layer"
-          aria-expanded={lensMenuOpen}
-          onclick={() => { lensMenuOpen = !lensMenuOpen }}
+          aria-label="Open plant specification source"
+          title="Plant specification source"
+          onclick={() => openArtifact('authored-spec')}
         >
-          <Eye size={18} aria-hidden="true" />
+          <FileText size={17} aria-hidden="true" />
         </button>
-        {#if lensMenuOpen && surface && loadedSystemId}
-          <div class="process-surface-lens-menu">
-            {#each lensOptions as option (option.id)}
-              <button
-                type="button"
-                class:active={activeLensId === option.id}
-                onclick={async () => {
-                  lensMenuOpen = false
-                  try {
-                    const currentSurface = surface
-                    const systemId = loadedSystemId
-                    if (!currentSurface || !systemId) throw new Error('process display is not ready')
-                    await applyLens(option, systemId, currentSurface.id)
-                  } catch (err) {
-                    error = err instanceof Error ? err.message : String(err)
-                  }
-                }}
-              >
-                <strong>{option.label}</strong>
-                <span>{option.description}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
+        <button
+          type="button"
+          class="process-surface-icon-button"
+          aria-label="Open full Mermaid component graph"
+          title="Full Mermaid component graph"
+          onclick={() => openArtifact('compiled-graph-mermaid')}
+        >
+          <GitBranch size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="process-surface-icon-button"
+          aria-label="Open computer-based procedures"
+          title="Computer-based procedures"
+          onclick={() => void openProcedureSystem()}
+        >
+          <ClipboardList size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="process-surface-icon-button"
+          aria-label="Close process display"
+          title="Close process display"
+          onclick={close}
+        >
+          <X size={19} aria-hidden="true" />
+        </button>
       </div>
-      <button
-        type="button"
-        class="process-surface-icon-button"
-        aria-label="Open plant specification source"
-        title="Plant specification source"
-        onclick={() => openArtifact('authored-spec')}
-      >
-        <FileText size={17} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="process-surface-icon-button"
-        aria-label="Open full Mermaid component graph"
-        title="Full Mermaid component graph"
-        onclick={() => openArtifact('compiled-graph-mermaid')}
-      >
-        <GitBranch size={17} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="process-surface-icon-button"
-        aria-label="Open computer-based procedures"
-        title="Computer-based procedures"
-        onclick={() => void openProcedureSystem()}
-      >
-        <ClipboardList size={17} aria-hidden="true" />
-      </button>
-      <button
-        type="button"
-        class="process-surface-icon-button"
-        aria-label="Close process display"
-        title="Close process display"
-        onclick={close}
-      >
-        <X size={19} aria-hidden="true" />
-      </button>
     </header>
     <div class="process-surface-window-body">
       {#if loading}

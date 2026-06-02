@@ -41,6 +41,7 @@
     readonly selectObject: (object: OperationalObject) => void
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly openProcessSurface?: (object: OperationalObject) => void
+    readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
     readonly openStatusModal: () => void
@@ -78,6 +79,7 @@
     selectObject,
     deleteObject,
     openProcessSurface,
+    openProcedureSystem,
     beginPlacement,
     cancelPlacement,
     openStatusModal,
@@ -188,6 +190,7 @@
       {deleteObject}
       {detailPresentationFor}
       {openProcessSurface}
+      {openProcedureSystem}
     />
   {/each}
 

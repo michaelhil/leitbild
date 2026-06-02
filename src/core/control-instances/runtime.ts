@@ -14,7 +14,7 @@ import {
   type ControlInstanceRuntimeMetricsSnapshot,
 } from './runtime-metrics.ts'
 import { defaultControlInstanceRuntimePolicy } from './runtime-persistence-policy.ts'
-import { createProcedureSourceService, type ProcedureSourceService } from '../procedures/source.ts'
+import { createProcedureSourceService, type ProcedureSourceLoadStatus, type ProcedureSourceService } from '../procedures/source.ts'
 import { procedureCommandEvents } from '../procedures/run-state.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultControlInstanceRuntimePolicy.projectedSnapshotFlushIntervalMs
@@ -45,6 +45,7 @@ export interface ControlInstanceRuntime {
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<ControlInstanceEvent>
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
+  readonly procedureSourceStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
   readonly procedureCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
   readonly procedureDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
   readonly publishInteractionSignal: (signal: InteractionSignal, provenance: Provenance) => Promise<void>
@@ -830,6 +831,7 @@ export const createControlInstanceRuntime = async (config: {
     publishResetBoundary,
     issueCommand,
     queryPack,
+    procedureSourceStatus: (statusConfig = {}) => procedureSourceService.readStatus(statusConfig),
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),
     procedureDocument: async (documentConfig) => await procedureSourceService.readDocument(documentConfig),
     publishInteractionSignal: async (signal: InteractionSignal, provenance: Provenance): Promise<void> => {
