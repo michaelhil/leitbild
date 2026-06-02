@@ -5,6 +5,8 @@ type LoopLetter = typeof loopLetters[number]
 
 const lowerLoop = (loop: LoopLetter): Lowercase<LoopLetter> => loop.toLowerCase() as Lowercase<LoopLetter>
 
+const rcpXFor = (sgX: number): number => sgX - 6
+
 const sgWidget = (loop: LoopLetter, x: number, rank: number) => {
   const lower = lowerLoop(loop)
   return {
@@ -51,17 +53,19 @@ const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
       speed: { label: 'Speed', path: `rcp${loop}.speedFraction`, digits: 2, display: 'percent' },
       flow: { label: 'Loop flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 },
     },
-    ports: { inlet: { x: 48, y: 0 }, outlet: { x: 0, y: 48 } },
+    ports: { inlet: { x: 48, y: 0 }, outlet: { x: 48, y: 96 } },
   } as const
 }
 
 const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
-  const laneCenter = sgX + 82
+  const pumpCenterX = rcpXFor(sgX) + 48
   const hotLegY = 366 + loopIndex(loop) * 42
   const coldLegY = 364 + loopIndex(loop) * 42
   const sgPrimaryInY = 336
   const sgPrimaryOutY = 496
+  const coldLegBranchY = sgPrimaryOutY + 70
+  const pumpReturnY = 726
   const hotRiserX = 430
   const returnHeaderX = 142
   return [
@@ -85,8 +89,8 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
       from: `sg-${lower}.primaryOut`,
       to: `rcp-${lower}.inlet`,
       waypoints: [
-        { x: sgX, y: sgPrimaryOutY + 70 },
-        { x: laneCenter, y: sgPrimaryOutY + 70 },
+        { x: sgX, y: coldLegBranchY },
+        { x: pumpCenterX, y: coldLegBranchY },
       ],
       binds: { flow: { label: 'Cold-leg flow', path: `rcs-cold-leg-${lower}.flowKgPerS`, digits: 0 } },
       style: { service: 'primary' },
@@ -98,8 +102,8 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
       from: `rcp-${lower}.outlet`,
       to: `reactor-vessel.coldLeg${loop}`,
       waypoints: [
-        { x: laneCenter - 18, y: 726 },
-        { x: returnHeaderX, y: 726 },
+        { x: pumpCenterX, y: pumpReturnY },
+        { x: returnHeaderX, y: pumpReturnY },
         { x: returnHeaderX, y: coldLegY },
       ],
       binds: { flow: { label: 'Pump flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 } },
@@ -245,7 +249,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       style: { tone: 'primary' },
     },
     ...loopLetters.map((loop, index) => sgWidget(loop, sgXs[loop], index)),
-    ...loopLetters.map((loop, index) => rcpWidget(loop, sgXs[loop] + 34, index + 10)),
+    ...loopLetters.map((loop, index) => rcpWidget(loop, rcpXFor(sgXs[loop]), index + 10)),
     {
       id: 'main-steam-header',
       type: 'numericReadout',

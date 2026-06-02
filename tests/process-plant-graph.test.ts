@@ -7,11 +7,14 @@ import {
   compileProcessPlantSystems,
   component,
   connect,
+  defaultProcessPlantDemoTransientInputs,
   plantGraph,
   plantGraphToMermaid,
   pressurizedWaterReactorPlantSpec,
   processPlantPressurizedWaterReactorGraphRef,
   processPlantComponentRegistry,
+  processPlantDemoTransientCommands,
+  processPlantDemoTransients,
   processPlantUnitOverviewSurface,
   processLinkVariableDescriptorSchema,
   tagIdForLookup,
@@ -110,6 +113,34 @@ describe('process plant graph foundation', () => {
     ]))
     expect(surface.widgets.every(widget => widget.geometry.width > 0 && widget.geometry.height > 0)).toBe(true)
     expect(surface.paths.every(path => path.points.length >= 3)).toBe(true)
+  })
+
+  test('reference demo transients target writable graph variables', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
+    const variablesByPath = new Map(graph.variables.map(variable => [String(variable.path), variable]))
+
+    expect(processPlantDemoTransients).toHaveLength(7)
+    for (const transient of processPlantDemoTransients) {
+      const commands = processPlantDemoTransientCommands(
+        transient,
+        defaultProcessPlantDemoTransientInputs(transient),
+      )
+      expect(commands.length).toBeGreaterThan(0)
+      for (const command of commands) {
+        const variable = variablesByPath.get(String(command.path))
+        expect(variable, `${transient.id} references ${command.path}`).toBeDefined()
+        if (!variable) continue
+        expect(variable.descriptor.writable, `${transient.id} targets non-writable ${command.path}`).toBe(true)
+        expect(typeof command.value).toBe(variable.descriptor.quantity === 'boolean' ? 'boolean' : 'number')
+        if (typeof command.value === 'number') {
+          const range = variable.descriptor.limits?.hardRange
+          if (range) {
+            expect(command.value).toBeGreaterThanOrEqual(range.min)
+            expect(command.value).toBeLessThanOrEqual(range.max)
+          }
+        }
+      }
+    }
   })
 
   test('process surfaces reject stale graph source references', () => {

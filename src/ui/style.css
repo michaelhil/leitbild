@@ -1429,6 +1429,156 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.process-transient-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 52;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(16, 24, 40, 0.22);
+  pointer-events: auto;
+}
+
+.process-transient-modal {
+  width: min(760px, calc(100vw - 56px));
+  max-height: min(720px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.32);
+}
+
+.process-transient-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 84%, var(--panel));
+}
+
+.process-transient-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.process-transient-header strong {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.process-transient-header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-transient-header button,
+.process-transient-play {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.process-transient-header button:hover,
+.process-transient-play:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 38%, var(--panel));
+}
+
+.process-transient-list {
+  min-height: 0;
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.process-transient-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-strong) 48%, var(--panel));
+}
+
+.process-transient-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.process-transient-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-transient-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.process-transient-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.process-transient-fields label {
+  display: grid;
+  grid-template-columns: auto 72px auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.process-transient-fields input {
+  width: 72px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+  font-size: 12px;
+}
+
+.process-transient-fields small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.process-transient-play {
+  color: var(--accent);
+}
+
+.process-transient-play:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
 .process-surface-window-body {
   min-height: 0;
   padding: 0;

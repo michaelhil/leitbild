@@ -1,4 +1,5 @@
 export * from './commands.ts'
+export * from './demo-transients.ts'
 export * from './graph/index.ts'
 export * from './model.ts'
 export * from './pack.ts'

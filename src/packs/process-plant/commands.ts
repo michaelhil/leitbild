@@ -1,8 +1,14 @@
 import { z } from 'zod'
 import { processSignalTagIdSchema, processVariableValueSchema, variablePathSchema } from './graph/index.ts'
+import {
+  processPlantControlWriteCommandKind,
+  processPlantIcLifecycleCommandKind,
+} from './command-kinds.ts'
 
-export const processPlantControlWriteCommandKind = 'process-plant.control.write'
-export const processPlantIcLifecycleCommandKind = 'process-plant.ic.lifecycle'
+export {
+  processPlantControlWriteCommandKind,
+  processPlantIcLifecycleCommandKind,
+}
 
 export const processPlantControlWritePayloadSchema = z.object({
   systemId: z.string().min(1),

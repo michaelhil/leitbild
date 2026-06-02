@@ -1,10 +1,18 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { ClipboardList, Eye, X } from 'lucide-svelte'
+  import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+  import { processPlantControlWriteCommandKind } from '../../packs/process-plant/command-kinds.ts'
+  import {
+    defaultProcessPlantDemoTransientInputs,
+    processPlantDemoTransientCommands,
+    processPlantDemoTransients,
+    type ProcessPlantDemoTransient,
+  } from '../../packs/process-plant/demo-transients.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
+  import { sendControlInstanceCommand } from '../control-instance-client.ts'
   import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
@@ -75,6 +83,14 @@
   let projection = $state<ProcessSurfaceProjection | null>(null)
   let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
+  let transientModalOpen = $state(false)
+  let transientRunningId = $state<string | null>(null)
+  let transientInputs = $state<Record<string, Record<string, number>>>(
+    Object.fromEntries(processPlantDemoTransients.map(transient => [
+      transient.id,
+      defaultProcessPlantDemoTransientInputs(transient),
+    ])) as Record<string, Record<string, number>>,
+  )
   let procedureModalOpen = $state(false)
   let procedureModalError = $state<string | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
@@ -176,6 +192,51 @@
       return
     }
     void openProcedureSystem()
+  }
+
+  const updateTransientInput = (config: {
+    readonly transientId: string
+    readonly fieldId: string
+    readonly value: number
+  }): void => {
+    transientInputs = {
+      ...transientInputs,
+      [config.transientId]: {
+        ...(transientInputs[config.transientId] ?? {}),
+        [config.fieldId]: config.value,
+      },
+    }
+  }
+
+  const runDemoTransient = async (transient: ProcessPlantDemoTransient): Promise<void> => {
+    if (transientRunningId !== null) return
+    const systemId = loadedSystemId ?? systemIdFor(object)
+    const currentSurface = surface
+    transientModalOpen = false
+    transientRunningId = transient.id
+    error = null
+    try {
+      const commands = processPlantDemoTransientCommands(transient, transientInputs[transient.id] ?? {})
+      for (const command of commands) {
+        const response = await sendControlInstanceCommand(controlInstanceId, {
+          kind: processPlantControlWriteCommandKind,
+          targetObjectIds: [object.id],
+          payload: {
+            systemId,
+            path: command.path,
+            value: command.value,
+          },
+        })
+        if (!response.result.ok) {
+          throw new Error(response.result.reason ?? `process plant rejected ${command.path}`)
+        }
+      }
+      if (currentSurface) await refreshSnapshot(controlInstanceId, systemId, currentSurface.id)
+    } catch (err) {
+      error = `${transient.label} failed: ${err instanceof Error ? err.message : String(err)}`
+    } finally {
+      transientRunningId = null
+    }
   }
 
   const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
@@ -422,6 +483,18 @@
         <button
           type="button"
           class="process-surface-icon-button"
+          aria-label="Open demo transients"
+          title="Demo transients"
+          onclick={() => {
+            lensMenuOpen = false
+            transientModalOpen = true
+          }}
+        >
+          <Zap size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="process-surface-icon-button"
           aria-label="Open computer-based procedures"
           title="Computer-based procedures"
           onclick={() => void openProcedureSystem()}
@@ -487,6 +560,73 @@
       onpointercancel={finishWindowDrag}
     ></div>
   </section>
+  {#if transientModalOpen}
+    <div class="process-transient-backdrop" role="presentation" onmousedown={() => { transientModalOpen = false }}>
+      <div
+        class="process-transient-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Demo transients"
+        tabindex="-1"
+        onmousedown={(event) => event.stopPropagation()}
+      >
+        <header class="process-transient-header">
+          <div>
+            <strong>Demo transients</strong>
+            <span>Run real process-plant control writes on {object.label}.</span>
+          </div>
+          <button type="button" aria-label="Close demo transients" title="Close" onclick={() => { transientModalOpen = false }}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        <div class="process-transient-list">
+          {#each processPlantDemoTransients as transient (transient.id)}
+            <article class="process-transient-row">
+              <div class="process-transient-copy">
+                <strong>{transient.label}</strong>
+                <span>{transient.description}</span>
+              </div>
+              {#if transient.fields.length > 0}
+                <div class="process-transient-fields">
+                  {#each transient.fields as field (field.id)}
+                    <label>
+                      <span>{field.label}</span>
+                      <input
+                        type="number"
+                        min={field.min}
+                        max={field.max}
+                        step={field.step}
+                        value={(transientInputs[transient.id]?.[field.id] ?? field.defaultValue).toFixed(field.digits)}
+                        oninput={(event) => {
+                          const target = event.currentTarget as HTMLInputElement
+                          updateTransientInput({
+                            transientId: transient.id,
+                            fieldId: field.id,
+                            value: Number.parseFloat(target.value),
+                          })
+                        }}
+                      />
+                      <small>{field.unit}</small>
+                    </label>
+                  {/each}
+                </div>
+              {/if}
+              <button
+                type="button"
+                class="process-transient-play"
+                aria-label="Run {transient.label}"
+                title="Run {transient.label}"
+                disabled={transientRunningId !== null}
+                onclick={() => { void runDemoTransient(transient) }}
+              >
+                <Play size={18} fill="currentColor" aria-hidden="true" />
+              </button>
+            </article>
+          {/each}
+        </div>
+      </div>
+    </div>
+  {/if}
   {#if procedureModalOpen && loadedSystemId && ProcedureSystemModal}
     <ProcedureSystemModal
       {controlInstanceId}
