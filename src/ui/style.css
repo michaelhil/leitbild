@@ -1880,6 +1880,12 @@ body.rail-resizing {
   color: #64748b;
 }
 
+.procedure-run-badge.open {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
 .procedure-run-badge:hover,
 .procedure-run-badge:focus-visible {
   color: #1d4ed8;
@@ -1953,7 +1959,13 @@ body.rail-resizing {
   background: transparent;
 }
 
+.procedure-csf-shell {
+  position: relative;
+  display: inline-flex;
+}
+
 .procedure-csf {
+  appearance: none;
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
@@ -1961,8 +1973,94 @@ body.rail-resizing {
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #475569;
+  font-family: inherit;
   font-size: 13px;
+  text-align: left;
   text-transform: capitalize;
+  cursor: help;
+}
+
+.procedure-csf:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.procedure-csf-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 6;
+  width: max-content;
+  max-width: min(900px, calc(100vw - 80px));
+  display: none;
+  gap: 7px;
+  padding: 11px 12px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+  color: #0f172a;
+  text-transform: none;
+}
+
+.procedure-csf-shell:hover .procedure-csf-popover,
+.procedure-csf-shell:focus-within .procedure-csf-popover {
+  display: grid;
+}
+
+.procedure-csf-popover strong,
+.procedure-csf-popover small,
+.procedure-csf-popover p {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.procedure-csf-popover p {
+  color: #475569;
+}
+
+.procedure-csf-popover small {
+  color: #64748b;
+}
+
+.procedure-csf-status-text.satisfied,
+.procedure-csf-signal.satisfied b {
+  color: #15803d;
+}
+
+.procedure-csf-status-text.challenged,
+.procedure-csf-signal.challenged b {
+  color: #b42318;
+}
+
+.procedure-csf-status-text.unknown,
+.procedure-csf-signal.unknown b {
+  color: #64748b;
+}
+
+.procedure-csf-signals {
+  display: grid;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.procedure-csf-signal {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto auto;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.procedure-csf-signal span {
+  color: #334155;
+  font-weight: 850;
+}
+
+.procedure-csf-signal code {
+  color: #64748b;
+  font-family: inherit;
+  font-size: 12px;
 }
 
 .procedure-csf.satisfied {
@@ -1994,8 +2092,8 @@ body.rail-resizing {
     text-shadow: none;
   }
   50% {
-    transform: scale(1.18);
-    text-shadow: 0 0 12px rgba(22, 101, 52, 0.38);
+    transform: scale(1.23);
+    text-shadow: 0 0 16px rgba(22, 101, 52, 0.52);
   }
 }
 
@@ -2380,16 +2478,18 @@ body.rail-resizing {
   animation: procedure-run-button-pulse 1.8s ease-in-out infinite;
 }
 
-.procedure-mode-actions button.complete:not(:disabled) {
-  border-color: #15803d;
-  color: #166534;
-  background: #f0fdf4;
-}
-
 .procedure-mode-actions button.reset:not(:disabled) {
   border-color: #94a3b8;
   color: #334155;
   background: #f8fafc;
+}
+
+.procedure-mode-actions button.completed:disabled {
+  border-color: #cbd5e1;
+  color: #64748b;
+  background: #eef2f7;
+  opacity: 1;
+  cursor: default;
 }
 
 .procedure-mode-actions button:disabled,
@@ -2486,12 +2586,16 @@ body.rail-resizing {
   animation: procedure-check-once 1s ease-out 1;
 }
 
+.procedure-assessment.just-failed {
+  animation: procedure-fail-once 1s ease-out 1;
+}
+
 @keyframes procedure-run-button-pulse {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
   }
   50% {
-    box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.16);
+    box-shadow: 0 0 0 2px rgba(21, 128, 61, 0.1);
   }
 }
 
@@ -2507,6 +2611,21 @@ body.rail-resizing {
   100% {
     transform: scale(1);
     box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
+  }
+}
+
+@keyframes procedure-fail-once {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(180, 35, 24, 0.28);
+  }
+  35% {
+    transform: scale(1.16);
+    box-shadow: 0 0 0 8px rgba(180, 35, 24, 0.2);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(180, 35, 24, 0);
   }
 }
 
@@ -2729,8 +2848,6 @@ body.rail-resizing {
 
 .procedure-toast {
   position: absolute;
-  right: 22px;
-  bottom: 22px;
   z-index: 6;
   max-width: min(620px, calc(100% - 44px));
   padding: 12px 14px;
@@ -2739,20 +2856,43 @@ body.rail-resizing {
   color: #14532d;
   box-shadow: 0 16px 44px rgba(15, 23, 42, 0.2);
   font-weight: 800;
-  animation: procedure-toast-life 10s ease-in-out forwards;
+  animation: procedure-toast-life var(--procedure-toast-duration, 10000ms) ease-in-out forwards;
+}
+
+.procedure-toast.corner {
+  right: 22px;
+  bottom: 22px;
+}
+
+.procedure-toast.center {
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  max-width: min(760px, calc(100% - 72px));
+  text-align: center;
+  font-size: 15px;
+}
+
+.procedure-toast.success {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #14532d;
+}
+
+.procedure-toast.transition {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1e3a8a;
 }
 
 @keyframes procedure-toast-life {
   0% {
-    transform: translateY(8px);
     opacity: 0;
   }
   8%, 88% {
-    transform: translateY(0);
     opacity: 1;
   }
   100% {
-    transform: translateY(8px);
     opacity: 0;
   }
 }
