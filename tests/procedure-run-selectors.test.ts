@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
 import {
   furthestTouchedStep,
+  procedureCurrentStep,
   procedureBranchActionText,
   procedureRunSummariesForScope,
   procedureRunSummaryText,
@@ -127,8 +128,21 @@ describe('procedure run selectors', () => {
 
   test('summarizes the furthest touched step by document order', () => {
     expect(furthestTouchedStep(activeRun, procedure)).toEqual({
+      stepId: 'verify-phase-a-isolation',
       label: '6',
       name: 'verify-phase-a-isolation',
+    })
+  })
+
+  test('uses canonical current step before furthest touched step', () => {
+    const run = {
+      ...activeRun,
+      currentStepId: 'verify-reactor-trip',
+    } satisfies ProcedureRunState
+    expect(procedureCurrentStep(run, procedure)?.progress).toEqual({
+      stepId: 'verify-reactor-trip',
+      label: '1',
+      name: 'verify-reactor-trip',
     })
   })
 

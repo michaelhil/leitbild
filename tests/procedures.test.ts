@@ -136,6 +136,7 @@ describe('procedure system', () => {
     const runId = store.snapshot().procedures?.runs[0]?.runId
     if (!runId) throw new Error('procedure run was not projected')
     expect(store.snapshot().procedures?.runs[0]?.scope).toEqual(unitAScope)
+    expect(store.snapshot().procedures?.runs[0]?.currentStepId).toBe('verify-reactor-trip')
 
     const update = await procedureCommandEvents({
       controlInstanceId,
@@ -144,7 +145,13 @@ describe('procedure system', () => {
         ...command,
         id: 'command:procedure-step' as CommandEnvelope['id'],
         kind: 'procedure.step.update',
-        payload: { runId, stepId: 'verify-reactor-trip', assessment: 'complete', favorite: true },
+        payload: {
+          runId,
+          stepId: 'verify-reactor-trip',
+          assessment: 'complete',
+          favorite: true,
+          currentStepId: 'verify-turbine-trip',
+        },
       },
       procedures: store.snapshot().procedures,
       factory: {
@@ -155,6 +162,7 @@ describe('procedure system', () => {
     })
     if (!update) throw new Error('procedure update command was not handled')
     store.apply(update[0] as ControlInstanceEvent)
+    expect(store.snapshot().procedures?.runs[0]?.currentStepId).toBe('verify-turbine-trip')
 
     expect(store.snapshot().procedures?.runs[0]?.stepStates).toEqual([{
       stepId: 'verify-reactor-trip',

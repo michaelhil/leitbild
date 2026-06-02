@@ -142,6 +142,7 @@ export const procedureRunStateSchema = z.object({
   startedBy: actorIdSchema,
   closedAt: isoTimestampSchema.optional(),
   closedBy: actorIdSchema.optional(),
+  currentStepId: procedureStepIdSchema.optional(),
   stepStates: z.array(procedureStepRunStateSchema).default([]),
 })
 export type ProcedureRunState = z.infer<typeof procedureRunStateSchema>
@@ -164,11 +165,17 @@ export const procedureStepUpdatePayloadSchema = z.object({
   assessment: procedureAssessmentSchema.optional(),
   comment: z.string().max(10_000).optional(),
   favorite: z.boolean().optional(),
+  currentStepId: procedureStepIdSchema.optional(),
 }).superRefine((payload, ctx) => {
-  if (payload.assessment === undefined && payload.comment === undefined && payload.favorite === undefined) {
+  if (
+    payload.assessment === undefined
+      && payload.comment === undefined
+      && payload.favorite === undefined
+      && payload.currentStepId === undefined
+  ) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'procedure step update requires assessment, comment, or favorite',
+      message: 'procedure step update requires assessment, comment, favorite, or currentStepId',
     })
   }
 })
@@ -201,6 +208,7 @@ export const procedureStepUpdatedEventSchema = z.object({
     comment: z.string().max(10_000).optional(),
     favorite: z.boolean().optional(),
   }),
+  currentStepId: procedureStepIdSchema.optional(),
   updatedAt: isoTimestampSchema,
   updatedBy: actorIdSchema,
 })

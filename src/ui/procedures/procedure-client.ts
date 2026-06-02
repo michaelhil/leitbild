@@ -49,12 +49,23 @@ export interface ProcedureTagValue {
   readonly path?: string
 }
 
+export interface ProcedureCsfSignalRead {
+  readonly id: string
+  readonly label: string
+  readonly path?: string
+  readonly formatted: string
+  readonly operator?: string
+  readonly expected?: unknown
+  readonly matches?: boolean
+}
+
 export interface ProcedureCsfEvaluation {
   readonly id: string
   readonly label: string
   readonly status: 'satisfied' | 'challenged' | 'unknown'
   readonly reason?: string
   readonly signalCount: number
+  readonly signals: ReadonlyArray<ProcedureCsfSignalRead>
 }
 
 const assertRecord = (value: unknown, message: string): Record<string, unknown> => {
@@ -71,6 +82,20 @@ const assertString = (value: unknown, message: string): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Error(message)
   return value
 }
+
+const optionalRecord = (value: unknown): Record<string, unknown> | null =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+
+const stringOrUndefined = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined
+
+const formatSignalValue = (
+  value: unknown,
+  unit: string | undefined,
+): string =>
+  `${String(value)}${unit === undefined ? '' : ` ${unit}`}`
 
 const readJson = async <T>(response: Response, message: string): Promise<T> => {
   if (!response.ok) throw new Error(`${message}: ${response.status}`)
@@ -144,6 +169,7 @@ export const updateProcedureStep = async (
     readonly assessment?: ProcedureAssessment
     readonly comment?: string
     readonly favorite?: boolean
+    readonly currentStepId?: ProcedureStepId
   },
 ): Promise<void> => {
   const response = await sendControlInstanceCommand(controlInstanceId, {
@@ -262,6 +288,28 @@ export const readProcedureTagValue = async (
   }
 }
 
+const parseProcedureCsfSignalRead = (value: unknown): ProcedureCsfSignalRead => {
+  const row = assertRecord(value, 'procedure CSF signal read row is malformed')
+  const signal = assertRecord(row.signal, 'procedure CSF signal read row requires signal')
+  const variable = assertRecord(row.variable, 'procedure CSF signal read row requires variable')
+  const comparison = optionalRecord(row.comparison)
+  const tagId = stringOrUndefined(signal.tagId)
+  const label = stringOrUndefined(signal.label) ?? tagId ?? stringOrUndefined(variable.path) ?? 'plant signal'
+  const path = stringOrUndefined(signal.path) ?? stringOrUndefined(variable.path)
+  const unit = stringOrUndefined(signal.unit) ?? stringOrUndefined(variable.unit)
+  const formatted = formatSignalValue(variable.value, unit)
+  const operator = stringOrUndefined(comparison?.operator)
+  return {
+    id: tagId ?? path ?? label,
+    label,
+    ...(path === undefined ? {} : { path }),
+    formatted,
+    ...(operator === undefined ? {} : { operator }),
+    ...(comparison !== null && 'value' in comparison ? { expected: comparison.value } : {}),
+    ...(typeof comparison?.matches === 'boolean' ? { matches: comparison.matches } : {}),
+  }
+}
+
 export const evaluateProcedureCsfs = async (
   controlInstanceId: ControlInstanceId,
   systemId: string,
@@ -283,12 +331,14 @@ export const evaluateProcedureCsfs = async (
     const label = assertString(row.label, 'procedure CSF row requires label')
     const status = assertString(row.status, 'procedure CSF row requires status')
     const signalsRead = assertArray(row.signalsRead, 'procedure CSF row requires signalsRead')
+    const signals = signalsRead.map(parseProcedureCsfSignalRead)
     return [id, {
       id,
       label,
       status: status === 'satisfied' || status === 'challenged' ? status : 'unknown',
       ...(typeof row.reason === 'string' ? { reason: row.reason } : {}),
-      signalCount: signalsRead.length,
+      signalCount: signals.length,
+      signals,
     }]
   }))
 }

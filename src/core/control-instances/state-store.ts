@@ -119,6 +119,7 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
           ? updateProcedureRunStep(run, {
               stepId: event.stepId,
               update: event.update,
+              currentStepId: event.currentStepId,
               updatedAt: event.updatedAt,
               updatedBy: event.updatedBy,
             })
@@ -203,6 +204,7 @@ const updateProcedureRunStep = (
       readonly comment?: string
       readonly favorite?: boolean
     }
+    readonly currentStepId?: ProcedureRunState['currentStepId']
     readonly updatedAt: ProcedureStepRunState['updatedAt']
     readonly updatedBy: ProcedureStepRunState['updatedBy']
   },
@@ -220,6 +222,7 @@ const updateProcedureRunStep = (
   }
   return {
     ...run,
+    currentStepId: config.currentStepId ?? (config.stepId as ProcedureRunState['currentStepId']),
     stepStates: existing === undefined
       ? [...run.stepStates, nextStep]
       : run.stepStates.map(step => step.stepId === config.stepId ? nextStep : step),

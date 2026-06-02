@@ -989,10 +989,15 @@ describe('process plant pack runtime', () => {
     if (!result.ok) throw new Error(result.reason)
     const body = result.result as {
       readonly matches: boolean
-      readonly signalsRead: ReadonlyArray<{ readonly signal: { readonly tagId?: string }; readonly variable: { readonly path: string } }>
+      readonly signalsRead: ReadonlyArray<{
+        readonly signal: { readonly tagId?: string }
+        readonly variable: { readonly path: string }
+        readonly comparison?: { readonly matches: boolean }
+      }>
     }
     expect(body.matches).toBe(true)
     expect(body.signalsRead.map(entry => entry.signal.tagId)).toEqual(['PT-455', 'RCP-A-RUN'])
+    expect(body.signalsRead.map(entry => entry.comparison?.matches)).toEqual([true, false])
 
     await connection.close()
   })

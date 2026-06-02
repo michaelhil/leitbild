@@ -101,6 +101,7 @@ export const procedureCommandEvents = async (
         status: 'active',
         startedAt: context.at,
         startedBy: context.command.actorId,
+        ...(document.steps[0] === undefined ? {} : { currentStepId: document.steps[0].id }),
         stepStates: [],
       },
     }]
@@ -113,6 +114,9 @@ export const procedureCommandEvents = async (
     if (!document.steps.some(step => step.id === payload.stepId)) {
       throw new Error(`procedure step ${payload.stepId} is not part of ${run.procedureId}`)
     }
+    if (payload.currentStepId !== undefined && !document.steps.some(step => step.id === payload.currentStepId)) {
+      throw new Error(`procedure current step ${payload.currentStepId} is not part of ${run.procedureId}`)
+    }
     return [{
       ...procedureBase(context),
       type: 'procedure.step.updated',
@@ -123,6 +127,7 @@ export const procedureCommandEvents = async (
         ...(payload.comment === undefined ? {} : { comment: payload.comment }),
         ...(payload.favorite === undefined ? {} : { favorite: payload.favorite }),
       },
+      ...(payload.currentStepId === undefined ? {} : { currentStepId: payload.currentStepId }),
       updatedAt: context.at,
       updatedBy: context.command.actorId as ActorId,
     }]

@@ -90,6 +90,7 @@ export type ControlInstanceEvent =
         readonly comment?: string
         readonly favorite?: boolean
       }
+      readonly currentStepId?: ProcedureStepId
       readonly updatedAt: IsoTimestamp
       readonly updatedBy: ActorId
     })

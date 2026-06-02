@@ -11,8 +11,14 @@ import type {
 export type ProcedureRunVisualState = 'idle' | 'active' | 'completed'
 
 export interface ProcedureRunStepProgress {
+  readonly stepId: string
   readonly label: string
   readonly name: string
+}
+
+export interface ProcedureRunCurrentStep {
+  readonly step: ProcedureStep
+  readonly progress: ProcedureRunStepProgress
 }
 
 export interface ProcedureRunSummary {
@@ -54,6 +60,12 @@ export const procedureStepReferenceText = (
   step: ProcedureStep,
 ): string =>
   `${document.procedureId}, step ${step.label}: ${procedureStepDisplayName(step)}`
+
+const progressForStep = (step: ProcedureStep): ProcedureRunStepProgress => ({
+  stepId: step.id,
+  label: step.label,
+  name: procedureStepDisplayName(step),
+})
 
 export const procedureBranchActionText = (config: {
   readonly currentDocument: ProcedureDocument
@@ -109,9 +121,6 @@ export const procedureRunVisualStateFor = (
   return 'idle'
 }
 
-export const completedStepCount = (run: ProcedureRunState): number =>
-  run.stepStates.filter(step => step.assessment === 'complete').length
-
 export const furthestTouchedStep = (
   run: ProcedureRunState,
   document: ProcedureDocument | undefined,
@@ -122,11 +131,29 @@ export const furthestTouchedStep = (
   if (touchedStepIds.size === 0) return null
   if (!document) {
     const lastTouched = findLast(run.stepStates, step => step.assessment !== 'blank')
-    return lastTouched ? { label: lastTouched.stepId, name: lastTouched.stepId } : null
+    return lastTouched ? { stepId: lastTouched.stepId, label: lastTouched.stepId, name: lastTouched.stepId } : null
   }
   const furthest = findLast(document.steps, step => touchedStepIds.has(step.id))
-  return furthest
-    ? { label: furthest.label, name: procedureStepDisplayName(furthest) }
+  return furthest ? progressForStep(furthest) : null
+}
+
+export const procedureCurrentStep = (
+  run: ProcedureRunState,
+  document: ProcedureDocument | undefined,
+): ProcedureRunCurrentStep | null => {
+  if (!document) return null
+  if (run.currentStepId !== undefined) {
+    const currentStep = procedureStepById(document, run.currentStepId)
+    if (currentStep) return { step: currentStep, progress: progressForStep(currentStep) }
+  }
+  const furthest = furthestTouchedStep(run, document)
+  if (furthest !== null) {
+    const step = procedureStepById(document, furthest.stepId)
+    if (step) return { step, progress: furthest }
+  }
+  const firstStep = procedureFirstStep(document)
+  return firstStep && run.status === 'active'
+    ? { step: firstStep, progress: progressForStep(firstStep) }
     : null
 }
 
@@ -140,7 +167,7 @@ export const procedureRunSummaryFor = (
     procedureId: run.procedureId,
     title: document?.title ?? run.title,
     status: run.status,
-    step: furthestTouchedStep(run, document),
+    step: procedureCurrentStep(run, document)?.progress ?? furthestTouchedStep(run, document),
   }
 }
 

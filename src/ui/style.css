@@ -1858,6 +1858,7 @@ body.rail-resizing {
 .procedure-run-badge {
   display: inline-flex;
   align-items: center;
+  appearance: none;
   min-height: 22px;
   padding: 1px 2px;
   border: 0;
@@ -1865,16 +1866,26 @@ body.rail-resizing {
   color: #475569;
   font-size: 12px;
   font-weight: 900;
+  line-height: 1;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .procedure-run-badge.active {
   color: #166534;
-  animation: procedure-soft-pulse 1.5s ease-in-out infinite;
+  animation: procedure-badge-pulse 1.25s ease-in-out infinite;
 }
 
 .procedure-run-badge.completed {
   color: #64748b;
+}
+
+.procedure-run-badge:hover,
+.procedure-run-badge:focus-visible {
+  color: #1d4ed8;
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .procedure-cross-unit-strip {
@@ -1945,7 +1956,6 @@ body.rail-resizing {
 .procedure-csf {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   white-space: nowrap;
   padding: 7px 10px;
   border: 1px solid #cbd5e1;
@@ -1955,30 +1965,16 @@ body.rail-resizing {
   text-transform: capitalize;
 }
 
-.procedure-csf.unknown svg {
-  color: #94a3b8;
-}
-
 .procedure-csf.satisfied {
   border-color: #bbf7d0;
   color: #166534;
   background: #f0fdf4;
 }
 
-.procedure-csf.satisfied svg {
-  color: #15803d;
-  fill: #15803d;
-}
-
 .procedure-csf.challenged {
   border-color: #fecaca;
   color: #991b1b;
   background: #fff1f2;
-}
-
-.procedure-csf.challenged svg {
-  color: #dc2626;
-  fill: #dc2626;
 }
 
 @keyframes procedure-soft-pulse {
@@ -1989,6 +1985,17 @@ body.rail-resizing {
   50% {
     transform: scale(1.08);
     opacity: 0.78;
+  }
+}
+
+@keyframes procedure-badge-pulse {
+  0%, 100% {
+    transform: scale(1);
+    text-shadow: none;
+  }
+  50% {
+    transform: scale(1.18);
+    text-shadow: 0 0 12px rgba(22, 101, 52, 0.38);
   }
 }
 
@@ -2166,6 +2173,28 @@ body.rail-resizing {
   box-shadow: inset 3px 0 0 #2563eb;
 }
 
+.procedure-list button.run-active {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.procedure-list button.run-completed {
+  border-color: #cbd5e1;
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.procedure-list button.run-active.active {
+  border-color: #22c55e;
+  box-shadow: inset 3px 0 0 #15803d;
+}
+
+.procedure-list button.run-completed.active {
+  border-color: #94a3b8;
+  box-shadow: inset 3px 0 0 #64748b;
+}
+
 .procedure-list button span {
   font-weight: 800;
 }
@@ -2289,10 +2318,28 @@ body.rail-resizing {
 }
 
 .procedure-step-counter {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
   white-space: nowrap;
   color: #475569;
   font-size: 13px;
   font-weight: 800;
+  cursor: pointer;
+}
+
+.procedure-step-counter:hover:not(:disabled),
+.procedure-step-counter:focus-visible:not(:disabled) {
+  color: #1d4ed8;
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.procedure-step-counter:disabled {
+  cursor: default;
+  opacity: 0.62;
 }
 
 .procedure-document-body {
@@ -2330,7 +2377,7 @@ body.rail-resizing {
   background: #15803d;
   border-color: #15803d;
   color: #ffffff;
-  animation: status-pulse 1.3s ease-in-out infinite;
+  animation: procedure-run-button-pulse 1.8s ease-in-out infinite;
 }
 
 .procedure-mode-actions button.complete:not(:disabled) {
@@ -2433,6 +2480,34 @@ body.rail-resizing {
 .procedure-assessment.unknown {
   background: #e2e8f0;
   color: #475569;
+}
+
+.procedure-assessment.just-confirmed {
+  animation: procedure-check-once 1s ease-out 1;
+}
+
+@keyframes procedure-run-button-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.16);
+  }
+}
+
+@keyframes procedure-check-once {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.28);
+  }
+  35% {
+    transform: scale(1.16);
+    box-shadow: 0 0 0 8px rgba(21, 128, 61, 0.2);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(21, 128, 61, 0);
+  }
 }
 
 .procedure-step-content {

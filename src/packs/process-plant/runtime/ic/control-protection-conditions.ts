@@ -7,6 +7,11 @@ import type { ProcessPlantIcComparisonOperator, ProcessPlantIcCondition } from '
 export interface ProcessPlantIcSignalRead {
   readonly signal: ProcessPlantSignalView
   readonly variable: ProcessPlantVariableSnapshot
+  readonly comparison?: {
+    readonly operator: ProcessPlantIcComparisonOperator
+    readonly value: number | boolean
+    readonly matches: boolean
+  }
 }
 
 export interface ProcessPlantIcConditionEvaluation {
@@ -38,8 +43,17 @@ export const evaluateProcessPlantIcCondition = (config: {
     if (condition.type === 'comparison') {
       const binding = resolveProcessPlantSignalBinding(config.system.graph, condition.signal)
       const variable = config.runtime.readVariableSnapshot(binding.path)
-      signalsRead.push({ signal: processPlantSignalView(binding), variable })
-      return compareValues(variable.value, condition.operator, condition.value)
+      const matches = compareValues(variable.value, condition.operator, condition.value)
+      signalsRead.push({
+        signal: processPlantSignalView(binding),
+        variable,
+        comparison: {
+          operator: condition.operator,
+          value: condition.value,
+          matches,
+        },
+      })
+      return matches
     }
     if (condition.type === 'all') {
       const childResults = condition.conditions.map(evaluate)
