@@ -3350,6 +3350,23 @@ body.rail-resizing {
   font-size: 9.5px;
 }
 
+.overview-metric-cell {
+  pointer-events: none;
+}
+
+.overview-metric-label {
+  fill: #a7b0ba;
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.overview-metric-value {
+  fill: #f6f7f9;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .alarm-panel-shell {
   fill: color-mix(in srgb, #20262c 95%, transparent);
   stroke: color-mix(in srgb, #a7b0ba 50%, #17191c);

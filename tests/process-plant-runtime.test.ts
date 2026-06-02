@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { ControlInstanceId } from '../src/core/model/index.ts'
+import type { ControlInstanceId, IsoTimestamp } from '../src/core/model/index.ts'
 import {
   componentVariablePath,
   compileProcessPlantExecutionPlan,
@@ -28,6 +28,7 @@ import {
   type ConnectionService,
   type VariablePath,
 } from '../src/packs/process-plant/index.ts'
+import { answerProcessPlantSurfaceQuery } from '../src/packs/process-plant/queries/surface-query.ts'
 import { componentBehaviorDefinitions, initialComponentValueFor } from '../src/packs/process-plant/runtime/component-behaviors.ts'
 import { componentInitialValueDefinitions } from '../src/packs/process-plant/runtime/component-initial-values.ts'
 import { componentInitialReconciliationDefinitions } from '../src/packs/process-plant/runtime/component-behaviors.ts'
@@ -35,6 +36,7 @@ import { processLinkBehaviorDefinitions } from '../src/packs/process-plant/runti
 import { latentHeatSteamMjPerKg } from '../src/packs/process-plant/runtime/thermophysics.ts'
 import { createProcessPlantVariableTable } from '../src/packs/process-plant/runtime/variable-table.ts'
 import { componentFlowBalanceForService } from '../src/packs/process-plant/runtime/links/link-flow-helpers.ts'
+import { createProcessPlantRuntimePerformance } from '../src/packs/process-plant/system-runtime.ts'
 
 const compiledSystem = () => compileProcessPlantSystem({
   id: 'plant',
@@ -117,6 +119,43 @@ const runWithReferenceProtection = (input: {
     elapsedMs = nextElapsedMs
   }
   return protection.snapshot()
+}
+
+const surfaceAlarmIdsFor = (input: {
+  readonly system: ReturnType<typeof compiledSystem>
+  readonly runtime: ReturnType<typeof createProcessPlantRuntime>
+  readonly protection: ReturnType<typeof createProcessPlantProtectionRunner>
+}): ReadonlyArray<string> => {
+  const systems = new Map([[
+    input.system.id,
+    {
+      system: input.system,
+      runtime: input.runtime,
+      schedule: createProcessPlantScheduleRunner({ system: input.system }),
+      protection: input.protection,
+      performance: createProcessPlantRuntimePerformance(),
+    },
+  ]])
+  const response = answerProcessPlantSurfaceQuery({
+    request: {
+      packId: 'process-plant',
+      kind: 'process-plant.surface.snapshot',
+      payload: {
+        systemId: input.system.id,
+        surfaceId: 'unit-overview',
+      },
+    },
+    systems,
+    at: '2026-06-02T00:00:00.000Z' as IsoTimestamp,
+  })
+  expect(response?.ok).toBe(true)
+  if (response === undefined || !response.ok) throw new Error(response?.reason ?? 'surface alarm snapshot query did not resolve')
+  const alarms = (response.result as {
+    readonly alarms: {
+      readonly active: ReadonlyArray<{ readonly id: string }>
+    }
+  }).alarms
+  return alarms.active.map(alarm => alarm.id).sort()
 }
 
 const fluidVariable = (input: {
@@ -304,6 +343,72 @@ describe('process plant runtime', () => {
       const active = activeLifecycleIds(snapshot)
       const activeIds = [...active.alarms, ...active.trips]
       expect(activeIds, transient.id).toEqual(expect.arrayContaining(expected))
+    }
+  })
+
+  test('demo transient catalog reaches the overview alarm panel snapshot', () => {
+    const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
+      ['sg-a-tube-leak', [
+        'alarm:sg-a-tube-leak-indication:tube-leak',
+        'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
+      ]],
+      ['trip-all-rcps', [
+        'alarm:rcp-a-trip:not-running',
+        'alarm:rcp-b-trip:not-running',
+        'alarm:rcp-c-trip:not-running',
+        'alarm:rcp-d-trip:not-running',
+        'trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip',
+      ]],
+      ['loss-main-feedwater', [
+        'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
+      ]],
+      ['sg-b-feedwater-runback', [
+        'alarm:sg-b-feedwater-flow-low:feedwater-flow-low',
+      ]],
+      ['pressurizer-relief-open', [
+        'alarm:pzr-relief-flow-high:relief-flow-high',
+      ]],
+      ['turbine-trip', [
+        'alarm:turbine-load-low:load-low',
+        'alarm:generator-output-low:generator-output-low',
+      ]],
+      ['loss-offsite-power', [
+        'alarm:loss-of-offsite-power:loss-of-offsite-power',
+      ]],
+    ])
+
+    for (const transient of processPlantDemoTransients) {
+      const expected = expectedLifecycleIds.get(transient.id)
+      if (expected === undefined) throw new Error(`missing surface alarm expectation for demo transient ${transient.id}`)
+      const system = compiledSystem()
+      const runtime = createProcessPlantRuntime({ system })
+      const protection = createProcessPlantProtectionRunner({
+        system,
+        protection: resolveProcessPlantIcConfig(processPlantPressurizedWaterReactorIcRef),
+      })
+      const commands = processPlantDemoTransientCommands(
+        transient,
+        defaultProcessPlantDemoTransientInputs(transient),
+      )
+      for (const command of commands) {
+        runtime.writeCommand({
+          type: 'setVariable',
+          path: command.path,
+          value: command.value,
+        })
+      }
+      for (let elapsedMs = 0; elapsedMs < 90_000; elapsedMs += 1_000) {
+        runtime.tick(1_000)
+        protection.evaluate({
+          runtime,
+          elapsedMs: runtime.elapsedMs(),
+          controlInstanceId: 'control-instance:runtime-surface-alarm-test' as ControlInstanceId,
+          sourceRuntimeId: 'process-plant-local',
+        })
+      }
+
+      expect(surfaceAlarmIdsFor({ system, runtime, protection }), transient.id)
+        .toEqual(expect.arrayContaining(expected))
     }
   })
 

@@ -37,6 +37,22 @@
   const widgetClass = $derived(`process-widget ${widget.type} ${widget.role ?? 'generic'} ${widget.style.tone ?? 'primary'} ${dragging ? 'dragging' : ''}`)
   const shortTitle = $derived(widget.label.length > 22 ? `${widget.label.slice(0, 20)}...` : widget.label)
   const detailLevel = $derived(renderScale >= 1.35 ? 'detailed' : renderScale <= 0.64 ? 'compact' : 'normal')
+  const metricColumns = $derived(displayRows.length <= 1
+    ? 1
+    : geometry.width >= 620
+      ? Math.min(4, displayRows.length)
+      : geometry.width >= 180
+        ? 2
+        : 1)
+  const metricCellWidth = $derived((geometry.width - 28) / Math.max(1, metricColumns))
+  const metricCompact = $derived(geometry.height < 76)
+  const metricBaseY = $derived(metricCompact ? 32 : geometry.height >= 86 ? 46 : 38)
+  const metricRowGap = $derived(metricCompact ? 18 : 24)
+  const metricValueOffset = $derived(metricCompact ? 12 : 14)
+  const metricLabelFor = (value: string): string =>
+    value.length <= 18 ? value : `${value.slice(0, 17)}...`
+  const metricXFor = (index: number): number => 14 + (index % metricColumns) * metricCellWidth
+  const metricYFor = (index: number): number => metricBaseY + Math.floor(index / metricColumns) * metricRowGap
   const pumpRadius = $derived(Math.min(geometry.width, geometry.height) * 0.36)
   const levelHeight = $derived(Math.max(0, (geometry.height - 34) * levelFraction))
   const levelY = $derived(geometry.height - 18 - levelHeight)
@@ -341,12 +357,12 @@
       <rect class="cd-hotwell-fill" x="4" y={86 - Math.max(4, levelFraction * 48)} width={geometry.width - 44} height={Math.max(4, levelFraction * 48)} rx="2" />
       <path class="cd-condensate-rain" d="M 24 0 V 28 M 48 0 V 28 M 72 0 V 28 M 96 0 V 28 M 120 0 V 28" />
     </g>
-    <g class="overview-widget-metrics" transform="translate(14 {geometry.height - 44})">
+    <g class="overview-widget-metrics">
       {#each displayRows as row, index (row.path)}
-        <text class="widget-readout overview-readout" x={(index % 2) * 100} y={Math.floor(index / 2) * 17}>
-          <tspan class="widget-readout-label">{row.label}</tspan>
-          <tspan dx="5">{row.formatted}</tspan>
-        </text>
+        <g class="overview-metric-cell" transform="translate({metricXFor(index)} {metricYFor(index)})">
+          <text class="overview-metric-label" x="0" y="0">{metricLabelFor(row.label)}</text>
+          <text class="overview-metric-value" x="0" y={metricValueOffset}>{row.formatted}</text>
+        </g>
       {/each}
     </g>
   {:else if widget.type === 'alarmPanel'}
@@ -355,10 +371,10 @@
     <rect class="overview-readout-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="4" />
     <text class="widget-title overview-readout-title" x="14" y="21">{shortTitle}</text>
     {#each displayRows as row, index (row.path)}
-      <text class="widget-readout overview-readout" x={14 + index * Math.max(92, (geometry.width - 28) / Math.max(1, displayRows.length))} y={geometry.height - 16}>
-        <tspan class="widget-readout-label">{row.label}</tspan>
-        <tspan dx="5">{row.formatted}</tspan>
-      </text>
+      <g class="overview-metric-cell" transform="translate({metricXFor(index)} {metricYFor(index)})">
+        <text class="overview-metric-label" x="0" y="0">{metricLabelFor(row.label)}</text>
+        <text class="overview-metric-value" x="0" y={metricValueOffset}>{row.formatted}</text>
+      </g>
     {/each}
   {:else if widget.type === 'vessel'}
     <rect class="widget-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="10" />

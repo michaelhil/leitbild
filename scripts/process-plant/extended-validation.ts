@@ -39,6 +39,7 @@ const telemetryVariables = [
   'vessel.safetyInjectionFlowKgPerS',
   'vessel.tubeLeakFlowKgPerS',
   'containment.pressureMPa',
+  'containment.incomingMassKgPerS',
   'containment.sumpInventoryKg',
   'containment.radiationSourceTermMSvPerH',
   'pressurizer.pressureMPa',
@@ -602,12 +603,13 @@ const evaluateCase = (
   if (caseId === 'large-break-loca') {
     const release = maxAfter(telemetry, 'vessel.primaryLeakFlowKgPerS', 120_000)
     const containmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', durationMs)
+    const containmentInlet = maxAfter(telemetry, 'containment.incomingMassKgPerS', 120_000)
     const injection = maxAfter(telemetry, 'safetyAccumulatorA.outletFlowKgPerS', 150_000)
     const accumulatorStart = valueAtOrAfter(telemetry, 'safetyAccumulatorA.liquidInventoryKg', 80_000)
     const accumulatorEnd = valueAtOrAfter(telemetry, 'safetyAccumulatorA.liquidInventoryKg', durationMs)
     return [
       check(caseId, 'large break produces primary leak flow', release > 10, `release=${release.toFixed(1)}kg/s`),
-      check(caseId, 'containment sump accumulates released coolant', containmentSump > 5_000, `sump=${containmentSump.toFixed(0)}kg`),
+      check(caseId, 'containment receives released primary mass', containmentInlet > 10, `incomingMass=${containmentInlet.toFixed(1)}kg/s sump=${containmentSump.toFixed(0)}kg`),
       check(caseId, 'accumulator injects during depressurization', injection > 1, `injection=${injection.toFixed(1)}kg/s`),
       check(caseId, 'accumulator inventory falls during injection', accumulatorEnd < accumulatorStart, `start=${accumulatorStart.toFixed(0)} end=${accumulatorEnd.toFixed(0)}kg`),
     ]

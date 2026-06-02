@@ -352,7 +352,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       label: 'Alarm Panel',
       region: 'alarms',
       rank: 0,
-      geometry: { x: 42, y: 806, width: 1516, height: 78 },
+      geometry: { x: 42, y: 800, width: 1516, height: 86 },
       binds: {},
       style: { tone: 'warning' },
     },

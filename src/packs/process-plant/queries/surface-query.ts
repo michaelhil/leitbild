@@ -184,13 +184,17 @@ const alarmSnapshotFor = (system: ProcessPlantSystemRuntime): ProcessSurfaceAlar
   const active = lifecycles.filter(lifecycle => lifecycle.active).sort(compareAlarmLifecycle)
   const activeFirstOut = active.filter(lifecycle => lifecycle.firstOut)
   const unacknowledged = lifecycles.filter(lifecycle => !lifecycle.acknowledged && (lifecycle.active || lifecycle.lastClearedElapsedMs !== undefined))
+  const activeHighestSeverity = active.reduce<ProcessSurfaceAlarmSeverity | null>((highest, lifecycle) => {
+    if (highest === null) return lifecycle.severity
+    return severityRank(lifecycle.severity) > severityRank(highest) ? lifecycle.severity : highest
+  }, null)
   return {
     configured: true,
     activeAlarmCount: snapshot.alarms.filter(lifecycle => lifecycle.active).length,
     activeTripCount: snapshot.trips.filter(lifecycle => lifecycle.active).length,
     unacknowledgedCount: unacknowledged.length,
     firstOutCount: activeFirstOut.length,
-    activeHighestSeverity: active[0]?.severity ?? null,
+    activeHighestSeverity,
     activeFirstOut: activeFirstOut.map(alarmLifecycleFor),
     active: active.map(alarmLifecycleFor),
   }

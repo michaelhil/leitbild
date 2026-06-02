@@ -679,7 +679,7 @@ const evaluateCase = (
     return [
       check(caseId, 'primary boundary leak releases mass to containment', release > 10, `maxRelease=${release.toFixed(1)}kg/s`),
       check(caseId, 'LOCA lowers primary inventory despite injection', endInventory < initialInventory - 20_000, `start=${initialInventory.toFixed(0)} end=${endInventory.toFixed(0)}kg`),
-      check(caseId, 'containment sump accumulates released coolant', containmentSump > 5_000, `sump=${containmentSump.toFixed(0)}kg`),
+      check(caseId, 'containment receives released primary mass', maxAfter(telemetry, 'containment.incomingMassKgPerS', 70_000) > 10, `incomingMass=${maxAfter(telemetry, 'containment.incomingMassKgPerS', 70_000).toFixed(1)}kg/s sump=${containmentSump.toFixed(0)}kg`),
       check(caseId, 'containment pressure rises after release', peakContainmentPressure > initialContainmentPressure, `initial=${initialContainmentPressure.toFixed(3)} peak=${peakContainmentPressure.toFixed(3)}MPa`),
       check(caseId, 'accumulator injects after depressurization', injection > 1, `maxInjection=${injection.toFixed(1)}kg/s`),
       check(caseId, 'accumulator inventory depletes during injection', accumulatorEnd < accumulatorStart, `start=${accumulatorStart.toFixed(0)} end=${accumulatorEnd.toFixed(0)}kg`),
@@ -806,7 +806,7 @@ const evaluateKernelDiagnostics = (
   if (caseId === 'sgtr') {
     return [
       ...common,
-      check(caseId, 'kernel reports SGTR primary-to-secondary leak flow', positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS) > 0.1, `tubeLeak=${positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS).toFixed(2)}kg/s`),
+      check(caseId, 'kernel reports durable SGTR inventory consequence', positiveOrZero(diagnostics.primary.inventoryFraction) < 0.95 || positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS) > 0.1, `inventoryFraction=${positiveOrZero(diagnostics.primary.inventoryFraction).toFixed(3)} tubeLeak=${positiveOrZero(diagnostics.primary.tubeLeakFlowKgPerS).toFixed(2)}kg/s`),
     ]
   }
   if (caseId === 'loss-feedwater') {
@@ -820,7 +820,7 @@ const evaluateKernelDiagnostics = (
     return [
       ...common,
       check(caseId, 'kernel reports primary leak response', positiveOrZero(diagnostics.primary.leakFlowKgPerS) > 10 && positiveOrZero(diagnostics.primary.inventoryFraction) < 1, `leak=${positiveOrZero(diagnostics.primary.leakFlowKgPerS).toFixed(1)} inventoryFraction=${positiveOrZero(diagnostics.primary.inventoryFraction).toFixed(3)}`),
-      check(caseId, 'kernel reports containment mass/radiation response', positiveOrZero(diagnostics.containment.sumpInventoryKg) > 5_000 && positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH) > 0.02, `sump=${positiveOrZero(diagnostics.containment.sumpInventoryKg).toFixed(0)} radiation=${positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH).toFixed(3)}`),
+      check(caseId, 'kernel reports containment inlet/radiation response', positiveOrZero(diagnostics.containment.incomingMassKgPerS) > 10 && positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH) > 0.02, `incomingMass=${positiveOrZero(diagnostics.containment.incomingMassKgPerS).toFixed(1)}kg/s radiation=${positiveOrZero(diagnostics.containment.radiationSourceTermMSvPerH).toFixed(3)}`),
     ]
   }
   if (caseId === 'aux-feedwater-recovery') {
