@@ -2,6 +2,7 @@
   import type { Component } from 'svelte'
   import { ClipboardList, Eye, FileText, GitBranch, X } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
+  import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
   import ProcessPlantArtifactModal from './ProcessPlantArtifactModal.svelte'
@@ -28,11 +29,12 @@
   interface Props {
     readonly controlInstanceId: ControlInstanceId
     readonly object: OperationalObject
+    readonly unitStatus?: PackObjectStatusPresentation
     readonly procedureRevision: number
     readonly close: () => void
   }
 
-  let { controlInstanceId, object, procedureRevision, close }: Props = $props()
+  let { controlInstanceId, object, unitStatus = undefined, procedureRevision, close }: Props = $props()
 
   type WindowDragMode = 'move' | 'resize-east' | 'resize-south' | 'resize-corner'
 
@@ -502,6 +504,8 @@
     <ProcedureSystemModal
       {controlInstanceId}
       systemId={loadedSystemId}
+      unitName={object.label}
+      {unitStatus}
       realtimeRevision={procedureRevision}
       close={() => { procedureModalOpen = false }}
     />
@@ -510,7 +514,7 @@
       <div class="procedure-modal loading" role="dialog" aria-modal="true" aria-label="Computer-based procedure system loading" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
         <header class="procedure-header">
           <div>
-            <strong>Computer-based procedures</strong>
+            <strong>{object.label}</strong>
             <span>{procedureModalError ?? 'Loading procedure system...'}</span>
           </div>
           <button type="button" aria-label="Close procedures" title="Close procedures" onclick={() => { procedureModalOpen = false }}>

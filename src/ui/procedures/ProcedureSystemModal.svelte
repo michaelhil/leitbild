@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { BookOpen, Bug, Check, Circle, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
+  import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, Circle, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import type {
     ControlInstanceId,
     ProcedureAssessment,
@@ -12,6 +12,8 @@
     ProcedureTag,
     ProcedureTagId,
   } from '../../core/model/index.ts'
+  import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
+  import StatusIndicator from '../components/StatusIndicator.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
     closeProcedureRun,
@@ -33,6 +35,8 @@
   interface Props {
     readonly controlInstanceId: ControlInstanceId
     readonly systemId: string
+    readonly unitName?: string
+    readonly unitStatus?: PackObjectStatusPresentation
     readonly realtimeRevision: number
     readonly close: () => void
   }
@@ -44,6 +48,8 @@
 
   type LoadStageId = 'source' | 'runs' | 'document' | 'tags' | 'csfs'
   type LoadStageStatus = 'pending' | 'running' | 'done' | 'failed'
+  type ProcedureTocMode = 'detail' | 'compact' | 'collapsed'
+  type ProcedureRunVisualState = 'idle' | 'active' | 'completed'
 
   interface LoadStage {
     readonly id: LoadStageId
@@ -52,7 +58,7 @@
     readonly detail?: string
   }
 
-  let { controlInstanceId, systemId, realtimeRevision, close }: Props = $props()
+  let { controlInstanceId, systemId, unitName = undefined, unitStatus = undefined, realtimeRevision, close }: Props = $props()
 
   let loading = $state(true)
   let refreshing = $state(false)
@@ -72,6 +78,7 @@
   let commentDrafts = $state<Record<string, string>>({})
   let procedureSourceStatus = $state<ProcedureSourceLoadStatus | null>(null)
   let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
+  let procedureTocMode = $state<ProcedureTocMode>('detail')
   let lastRealtimeRevision = 0
   let csfRefreshInFlight = false
 
@@ -79,16 +86,53 @@
   const activeRun = $derived(document
     ? activeRuns.find(run => run.procedureId === document.procedureId) ?? null
     : null)
+  const selectedProcedureRun = $derived(document ? procedureRunFor(document.procedureId) : null)
   const selectedRun = $derived(mode === 'run' ? activeRun : null)
   const procedureLoadPanelVisible = $derived(loading || (error !== null && (catalog === null || document === null)))
-  const stepStates = $derived(new Map((selectedRun?.stepStates ?? []).map(state => [state.stepId, state])))
-  const selectedProcedure = $derived(catalog?.procedures.find(item => item.procedureId === selectedProcedureId) ?? null)
+  const stepStates = $derived(new Map((selectedProcedureRun?.stepStates ?? []).map(state => [state.stepId, state])))
   const procedureFamilies = $derived(groupCatalog(catalog?.procedures ?? []))
   const sourceLabel = $derived(catalog
     ? `${catalog.source.repository}@${catalog.source.ref}`
     : 'Procedure source')
+  const displayUnitName = $derived(unitName ?? systemId)
+  const displayUnitStatus = $derived(unitStatus ?? {
+    tone: 'idle',
+    label: 'Unit status unavailable',
+    indicator: { shape: 'dot' },
+  } satisfies PackObjectStatusPresentation)
   const csfIds = $derived(document?.csfsMonitored ?? [])
   const primaryBlockKinds = new Set(['check', 'action', 'when', 'until', 'within', 'concurrent'])
+
+  function procedureRunFor(procedureId: string): ProcedureRunState | null {
+    return activeRuns.find(run => run.procedureId === procedureId)
+      ?? runs.find(run => run.procedureId === procedureId && run.status === 'completed')
+      ?? null
+  }
+
+  const procedureRunVisualStateFor = (procedureId: string): ProcedureRunVisualState => {
+    const run = procedureRunFor(procedureId)
+    if (run?.status === 'active') return 'active'
+    if (run?.status === 'completed') return 'completed'
+    return 'idle'
+  }
+
+  const cycleProcedureTocMode = (): void => {
+    if (procedureTocMode === 'detail') {
+      procedureTocMode = 'compact'
+      return
+    }
+    if (procedureTocMode === 'compact') {
+      procedureTocMode = 'collapsed'
+      return
+    }
+    procedureTocMode = 'detail'
+  }
+
+  const procedureTocModeLabel = (): string => {
+    if (procedureTocMode === 'detail') return 'Show compact procedure list'
+    if (procedureTocMode === 'compact') return 'Collapse procedure list'
+    return 'Open procedure list'
+  }
 
   function createLoadStages(): Record<LoadStageId, LoadStage> {
     return {
@@ -188,6 +232,9 @@
 
   const completedStepCount = (run: ProcedureRunState): number =>
     run.stepStates.filter(step => step.assessment === 'complete').length
+
+  const selectedProcedureRunVisualState = $derived(document ? procedureRunVisualStateFor(document.procedureId) : 'idle')
+  const selectedProcedureCompletedStepCount = $derived(selectedProcedureRun ? completedStepCount(selectedProcedureRun) : 0)
 
   const pollProcedureSourceStatus = (sourceId?: string): (() => void) => {
     let stopped = false
@@ -330,6 +377,7 @@
     try {
       await closeProcedureRun(controlInstanceId, { runId: activeRun.runId, status })
       await refreshRuns()
+      mode = 'read'
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     }
@@ -480,9 +528,23 @@
 <div class="procedure-backdrop" role="presentation" onmousedown={close}>
   <div class="procedure-modal" role="dialog" aria-modal="true" aria-label="Computer-based procedure system" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
     <header class="procedure-header">
-      <div>
-        <strong>Computer-based procedures</strong>
-        <span>{sourceLabel}</span>
+      <div class="procedure-header-unit">
+        <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
+        <div>
+          <strong>{displayUnitName}</strong>
+          <div class="procedure-csf-strip" aria-label="Critical safety functions">
+            {#if csfIds.length === 0}
+              <div class="procedure-csf unknown"><Circle size={12} /> CSF status unavailable until a procedure is selected</div>
+            {:else}
+              {#each csfIds as csf}
+                {@const evaluation = csfEvaluationFor(csf)}
+                <div class="procedure-csf {evaluation?.status ?? 'unknown'}" title={csfTitleFor(csf)}>
+                  <Circle size={12} /> {evaluation?.label ?? csf.replaceAll('-', ' ')}
+                </div>
+              {/each}
+            {/if}
+          </div>
+        </div>
       </div>
       <div class="procedure-header-actions">
         <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
@@ -493,19 +555,6 @@
         </button>
       </div>
     </header>
-
-    <div class="procedure-csf-strip" aria-label="Critical safety functions">
-      {#if csfIds.length === 0}
-        <div class="procedure-csf unknown"><Circle size={12} /> CSF status unavailable until a procedure is selected</div>
-      {:else}
-        {#each csfIds as csf}
-          {@const evaluation = csfEvaluationFor(csf)}
-          <div class="procedure-csf {evaluation?.status ?? 'unknown'}" title={csfTitleFor(csf)}>
-            <Circle size={12} /> {evaluation?.label ?? csf.replaceAll('-', ' ')}
-          </div>
-        {/each}
-      {/if}
-    </div>
 
     {#if csfError}
       <div class="procedure-error">{csfError}</div>
@@ -532,18 +581,22 @@
         </div>
       </section>
     {:else}
-      <div class="procedure-layout">
+      <div class="procedure-layout toc-{procedureTocMode}">
+        {#if procedureTocMode !== 'collapsed'}
         <aside class="procedure-list" aria-label="Procedure list">
             {#each procedureFamilies as family (family.id)}
               <section>
                 <h3>{family.label}</h3>
                 {#each family.procedures as item (item.procedureId)}
+                  {@const runState = procedureRunVisualStateFor(item.procedureId)}
                   <button
                     type="button"
                     class:active={selectedProcedureId === item.procedureId}
                     onclick={() => void loadProcedure(item.procedureId)}
                   >
-                    <BookOpen size={15} aria-hidden="true" />
+                    <span class="procedure-book-icon {runState}">
+                      <BookOpen size={15} aria-hidden="true" />
+                    </span>
                     <span>{item.procedureId}</span>
                     <small>{item.title}</small>
                   </button>
@@ -551,19 +604,43 @@
               </section>
             {/each}
         </aside>
+        {/if}
+
+        <button
+          type="button"
+          class="procedure-toc-handle"
+          title={procedureTocModeLabel()}
+          aria-label={procedureTocModeLabel()}
+          onclick={cycleProcedureTocMode}
+        >
+          {#if procedureTocMode === 'collapsed'}
+            <ChevronRight size={17} aria-hidden="true" />
+          {:else}
+            <ChevronLeft size={17} aria-hidden="true" />
+          {/if}
+        </button>
 
         <main class="procedure-document">
           {#if document}
           <div class="procedure-document-toolbar">
-            <div>
+            <div class="procedure-document-title">
+              <span class="procedure-book-icon title-icon {selectedProcedureRunVisualState}">
+                <BookOpen size={20} aria-hidden="true" />
+              </span>
               <h2>{document.procedureId} — {document.title}</h2>
-              <p>{document.description}</p>
+              {#if document.description}
+                <button type="button" class="procedure-summary-help" aria-label="Procedure summary">
+                  <HelpCircle size={17} aria-hidden="true" />
+                  <span class="procedure-summary-popover">{document.description}</span>
+                </button>
+              {/if}
+              <span class="procedure-step-counter">{selectedProcedureCompletedStepCount} / {document.steps.length} steps completed</span>
             </div>
             <div class="procedure-mode-actions">
               <button type="button" class:active={mode === 'read'} onclick={() => { mode = 'read' }}>Read</button>
               <button type="button" class:active={mode === 'run'} disabled={!activeRun} onclick={() => { mode = 'run' }}>Run</button>
               {#if activeRun}
-                <button type="button" onclick={() => void closeActiveRun('completed')}>Complete run</button>
+                <button type="button" onclick={() => void closeActiveRun('completed')}>Completed</button>
                 <button type="button" onclick={() => void closeActiveRun('abandoned')}>Abandon</button>
               {:else}
                 <button type="button" class="primary" onclick={() => void startSelectedProcedure()}>
@@ -576,85 +653,79 @@
             </div>
           </div>
 
-          <div class="procedure-run-banner">
-            {#if selectedRun}
-              Active run · {selectedRun.runId} · {completedStepCount(selectedRun)} / {document.steps.length} steps completed
-            {:else}
-              Read-only view · start the procedure to enable synchronized placekeeping
-            {/if}
-          </div>
-
-          <div class="procedure-steps">
-            {#each document.steps as step (step.id)}
-              {@const state = stepStates.get(step.id)}
-              {@const machineStatus = machineStatusFor(step)}
-              <article class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
-                <div class="procedure-step-main">
-                  <button
-                    type="button"
-                    class="procedure-assessment {assessmentClass(state)} machine-{machineStatus}"
-                    disabled={!selectedRun}
-                    title={machineStatusTitleFor(step)}
-                    aria-label="Cycle human assessment"
-                    onclick={() => void cycleStepAssessment(step)}
-                  >
-                    {#if state?.assessment === 'complete'}
-                      <Check size={17} aria-hidden="true" />
-                    {:else if state?.assessment === 'failed'}
-                      <X size={17} aria-hidden="true" />
-                    {:else if state?.assessment === 'unknown'}
-                      <HelpCircle size={17} aria-hidden="true" />
-                    {/if}
-                  </button>
-                  <div class="procedure-step-content">
-                    <h3>Step {step.label}<span>{step.title}</span></h3>
-                    <div class="procedure-two-column">
-                      <div class="procedure-column">
-                        {#each step.blocks.filter(block => primaryBlockKinds.has(block.kind)) as block}
-                          <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
-                        {/each}
+          <div class="procedure-document-body">
+            <div class="procedure-steps">
+              {#each document.steps as step (step.id)}
+                {@const state = stepStates.get(step.id)}
+                {@const machineStatus = machineStatusFor(step)}
+                <article class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
+                  <div class="procedure-step-main">
+                    <button
+                      type="button"
+                      class="procedure-assessment {assessmentClass(state)} machine-{machineStatus}"
+                      disabled={!selectedRun}
+                      title={machineStatusTitleFor(step)}
+                      aria-label="Cycle human assessment"
+                      onclick={() => void cycleStepAssessment(step)}
+                    >
+                      {#if state?.assessment === 'complete'}
+                        <Check size={17} aria-hidden="true" />
+                      {:else if state?.assessment === 'failed'}
+                        <X size={17} aria-hidden="true" />
+                      {:else if state?.assessment === 'unknown'}
+                        <HelpCircle size={17} aria-hidden="true" />
+                      {/if}
+                    </button>
+                    <div class="procedure-step-content">
+                      <h3>Step {step.label}<span>{step.title}</span></h3>
+                      <div class="procedure-two-column">
+                        <div class="procedure-column">
+                          {#each step.blocks.filter(block => primaryBlockKinds.has(block.kind)) as block}
+                            <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
+                          {/each}
+                        </div>
+                        <div class="procedure-column response">
+                          {#each step.blocks.filter(block => !primaryBlockKinds.has(block.kind)) as block}
+                            <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
+                          {/each}
+                          {#each step.branches as branch}
+                            <div class="procedure-branch">
+                              <strong>{branch.label}</strong>
+                              <span>→ {branch.targetKind === 'step' ? `Step ${branch.target}` : branch.target}</span>
+                              {#if branch.because}<em>{branch.because}</em>{/if}
+                            </div>
+                          {/each}
+                        </div>
                       </div>
-                      <div class="procedure-column response">
-                        {#each step.blocks.filter(block => !primaryBlockKinds.has(block.kind)) as block}
-                          <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
-                        {/each}
-                        {#each step.branches as branch}
-                          <div class="procedure-branch">
-                            <strong>{branch.label}</strong>
-                            <span>→ {branch.targetKind === 'step' ? `Step ${branch.target}` : branch.target}</span>
-                            {#if branch.because}<em>{branch.because}</em>{/if}
-                          </div>
-                        {/each}
-                      </div>
+                      {#if commentOpen[step.id]}
+                        <div class="procedure-comment-editor">
+                          <textarea
+                            value={commentDrafts[step.id] ?? state?.comment ?? ''}
+                            oninput={(event) => { commentDrafts = { ...commentDrafts, [step.id]: event.currentTarget.value } }}
+                            placeholder="Add handling annotation..."
+                          ></textarea>
+                          <button type="button" onclick={() => void saveComment(step)}>Save comment</button>
+                        </div>
+                      {/if}
+                      {#if state?.comment}
+                        <div class="procedure-comment">{state.comment}</div>
+                      {/if}
                     </div>
-                    {#if commentOpen[step.id]}
-                      <div class="procedure-comment-editor">
-                        <textarea
-                          value={commentDrafts[step.id] ?? state?.comment ?? ''}
-                          oninput={(event) => { commentDrafts = { ...commentDrafts, [step.id]: event.currentTarget.value } }}
-                          placeholder="Add handling annotation..."
-                        ></textarea>
-                        <button type="button" onclick={() => void saveComment(step)}>Save comment</button>
-                      </div>
-                    {/if}
-                    {#if state?.comment}
-                      <div class="procedure-comment">{state.comment}</div>
-                    {/if}
                   </div>
-                </div>
-                <div class="procedure-step-actions">
-                  <button type="button" class:active={commentOpen[step.id] === true} disabled={!selectedRun} title="Comment" aria-label="Comment" onclick={() => { commentOpen = { ...commentOpen, [step.id]: !commentOpen[step.id] }; commentDrafts = { ...commentDrafts, [step.id]: state?.comment ?? '' } }}>
-                    <MessageSquare size={16} aria-hidden="true" />
-                  </button>
-                  <button type="button" class:active={state?.favorite === true} disabled={!selectedRun} title="Favorite" aria-label="Favorite" onclick={() => void toggleFavorite(step)}>
-                    <Star size={16} aria-hidden="true" />
-                  </button>
-                  <button type="button" title="Report procedure issue" aria-label="Report procedure issue" onclick={() => openIssue(step)}>
-                    <Bug size={16} aria-hidden="true" />
-                  </button>
-                </div>
-              </article>
-            {/each}
+                  <div class="procedure-step-actions">
+                    <button type="button" class:active={commentOpen[step.id] === true} disabled={!selectedRun} title="Comment" aria-label="Comment" onclick={() => { commentOpen = { ...commentOpen, [step.id]: !commentOpen[step.id] }; commentDrafts = { ...commentDrafts, [step.id]: state?.comment ?? '' } }}>
+                      <MessageSquare size={16} aria-hidden="true" />
+                    </button>
+                    <button type="button" class:active={state?.favorite === true} disabled={!selectedRun} title="Favorite" aria-label="Favorite" onclick={() => void toggleFavorite(step)}>
+                      <Star size={16} aria-hidden="true" />
+                    </button>
+                    <button type="button" title="Report procedure issue" aria-label="Report procedure issue" onclick={() => openIssue(step)}>
+                      <Bug size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                </article>
+              {/each}
+            </div>
           </div>
         {:else}
           <div class="procedure-loading">No procedure selected.</div>

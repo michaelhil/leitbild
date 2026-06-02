@@ -4,7 +4,7 @@
   import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
-  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier } from '../../core/packs/protocol.ts'
+  import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import {
     fetchScenario,
     joinControlInstance as joinControlInstanceClient,
@@ -333,6 +333,13 @@
 
   const mapPresentationFor = (object: OperationalObject): PackObjectPresentation =>
     presentationFor(object, { tier: 'map' })
+
+  const statusPresentationFor = (object: OperationalObject): PackObjectStatusPresentation =>
+    presentationFor(object).status ?? {
+      tone: 'idle',
+      label: object.operational.status,
+      indicator: { shape: 'dot' },
+    }
 
   const mapAreaFeaturesFor = createMapAreaFeatureLoader({
     pack: () => activePack,
@@ -1252,6 +1259,7 @@
   <ProcessSurfaceModal
     {controlInstanceId}
     object={processSurfaceObject}
+    unitStatus={statusPresentationFor(processSurfaceObject)}
     {procedureRevision}
     close={closeProcessSurface}
   />
@@ -1261,6 +1269,8 @@
   <ProcedureSystemModal
     {controlInstanceId}
     systemId={procedureSystemId}
+    unitName={procedureSystemObject.label}
+    unitStatus={statusPresentationFor(procedureSystemObject)}
     realtimeRevision={procedureRevision}
     close={closeProcedureSystem}
   />
