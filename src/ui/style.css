@@ -606,7 +606,7 @@ body.rail-resizing {
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 20px 20px;
+  grid-template-columns: minmax(0, 1fr) 20px;
   align-items: center;
   gap: 6px;
   box-sizing: border-box;
@@ -730,12 +730,29 @@ body.rail-resizing {
 }
 
 .row-title-text {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  overflow: visible;
+  align-items: center;
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: help;
+}
+
+.row-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 650;
+}
+
+.row-title .icon-button {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
 }
 
 .new-info-dot {
@@ -809,6 +826,26 @@ body.rail-resizing {
   padding: 0 46px 4px 26px;
 }
 
+.object-row-procedures {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 28px 5px 26px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.object-row-procedures > span {
+  flex: 0 0 auto;
+}
+
+.object-row-procedures .procedure-run-badges {
+  min-width: 0;
+}
+
 .row-tooltip,
 .marker-hover-card {
   position: absolute;
@@ -863,8 +900,8 @@ body.rail-resizing {
   text-align: left;
 }
 
-.row-info:hover .row-tooltip,
-.row-info:focus-visible .row-tooltip {
+.row-title-text:hover .row-tooltip,
+.row-title-text:focus-visible .row-tooltip {
   display: block;
 }
 

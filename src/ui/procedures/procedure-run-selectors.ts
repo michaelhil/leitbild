@@ -29,6 +29,11 @@ export interface ProcedureRunSummary {
   readonly step: ProcedureRunStepProgress | null
 }
 
+export interface ProcedureRunSummaryGroup {
+  readonly active: ReadonlyArray<ProcedureRunSummary>
+  readonly completed: ReadonlyArray<ProcedureRunSummary>
+}
+
 export const sameProcedureScope = (
   left: ProcedureRunScope,
   right: ProcedureRunScope,
@@ -175,10 +180,7 @@ export const procedureRunSummariesForScope = (
   runs: ReadonlyArray<ProcedureRunState>,
   scope: ProcedureRunScope,
   documents: ReadonlyMap<ProcedureId, ProcedureDocument>,
-): {
-  readonly active: ReadonlyArray<ProcedureRunSummary>
-  readonly completed: ReadonlyArray<ProcedureRunSummary>
-} => {
+): ProcedureRunSummaryGroup => {
   const summaries = runs
     .filter(run => sameProcedureScope(run.scope, scope))
     .map(run => procedureRunSummaryFor(run, documents.get(run.procedureId)))

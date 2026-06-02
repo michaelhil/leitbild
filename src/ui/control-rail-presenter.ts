@@ -58,11 +58,13 @@ const visibleFieldsForObject = (
 
 const fieldOptionsFor = (
   presentedRows: ReadonlyArray<PresentedObjectRow>,
+  additionalOptions: ReadonlyArray<FieldVisibilityOption> = [],
 ): ReadonlyArray<FieldVisibilityOption> => {
   const fields = new Map<string, string>()
   for (const row of presentedRows) {
     for (const field of row.presentation.fields) fields.set(field.key, field.label)
   }
+  for (const option of additionalOptions) fields.set(option.key, option.label)
   return [...fields.entries()]
     .sort((left, right) => left[1].localeCompare(right[1], undefined, { numeric: true, sensitivity: 'base' }))
     .map(([key, label]) => ({ key, label }))
@@ -93,6 +95,7 @@ export const buildPresentedCategoryRows = (config: {
   readonly includeRows?: boolean
   readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
   readonly hasNewInfo: (object: OperationalObject) => boolean
+  readonly additionalFieldOptionsForCategory?: (row: CategoryRow) => ReadonlyArray<FieldVisibilityOption>
 }): ReadonlyArray<PresentedCategoryRow> =>
   config.categoryRows.map(row => {
     const visibleFields = visibleFieldsFor(config.visibleFieldsByCategory, row.category.id)
@@ -110,7 +113,9 @@ export const buildPresentedCategoryRows = (config: {
       collapsed: config.collapsedCategoryIds[row.category.id] === true,
       fieldMenuOpen: config.openFieldCategoryId === row.category.id,
       visibleFields,
-      fieldOptions: config.includeRows === false ? [] : fieldOptionsFor(presentedRows),
+      fieldOptions: config.includeRows === false
+        ? []
+        : fieldOptionsFor(presentedRows, config.additionalFieldOptionsForCategory?.(row) ?? []),
       presentedRows,
     }
   })

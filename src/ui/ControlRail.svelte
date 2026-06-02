@@ -7,6 +7,8 @@
   import { X } from 'lucide-svelte'
   import CategorySection from './CategorySection.svelte'
   import IconButton from './components/IconButton.svelte'
+  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import { runOnMount } from './svelte-lifecycle.svelte.ts'
   import type { CategoryRow } from './types.ts'
   import {
@@ -20,6 +22,11 @@
   } from './surface.ts'
   import SystemFooter from './SystemFooter.svelte'
   import type { StatusTone } from './components/StatusDot.svelte'
+
+  const processPlantCategoryId = 'process-plants'
+  const proceduresFieldKey = 'procedures'
+  const procedureFieldOption = { key: proceduresFieldKey, label: 'Procedures' } as const
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface Props {
     readonly status: string
@@ -42,6 +49,9 @@
     readonly deleteObject: (object: OperationalObject) => Promise<void>
     readonly openProcessSurface?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
+    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
+    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
+    readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
     readonly openStatusModal: () => void
@@ -80,6 +90,9 @@
     deleteObject,
     openProcessSurface,
     openProcedureSystem,
+    openProcedureSystemAt,
+    openProcessPlantArtifact,
+    procedureSummariesForObject = () => emptyProcedureRunSummaries,
     beginPlacement,
     cancelPlacement,
     openStatusModal,
@@ -158,6 +171,7 @@
     includeRows: !deferObjectRows,
     presentationFor,
     hasNewInfo,
+    additionalFieldOptionsForCategory: row => row.category.id === processPlantCategoryId ? [procedureFieldOption] : [],
   }))
 </script>
 
@@ -191,6 +205,10 @@
       {detailPresentationFor}
       {openProcessSurface}
       {openProcedureSystem}
+      {openProcedureSystemAt}
+      {openProcessPlantArtifact}
+      {procedureSummariesForObject}
+      proceduresVisible={fieldVisible(entry.row.category.id, proceduresFieldKey)}
     />
   {/each}
 

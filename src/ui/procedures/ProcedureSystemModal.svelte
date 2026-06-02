@@ -20,6 +20,7 @@
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import StatusIndicator from '../components/StatusIndicator.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
+  import ProcedureRunBadges from './ProcedureRunBadges.svelte'
   import {
     closeProcedureRun,
     evaluateProcedureCsfs,
@@ -45,7 +46,6 @@
     procedureRunFor,
     procedureRunSummariesForScope,
     procedureRunSummaryText,
-    procedureRunSummaryTitle,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
     procedureStepById,
     procedureStepDisplayName,
@@ -61,6 +61,9 @@
     readonly unitStatus?: PackObjectStatusPresentation
     readonly unitContexts?: ReadonlyArray<ProcedureUnitContext>
     readonly realtimeRevision: number
+    readonly initialProcedureId?: ProcedureId
+    readonly initialStepId?: ProcedureStepId
+    readonly initialNavigationRevision?: number
     readonly close: () => void
   }
 
@@ -112,7 +115,18 @@
     readonly durationMs: number
   }
 
-  let { controlInstanceId, systemId, unitName = undefined, unitStatus = undefined, unitContexts = [], realtimeRevision, close }: Props = $props()
+  let {
+    controlInstanceId,
+    systemId,
+    unitName = undefined,
+    unitStatus = undefined,
+    unitContexts = [],
+    realtimeRevision,
+    initialProcedureId = undefined,
+    initialStepId = undefined,
+    initialNavigationRevision = 0,
+    close,
+  }: Props = $props()
 
   let loading = $state(true)
   let refreshing = $state(false)
@@ -140,6 +154,7 @@
   let recentlyConfirmedAssessment = $state<Extract<ProcedureAssessment, 'complete' | 'failed'> | null>(null)
   let transitionInProgress = $state(false)
   let lastRealtimeRevision = 0
+  let appliedInitialNavigationRevision = -1
   let csfRefreshInFlight = false
   let toastTimer: number | null = null
 
@@ -417,7 +432,7 @@
       catalog = nextCatalog
       runs = nextScopedRuns
       setLoadStage('runs', 'done', `${nextScopedRuns.length} tracked runs`)
-      selectedProcedureId = selectedProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
+      selectedProcedureId = selectedProcedureId ?? initialProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
       if (selectedProcedureId && (!document || document.procedureId !== selectedProcedureId || refresh)) {
         await loadProcedure(selectedProcedureId, refresh)
       } else {
@@ -544,6 +559,18 @@
       await loadProcedure(summary.procedureId)
       const currentStep = procedureCurrentStep(summary.run, nextDocument)
       if (currentStep) scrollToProcedureStep(currentStep.step.id)
+    } catch (err) {
+      error = errorMessage(err)
+    }
+  }
+
+  const applyInitialNavigation = async (): Promise<void> => {
+    const procedureId = initialProcedureId
+    if (!procedureId || appliedInitialNavigationRevision === initialNavigationRevision || catalog === null || loading) return
+    appliedInitialNavigationRevision = initialNavigationRevision
+    try {
+      if (document?.procedureId !== procedureId) await loadProcedure(procedureId)
+      if (initialStepId) scrollToProcedureStep(initialStepId)
     } catch (err) {
       error = errorMessage(err)
     }
@@ -920,6 +947,10 @@
       void refreshCsfStatus()
     }
   })
+
+  $effect(() => {
+    void applyInitialNavigation()
+  })
 </script>
 
 <div class="procedure-backdrop" role="presentation" onmousedown={close}>
@@ -929,21 +960,11 @@
         <div class="procedure-current-unit-line">
           <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
           <strong>{displayUnitName}</strong>
-          {#if currentUnitProcedureSummaries.active.length > 0 || currentUnitProcedureSummaries.completed.length > 0}
-            <span class="procedure-run-badges">
-              {#each currentUnitProcedureSummaries.active as summary, index (summary.run.runId)}
-                <button type="button" class="procedure-run-badge active" class:open={summary.procedureId === document?.procedureId} title={procedureRunSummaryTitle(summary)} onclick={() => void openProcedureRunSummary(summary, currentUnitContext)}>{procedureRunSummaryText(summary)}</button>{#if index < currentUnitProcedureSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
-              {/each}
-              {#if currentUnitProcedureSummaries.completed.length > 0}
-                <span class="procedure-run-completed-group">
-                  {#if currentUnitProcedureSummaries.active.length > 0}<span>&nbsp;</span>{/if}
-                  {#each currentUnitProcedureSummaries.completed as summary, index (summary.run.runId)}
-                    <button type="button" class="procedure-run-badge completed" class:open={summary.procedureId === document?.procedureId} title={procedureRunSummaryTitle(summary)} onclick={() => void openProcedureRunSummary(summary, currentUnitContext)}>{procedureRunSummaryText(summary)}</button>{#if index < currentUnitProcedureSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                  {/each}
-                </span>
-              {/if}
-            </span>
-          {/if}
+          <ProcedureRunBadges
+            summaries={currentUnitProcedureSummaries}
+            openProcedureId={document?.procedureId}
+            onOpen={(summary) => openProcedureRunSummary(summary, currentUnitContext)}
+          />
         </div>
         <div class="procedure-header-actions">
           <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
@@ -962,19 +983,11 @@
           <div class="procedure-cross-unit" class:current={unit.systemId === systemId}>
             <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
             <span class="procedure-cross-unit-name">{unit.label}</span>
-            {#if unitSummaries.active.length > 0 || unitSummaries.completed.length > 0}
-              {#each unitSummaries.active as summary, index (summary.run.runId)}
-                <button type="button" class="procedure-run-badge active" class:open={summary.procedureId === document?.procedureId} title={procedureRunSummaryTitle(summary)} onclick={() => void openProcedureRunSummary(summary, unit)}>{procedureRunSummaryText(summary)}</button>{#if index < unitSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
-              {/each}
-              {#if unitSummaries.completed.length > 0}
-                <span class="procedure-run-completed-group">
-                  {#if unitSummaries.active.length > 0}<span>&nbsp;</span>{/if}
-                  {#each unitSummaries.completed as summary, index (summary.run.runId)}
-                    <button type="button" class="procedure-run-badge completed" class:open={summary.procedureId === document?.procedureId} title={procedureRunSummaryTitle(summary)} onclick={() => void openProcedureRunSummary(summary, unit)}>{procedureRunSummaryText(summary)}</button>{#if index < unitSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                  {/each}
-                </span>
-              {/if}
-            {/if}
+            <ProcedureRunBadges
+              summaries={unitSummaries}
+              openProcedureId={document?.procedureId}
+              onOpen={(summary) => openProcedureRunSummary(summary, unit)}
+            />
           </div>
         {/each}
       </div>

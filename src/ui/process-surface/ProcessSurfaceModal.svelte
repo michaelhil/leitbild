@@ -1,18 +1,18 @@
 <script lang="ts">
   import type { Component } from 'svelte'
-  import { ClipboardList, Eye, FileText, GitBranch, X } from 'lucide-svelte'
+  import { ClipboardList, Eye, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
-  import ProcessPlantArtifactModal from './ProcessPlantArtifactModal.svelte'
+  import ProcedureRunBadges from '../procedures/ProcedureRunBadges.svelte'
+  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import {
     listProcessSurfaces,
     readProcessSurface,
     readProcessSurfaceProjection,
     readProcessSurfaceSnapshot,
-    type ProcessPlantArtifactKind,
     type ProcessSurfaceProjection,
     type ProcessSurfaceLensOption,
   } from './process-surface-client.ts'
@@ -36,11 +36,24 @@
       readonly label: string
       readonly status?: PackObjectStatusPresentation
     }>
+    readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly procedureRevision: number
+    readonly openProcedureSystemAt?: (summary: ProcedureRunSummary) => void
     readonly close: () => void
   }
 
-  let { controlInstanceId, object, unitStatus = undefined, unitContexts = [], procedureRevision, close }: Props = $props()
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+
+  let {
+    controlInstanceId,
+    object,
+    unitStatus = undefined,
+    unitContexts = [],
+    procedureSummaries = emptyProcedureRunSummaries,
+    procedureRevision,
+    openProcedureSystemAt = undefined,
+    close,
+  }: Props = $props()
 
   type WindowDragMode = 'move' | 'resize-east' | 'resize-south' | 'resize-corner'
 
@@ -62,7 +75,6 @@
   let projection = $state<ProcessSurfaceProjection | null>(null)
   let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
-  let artifactModal = $state<ProcessPlantArtifactKind | null>(null)
   let procedureModalOpen = $state(false)
   let procedureModalError = $state<string | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
@@ -114,14 +126,6 @@
     values = new Map(snapshot.values.map(value => [value.path, value]))
   }
 
-  const statusValue = (path: string): string =>
-    values.get(path)?.formatted ?? 'pending'
-
-  const statusItems = $derived([
-    { label: 'MWt', value: statusValue('core.totalThermalPowerMw') },
-    { label: 'MWe', value: statusValue('turbine.electricMw') },
-  ])
-
   const visibleWidgetIds = $derived(projection
     ? new Set<string>(projection.surfaceProjection.visibleWidgetIds)
     : null)
@@ -141,10 +145,6 @@
           ? 'ready'
           : 'idle',
   ))
-
-  const openArtifact = (artifact: ProcessPlantArtifactKind): void => {
-    artifactModal = artifact
-  }
 
   const loadProcedureSystemModal = async (): Promise<void> => {
     if (ProcedureSystemModal) return
@@ -168,6 +168,14 @@
     } catch (err) {
       procedureModalError = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  const openProcedureSummary = (summary: ProcedureRunSummary): void => {
+    if (openProcedureSystemAt) {
+      openProcedureSystemAt(summary)
+      return
+    }
+    void openProcedureSystem()
   }
 
   const commitWindowBounds = (bounds: ProcessSurfaceWindowBounds): void => {
@@ -370,11 +378,10 @@
         onpointercancel={finishWindowDrag}
       >
         <strong><span class="process-surface-asset-dot" style:background={assetStatusColor}></span>{object.label}</strong>
-        <div class="process-surface-status-items">
-          {#each statusItems as item (item.label)}
-            <span><b>{item.label}</b> {item.value}</span>
-          {/each}
-        </div>
+        <ProcedureRunBadges
+          summaries={procedureSummaries}
+          onOpen={openProcedureSummary}
+        />
       </div>
       <div class="process-surface-window-actions">
         <div class="process-surface-lens-control">
@@ -412,24 +419,6 @@
             </div>
           {/if}
         </div>
-        <button
-          type="button"
-          class="process-surface-icon-button"
-          aria-label="Open plant specification source"
-          title="Plant specification source"
-          onclick={() => openArtifact('authored-spec')}
-        >
-          <FileText size={17} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="process-surface-icon-button"
-          aria-label="Open full Mermaid component graph"
-          title="Full Mermaid component graph"
-          onclick={() => openArtifact('compiled-graph-mermaid')}
-        >
-          <GitBranch size={17} aria-hidden="true" />
-        </button>
         <button
           type="button"
           class="process-surface-icon-button"
@@ -498,14 +487,6 @@
       onpointercancel={finishWindowDrag}
     ></div>
   </section>
-  {#if artifactModal && loadedSystemId}
-    <ProcessPlantArtifactModal
-      {controlInstanceId}
-      systemId={loadedSystemId}
-      artifact={artifactModal}
-      close={() => { artifactModal = null }}
-    />
-  {/if}
   {#if procedureModalOpen && loadedSystemId && ProcedureSystemModal}
     <ProcedureSystemModal
       {controlInstanceId}

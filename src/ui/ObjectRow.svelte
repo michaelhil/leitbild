@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { ClipboardList, MonitorCog, X } from 'lucide-svelte'
+  import { ClipboardList, FileText, GitBranch, MonitorCog, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
   import StatusIndicator from './components/StatusIndicator.svelte'
+  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import ProcedureRunBadges from './procedures/ProcedureRunBadges.svelte'
+  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
+
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
 
   interface Props {
     readonly object: OperationalObject
@@ -18,6 +23,10 @@
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
+    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
+    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
+    readonly procedureSummaries?: ProcedureRunSummaryGroup
+    readonly proceduresVisible: boolean
   }
 
   let {
@@ -33,6 +42,10 @@
     detailPresentationFor,
     openProcessSurface,
     openProcedureSystem,
+    openProcedureSystemAt,
+    openProcessPlantArtifact,
+    procedureSummaries = emptyProcedureRunSummaries,
+    proceduresVisible,
   }: Props = $props()
 
   let newInfoBadge: HTMLButtonElement | null = $state(null)
@@ -93,6 +106,18 @@
       && openProcedureSystem !== undefined
       && processSystemIdAvailable,
   )
+  const processArtifactAvailable = $derived(
+    object.packId === 'process-plant'
+      && openProcessPlantArtifact !== undefined
+      && processSystemIdAvailable,
+  )
+  const openProcedureSummary = (summary: ProcedureRunSummary): void => {
+    if (openProcedureSystemAt) {
+      openProcedureSystemAt(object, summary)
+      return
+    }
+    openProcedureSystem?.(object)
+  }
 </script>
 
 <div
@@ -102,6 +127,8 @@
   class="object-row"
   role="button"
   tabindex="0"
+  onmouseenter={loadDetailPresentation}
+  onfocus={loadDetailPresentation}
   onclick={() => selectObject(object)}
   onkeydown={(event) => {
     if (event.key !== 'Enter' && event.key !== ' ') return
@@ -115,7 +142,15 @@
     </span>
     <span class="object-row-content">
       <span class="row-title">
-        <span class="row-title-text">{object.label}</span>
+        <span
+          class="row-title-text"
+        >
+          <span class="row-label">{object.label}</span>
+          <span class="row-tooltip">
+            <strong>{object.label}</strong>
+            {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
+          </span>
+        </span>
         {#if hasNewInfo}
           <button
             bind:this={newInfoBadge}
@@ -134,43 +169,47 @@
             new
           </button>
         {/if}
+        {#if processSurfaceAvailable}
+          <IconButton
+            label="Open process display for {object.label}"
+            title="Open process display"
+            icon={MonitorCog}
+            size={13}
+            variant="bare"
+            onClick={() => openProcessSurface?.(object)}
+          />
+        {/if}
+        {#if procedureSystemAvailable}
+          <IconButton
+            label="Open procedures for {object.label}"
+            title="Open procedures"
+            icon={ClipboardList}
+            size={13}
+            variant="bare"
+            onClick={() => openProcedureSystem?.(object)}
+          />
+        {/if}
+        {#if processArtifactAvailable}
+          <IconButton
+            label="Open plant specification source for {object.label}"
+            title="Plant specification source"
+            icon={FileText}
+            size={13}
+            variant="bare"
+            onClick={() => openProcessPlantArtifact?.(object, 'authored-spec')}
+          />
+          <IconButton
+            label="Open full component graph for {object.label}"
+            title="Full component graph"
+            icon={GitBranch}
+            size={13}
+            variant="bare"
+            onClick={() => openProcessPlantArtifact?.(object, 'compiled-graph-mermaid')}
+          />
+        {/if}
       </span>
     </span>
   </div>
-  <button
-    class="row-info"
-    type="button"
-    aria-label="Show {object.label} details"
-    onmouseenter={loadDetailPresentation}
-    onfocus={loadDetailPresentation}
-    onclick={(event) => event.stopPropagation()}
-  >
-    ?
-    <span class="row-tooltip">
-      <strong>{object.label}</strong>
-      {#each activeDetailPresentation.fields as field}<span>{field.label}: {field.value}</span>{/each}
-    </span>
-  </button>
-  {#if processSurfaceAvailable}
-    <IconButton
-      label="Open process display for {object.label}"
-      title="Open process display"
-      icon={MonitorCog}
-      size={13}
-      variant="bare"
-      onClick={() => openProcessSurface?.(object)}
-    />
-  {/if}
-  {#if procedureSystemAvailable}
-    <IconButton
-      label="Open procedures for {object.label}"
-      title="Open procedures"
-      icon={ClipboardList}
-      size={13}
-      variant="bare"
-      onClick={() => openProcedureSystem?.(object)}
-    />
-  {/if}
   <IconButton
     label="Delete {object.label}"
     title="Delete {object.label}"
@@ -184,6 +223,16 @@
       {#each visibleFields as field (field.key)}
         <span class="object-meta"><strong>{field.label}:</strong> {field.value}</span>
       {/each}
+    </div>
+  {/if}
+  {#if proceduresVisible && procedureSystemAvailable}
+    <div class="object-row-procedures">
+      <span>Procedures</span>
+      <ProcedureRunBadges
+        summaries={procedureSummaries}
+        mode="rail"
+        onOpen={openProcedureSummary}
+      />
     </div>
   {/if}
 </div>

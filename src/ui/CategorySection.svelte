@@ -3,6 +3,8 @@
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackCreateObjectType, PackObjectPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
+  import type { ProcessPlantArtifactKind } from './process-surface/process-surface-client.ts'
+  import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from './procedures/procedure-run-selectors.ts'
   import FieldVisibilityMenu from './FieldVisibilityMenu.svelte'
   import ObjectRow from './ObjectRow.svelte'
   import { iconHtml, type IconName } from './icons.ts'
@@ -30,6 +32,10 @@
     readonly detailPresentationFor?: (object: OperationalObject) => PackObjectPresentation
     readonly openProcessSurface?: (object: OperationalObject) => void
     readonly openProcedureSystem?: (object: OperationalObject) => void
+    readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
+    readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
+    readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
+    readonly proceduresVisible: boolean
   }
 
   let {
@@ -53,6 +59,10 @@
     detailPresentationFor,
     openProcessSurface,
     openProcedureSystem,
+    openProcedureSystemAt,
+    openProcessPlantArtifact,
+    procedureSummariesForObject,
+    proceduresVisible,
   }: Props = $props()
 </script>
 
@@ -120,6 +130,10 @@
         {detailPresentationFor}
         {openProcessSurface}
         {openProcedureSystem}
+        {openProcedureSystemAt}
+        {openProcessPlantArtifact}
+        procedureSummaries={procedureSummariesForObject?.(entry.object)}
+        {proceduresVisible}
       />
     {/each}
   {/if}

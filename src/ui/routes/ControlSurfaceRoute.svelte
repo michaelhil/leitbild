@@ -1,7 +1,19 @@
 <script lang="ts">
   import type { Component } from 'svelte'
   import { tick, untrack } from 'svelte'
-  import type { IsoTimestamp, OperationalObject, ControlInstanceId, ScenarioDefinition, ScenarioInstanceState, SimulationClockState } from '../../core/model/index.ts'
+  import type {
+    IsoTimestamp,
+    OperationalObject,
+    ControlInstanceId,
+    ProcedureDocument,
+    ProcedureId,
+    ProcedureRunScope,
+    ProcedureRunState,
+    ProcedureStepId,
+    ScenarioDefinition,
+    ScenarioInstanceState,
+    SimulationClockState,
+  } from '../../core/model/index.ts'
   import { deleteObjectCommandKind } from '../../core/model/index.ts'
   import { createPackPresentationComposer } from '../../core/packs/presentation-composer.ts'
   import type { LeitbildPack, PackCreateObjectType, PackObjectPresentation, PackObjectPresentationTier, PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
@@ -41,6 +53,14 @@
   import ControlRail from '../ControlRail.svelte'
   import ScenarioGuidance from '../ScenarioGuidance.svelte'
   import StartupModal from '../StartupModal.svelte'
+  import type { ProcessPlantArtifactKind } from '../process-surface/process-surface-client.ts'
+  import { readProcedureDocument, readProcedureRuns } from '../procedures/procedure-client.ts'
+  import {
+    procedureCurrentStep,
+    procedureRunSummariesForScope,
+    type ProcedureRunSummary,
+    type ProcedureRunSummaryGroup,
+  } from '../procedures/procedure-run-selectors.ts'
   import type { StatusTone } from '../components/StatusDot.svelte'
   import {
     categoryRowsForSurface,
@@ -84,6 +104,7 @@
   const emptyStringArray: ReadonlyArray<string> = []
   const emptyMapLayerGroups: NonNullable<LeitbildPack['mapLayerGroups']> = []
   const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['mapAreaFeatureLayers']> = []
+  const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
   let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -111,8 +132,18 @@
   let ProcessSurfaceModal = $state<Component | null>(null)
   let GridOverviewPanel = $state<Component | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
+  let ProcessPlantArtifactModal = $state<Component | null>(null)
   let processSurfaceObject = $state<OperationalObject | null>(null)
   let procedureSystemObject = $state<OperationalObject | null>(null)
+  let procedureLaunchProcedureId = $state<ProcedureId | undefined>(undefined)
+  let procedureLaunchStepId = $state<ProcedureStepId | undefined>(undefined)
+  let procedureLaunchRevision = $state(0)
+  let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
+  let procedureRunDocuments = $state<ReadonlyMap<ProcedureId, ProcedureDocument>>(new Map())
+  let processPlantArtifactModal = $state<{
+    readonly object: OperationalObject
+    readonly artifact: ProcessPlantArtifactKind
+  } | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
@@ -122,6 +153,7 @@
   let processSurfaceModalLoadPromise: Promise<Component> | null = null
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let procedureSystemModalLoadPromise: Promise<Component> | null = null
+  let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
   let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -130,6 +162,10 @@
   let startupDebugMarks: Array<{ readonly label: string; readonly atMs: number; readonly deltaMs: number }> = []
   let latestMapRuntimeDiagnostics = $state<MapRuntimeDiagnosticsSnapshot | null>(null)
   let longTaskMonitor: LongTaskDiagnosticsMonitor | null = null
+  let procedureRunRefreshInFlight = false
+  let procedureRunRefreshQueued = false
+  let procedureRunRefreshKey = ''
+  let procedureRunDocumentControlInstanceId: ControlInstanceId | null = null
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -557,6 +593,20 @@
     }
   }
 
+  const loadProcessPlantArtifactModal = async (): Promise<void> => {
+    if (ProcessPlantArtifactModal) return
+    processPlantArtifactModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../process-surface/ProcessPlantArtifactModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcessPlantArtifactModal = await processPlantArtifactModalLoadPromise
+    } catch (err) {
+      processPlantArtifactModalLoadPromise = null
+      throw err
+    }
+  }
+
   const startStep = (id: StartupStepId): void => {
     markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
@@ -675,6 +725,16 @@
     processSurfaceObject = null
   }
 
+  const openProcessPlantArtifact = (object: OperationalObject, artifact: ProcessPlantArtifactKind): void => {
+    if (processPlantSystemIdFor(object) === null) return
+    processPlantArtifactModal = { object, artifact }
+    void loadProcessPlantArtifactModal()
+  }
+
+  const closeProcessPlantArtifact = (): void => {
+    processPlantArtifactModal = null
+  }
+
   const processPlantSystemIdFor = (object: OperationalObject): string | null => {
     if (object.packId !== 'process-plant') return null
     const data = object.packData
@@ -699,10 +759,101 @@
         }]
   }))
 
-  const openProcedureSystem = (object: OperationalObject): void => {
+  const procedureScopeForObject = (object: OperationalObject): ProcedureRunScope | null => {
+    const systemId = processPlantSystemIdFor(object)
+    return systemId === null
+      ? null
+      : { systemId, targetObjectId: object.id, label: object.label }
+  }
+
+  const scopedProcedureRuns = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureRunState> =>
+    nextRuns.filter(run => {
+      const raw = run as ProcedureRunState & { readonly scope?: unknown }
+      return typeof raw.scope === 'object'
+        && raw.scope !== null
+        && !Array.isArray(raw.scope)
+        && typeof (raw.scope as Record<string, unknown>).systemId === 'string'
+    })
+
+  const procedureRunDocumentIds = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureId> =>
+    [...new Set(nextRuns
+      .filter(run => run.status === 'active' || run.status === 'completed')
+      .map(run => run.procedureId))]
+
+  const ensureProcedureRunDocuments = async (
+    controlId: ControlInstanceId,
+    nextRuns: ReadonlyArray<ProcedureRunState>,
+  ): Promise<void> => {
+    const missing = procedureRunDocumentIds(nextRuns).filter(procedureId => !procedureRunDocuments.has(procedureId))
+    if (missing.length === 0) return
+    const loaded = await Promise.all(missing.map(async procedureId =>
+      await readProcedureDocument(controlId, procedureId, {
+        sourceId: nextRuns.find(run => run.procedureId === procedureId)?.sourceId,
+      }),
+    ))
+    procedureRunDocuments = new Map([
+      ...procedureRunDocuments,
+      ...loaded.map(document => [document.procedureId, document] as const),
+    ])
+  }
+
+  const refreshProcedureRunState = async (): Promise<void> => {
+    const controlId = controlInstanceId
+    if (!controlId || scenarioDefinition?.packs.includes('process-plant') !== true) {
+      procedureRuns = []
+      procedureRunDocuments = new Map()
+      procedureRunRefreshKey = ''
+      procedureRunDocumentControlInstanceId = null
+      return
+    }
+    if (procedureRunDocumentControlInstanceId !== controlId) {
+      procedureRuns = []
+      procedureRunDocuments = new Map()
+      procedureRunDocumentControlInstanceId = controlId
+    }
+    if (procedureRunRefreshInFlight) {
+      procedureRunRefreshQueued = true
+      return
+    }
+    procedureRunRefreshInFlight = true
+    try {
+      do {
+        procedureRunRefreshQueued = false
+        const nextRuns = scopedProcedureRuns((await readProcedureRuns(controlId)).runs)
+        await ensureProcedureRunDocuments(controlId, nextRuns)
+        if (controlInstanceId === controlId) procedureRuns = nextRuns
+      } while (procedureRunRefreshQueued)
+    } catch (err) {
+      commandStatus = err instanceof Error ? err.message : 'Unable to refresh procedure run status'
+    } finally {
+      procedureRunRefreshInFlight = false
+    }
+  }
+
+  const procedureSummariesForObject = (object: OperationalObject): ProcedureRunSummaryGroup => {
+    const scope = procedureScopeForObject(object)
+    return scope
+      ? procedureRunSummariesForScope(procedureRuns, scope, procedureRunDocuments)
+      : emptyProcedureRunSummaries
+  }
+
+  const procedureLaunchStepFor = (summary: ProcedureRunSummary): ProcedureStepId | undefined => {
+    const document = procedureRunDocuments.get(summary.procedureId)
+    const current = document ? procedureCurrentStep(summary.run, document) : null
+    return (current?.step.id ?? summary.step?.stepId) as ProcedureStepId | undefined
+  }
+
+  const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
     if (processPlantSystemIdFor(object) === null) return
     procedureSystemObject = object
+    procedureLaunchProcedureId = summary?.procedureId
+    procedureLaunchStepId = summary ? procedureLaunchStepFor(summary) : undefined
+    procedureLaunchRevision += 1
     void loadProcedureSystemModal()
+  }
+
+  const openProcedureSystem = (object: OperationalObject): void => {
+    openProcedureSystemAt(object)
   }
 
   const closeProcedureSystem = (): void => {
@@ -1158,6 +1309,20 @@
   $effect(() => {
     if (gridOverviewVisible && richOperationalUiReady) void loadGridOverviewPanel()
   })
+
+  $effect(() => {
+    const controlId = controlInstanceId
+    const hasProcessPlant = scenarioDefinition?.packs.includes('process-plant') === true
+    const refreshKey = controlId && hasProcessPlant ? `${controlId}:${procedureRevision}` : ''
+    if (refreshKey === procedureRunRefreshKey) return
+    procedureRunRefreshKey = refreshKey
+    if (!refreshKey) {
+      procedureRuns = []
+      procedureRunDocuments = new Map()
+      return
+    }
+    void refreshProcedureRunState()
+  })
 </script>
 
 {#if !surface}
@@ -1191,6 +1356,9 @@
         {deleteObject}
         {openProcessSurface}
         {openProcedureSystem}
+        {openProcedureSystemAt}
+        {openProcessPlantArtifact}
+        {procedureSummariesForObject}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
         {openStatusModal}
@@ -1273,7 +1441,9 @@
     object={processSurfaceObject}
     unitStatus={statusPresentationFor(processSurfaceObject)}
     unitContexts={procedureUnitContexts}
+    procedureSummaries={procedureSummariesForObject(processSurfaceObject)}
     {procedureRevision}
+    openProcedureSystemAt={(summary) => openProcedureSystemAt(processSurfaceObject, summary)}
     close={closeProcessSurface}
   />
 {/if}
@@ -1286,8 +1456,23 @@
     unitStatus={statusPresentationFor(procedureSystemObject)}
     unitContexts={procedureUnitContexts}
     realtimeRevision={procedureRevision}
+    initialProcedureId={procedureLaunchProcedureId}
+    initialStepId={procedureLaunchStepId}
+    initialNavigationRevision={procedureLaunchRevision}
     close={closeProcedureSystem}
   />
+{/if}
+
+{#if processPlantArtifactModal && ProcessPlantArtifactModal && controlInstanceId}
+  {@const artifactSystemId = processPlantSystemIdFor(processPlantArtifactModal.object)}
+  {#if artifactSystemId}
+    <ProcessPlantArtifactModal
+      {controlInstanceId}
+      systemId={artifactSystemId}
+      artifact={processPlantArtifactModal.artifact}
+      close={closeProcessPlantArtifact}
+    />
+  {/if}
 {/if}
 
 {#if startupModalVisible}
