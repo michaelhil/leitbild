@@ -1741,6 +1741,16 @@ body.rail-resizing {
   background: rgba(16, 24, 40, 0.12);
 }
 
+.process-imported-source-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 56px;
+  background: rgba(16, 24, 40, 0.18);
+}
+
 .process-component-source-modal {
   width: min(760px, calc(100vw - 96px));
   height: min(620px, calc(100vh - 96px));
@@ -1819,6 +1829,36 @@ body.rail-resizing {
   display: block;
   width: max-content;
   min-width: 100%;
+}
+
+.process-component-source-modal .source-link {
+  display: inline;
+  border: 0;
+  padding: 0 1px;
+  color: #1d4ed8;
+  background: color-mix(in srgb, #bfdbfe 58%, transparent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.process-component-source-modal .source-link:hover,
+.process-component-source-modal .source-link:focus-visible {
+  color: #1e40af;
+  background: #dbeafe;
+  outline: 1px solid #93c5fd;
+}
+
+.process-component-source-modal pre .active-line {
+  display: inline;
+  outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.process-imported-source-modal {
+  width: min(900px, calc(100vw - 112px));
+  height: min(680px, calc(100vh - 112px));
 }
 
 .procedure-backdrop {

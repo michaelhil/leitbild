@@ -7,6 +7,7 @@
     type ProcessPlantArtifact,
     type ProcessPlantArtifactComponent,
     type ProcessPlantArtifactKind,
+    type ProcessPlantArtifactSourceLink,
   } from './process-surface-client.ts'
 
   interface Props {
@@ -32,6 +33,8 @@
   let sourceSearchQuery = $state('')
   let sourceSearchCursor = $state(-1)
   let componentSource = $state<ProcessPlantArtifactComponent | null>(null)
+  let importedSource = $state<ProcessPlantArtifactSourceLink | null>(null)
+  let importedSourceViewport = $state<HTMLElement | null>(null)
   let graphPan = $state<{
     readonly pointerId: number
     readonly pointerStart: { readonly x: number; readonly y: number }
@@ -45,6 +48,7 @@
 
   const contentLineCount = $derived(data ? lineCountFor(data.content) : null)
   const sourceLines = $derived(data?.language === 'json' ? data.content.split(/\r\n|\r|\n/) : [])
+  const sourceFileByPath = $derived.by(() => new Map((data?.sourceFiles ?? []).map(file => [file.path, file] as const)))
   const normalizedSourceSearchQuery = $derived(sourceSearchQuery.trim().toLowerCase())
   const sourceSearchMatches = $derived(normalizedSourceSearchQuery.length === 0
     ? []
@@ -56,6 +60,46 @@
   interface SourceTextSegment {
     readonly text: string
     readonly match: boolean
+  }
+
+  interface SourceNavigationSegment {
+    readonly text: string
+    readonly link: ProcessPlantArtifactSourceLink | null
+  }
+
+  const sourceLinesFor = (content: string): ReadonlyArray<string> => content.split(/\r\n|\r|\n/)
+
+  const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+  const isIdentifierCharacter = (value: string | undefined): boolean =>
+    value !== undefined && /[A-Za-z0-9_$]/.test(value)
+
+  const hasIdentifierBoundary = (line: string, start: number, end: number): boolean =>
+    !isIdentifierCharacter(line[start - 1]) && !isIdentifierCharacter(line[end])
+
+  const sourceNavigationSegments = (
+    line: string,
+    links: ReadonlyArray<ProcessPlantArtifactSourceLink>,
+  ): ReadonlyArray<SourceNavigationSegment> => {
+    if (links.length === 0 || line.length === 0) return [{ text: line, link: null }]
+    const linkBySymbol = new Map(links.map(link => [link.symbol, link] as const))
+    const pattern = new RegExp([...linkBySymbol.keys()].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|'), 'g')
+    const segments: SourceNavigationSegment[] = []
+    let cursor = 0
+    for (const match of line.matchAll(pattern)) {
+      const index = match.index
+      const text = match[0]
+      if (index === undefined || text.length === 0) continue
+      const end = index + text.length
+      if (!hasIdentifierBoundary(line, index, end)) continue
+      const link = linkBySymbol.get(text)
+      if (!link) continue
+      if (index > cursor) segments.push({ text: line.slice(cursor, index), link: null })
+      segments.push({ text, link })
+      cursor = end
+    }
+    if (cursor < line.length) segments.push({ text: line.slice(cursor), link: null })
+    return segments.length === 0 ? [{ text: line, link: null }] : segments
   }
 
   const sourceTextSegments = (line: string): ReadonlyArray<SourceTextSegment> => {
@@ -152,7 +196,26 @@
   }
 
   const closeComponentSourceFromBackdrop = (event: MouseEvent): void => {
-    if (event.target === event.currentTarget) componentSource = null
+    if (event.target !== event.currentTarget) return
+    componentSource = null
+    importedSource = null
+  }
+
+  const closeImportedSourceFromBackdrop = (event: MouseEvent): void => {
+    if (event.target === event.currentTarget) importedSource = null
+  }
+
+  const scrollImportedSourceToDefinition = (): void => {
+    const targetLineIndex = importedSource?.targetLineIndex
+    if (targetLineIndex === null || targetLineIndex === undefined) return
+    const line = importedSourceViewport?.querySelector(`[data-import-source-line="${targetLineIndex}"]`)
+    if (line instanceof HTMLElement) line.scrollIntoView({ block: 'center' })
+  }
+
+  const openImportedSource = async (link: ProcessPlantArtifactSourceLink): Promise<void> => {
+    importedSource = link
+    await tick()
+    scrollImportedSourceToDefinition()
   }
 
   const fitGraphView = (): void => {
@@ -272,6 +335,7 @@
         sourceSearchQuery = ''
         sourceSearchCursor = -1
         componentSource = null
+        importedSource = null
         renderedSvg = null
         renderError = null
         graphSize = null
@@ -483,11 +547,44 @@
             <strong>{componentSource.label}</strong>
             <span>{componentSource.kind} · {componentSource.sourcePath}</span>
           </div>
-          <button type="button" aria-label="Close component source" onclick={() => { componentSource = null }}>
+          <button type="button" aria-label="Close component source" onclick={() => { componentSource = null; importedSource = null }}>
             <X size={18} aria-hidden="true" />
           </button>
         </header>
-        <pre><code>{componentSource.source}</code></pre>
+        <pre><code>{#each sourceLinesFor(componentSource.source) as line, lineIndex (`component-${componentSource.id}-${lineIndex}`)}<span data-component-source-line={lineIndex}>{#each sourceNavigationSegments(line, componentSource.sourceLinks) as segment, segmentIndex (`${lineIndex}-${segmentIndex}-${segment.text}`)}{#if segment.link}<button
+                  type="button"
+                  class="source-link"
+                  title="Open {segment.link.targetPath} at {segment.link.importedName}"
+                  onclick={() => void openImportedSource(segment.link)}
+                >{segment.text}</button>{:else}{segment.text}{/if}{/each}</span>{lineIndex + 1 < sourceLinesFor(componentSource.source).length ? '\n' : ''}{/each}</code></pre>
+      </section>
+    </div>
+  {/if}
+  {#if importedSource}
+    {@const importedFile = sourceFileByPath.get(importedSource.targetPath)}
+    <div
+      class="process-imported-source-backdrop"
+      role="presentation"
+      onclick={closeImportedSourceFromBackdrop}
+    >
+      <section
+        class="process-component-source-modal process-imported-source-modal"
+        aria-label="Imported source"
+      >
+        <header>
+          <div>
+            <strong>{importedSource.importedName}</strong>
+            <span>{importedSource.targetPath}{#if importedSource.targetLineIndex !== null} · line {importedSource.targetLineIndex + 1}{/if}</span>
+          </div>
+          <button type="button" aria-label="Close imported source" onclick={() => { importedSource = null }}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        {#if importedFile}
+          <pre bind:this={importedSourceViewport}><code>{#each sourceLinesFor(importedFile.content) as line, lineIndex (`imported-${importedSource.targetPath}-${lineIndex}`)}<span data-import-source-line={lineIndex} class:active-line={importedSource.targetLineIndex === lineIndex}>{line}</span>{lineIndex + 1 < sourceLinesFor(importedFile.content).length ? '\n' : ''}{/each}</code></pre>
+        {:else}
+          <div class="process-surface-error">Imported source file was not included in the artifact payload: {importedSource.targetPath}</div>
+        {/if}
       </section>
     </div>
   {/if}

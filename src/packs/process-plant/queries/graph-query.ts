@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { dirname, join, normalize } from 'node:path/posix'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
@@ -23,9 +24,28 @@ const sourceRoot = fileURLToPath(new URL('../../../..', import.meta.url))
 interface ComponentSourceView {
   readonly path: string
   readonly content: string
+  readonly imports: ReadonlyArray<ComponentSourceImportView>
+}
+
+interface ComponentSourceImportView {
+  readonly symbol: string
+  readonly importedName: string
+  readonly targetPath: string
+  readonly targetLineIndex: number | null
+}
+
+interface ArtifactComponentView {
+  readonly id: ComponentId
+  readonly label: string
+  readonly kind: string
+  readonly shownOnOverview: boolean
+  readonly source: string
+  readonly sourcePath: string
+  readonly sourceLinks: ReadonlyArray<ComponentSourceImportView>
 }
 
 const componentSourceCache = new Map<string, string>()
+const componentSourceImportCache = new Map<string, ReadonlyArray<ComponentSourceImportView>>()
 
 const sourceTextFor = (sourcePath: string): string => {
   const existing = componentSourceCache.get(sourcePath)
@@ -35,15 +55,80 @@ const sourceTextFor = (sourcePath: string): string => {
   return content
 }
 
+const importDeclarationPattern = /(?:^|\n)\s*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]/g
+const identifierCharacters = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+const resolveRelativeSourcePath = (sourcePath: string, importPath: string): string | null => {
+  if (!importPath.startsWith('.')) return null
+  const resolved = normalize(join(dirname(sourcePath), importPath))
+  if (!resolved.startsWith('src/')) return null
+  return resolved.endsWith('.ts') ? resolved : `${resolved}.ts`
+}
+
+const importedSymbolsFor = (importClause: string): ReadonlyArray<{ readonly symbol: string; readonly importedName: string }> => {
+  const namedImportMatch = /\{([\s\S]*?)\}/.exec(importClause)
+  if (!namedImportMatch) return []
+  const namedImportBody = namedImportMatch[1]
+  if (namedImportBody === undefined) return []
+  return namedImportBody
+    .split(',')
+    .map(part => part.trim().replace(/^type\s+/, '').trim())
+    .filter(part => part.length > 0)
+    .flatMap(part => {
+      const [imported, alias] = part.split(/\s+as\s+/).map(value => value.trim())
+      if (!imported || !identifierCharacters.test(imported)) return []
+      const symbol = alias && identifierCharacters.test(alias) ? alias : imported
+      return [{ symbol, importedName: imported }]
+    })
+}
+
+const escapedIdentifier = (identifier: string): string => identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const definitionLineIndexFor = (content: string, exportedName: string): number | null => {
+  const declarationPattern = new RegExp(`^\\s*export\\s+(?:const|function|interface|type|enum)\\s+${escapedIdentifier(exportedName)}\\b`)
+  const lines = content.split(/\r\n|\r|\n/)
+  const index = lines.findIndex(line => declarationPattern.test(line))
+  return index < 0 ? null : index
+}
+
+const componentSourceImportsFor = (sourcePath: string): ReadonlyArray<ComponentSourceImportView> => {
+  const cached = componentSourceImportCache.get(sourcePath)
+  if (cached) return cached
+  const content = sourceTextFor(sourcePath)
+  const imports: ComponentSourceImportView[] = []
+  const seen = new Set<string>()
+  for (const match of content.matchAll(importDeclarationPattern)) {
+    const importClause = match[1] ?? ''
+    const importedFrom = match[2] ?? ''
+    const targetPath = resolveRelativeSourcePath(sourcePath, importedFrom)
+    if (!targetPath) continue
+    const targetContent = sourceTextFor(targetPath)
+    for (const symbol of importedSymbolsFor(importClause)) {
+      const key = `${symbol.symbol}:${targetPath}:${symbol.importedName}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      imports.push({
+        symbol: symbol.symbol,
+        importedName: symbol.importedName,
+        targetPath,
+        targetLineIndex: definitionLineIndexFor(targetContent, symbol.importedName),
+      })
+    }
+  }
+  componentSourceImportCache.set(sourcePath, imports)
+  return imports
+}
+
 const componentSourceViewFor = (component: CompiledPlantGraph['components'][number]): ComponentSourceView => {
   const sourcePath = processPlantComponentBehaviorSourcePathByKind.get(component.kind)
   if (!sourcePath) {
     return {
       path: 'unknown',
       content: `Component behavior source not found for kind ${component.kind}`,
+      imports: [],
     }
   }
-  return { path: sourcePath, content: sourceTextFor(sourcePath) }
+  return { path: sourcePath, content: sourceTextFor(sourcePath), imports: componentSourceImportsFor(sourcePath) }
 }
 
 const displayProfileReadQuerySchema = z.object({
@@ -100,7 +185,7 @@ const artifactMetadata = (
 const artifactComponents = (
   graph: CompiledPlantGraph,
   overviewComponentIds: ReadonlySet<ComponentId>,
-): ReadonlyArray<Record<string, unknown>> => {
+): ReadonlyArray<ArtifactComponentView> => {
   return graph.components.map(component => {
     const source = componentSourceViewFor(component)
     return {
@@ -110,8 +195,20 @@ const artifactComponents = (
       shownOnOverview: overviewComponentIds.has(component.id),
       source: source.content,
       sourcePath: source.path,
+      sourceLinks: source.imports,
     }
   })
+}
+
+const artifactSourceFiles = (components: ReadonlyArray<ArtifactComponentView>): ReadonlyArray<Record<string, unknown>> => {
+  const targetPaths = new Set<string>()
+  for (const component of components) {
+    for (const link of component.sourceLinks) targetPaths.add(link.targetPath)
+  }
+  return [...targetPaths].sort().map(path => ({
+    path,
+    content: sourceTextFor(path),
+  }))
 }
 
 const artifactView = (
@@ -128,6 +225,7 @@ const artifactView = (
       language: 'json',
       content: JSON.stringify(system.system.sourceGraph, null, 2),
       components,
+      sourceFiles: artifactSourceFiles(components),
       metadata: artifactMetadata(system.system.graph, overviewComponentIds),
     }
   }
@@ -138,6 +236,7 @@ const artifactView = (
     language: 'mermaid',
     content: plantGraphToMermaid(system.system.graph, { highlightedComponentIds: overviewComponentIds }),
     components,
+    sourceFiles: artifactSourceFiles(components),
     metadata: artifactMetadata(system.system.graph, overviewComponentIds),
   }
 }

@@ -44,6 +44,18 @@ export interface ProcessSurfaceProjection {
 
 export type ProcessPlantArtifactKind = 'authored-spec' | 'compiled-graph-mermaid'
 
+export interface ProcessPlantArtifactSourceLink {
+  readonly symbol: string
+  readonly importedName: string
+  readonly targetPath: string
+  readonly targetLineIndex: number | null
+}
+
+export interface ProcessPlantArtifactSourceFile {
+  readonly path: string
+  readonly content: string
+}
+
 export interface ProcessPlantArtifactComponent {
   readonly id: string
   readonly label: string
@@ -51,6 +63,7 @@ export interface ProcessPlantArtifactComponent {
   readonly shownOnOverview: boolean
   readonly source: string
   readonly sourcePath: string
+  readonly sourceLinks: ReadonlyArray<ProcessPlantArtifactSourceLink>
 }
 
 export interface ProcessPlantArtifact {
@@ -60,6 +73,7 @@ export interface ProcessPlantArtifact {
   readonly language: 'json' | 'mermaid'
   readonly content: string
   readonly components: ReadonlyArray<ProcessPlantArtifactComponent>
+  readonly sourceFiles: ReadonlyArray<ProcessPlantArtifactSourceFile>
   readonly metadata: {
     readonly specId: string
     readonly componentCount: number
@@ -145,6 +159,29 @@ const parseProcessPlantArtifactComponent = (value: unknown): ProcessPlantArtifac
     shownOnOverview: component.shownOnOverview,
     source: assertString(component.source, 'process plant artifact component requires source'),
     sourcePath: assertString(component.sourcePath, 'process plant artifact component requires sourcePath'),
+    sourceLinks: assertArray(component.sourceLinks, 'process plant artifact component requires sourceLinks').map(parseProcessPlantArtifactSourceLink),
+  }
+}
+
+const parseProcessPlantArtifactSourceLink = (value: unknown): ProcessPlantArtifactSourceLink => {
+  const link = assertObject(value, 'process plant artifact source link is malformed')
+  const targetLineIndex = link.targetLineIndex
+  if (targetLineIndex !== null && (typeof targetLineIndex !== 'number' || !Number.isInteger(targetLineIndex) || targetLineIndex < 0)) {
+    throw new Error('process plant artifact source link requires nullable nonnegative targetLineIndex')
+  }
+  return {
+    symbol: assertString(link.symbol, 'process plant artifact source link requires symbol'),
+    importedName: assertString(link.importedName, 'process plant artifact source link requires importedName'),
+    targetPath: assertString(link.targetPath, 'process plant artifact source link requires targetPath'),
+    targetLineIndex,
+  }
+}
+
+const parseProcessPlantArtifactSourceFile = (value: unknown): ProcessPlantArtifactSourceFile => {
+  const file = assertObject(value, 'process plant artifact source file is malformed')
+  return {
+    path: assertString(file.path, 'process plant artifact source file requires path'),
+    content: assertString(file.content, 'process plant artifact source file requires content'),
   }
 }
 
@@ -260,6 +297,7 @@ export const readProcessPlantArtifact = async (
     language,
     content: assertString(result.content, 'process plant artifact result requires content'),
     components: assertArray(result.components, 'process plant artifact result requires components').map(parseProcessPlantArtifactComponent),
+    sourceFiles: assertArray(result.sourceFiles, 'process plant artifact result requires sourceFiles').map(parseProcessPlantArtifactSourceFile),
     metadata: {
       specId: assertString(metadata.specId, 'process plant artifact metadata requires specId'),
       componentCount: assertNumber(metadata.componentCount, 'process plant artifact metadata requires componentCount'),
