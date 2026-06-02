@@ -27,6 +27,8 @@ export const pressurizerInitialValueDefinitions: ReadonlyArray<ComponentInitialV
       if (localPath === 'heaterPowerMw') return 0
       if (localPath === 'sprayFlowKgPerS') return 0
       if (localPath === 'reliefValvePositionFraction') return 0
+      if (localPath === 'reliefValveFailureActive') return false
+      if (localPath === 'reliefValveFailedPositionFraction') return 1
       if (localPath === 'reliefFlowKgPerS') return 0
       return undefined
     },

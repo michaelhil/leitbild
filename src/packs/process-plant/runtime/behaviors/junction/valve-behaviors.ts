@@ -163,10 +163,12 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
   id: `${componentKind}-effective-position`,
   phase: 'solveFluidFlowComponents',
   componentKind,
-  reads: ['positionFraction', 'incoming:pressureMPa', 'availablePressureDropMPa', 'autoOpenActive'],
+  reads: ['positionFraction', 'positionFailureActive', 'failedPositionFraction', 'incoming:pressureMPa', 'availablePressureDropMPa', 'autoOpenActive'],
   writes: ['demandPositionFraction', 'effectivePositionFraction', 'autoOpenActive'],
   update: ({ system, component, context }): void => {
     const manualTarget = clamp(context.readNumber(componentVariablePath(component, 'positionFraction')), 0, 1)
+    const failureActive = context.readBoolean(componentVariablePath(component, 'positionFailureActive'))
+    const failedPosition = clamp(context.readNumber(componentVariablePath(component, 'failedPositionFraction')), 0, 1)
     const mode = optionalParameterString(component, 'valveMode', 'control', valveModes)
     const incomingLinks = incomingComponentLinks(system, component)
     const upstreamPressure = maxLinkValue(
@@ -182,7 +184,7 @@ const valveControlBehavior = (componentKind: 'processValve' | 'steamValve'): Com
     const wasAutoOpen = context.readBoolean(componentVariablePath(component, 'autoOpenActive'))
     const automaticPressure = upstreamPressure ?? pressureDrop
     const autoOpen = (mode === 'relief' || mode === 'safety') && (automaticPressure >= setpoint || (wasAutoOpen && automaticPressure > reseat))
-    const target = autoOpen ? 1 : manualTarget
+    const target = failureActive ? failedPosition : autoOpen ? 1 : manualTarget
     const current = context.readNumber(componentVariablePath(component, 'effectivePositionFraction'))
     const timeConstant = target >= current
       ? optionalParameterNumber(component, 'strokeOpenTimeS', optionalParameterNumber(component, 'strokeTimeConstantS', 0.1))

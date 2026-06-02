@@ -12,9 +12,12 @@ import {
   createProcessPlantMultiSystemTestbed,
   createProcessPlantRuntime,
   createProcessPlantTestbed,
+  defaultProcessPlantDemoTransientInputs,
   plantGraph,
   pressurizedWaterReactorPlantSpec,
   processLinkVariableDescriptorSchema,
+  processPlantDemoTransientCommands,
+  processPlantDemoTransients,
   processPlantSolverPhases,
   processPlantComponentRegistry,
   processPlantServices,
@@ -248,6 +251,60 @@ describe('process plant runtime', () => {
 
     expect(Number(runtime.readVariable(valueOf('offsiteGrid.voltageFraction')))).toBeCloseTo(0.85, 6)
     expect(activeLifecycleIds(snapshot).alarms).toContain('alarm:offsite-grid-degraded-voltage:offsite-grid-degraded-voltage')
+  })
+
+  test('demo transient catalog produces reference I&C lifecycle indications', () => {
+    const expectedLifecycleIds = new Map<string, ReadonlyArray<string>>([
+      ['sg-a-tube-leak', [
+        'alarm:sg-a-tube-leak-indication:tube-leak',
+        'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
+      ]],
+      ['trip-all-rcps', [
+        'alarm:rcp-a-trip:not-running',
+        'alarm:rcp-b-trip:not-running',
+        'alarm:rcp-c-trip:not-running',
+        'alarm:rcp-d-trip:not-running',
+        'trip:reactor-low-rcp-flow-trip:low-rcp-flow-trip',
+      ]],
+      ['loss-main-feedwater', [
+        'alarm:main-feedwater-pump-trip:main-feedwater-pump-unavailable',
+      ]],
+      ['sg-b-feedwater-runback', [
+        'alarm:sg-b-feedwater-flow-low:feedwater-flow-low',
+      ]],
+      ['pressurizer-relief-open', [
+        'alarm:pzr-relief-flow-high:relief-flow-high',
+      ]],
+      ['turbine-trip', [
+        'alarm:turbine-load-low:load-low',
+        'alarm:generator-output-low:generator-output-low',
+      ]],
+      ['loss-offsite-power', [
+        'alarm:loss-of-offsite-power:loss-of-offsite-power',
+      ]],
+    ])
+
+    for (const transient of processPlantDemoTransients) {
+      const expected = expectedLifecycleIds.get(transient.id)
+      if (expected === undefined) throw new Error(`missing lifecycle expectation for demo transient ${transient.id}`)
+      const system = compiledSystem()
+      const runtime = createProcessPlantRuntime({ system })
+      const commands = processPlantDemoTransientCommands(
+        transient,
+        defaultProcessPlantDemoTransientInputs(transient),
+      )
+      for (const command of commands) {
+        runtime.writeCommand({
+          type: 'setVariable',
+          path: command.path,
+          value: command.value,
+        })
+      }
+      const snapshot = runWithReferenceProtection({ system, runtime, durationMs: 90_000 })
+      const active = activeLifecycleIds(snapshot)
+      const activeIds = [...active.alarms, ...active.trips]
+      expect(activeIds, transient.id).toEqual(expect.arrayContaining(expected))
+    }
   })
 
   test('explicit electrical links make train loss disable train-powered pumps', () => {

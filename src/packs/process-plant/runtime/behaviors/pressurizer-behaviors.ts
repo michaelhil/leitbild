@@ -33,6 +33,8 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
       'incoming electrical energized?',
       'sprayFlowKgPerS',
       'reliefValvePositionFraction',
+      'reliefValveFailureActive',
+      'reliefValveFailedPositionFraction',
       'incoming:primaryCoolant.temperatureC',
       'reactor vessel primaryPressureBiasMPa',
     ],
@@ -68,8 +70,12 @@ export const pressurizerBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefi
         : 0
       const sprayFlow = clamp(context.readNumber(componentVariablePath(component, 'sprayFlowKgPerS')), 0, 500)
       const reliefValvePosition = clamp(context.readNumber(componentVariablePath(component, 'reliefValvePositionFraction')), 0, 1)
+      const reliefValveFailureActive = context.readBoolean(componentVariablePath(component, 'reliefValveFailureActive'))
+      const reliefValveFailedPosition = clamp(context.readNumber(componentVariablePath(component, 'reliefValveFailedPositionFraction')), 0, 1)
       const automaticReliefDemand = clamp((currentPressure - reliefSetpoint) / Math.max(0.1, reliefSetpoint * 0.04), 0, 1)
-      const reliefDemand = Math.max(reliefValvePosition, automaticReliefDemand)
+      const reliefDemand = reliefValveFailureActive
+        ? reliefValveFailedPosition
+        : Math.max(reliefValvePosition, automaticReliefDemand)
       const reliefFlow = reliefCapacity * reliefDemand * clamp(currentPressure / nominalPressure, 0.1, 1.4)
 
       const surgeTemperature = averageIncomingLinkValue(system, component, 'temperatureC', context, link => link.service === 'primaryCoolant')

@@ -108,22 +108,34 @@ export const processPlantDemoTransients: ReadonlyArray<ProcessPlantDemoTransient
   {
     id: 'sg-b-feedwater-runback',
     label: 'SG B feedwater runback',
-    description: 'Drive the SG B feedwater control valve low; useful for showing level imbalance across the SG group.',
+    description: 'Fail the SG B feedwater control valve near closed; SG feedwater flow and level imbalance respond.',
     fields: feedwaterRunbackFields,
-    commands: values => [{
-      path: path('feedwaterControlValveB.positionFraction'),
-      value: percentToFraction(fieldValue(feedwaterRunbackFields, values, 'positionPercent')),
-    }],
+    commands: values => [
+      {
+        path: path('feedwaterControlValveB.positionFailureActive'),
+        value: true,
+      },
+      {
+        path: path('feedwaterControlValveB.failedPositionFraction'),
+        value: percentToFraction(fieldValue(feedwaterRunbackFields, values, 'positionPercent')),
+      },
+    ],
   },
   {
     id: 'pressurizer-relief-open',
     label: 'PZR relief stuck open',
-    description: 'Open the pressurizer relief path; pressure, relief flow, and primary inventory respond.',
+    description: 'Fail the pressurizer relief path open; relief flow, pressure, and primary inventory respond.',
     fields: reliefFields,
-    commands: values => [{
-      path: path('pressurizer.reliefValvePositionFraction'),
-      value: percentToFraction(fieldValue(reliefFields, values, 'positionPercent')),
-    }],
+    commands: values => [
+      {
+        path: path('pressurizer.reliefValveFailureActive'),
+        value: true,
+      },
+      {
+        path: path('pressurizer.reliefValveFailedPositionFraction'),
+        value: percentToFraction(fieldValue(reliefFields, values, 'positionPercent')),
+      },
+    ],
   },
   {
     id: 'turbine-trip',

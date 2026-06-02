@@ -124,5 +124,25 @@ export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): Rea
         annunciator: sgAlarm,
       })],
     }),
+    rule({
+      id: `sg-${lower}-feedwater-flow-low`,
+      label: `Steam generator ${loop} feedwater flow low`,
+      ruleClass: 'alarm',
+      modeLabel: 'power operation',
+      modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
+      condition: comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '<', 150),
+      clearCondition: comparison({ path: `${sg}.feedwaterFlowKgPerS` }, '>', 180),
+      clearDelayMs: 2_000,
+      delayMs: 3_000,
+      latch: false,
+      resetWhenClear: true,
+      effects: [alarm({
+        id: 'feedwater-flow-low',
+        title: `Steam generator ${loop} feedwater flow low`,
+        message: `Steam generator ${loop} feedwater flow is below the reference low-flow threshold.`,
+        severity: 'warning',
+        annunciator: sgAlarm,
+      })],
+    }),
   ]
 }
