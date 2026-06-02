@@ -92,9 +92,11 @@ describe('process plant graph foundation', () => {
       'pressurizer',
       'sg-a',
       'sg-b',
+      'alarm-panel',
       'turbine',
       'condenser',
     ]))
+    expect(surface.widgets.find(widget => widget.id === 'alarm-panel')?.type).toBe('alarmPanel')
     expect(surface.paths.map(path => path.id)).toEqual(expect.arrayContaining([
       'primary-hot-leg-a',
       'main-steam-to-turbine',

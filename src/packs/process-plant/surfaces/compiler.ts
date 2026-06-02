@@ -72,6 +72,7 @@ const regionFramesFor = (surface: ProcessSurfaceDefinition): ReadonlyMap<string,
 
 const sizeFor = (widget: ProcessSurfaceWidget): { readonly width: number; readonly height: number } => {
   if (widget.type === 'statusBanner') return { width: 540, height: 62 }
+  if (widget.type === 'alarmPanel') return { width: 640, height: 72 }
   if (widget.type === 'alarmStrip') return { width: 640, height: 54 }
   if (widget.type === 'numericReadout') return { width: 240, height: 74 }
   if (widget.type === 'trendMini') return { width: 260, height: 92 }

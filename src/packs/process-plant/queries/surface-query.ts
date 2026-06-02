@@ -14,10 +14,15 @@ import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overvi
 import {
   processSurfaceGraphLensSchema,
   type CompiledProcessSurface,
+  type ProcessSurfaceAlarmAnnunciator,
+  type ProcessSurfaceAlarmLifecycle,
+  type ProcessSurfaceAlarmSeverity,
+  type ProcessSurfaceAlarmSnapshot,
   type ProcessSurfaceBinding,
   type ProcessSurfaceValue,
 } from '../surfaces/model.ts'
 import { projectCompiledProcessSurface } from '../surfaces/projection.ts'
+import type { ProcessPlantIcLifecycleState } from '../runtime/index.ts'
 
 const surfaceQuerySchema = z.object({
   systemId: idSchema,
@@ -104,6 +109,93 @@ const snapshotValuesFor = (
   })
 }
 
+const severityOrder: ReadonlyArray<ProcessSurfaceAlarmSeverity> = ['info', 'notice', 'warning', 'critical']
+
+const severityRank = (severity: ProcessSurfaceAlarmSeverity): number =>
+  severityOrder.indexOf(severity)
+
+const compareAlarmLifecycle = (
+  left: ProcessPlantIcLifecycleState,
+  right: ProcessPlantIcLifecycleState,
+): number => {
+  if (left.firstOut && right.firstOut) {
+    return (left.firstOutRank ?? Number.MAX_SAFE_INTEGER) - (right.firstOutRank ?? Number.MAX_SAFE_INTEGER)
+  }
+  if (left.firstOut !== right.firstOut) return left.firstOut ? -1 : 1
+  const severityDelta = severityRank(right.severity) - severityRank(left.severity)
+  if (severityDelta !== 0) return severityDelta
+  return (left.firstActiveElapsedMs ?? left.lastActiveElapsedMs ?? Number.MAX_SAFE_INTEGER)
+    - (right.firstActiveElapsedMs ?? right.lastActiveElapsedMs ?? Number.MAX_SAFE_INTEGER)
+}
+
+const alarmAnnunciatorFor = (
+  lifecycle: ProcessPlantIcLifecycleState,
+): ProcessSurfaceAlarmAnnunciator | undefined => {
+  const annunciator = lifecycle.annunciator
+  if (annunciator === undefined) return undefined
+  return {
+    ...(annunciator.system === undefined ? {} : { system: annunciator.system }),
+    ...(annunciator.equipmentId === undefined ? {} : { equipmentId: annunciator.equipmentId }),
+    ...(annunciator.group === undefined ? {} : { group: annunciator.group }),
+    ...(annunciator.firstOutGroup === undefined ? {} : { firstOutGroup: annunciator.firstOutGroup }),
+    priority: annunciator.priority,
+    role: annunciator.role,
+  }
+}
+
+const alarmLifecycleFor = (
+  lifecycle: ProcessPlantIcLifecycleState,
+): ProcessSurfaceAlarmLifecycle => {
+  const annunciator = alarmAnnunciatorFor(lifecycle)
+  return {
+    id: lifecycle.id,
+    kind: lifecycle.kind,
+    title: lifecycle.title,
+    message: lifecycle.message,
+    severity: lifecycle.severity,
+    phase: lifecycle.phase,
+    active: lifecycle.active,
+    acknowledged: lifecycle.acknowledged,
+    firstOut: lifecycle.firstOut,
+    resettable: lifecycle.resettable,
+    ...(annunciator === undefined ? {} : { annunciator }),
+    ...(lifecycle.firstOutRank === undefined ? {} : { firstOutRank: lifecycle.firstOutRank }),
+    ...(lifecycle.firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs: lifecycle.firstActiveElapsedMs }),
+    ...(lifecycle.lastActiveElapsedMs === undefined ? {} : { lastActiveElapsedMs: lifecycle.lastActiveElapsedMs }),
+    ...(lifecycle.lastClearedElapsedMs === undefined ? {} : { lastClearedElapsedMs: lifecycle.lastClearedElapsedMs }),
+  }
+}
+
+const alarmSnapshotFor = (system: ProcessPlantSystemRuntime): ProcessSurfaceAlarmSnapshot => {
+  const snapshot = system.protection?.snapshot()
+  if (snapshot === undefined) {
+    return {
+      configured: false,
+      activeAlarmCount: 0,
+      activeTripCount: 0,
+      unacknowledgedCount: 0,
+      firstOutCount: 0,
+      activeHighestSeverity: null,
+      activeFirstOut: [],
+      active: [],
+    }
+  }
+  const lifecycles = [...snapshot.alarms, ...snapshot.trips]
+  const active = lifecycles.filter(lifecycle => lifecycle.active).sort(compareAlarmLifecycle)
+  const activeFirstOut = active.filter(lifecycle => lifecycle.firstOut)
+  const unacknowledged = lifecycles.filter(lifecycle => !lifecycle.acknowledged && (lifecycle.active || lifecycle.lastClearedElapsedMs !== undefined))
+  return {
+    configured: true,
+    activeAlarmCount: snapshot.alarms.filter(lifecycle => lifecycle.active).length,
+    activeTripCount: snapshot.trips.filter(lifecycle => lifecycle.active).length,
+    unacknowledgedCount: unacknowledged.length,
+    firstOutCount: activeFirstOut.length,
+    activeHighestSeverity: active[0]?.severity ?? null,
+    activeFirstOut: activeFirstOut.map(alarmLifecycleFor),
+    active: active.map(alarmLifecycleFor),
+  }
+}
+
 export const answerProcessPlantSurfaceQuery = (config: {
   readonly request: PackQueryRequest
   readonly systems: ReadonlyMap<string, ProcessPlantSystemRuntime>
@@ -160,5 +252,6 @@ export const answerProcessPlantSurfaceQuery = (config: {
     systemId: system.system.id,
     surfaceId: surface.id,
     values: snapshotValuesFor(system, plan),
+    alarms: alarmSnapshotFor(system),
   }, config.at)
 }

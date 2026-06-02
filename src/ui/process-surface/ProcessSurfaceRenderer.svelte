@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { CompiledProcessSurface, CompiledProcessSurfaceWidget, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import type { CompiledProcessSurface, CompiledProcessSurfaceWidget, ProcessSurfaceAlarmSnapshot, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import { emptyProcessSurfaceAlarmSnapshot } from './process-surface-client.ts'
   import ProcessSurfaceWidget from './ProcessSurfaceWidget.svelte'
   import type { ProcessSurfaceLayout, ProcessSurfaceWidgetPosition } from './process-surface-layout.ts'
   import {
@@ -12,6 +13,7 @@
   interface Props {
     readonly surface: CompiledProcessSurface
     readonly values: ReadonlyMap<string, ProcessSurfaceValue>
+    readonly alarms?: ProcessSurfaceAlarmSnapshot
     readonly widgetPositions?: ProcessSurfaceLayout
     readonly visibleWidgetIds?: ReadonlySet<string> | null
     readonly visiblePathIds?: ReadonlySet<string> | null
@@ -21,6 +23,7 @@
   let {
     surface,
     values,
+    alarms = emptyProcessSurfaceAlarmSnapshot,
     widgetPositions = {},
     visibleWidgetIds = null,
     visiblePathIds = null,
@@ -252,6 +255,7 @@
           {widget}
           geometry={widgetGeometryFor(widget, widgetPositions)}
           {values}
+          {alarms}
           dragging={dragState?.widgetId === widget.id}
           renderScale={viewTransform.scale}
           onStartDrag={startDrag}

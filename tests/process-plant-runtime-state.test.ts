@@ -307,6 +307,19 @@ describe('process plant pack runtime', () => {
     expect(typeof values.get('core.totalThermalPowerMw')?.value).toBe('number')
     expect(values.get('core.totalThermalPowerMw')?.formatted).toMatch(/MW$/)
     expect(typeof values.get('pressurizer.pressureMPa')?.value).toBe('number')
+    expect((snapshot.result as {
+      readonly alarms: {
+        readonly configured: boolean
+        readonly activeAlarmCount: number
+        readonly activeTripCount: number
+        readonly active: ReadonlyArray<unknown>
+      }
+    }).alarms).toEqual(expect.objectContaining({
+      configured: false,
+      activeAlarmCount: 0,
+      activeTripCount: 0,
+      active: [],
+    }))
 
     const projection = await connection.query(query('process-plant.surface.project', {
       systemId: 'plant',
@@ -1995,7 +2008,37 @@ describe('process plant pack runtime', () => {
         priority: 'high',
       }),
     }))
+    expect(alarms).toContainEqual(expect.objectContaining({
+      id: 'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
+      active: true,
+      title: 'Steam generator A secondary radiation high',
+      annunciator: expect.objectContaining({
+        equipmentId: 'sgA',
+        priority: 'urgent',
+      }),
+    }))
     expect(alarms.some(entry => entry.title.toLowerCase().includes('procedure'))).toBe(false)
+
+    const surfaceSnapshot = await connection.query(query('process-plant.surface.snapshot', {
+      systemId: 'plant',
+      surfaceId: 'unit-overview',
+    }))
+    expect(surfaceSnapshot.ok).toBe(true)
+    if (!surfaceSnapshot.ok) throw new Error(surfaceSnapshot.reason)
+    const alarmPanel = (surfaceSnapshot.result as {
+      readonly alarms: {
+        readonly activeAlarmCount: number
+        readonly activeHighestSeverity: string | null
+        readonly active: ReadonlyArray<{ readonly id: string; readonly title: string; readonly severity: string }>
+      }
+    }).alarms
+    expect(alarmPanel.activeAlarmCount).toBeGreaterThanOrEqual(2)
+    expect(alarmPanel.activeHighestSeverity).toBe('critical')
+    expect(alarmPanel.active).toContainEqual(expect.objectContaining({
+      id: 'alarm:sg-a-secondary-radiation-high:secondary-radiation-high',
+      title: 'Steam generator A secondary radiation high',
+      severity: 'critical',
+    }))
 
     await connection.close()
   })

@@ -1,11 +1,14 @@
 <script lang="ts">
-  import type { CompiledProcessSurfaceWidget, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import type { CompiledProcessSurfaceWidget, ProcessSurfaceAlarmSnapshot, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
+  import { emptyProcessSurfaceAlarmSnapshot } from './process-surface-client.ts'
+  import ProcessSurfaceAlarmPanel from './ProcessSurfaceAlarmPanel.svelte'
   import { bindingRowsFor, levelFractionFor } from './process-surface-rendering.ts'
 
   interface Props {
     readonly widget: CompiledProcessSurfaceWidget
     readonly geometry: CompiledProcessSurfaceWidget['geometry']
     readonly values: ReadonlyMap<string, ProcessSurfaceValue>
+    readonly alarms?: ProcessSurfaceAlarmSnapshot
     readonly dragging?: boolean
     readonly renderScale?: number
     readonly onStartDrag?: (event: PointerEvent, widget: CompiledProcessSurfaceWidget) => void
@@ -17,6 +20,7 @@
     widget,
     geometry,
     values,
+    alarms = emptyProcessSurfaceAlarmSnapshot,
     dragging = false,
     renderScale = 1,
     onStartDrag,
@@ -28,7 +32,7 @@
   const levelFraction = $derived(levelFractionFor(widget, values))
   const rowLimit = $derived(widget.role === 'steam-generator'
     ? 6
-    : widget.type === 'statusBanner' || widget.type === 'alarmStrip' ? 4 : 3)
+    : widget.type === 'statusBanner' || widget.type === 'alarmStrip' || widget.type === 'alarmPanel' ? 4 : 3)
   const displayRows = $derived(rows.slice(0, rowLimit))
   const widgetClass = $derived(`process-widget ${widget.type} ${widget.role ?? 'generic'} ${widget.style.tone ?? 'primary'} ${dragging ? 'dragging' : ''}`)
   const shortTitle = $derived(widget.label.length > 22 ? `${widget.label.slice(0, 20)}...` : widget.label)
@@ -345,6 +349,8 @@
         </text>
       {/each}
     </g>
+  {:else if widget.type === 'alarmPanel'}
+    <ProcessSurfaceAlarmPanel {widget} {geometry} {alarms} />
   {:else if widget.type === 'numericReadout' || widget.type === 'alarmStrip'}
     <rect class="overview-readout-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="4" />
     <text class="widget-title overview-readout-title" x="14" y="21">{shortTitle}</text>

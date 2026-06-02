@@ -1,6 +1,10 @@
 import type { ControlInstanceId } from '../../core/model/index.ts'
 import type {
   CompiledProcessSurface,
+  ProcessSurfaceAlarmAnnunciator,
+  ProcessSurfaceAlarmLifecycle,
+  ProcessSurfaceAlarmSnapshot,
+  ProcessSurfaceAlarmSeverity,
   ProcessSurfaceGraphLens,
   ProcessSurfaceValue,
 } from '../../packs/process-plant/surfaces/index.ts'
@@ -24,6 +28,18 @@ export interface ProcessSurfaceSnapshot {
   readonly systemId: string
   readonly surfaceId: string
   readonly values: ReadonlyArray<ProcessSurfaceValue>
+  readonly alarms: ProcessSurfaceAlarmSnapshot
+}
+
+export const emptyProcessSurfaceAlarmSnapshot: ProcessSurfaceAlarmSnapshot = {
+  configured: false,
+  activeAlarmCount: 0,
+  activeTripCount: 0,
+  unacknowledgedCount: 0,
+  firstOutCount: 0,
+  activeHighestSeverity: null,
+  activeFirstOut: [],
+  active: [],
 }
 
 export interface ProcessSurfaceProjection {
@@ -103,6 +119,11 @@ const assertNumber = (value: unknown, message: string): number => {
   return value
 }
 
+const assertBoolean = (value: unknown, message: string): boolean => {
+  if (typeof value !== 'boolean') throw new Error(message)
+  return value
+}
+
 const requireOkResult = (value: unknown): Record<string, unknown> => {
   const envelope = assertObject(value, 'process surface query returned a malformed response')
   if (envelope.ok !== true) throw new Error(typeof envelope.reason === 'string' ? envelope.reason : 'process surface query failed')
@@ -130,6 +151,85 @@ const parseSurfaceValues = (value: unknown): ReadonlyArray<ProcessSurfaceValue> 
       formatted: assertString(record.formatted, 'process surface value requires formatted'),
     }
   })
+
+const parseAlarmSeverity = (value: unknown): ProcessSurfaceAlarmSeverity => {
+  if (value === 'info' || value === 'notice' || value === 'warning' || value === 'critical') return value
+  throw new Error('process surface alarm lifecycle has invalid severity')
+}
+
+const parseAlarmPriority = (value: unknown): NonNullable<ProcessSurfaceAlarmLifecycle['annunciator']>['priority'] => {
+  if (value === 'low' || value === 'medium' || value === 'high' || value === 'urgent') return value
+  throw new Error('process surface alarm annunciator has invalid priority')
+}
+
+const parseAlarmRole = (value: unknown): NonNullable<ProcessSurfaceAlarmLifecycle['annunciator']>['role'] => {
+  if (value === 'symptom' || value === 'cause' || value === 'automaticAction' || value === 'status') return value
+  throw new Error('process surface alarm annunciator has invalid role')
+}
+
+const parseOptionalNumber = (value: unknown, message: string): number | undefined => {
+  if (value === undefined) return undefined
+  return assertNumber(value, message)
+}
+
+const parseAlarmAnnunciator = (value: unknown): ProcessSurfaceAlarmAnnunciator | undefined => {
+  if (value === undefined) return undefined
+  const annunciator = assertObject(value, 'process surface alarm annunciator is malformed')
+  const priority = annunciator.priority === undefined ? undefined : parseAlarmPriority(annunciator.priority)
+  const role = annunciator.role === undefined ? undefined : parseAlarmRole(annunciator.role)
+  return {
+    ...(typeof annunciator.system === 'string' ? { system: annunciator.system } : {}),
+    ...(typeof annunciator.equipmentId === 'string' ? { equipmentId: annunciator.equipmentId } : {}),
+    ...(typeof annunciator.group === 'string' ? { group: annunciator.group } : {}),
+    ...(typeof annunciator.firstOutGroup === 'string' ? { firstOutGroup: annunciator.firstOutGroup } : {}),
+    ...(priority === undefined ? {} : { priority }),
+    ...(role === undefined ? {} : { role }),
+  }
+}
+
+const parseAlarmLifecycle = (value: unknown): ProcessSurfaceAlarmLifecycle => {
+  const lifecycle = assertObject(value, 'process surface alarm lifecycle is malformed')
+  const kind = lifecycle.kind
+  if (kind !== 'alarm' && kind !== 'trip') throw new Error('process surface alarm lifecycle has invalid kind')
+  const parsedAnnunciator = parseAlarmAnnunciator(lifecycle.annunciator)
+  const firstOutRank = parseOptionalNumber(lifecycle.firstOutRank, 'process surface alarm lifecycle has invalid firstOutRank')
+  const firstActiveElapsedMs = parseOptionalNumber(lifecycle.firstActiveElapsedMs, 'process surface alarm lifecycle has invalid firstActiveElapsedMs')
+  const lastActiveElapsedMs = parseOptionalNumber(lifecycle.lastActiveElapsedMs, 'process surface alarm lifecycle has invalid lastActiveElapsedMs')
+  const lastClearedElapsedMs = parseOptionalNumber(lifecycle.lastClearedElapsedMs, 'process surface alarm lifecycle has invalid lastClearedElapsedMs')
+  return {
+    id: assertString(lifecycle.id, 'process surface alarm lifecycle requires id'),
+    kind,
+    title: assertString(lifecycle.title, 'process surface alarm lifecycle requires title'),
+    message: assertString(lifecycle.message, 'process surface alarm lifecycle requires message'),
+    severity: parseAlarmSeverity(lifecycle.severity),
+    phase: assertString(lifecycle.phase, 'process surface alarm lifecycle requires phase'),
+    active: assertBoolean(lifecycle.active, 'process surface alarm lifecycle requires active'),
+    acknowledged: assertBoolean(lifecycle.acknowledged, 'process surface alarm lifecycle requires acknowledged'),
+    firstOut: assertBoolean(lifecycle.firstOut, 'process surface alarm lifecycle requires firstOut'),
+    resettable: assertBoolean(lifecycle.resettable, 'process surface alarm lifecycle requires resettable'),
+    ...(parsedAnnunciator === undefined ? {} : { annunciator: parsedAnnunciator }),
+    ...(firstOutRank === undefined ? {} : { firstOutRank }),
+    ...(firstActiveElapsedMs === undefined ? {} : { firstActiveElapsedMs }),
+    ...(lastActiveElapsedMs === undefined ? {} : { lastActiveElapsedMs }),
+    ...(lastClearedElapsedMs === undefined ? {} : { lastClearedElapsedMs }),
+  }
+}
+
+const parseAlarmSnapshot = (value: unknown): ProcessSurfaceAlarmSnapshot => {
+  const snapshot = assertObject(value, 'process surface snapshot result has no alarms object')
+  const activeHighestSeverity = snapshot.activeHighestSeverity
+  if (activeHighestSeverity !== null && activeHighestSeverity !== undefined) parseAlarmSeverity(activeHighestSeverity)
+  return {
+    configured: assertBoolean(snapshot.configured, 'process surface alarm snapshot requires configured'),
+    activeAlarmCount: assertNumber(snapshot.activeAlarmCount, 'process surface alarm snapshot requires activeAlarmCount'),
+    activeTripCount: assertNumber(snapshot.activeTripCount, 'process surface alarm snapshot requires activeTripCount'),
+    unacknowledgedCount: assertNumber(snapshot.unacknowledgedCount, 'process surface alarm snapshot requires unacknowledgedCount'),
+    firstOutCount: assertNumber(snapshot.firstOutCount, 'process surface alarm snapshot requires firstOutCount'),
+    activeHighestSeverity: activeHighestSeverity === null || activeHighestSeverity === undefined ? null : parseAlarmSeverity(activeHighestSeverity),
+    activeFirstOut: assertArray(snapshot.activeFirstOut, 'process surface alarm snapshot requires activeFirstOut').map(parseAlarmLifecycle),
+    active: assertArray(snapshot.active, 'process surface alarm snapshot requires active').map(parseAlarmLifecycle),
+  }
+}
 
 const parseCompiledProcessSurface = (value: unknown): CompiledProcessSurface => {
   const surface = assertObject(value, 'process surface read result has no surface')
@@ -237,6 +337,7 @@ export const readProcessSurfaceSnapshot = async (
     systemId: result.systemId,
     surfaceId: result.surfaceId,
     values: parseSurfaceValues(result.values),
+    alarms: parseAlarmSnapshot(result.alarms),
   }
 }
 

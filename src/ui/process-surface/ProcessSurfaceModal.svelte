@@ -17,6 +17,7 @@
   import type { ProcedureRunSummary, ProcedureRunSummaryGroup } from '../procedures/procedure-run-selectors.ts'
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import {
+    emptyProcessSurfaceAlarmSnapshot,
     listProcessSurfaces,
     readProcessSurface,
     readProcessSurfaceProjection,
@@ -24,6 +25,7 @@
     type ProcessSurfaceProjection,
     type ProcessSurfaceLensOption,
   } from './process-surface-client.ts'
+  import type { ProcessSurfaceAlarmSnapshot } from '../../packs/process-plant/surfaces/index.ts'
   import {
     readProcessSurfaceLayout,
     readProcessSurfaceWindowBounds,
@@ -80,6 +82,7 @@
   let error = $state<string | null>(null)
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
+  let alarms = $state<ProcessSurfaceAlarmSnapshot>(emptyProcessSurfaceAlarmSnapshot)
   let projection = $state<ProcessSurfaceProjection | null>(null)
   let activeLensId = $state<string>('all')
   let lensMenuOpen = $state(false)
@@ -140,6 +143,7 @@
   ): Promise<void> => {
     const snapshot = await readProcessSurfaceSnapshot(instanceId, systemId, surfaceId)
     values = new Map(snapshot.values.map(value => [value.path, value]))
+    alarms = snapshot.alarms
   }
 
   const visibleWidgetIds = $derived(projection
@@ -377,6 +381,7 @@
         loading = true
         error = null
         values = new Map()
+        alarms = emptyProcessSurfaceAlarmSnapshot
         const systemId = systemIdFor(selectedObject)
         const surfaces = await listProcessSurfaces(selectedControlInstanceId, systemId)
         const first = surfaces[0]
@@ -521,6 +526,7 @@
         <ProcessSurfaceRenderer
           {surface}
           {values}
+          {alarms}
           {widgetPositions}
           {visibleWidgetIds}
           {visiblePathIds}

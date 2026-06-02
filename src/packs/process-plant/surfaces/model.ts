@@ -12,6 +12,7 @@ import {
 } from '../graph/index.ts'
 
 export const processSurfaceWidgetTypeSchema = z.enum([
+  'alarmPanel',
   'alarmStrip',
   'heatExchanger',
   'label',
@@ -23,6 +24,46 @@ export const processSurfaceWidgetTypeSchema = z.enum([
   'vessel',
 ])
 export type ProcessSurfaceWidgetType = z.infer<typeof processSurfaceWidgetTypeSchema>
+
+export type ProcessSurfaceAlarmSeverity = 'info' | 'notice' | 'warning' | 'critical'
+
+export interface ProcessSurfaceAlarmAnnunciator {
+  readonly system?: string
+  readonly equipmentId?: string
+  readonly group?: string
+  readonly firstOutGroup?: string
+  readonly priority?: 'low' | 'medium' | 'high' | 'urgent'
+  readonly role?: 'symptom' | 'cause' | 'automaticAction' | 'status'
+}
+
+export interface ProcessSurfaceAlarmLifecycle {
+  readonly id: string
+  readonly kind: 'alarm' | 'trip'
+  readonly title: string
+  readonly message: string
+  readonly severity: ProcessSurfaceAlarmSeverity
+  readonly phase: string
+  readonly active: boolean
+  readonly acknowledged: boolean
+  readonly firstOut: boolean
+  readonly resettable: boolean
+  readonly annunciator?: ProcessSurfaceAlarmAnnunciator
+  readonly firstOutRank?: number
+  readonly firstActiveElapsedMs?: number
+  readonly lastActiveElapsedMs?: number
+  readonly lastClearedElapsedMs?: number
+}
+
+export interface ProcessSurfaceAlarmSnapshot {
+  readonly configured: boolean
+  readonly activeAlarmCount: number
+  readonly activeTripCount: number
+  readonly unacknowledgedCount: number
+  readonly firstOutCount: number
+  readonly activeHighestSeverity: ProcessSurfaceAlarmSeverity | null
+  readonly activeFirstOut: ReadonlyArray<ProcessSurfaceAlarmLifecycle>
+  readonly active: ReadonlyArray<ProcessSurfaceAlarmLifecycle>
+}
 
 export const processSurfaceRegionRoleSchema = z.enum([
   'alarms',

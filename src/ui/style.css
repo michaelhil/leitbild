@@ -3350,6 +3350,119 @@ body.rail-resizing {
   font-size: 9.5px;
 }
 
+.alarm-panel-shell {
+  fill: color-mix(in srgb, #20262c 95%, transparent);
+  stroke: color-mix(in srgb, #a7b0ba 50%, #17191c);
+  stroke-width: 1.4;
+}
+
+.alarm-panel-shell.normal {
+  stroke: color-mix(in srgb, #2dd38a 46%, #a7b0ba);
+}
+
+.alarm-panel-shell.warning {
+  stroke: #f59e0b;
+}
+
+.alarm-panel-shell.critical {
+  stroke: #ef4444;
+  stroke-width: 2;
+}
+
+.alarm-panel-title {
+  fill: #f8fafc;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.alarm-panel-summary text,
+.alarm-panel-empty,
+.alarm-panel-row text,
+.alarm-panel-focus text {
+  font-weight: 800;
+}
+
+.alarm-panel-summary-label,
+.alarm-panel-focus-label {
+  fill: #9ba6b2;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.alarm-panel-summary-value {
+  fill: #f8fafc;
+  font-size: 12px;
+}
+
+.alarm-panel-divider {
+  stroke: color-mix(in srgb, #a7b0ba 26%, transparent);
+  stroke-width: 1;
+}
+
+.alarm-panel-empty {
+  fill: #9ba6b2;
+  font-size: 13px;
+}
+
+.alarm-panel-row rect {
+  fill: color-mix(in srgb, #11161b 62%, transparent);
+  stroke: color-mix(in srgb, #a7b0ba 16%, transparent);
+  stroke-width: 1;
+}
+
+.alarm-panel-row.warning rect {
+  fill: color-mix(in srgb, #4a3510 80%, transparent);
+}
+
+.alarm-panel-row.critical rect,
+.alarm-panel-row.trip rect {
+  fill: color-mix(in srgb, #4f1414 84%, transparent);
+  stroke: color-mix(in srgb, #ef4444 58%, transparent);
+}
+
+.alarm-panel-row-kind {
+  fill: #f8fafc;
+  font-size: 8.8px;
+}
+
+.alarm-panel-row-title {
+  fill: #e2e8f0;
+  font-size: 9.6px;
+}
+
+.alarm-panel-row-status,
+.alarm-panel-row-time {
+  fill: #cbd5e1;
+  font-size: 8.8px;
+}
+
+.alarm-panel-focus-title {
+  fill: #f8fafc;
+  font-size: 12px;
+}
+
+.alarm-panel-focus-title.warning {
+  fill: #fbbf24;
+}
+
+.alarm-panel-focus-title.critical {
+  fill: #fca5a5;
+}
+
+.alarm-panel-focus-title.normal {
+  fill: #86efac;
+}
+
+.alarm-panel-focus-message,
+.alarm-panel-focus-meta {
+  fill: #cbd5e1;
+  font-size: 9.4px;
+}
+
+.alarm-panel-focus-meta {
+  fill: #94a3b8;
+}
+
 .rv-shell,
 .pz-shell,
 .tg-shell,
