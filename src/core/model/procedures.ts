@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { actorIdSchema, commandIdSchema, idSchema } from './ids.ts'
+import { actorIdSchema, commandIdSchema, idSchema, objectIdSchema } from './ids.ts'
 import { isoTimestampSchema } from './time.ts'
 
 export const procedureSourceIdSchema = idSchema
@@ -13,6 +13,13 @@ export type ProcedureId = z.infer<typeof procedureIdSchema>
 export type ProcedureStepId = z.infer<typeof procedureStepIdSchema>
 export type ProcedureTagId = z.infer<typeof procedureTagIdSchema>
 export type ProcedureRunId = z.infer<typeof procedureRunIdSchema>
+
+export const procedureRunScopeSchema = z.object({
+  systemId: idSchema,
+  targetObjectId: objectIdSchema.optional(),
+  label: z.string().min(1).max(160).optional(),
+})
+export type ProcedureRunScope = z.infer<typeof procedureRunScopeSchema>
 
 export const procedureAssessmentSchema = z.enum(['blank', 'complete', 'failed', 'unknown'])
 export type ProcedureAssessment = z.infer<typeof procedureAssessmentSchema>
@@ -128,6 +135,7 @@ export const procedureRunStateSchema = z.object({
   sourceId: procedureSourceIdSchema,
   sourceRevision: z.string().min(1).optional(),
   procedureId: procedureIdSchema,
+  scope: procedureRunScopeSchema,
   title: z.string().min(1),
   status: procedureRunStatusSchema,
   startedAt: isoTimestampSchema,
@@ -146,6 +154,7 @@ export type ProcedureControlState = z.infer<typeof procedureControlStateSchema>
 export const procedureRunStartPayloadSchema = z.object({
   sourceId: procedureSourceIdSchema,
   procedureId: procedureIdSchema,
+  scope: procedureRunScopeSchema,
 })
 export type ProcedureRunStartPayload = z.infer<typeof procedureRunStartPayloadSchema>
 
@@ -170,6 +179,13 @@ export const procedureRunClosePayloadSchema = z.object({
   status: z.enum(['completed', 'abandoned']),
 })
 export type ProcedureRunClosePayload = z.infer<typeof procedureRunClosePayloadSchema>
+
+export const procedureRunResetPayloadSchema = z.object({
+  sourceId: procedureSourceIdSchema,
+  procedureId: procedureIdSchema,
+  scope: procedureRunScopeSchema,
+})
+export type ProcedureRunResetPayload = z.infer<typeof procedureRunResetPayloadSchema>
 
 export const procedureRunStartedEventSchema = z.object({
   type: z.literal('procedure.run.started'),
@@ -197,10 +213,20 @@ export const procedureRunClosedEventSchema = z.object({
   closedBy: actorIdSchema,
 })
 
+export const procedureRunResetEventSchema = z.object({
+  type: z.literal('procedure.run.reset'),
+  sourceId: procedureSourceIdSchema,
+  procedureId: procedureIdSchema,
+  scope: procedureRunScopeSchema,
+  resetAt: isoTimestampSchema,
+  resetBy: actorIdSchema,
+})
+
 export const procedureCommandKindSchema = z.enum([
   'procedure.run.start',
   'procedure.step.update',
   'procedure.run.close',
+  'procedure.run.reset',
 ])
 export type ProcedureCommandKind = z.infer<typeof procedureCommandKindSchema>
 

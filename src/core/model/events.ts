@@ -7,7 +7,7 @@ import { isoTimestampSchema, simulationClockStateSchema, type IsoTimestamp, type
 import { telemetryStateSchema, type TelemetryState } from './telemetry.ts'
 import { interactionSignalSchema, operationalNotificationSchema, type InteractionSignal, type OperationalNotification } from './interactions.ts'
 import { scenarioGuidanceSchema, type ScenarioGuidance } from './scenario.ts'
-import { procedureRunClosedEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment } from './procedures.ts'
+import { procedureRunClosedEventSchema, procedureRunResetEventSchema, procedureRunStartedEventSchema, procedureStepUpdatedEventSchema, type ProcedureRunState, type ProcedureRunId, type ProcedureRunScope, type ProcedureRunStatus, type ProcedureStepId, type ProcedureAssessment, type ProcedureId, type ProcedureSourceId } from './procedures.ts'
 
 export interface EventEnvelopeBase {
   readonly id: EventId
@@ -100,6 +100,14 @@ export type ControlInstanceEvent =
       readonly closedAt: IsoTimestamp
       readonly closedBy: ActorId
     })
+  | (EventEnvelopeBase & {
+      readonly type: 'procedure.run.reset'
+      readonly sourceId: ProcedureSourceId
+      readonly procedureId: ProcedureId
+      readonly scope: ProcedureRunScope
+      readonly resetAt: IsoTimestamp
+      readonly resetBy: ActorId
+    })
 
 const eventBaseSchema = z.object({
   id: eventIdSchema,
@@ -172,4 +180,5 @@ export const controlInstanceEventSchema = z.discriminatedUnion('type', [
   eventBaseSchema.merge(procedureRunStartedEventSchema),
   eventBaseSchema.merge(procedureStepUpdatedEventSchema),
   eventBaseSchema.merge(procedureRunClosedEventSchema),
+  eventBaseSchema.merge(procedureRunResetEventSchema),
 ])

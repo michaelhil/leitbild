@@ -650,6 +650,11 @@ describe('control instance API', () => {
       )
       expect(document.body.procedure.steps.map(step => step.id)).toEqual(['verify-reactor-trip'])
 
+      const procedureScope = {
+        systemId: 'procedure-sandbox-unit',
+        targetObjectId: 'object:procedure-sandbox-unit',
+        label: 'Procedure sandbox unit',
+      }
       const started = await callRoute<{ readonly result: { readonly ok: boolean } }>(
         registry,
         '/api/control-instances/procedure-sandbox/commands',
@@ -663,6 +668,7 @@ describe('control instance API', () => {
             payload: {
               sourceId: 'pwr-ops',
               procedureId: 'E-0',
+              scope: procedureScope,
             },
           }),
         },
@@ -675,6 +681,7 @@ describe('control instance API', () => {
             readonly runId: string
             readonly status: string
             readonly procedureId: string
+            readonly scope: { readonly systemId: string }
             readonly stepStates: readonly { readonly stepId: string; readonly assessment: string; readonly favorite: boolean }[]
           }[]
         }
@@ -685,6 +692,7 @@ describe('control instance API', () => {
       const runId = activeRuns.body.procedures.runs[0]?.runId
       expect(activeRuns.body.procedures.runs[0]?.status).toBe('active')
       expect(activeRuns.body.procedures.runs[0]?.procedureId).toBe('E-0')
+      expect(activeRuns.body.procedures.runs[0]?.scope.systemId).toBe('procedure-sandbox-unit')
       if (!runId) throw new Error('missing procedure run id')
 
       const updated = await callRoute<{ readonly result: { readonly ok: boolean } }>(
@@ -723,6 +731,36 @@ describe('control instance API', () => {
         assessment: 'complete',
         favorite: true,
       })
+
+      const reset = await callRoute<{ readonly result: { readonly ok: boolean } }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/commands',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            actorId: 'actor:test-api-operator',
+            kind: 'procedure.run.reset',
+            targetObjectIds: [],
+            payload: {
+              sourceId: 'pwr-ops',
+              procedureId: 'E-0',
+              scope: procedureScope,
+            },
+          }),
+        },
+      )
+      expect(reset.body.result.ok).toBe(true)
+
+      const resetRuns = await callRoute<{
+        readonly procedures: {
+          readonly runs: readonly unknown[]
+        }
+      }>(
+        registry,
+        '/api/control-instances/procedure-sandbox/procedure-runs',
+      )
+      expect(resetRuns.body.procedures.runs).toEqual([])
     } finally {
       await registry.close('procedure-sandbox' as ControlInstanceId)
     }

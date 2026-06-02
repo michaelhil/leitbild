@@ -3,6 +3,7 @@ import type {
   ProcedureAssessment,
   ProcedureCatalog,
   ProcedureDocument,
+  ProcedureRunScope,
   ProcedureRunState,
   ProcedureStepId,
   ProcedureTag,
@@ -125,11 +126,11 @@ export const readProcedureRuns = async (
 
 export const startProcedureRun = async (
   controlInstanceId: ControlInstanceId,
-  config: { readonly sourceId: string; readonly procedureId: string },
+  config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
 ): Promise<void> => {
   const response = await sendControlInstanceCommand(controlInstanceId, {
     kind: 'procedure.run.start',
-    targetObjectIds: [],
+    targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
     payload: config,
   })
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run start rejected')
@@ -163,6 +164,18 @@ export const closeProcedureRun = async (
     payload: config,
   })
   if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run close rejected')
+}
+
+export const resetProcedureRun = async (
+  controlInstanceId: ControlInstanceId,
+  config: { readonly sourceId: string; readonly procedureId: string; readonly scope: ProcedureRunScope },
+): Promise<void> => {
+  const response = await sendControlInstanceCommand(controlInstanceId, {
+    kind: 'procedure.run.reset',
+    targetObjectIds: config.scope.targetObjectId ? [config.scope.targetObjectId] : [],
+    payload: config,
+  })
+  if (!response.result.ok) throw new Error(response.result.reason ?? 'procedure run reset rejected')
 }
 
 const requireOkPackResult = (value: unknown, message: string): Record<string, unknown> => {

@@ -60,6 +60,16 @@ const parseFixture = (): ProcedureDocument =>
     rawMarkdown: e0Fixture,
   })
 
+const unitAScope = {
+  systemId: 'halden-unit-a',
+  label: 'Halden Unit A',
+} as const
+
+const unitBScope = {
+  systemId: 'halden-unit-b',
+  label: 'Halden Unit B',
+} as const
+
 describe('procedure system', () => {
   test('parses procmd steps, branches, tags, and CSF metadata', () => {
     const procedure = parseFixture()
@@ -104,7 +114,7 @@ describe('procedure system', () => {
       actorId: 'actor:operator' as ActorId,
       kind: 'procedure.run.start',
       targetObjectIds: [],
-      payload: { sourceId: 'pwr-ops', procedureId: 'E-0' },
+      payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
       issuedAt: at,
     }
     const started = await procedureCommandEvents({
@@ -125,6 +135,7 @@ describe('procedure system', () => {
     store.apply(startEvent)
     const runId = store.snapshot().procedures?.runs[0]?.runId
     if (!runId) throw new Error('procedure run was not projected')
+    expect(store.snapshot().procedures?.runs[0]?.scope).toEqual(unitAScope)
 
     const update = await procedureCommandEvents({
       controlInstanceId,
@@ -152,5 +163,83 @@ describe('procedure system', () => {
       updatedAt: at,
       updatedBy: 'actor:operator' as ActorId,
     }])
+  })
+
+  test('procedure runs are scoped per unit and reset clears only the selected unit procedure', async () => {
+    let seq = 0
+    const controlInstanceId = 'procedure-test' as ControlInstanceId
+    const at = nowIso()
+    const baseCommand = {
+      controlInstanceId,
+      actorId: 'actor:operator' as ActorId,
+      kind: 'procedure.run.start',
+      targetObjectIds: [],
+      issuedAt: at,
+    } satisfies Omit<CommandEnvelope, 'id' | 'payload'>
+    const store = createControlInstanceStateStore()
+    store.hydrate({ objects: [], seq: 0 })
+    const commandFactory = {
+      eventId: () => `event:${++seq}` as EventId,
+      nextSeq: () => seq,
+    }
+
+    for (const [id, scope] of [['command:start-a', unitAScope], ['command:start-b', unitBScope]] as const) {
+      const events = await procedureCommandEvents({
+        controlInstanceId,
+        at,
+        command: {
+          ...baseCommand,
+          id: id as CommandEnvelope['id'],
+          payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope },
+        },
+        procedures: store.snapshot().procedures,
+        factory: commandFactory,
+        readDocument: async () => parseFixture(),
+      })
+      if (!events) throw new Error('procedure command was not handled')
+      store.apply(events[0] as ControlInstanceEvent)
+    }
+
+    expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId).sort()).toEqual([
+      'halden-unit-a',
+      'halden-unit-b',
+    ])
+
+    let duplicate = 'accepted'
+    try {
+      await procedureCommandEvents({
+        controlInstanceId,
+        at,
+        command: {
+          ...baseCommand,
+          id: 'command:duplicate-a' as CommandEnvelope['id'],
+          payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
+        },
+        procedures: store.snapshot().procedures,
+        factory: commandFactory,
+        readDocument: async () => parseFixture(),
+      })
+    } catch (err) {
+      duplicate = err instanceof Error ? err.message : String(err)
+    }
+    expect(duplicate).toContain('reset it before starting another run')
+
+    const reset = await procedureCommandEvents({
+      controlInstanceId,
+      at,
+      command: {
+        ...baseCommand,
+        id: 'command:reset-a' as CommandEnvelope['id'],
+        kind: 'procedure.run.reset',
+        payload: { sourceId: 'pwr-ops', procedureId: 'E-0', scope: unitAScope },
+      },
+      procedures: store.snapshot().procedures,
+      factory: commandFactory,
+      readDocument: async () => parseFixture(),
+    })
+    if (!reset) throw new Error('procedure reset command was not handled')
+    store.apply(reset[0] as ControlInstanceEvent)
+
+    expect(store.snapshot().procedures?.runs.map(run => run.scope.systemId)).toEqual(['halden-unit-b'])
   })
 })

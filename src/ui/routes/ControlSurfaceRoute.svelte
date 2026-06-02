@@ -687,6 +687,18 @@
     ? null
     : processPlantSystemIdFor(procedureSystemObject))
 
+  const procedureUnitContexts = $derived(objects.flatMap(object => {
+    const systemId = processPlantSystemIdFor(object)
+    return systemId === null
+      ? []
+      : [{
+          systemId,
+          targetObjectId: object.id,
+          label: object.label,
+          status: statusPresentationFor(object),
+        }]
+  }))
+
   const openProcedureSystem = (object: OperationalObject): void => {
     if (processPlantSystemIdFor(object) === null) return
     procedureSystemObject = object
@@ -1260,6 +1272,7 @@
     {controlInstanceId}
     object={processSurfaceObject}
     unitStatus={statusPresentationFor(processSurfaceObject)}
+    unitContexts={procedureUnitContexts}
     {procedureRevision}
     close={closeProcessSurface}
   />
@@ -1271,6 +1284,7 @@
     systemId={procedureSystemId}
     unitName={procedureSystemObject.label}
     unitStatus={statusPresentationFor(procedureSystemObject)}
+    unitContexts={procedureUnitContexts}
     realtimeRevision={procedureRevision}
     close={closeProcedureSystem}
   />

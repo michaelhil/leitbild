@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { operationalObjectSchema, procedureControlStateSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type ControlInstanceEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureRunState, type ProcedureStepRunState, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
+import { operationalObjectSchema, procedureControlStateSchema, scenarioInstanceStateSchema, simulationClockStateSchema, type ControlInstanceEvent, type ObjectId, type OperationalObject, type ProcedureControlState, type ProcedureId, type ProcedureRunScope, type ProcedureRunState, type ProcedureSourceId, type ProcedureStepRunState, type ScenarioInstanceState, type SimulationClockState } from '../model/index.ts'
 
 export interface ControlInstanceStateSnapshot {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -138,6 +138,17 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
             }
           : run),
       }
+      return
+    }
+    if (event.type === 'procedure.run.reset') {
+      const current = procedures ?? { runs: [] }
+      procedures = {
+        runs: current.runs.filter(run => !procedureRunMatchesScope(run, {
+          sourceId: event.sourceId,
+          procedureId: event.procedureId,
+          scope: event.scope,
+        })),
+      }
     }
   }
 
@@ -163,6 +174,25 @@ export const createControlInstanceStateStore = (): ControlInstanceStateStore => 
     getObject: (id: ObjectId) => objects.get(id),
   }
 }
+
+const sameProcedureScope = (
+  left: ProcedureRunScope,
+  right: ProcedureRunScope,
+): boolean =>
+  left.systemId === right.systemId
+    && left.targetObjectId === right.targetObjectId
+
+const procedureRunMatchesScope = (
+  run: ProcedureRunState,
+  config: {
+    readonly sourceId: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly scope: ProcedureRunScope
+  },
+): boolean =>
+  run.sourceId === config.sourceId
+    && run.procedureId === config.procedureId
+    && sameProcedureScope(run.scope, config.scope)
 
 const updateProcedureRunStep = (
   run: ProcedureRunState,

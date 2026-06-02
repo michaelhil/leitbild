@@ -8,12 +8,14 @@ import type {
   ProcedureControlState,
   ProcedureDocument,
   ProcedureId,
+  ProcedureRunScope,
   ProcedureSourceId,
 } from '../model/index.ts'
 import {
   createProcedureRunId,
   procedureCommandKindSchema,
   procedureRunClosePayloadSchema,
+  procedureRunResetPayloadSchema,
   procedureRunStartPayloadSchema,
   procedureStepUpdatePayloadSchema,
 } from '../model/index.ts'
@@ -52,6 +54,28 @@ const activeRunFor = (
   return run
 }
 
+const sameProcedureScope = (
+  left: ProcedureRunScope,
+  right: ProcedureRunScope,
+): boolean =>
+  left.systemId === right.systemId
+    && left.targetObjectId === right.targetObjectId
+
+const runHasCurrentState = (
+  procedures: ProcedureControlState | undefined,
+  config: {
+    readonly sourceId: ProcedureSourceId
+    readonly procedureId: ProcedureId
+    readonly scope: ProcedureRunScope
+  },
+): boolean =>
+  procedures?.runs.some(run =>
+    run.sourceId === config.sourceId
+      && run.procedureId === config.procedureId
+      && sameProcedureScope(run.scope, config.scope)
+      && (run.status === 'active' || run.status === 'completed'),
+  ) ?? false
+
 export const procedureCommandEvents = async (
   context: ProcedureCommandContext,
 ): Promise<ReadonlyArray<ControlInstanceEvent> | null> => {
@@ -60,6 +84,9 @@ export const procedureCommandEvents = async (
 
   if (kind.data === 'procedure.run.start') {
     const payload = procedureRunStartPayloadSchema.parse(context.command.payload)
+    if (runHasCurrentState(context.procedures, payload)) {
+      throw new Error(`procedure ${payload.procedureId} already has current run state for ${payload.scope.systemId}; reset it before starting another run`)
+    }
     const document = await context.readDocument(payload.sourceId, payload.procedureId)
     return [{
       ...procedureBase(context),
@@ -69,6 +96,7 @@ export const procedureCommandEvents = async (
         sourceId: payload.sourceId,
         sourceRevision: document.source.commitSha ?? `${document.source.repository}@${document.source.ref}`,
         procedureId: document.procedureId,
+        scope: payload.scope,
         title: document.title,
         status: 'active',
         startedAt: context.at,
@@ -97,6 +125,19 @@ export const procedureCommandEvents = async (
       },
       updatedAt: context.at,
       updatedBy: context.command.actorId as ActorId,
+    }]
+  }
+
+  if (kind.data === 'procedure.run.reset') {
+    const payload = procedureRunResetPayloadSchema.parse(context.command.payload)
+    return [{
+      ...procedureBase(context),
+      type: 'procedure.run.reset',
+      sourceId: payload.sourceId,
+      procedureId: payload.procedureId,
+      scope: payload.scope,
+      resetAt: context.at,
+      resetBy: context.command.actorId,
     }]
   }
 

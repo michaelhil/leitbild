@@ -2,10 +2,13 @@
   import { BookOpen, Bug, Check, ChevronLeft, ChevronRight, Circle, ExternalLink, HelpCircle, MessageSquare, Play, RefreshCw, Star, X } from 'lucide-svelte'
   import type {
     ControlInstanceId,
+    ObjectId,
     ProcedureAssessment,
     ProcedureCatalog,
     ProcedureCatalogItem,
     ProcedureDocument,
+    ProcedureId,
+    ProcedureRunScope,
     ProcedureRunState,
     ProcedureStep,
     ProcedureStepRunState,
@@ -23,6 +26,7 @@
     readProcedureRuns,
     readProcedureSourceStatus,
     readProcedureTagValue,
+    resetProcedureRun,
     startProcedureRun,
     updateProcedureStep,
     validateProcedureTags,
@@ -31,14 +35,34 @@
     type ProcedureTagValidation,
     type ProcedureTagValue,
   } from './procedure-client.ts'
+  import {
+    completedStepCount,
+    furthestTouchedStep,
+    procedureRunFor,
+    procedureRunSummariesForScope,
+    procedureRunSummaryText,
+    procedureRunSummaryTitle,
+    procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
+    procedureStepDisplayName,
+    type ProcedureRunSummary,
+    type ProcedureRunVisualState,
+  } from './procedure-run-selectors.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
     readonly systemId: string
     readonly unitName?: string
     readonly unitStatus?: PackObjectStatusPresentation
+    readonly unitContexts?: ReadonlyArray<ProcedureUnitContext>
     readonly realtimeRevision: number
     readonly close: () => void
+  }
+
+  interface ProcedureUnitContext {
+    readonly systemId: string
+    readonly targetObjectId?: ObjectId
+    readonly label: string
+    readonly status?: PackObjectStatusPresentation
   }
 
   interface TextSegment {
@@ -49,7 +73,7 @@
   type LoadStageId = 'source' | 'runs' | 'document' | 'tags' | 'csfs'
   type LoadStageStatus = 'pending' | 'running' | 'done' | 'failed'
   type ProcedureTocMode = 'detail' | 'compact' | 'collapsed'
-  type ProcedureRunVisualState = 'idle' | 'active' | 'completed'
+  type ProcedureConfirmation = 'run' | 'completed' | 'reset'
 
   interface LoadStage {
     readonly id: LoadStageId
@@ -58,7 +82,7 @@
     readonly detail?: string
   }
 
-  let { controlInstanceId, systemId, unitName = undefined, unitStatus = undefined, realtimeRevision, close }: Props = $props()
+  let { controlInstanceId, systemId, unitName = undefined, unitStatus = undefined, unitContexts = [], realtimeRevision, close }: Props = $props()
 
   let loading = $state(true)
   let refreshing = $state(false)
@@ -66,8 +90,9 @@
   let catalog = $state<ProcedureCatalog | null>(null)
   let document = $state<ProcedureDocument | null>(null)
   let runs = $state<ReadonlyArray<ProcedureRunState>>([])
+  let runDocuments = $state<ReadonlyMap<ProcedureId, ProcedureDocument>>(new Map())
   let selectedProcedureId = $state<string | null>(null)
-  let mode = $state<'read' | 'run'>('read')
+  let confirmation = $state<ProcedureConfirmation | null>(null)
   let tagValidation = $state<ReadonlyMap<string, ProcedureTagValidation>>(new Map())
   let csfEvaluations = $state<ReadonlyMap<string, ProcedureCsfEvaluation>>(new Map())
   let csfError = $state<string | null>(null)
@@ -82,38 +107,42 @@
   let lastRealtimeRevision = 0
   let csfRefreshInFlight = false
 
-  const activeRuns = $derived(runs.filter(run => run.status === 'active'))
-  const activeRun = $derived(document
-    ? activeRuns.find(run => run.procedureId === document.procedureId) ?? null
-    : null)
-  const selectedProcedureRun = $derived(document ? procedureRunFor(document.procedureId) : null)
-  const selectedRun = $derived(mode === 'run' ? activeRun : null)
+  const currentUnitContext = $derived(unitContexts.find(unit => unit.systemId === systemId) ?? {
+    systemId,
+    label: unitName ?? systemId,
+    ...(unitStatus === undefined ? {} : { status: unitStatus }),
+  } satisfies ProcedureUnitContext)
+  const currentScope = $derived(procedureScopeFor(currentUnitContext))
+  const procedureUnits = $derived(unitContexts.length > 0 ? unitContexts : [currentUnitContext])
+  const selectedProcedureRun = $derived(document ? procedureRunFor(runs, {
+    sourceId: document.source.sourceId,
+    procedureId: document.procedureId,
+    scope: currentScope,
+  }) : null)
+  const activeRun = $derived(selectedProcedureRun?.status === 'active' ? selectedProcedureRun : null)
+  const selectedRun = $derived(activeRun)
   const procedureLoadPanelVisible = $derived(loading || (error !== null && (catalog === null || document === null)))
   const stepStates = $derived(new Map((selectedProcedureRun?.stepStates ?? []).map(state => [state.stepId, state])))
   const procedureFamilies = $derived(groupCatalog(catalog?.procedures ?? []))
   const sourceLabel = $derived(catalog
     ? `${catalog.source.repository}@${catalog.source.ref}`
     : 'Procedure source')
-  const displayUnitName = $derived(unitName ?? systemId)
-  const displayUnitStatus = $derived(unitStatus ?? {
+  const displayUnitName = $derived(currentUnitContext.label)
+  const displayUnitStatus = $derived(currentUnitContext.status ?? unitStatus ?? {
     tone: 'idle',
     label: 'Unit status unavailable',
     indicator: { shape: 'dot' },
   } satisfies PackObjectStatusPresentation)
+  const currentUnitProcedureSummaries = $derived(procedureRunSummariesForScope(runs, currentScope, runDocuments))
   const csfIds = $derived(document?.csfsMonitored ?? [])
   const primaryBlockKinds = new Set(['check', 'action', 'when', 'until', 'within', 'concurrent'])
 
-  function procedureRunFor(procedureId: string): ProcedureRunState | null {
-    return activeRuns.find(run => run.procedureId === procedureId)
-      ?? runs.find(run => run.procedureId === procedureId && run.status === 'completed')
-      ?? null
-  }
-
   const procedureRunVisualStateFor = (procedureId: string): ProcedureRunVisualState => {
-    const run = procedureRunFor(procedureId)
-    if (run?.status === 'active') return 'active'
-    if (run?.status === 'completed') return 'completed'
-    return 'idle'
+    return selectedProcedureRunVisualStateFor(runs, {
+      sourceId: catalog?.source.sourceId,
+      procedureId: procedureId as ProcedureId,
+      scope: currentScope,
+    })
   }
 
   const cycleProcedureTocMode = (): void => {
@@ -142,6 +171,62 @@
       tags: { id: 'tags', label: 'Resolve plant tags', status: 'pending' },
       csfs: { id: 'csfs', label: 'Evaluate critical safety functions', status: 'pending' },
     }
+  }
+
+  const procedureScopeFor = (unit: ProcedureUnitContext): ProcedureRunScope => ({
+    systemId: unit.systemId,
+    ...(unit.targetObjectId === undefined ? {} : { targetObjectId: unit.targetObjectId }),
+    label: unit.label,
+  })
+
+  const runDocumentIds = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureId> =>
+    [...new Set(nextRuns
+      .filter(run => run.status === 'active' || run.status === 'completed')
+      .map(run => run.procedureId))]
+
+  const rememberProcedureDocument = (nextDocument: ProcedureDocument): void => {
+    runDocuments = new Map([...runDocuments, [nextDocument.procedureId, nextDocument]])
+  }
+
+  const ensureRunDocuments = async (nextRuns: ReadonlyArray<ProcedureRunState>): Promise<void> => {
+    const missing = runDocumentIds(nextRuns).filter(procedureId => !runDocuments.has(procedureId))
+    if (missing.length === 0) return
+    const loaded = await Promise.all(missing.map(async procedureId =>
+      await readProcedureDocument(controlInstanceId, procedureId, {
+        sourceId: nextRuns.find(run => run.procedureId === procedureId)?.sourceId,
+      }),
+    ))
+    runDocuments = new Map([
+      ...runDocuments,
+      ...loaded.map(nextDocument => [nextDocument.procedureId, nextDocument] as const),
+    ])
+  }
+
+  const unitProcedureSummariesFor = (unit: ProcedureUnitContext): {
+    readonly active: ReadonlyArray<ProcedureRunSummary>
+    readonly completed: ReadonlyArray<ProcedureRunSummary>
+  } =>
+    procedureRunSummariesForScope(runs, procedureScopeFor(unit), runDocuments)
+
+  const statusForUnit = (unit: ProcedureUnitContext): PackObjectStatusPresentation =>
+    unit.status ?? (unit.systemId === systemId ? displayUnitStatus : {
+      tone: 'idle',
+      label: 'Unit status unavailable',
+      indicator: { shape: 'dot' },
+    })
+
+  const scopedProcedureRuns = (nextRuns: ReadonlyArray<ProcedureRunState>): ReadonlyArray<ProcedureRunState> => {
+    const scoped = nextRuns.filter(run => {
+      const raw = run as ProcedureRunState & { readonly scope?: unknown }
+      return typeof raw.scope === 'object'
+        && raw.scope !== null
+        && !Array.isArray(raw.scope)
+        && typeof (raw.scope as Record<string, unknown>).systemId === 'string'
+    })
+    if (scoped.length !== nextRuns.length) {
+      error = `${nextRuns.length - scoped.length} unscoped procedure run(s) were ignored; reset affected procedure state before continuing runs.`
+    }
+    return scoped
   }
 
   const setLoadStage = (id: LoadStageId, status: LoadStageStatus, detail?: string): void => {
@@ -230,10 +315,6 @@
     return 'Machine evaluation unavailable for this step; checkbox is the human placekeeping state'
   }
 
-  const completedStepCount = (run: ProcedureRunState): number =>
-    run.stepStates.filter(step => step.assessment === 'complete').length
-
-  const selectedProcedureRunVisualState = $derived(document ? procedureRunVisualStateFor(document.procedureId) : 'idle')
   const selectedProcedureCompletedStepCount = $derived(selectedProcedureRun ? completedStepCount(selectedProcedureRun) : 0)
 
   const pollProcedureSourceStatus = (sourceId?: string): (() => void) => {
@@ -277,9 +358,11 @@
       setLoadStage('source', 'done', `${nextCatalog.procedures.length} procedures available`)
       setLoadStage('runs', 'running')
       const nextRuns = await readProcedureRuns(controlInstanceId)
+      const nextScopedRuns = scopedProcedureRuns(nextRuns.runs)
+      await ensureRunDocuments(nextScopedRuns)
       catalog = nextCatalog
-      runs = nextRuns.runs
-      setLoadStage('runs', 'done', `${nextRuns.runs.length} tracked runs`)
+      runs = nextScopedRuns
+      setLoadStage('runs', 'done', `${nextScopedRuns.length} tracked runs`)
       selectedProcedureId = selectedProcedureId ?? nextCatalog.procedures[0]?.procedureId ?? null
       if (selectedProcedureId && (!document || document.procedureId !== selectedProcedureId || refresh)) {
         await loadProcedure(selectedProcedureId, refresh)
@@ -301,7 +384,9 @@
 
   const refreshRuns = async (): Promise<void> => {
     try {
-      runs = (await readProcedureRuns(controlInstanceId)).runs
+      const nextRuns = scopedProcedureRuns((await readProcedureRuns(controlInstanceId)).runs)
+      await ensureRunDocuments(nextRuns)
+      runs = nextRuns
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     }
@@ -318,6 +403,7 @@
         refresh,
       })
       document = nextDocument
+      rememberProcedureDocument(nextDocument)
       setLoadStage('document', 'done', `${nextDocument.steps.length} steps`)
       const loadTagValidation = async (): Promise<ReadonlyMap<string, ProcedureTagValidation>> => {
         try {
@@ -364,8 +450,8 @@
       await startProcedureRun(controlInstanceId, {
         sourceId: current.source.sourceId,
         procedureId: current.procedureId,
+        scope: currentScope,
       })
-      mode = 'run'
       await refreshRuns()
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
@@ -377,10 +463,61 @@
     try {
       await closeProcedureRun(controlInstanceId, { runId: activeRun.runId, status })
       await refreshRuns()
-      mode = 'read'
     } catch (err) {
       error = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  const resetSelectedProcedure = async (): Promise<void> => {
+    const current = document
+    if (!current) return
+    try {
+      await resetProcedureRun(controlInstanceId, {
+        sourceId: current.source.sourceId,
+        procedureId: current.procedureId,
+        scope: currentScope,
+      })
+      await refreshRuns()
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  const confirmProcedureAction = async (): Promise<void> => {
+    const action = confirmation
+    confirmation = null
+    if (action === 'run') {
+      await startSelectedProcedure()
+      return
+    }
+    if (action === 'completed') {
+      await closeActiveRun('completed')
+      return
+    }
+    if (action === 'reset') {
+      await resetSelectedProcedure()
+    }
+  }
+
+  const confirmationTitle = (): string => {
+    if (!document || !confirmation) return ''
+    if (confirmation === 'run') return `Run ${document.procedureId} on ${displayUnitName}?`
+    if (confirmation === 'completed') return `Complete ${document.procedureId} on ${displayUnitName}?`
+    return `Reset ${document.procedureId} on ${displayUnitName}?`
+  }
+
+  const confirmationBody = (): string => {
+    if (!document || !confirmation) return ''
+    const currentStep = selectedProcedureRun
+      ? furthestTouchedStep(selectedProcedureRun, document)
+      : null
+    if (confirmation === 'run') {
+      return `Confirm that you want to run ${document.procedureId} - ${document.title} on ${displayUnitName}.`
+    }
+    if (confirmation === 'completed') {
+      return `Confirm: complete ${displayUnitName} ${document.procedureId} on step ${currentStep?.label ?? '-'}.`
+    }
+    return `Reset clears the current run state, step assessments, comments, and favorites for ${document.procedureId} on ${displayUnitName}.`
   }
 
   const assessmentAfter = (assessment: ProcedureAssessment | undefined): ProcedureAssessment => {
@@ -529,9 +666,53 @@
   <div class="procedure-modal" role="dialog" aria-modal="true" aria-label="Computer-based procedure system" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
     <header class="procedure-header">
       <div class="procedure-header-unit">
-        <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
         <div>
-          <strong>{displayUnitName}</strong>
+          <div class="procedure-current-unit-line">
+            <strong>{displayUnitName}</strong>
+            <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
+            {#if currentUnitProcedureSummaries.active.length > 0 || currentUnitProcedureSummaries.completed.length > 0}
+              <span class="procedure-unit-separator">-</span>
+              <span class="procedure-run-badges">
+                {#each currentUnitProcedureSummaries.active as summary, index (summary.run.runId)}
+                  <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                {/each}
+                {#if currentUnitProcedureSummaries.completed.length > 0}
+                  <span class="procedure-run-completed-group">
+                    {#if currentUnitProcedureSummaries.active.length > 0}<span>&nbsp;</span>{/if}(
+                    {#each currentUnitProcedureSummaries.completed as summary, index (summary.run.runId)}
+                      <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                    {/each}
+                    )
+                  </span>
+                {/if}
+              </span>
+            {/if}
+          </div>
+          <div class="procedure-cross-unit-strip" aria-label="Cross-unit procedure status">
+            {#each procedureUnits as unit (unit.systemId)}
+              {@const unitStatusPresentation = statusForUnit(unit)}
+              {@const unitSummaries = unitProcedureSummariesFor(unit)}
+              <div class="procedure-cross-unit" class:current={unit.systemId === systemId}>
+                <span class="procedure-cross-unit-name">{unit.label}</span>
+                <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
+                {#if unitSummaries.active.length > 0 || unitSummaries.completed.length > 0}
+                  <span class="procedure-unit-separator">-</span>
+                  {#each unitSummaries.active as summary, index (summary.run.runId)}
+                    <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                  {/each}
+                  {#if unitSummaries.completed.length > 0}
+                    <span class="procedure-run-completed-group">
+                      {#if unitSummaries.active.length > 0}<span>&nbsp;</span>{/if}(
+                      {#each unitSummaries.completed as summary, index (summary.run.runId)}
+                        <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                      {/each}
+                      )
+                    </span>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </div>
           <div class="procedure-csf-strip" aria-label="Critical safety functions">
             {#if csfIds.length === 0}
               <div class="procedure-csf unknown"><Circle size={12} /> CSF status unavailable until a procedure is selected</div>
@@ -620,13 +801,10 @@
           {/if}
         </button>
 
-        <main class="procedure-document">
+        <main class="procedure-document" class:completed-run={selectedProcedureRun?.status === 'completed'}>
           {#if document}
           <div class="procedure-document-toolbar">
             <div class="procedure-document-title">
-              <span class="procedure-book-icon title-icon {selectedProcedureRunVisualState}">
-                <BookOpen size={20} aria-hidden="true" />
-              </span>
               <h2>{document.procedureId} — {document.title}</h2>
               {#if document.description}
                 <button type="button" class="procedure-summary-help" aria-label="Procedure summary">
@@ -634,22 +812,18 @@
                   <span class="procedure-summary-popover">{document.description}</span>
                 </button>
               {/if}
+              <a class="procedure-source-icon" href={document.sourceUrl} target="_blank" rel="noreferrer" title="Open procedure source" aria-label="Open procedure source">
+                <ExternalLink size={15} aria-hidden="true" />
+              </a>
               <span class="procedure-step-counter">{selectedProcedureCompletedStepCount} / {document.steps.length} steps completed</span>
             </div>
             <div class="procedure-mode-actions">
-              <button type="button" class:active={mode === 'read'} onclick={() => { mode = 'read' }}>Read</button>
-              <button type="button" class:active={mode === 'run'} disabled={!activeRun} onclick={() => { mode = 'run' }}>Run</button>
-              {#if activeRun}
-                <button type="button" onclick={() => void closeActiveRun('completed')}>Completed</button>
-                <button type="button" onclick={() => void closeActiveRun('abandoned')}>Abandon</button>
-              {:else}
-                <button type="button" class="primary" onclick={() => void startSelectedProcedure()}>
-                  <Play size={15} aria-hidden="true" /> Start
-                </button>
-              {/if}
-              <a href={document.sourceUrl} target="_blank" rel="noreferrer">
-                <ExternalLink size={15} aria-hidden="true" /> Source
-              </a>
+              <button type="button" class="read" class:active={selectedProcedureRun === null} disabled={selectedProcedureRun !== null}>Read</button>
+              <button type="button" class="run" class:running={activeRun !== null} disabled={selectedProcedureRun !== null} onclick={() => { confirmation = 'run' }}>
+                <Play size={13} aria-hidden="true" /> Run
+              </button>
+              <button type="button" class="complete" disabled={activeRun === null} onclick={() => { confirmation = 'completed' }}>Completed</button>
+              <button type="button" class="reset" disabled={selectedProcedureRun === null} onclick={() => { confirmation = 'reset' }}>Reset</button>
             </div>
           </div>
 
@@ -677,7 +851,7 @@
                       {/if}
                     </button>
                     <div class="procedure-step-content">
-                      <h3>Step {step.label}<span>{step.title}</span></h3>
+                      <h3>Step {step.label}<span>{procedureStepDisplayName(step)}</span></h3>
                       <div class="procedure-two-column">
                         <div class="procedure-column">
                           {#each step.blocks.filter(block => primaryBlockKinds.has(block.kind)) as block}
@@ -756,6 +930,19 @@
 
     {#if refreshing}
       <div class="procedure-refreshing">Refreshing procedure source...</div>
+    {/if}
+
+    {#if confirmation}
+      <div class="procedure-confirm-backdrop" role="presentation" onmousedown={() => { confirmation = null }}>
+        <div class="procedure-confirm" role="dialog" aria-modal="true" aria-label={confirmationTitle()} tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
+          <h2>{confirmationTitle()}</h2>
+          <p>{confirmationBody()}</p>
+          <div class="procedure-confirm-actions">
+            <button type="button" onclick={() => { confirmation = null }}>Cancel</button>
+            <button type="button" class="primary" onclick={() => void confirmProcedureAction()}>Confirm</button>
+          </div>
+        </div>
+      </div>
     {/if}
   </div>
 </div>
