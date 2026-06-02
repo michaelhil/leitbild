@@ -6,6 +6,7 @@
     ProcedureAssessment,
     ProcedureCatalog,
     ProcedureCatalogItem,
+    ProcedureBranch,
     ProcedureDocument,
     ProcedureId,
     ProcedureRunScope,
@@ -38,11 +39,14 @@
   import {
     completedStepCount,
     furthestTouchedStep,
+    procedureBranchActionText,
+    procedureFirstStep,
     procedureRunFor,
     procedureRunSummariesForScope,
     procedureRunSummaryText,
     procedureRunSummaryTitle,
     procedureRunVisualStateFor as selectedProcedureRunVisualStateFor,
+    procedureStepById,
     procedureStepDisplayName,
     type ProcedureRunSummary,
     type ProcedureRunVisualState,
@@ -73,13 +77,34 @@
   type LoadStageId = 'source' | 'runs' | 'document' | 'tags' | 'csfs'
   type LoadStageStatus = 'pending' | 'running' | 'done' | 'failed'
   type ProcedureTocMode = 'detail' | 'compact' | 'collapsed'
-  type ProcedureConfirmation = 'run' | 'completed' | 'reset'
+  type ProcedureConfirmation = 'run' | 'completed' | 'reset' | 'transition'
+
+  const pwrCriticalSafetyFunctions = [
+    'subcriticality',
+    'core-cooling',
+    'heat-sink',
+    'rcs-integrity',
+    'containment',
+    'rcs-inventory',
+  ] as const
 
   interface LoadStage {
     readonly id: LoadStageId
     readonly label: string
     readonly status: LoadStageStatus
     readonly detail?: string
+  }
+
+  interface ProcedureTransition {
+    readonly fromProcedure: ProcedureDocument
+    readonly fromStep: ProcedureStep
+    readonly branch: ProcedureBranch
+    readonly targetProcedure: ProcedureDocument
+    readonly targetStep: ProcedureStep
+  }
+
+  interface ProcedureToast {
+    readonly message: string
   }
 
   let { controlInstanceId, systemId, unitName = undefined, unitStatus = undefined, unitContexts = [], realtimeRevision, close }: Props = $props()
@@ -101,11 +126,14 @@
   let hoveredTagError = $state<string | null>(null)
   let commentOpen = $state<Record<string, boolean>>({})
   let commentDrafts = $state<Record<string, string>>({})
+  let pendingTransition = $state<ProcedureTransition | null>(null)
+  let procedureToast = $state<ProcedureToast | null>(null)
   let procedureSourceStatus = $state<ProcedureSourceLoadStatus | null>(null)
   let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
   let procedureTocMode = $state<ProcedureTocMode>('detail')
   let lastRealtimeRevision = 0
   let csfRefreshInFlight = false
+  let toastTimer: number | null = null
 
   const currentUnitContext = $derived(unitContexts.find(unit => unit.systemId === systemId) ?? {
     systemId,
@@ -134,7 +162,7 @@
     indicator: { shape: 'dot' },
   } satisfies PackObjectStatusPresentation)
   const currentUnitProcedureSummaries = $derived(procedureRunSummariesForScope(runs, currentScope, runDocuments))
-  const csfIds = $derived(document?.csfsMonitored ?? [])
+  const csfIds = pwrCriticalSafetyFunctions
   const primaryBlockKinds = new Set(['check', 'action', 'when', 'until', 'within', 'concurrent'])
 
   const procedureRunVisualStateFor = (procedureId: string): ProcedureRunVisualState => {
@@ -200,6 +228,16 @@
       ...runDocuments,
       ...loaded.map(nextDocument => [nextDocument.procedureId, nextDocument] as const),
     ])
+  }
+
+  const readAndRememberProcedureDocument = async (procedureId: ProcedureId): Promise<ProcedureDocument> => {
+    const cached = runDocuments.get(procedureId)
+    if (cached) return cached
+    const loaded = await readProcedureDocument(controlInstanceId, procedureId, {
+      sourceId: catalog?.source.sourceId,
+    })
+    rememberProcedureDocument(loaded)
+    return loaded
   }
 
   const unitProcedureSummariesFor = (unit: ProcedureUnitContext): {
@@ -369,7 +407,7 @@
       } else {
         setLoadStage('document', 'done', document ? `${document.procedureId} already loaded` : 'No procedure selected')
         setLoadStage('tags', 'done', document ? `${document.tags.length} tags already resolved` : 'No tags')
-        setLoadStage('csfs', 'done', document ? `${document.csfsMonitored.length} CSFs already evaluated` : 'No CSFs')
+        setLoadStage('csfs', 'done', `${csfIds.length} CSFs already evaluated`)
       }
     } catch (err) {
       error = errorMessage(err)
@@ -421,8 +459,8 @@
       }
       const loadCsfEvaluations = async (): Promise<ReadonlyMap<string, ProcedureCsfEvaluation>> => {
         try {
-          setLoadStage('csfs', 'running', `${nextDocument.csfsMonitored.length} functions`)
-          const nextCsfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, nextDocument.csfsMonitored)
+          setLoadStage('csfs', 'running', `${csfIds.length} functions`)
+          const nextCsfEvaluations = await evaluateProcedureCsfs(controlInstanceId, systemId, csfIds)
           setLoadStage('csfs', 'done', `${nextCsfEvaluations.size} functions evaluated`)
           return nextCsfEvaluations
         } catch (err) {
@@ -468,6 +506,133 @@
     }
   }
 
+  const procedureStepElementId = (stepId: string): string =>
+    `procedure-step-${stepId}`
+
+  const scrollToProcedureStep = (stepId: string): void => {
+    window.requestAnimationFrame(() => {
+      window.document.getElementById(procedureStepElementId(stepId))?.scrollIntoView({
+        block: 'start',
+        behavior: 'smooth',
+      })
+    })
+  }
+
+  const targetDocumentForBranch = (branch: ProcedureBranch): ProcedureDocument | undefined =>
+    branch.targetKind === 'procedure'
+      ? runDocuments.get(branch.target as ProcedureId)
+      : undefined
+
+  const branchActionTextFor = (branch: ProcedureBranch): string =>
+    document
+      ? procedureBranchActionText({
+        currentDocument: document,
+        branch,
+        ...(targetDocumentForBranch(branch) === undefined ? {} : { targetDocument: targetDocumentForBranch(branch) }),
+      })
+      : branch.target
+
+  const showProcedureToast = (message: string): void => {
+    if (toastTimer !== null) window.clearTimeout(toastTimer)
+    procedureToast = { message }
+    toastTimer = window.setTimeout(() => {
+      procedureToast = null
+      toastTimer = null
+    }, 10_000)
+  }
+
+  const cancelConfirmation = (): void => {
+    confirmation = null
+    pendingTransition = null
+  }
+
+  const completeStepAndJump = async (fromStep: ProcedureStep, branch: ProcedureBranch): Promise<void> => {
+    if (!selectedRun || !document || branch.targetKind !== 'step') return
+    const targetStep = procedureStepById(document, branch.target)
+    if (!targetStep) {
+      error = `Procedure branch target step not found: ${branch.target}`
+      return
+    }
+    await updateStep(fromStep, { assessment: 'complete' })
+    scrollToProcedureStep(targetStep.id)
+  }
+
+  const openProcedureTransition = async (fromStep: ProcedureStep, branch: ProcedureBranch): Promise<void> => {
+    if (!selectedRun || !document || branch.targetKind !== 'procedure') return
+    try {
+      const targetProcedure = await readAndRememberProcedureDocument(branch.target as ProcedureId)
+      const targetStep = procedureFirstStep(targetProcedure)
+      if (!targetStep) {
+        error = `Procedure ${targetProcedure.procedureId} has no steps to enter.`
+        return
+      }
+      pendingTransition = {
+        fromProcedure: document,
+        fromStep,
+        branch,
+        targetProcedure,
+        targetStep,
+      }
+      confirmation = 'transition'
+    } catch (err) {
+      error = errorMessage(err)
+    }
+  }
+
+  const activateBranch = async (fromStep: ProcedureStep, branch: ProcedureBranch): Promise<void> => {
+    if (branch.targetKind === 'step') {
+      await completeStepAndJump(fromStep, branch)
+      return
+    }
+    if (branch.targetKind === 'procedure') {
+      await openProcedureTransition(fromStep, branch)
+    }
+  }
+
+  const transitionFromLabel = (transition: ProcedureTransition): string =>
+    `${transition.fromProcedure.procedureId} (${transition.fromProcedure.title}) step ${transition.fromStep.label} (${procedureStepDisplayName(transition.fromStep)})`
+
+  const transitionToLabel = (transition: ProcedureTransition): string =>
+    `${transition.targetProcedure.procedureId} (${transition.targetProcedure.title}), step ${transition.targetStep.label} (${procedureStepDisplayName(transition.targetStep)})`
+
+  const confirmProcedureTransition = async (): Promise<void> => {
+    const transition = pendingTransition
+    const sourceRun = selectedRun
+    if (!transition || !sourceRun) return
+    const targetRun = procedureRunFor(runs, {
+      sourceId: transition.targetProcedure.source.sourceId,
+      procedureId: transition.targetProcedure.procedureId,
+      scope: currentScope,
+    })
+    if (targetRun?.status === 'completed') {
+      error = `${transition.targetProcedure.procedureId} is already completed for ${displayUnitName}; reset it before entering it again.`
+      pendingTransition = null
+      return
+    }
+    try {
+      if (!targetRun) {
+        await startProcedureRun(controlInstanceId, {
+          sourceId: transition.targetProcedure.source.sourceId,
+          procedureId: transition.targetProcedure.procedureId,
+          scope: currentScope,
+        })
+      }
+      await updateProcedureStep(controlInstanceId, {
+        runId: sourceRun.runId,
+        stepId: transition.fromStep.id,
+        assessment: 'failed',
+      })
+      await closeProcedureRun(controlInstanceId, { runId: sourceRun.runId, status: 'completed' })
+      await loadProcedure(transition.targetProcedure.procedureId)
+      await refreshRuns()
+      showProcedureToast(`${transition.targetProcedure.procedureId} now active, entered from ${transitionFromLabel(transition)}.`)
+    } catch (err) {
+      error = errorMessage(err)
+    } finally {
+      pendingTransition = null
+    }
+  }
+
   const resetSelectedProcedure = async (): Promise<void> => {
     const current = document
     if (!current) return
@@ -496,11 +661,16 @@
     }
     if (action === 'reset') {
       await resetSelectedProcedure()
+      return
+    }
+    if (action === 'transition') {
+      await confirmProcedureTransition()
     }
   }
 
   const confirmationTitle = (): string => {
     if (!document || !confirmation) return ''
+    if (confirmation === 'transition') return 'Confirm procedure transition'
     if (confirmation === 'run') return `Run ${document.procedureId} on ${displayUnitName}?`
     if (confirmation === 'completed') return `Complete ${document.procedureId} on ${displayUnitName}?`
     return `Reset ${document.procedureId} on ${displayUnitName}?`
@@ -508,6 +678,7 @@
 
   const confirmationBody = (): string => {
     if (!document || !confirmation) return ''
+    if (confirmation === 'transition') return ''
     const currentStep = selectedProcedureRun
       ? furthestTouchedStep(selectedProcedureRun, document)
       : null
@@ -649,6 +820,7 @@
     }, 2_000)
     return () => {
       window.clearInterval(interval)
+      if (toastTimer !== null) window.clearTimeout(toastTimer)
     }
   })
 
@@ -665,75 +837,67 @@
 <div class="procedure-backdrop" role="presentation" onmousedown={close}>
   <div class="procedure-modal" role="dialog" aria-modal="true" aria-label="Computer-based procedure system" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
     <header class="procedure-header">
-      <div class="procedure-header-unit">
-        <div>
-          <div class="procedure-current-unit-line">
-            <strong>{displayUnitName}</strong>
-            <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
-            {#if currentUnitProcedureSummaries.active.length > 0 || currentUnitProcedureSummaries.completed.length > 0}
-              <span class="procedure-unit-separator">-</span>
-              <span class="procedure-run-badges">
-                {#each currentUnitProcedureSummaries.active as summary, index (summary.run.runId)}
-                  <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                {/each}
-                {#if currentUnitProcedureSummaries.completed.length > 0}
-                  <span class="procedure-run-completed-group">
-                    {#if currentUnitProcedureSummaries.active.length > 0}<span>&nbsp;</span>{/if}(
-                    {#each currentUnitProcedureSummaries.completed as summary, index (summary.run.runId)}
-                      <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                    {/each}
-                    )
-                  </span>
-                {/if}
-              </span>
-            {/if}
-          </div>
-          <div class="procedure-cross-unit-strip" aria-label="Cross-unit procedure status">
-            {#each procedureUnits as unit (unit.systemId)}
-              {@const unitStatusPresentation = statusForUnit(unit)}
-              {@const unitSummaries = unitProcedureSummariesFor(unit)}
-              <div class="procedure-cross-unit" class:current={unit.systemId === systemId}>
-                <span class="procedure-cross-unit-name">{unit.label}</span>
-                <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
-                {#if unitSummaries.active.length > 0 || unitSummaries.completed.length > 0}
-                  <span class="procedure-unit-separator">-</span>
-                  {#each unitSummaries.active as summary, index (summary.run.runId)}
-                    <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                  {/each}
-                  {#if unitSummaries.completed.length > 0}
-                    <span class="procedure-run-completed-group">
-                      {#if unitSummaries.active.length > 0}<span>&nbsp;</span>{/if}(
-                      {#each unitSummaries.completed as summary, index (summary.run.runId)}
-                        <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
-                      {/each}
-                      )
-                    </span>
-                  {/if}
-                {/if}
-              </div>
-            {/each}
-          </div>
-          <div class="procedure-csf-strip" aria-label="Critical safety functions">
-            {#if csfIds.length === 0}
-              <div class="procedure-csf unknown"><Circle size={12} /> CSF status unavailable until a procedure is selected</div>
-            {:else}
-              {#each csfIds as csf}
-                {@const evaluation = csfEvaluationFor(csf)}
-                <div class="procedure-csf {evaluation?.status ?? 'unknown'}" title={csfTitleFor(csf)}>
-                  <Circle size={12} /> {evaluation?.label ?? csf.replaceAll('-', ' ')}
-                </div>
+      <div class="procedure-header-top">
+        <div class="procedure-current-unit-line">
+          <strong>{displayUnitName}</strong>
+          <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
+          {#if currentUnitProcedureSummaries.active.length > 0 || currentUnitProcedureSummaries.completed.length > 0}
+            <span class="procedure-run-badges">
+              {#each currentUnitProcedureSummaries.active as summary, index (summary.run.runId)}
+                <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
               {/each}
-            {/if}
-          </div>
+              {#if currentUnitProcedureSummaries.completed.length > 0}
+                <span class="procedure-run-completed-group">
+                  {#if currentUnitProcedureSummaries.active.length > 0}<span>&nbsp;</span>{/if}
+                  {#each currentUnitProcedureSummaries.completed as summary, index (summary.run.runId)}
+                    <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < currentUnitProcedureSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                  {/each}
+                </span>
+              {/if}
+            </span>
+          {/if}
+        </div>
+        <div class="procedure-header-actions">
+          <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
+            <RefreshCw size={18} aria-hidden="true" />
+          </button>
+          <button type="button" title="Close procedures" aria-label="Close procedures" onclick={close}>
+            <X size={20} aria-hidden="true" />
+          </button>
         </div>
       </div>
-      <div class="procedure-header-actions">
-        <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
-          <RefreshCw size={18} aria-hidden="true" />
-        </button>
-        <button type="button" title="Close procedures" aria-label="Close procedures" onclick={close}>
-          <X size={20} aria-hidden="true" />
-        </button>
+
+      <div class="procedure-cross-unit-strip" aria-label="Cross-unit procedure status">
+        {#each procedureUnits as unit (unit.systemId)}
+          {@const unitStatusPresentation = statusForUnit(unit)}
+          {@const unitSummaries = unitProcedureSummariesFor(unit)}
+          <div class="procedure-cross-unit" class:current={unit.systemId === systemId}>
+            <span class="procedure-cross-unit-name">{unit.label}</span>
+            <StatusIndicator tone={unitStatusPresentation.tone} label={unitStatusPresentation.label} indicator={unitStatusPresentation.indicator} />
+            {#if unitSummaries.active.length > 0 || unitSummaries.completed.length > 0}
+              {#each unitSummaries.active as summary, index (summary.run.runId)}
+                <span class="procedure-run-badge active" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.active.length - 1}<span class="procedure-run-comma">,</span>{/if}
+              {/each}
+              {#if unitSummaries.completed.length > 0}
+                <span class="procedure-run-completed-group">
+                  {#if unitSummaries.active.length > 0}<span>&nbsp;</span>{/if}
+                  {#each unitSummaries.completed as summary, index (summary.run.runId)}
+                    <span class="procedure-run-badge completed" title={procedureRunSummaryTitle(summary)}>{procedureRunSummaryText(summary)}</span>{#if index < unitSummaries.completed.length - 1}<span class="procedure-run-comma">,</span>{/if}
+                  {/each}
+                </span>
+              {/if}
+            {/if}
+          </div>
+        {/each}
+      </div>
+
+      <div class="procedure-csf-strip" aria-label="Critical safety functions">
+        {#each csfIds as csf}
+          {@const evaluation = csfEvaluationFor(csf)}
+          <div class="procedure-csf {evaluation?.status ?? 'unknown'}" title={csfTitleFor(csf)}>
+            <Circle size={12} /> {evaluation?.label ?? csf.replaceAll('-', ' ')}
+          </div>
+        {/each}
       </div>
     </header>
 
@@ -832,7 +996,7 @@
               {#each document.steps as step (step.id)}
                 {@const state = stepStates.get(step.id)}
                 {@const machineStatus = machineStatusFor(step)}
-                <article class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
+                <article id={procedureStepElementId(step.id)} class="procedure-step" class:complete={state?.assessment === 'complete'} class:failed={state?.assessment === 'failed'}>
                   <div class="procedure-step-main">
                     <button
                       type="button"
@@ -863,11 +1027,17 @@
                             <p class="block-{block.kind}"><b>{block.kind}</b> {#each textSegments(block.text) as segment}{#if segment.kind === 'tag'}<button type="button" class="procedure-tag" onmouseenter={() => void showTag(segment.text as ProcedureTagId)} onmouseleave={hideTag}>«{segment.text}»</button>{:else}{segment.text}{/if}{/each}</p>
                           {/each}
                           {#each step.branches as branch}
-                            <div class="procedure-branch">
+                            <button
+                              type="button"
+                              class="procedure-branch"
+                              disabled={!selectedRun || (branch.targetKind !== 'step' && branch.targetKind !== 'procedure')}
+                              title={selectedRun ? branchActionTextFor(branch) : 'Start the procedure to use branch actions'}
+                              onclick={() => void activateBranch(step, branch)}
+                            >
                               <strong>{branch.label}</strong>
-                              <span>→ {branch.targetKind === 'step' ? `Step ${branch.target}` : branch.target}</span>
+                              <span>{branchActionTextFor(branch)}</span>
                               {#if branch.because}<em>{branch.because}</em>{/if}
-                            </div>
+                            </button>
                           {/each}
                         </div>
                       </div>
@@ -933,15 +1103,29 @@
     {/if}
 
     {#if confirmation}
-      <div class="procedure-confirm-backdrop" role="presentation" onmousedown={() => { confirmation = null }}>
+      <div class="procedure-confirm-backdrop" role="presentation" onmousedown={cancelConfirmation}>
         <div class="procedure-confirm" role="dialog" aria-modal="true" aria-label={confirmationTitle()} tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
           <h2>{confirmationTitle()}</h2>
-          <p>{confirmationBody()}</p>
+          {#if confirmation === 'transition' && pendingTransition}
+            <p>
+              Transition from {transitionFromLabel(pendingTransition)} to
+              <br />
+              <strong>{transitionToLabel(pendingTransition)}</strong>
+            </p>
+          {:else}
+            <p>{confirmationBody()}</p>
+          {/if}
           <div class="procedure-confirm-actions">
-            <button type="button" onclick={() => { confirmation = null }}>Cancel</button>
+            <button type="button" onclick={cancelConfirmation}>Cancel</button>
             <button type="button" class="primary" onclick={() => void confirmProcedureAction()}>Confirm</button>
           </div>
         </div>
+      </div>
+    {/if}
+
+    {#if procedureToast}
+      <div class="procedure-toast" role="status">
+        {procedureToast.message}
       </div>
     {/if}
   </div>

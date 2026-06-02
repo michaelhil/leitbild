@@ -1,4 +1,5 @@
 import type {
+  ProcedureBranch,
   ProcedureDocument,
   ProcedureId,
   ProcedureRunScope,
@@ -36,6 +37,45 @@ export const procedureStepDisplayName = (step: ProcedureStep): string => {
 
 export const procedureStepHoverLabel = (step: ProcedureStep): string =>
   `Step ${step.label}: ${procedureStepDisplayName(step)}`
+
+export const procedureStepById = (
+  document: ProcedureDocument,
+  stepId: string,
+): ProcedureStep | null =>
+  document.steps.find(step => step.id === stepId) ?? null
+
+export const procedureFirstStep = (
+  document: ProcedureDocument,
+): ProcedureStep | null =>
+  document.steps[0] ?? null
+
+export const procedureStepReferenceText = (
+  document: ProcedureDocument,
+  step: ProcedureStep,
+): string =>
+  `${document.procedureId}, step ${step.label}: ${procedureStepDisplayName(step)}`
+
+export const procedureBranchActionText = (config: {
+  readonly currentDocument: ProcedureDocument
+  readonly branch: ProcedureBranch
+  readonly targetDocument?: ProcedureDocument
+}): string => {
+  if (config.branch.targetKind === 'step') {
+    const targetStep = procedureStepById(config.currentDocument, config.branch.target)
+    return targetStep
+      ? `Go to ${procedureStepReferenceText(config.currentDocument, targetStep)}`
+      : `Go to ${config.currentDocument.procedureId}, step ?: ${config.branch.target}`
+  }
+
+  if (config.branch.targetKind === 'procedure') {
+    const targetStep = config.targetDocument ? procedureFirstStep(config.targetDocument) : null
+    return targetStep && config.targetDocument
+      ? `Go to ${procedureStepReferenceText(config.targetDocument, targetStep)}`
+      : `Go to ${config.branch.target}, step 1`
+  }
+
+  return config.branch.target
+}
 
 export const procedureRunFor = (
   runs: ReadonlyArray<ProcedureRunState>,

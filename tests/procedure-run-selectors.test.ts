@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, IsoTimestamp, ProcedureDocument, ProcedureRunState } from '../src/core/model/index.ts'
 import {
   furthestTouchedStep,
+  procedureBranchActionText,
   procedureRunSummariesForScope,
   procedureRunSummaryText,
   procedureStepDisplayName,
@@ -81,6 +82,47 @@ const activeRun = {
 describe('procedure run selectors', () => {
   test('uses procmd step id when a heading only has a fallback step title', () => {
     expect(procedureStepDisplayName(procedure.steps[1]!)).toBe('verify-phase-a-isolation')
+  })
+
+  test('labels internal branch actions with procedure, step number, and step name', () => {
+    expect(procedureBranchActionText({
+      currentDocument: procedure,
+      branch: {
+        label: 'Phase A isolated',
+        target: 'verify-phase-a-isolation',
+        targetKind: 'step',
+        tagIds: [],
+      },
+    })).toBe('Go to E-0, step 6: verify-phase-a-isolation')
+  })
+
+  test('labels external branch actions with target procedure first step when loaded', () => {
+    const targetProcedure = {
+      ...procedure,
+      procedureId: 'FR-C.1',
+      title: 'Response to Inadequate Core Cooling',
+      steps: [{
+        id: 'verify-icc',
+        label: '1',
+        title: 'Step 1',
+        level: 2,
+        blocks: [],
+        branches: [],
+        tagIds: [],
+        sourceLine: 12,
+      }],
+    } satisfies ProcedureDocument
+
+    expect(procedureBranchActionText({
+      currentDocument: procedure,
+      targetDocument: targetProcedure,
+      branch: {
+        label: 'Cooling inadequate',
+        target: 'FR-C.1',
+        targetKind: 'procedure',
+        tagIds: [],
+      },
+    })).toBe('Go to FR-C.1, step 1: verify-icc')
   })
 
   test('summarizes the furthest touched step by document order', () => {
