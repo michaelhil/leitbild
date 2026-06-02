@@ -3367,6 +3367,56 @@ body.rail-resizing {
   font-weight: 850;
 }
 
+.rps-shell {
+  fill: color-mix(in srgb, #20262c 94%, transparent);
+  stroke: color-mix(in srgb, #7db5f1 58%, #17191c);
+  stroke-width: 1.4;
+}
+
+.rps-shell.tripped {
+  stroke: #ef4444;
+  stroke-width: 2;
+}
+
+.rps-title {
+  fill: #f8fafc;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.rps-state rect {
+  fill: color-mix(in srgb, #166534 72%, #11161b);
+  stroke: color-mix(in srgb, #86efac 72%, transparent);
+  stroke-width: 1;
+}
+
+.rps-state.tripped rect {
+  fill: color-mix(in srgb, #7f1d1d 82%, #11161b);
+  stroke: color-mix(in srgb, #fca5a5 76%, transparent);
+}
+
+.rps-state text {
+  fill: #f8fafc;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.rps-primary {
+  fill: #86efac;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.rps-primary.tripped {
+  fill: #fca5a5;
+}
+
+.rps-detail {
+  fill: #cbd5e1;
+  font-size: 9.2px;
+  font-weight: 800;
+}
+
 .alarm-panel-shell {
   fill: color-mix(in srgb, #20262c 95%, transparent);
   stroke: color-mix(in srgb, #a7b0ba 50%, #17191c);

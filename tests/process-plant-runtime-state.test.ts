@@ -284,8 +284,12 @@ describe('process plant pack runtime', () => {
       }
     }).surface
     expect(compiled.widgets.map(widget => widget.id)).toContain('reactor-vessel')
+    expect(compiled.widgets.map(widget => widget.id)).toContain('reactor-protection')
     expect(compiled.paths.map(path => path.id)).toContain('main-steam-to-turbine')
     expect(compiled.bindingPaths).toContain('core.totalThermalPowerMw')
+    expect(compiled.bindingPaths).toContain('core.rodInsertionFraction')
+    expect(compiled.bindingPaths).toContain('reactorTripBreakerA.closed')
+    expect(compiled.bindingPaths).toContain('reactorTripBreakerB.closed')
     expect(compiled.bindingPaths).toContain('sgA.tubeCoverageFraction')
     expect(compiled.bindingPaths).toContain('condenser.coolingWaterAvailabilityFraction')
     expect(compiled.bindingPaths).toContain('auxFeedwaterTank.availableOutletFlowKgPerS')
@@ -306,6 +310,10 @@ describe('process plant pack runtime', () => {
     }).values.map(value => [value.path, value]))
     expect(typeof values.get('core.totalThermalPowerMw')?.value).toBe('number')
     expect(values.get('core.totalThermalPowerMw')?.formatted).toMatch(/MW$/)
+    expect(typeof values.get('core.rodInsertionFraction')?.value).toBe('number')
+    expect(values.get('core.rodInsertionFraction')?.formatted).toMatch(/%$/)
+    expect(values.get('reactorTripBreakerA.closed')?.value).toBe(true)
+    expect(values.get('reactorTripBreakerB.closed')?.value).toBe(true)
     expect(typeof values.get('pressurizer.pressureMPa')?.value).toBe('number')
     expect((snapshot.result as {
       readonly alarms: {

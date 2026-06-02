@@ -72,6 +72,24 @@
     const value = rowFor(key)?.value
     return typeof value === 'number' && Number.isFinite(value) ? value : null
   }
+  const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
+  const booleanStateLabel = (value: unknown, trueLabel: string, falseLabel: string): string => {
+    if (value === true) return trueLabel
+    if (value === false) return falseLabel
+    return 'UNKNOWN'
+  }
+  const rodInsertionFraction = $derived(clamp(numericValue('rods') ?? 0, 0, 1))
+  const rodsInserted = $derived(rodInsertionFraction >= 0.95)
+  const tripBreakerAClosed = $derived(rowFor('tripBreakerA')?.value)
+  const tripBreakerBClosed = $derived(rowFor('tripBreakerB')?.value)
+  const tripBreakerAOpen = $derived(tripBreakerAClosed === false)
+  const tripBreakerBOpen = $derived(tripBreakerBClosed === false)
+  const reactorProtectionActuated = $derived(rodsInserted || tripBreakerAOpen || tripBreakerBOpen)
+  const reactorProtectionStateLabel = $derived(reactorProtectionActuated ? 'RPS TRIP' : 'RPS READY')
+  const rodStateLabel = $derived(rodsInserted ? 'INSERTED' : `${(rodInsertionFraction * 100).toFixed(0)}%`)
+  const tripBreakerStateLabel = $derived(
+    `A ${booleanStateLabel(tripBreakerAClosed, 'CLOSED', 'OPEN')} / B ${booleanStateLabel(tripBreakerBClosed, 'CLOSED', 'OPEN')}`,
+  )
   const sgDisplayFor = (key: string): { readonly label: string; readonly formatted: string } | undefined => {
     const binding = widget.binds[key]
     const value = binding ? values.get(binding.path) : undefined
@@ -95,7 +113,6 @@
   })
   const sgLetters = ['A', 'B', 'C', 'D'] as const
   type SgLetter = typeof sgLetters[number]
-  const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value))
   const currentSgLetter = (): SgLetter | null => {
     const suffix = widget.id.match(/^sg-([a-d])$/)?.[1]?.toUpperCase()
     return sgLetters.find(letter => letter === suffix) ?? null
@@ -367,6 +384,27 @@
     </g>
   {:else if widget.type === 'alarmPanel'}
     <ProcessSurfaceAlarmPanel {widget} {geometry} {alarms} />
+  {:else if widget.role === 'reactor-protection'}
+    <rect
+      class="rps-shell"
+      class:tripped={reactorProtectionActuated}
+      x="0"
+      y="0"
+      width={geometry.width}
+      height={geometry.height}
+      rx="4"
+    />
+    <text class="rps-title" x="14" y="18">{shortTitle}</text>
+    <g class="rps-state" class:tripped={reactorProtectionActuated} transform="translate({geometry.width - 76} 8)">
+      <rect x="0" y="0" width="62" height="20" rx="2" />
+      <text x="31" y="14" text-anchor="middle">{reactorProtectionActuated ? 'TRIP' : 'READY'}</text>
+    </g>
+    <text class="rps-primary" class:tripped={reactorProtectionActuated} x="14" y="39">
+      {reactorProtectionStateLabel}
+    </text>
+    <text class="rps-detail" x="14" y="55">
+      Rods {rodStateLabel} · {tripBreakerStateLabel}
+    </text>
   {:else if widget.type === 'numericReadout' || widget.type === 'alarmStrip'}
     <rect class="overview-readout-shell" x="0" y="0" width={geometry.width} height={geometry.height} rx="4" />
     <text class="widget-title overview-readout-title" x="14" y="21">{shortTitle}</text>
