@@ -47,6 +47,7 @@ const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
     rank,
     geometry: { x, y: 606, width: 96, height: 96 },
     binds: {
+      running: { label: 'Run', path: `rcp${loop}.running` },
       speed: { label: 'Speed', path: `rcp${loop}.speedFraction`, digits: 2, display: 'percent' },
       flow: { label: 'Loop flow', path: `rcp${loop}.loopFlowKgPerS`, digits: 0 },
     },

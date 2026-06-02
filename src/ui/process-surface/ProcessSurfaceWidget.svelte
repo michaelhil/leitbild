@@ -34,13 +34,20 @@
   const shortTitle = $derived(widget.label.length > 22 ? `${widget.label.slice(0, 20)}...` : widget.label)
   const detailLevel = $derived(renderScale >= 1.35 ? 'detailed' : renderScale <= 0.64 ? 'compact' : 'normal')
   const pumpRadius = $derived(Math.min(geometry.width, geometry.height) * 0.36)
-  const pumpValue = $derived(rows.find(row => row.label.toLowerCase().includes('speed')) ?? rows[0])
   const levelHeight = $derived(Math.max(0, (geometry.height - 34) * levelFraction))
   const levelY = $derived(geometry.height - 18 - levelHeight)
   const rowFor = (key: string): ProcessSurfaceValue | undefined => {
     const binding = widget.binds[key]
     return binding ? values.get(binding.path) : undefined
   }
+  const pumpRunning = $derived(rowFor('running')?.value)
+  const pumpIsStopped = $derived(pumpRunning === false)
+  const pumpFlow = $derived(rowFor('flow'))
+  const pumpSpeed = $derived(rowFor('speed'))
+  const pumpPrimaryReadout = $derived(pumpIsStopped ? 'TRIPPED' : (pumpFlow?.formatted ?? pumpSpeed?.formatted ?? rows[0]?.formatted))
+  const pumpSecondaryReadout = $derived(pumpFlow && pumpSpeed
+    ? `${pumpFlow.formatted} / ${pumpSpeed.formatted}`
+    : pumpFlow?.formatted ?? pumpSpeed?.formatted)
   const numericValue = (key: string): number | null => {
     const value = rowFor(key)?.value
     return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -372,10 +379,13 @@
   {:else if widget.type === 'pump'}
     <circle class="pump-shell" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius} />
     <circle class="pump-inner" cx={geometry.width / 2} cy={geometry.height / 2} r={pumpRadius * 0.74} />
-    <path class="pump-impeller" d="M {geometry.width / 2} {geometry.height * 0.25} L {geometry.width * 0.66} {geometry.height * 0.60} H {geometry.width * 0.34} Z" />
+    <path class="pump-impeller" class:stopped={pumpIsStopped} d="M {geometry.width / 2} {geometry.height * 0.25} L {geometry.width * 0.66} {geometry.height * 0.60} H {geometry.width * 0.34} Z" />
     <text class="widget-title centered" x={geometry.width / 2} y={geometry.height * 0.18} text-anchor="middle">{shortTitle}</text>
-    {#if pumpValue}
-      <text class="widget-readout centered" x={geometry.width / 2} y={geometry.height * 0.78} text-anchor="middle">{pumpValue.formatted}</text>
+    {#if pumpPrimaryReadout}
+      <text class="widget-readout centered pump-state" class:stopped={pumpIsStopped} x={geometry.width / 2} y={geometry.height * 0.76} text-anchor="middle">{pumpPrimaryReadout}</text>
+    {/if}
+    {#if pumpSecondaryReadout && detailLevel !== 'compact'}
+      <text class="widget-readout centered pump-secondary" x={geometry.width / 2} y={geometry.height * 0.91} text-anchor="middle">{pumpSecondaryReadout}</text>
     {/if}
   {:else if widget.type === 'valve'}
     <rect class="widget-shell" x="6" y={geometry.height * 0.30} width={geometry.width - 12} height={geometry.height * 0.40} rx="6" />
