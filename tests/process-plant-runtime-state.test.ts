@@ -16,6 +16,7 @@ import {
   variablePathSchema,
 } from '../src/packs/process-plant/index.ts'
 import { createAmbulanceMedicalDemandInteractionHandler } from '../src/packs/ambulance/sim/interactions.ts'
+import { scenarios } from '../src/scenarios/index.ts'
 
 const controlInstanceId = 'control-instance:process-plant-test' as ControlInstanceId
 const startsAt = '2026-01-01T09:00:00.000Z' as IsoTimestamp
@@ -251,6 +252,54 @@ describe('process plant pack runtime', () => {
     expect(graphResult.metadata.linkCount).toBeGreaterThan(20)
 
     await connection.close()
+  })
+
+  test('runs the Halden multi-unit PWR scenario and serves four-loop and six-loop overview surfaces after startup', async () => {
+    const scenario = scenarios.find(candidate => candidate.id === 'halden-process-plant-demo')
+    if (!scenario) throw new Error('missing Halden process-plant scenario')
+    const processPlantRuntimeConfig = scenario.runtimeConfigs['process-plant'] ?? {}
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: {
+        scenarioId: scenario.id,
+        runtimeIds: ['process-plant-local'],
+        world: scenario.world,
+        initialObjects: scenario.initialObjects.filter(object => object.packId === 'process-plant'),
+        processSystems: scenario.processSystems,
+        runtimeConfigs: { 'process-plant-local': processPlantRuntimeConfig },
+        runtimeConfig: processPlantRuntimeConfig,
+      },
+      runtimeStateStore: createMemoryStateStore(),
+    })
+
+    try {
+      await Bun.sleep(1_100)
+      for (const systemId of ['halden-unit-a2', 'halden-6-loop']) {
+        const surface = await connection.query(query('process-plant.surface.read', {
+          systemId,
+          surfaceId: 'unit-overview',
+        }))
+        expect(surface.ok).toBe(true)
+        if (!surface.ok) throw new Error(surface.reason)
+        const snapshot = await connection.query(query('process-plant.surface.snapshot', {
+          systemId,
+          surfaceId: 'unit-overview',
+        }))
+        expect(snapshot.ok).toBe(true)
+        if (!snapshot.ok) throw new Error(snapshot.reason)
+      }
+
+      const diagnostics = await connection.query(query('process-plant.transient.diagnostics', { systemId: 'halden-6-loop' }))
+      expect(diagnostics.ok).toBe(true)
+      if (!diagnostics.ok) throw new Error(diagnostics.reason)
+      expect((diagnostics.result as {
+        readonly diagnostics: {
+          readonly componentCounts: { readonly steamGenerators: number }
+        }
+      }).diagnostics.componentCounts.steamGenerators).toBe(6)
+    } finally {
+      await connection.close()
+    }
   })
 
   test('exposes compiled process surfaces and batched surface snapshots through pack queries', async () => {

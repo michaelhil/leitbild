@@ -128,10 +128,10 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       }).map(object => [object.id, object]),
     )
 
-    let runtimeFailed = false
+    let runtimeFailureReason: string | null = null
 
     const advance = async (): Promise<void> => {
-      if (runtimeFailed) return
+      if (runtimeFailureReason !== null) return
       const nowWallMs = Date.now()
       const elapsedMs = clock.paused ? 0 : Math.round((nowWallMs - lastTickWallMs) * clock.speed)
       lastTickWallMs = nowWallMs
@@ -171,7 +171,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         try {
           await advance()
         } catch (error) {
-          runtimeFailed = true
+          runtimeFailureReason = error instanceof Error ? error.message : String(error)
           clearInterval(interval)
           emitRuntimeFailure({
             handlers,
@@ -197,8 +197,8 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
       },
       sendCommand: async (command: CommandEnvelope): Promise<CommandResult> => {
         const acceptedAt = nowIso()
-        if (runtimeFailed) {
-          return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: 'process plant runtime has stopped after a runtime failure' }
+        if (runtimeFailureReason !== null) {
+          return { ok: false, commandId: command.id, rejectedAt: acceptedAt, reason: `process plant runtime has stopped after a runtime failure: ${runtimeFailureReason}` }
         }
         if (command.kind === processPlantIcLifecycleCommandKind) {
           const payload = processPlantIcLifecyclePayloadSchema.safeParse(command.payload)
@@ -267,7 +267,7 @@ export const createLocalProcessPlantPackRuntimeAdapter = (): PackRuntimeAdapter 
         }
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> => {
-        if (runtimeFailed) return fail(request, 'process plant runtime has stopped after a runtime failure')
+        if (runtimeFailureReason !== null) return fail(request, `process plant runtime has stopped after a runtime failure: ${runtimeFailureReason}`)
         if (systems.size === 0) return fail(request, 'process plant runtime is not active for this scenario')
         return answerProcessPlantQuery({
           request,

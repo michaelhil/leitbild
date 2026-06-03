@@ -124,6 +124,19 @@ export const setControlInstanceClock = async (
   return await readJsonResponse<ClockResponse>(response, 'clock update failed')
 }
 
+const packQueryFailureMessage = (status: number, text: string): string => {
+  try {
+    const parsed = JSON.parse(text) as unknown
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return `pack query failed: ${status}`
+    const response = (parsed as { readonly response?: unknown }).response
+    if (typeof response !== 'object' || response === null || Array.isArray(response)) return `pack query failed: ${status}`
+    const reason = (response as { readonly reason?: unknown }).reason
+    return typeof reason === 'string' && reason.length > 0 ? reason : `pack query failed: ${status}`
+  } catch {
+    return `pack query failed: ${status}`
+  }
+}
+
 export const queryControlInstancePack = async (
   controlInstanceId: ControlInstanceId,
   request: PackQueryRequest,
@@ -153,7 +166,7 @@ export const queryControlInstancePack = async (
       ok: response.ok,
     })
     recorded = true
-    if (!response.ok) throw new Error(`pack query failed: ${response.status}`)
+    if (!response.ok) throw new Error(packQueryFailureMessage(response.status, text))
     return JSON.parse(text) as PackQueryApiResponse
   } catch (err) {
     if (!recorded) {
