@@ -10,11 +10,14 @@ import {
   defaultProcessPlantDemoTransientInputs,
   plantGraph,
   plantGraphToMermaid,
+  pressurizedWaterReactorSixLoopPlantSpec,
   pressurizedWaterReactorPlantSpec,
+  processPlantPressurizedWaterReactorSixLoopGraphRef,
   processPlantPressurizedWaterReactorGraphRef,
   processPlantComponentRegistry,
   processPlantDemoTransientCommands,
   processPlantDemoTransients,
+  processPlantSixLoopUnitOverviewSurface,
   processPlantUnitOverviewSurface,
   processLinkVariableDescriptorSchema,
   tagIdForLookup,
@@ -79,6 +82,36 @@ describe('process plant graph foundation', () => {
     expect(publishedVariables).toContain('safetyBusB.marginMw')
   })
 
+  test('compiles the six-loop pressurized water reactor graph into six SG and RCP loops', () => {
+    const compiled = compilePlantGraph(pressurizedWaterReactorSixLoopPlantSpec, processPlantComponentRegistry)
+
+    expect(String(compiled.specId)).toBe(processPlantPressurizedWaterReactorSixLoopGraphRef)
+    expect(compiled.components.filter(component => component.kind === 'steamGenerator').map(component => String(component.id))).toEqual([
+      'sgA',
+      'sgB',
+      'sgC',
+      'sgD',
+      'sgE',
+      'sgF',
+    ])
+    expect(compiled.components.filter(component => component.kind === 'centrifugalPump').map(component => String(component.id))).toEqual(expect.arrayContaining([
+      'rcpA',
+      'rcpB',
+      'rcpC',
+      'rcpD',
+      'rcpE',
+      'rcpF',
+    ]))
+    expect(compiled.variables.map(variable => String(variable.path))).toEqual(expect.arrayContaining([
+      'sgE.levelPercent',
+      'sgF.levelPercent',
+      'rcs-hot-leg-e.flowKgPerS',
+      'rcs-cold-leg-f.flowKgPerS',
+      'sg-e-steam-to-msiv-e.flowKgPerS',
+      'feedwater-control-valve-f-to-sg-f.flowKgPerS',
+    ]))
+  })
+
   test('compiles the reference process surface against real graph variables and topology', () => {
     const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const surface = compileProcessSurface({
@@ -115,6 +148,38 @@ describe('process plant graph foundation', () => {
     ]))
     expect(surface.widgets.every(widget => widget.geometry.width > 0 && widget.geometry.height > 0)).toBe(true)
     expect(surface.paths.every(path => path.points.length >= 3)).toBe(true)
+  })
+
+  test('compiles the six-loop process surface against the six-loop graph', () => {
+    const graph = compilePlantGraph(pressurizedWaterReactorSixLoopPlantSpec, processPlantComponentRegistry)
+    const surface = compileProcessSurface({
+      definition: processPlantSixLoopUnitOverviewSurface,
+      graph,
+    })
+
+    expect(surface.designSize.width).toBeGreaterThan(processPlantUnitOverviewSurface.designSize.width)
+    expect(surface.widgets.filter(widget => widget.role === 'steam-generator').map(widget => widget.id)).toEqual([
+      'sg-a',
+      'sg-b',
+      'sg-c',
+      'sg-d',
+      'sg-e',
+      'sg-f',
+    ])
+    expect(surface.widgets.filter(widget => widget.role === 'reactor-coolant-pump').map(widget => widget.id)).toEqual([
+      'rcp-a',
+      'rcp-b',
+      'rcp-c',
+      'rcp-d',
+      'rcp-e',
+      'rcp-f',
+    ])
+    expect(surface.paths.map(path => path.id)).toEqual(expect.arrayContaining([
+      'primary-hot-leg-e',
+      'primary-cold-leg-f',
+      'steam-e-to-header',
+      'feedwater-to-sg-f',
+    ]))
   })
 
   test('reference demo transients target writable graph variables', () => {
@@ -291,7 +356,8 @@ describe('process plant graph foundation', () => {
       return inventory.value
     })
 
-    expect(systems).toHaveLength(6)
+    expect(systems).toHaveLength(7)
+    expect(String(systems.find(system => system.id === 'halden-6-loop')?.graph.specId)).toBe(processPlantPressurizedWaterReactorSixLoopGraphRef)
     expect(new Set(powerFractions).size).toBeGreaterThan(3)
     expect(new Set(pzrPressures).size).toBeGreaterThan(3)
     expect(new Set(sgAInventories).size).toBeGreaterThan(3)

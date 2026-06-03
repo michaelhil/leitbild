@@ -2,7 +2,7 @@
   "id": "halden-process-plant-demo",
   "schemaVersion": 1,
   "title": "Halden process-plant multi-sim demo",
-  "description": "Six independently simulated process-plant units near Halden, running alongside ambulance response and moving weather.",
+  "description": "Seven independently simulated process-plant units near Halden, including a six-loop PWR variant, running alongside ambulance response and moving weather.",
   "packs": ["process-plant", "ambulance", "weather"],
   "runtimeOverrides": {},
   "world": {
@@ -73,6 +73,16 @@
       "clusterId": "cluster-b",
       "coolingWater": "Iddefjorden",
       "location": [11.4130, 59.1121]
+    },
+    {
+      "pack": "process-plant",
+      "type": "unit",
+      "id": "plant:halden-6-loop",
+      "label": "Halden 6-loop",
+      "systemId": "halden-6-loop",
+      "clusterId": "cluster-c",
+      "coolingWater": "Iddefjorden",
+      "location": [11.3985, 59.1170]
     },
     {
       "pack": "ambulance",
@@ -318,6 +328,24 @@
         "sgA.steamMassKg": 12020,
         "feedwaterControlValveA.positionFraction": 0.911
       }
+    },
+    {
+      "id": "halden-6-loop",
+      "pack": "process-plant",
+      "componentLibrary": "process-plant",
+      "graphRef": "process-plant.pressurized-water-reactor-6-loop.v1",
+      "parameters": {
+        "core": { "initialPowerFraction": 1.0 },
+        "turbine": { "initialLoadFraction": 1.0 }
+      },
+      "initialState": {
+        "pressurizer.pressureMPa": 15.50,
+        "sgA.levelPercent": 55.0,
+        "sgA.collapsedLevelPercent": 53.2,
+        "sgA.secondaryInventoryKg": 29800,
+        "sgA.steamMassKg": 12000,
+        "feedwaterControlValveA.positionFraction": 0.91
+      }
     }
   ],
   "runtimeConfigs": {
@@ -349,7 +377,8 @@
           }
         },
         "halden-unit-b2": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
-        "halden-unit-b3": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" }
+        "halden-unit-b3": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
+        "halden-6-loop": { "icRef": "process-plant.pressurized-water-reactor-6-loop.ic.v1" }
       }
     },
     "ambulance": {},
@@ -398,14 +427,14 @@
             "guidance": {
               "id": "halden-process-welcome",
               "title": "Halden process-plant demo",
-              "message": "Six process-plant units are running in two nearby clusters while ambulance and weather runtimes continue around them. Watch Unit A2 and Unit B1 as scheduled faults develop. The plant rail values are projected from the process runtime; click the eye icon to choose which values stay visible.",
-              "objectIds": ["plant:halden-a2", "plant:halden-b1", "amb:demo-reserve-1"],
+              "message": "Seven process-plant units are running near Halden, including a Halden 6-loop variant with six steam generators. Watch Unit A2 and Unit B1 as scheduled faults develop. The plant rail values are projected from the process runtime; click the eye icon to choose which values stay visible.",
+              "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"],
               "dismissible": true
             }
           },
           {
             "type": "highlight_objects",
-            "objectIds": ["plant:halden-a2", "plant:halden-b1", "amb:demo-reserve-1"]
+            "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"]
           }
         ]
       },
@@ -480,7 +509,7 @@
         "actions": [
           {
             "type": "clear_highlights",
-            "objectIds": ["plant:halden-a2", "plant:halden-b1", "amb:demo-reserve-1"]
+            "objectIds": ["plant:halden-a2", "plant:halden-b1", "plant:halden-6-loop", "amb:demo-reserve-1"]
           }
         ]
       }

@@ -1,7 +1,8 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import { alarm, annunciator, comparison, rule } from './reference-ic-helpers.ts'
+import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
-export const reactorCoolantPumpReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): ReadonlyArray<ProcessPlantIcRule> => {
+export const reactorCoolantPumpReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
   const rcpAlarm = annunciator({
     system: 'reactor coolant system',

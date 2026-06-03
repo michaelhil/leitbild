@@ -1,7 +1,8 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import { alarm, all, annunciator, any, comparison, rule, trip, write } from './reference-ic-helpers.ts'
+import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
-export const steamGeneratorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): ReadonlyArray<ProcessPlantIcRule> => {
+export const steamGeneratorReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
   const sg = `sg${loop}`
   const sgAlarm = annunciator({

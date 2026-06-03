@@ -224,8 +224,8 @@ describe('control instance API', () => {
     )
     expect(fetched.status).toBe(200)
     expect(fetched.body.scenario.packs).toEqual(['process-plant', 'ambulance', 'weather'])
-    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(6)
-    expect(fetched.body.scenario.processSystems).toHaveLength(6)
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(7)
+    expect(fetched.body.scenario.processSystems).toHaveLength(7)
   })
 
   test('joins a named control instance and exposes objects', async () => {

@@ -111,10 +111,10 @@
     feedwater: [],
     pressure: [],
   })
-  const sgLetters = ['A', 'B', 'C', 'D'] as const
+  const sgLetters = ['A', 'B', 'C', 'D', 'E', 'F'] as const
   type SgLetter = typeof sgLetters[number]
   const currentSgLetter = (): SgLetter | null => {
-    const suffix = widget.id.match(/^sg-([a-d])$/)?.[1]?.toUpperCase()
+    const suffix = widget.id.match(/^sg-([a-f])$/)?.[1]?.toUpperCase()
     return sgLetters.find(letter => letter === suffix) ?? null
   }
   const sgPeerValuePath = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation', letter: SgLetter): string => {

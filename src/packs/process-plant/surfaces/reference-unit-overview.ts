@@ -1,7 +1,10 @@
+import type { CompiledPlantGraph } from '../graph/index.ts'
 import { processSurfaceDefinitionSchema } from './model.ts'
 
-const loopLetters = ['A', 'B', 'C', 'D'] as const
-type LoopLetter = typeof loopLetters[number]
+const fourLoopLetters = ['A', 'B', 'C', 'D'] as const
+const sixLoopLetters = ['A', 'B', 'C', 'D', 'E', 'F'] as const
+type LoopLetter = typeof sixLoopLetters[number]
+type LoopLetters = ReadonlyArray<LoopLetter>
 
 const lowerLoop = (loop: LoopLetter): Lowercase<LoopLetter> => loop.toLowerCase() as Lowercase<LoopLetter>
 
@@ -57,11 +60,14 @@ const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
   } as const
 }
 
-const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
+const primaryLoopLaneY = (loops: LoopLetters, base: number, loop: LoopLetter): number =>
+  base + loopIndex(loops, loop) * (loops.length > 4 ? 30 : 42)
+
+const primaryLoopPaths = (loops: LoopLetters, loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
   const pumpCenterX = rcpXFor(sgX) + 48
-  const hotLegY = 366 + loopIndex(loop) * 42
-  const coldLegY = 364 + loopIndex(loop) * 42
+  const hotLegY = primaryLoopLaneY(loops, 366, loop)
+  const coldLegY = primaryLoopLaneY(loops, 364, loop)
   const sgPrimaryInY = 336
   const sgPrimaryOutY = 496
   const coldLegBranchY = sgPrimaryOutY + 70
@@ -112,7 +118,7 @@ const primaryLoopPaths = (loop: LoopLetter, sgX: number) => {
   ] as const
 }
 
-const loopIndex = (loop: LoopLetter): number => loopLetters.indexOf(loop)
+const loopIndex = (loops: LoopLetters, loop: LoopLetter): number => loops.indexOf(loop)
 
 const secondaryPaths = (loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
@@ -149,15 +155,49 @@ const secondaryPaths = (loop: LoopLetter, sgX: number) => {
   ] as const
 }
 
-const sgXs: Record<LoopLetter, number> = { A: 464, B: 688, C: 912, D: 1136 }
+const sgXs: Record<LoopLetter, number> = { A: 464, B: 688, C: 912, D: 1136, E: 1360, F: 1584 }
 
-export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.parse({
-  schemaVersion: 1,
-  id: 'unit-overview',
-  title: 'PWR Unit Overview',
-  description: 'Information-rich overview display for one pressurized-water-reactor unit.',
-  designSize: { width: 1600, height: 900 },
-  lenses: [
+const designWidthFor = (loops: LoopLetters): number => loops.length > 4 ? 2048 : 1600
+
+const secondaryZoneXFor = (designWidth: number): number => designWidth - 292
+
+const headerX = 544
+
+const headerWidthFor = (designWidth: number): number => secondaryZoneXFor(designWidth) - headerX - 4
+
+const loopHeaderPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> =>
+  Object.fromEntries(loops.map(loop => [
+    `in${loop}`,
+    { x: sgXs[loop] + 113 - headerX, y: 58 },
+  ]))
+
+const loopFeedwaterPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> =>
+  Object.fromEntries(loops.map(loop => [
+    `out${loop}`,
+    { x: sgXs[loop] + 113 - headerX, y: 0 },
+  ]))
+
+const reactorVesselPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> => {
+  const spacing = loops.length > 4 ? 30 : 42
+  const ports: Record<string, { readonly x: number; readonly y: number }> = {}
+  for (const [index, loop] of loops.entries()) {
+    ports[`hotLeg${loop}`] = { x: 196, y: 74 + index * spacing }
+    ports[`coldLeg${loop}`] = { x: 0, y: 72 + index * spacing }
+  }
+  return ports
+}
+
+const createProcessPlantUnitOverviewSurface = (loops: LoopLetters) => {
+  const designWidth = designWidthFor(loops)
+  const headerWidth = headerWidthFor(designWidth)
+  const secondaryZoneX = secondaryZoneXFor(designWidth)
+  return processSurfaceDefinitionSchema.parse({
+    schemaVersion: 1,
+    id: 'unit-overview',
+    title: 'PWR Unit Overview',
+    description: `Information-rich overview display for one ${loops.length}-loop pressurized-water-reactor unit.`,
+    designSize: { width: designWidth, height: 900 },
+    lenses: [
     { id: 'all', label: 'Full overview', description: 'Show the authored overview surface.' },
     {
       id: 'primary',
@@ -178,7 +218,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       lens: { mode: 'service-layer', service: 'feedwater' },
     },
   ],
-  regions: [
+    regions: [
     { id: 'unit-status', label: 'Unit status', role: 'unit-status', order: 0 },
     { id: 'primary', label: 'Primary system', role: 'primary-system', order: 1 },
     { id: 'heat-transfer', label: 'Steam generators', role: 'heat-transfer', order: 2 },
@@ -186,14 +226,14 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
     { id: 'support', label: 'Support systems', role: 'support-system', order: 4 },
     { id: 'alarms', label: 'Alarms', role: 'alarms', order: 5 },
   ],
-  widgets: [
+    widgets: [
     {
       id: 'unit-status-banner',
       type: 'statusBanner',
       label: 'Unit Status',
       region: 'unit-status',
       rank: 0,
-      geometry: { x: 42, y: 32, width: 1516, height: 72 },
+      geometry: { x: 42, y: 32, width: designWidth - 84, height: 72 },
       binds: {
         thermalPower: { label: 'Thermal power', path: 'core.totalThermalPowerMw', digits: 0 },
         electricOutput: { label: 'Electric output', path: 'turbine.electricMw', digits: 0 },
@@ -219,16 +259,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
         inventory: { label: 'Inventory', path: 'vessel.primaryCoolantInventoryKg', digits: 0 },
         cooling: { label: 'Cooling', path: 'core.coreCoolingAvailabilityFraction', digits: 2, display: 'percent' },
       },
-      ports: {
-        hotLegA: { x: 196, y: 74 },
-        hotLegB: { x: 196, y: 116 },
-        hotLegC: { x: 196, y: 158 },
-        hotLegD: { x: 196, y: 200 },
-        coldLegA: { x: 0, y: 72 },
-        coldLegB: { x: 0, y: 114 },
-        coldLegC: { x: 0, y: 156 },
-        coldLegD: { x: 0, y: 198 },
-      },
+      ports: reactorVesselPorts(loops),
       style: { tone: 'primary' },
     },
     {
@@ -264,8 +295,8 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       ports: { surgeLine: { x: 76, y: 126 } },
       style: { tone: 'primary' },
     },
-    ...loopLetters.map((loop, index) => sgWidget(loop, sgXs[loop], index)),
-    ...loopLetters.map((loop, index) => rcpWidget(loop, rcpXFor(sgXs[loop]), index + 10)),
+    ...loops.map((loop, index) => sgWidget(loop, sgXs[loop], index)),
+    ...loops.map((loop, index) => rcpWidget(loop, rcpXFor(sgXs[loop]), index + 10)),
     {
       id: 'main-steam-header',
       type: 'numericReadout',
@@ -274,16 +305,13 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['mainSteamHeader'] },
       role: 'main-steam-header',
       rank: 0,
-      geometry: { x: 544, y: 154, width: 760, height: 58 },
+      geometry: { x: headerX, y: 154, width: headerWidth, height: 58 },
       binds: {
         flow: { label: 'Header flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 },
       },
       ports: {
-        inA: { x: 98, y: 58 },
-        inB: { x: 286, y: 58 },
-        inC: { x: 474, y: 58 },
-        inD: { x: 662, y: 58 },
-        outlet: { x: 760, y: 29 },
+        ...loopHeaderPorts(loops),
+        outlet: { x: headerWidth, y: 29 },
       },
       style: { tone: 'secondary' },
     },
@@ -295,7 +323,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['turbine'] },
       role: 'turbine-generator',
       rank: 1,
-      geometry: { x: 1372, y: 298, width: 118, height: 118 },
+      geometry: { x: secondaryZoneX + 64, y: 298, width: 118, height: 118 },
       binds: {
         output: { label: 'Output', path: 'turbine.electricMw', digits: 0 },
         steam: { label: 'Steam use', path: 'turbine.steamFlowKgPerS', digits: 0 },
@@ -312,7 +340,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['condenser'] },
       role: 'condenser',
       rank: 2,
-      geometry: { x: 1324, y: 566, width: 214, height: 132 },
+      geometry: { x: secondaryZoneX + 16, y: 566, width: 214, height: 132 },
       binds: {
         level: { label: 'Hotwell', path: 'condenser.condensateLevelPercent', digits: 0, display: 'percent' },
         backPressure: { label: 'Backpressure', path: 'condenser.backPressurePa', digits: 0 },
@@ -330,19 +358,14 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['feedwaterTank', 'feedwaterHeader'] },
       role: 'feedwater-header',
       rank: 0,
-      geometry: { x: 544, y: 738, width: 760, height: 58 },
+      geometry: { x: headerX, y: 738, width: headerWidth, height: 58 },
       binds: {
         tankLevel: { label: 'Tank', path: 'feedwaterTank.levelPercent', digits: 0, display: 'percent' },
         availableFlow: { label: 'Available', path: 'feedwaterTank.availableOutletFlowKgPerS', digits: 0 },
         auxTank: { label: 'AFW tank', path: 'auxFeedwaterTank.levelPercent', digits: 0, display: 'percent' },
         auxAvailable: { label: 'AFW avail', path: 'auxFeedwaterTank.availableOutletFlowKgPerS', digits: 0 },
       },
-      ports: {
-        outA: { x: 98, y: 0 },
-        outB: { x: 286, y: 0 },
-        outC: { x: 474, y: 0 },
-        outD: { x: 662, y: 0 },
-      },
+      ports: loopFeedwaterPorts(loops),
       style: { tone: 'support' },
     },
     {
@@ -353,7 +376,7 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       source: { componentIds: ['safetyBusA', 'safetyBusB'] },
       role: 'electrical',
       rank: 1,
-      geometry: { x: 1324, y: 730, width: 214, height: 66 },
+      geometry: { x: secondaryZoneX + 16, y: 730, width: 214, height: 66 },
       binds: {
         busA: { label: 'Bus A', path: 'safetyBusA.voltageFraction', digits: 2, display: 'percent' },
         busB: { label: 'Bus B', path: 'safetyBusB.voltageFraction', digits: 2, display: 'percent' },
@@ -368,14 +391,14 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       label: 'Alarm Panel',
       region: 'alarms',
       rank: 0,
-      geometry: { x: 42, y: 800, width: 1516, height: 86 },
+      geometry: { x: 42, y: 800, width: designWidth - 84, height: 86 },
       binds: {},
       style: { tone: 'warning' },
     },
   ],
   paths: [
-    ...loopLetters.flatMap(loop => primaryLoopPaths(loop, sgXs[loop])),
-    ...loopLetters.flatMap(loop => secondaryPaths(loop, sgXs[loop])),
+    ...loops.flatMap(loop => primaryLoopPaths(loops, loop, sgXs[loop])),
+    ...loops.flatMap(loop => secondaryPaths(loop, sgXs[loop])),
     {
       id: 'main-steam-to-turbine',
       label: 'Main steam to turbine',
@@ -383,8 +406,8 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       from: 'main-steam-header.outlet',
       to: 'turbine.steamIn',
       waypoints: [
-        { x: 1350, y: 183 },
-        { x: 1350, y: 358 },
+        { x: secondaryZoneX + 42, y: 183 },
+        { x: secondaryZoneX + 42, y: 358 },
       ],
       binds: { flow: { label: 'Header flow', path: 'main-steam-header-to-turbine-stop-valve.flowKgPerS', digits: 0 } },
       style: { service: 'steam' },
@@ -396,13 +419,25 @@ export const processPlantUnitOverviewSurface = processSurfaceDefinitionSchema.pa
       from: 'turbine.exhaust',
       to: 'condenser.steamIn',
       waypoints: [
-        { x: 1431, y: 486 },
-        { x: 1431, y: 520 },
+        { x: secondaryZoneX + 123, y: 486 },
+        { x: secondaryZoneX + 123, y: 520 },
       ],
       binds: { flow: { label: 'Exhaust flow', path: 'turbine-exhaust-to-condenser.flowKgPerS', digits: 0 } },
       style: { service: 'steam' },
     },
   ],
 })
+}
+
+export const processPlantUnitOverviewSurface = createProcessPlantUnitOverviewSurface(fourLoopLetters)
+export const processPlantSixLoopUnitOverviewSurface = createProcessPlantUnitOverviewSurface(sixLoopLetters)
+
+const steamGeneratorCountFor = (graph: CompiledPlantGraph): number =>
+  graph.components.filter(component => component.kind === 'steamGenerator').length
+
+export const processPlantUnitOverviewSurfaceForGraph = (graph: CompiledPlantGraph) =>
+  steamGeneratorCountFor(graph) > fourLoopLetters.length
+    ? processPlantSixLoopUnitOverviewSurface
+    : processPlantUnitOverviewSurface
 
 export const processPlantReferenceSurfaces = [processPlantUnitOverviewSurface] as const

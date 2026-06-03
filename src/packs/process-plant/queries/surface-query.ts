@@ -10,7 +10,10 @@ import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { requireSystem, success } from './common.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
-import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
+import {
+  processPlantReferenceSurfaces,
+  processPlantUnitOverviewSurfaceForGraph,
+} from '../surfaces/reference-unit-overview.ts'
 import {
   processSurfaceGraphLensSchema,
   type CompiledProcessSurface,
@@ -40,7 +43,10 @@ export const processPlantSurfaceQueryKinds = [
   'process-plant.surface.project',
 ] as const
 
-const surfaceFor = (surfaceId: string) => {
+const surfaceFor = (surfaceId: string, system?: ProcessPlantSystemRuntime) => {
+  if (surfaceId === 'unit-overview' && system !== undefined) {
+    return processPlantUnitOverviewSurfaceForGraph(system.system.graph)
+  }
   const surface = processPlantReferenceSurfaces.find(candidate => candidate.id === surfaceId)
   if (!surface) throw new Error(`process plant surface not found: ${surfaceId}`)
   return surface
@@ -61,7 +67,7 @@ const compiledSurfaceFor = (
   const existingCache = compiledSurfaceCache.get(system)
   const existingPlan = existingCache?.get(surfaceId)
   if (existingPlan) return existingPlan
-  const surface = compileProcessSurface({ definition: surfaceFor(surfaceId), graph: system.system.graph })
+  const surface = compileProcessSurface({ definition: surfaceFor(surfaceId, system), graph: system.system.graph })
   const plan = {
     surface,
     bindings: bindingByPath(surface),
@@ -209,9 +215,13 @@ export const answerProcessPlantSurfaceQuery = (config: {
   if (config.request.kind === 'process-plant.surfaces.list') {
     const payload = z.object({ systemId: idSchema }).parse(config.request.payload)
     const system = requireSystem(config.systems, payload.systemId)
+    const surfaces = [
+      processPlantUnitOverviewSurfaceForGraph(system.system.graph),
+      ...processPlantReferenceSurfaces.filter(surface => surface.id !== 'unit-overview'),
+    ]
     return success(config.request, {
       systemId: system.system.id,
-      surfaces: processPlantReferenceSurfaces.map(surface => ({
+      surfaces: surfaces.map(surface => ({
         id: surface.id,
         title: surface.title,
         description: surface.description,

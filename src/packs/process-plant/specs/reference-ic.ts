@@ -8,33 +8,32 @@ import { pressurizerReferenceIcRules } from './reference-ic-pressurizer.ts'
 import { reactorReferenceIcRules } from './reference-ic-reactor.ts'
 import { reactorCoolantPumpReferenceIcRules } from './reference-ic-rcp.ts'
 import { steamGeneratorReferenceIcRules } from './reference-ic-steam-generator.ts'
+import { fourLoopReferenceLetters, sixLoopReferenceLetters } from './reference-loop.ts'
 
 export const processPlantPressurizedWaterReactorIcRef = 'process-plant.pressurized-water-reactor.ic.v1'
+export const processPlantPressurizedWaterReactorSixLoopIcRef = 'process-plant.pressurized-water-reactor-6-loop.ic.v1'
 
-export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = {
+const pressurizedWaterReactorReferenceIcFor = (
+  loops: typeof fourLoopReferenceLetters | typeof sixLoopReferenceLetters,
+): ProcessPlantIcConfig => ({
   rules: [
     ...reactorReferenceIcRules(),
     ...pressurizerReferenceIcRules(),
-    ...steamGeneratorReferenceIcRules('A'),
-    ...steamGeneratorReferenceIcRules('B'),
-    ...steamGeneratorReferenceIcRules('C'),
-    ...steamGeneratorReferenceIcRules('D'),
-    ...reactorCoolantPumpReferenceIcRules('A'),
-    ...reactorCoolantPumpReferenceIcRules('B'),
-    ...reactorCoolantPumpReferenceIcRules('C'),
-    ...reactorCoolantPumpReferenceIcRules('D'),
-    ...accumulatorReferenceIcRules('A'),
-    ...accumulatorReferenceIcRules('B'),
-    ...accumulatorReferenceIcRules('C'),
-    ...accumulatorReferenceIcRules('D'),
+    ...loops.flatMap(loop => steamGeneratorReferenceIcRules(loop)),
+    ...loops.flatMap(loop => reactorCoolantPumpReferenceIcRules(loop)),
+    ...loops.flatMap(loop => accumulatorReferenceIcRules(loop)),
     ...containmentReferenceIcRules(),
     ...electricalReferenceIcRules(),
     ...balanceOfPlantReferenceIcRules(),
   ],
-}
+})
+
+export const pressurizedWaterReactorReferenceIc: ProcessPlantIcConfig = pressurizedWaterReactorReferenceIcFor(fourLoopReferenceLetters)
+export const pressurizedWaterReactorSixLoopReferenceIc: ProcessPlantIcConfig = pressurizedWaterReactorReferenceIcFor(sixLoopReferenceLetters)
 
 const builtInProcessPlantIcConfigs = new Map<string, ProcessPlantIcConfig>([
   [processPlantPressurizedWaterReactorIcRef, pressurizedWaterReactorReferenceIc],
+  [processPlantPressurizedWaterReactorSixLoopIcRef, pressurizedWaterReactorSixLoopReferenceIc],
 ])
 
 export const resolveProcessPlantIcConfig = (icRef: string): ProcessPlantIcConfig => {

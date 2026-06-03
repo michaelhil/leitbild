@@ -10,7 +10,7 @@ import { plantGraphToMermaid } from '../graph/index.ts'
 import { processPlantComponentBehaviorSourcePathByKind } from '../runtime/behaviors/index.ts'
 import type { ProcessPlantVariableHandle } from '../runtime/variable-table.ts'
 import { compileProcessSurface } from '../surfaces/compiler.ts'
-import { processPlantReferenceSurfaces } from '../surfaces/reference-unit-overview.ts'
+import { processPlantUnitOverviewSurfaceForGraph } from '../surfaces/reference-unit-overview.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success, systemQuerySchema } from './common.ts'
 
@@ -160,12 +160,10 @@ const overviewComponentIdsFor = (system: ProcessPlantSystemRuntime): ReadonlySet
   const existing = overviewComponentIdsCache.get(system)
   if (existing) return existing
   const ids = new Set<ComponentId>()
-  const surface = processPlantReferenceSurfaces.find(candidate => candidate.id === 'unit-overview')
-  if (surface) {
-    const compiled = compileProcessSurface({ definition: surface, graph: system.system.graph })
-    for (const widget of compiled.widgets) {
-      for (const componentId of widget.source?.componentIds ?? []) ids.add(componentId)
-    }
+  const surface = processPlantUnitOverviewSurfaceForGraph(system.system.graph)
+  const compiled = compileProcessSurface({ definition: surface, graph: system.system.graph })
+  for (const widget of compiled.widgets) {
+    for (const componentId of widget.source?.componentIds ?? []) ids.add(componentId)
   }
   overviewComponentIdsCache.set(system, ids)
   return ids

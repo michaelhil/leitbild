@@ -1,7 +1,8 @@
 import type { ProcessPlantIcRule } from '../runtime/index.ts'
 import { alarm, annunciator, comparison, rule } from './reference-ic-helpers.ts'
+import type { ProcessPlantReferenceLoop } from './reference-loop.ts'
 
-export const accumulatorReferenceIcRules = (loop: 'A' | 'B' | 'C' | 'D'): ReadonlyArray<ProcessPlantIcRule> => {
+export const accumulatorReferenceIcRules = (loop: ProcessPlantReferenceLoop): ReadonlyArray<ProcessPlantIcRule> => {
   const lower = loop.toLowerCase()
   const id = `safetyAccumulator${loop}`
   const accumulatorAlarm = annunciator({
