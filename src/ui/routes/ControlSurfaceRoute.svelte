@@ -716,6 +716,10 @@
     void loadScenarioOptions()
   }
 
+  const goToStartPage = (): void => {
+    window.location.assign('/')
+  }
+
   const openProcessSurface = (object: OperationalObject): void => {
     processSurfaceObject = object
     void loadProcessSurfaceModal()
@@ -1498,6 +1502,7 @@
     scenarios={scenarioOptions}
     selectedScenarioId={scenarioState?.scenarioId ?? ''}
     close={closeSettings}
+    {goToStartPage}
     {toggleTheme}
     {toggleWeatherLayer}
     {resetScenario}

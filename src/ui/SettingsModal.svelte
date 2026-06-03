@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Eye, EyeOff, Moon, RotateCcw, Sun } from 'lucide-svelte'
+  import { Eye, EyeOff, House, Moon, RotateCcw, Sun } from 'lucide-svelte'
   import type { ThemeMode } from './theme.ts'
   import type { ScenarioListItem } from './types.ts'
   import IconButton from './components/IconButton.svelte'
@@ -12,6 +12,7 @@
     readonly scenarios: ReadonlyArray<ScenarioListItem>
     readonly selectedScenarioId: string
     readonly close: () => void
+    readonly goToStartPage: () => void
     readonly toggleTheme: () => void
     readonly toggleWeatherLayer: () => void
     readonly resetScenario: () => Promise<void>
@@ -25,6 +26,7 @@
     scenarios,
     selectedScenarioId,
     close,
+    goToStartPage,
     toggleTheme,
     toggleWeatherLayer,
     resetScenario,
@@ -52,6 +54,20 @@
         pressed={theme === 'dark'}
         variant="ghost"
         onClick={toggleTheme}
+      />
+    </section>
+
+    <section class="settings-row">
+      <div>
+        <strong>Start page</strong>
+        <span>Return to the scenario index.</span>
+      </div>
+      <IconButton
+        label="Go to start page"
+        title="Go to start page"
+        icon={House}
+        variant="ghost"
+        onClick={goToStartPage}
       />
     </section>
 
