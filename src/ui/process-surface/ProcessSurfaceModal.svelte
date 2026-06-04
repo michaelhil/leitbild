@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Component } from 'svelte'
+  import { untrack } from 'svelte'
   import { ClipboardList, Eye, Play, X, Zap } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import type { PackObjectStatusPresentation } from '../../core/packs/protocol.ts'
@@ -142,6 +143,7 @@
     if (typeof systemId !== 'string' || systemId.length === 0) throw new Error('process display object has no system id')
     return systemId
   }
+  const processSurfaceSystemId = untrack(() => systemIdFor(object))
 
   const refreshSnapshot = async (
     instanceId: ControlInstanceId,
@@ -369,7 +371,7 @@
   }
 
   $effect(() => {
-    const selectedObject = object
+    const selectedSystemId = processSurfaceSystemId
     const selectedControlInstanceId = controlInstanceId
     let cancelled = false
     let stopRefresh: (() => void) | null = null
@@ -385,31 +387,31 @@
         error = null
         values = new Map()
         alarms = emptyProcessSurfaceAlarmSnapshot
-        const systemId = systemIdFor(selectedObject)
-        const surfaces = await listProcessSurfaces(selectedControlInstanceId, systemId)
+        const surfaces = await listProcessSurfaces(selectedControlInstanceId, selectedSystemId)
         const first = surfaces[0]
-        if (!first) throw new Error(`no process displays are available for ${systemId}`)
-        const nextSurface = await readProcessSurface(selectedControlInstanceId, systemId, first.id)
+        if (!first) throw new Error(`no process displays are available for ${selectedSystemId}`)
+        const nextSurface = await readProcessSurface(selectedControlInstanceId, selectedSystemId, first.id)
         if (cancelled) return
-        loadedSystemId = systemId
+        loadedSystemId = selectedSystemId
         surface = nextSurface
         projection = null
         activeLensId = nextSurface.lenses[0]?.id ?? 'all'
         widgetPositions = readProcessSurfaceLayout({
           controlInstanceId: selectedControlInstanceId,
-          systemId,
+          systemId: selectedSystemId,
           surfaceId: nextSurface.id,
         })
+        const currentWindowBounds = untrack(() => windowBounds)
         windowBounds = clampWindowBounds(readProcessSurfaceWindowBounds({
           controlInstanceId: selectedControlInstanceId,
-          systemId,
+          systemId: selectedSystemId,
           surfaceId: nextSurface.id,
-        }) ?? windowBounds)
-        await refreshSnapshot(selectedControlInstanceId, systemId, first.id)
+        }) ?? currentWindowBounds)
+        await refreshSnapshot(selectedControlInstanceId, selectedSystemId, first.id)
         if (cancelled) return
         stopRefresh = startSnapshotRefresh({
           instanceId: selectedControlInstanceId,
-          systemId,
+          systemId: selectedSystemId,
           surfaceId: first.id,
           isCancelled: () => cancelled,
         })

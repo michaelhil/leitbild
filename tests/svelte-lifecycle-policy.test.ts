@@ -66,4 +66,16 @@ describe('Svelte lifecycle policy', () => {
     expect(artifactBackdrop).toContain('pointer-events: auto')
     expect(procedureBackdrop).toContain('pointer-events: auto')
   })
+
+  test('process display loader stays independent from live object telemetry and window geometry', () => {
+    const source = readFileSync(join(uiRoot, 'process-surface', 'ProcessSurfaceModal.svelte'), 'utf8')
+    const loadEffectStart = source.lastIndexOf('$effect(() => {')
+    const loadEffect = source.slice(loadEffectStart, source.indexOf('</script>', loadEffectStart))
+
+    expect(loadEffect).toContain('const selectedSystemId = processSurfaceSystemId')
+    expect(loadEffect).toContain('untrack(() => windowBounds)')
+    expect(loadEffect).not.toContain('selectedObject = object')
+    expect(loadEffect).not.toContain('systemIdFor(object)')
+    expect(loadEffect).not.toContain('?? windowBounds')
+  })
 })
