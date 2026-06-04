@@ -287,7 +287,7 @@
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof HTMLElement && target.closest('button, a, textarea, input, .procedure-csf-shell, .procedure-run-badges')) return
+    if (target instanceof Element && target.closest('button, a, textarea, input, .procedure-csf-shell, .procedure-run-badges')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)

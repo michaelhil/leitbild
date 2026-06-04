@@ -78,4 +78,14 @@ describe('Svelte lifecycle policy', () => {
     expect(loadEffect).not.toContain('systemIdFor(object)')
     expect(loadEffect).not.toContain('?? windowBounds')
   })
+
+  test('floating window drag guards ignore icon clicks inside buttons', () => {
+    const procedureSource = readFileSync(join(uiRoot, 'procedures', 'ProcedureSystemModal.svelte'), 'utf8')
+    const processSurfaceSource = readFileSync(join(uiRoot, 'process-surface', 'ProcessSurfaceModal.svelte'), 'utf8')
+
+    expect(procedureSource).toContain('target instanceof Element && target.closest')
+    expect(processSurfaceSource).toContain('target instanceof Element && target.closest')
+    expect(procedureSource).not.toContain('target instanceof HTMLElement && target.closest')
+    expect(processSurfaceSource).not.toContain('target instanceof HTMLElement && target.closest')
+  })
 })

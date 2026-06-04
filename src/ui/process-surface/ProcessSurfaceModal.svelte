@@ -289,7 +289,7 @@
   const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
-    if (target instanceof HTMLElement && target.closest('button, .process-surface-lens-menu')) return
+    if (target instanceof Element && target.closest('button, .process-surface-lens-menu')) return
     event.preventDefault()
     const element = event.currentTarget as Element
     element.setPointerCapture(event.pointerId)
