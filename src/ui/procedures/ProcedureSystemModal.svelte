@@ -53,6 +53,12 @@
     type ProcedureRunSummary,
     type ProcedureRunVisualState,
   } from './procedure-run-selectors.ts'
+  import {
+    floatingWindowBoundsForDrag,
+    normalizeFloatingWindowBounds,
+    type FloatingWindowBounds,
+    type FloatingWindowDragMode,
+  } from '../window-bounds.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -64,6 +70,7 @@
     readonly initialProcedureId?: ProcedureId
     readonly initialStepId?: ProcedureStepId
     readonly initialNavigationRevision?: number
+    readonly windowOffsetIndex?: number
     readonly close: () => void
   }
 
@@ -83,6 +90,13 @@
   type LoadStageStatus = 'pending' | 'running' | 'done' | 'failed'
   type ProcedureTocMode = 'detail' | 'compact' | 'collapsed'
   type ProcedureConfirmation = 'run' | 'completed' | 'reset' | 'transition'
+
+  interface ProcedureWindowDragState {
+    readonly pointerId: number
+    readonly mode: FloatingWindowDragMode
+    readonly pointerStart: { readonly x: number; readonly y: number }
+    readonly origin: FloatingWindowBounds
+  }
 
   const pwrCriticalSafetyFunctions = [
     'subcriticality',
@@ -125,8 +139,17 @@
     initialProcedureId = undefined,
     initialStepId = undefined,
     initialNavigationRevision = 0,
+    windowOffsetIndex = 0,
     close,
   }: Props = $props()
+
+  const minWindowWidth = 48
+  const minWindowHeight = 32
+  const viewportMargin = 12
+  const windowOffsetStepPx = 32
+  const minProcedureFontScale = 0.65
+  const maxProcedureFontScale = 1.6
+  const procedureFontScaleStep = 0.1
 
   let loading = $state(true)
   let refreshing = $state(false)
@@ -150,11 +173,15 @@
   let procedureSourceStatus = $state<ProcedureSourceLoadStatus | null>(null)
   let loadStages = $state<Record<LoadStageId, LoadStage>>(createLoadStages())
   let procedureTocMode = $state<ProcedureTocMode>('detail')
+  let procedureFontScale = $state(1)
+  let windowBounds = $state<FloatingWindowBounds>({ x: 48, y: 48, width: 1500, height: 940 })
+  let windowDragState = $state<ProcedureWindowDragState | null>(null)
   let recentlyConfirmedStepId = $state<string | null>(null)
   let recentlyConfirmedAssessment = $state<Extract<ProcedureAssessment, 'complete' | 'failed'> | null>(null)
   let transitionInProgress = $state(false)
   let lastRealtimeRevision = 0
   let appliedInitialNavigationRevision = -1
+  let boundsInitialized = false
   let csfRefreshInFlight = false
   let toastTimer: number | null = null
 
@@ -210,6 +237,87 @@
       return
     }
     procedureTocMode = 'detail'
+  }
+
+  const defaultWindowBounds = (): FloatingWindowBounds => {
+    if (typeof window === 'undefined') return windowBounds
+    const width = Math.max(minWindowWidth, Math.min(1500, window.innerWidth - 2 * viewportMargin))
+    const height = Math.max(minWindowHeight, Math.min(940, window.innerHeight - 2 * viewportMargin))
+    const offset = windowOffsetIndex * windowOffsetStepPx
+    return {
+      x: Math.max(viewportMargin, Math.round((window.innerWidth - width) / 2) + offset),
+      y: Math.max(viewportMargin, Math.round((window.innerHeight - height) / 2) + offset),
+      width,
+      height,
+    }
+  }
+
+  const clampWindowBounds = (bounds: FloatingWindowBounds): FloatingWindowBounds => {
+    if (typeof window === 'undefined') return bounds
+    return normalizeFloatingWindowBounds(bounds, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }, {
+      minWidth: minWindowWidth,
+      minHeight: minWindowHeight,
+      margin: viewportMargin,
+    })
+  }
+
+  const nextBoundsForDrag = (
+    drag: ProcedureWindowDragState,
+    event: PointerEvent,
+  ): FloatingWindowBounds => {
+    if (typeof window === 'undefined') return drag.origin
+    return floatingWindowBoundsForDrag({
+      mode: drag.mode,
+      origin: drag.origin,
+      dx: event.clientX - drag.pointerStart.x,
+      dy: event.clientY - drag.pointerStart.y,
+    }, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }, {
+      minWidth: minWindowWidth,
+      minHeight: minWindowHeight,
+      margin: viewportMargin,
+    })
+  }
+
+  const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (target instanceof HTMLElement && target.closest('button, a, textarea, input, .procedure-csf-shell, .procedure-run-badges')) return
+    event.preventDefault()
+    const element = event.currentTarget as Element
+    element.setPointerCapture(event.pointerId)
+    windowDragState = {
+      pointerId: event.pointerId,
+      mode,
+      pointerStart: { x: event.clientX, y: event.clientY },
+      origin: windowBounds,
+    }
+  }
+
+  const updateWindowDrag = (event: PointerEvent): void => {
+    const drag = windowDragState
+    if (!drag || drag.pointerId !== event.pointerId) return
+    windowBounds = nextBoundsForDrag(drag, event)
+  }
+
+  const finishWindowDrag = (event: PointerEvent): void => {
+    const drag = windowDragState
+    if (!drag || drag.pointerId !== event.pointerId) return
+    windowBounds = nextBoundsForDrag(drag, event)
+    windowDragState = null
+  }
+
+  const increaseProcedureFontSize = (): void => {
+    procedureFontScale = Math.min(maxProcedureFontScale, Math.round((procedureFontScale + procedureFontScaleStep) * 10) / 10)
+  }
+
+  const decreaseProcedureFontSize = (): void => {
+    procedureFontScale = Math.max(minProcedureFontScale, Math.round((procedureFontScale - procedureFontScaleStep) * 10) / 10)
   }
 
   const procedureTocModeLabel = (): string => {
@@ -929,12 +1037,21 @@
   }
 
   runOnMount(() => {
+    if (!boundsInitialized) {
+      windowBounds = clampWindowBounds(defaultWindowBounds())
+      boundsInitialized = true
+    }
     void loadCatalogAndRuns()
     const interval = window.setInterval(() => {
       void refreshCsfStatus()
     }, 2_000)
+    const handleResize = (): void => {
+      windowBounds = clampWindowBounds(windowBounds)
+    }
+    window.addEventListener('resize', handleResize)
     return () => {
       window.clearInterval(interval)
+      window.removeEventListener('resize', handleResize)
       if (toastTimer !== null) window.clearTimeout(toastTimer)
     }
   })
@@ -953,10 +1070,27 @@
   })
 </script>
 
-<div class="procedure-backdrop" role="presentation" onmousedown={close}>
-  <div class="procedure-modal" role="dialog" aria-modal="true" aria-label="Computer-based procedure system" tabindex="-1" onmousedown={(event) => event.stopPropagation()}>
+<div class="procedure-window-layer">
+  <div
+    class="procedure-modal procedure-window"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Computer-based procedure system"
+    tabindex="-1"
+    style={`left: ${windowBounds.x}px; top: ${windowBounds.y}px; width: ${windowBounds.width}px; height: ${windowBounds.height}px; --procedure-font-scale: ${procedureFontScale};`}
+    onmousedown={(event) => event.stopPropagation()}
+  >
     <header class="procedure-header">
-      <div class="procedure-header-top">
+      <div
+        class="procedure-header-top"
+        role="toolbar"
+        tabindex="0"
+        aria-label="Procedure system window controls"
+        onpointerdown={(event) => startWindowDrag(event, 'move')}
+        onpointermove={updateWindowDrag}
+        onpointerup={finishWindowDrag}
+        onpointercancel={finishWindowDrag}
+      >
         <div class="procedure-current-unit-line">
           <StatusIndicator tone={displayUnitStatus.tone} label={displayUnitStatus.label} indicator={displayUnitStatus.indicator} />
           <strong>{displayUnitName}</strong>
@@ -967,6 +1101,12 @@
           />
         </div>
         <div class="procedure-header-actions">
+          <button class="procedure-font-button large" type="button" title="Increase procedure font size" aria-label="Increase procedure font size" onclick={increaseProcedureFontSize}>
+            A
+          </button>
+          <button class="procedure-font-button small" type="button" title="Decrease procedure font size" aria-label="Decrease procedure font size" onclick={decreaseProcedureFontSize}>
+            A
+          </button>
           <button type="button" title="Refresh procedure source" aria-label="Refresh procedure source" onclick={() => void loadCatalogAndRuns(true)}>
             <RefreshCw size={18} aria-hidden="true" />
           </button>
@@ -1276,5 +1416,81 @@
         {procedureToast.message}
       </div>
     {/if}
+    <div
+      class="procedure-resize-handle north"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize procedure system from top"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle east"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize procedure system from right"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle south"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize procedure system from bottom"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle west"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize procedure system from left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-west')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle corner north-east"
+      role="separator"
+      aria-label="Resize procedure system from top right"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle corner north-west"
+      role="separator"
+      aria-label="Resize procedure system from top left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north-west')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle corner south-east"
+      role="separator"
+      aria-label="Resize procedure system from bottom right"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="procedure-resize-handle corner south-west"
+      role="separator"
+      aria-label="Resize procedure system from bottom left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south-west')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
   </div>
 </div>

@@ -35,6 +35,11 @@
     type ProcessSurfaceWindowBounds,
     type ProcessSurfaceWidgetPosition,
   } from './process-surface-layout.ts'
+  import {
+    floatingWindowBoundsForDrag,
+    normalizeFloatingWindowBounds,
+    type FloatingWindowDragMode,
+  } from '../window-bounds.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -48,7 +53,8 @@
     }>
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly procedureRevision: number
-    readonly openProcedureSystemAt?: (summary: ProcedureRunSummary) => void
+    readonly windowOffsetIndex?: number
+    readonly openProcedureSystemAt?: (summary?: ProcedureRunSummary) => void
     readonly close: () => void
   }
 
@@ -61,22 +67,22 @@
     unitContexts = [],
     procedureSummaries = emptyProcedureRunSummaries,
     procedureRevision,
+    windowOffsetIndex = 0,
     openProcedureSystemAt = undefined,
     close,
   }: Props = $props()
 
-  type WindowDragMode = 'move' | 'resize-east' | 'resize-south' | 'resize-corner'
-
   interface WindowDragState {
     readonly pointerId: number
-    readonly mode: WindowDragMode
+    readonly mode: FloatingWindowDragMode
     readonly pointerStart: { readonly x: number; readonly y: number }
     readonly origin: ProcessSurfaceWindowBounds
   }
 
-  const minWindowWidth = 620
-  const minWindowHeight = 420
+  const minWindowWidth = 48
+  const minWindowHeight = 32
   const viewportMargin = 12
+  const windowOffsetStepPx = 28
 
   let loading = $state(true)
   let error = $state<string | null>(null)
@@ -106,26 +112,27 @@
 
   const defaultWindowBounds = (): ProcessSurfaceWindowBounds => {
     if (typeof window === 'undefined') return windowBounds
+    const width = Math.max(minWindowWidth, Math.min(1180, window.innerWidth - 2 * viewportMargin))
+    const height = Math.max(minWindowHeight, Math.min(760, window.innerHeight - 2 * viewportMargin))
+    const offset = windowOffsetIndex * windowOffsetStepPx
     return {
-      x: Math.max(viewportMargin, Math.round((window.innerWidth - Math.min(1180, window.innerWidth - 2 * viewportMargin)) / 2)),
-      y: Math.max(viewportMargin, Math.round((window.innerHeight - Math.min(760, window.innerHeight - 2 * viewportMargin)) / 2)),
-      width: Math.max(minWindowWidth, Math.min(1180, window.innerWidth - 2 * viewportMargin)),
-      height: Math.max(minWindowHeight, Math.min(760, window.innerHeight - 2 * viewportMargin)),
+      x: Math.max(viewportMargin, Math.round((window.innerWidth - width) / 2) + offset),
+      y: Math.max(viewportMargin, Math.round((window.innerHeight - height) / 2) + offset),
+      width,
+      height,
     }
   }
 
   const clampWindowBounds = (bounds: ProcessSurfaceWindowBounds): ProcessSurfaceWindowBounds => {
     if (typeof window === 'undefined') return bounds
-    const maxWidth = Math.max(minWindowWidth, window.innerWidth - 2 * viewportMargin)
-    const maxHeight = Math.max(minWindowHeight, window.innerHeight - 2 * viewportMargin)
-    const width = Math.max(minWindowWidth, Math.min(maxWidth, bounds.width))
-    const height = Math.max(minWindowHeight, Math.min(maxHeight, bounds.height))
-    return {
-      x: Math.max(viewportMargin, Math.min(window.innerWidth - width - viewportMargin, bounds.x)),
-      y: Math.max(viewportMargin, Math.min(window.innerHeight - height - viewportMargin, bounds.y)),
-      width,
-      height,
-    }
+    return normalizeFloatingWindowBounds(bounds, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }, {
+      minWidth: minWindowWidth,
+      minHeight: minWindowHeight,
+      margin: viewportMargin,
+    })
   }
 
   const systemIdFor = (candidate: OperationalObject): string => {
@@ -261,27 +268,23 @@
   ): ProcessSurfaceWindowBounds => {
     const dx = event.clientX - drag.pointerStart.x
     const dy = event.clientY - drag.pointerStart.y
-    if (drag.mode === 'move') {
-      return clampWindowBounds({
-        ...drag.origin,
-        x: drag.origin.x + dx,
-        y: drag.origin.y + dy,
-      })
-    }
-    if (drag.mode === 'resize-east') {
-      return clampWindowBounds({ ...drag.origin, width: drag.origin.width + dx })
-    }
-    if (drag.mode === 'resize-south') {
-      return clampWindowBounds({ ...drag.origin, height: drag.origin.height + dy })
-    }
-    return clampWindowBounds({
-      ...drag.origin,
-      width: drag.origin.width + dx,
-      height: drag.origin.height + dy,
+    if (typeof window === 'undefined') return drag.origin
+    return floatingWindowBoundsForDrag({
+      mode: drag.mode,
+      origin: drag.origin,
+      dx,
+      dy,
+    }, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }, {
+      minWidth: minWindowWidth,
+      minHeight: minWindowHeight,
+      margin: viewportMargin,
     })
   }
 
-  const startWindowDrag = (event: PointerEvent, mode: WindowDragMode): void => {
+  const startWindowDrag = (event: PointerEvent, mode: FloatingWindowDragMode): void => {
     if (event.button !== 0) return
     const target = event.target
     if (target instanceof HTMLElement && target.closest('button, .process-surface-lens-menu')) return
@@ -502,7 +505,13 @@
           class="process-surface-icon-button"
           aria-label="Open computer-based procedures"
           title="Computer-based procedures"
-          onclick={() => void openProcedureSystem()}
+          onclick={() => {
+            if (openProcedureSystemAt) {
+              openProcedureSystemAt()
+              return
+            }
+            void openProcedureSystem()
+          }}
         >
           <ClipboardList size={17} aria-hidden="true" />
         </button>
@@ -557,10 +566,57 @@
       onpointercancel={finishWindowDrag}
     ></div>
     <div
+      class="process-surface-resize-handle north"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="Resize process display from top"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle west"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize process display from left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-west')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
       class="process-surface-resize-handle corner"
       role="separator"
       aria-label="Resize process display"
-      onpointerdown={(event) => startWindowDrag(event, 'resize-corner')}
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle corner north-east"
+      role="separator"
+      aria-label="Resize process display from top right"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north-east')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle corner north-west"
+      role="separator"
+      aria-label="Resize process display from top left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-north-west')}
+      onpointermove={updateWindowDrag}
+      onpointerup={finishWindowDrag}
+      onpointercancel={finishWindowDrag}
+    ></div>
+    <div
+      class="process-surface-resize-handle corner south-west"
+      role="separator"
+      aria-label="Resize process display from bottom left"
+      onpointerdown={(event) => startWindowDrag(event, 'resize-south-west')}
       onpointermove={updateWindowDrag}
       onpointerup={finishWindowDrag}
       onpointercancel={finishWindowDrag}

@@ -5,6 +5,7 @@
     IsoTimestamp,
     OperationalObject,
     ControlInstanceId,
+    ObjectId,
     ProcedureDocument,
     ProcedureId,
     ProcedureRunScope,
@@ -105,6 +106,30 @@
   const emptyMapLayerGroups: NonNullable<LeitbildPack['mapLayerGroups']> = []
   const emptyMapAreaFeatureLayers: NonNullable<LeitbildPack['mapAreaFeatureLayers']> = []
   const emptyProcedureRunSummaries: ProcedureRunSummaryGroup = { active: [], completed: [] }
+
+  interface ProcessSurfaceWindowEntry {
+    readonly id: string
+    readonly objectId: ObjectId
+  }
+
+  interface ProcedureSystemWindowEntry {
+    readonly id: string
+    readonly objectId: ObjectId
+    readonly initialProcedureId?: ProcedureId
+    readonly initialStepId?: ProcedureStepId
+    readonly initialNavigationRevision: number
+  }
+
+  interface ProcessSurfaceWindowModel extends ProcessSurfaceWindowEntry {
+    readonly object: OperationalObject
+    readonly index: number
+  }
+
+  interface ProcedureSystemWindowModel extends ProcedureSystemWindowEntry {
+    readonly object: OperationalObject
+    readonly systemId: string
+    readonly index: number
+  }
   let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
@@ -133,11 +158,9 @@
   let GridOverviewPanel = $state<Component | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
   let ProcessPlantArtifactModal = $state<Component | null>(null)
-  let processSurfaceObject = $state<OperationalObject | null>(null)
-  let procedureSystemObject = $state<OperationalObject | null>(null)
-  let procedureLaunchProcedureId = $state<ProcedureId | undefined>(undefined)
-  let procedureLaunchStepId = $state<ProcedureStepId | undefined>(undefined)
-  let procedureLaunchRevision = $state(0)
+  let processSurfaceWindows = $state<ReadonlyArray<ProcessSurfaceWindowEntry>>([])
+  let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
+  let floatingWindowSequence = 0
   let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
   let procedureRunDocuments = $state<ReadonlyMap<ProcedureId, ProcedureDocument>>(new Map())
   let processPlantArtifactModal = $state<{
@@ -206,6 +229,7 @@
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))
+  const objectById = $derived(new Map(objects.map(object => [object.id, object])))
   $effect(() => {
     const rows = categoryRows
     untrack(() => {
@@ -720,13 +744,24 @@
     window.location.assign('/')
   }
 
+  const nextFloatingWindowId = (prefix: string, objectId: ObjectId): string => {
+    floatingWindowSequence += 1
+    return `${prefix}:${objectId}:${floatingWindowSequence}`
+  }
+
   const openProcessSurface = (object: OperationalObject): void => {
-    processSurfaceObject = object
+    processSurfaceWindows = [
+      ...processSurfaceWindows,
+      {
+        id: nextFloatingWindowId('process-surface', object.id),
+        objectId: object.id,
+      },
+    ]
     void loadProcessSurfaceModal()
   }
 
-  const closeProcessSurface = (): void => {
-    processSurfaceObject = null
+  const closeProcessSurface = (windowId: string): void => {
+    processSurfaceWindows = processSurfaceWindows.filter(entry => entry.id !== windowId)
   }
 
   const openProcessPlantArtifact = (object: OperationalObject, artifact: ProcessPlantArtifactKind): void => {
@@ -747,10 +782,6 @@
     return typeof systemId === 'string' && systemId.length > 0 ? systemId : null
   }
 
-  const procedureSystemId = $derived(procedureSystemObject === null
-    ? null
-    : processPlantSystemIdFor(procedureSystemObject))
-
   const procedureUnitContexts = $derived(objects.flatMap(object => {
     const systemId = processPlantSystemIdFor(object)
     return systemId === null
@@ -762,6 +793,36 @@
           status: statusPresentationFor(object),
         }]
   }))
+
+  const processSurfaceWindowModels = $derived<ReadonlyArray<ProcessSurfaceWindowModel>>(
+    processSurfaceWindows.flatMap((entry, index) => {
+      const object = objectById.get(entry.objectId)
+      return object === undefined ? [] : [{ ...entry, object, index }]
+    }),
+  )
+
+  const procedureSystemWindowModels = $derived<ReadonlyArray<ProcedureSystemWindowModel>>(
+    procedureSystemWindows.flatMap((entry, index) => {
+      const object = objectById.get(entry.objectId)
+      if (object === undefined) return []
+      const systemId = processPlantSystemIdFor(object)
+      return systemId === null ? [] : [{ ...entry, object, systemId, index }]
+    }),
+  )
+
+  $effect(() => {
+    const liveObjectIds = new Set(objects.map(object => object.id))
+    untrack(() => {
+      const nextProcessSurfaceWindows = processSurfaceWindows.filter(entry => liveObjectIds.has(entry.objectId))
+      if (nextProcessSurfaceWindows.length !== processSurfaceWindows.length) {
+        processSurfaceWindows = nextProcessSurfaceWindows
+      }
+      const nextProcedureSystemWindows = procedureSystemWindows.filter(entry => liveObjectIds.has(entry.objectId))
+      if (nextProcedureSystemWindows.length !== procedureSystemWindows.length) {
+        procedureSystemWindows = nextProcedureSystemWindows
+      }
+    })
+  })
 
   const procedureScopeForObject = (object: OperationalObject): ProcedureRunScope | null => {
     const systemId = processPlantSystemIdFor(object)
@@ -849,10 +910,17 @@
 
   const openProcedureSystemAt = (object: OperationalObject, summary?: ProcedureRunSummary): void => {
     if (processPlantSystemIdFor(object) === null) return
-    procedureSystemObject = object
-    procedureLaunchProcedureId = summary?.procedureId
-    procedureLaunchStepId = summary ? procedureLaunchStepFor(summary) : undefined
-    procedureLaunchRevision += 1
+    const initialStepId = summary === undefined ? undefined : procedureLaunchStepFor(summary)
+    procedureSystemWindows = [
+      ...procedureSystemWindows,
+      {
+        id: nextFloatingWindowId('procedure-system', object.id),
+        objectId: object.id,
+        ...(summary?.procedureId === undefined ? {} : { initialProcedureId: summary.procedureId }),
+        ...(initialStepId === undefined ? {} : { initialStepId }),
+        initialNavigationRevision: floatingWindowSequence,
+      },
+    ]
     void loadProcedureSystemModal()
   }
 
@@ -860,8 +928,8 @@
     openProcedureSystemAt(object)
   }
 
-  const closeProcedureSystem = (): void => {
-    procedureSystemObject = null
+  const closeProcedureSystem = (windowId: string): void => {
+    procedureSystemWindows = procedureSystemWindows.filter(entry => entry.id !== windowId)
   }
 
   const closeSettings = (): void => {
@@ -1439,32 +1507,38 @@
   </div>
 {/if}
 
-{#if processSurfaceObject && ProcessSurfaceModal && controlInstanceId}
-  <ProcessSurfaceModal
-    {controlInstanceId}
-    object={processSurfaceObject}
-    unitStatus={statusPresentationFor(processSurfaceObject)}
-    unitContexts={procedureUnitContexts}
-    procedureSummaries={procedureSummariesForObject(processSurfaceObject)}
-    {procedureRevision}
-    openProcedureSystemAt={(summary) => openProcedureSystemAt(processSurfaceObject, summary)}
-    close={closeProcessSurface}
-  />
+{#if ProcessSurfaceModal && controlInstanceId}
+  {#each processSurfaceWindowModels as windowEntry (windowEntry.id)}
+    <ProcessSurfaceModal
+      {controlInstanceId}
+      object={windowEntry.object}
+      unitStatus={statusPresentationFor(windowEntry.object)}
+      unitContexts={procedureUnitContexts}
+      procedureSummaries={procedureSummariesForObject(windowEntry.object)}
+      {procedureRevision}
+      windowOffsetIndex={windowEntry.index}
+      openProcedureSystemAt={(summary) => openProcedureSystemAt(windowEntry.object, summary)}
+      close={() => closeProcessSurface(windowEntry.id)}
+    />
+  {/each}
 {/if}
 
-{#if procedureSystemObject && procedureSystemId && ProcedureSystemModal && controlInstanceId}
-  <ProcedureSystemModal
-    {controlInstanceId}
-    systemId={procedureSystemId}
-    unitName={procedureSystemObject.label}
-    unitStatus={statusPresentationFor(procedureSystemObject)}
-    unitContexts={procedureUnitContexts}
-    realtimeRevision={procedureRevision}
-    initialProcedureId={procedureLaunchProcedureId}
-    initialStepId={procedureLaunchStepId}
-    initialNavigationRevision={procedureLaunchRevision}
-    close={closeProcedureSystem}
-  />
+{#if ProcedureSystemModal && controlInstanceId}
+  {#each procedureSystemWindowModels as windowEntry (windowEntry.id)}
+    <ProcedureSystemModal
+      {controlInstanceId}
+      systemId={windowEntry.systemId}
+      unitName={windowEntry.object.label}
+      unitStatus={statusPresentationFor(windowEntry.object)}
+      unitContexts={procedureUnitContexts}
+      realtimeRevision={procedureRevision}
+      initialProcedureId={windowEntry.initialProcedureId}
+      initialStepId={windowEntry.initialStepId}
+      initialNavigationRevision={windowEntry.initialNavigationRevision}
+      windowOffsetIndex={windowEntry.index}
+      close={() => closeProcedureSystem(windowEntry.id)}
+    />
+  {/each}
 {/if}
 
 {#if processPlantArtifactModal && ProcessPlantArtifactModal && controlInstanceId}

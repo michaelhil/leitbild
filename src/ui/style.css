@@ -1274,8 +1274,8 @@ body.rail-resizing {
 
 .process-surface-window {
   position: fixed;
-  min-width: 620px;
-  min-height: 420px;
+  min-width: 0;
+  min-height: 0;
   display: grid;
   grid-template-rows: 42px minmax(0, 1fr);
   border: 1px solid var(--border);
@@ -1607,12 +1607,50 @@ body.rail-resizing {
   cursor: ns-resize;
 }
 
+.process-surface-resize-handle.north {
+  top: 0;
+  right: 14px;
+  left: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.process-surface-resize-handle.west {
+  top: 42px;
+  bottom: 14px;
+  left: 0;
+  width: 10px;
+  cursor: ew-resize;
+}
+
 .process-surface-resize-handle.corner {
   right: 0;
   bottom: 0;
   width: 18px;
   height: 18px;
   cursor: nwse-resize;
+}
+
+.process-surface-resize-handle.corner.north-east {
+  top: 0;
+  right: 0;
+  bottom: auto;
+  cursor: nesw-resize;
+}
+
+.process-surface-resize-handle.corner.north-west {
+  top: 0;
+  right: auto;
+  bottom: auto;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.process-surface-resize-handle.corner.south-west {
+  right: auto;
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }
 
 .process-surface-resize-handle.corner::after {
@@ -1624,6 +1662,12 @@ body.rail-resizing {
   height: 8px;
   border-right: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
   border-bottom: 2px solid color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.process-surface-resize-handle.corner.north-east::after,
+.process-surface-resize-handle.corner.north-west::after,
+.process-surface-resize-handle.corner.south-west::after {
+  display: none;
 }
 
 .process-artifact-backdrop {
@@ -2022,16 +2066,100 @@ body.rail-resizing {
   pointer-events: auto;
 }
 
+.procedure-window-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  pointer-events: none;
+}
+
 .procedure-modal {
   position: relative;
   width: min(1500px, calc(100vw - 48px));
   height: min(940px, calc(100vh - 48px));
+  --procedure-font-scale: 1;
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
   display: grid;
   grid-template-rows: auto auto 1fr;
   overflow: hidden;
+}
+
+.procedure-modal.procedure-window {
+  position: absolute;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  pointer-events: auto;
+}
+
+.procedure-resize-handle {
+  position: absolute;
+  z-index: 8;
+  touch-action: none;
+}
+
+.procedure-resize-handle.north {
+  top: 0;
+  right: 14px;
+  left: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.procedure-resize-handle.east {
+  top: 14px;
+  right: 0;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.procedure-resize-handle.south {
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.procedure-resize-handle.west {
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.procedure-resize-handle.corner {
+  width: 18px;
+  height: 18px;
+}
+
+.procedure-resize-handle.corner.north-east {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.procedure-resize-handle.corner.north-west {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.procedure-resize-handle.corner.south-east {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.procedure-resize-handle.corner.south-west {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
 }
 
 .procedure-header {
@@ -2055,6 +2183,8 @@ body.rail-resizing {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
+  cursor: move;
+  touch-action: none;
 }
 
 .procedure-current-unit-line {
@@ -2176,6 +2306,20 @@ body.rail-resizing {
   height: 38px;
   display: grid;
   place-items: center;
+}
+
+.procedure-header-actions .procedure-font-button {
+  font-family: inherit;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.procedure-header-actions .procedure-font-button.large {
+  font-size: 22px;
+}
+
+.procedure-header-actions .procedure-font-button.small {
+  font-size: 15px;
 }
 
 .procedure-csf-strip {
@@ -2473,6 +2617,7 @@ body.rail-resizing {
   align-items: center;
   margin-bottom: 7px;
   padding: 9px 10px;
+  font-size: calc(13px * var(--procedure-font-scale));
   text-align: left;
 }
 
@@ -2585,7 +2730,7 @@ body.rail-resizing {
   margin: 0;
   min-width: 0;
   color: #0f172a;
-  font-size: 24px;
+  font-size: calc(24px * var(--procedure-font-scale));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2649,7 +2794,7 @@ body.rail-resizing {
   padding: 2px 0;
   white-space: nowrap;
   color: #475569;
-  font-size: 13px;
+  font-size: calc(13px * var(--procedure-font-scale));
   font-weight: 800;
   cursor: pointer;
 }
@@ -2671,6 +2816,7 @@ body.rail-resizing {
   min-height: 0;
   overflow: auto;
   padding: 14px 22px 34px;
+  font-size: calc(14px * var(--procedure-font-scale));
 }
 
 .procedure-mode-actions {
@@ -2688,7 +2834,7 @@ body.rail-resizing {
   gap: 6px;
   padding: 5px 9px;
   text-decoration: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--procedure-font-scale));
   font-weight: 800;
 }
 
@@ -2867,12 +3013,12 @@ body.rail-resizing {
   gap: 8px;
   align-items: baseline;
   color: #0f172a;
-  font-size: 17px;
+  font-size: calc(17px * var(--procedure-font-scale));
 }
 
 .procedure-step-content h3 span {
   color: #64748b;
-  font-size: 14px;
+  font-size: calc(14px * var(--procedure-font-scale));
   font-weight: 700;
 }
 
@@ -2894,6 +3040,7 @@ body.rail-resizing {
 .procedure-column p {
   margin: 0 0 8px;
   color: #1f2937;
+  font-size: calc(14px * var(--procedure-font-scale));
   line-height: 1.42;
 }
 
@@ -2901,7 +3048,7 @@ body.rail-resizing {
   margin-right: 6px;
   color: #475569;
   text-transform: uppercase;
-  font-size: 11px;
+  font-size: calc(11px * var(--procedure-font-scale));
   letter-spacing: 0.06em;
 }
 
@@ -2919,6 +3066,7 @@ body.rail-resizing {
   background: #f8fafc;
   border: 1px solid #d8e0ea;
   color: inherit;
+  font-size: calc(13px * var(--procedure-font-scale));
   text-align: left;
   cursor: pointer;
 }
