@@ -16,6 +16,7 @@ export const createBuiltinScenarios = async (
   routing: RoutingAdapter,
 ): Promise<ReadonlyArray<ScenarioDefinition>> => [
   await scenarioDefinitionFromConfig(readScenarioConfig('oslo-ambulance.scenario.json'), leitbildPacks, { routing }),
+  await scenarioDefinitionFromConfig(readScenarioConfig('oslo-all-packs-demo.scenario.json'), leitbildPacks, { routing }),
   await scenarioDefinitionFromConfig(readScenarioConfig('halden.scenario.json'), leitbildPacks, { routing }),
   await scenarioDefinitionFromConfig(readScenarioConfig('halden-process-plant-demo.scenario.json'), leitbildPacks, { routing }),
   await scenarioDefinitionFromConfig(readScenarioConfig('norway-airspace.scenario.json'), leitbildPacks, { routing }),

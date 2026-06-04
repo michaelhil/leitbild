@@ -9,16 +9,9 @@ import { createControlInstanceRegistry } from '../src/core/control-instances/reg
 import type { ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import type { ProcedureSourceLoadStatus, ProcedureSourceService } from '../src/core/procedures/source.ts'
 import { parseProcedureMarkdown } from '../src/core/procedures/procmd.ts'
-import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
-import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { ambulancePack } from '../src/packs/ambulance/pack.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
-import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
-import { trafficPack } from '../src/packs/traffic/pack.ts'
-import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
-import { weatherPack } from '../src/packs/weather/pack.ts'
-import { createTestScenarioCatalog } from './helpers.ts'
+import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
 
 interface ApiResponse<T> {
@@ -119,12 +112,8 @@ const createTestRegistry = async (config: {
   return createControlInstanceRegistry({
     dataDir,
     scenarioCatalog: createTestScenarioCatalog(),
-    runtimeAdapters: [
-      createLocalAmbulancePackRuntimeAdapter({ routing: createDirectRoutingAdapter() }),
-      createLocalTrafficPackRuntimeAdapter(),
-      createLocalWeatherPackRuntimeAdapter(),
-    ],
-    interactionHandlers: [ambulancePack, trafficPack, weatherPack].flatMap(pack => pack.interactionHandlers ?? []),
+    runtimeAdapters: createTestPackRuntimeAdapters(),
+    interactionHandlers: testPacks.flatMap(pack => pack.interactionHandlers ?? []),
     ...(config.procedureSourceService === undefined ? {} : { procedureSourceService: config.procedureSourceService }),
   })
 }
@@ -199,6 +188,7 @@ describe('control instance API', () => {
     expect(listed.status).toBe(200)
     expect(listed.body.defaultScenarioId).toBe('oslo-ambulance')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-ambulance')
+    expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('oslo-all-packs-demo')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden')
     expect(listed.body.scenarios.map(scenario => scenario.id)).toContain('halden-process-plant-demo')
     const oslo = listed.body.scenarios.find(scenario => scenario.id === 'oslo-ambulance')
@@ -214,6 +204,55 @@ describe('control instance API', () => {
     expect(fetched.body.scenario.id).toBe('oslo-ambulance')
     expect(fetched.body.scenario.packs).toEqual(['ambulance', 'traffic', 'weather'])
     expect(fetched.body.scenario.initialObjects).toHaveLength(osloAmbulanceScenario.initialObjects.length)
+  })
+
+  test('loads the Oslo all-packs screenshot scenario', async () => {
+    const registry = await createTestRegistry()
+    const fetched = await callRoute<{ readonly scenario: { readonly id: string; readonly packs: readonly string[]; readonly initialObjects: readonly { readonly id: string; readonly packId: string }[]; readonly processSystems: readonly { readonly id: string }[] } }>(
+      registry,
+      '/api/scenarios/oslo-all-packs-demo',
+    )
+    expect(fetched.status).toBe(200)
+    expect(fetched.body.scenario.packs).toEqual(['ambulance', 'weather', 'electric-grid', 'process-plant'])
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
+    expect(fetched.body.scenario.initialObjects.filter(object => object.packId === 'ambulance')).toHaveLength(7)
+    expect(fetched.body.scenario.initialObjects.some(object => object.packId === 'weather')).toBe(true)
+    expect(fetched.body.scenario.initialObjects.some(object => object.packId === 'electric-grid')).toBe(true)
+    expect(fetched.body.scenario.processSystems.map(system => system.id)).toEqual([
+      'oslo-west-plant',
+      'oslo-north-plant',
+      'oslo-east-plant',
+      'oslo-south-plant',
+    ])
+  })
+
+  test('starts a control instance from the Oslo all-packs screenshot scenario', async () => {
+    const registry = await createTestRegistry()
+    const id = 'oslo-all-packs-api' as ControlInstanceId
+    try {
+      const created = await callRoute<{
+        readonly id: ControlInstanceId
+        readonly scenario?: { readonly id: string; readonly packs: readonly string[] }
+        readonly snapshot: { readonly objects: readonly { readonly id: string; readonly packId: string }[] }
+      }>(
+        registry,
+        '/api/control-instances',
+        {
+          method: 'POST',
+          body: JSON.stringify({ id, scenarioId: 'oslo-all-packs-demo' }),
+        },
+      )
+
+      expect(created.status).toBe(201)
+      expect(created.body.scenario?.id).toBe('oslo-all-packs-demo')
+      expect(created.body.scenario?.packs).toEqual(['ambulance', 'weather', 'electric-grid', 'process-plant'])
+      expect(created.body.snapshot.objects.filter(object => object.packId === 'process-plant')).toHaveLength(4)
+      expect(created.body.snapshot.objects.filter(object => object.packId === 'ambulance')).toHaveLength(7)
+      expect(created.body.snapshot.objects.filter(object => object.packId === 'weather')).toHaveLength(2)
+      expect(created.body.snapshot.objects.filter(object => object.packId === 'electric-grid').length).toBeGreaterThan(200)
+    } finally {
+      await registry.close(id)
+    }
   })
 
   test('loads the Halden process-plant multi-pack scenario', async () => {
