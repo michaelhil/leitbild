@@ -12,10 +12,17 @@ import {
   type VariablePath,
 } from '../graph/index.ts'
 import { pressurizedWaterReactorSixLoopPlantSpec } from '../specs/pressurized-water-reactor-6-loop.ts'
-import { composePlantGraph, instantiateGraphFragment, type GraphFragmentSpec, type GraphFragmentSubstitution } from './graph-fragment.ts'
+import {
+  composePlantGraph,
+  instantiateGraphFragment,
+  type GraphFragmentInstance,
+  type GraphFragmentSpec,
+  type GraphFragmentSubstitution,
+} from './graph-fragment.ts'
 
 export const processPlantPwrReferenceAssemblyRef = 'process-plant.pwr.reference.v2'
 export const processPlantPwrReferenceLoopTemplateFragmentRef = 'process-plant.pwr.reference.loop-template-fragment.v2'
+export const processPlantPwrReferenceLoopInstancePresetRef = 'process-plant.pwr.reference.loop-instance.v2'
 export const processPlantPwrReferenceBaseFragmentRefForLoopCount = (loopCount: number): string =>
   `process-plant.pwr.reference.${loopCount}-loop.base-fragment.v2`
 
@@ -50,6 +57,42 @@ const pwrReferenceAssemblyConfigSchema = z.object({
 })
 
 type PwrReferenceAssemblyConfig = z.infer<typeof pwrReferenceAssemblyConfigSchema>
+
+const pwrReferenceLoopInstancePresetConfigSchema = z.object({
+  loopId: loopIdSchema,
+  loopIds: z.array(loopIdSchema).min(2).max(defaultLoopIds.length).optional(),
+  loopCount: z.number().int().min(2).max(defaultLoopIds.length).optional(),
+}).strict().superRefine((config, ctx) => {
+  if (config.loopIds !== undefined && new Set(config.loopIds).size !== config.loopIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['loopIds'],
+      message: 'loopIds must be unique',
+    })
+  }
+  if (config.loopIds !== undefined && config.loopCount !== undefined && config.loopIds.length !== config.loopCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['loopIds'],
+      message: 'loopIds length must match loopCount',
+    })
+  }
+  const resolvedLoopIds = config.loopIds ?? defaultLoopIds.slice(0, config.loopCount ?? Math.max(2, defaultLoopIds.indexOf(config.loopId) + 1))
+  if (!resolvedLoopIds.includes(config.loopId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['loopId'],
+      message: 'loopId must be included in the resolved loopIds',
+    })
+  }
+})
+
+type PwrReferenceLoopInstancePresetConfig = z.infer<typeof pwrReferenceLoopInstancePresetConfigSchema>
+
+const loopIdsForInstancePreset = (
+  config: PwrReferenceLoopInstancePresetConfig,
+): ReadonlyArray<string> =>
+  config.loopIds ?? defaultLoopIds.slice(0, config.loopCount ?? Math.max(2, defaultLoopIds.indexOf(config.loopId) + 1))
 
 const componentLoopId = (component: Pick<ComponentInstanceSpec, 'id'>): string | null => {
   const match = /^(sg|rcp|feedwaterControlValve|auxFeedwaterValve|mainSteamIsolationValve|safetyAccumulator)([A-Z])$/.exec(String(component.id))
@@ -244,6 +287,23 @@ const safetyTrainConnectionOverlay = (
   }
 }
 
+const pwrReferenceLoopInstancePreset = (input: unknown): GraphFragmentInstance => {
+  const config = pwrReferenceLoopInstancePresetConfigSchema.parse(input)
+  const loopIds = loopIdsForInstancePreset(config)
+  return {
+    substitutions: loopSubstitutions(loopIds, config.loopId),
+    componentMetadata: loopMetadata(loopIds, config.loopId, undefined),
+    connectionMetadata: loopMetadata(loopIds, config.loopId, undefined),
+    componentOverlays: [{
+      id: `rcp${config.loopId}`,
+      parameters: {
+        primaryLoopId: config.loopId,
+      },
+    }],
+    connectionOverlays: [safetyTrainConnectionOverlay(loopIds, config.loopId)],
+  }
+}
+
 const baseGraphWithoutLoopFragments = (
   sourceGraph: PlantGraphSpec,
 ): PlantGraphSpec => {
@@ -392,6 +452,14 @@ export const pwrReferenceGraphFragmentEntries: ReadonlyArray<{
     }
   }),
 ]
+
+export const pwrReferenceGraphFragmentInstancePresetEntries: ReadonlyArray<{
+  readonly ref: string
+  readonly instance: (config: unknown) => GraphFragmentInstance
+}> = [{
+  ref: processPlantPwrReferenceLoopInstancePresetRef,
+  instance: pwrReferenceLoopInstancePreset,
+}]
 
 export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec => {
   const config: PwrReferenceAssemblyConfig = pwrReferenceAssemblyConfigSchema.parse(input)

@@ -1,5 +1,6 @@
 export * from './catalog.ts'
 export * from './graph-fragment.ts'
 export * from './graph-fragment-catalog.ts'
+export * from './graph-fragment-instance-preset-catalog.ts'
 export * from './modular-graph-assembly.ts'
 export * from './pwr-reference-assembly.ts'

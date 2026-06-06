@@ -17,6 +17,7 @@ import {
   type GraphFragmentSpec,
 } from './graph-fragment.ts'
 import { resolveProcessPlantGraphFragmentSpec } from './graph-fragment-catalog.ts'
+import { resolveProcessPlantGraphFragmentInstancePreset } from './graph-fragment-instance-preset-catalog.ts'
 
 export const processPlantModularGraphAssemblyRef = 'process-plant.graph.compose.v1'
 
@@ -37,7 +38,17 @@ const namedGraphFragmentSchema = z.object({
 
 const graphFragmentInstanceConfigSchema = graphFragmentInstanceSchema.extend({
   fragmentRef: z.string().min(1),
-}).strict()
+  presetRef: z.string().min(1).optional(),
+  presetConfig: z.unknown().optional(),
+}).strict().superRefine((instance, ctx) => {
+  if (instance.presetConfig !== undefined && instance.presetRef === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['presetConfig'],
+      message: 'modular graph instance presetConfig requires presetRef',
+    })
+  }
+})
 
 const modularGraphAssemblyConfigSchema = z.object({
   id: z.string().min(1),
@@ -97,6 +108,7 @@ const modularGraphAssemblyConfigSchema = z.object({
 })
 
 type ModularGraphAssemblyConfig = z.infer<typeof modularGraphAssemblyConfigSchema>
+type GraphFragmentInstanceConfig = z.infer<typeof graphFragmentInstanceConfigSchema>
 
 const graphFromBaseFragment = (
   config: ModularGraphAssemblyConfig,
@@ -154,6 +166,45 @@ const fragmentById = (
       : resolveProcessPlantGraphFragmentSpec(fragment.fragmentRef),
   ]))
 
+const combinedArray = <T>(
+  preset: ReadonlyArray<T> | undefined,
+  inline: ReadonlyArray<T> | undefined,
+): ReadonlyArray<T> | undefined => {
+  const values = [...(preset ?? []), ...(inline ?? [])]
+  return values.length === 0 ? undefined : values
+}
+
+const mergedGraphFragmentInstance = (
+  preset: GraphFragmentInstance,
+  inline: GraphFragmentInstance,
+): GraphFragmentInstance => {
+  const substitutions = combinedArray(preset.substitutions, inline.substitutions)
+  const componentMetadata = preset.componentMetadata === undefined && inline.componentMetadata === undefined
+    ? undefined
+    : { ...(preset.componentMetadata ?? {}), ...(inline.componentMetadata ?? {}) }
+  const connectionMetadata = preset.connectionMetadata === undefined && inline.connectionMetadata === undefined
+    ? undefined
+    : { ...(preset.connectionMetadata ?? {}), ...(inline.connectionMetadata ?? {}) }
+  const componentOverlays = combinedArray(preset.componentOverlays, inline.componentOverlays)
+  const connectionOverlays = combinedArray(preset.connectionOverlays, inline.connectionOverlays)
+  return {
+    ...(substitutions === undefined ? {} : { substitutions }),
+    ...(componentMetadata === undefined ? {} : { componentMetadata }),
+    ...(connectionMetadata === undefined ? {} : { connectionMetadata }),
+    ...(componentOverlays === undefined ? {} : { componentOverlays }),
+    ...(connectionOverlays === undefined ? {} : { connectionOverlays }),
+  }
+}
+
+const instanceForConfig = (
+  instance: GraphFragmentInstanceConfig,
+): GraphFragmentInstance => {
+  const { fragmentRef: _fragmentRef, presetRef, presetConfig, ...inlineInput } = instance
+  const inline = parseGraphFragmentInstance(inlineInput)
+  if (presetRef === undefined) return inline
+  return mergedGraphFragmentInstance(resolveProcessPlantGraphFragmentInstancePreset(presetRef, presetConfig), inline)
+}
+
 const instantiateFragments = (
   config: ModularGraphAssemblyConfig,
 ): ReadonlyArray<Required<GraphFragmentSpec>> => {
@@ -161,8 +212,7 @@ const instantiateFragments = (
   return config.instances.map(instance => {
     const fragment = fragments.get(instance.fragmentRef)
     if (fragment === undefined) throw new Error(`modular graph instance references unknown fragment: ${instance.fragmentRef}`)
-    const { fragmentRef: _fragmentRef, ...fragmentInstance } = instance
-    return instantiateGraphFragment(fragment, parseGraphFragmentInstance(fragmentInstance))
+    return instantiateGraphFragment(fragment, instanceForConfig(instance))
   })
 }
 

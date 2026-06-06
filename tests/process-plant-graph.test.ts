@@ -26,7 +26,9 @@ import {
   processPlantPwrReferenceAssemblyRef,
   processPlantPwrReferenceGraphIcRef,
   processPlantPwrReferenceIcRefForLoopCount,
+  processPlantPwrReferenceLoopInstancePresetRef,
   processPlantPwrReferenceLoopTemplateFragmentRef,
+  listProcessPlantGraphFragmentInstancePresetRefs,
   listProcessPlantGraphFragmentRefs,
   resolveProcessPlantIcConfig,
   resolveProcessPlantIcConfigForGraph,
@@ -1108,6 +1110,63 @@ describe('process plant graph foundation', () => {
     expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graph fragmentRef: process-plant.no-such-fragment.v1')
   })
 
+  test('rejects modular graph assemblies that import unknown instance preset refs', () => {
+    const baseGraph = plantGraph({
+      id: 'process-plant.generic-preset-base.v1',
+      title: 'Generic Preset Base',
+      fixedStepMs: 250,
+      components: [
+        component('sourceTank', 'processTank', 'Raw Product Tank', {
+          nominalInventoryKg: 10_000,
+          initialInventoryFraction: 0.7,
+          initialTemperatureC: 6,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 30,
+        }),
+      ],
+      connections: [],
+    })
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-unknown-instance-preset',
+      schemaVersion: 1,
+      title: 'Modular Unknown Instance Preset',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.invalid-instance-preset.v1',
+          title: 'Invalid Instance Preset Plant',
+          baseGraph,
+          fragments: [{
+            id: 'line',
+            fragment: {
+              components: [],
+              connections: [],
+            },
+          }],
+          instances: [{
+            fragmentRef: 'line',
+            presetRef: 'process-plant.no-such-instance-preset.v1',
+          }],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graph fragment instance presetRef: process-plant.no-such-instance-preset.v1')
+  })
+
   test('imports and customizes an existing process plant graph through generic modular assembly', () => {
     const scenario = scenarioDefinitionSchema.parse({
       id: 'modular-pwr-reference-import',
@@ -1171,6 +1230,9 @@ describe('process plant graph foundation', () => {
       processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
       processPlantPwrReferenceLoopTemplateFragmentRef,
     ]))
+    expect(listProcessPlantGraphFragmentInstancePresetRefs()).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceLoopInstancePresetRef,
+    ]))
 
     const scenario = scenarioDefinitionSchema.parse({
       id: 'modular-pwr-imported-fragments',
@@ -1198,56 +1260,18 @@ describe('process plant graph foundation', () => {
           }],
           instances: [{
             fragmentRef: 'pwr-reference-loop',
+            presetRef: processPlantPwrReferenceLoopInstancePresetRef,
+            presetConfig: {
+              loopId: 'A',
+              loopCount: 2,
+            },
           }, {
             fragmentRef: 'pwr-reference-loop',
-            substitutions: [
-              { from: 'feedwaterControlValveA', to: 'feedwaterControlValveB' },
-              { from: 'auxFeedwaterValveA', to: 'auxFeedwaterValveB' },
-              { from: 'mainSteamIsolationValveA', to: 'mainSteamIsolationValveB' },
-              { from: 'safetyAccumulatorA', to: 'safetyAccumulatorB' },
-              { from: 'sgA', to: 'sgB' },
-              { from: 'rcpA', to: 'rcpB' },
-              { from: 'hotLegA', to: 'hotLegB' },
-              { from: 'coldLegA', to: 'coldLegB' },
-              { from: 'inletA', to: 'inletB' },
-              { from: 'outletA', to: 'outletB' },
-              { from: 'SG-A', to: 'SG-B' },
-              { from: 'RCP-A', to: 'RCP-B' },
-              { from: 'MFW-A', to: 'MFW-B' },
-              { from: 'AFW-A', to: 'AFW-B' },
-              { from: 'MSIV-A', to: 'MSIV-B' },
-              { from: 'RCP-1', to: 'RCP-2' },
-              { from: 'ACCUM-1', to: 'ACCUM-2' },
-              { from: 'TE-411', to: 'TE-421' },
-              { from: 'secondary.sg.a', to: 'secondary.sg.b' },
-              { from: 'secondary.mfw.a', to: 'secondary.mfw.b' },
-              { from: 'secondary.msiv.a', to: 'secondary.msiv.b' },
-              { from: 'afw.a', to: 'afw.b' },
-              { from: 'rcs.rcp.1', to: 'rcs.rcp.2' },
-              { from: 'rcs.loop1', to: 'rcs.loop2' },
-              { from: 'ess.accumulator.1', to: 'ess.accumulator.2' },
-              { from: 'loop 1', to: 'loop 2' },
-              { from: 'sg-a', to: 'sg-b' },
-              { from: 'rcp-a', to: 'rcp-b' },
-              { from: 'hot-leg-a', to: 'hot-leg-b' },
-              { from: 'cold-leg-a', to: 'cold-leg-b' },
-              { from: 'control-valve-a', to: 'control-valve-b' },
-              { from: 'valve-a', to: 'valve-b' },
-              { from: 'msiv-a', to: 'msiv-b' },
-              { from: '.a.', to: '.b.' },
-              { from: ' A', to: ' B' },
-            ],
-            componentOverlays: [{
-              id: 'rcpB',
-              parameters: {
-                primaryLoopId: 'B',
-              },
-            }],
-            connectionOverlays: [{
-              id: 'safety-bus-a-to-rcpB',
-              nextId: 'safety-bus-b-to-rcpB',
-              from: 'safetyBusB.outlet',
-            }],
+            presetRef: processPlantPwrReferenceLoopInstancePresetRef,
+            presetConfig: {
+              loopId: 'B',
+              loopCount: 2,
+            },
           }],
         },
       }],
@@ -1276,6 +1300,11 @@ describe('process plant graph foundation', () => {
     expect(system.graph.components.find(componentItem => componentItem.id === 'core')?.ports.hotLegB).toMatchObject({
       kind: 'hydraulicThermal',
       direction: 'out',
+    })
+    expect(system.graph.components.find(componentItem => componentItem.id === 'sgB')?.metadata).toMatchObject({
+      groupId: 'primary-loop',
+      loopId: 'B',
+      ordinal: 1,
     })
     expect(String(system.graph.components[system.graph.links.find(link => link.id === 'safety-bus-b-to-rcpB')?.fromComponentIndex ?? -1]?.id)).toBe('safetyBusB')
   })
