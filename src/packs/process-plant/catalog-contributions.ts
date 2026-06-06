@@ -7,32 +7,38 @@ import { processPlantPwrReferenceCatalogContribution } from './pwr-reference-cat
 
 export interface ProcessPlantGraphSpecCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly graph: () => PlantGraphSpec
 }
 
 export interface ProcessPlantAssemblyCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly assemble: (config: unknown) => PlantGraphSpec
 }
 
 export interface ProcessPlantGraphFragmentCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly fragment: () => GraphFragmentSpec
 }
 
 export interface ProcessPlantGraphFragmentInstancePresetCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly instance: (config: unknown) => GraphFragmentInstance
 }
 
 export interface ProcessPlantIcCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly config: () => ProcessPlantIcConfig
 }
 
 export interface ProcessPlantDynamicIcCatalogEntry {
   readonly id: string
   readonly refPattern: string
+  readonly sourcePath?: string
   readonly description?: string
   readonly matches: (icRef: string) => boolean
   readonly config: (icRef: string) => ProcessPlantIcConfig
@@ -41,11 +47,13 @@ export interface ProcessPlantDynamicIcCatalogEntry {
 
 export interface ProcessPlantGraphIcCatalogEntry {
   readonly ref: string
+  readonly sourcePath?: string
   readonly configForGraph: (graph: CompiledPlantGraph) => ProcessPlantIcConfig
 }
 
 export interface ProcessPlantSurfaceCatalogEntry {
   readonly id: string
+  readonly sourcePath?: string
   readonly surface: (config: {
     readonly graph: CompiledPlantGraph
   }) => ProcessSurfaceDefinition

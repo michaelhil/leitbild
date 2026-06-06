@@ -1,9 +1,15 @@
 <script lang="ts">
   import { Copy, Search, X } from 'lucide-svelte'
+  import { tick } from 'svelte'
   import type { ControlInstanceId } from '../../core/model/index.ts'
   import {
     readProcessPlantCatalog,
+    readProcessPlantCatalogSource,
     type ProcessPlantCatalog,
+    type ProcessPlantCatalogEntrySource,
+    type ProcessPlantCatalogRefEntry,
+    type ProcessPlantCatalogSectionId,
+    type ProcessPlantCatalogSourceFile,
   } from './process-surface-client.ts'
 
   interface Props {
@@ -15,12 +21,19 @@
     readonly id: string
     readonly value: string
     readonly detail?: string
+    readonly source?: ProcessPlantCatalogEntrySource
   }
 
   interface CatalogSection {
-    readonly id: string
+    readonly id: ProcessPlantCatalogSectionId
     readonly title: string
     readonly rows: ReadonlyArray<CatalogRow>
+  }
+
+  interface CatalogSourcePanel {
+    readonly sectionTitle: string
+    readonly row: CatalogRow
+    readonly source: ProcessPlantCatalogSourceFile | null
   }
 
   let { controlInstanceId, close }: Props = $props()
@@ -30,9 +43,18 @@
   let catalog = $state<ProcessPlantCatalog | null>(null)
   let query = $state('')
   let copyStatus = $state<string | null>(null)
+  let sourcePanel = $state<CatalogSourcePanel | null>(null)
+  let sourceLoading = $state(false)
+  let sourceError = $state<string | null>(null)
+  let sourceViewport = $state<HTMLElement | null>(null)
+  let sourceRequestId = 0
 
-  const rowsFor = (values: ReadonlyArray<string>): ReadonlyArray<CatalogRow> =>
-    values.map(value => ({ id: value, value }))
+  const rowsFor = (values: ReadonlyArray<ProcessPlantCatalogRefEntry>): ReadonlyArray<CatalogRow> =>
+    values.map(entry => ({
+      id: entry.id,
+      value: entry.value,
+      ...(entry.source === undefined ? {} : { source: entry.source }),
+    }))
 
   const sections = $derived<CatalogSection[]>(catalog === null ? [] : [
     { id: 'graphRefs', title: 'Graph refs', rows: rowsFor(catalog.graphRefs) },
@@ -47,6 +69,7 @@
         id: pattern.id,
         value: pattern.pattern,
         detail: pattern.description ?? pattern.id,
+        ...(pattern.source === undefined ? {} : { source: pattern.source }),
       })),
     },
     { id: 'surfaceIds', title: 'Surface ids', rows: rowsFor(catalog.surfaceIds) },
@@ -60,10 +83,20 @@
       rows: section.rows.filter(row =>
         row.value.toLowerCase().includes(normalizedQuery)
         || row.id.toLowerCase().includes(normalizedQuery)
-        || (row.detail?.toLowerCase().includes(normalizedQuery) ?? false),
+        || (row.detail?.toLowerCase().includes(normalizedQuery) ?? false)
+        || (row.source?.path.toLowerCase().includes(normalizedQuery) ?? false),
       ),
     })).filter(section => section.rows.length > 0))
   const entryCount = $derived(sections.reduce((count, section) => count + section.rows.length, 0))
+
+  const sourceLinesFor = (content: string): ReadonlyArray<string> => content.split(/\r\n|\r|\n/)
+
+  const scrollSourceToTarget = (): void => {
+    const targetLineIndex = sourcePanel?.source?.targetLineIndex
+    if (targetLineIndex === null || targetLineIndex === undefined) return
+    const line = sourceViewport?.querySelector(`[data-catalog-source-line="${targetLineIndex}"]`)
+    if (line instanceof HTMLElement) line.scrollIntoView({ block: 'center' })
+  }
 
   const copyValue = async (value: string): Promise<void> => {
     try {
@@ -72,6 +105,45 @@
     } catch (err) {
       copyStatus = err instanceof Error ? err.message : String(err)
     }
+  }
+
+  const openCatalogSource = async (section: CatalogSection, row: CatalogRow): Promise<void> => {
+    if (row.source === undefined) return
+    const requestId = sourceRequestId + 1
+    sourceRequestId = requestId
+    sourcePanel = {
+      sectionTitle: section.title,
+      row,
+      source: null,
+    }
+    sourceLoading = true
+    sourceError = null
+    try {
+      const source = await readProcessPlantCatalogSource(controlInstanceId, section.id, row.id)
+      if (sourceRequestId !== requestId) return
+      sourcePanel = {
+        sectionTitle: section.title,
+        row,
+        source,
+      }
+      await tick()
+      scrollSourceToTarget()
+    } catch (err) {
+      if (sourceRequestId === requestId) sourceError = err instanceof Error ? err.message : String(err)
+    } finally {
+      if (sourceRequestId === requestId) sourceLoading = false
+    }
+  }
+
+  const closeCatalogSource = (): void => {
+    sourceRequestId += 1
+    sourcePanel = null
+    sourceLoading = false
+    sourceError = null
+  }
+
+  const closeCatalogSourceFromBackdrop = (event: MouseEvent): void => {
+    if (event.target === event.currentTarget) closeCatalogSource()
   }
 
   $effect(() => {
@@ -84,6 +156,7 @@
         error = null
         catalog = null
         copyStatus = null
+        closeCatalogSource()
         const next = await readProcessPlantCatalog(instanceId)
         if (!cancelled) catalog = next
       } catch (err) {
@@ -147,13 +220,21 @@
                 <div class="process-catalog-rows">
                   {#each section.rows as row (row.id)}
                     <div class="process-catalog-row">
-                      <div>
+                      <button
+                        type="button"
+                        class="process-catalog-row-main"
+                        disabled={row.source === undefined}
+                        title={row.source === undefined ? 'No source file registered' : `Open ${row.source.path}`}
+                        onclick={() => void openCatalogSource(section, row)}
+                      >
                         <code>{row.value}</code>
                         {#if row.detail}
                           <span>{row.detail}</span>
+                        {:else if row.source}
+                          <span>{row.source.path}</span>
                         {/if}
-                      </div>
-                      <button type="button" aria-label="Copy {row.value}" title="Copy" onclick={() => void copyValue(row.value)}>
+                      </button>
+                      <button class="process-catalog-copy-button" type="button" aria-label="Copy {row.value}" title="Copy" onclick={() => void copyValue(row.value)}>
                         <Copy size={15} aria-hidden="true" />
                       </button>
                     </div>
@@ -168,4 +249,42 @@
       {/if}
     </div>
   </section>
+  {#if sourcePanel}
+    <div
+      class="process-component-source-backdrop"
+      role="presentation"
+      onclick={closeCatalogSourceFromBackdrop}
+    >
+      <section
+        class="process-component-source-modal process-catalog-source-modal"
+        aria-label="Process plant catalog source"
+      >
+        <header>
+          <div>
+            <strong>{sourcePanel.row.value}</strong>
+            <span>
+              {sourcePanel.sectionTitle}
+              {#if sourcePanel.source}
+                · {sourcePanel.source.path}{#if sourcePanel.source.targetLineIndex !== null} · line {sourcePanel.source.targetLineIndex + 1}{/if}
+              {:else if sourcePanel.row.source}
+                · {sourcePanel.row.source.path}
+              {/if}
+            </span>
+          </div>
+          <button type="button" aria-label="Close catalog source" onclick={closeCatalogSource}>
+            <X size={18} aria-hidden="true" />
+          </button>
+        </header>
+        {#if sourceLoading}
+          <div class="process-surface-message">Loading source file...</div>
+        {:else if sourceError}
+          <div class="process-surface-error">{sourceError}</div>
+        {:else if sourcePanel.source}
+          <pre bind:this={sourceViewport}><code>{#each sourceLinesFor(sourcePanel.source.content) as line, lineIndex (`catalog-${sourcePanel.source.path}-${lineIndex}`)}<span data-catalog-source-line={lineIndex} class:active-line={sourcePanel.source.targetLineIndex === lineIndex}>{line}</span>{lineIndex + 1 < sourceLinesFor(sourcePanel.source.content).length ? '\n' : ''}{/each}</code></pre>
+        {:else}
+          <div class="process-surface-error">Catalog source file did not load.</div>
+        {/if}
+      </section>
+    </div>
+  {/if}
 </div>

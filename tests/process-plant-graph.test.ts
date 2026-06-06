@@ -595,46 +595,129 @@ describe('process plant graph foundation', () => {
     })
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error(response.reason)
+    interface CatalogRefEntry {
+      readonly id: string
+      readonly value: string
+      readonly source?: { readonly path: string }
+    }
     const catalog = response.result as {
-      readonly graphRefs: ReadonlyArray<string>
-      readonly assemblyRefs: ReadonlyArray<string>
-      readonly graphFragmentRefs: ReadonlyArray<string>
-      readonly graphFragmentInstancePresetRefs: ReadonlyArray<string>
-      readonly icRefs: ReadonlyArray<string>
+      readonly graphRefs: ReadonlyArray<CatalogRefEntry>
+      readonly assemblyRefs: ReadonlyArray<CatalogRefEntry>
+      readonly graphFragmentRefs: ReadonlyArray<CatalogRefEntry>
+      readonly graphFragmentInstancePresetRefs: ReadonlyArray<CatalogRefEntry>
+      readonly icRefs: ReadonlyArray<CatalogRefEntry>
       readonly dynamicIcRefPatterns: ReadonlyArray<{
         readonly id: string
         readonly pattern: string
         readonly description?: string
+        readonly source?: { readonly path: string }
       }>
-      readonly surfaceIds: ReadonlyArray<string>
+      readonly surfaceIds: ReadonlyArray<CatalogRefEntry>
     }
-    expect(catalog.graphRefs).toEqual(expect.arrayContaining([
+    expect(catalog.graphRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantPressurizedWaterReactorGraphRef,
       processPlantPressurizedWaterReactorSixLoopGraphRef,
     ]))
-    expect(catalog.assemblyRefs).toEqual(expect.arrayContaining([
+    expect(catalog.graphRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: processPlantPressurizedWaterReactorGraphRef,
+        source: { path: 'src/packs/process-plant/specs/pressurized-water-reactor.graph.json' },
+      }),
+    ]))
+    expect(catalog.assemblyRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantModularGraphAssemblyRef,
       processPlantPwrReferenceAssemblyRef,
     ]))
-    expect(catalog.graphFragmentRefs).toEqual(expect.arrayContaining([
+    expect(catalog.assemblyRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: processPlantModularGraphAssemblyRef,
+        source: { path: 'src/packs/process-plant/assembly/modular-graph-assembly.ts' },
+      }),
+    ]))
+    expect(catalog.graphFragmentRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
       processPlantPwrReferenceLoopTemplateFragmentRef,
     ]))
-    expect(catalog.graphFragmentInstancePresetRefs).toEqual(expect.arrayContaining([
+    expect(catalog.graphFragmentInstancePresetRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantPwrReferenceLoopInstancePresetRef,
     ]))
-    expect(catalog.icRefs).toEqual(expect.arrayContaining([
+    expect(catalog.icRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantPwrReferenceGraphIcRef,
+    ]))
+    expect(catalog.icRefs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: processPlantPwrReferenceGraphIcRef,
+        source: { path: 'src/packs/process-plant/specs/reference-ic.ts' },
+      }),
     ]))
     expect(catalog.dynamicIcRefPatterns).toEqual(expect.arrayContaining([
       expect.objectContaining({
         id: 'process-plant.pwr-reference.loop-count-ic',
         pattern: 'process-plant.pwr.reference.<loopCount>-loop.ic.v2',
+        source: { path: 'src/packs/process-plant/pwr-reference-catalog-contribution.ts' },
       }),
     ]))
-    expect(catalog.surfaceIds).toEqual(expect.arrayContaining([
+    expect(catalog.surfaceIds.map(entry => entry.value)).toEqual(expect.arrayContaining([
       'unit-overview',
     ]))
+    expect(catalog.surfaceIds).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        value: 'unit-overview',
+        source: { path: 'src/packs/process-plant/surfaces/reference-unit-overview.ts' },
+      }),
+    ]))
+  })
+
+  test('process plant catalog source query resolves registered source files', () => {
+    const graphResponse = answerProcessPlantQuery({
+      request: {
+        packId: 'process-plant',
+        kind: 'process-plant.catalog.source',
+        payload: {
+          section: 'graphRefs',
+          id: processPlantPressurizedWaterReactorGraphRef,
+        },
+      },
+      systems: new Map(),
+      at: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+    })
+    expect(graphResponse.ok).toBe(true)
+    if (!graphResponse.ok) throw new Error(graphResponse.reason)
+    const graphSource = graphResponse.result as {
+      readonly path: string
+      readonly language: string
+      readonly content: string
+      readonly targetLineIndex: number | null
+    }
+    expect(graphSource.path).toBe('src/packs/process-plant/specs/pressurized-water-reactor.graph.json')
+    expect(graphSource.language).toBe('json')
+    expect(graphSource.content).toContain(processPlantPressurizedWaterReactorGraphRef)
+    expect(graphSource.targetLineIndex).toEqual(expect.any(Number))
+
+    const dynamicIcResponse = answerProcessPlantQuery({
+      request: {
+        packId: 'process-plant',
+        kind: 'process-plant.catalog.source',
+        payload: {
+          section: 'dynamicIcRefPatterns',
+          id: 'process-plant.pwr-reference.loop-count-ic',
+        },
+      },
+      systems: new Map(),
+      at: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+    })
+    expect(dynamicIcResponse.ok).toBe(true)
+    if (!dynamicIcResponse.ok) throw new Error(dynamicIcResponse.reason)
+    const dynamicIcSource = dynamicIcResponse.result as {
+      readonly path: string
+      readonly language: string
+      readonly content: string
+      readonly targetLineIndex: number | null
+    }
+    expect(dynamicIcSource.path).toBe('src/packs/process-plant/pwr-reference-catalog-contribution.ts')
+    expect(dynamicIcSource.language).toBe('typescript')
+    expect(dynamicIcSource.content).toContain('process-plant.pwr.reference.<loopCount>-loop.ic.v2')
+    expect(dynamicIcSource.targetLineIndex).toEqual(expect.any(Number))
   })
 
   test('process plant catalog contributions reject duplicate refs across contributors', () => {

@@ -3,6 +3,7 @@ import { assembleModularPlantGraph, processPlantModularGraphAssemblyRef } from '
 import {
   collectProcessPlantCatalog,
   processPlantCatalogContributions,
+  type ProcessPlantAssemblyCatalogEntry,
   type ProcessPlantCatalogContribution,
 } from '../catalog-contributions.ts'
 
@@ -10,6 +11,7 @@ const processPlantModularGraphAssemblyContribution: ProcessPlantCatalogContribut
   id: 'process-plant.modular-graph-assembly',
   assemblies: [{
     ref: processPlantModularGraphAssemblyRef,
+    sourcePath: 'src/packs/process-plant/assembly/modular-graph-assembly.ts',
     assemble: assembleModularPlantGraph,
   }],
 }
@@ -27,3 +29,6 @@ export const resolveProcessPlantAssemblySpec = (assemblyRef: string, config: unk
 
 export const listProcessPlantAssemblyRefs = (): ReadonlyArray<string> =>
   [...processPlantAssemblyCatalog.assembliesByRef.keys()]
+
+export const listProcessPlantAssemblyCatalogEntries = (): ReadonlyArray<ProcessPlantAssemblyCatalogEntry> =>
+  [...processPlantAssemblyCatalog.assembliesByRef.values()]

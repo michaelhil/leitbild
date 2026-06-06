@@ -1983,10 +1983,25 @@ body.rail-resizing {
   background: color-mix(in srgb, var(--panel-strong) 58%, transparent);
 }
 
-.process-catalog-row > div {
+.process-catalog-row-main {
   min-width: 0;
   display: grid;
   gap: 2px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.process-catalog-row-main:disabled {
+  cursor: default;
+}
+
+.process-catalog-row-main:not(:disabled):hover code,
+.process-catalog-row-main:not(:disabled):focus-visible code {
+  color: var(--accent);
 }
 
 .process-catalog-row code {
@@ -2008,7 +2023,7 @@ body.rail-resizing {
   white-space: nowrap;
 }
 
-.process-catalog-row button {
+.process-catalog-copy-button {
   width: 30px;
   height: 30px;
   display: grid;
@@ -2020,9 +2035,14 @@ body.rail-resizing {
   cursor: pointer;
 }
 
-.process-catalog-row button:hover {
+.process-catalog-copy-button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.process-catalog-source-modal {
+  width: min(980px, calc(100vw - 96px));
+  height: min(720px, calc(100vh - 96px));
 }
 
 .process-component-source-backdrop {

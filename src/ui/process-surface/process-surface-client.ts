@@ -99,20 +99,50 @@ export interface ProcessPlantArtifact {
   }
 }
 
+export type ProcessPlantCatalogSectionId =
+  | 'graphRefs'
+  | 'assemblyRefs'
+  | 'graphFragmentRefs'
+  | 'graphFragmentInstancePresetRefs'
+  | 'icRefs'
+  | 'dynamicIcRefPatterns'
+  | 'surfaceIds'
+
+export interface ProcessPlantCatalogEntrySource {
+  readonly path: string
+}
+
+export interface ProcessPlantCatalogRefEntry {
+  readonly id: string
+  readonly value: string
+  readonly source?: ProcessPlantCatalogEntrySource
+}
+
 export interface ProcessPlantDynamicIcRefPattern {
   readonly id: string
   readonly pattern: string
   readonly description?: string
+  readonly source?: ProcessPlantCatalogEntrySource
 }
 
 export interface ProcessPlantCatalog {
-  readonly graphRefs: ReadonlyArray<string>
-  readonly assemblyRefs: ReadonlyArray<string>
-  readonly graphFragmentRefs: ReadonlyArray<string>
-  readonly graphFragmentInstancePresetRefs: ReadonlyArray<string>
-  readonly icRefs: ReadonlyArray<string>
+  readonly graphRefs: ReadonlyArray<ProcessPlantCatalogRefEntry>
+  readonly assemblyRefs: ReadonlyArray<ProcessPlantCatalogRefEntry>
+  readonly graphFragmentRefs: ReadonlyArray<ProcessPlantCatalogRefEntry>
+  readonly graphFragmentInstancePresetRefs: ReadonlyArray<ProcessPlantCatalogRefEntry>
+  readonly icRefs: ReadonlyArray<ProcessPlantCatalogRefEntry>
   readonly dynamicIcRefPatterns: ReadonlyArray<ProcessPlantDynamicIcRefPattern>
-  readonly surfaceIds: ReadonlyArray<string>
+  readonly surfaceIds: ReadonlyArray<ProcessPlantCatalogRefEntry>
+}
+
+export interface ProcessPlantCatalogSourceFile {
+  readonly section: ProcessPlantCatalogSectionId
+  readonly id: string
+  readonly value: string
+  readonly path: string
+  readonly language: 'json' | 'typescript'
+  readonly targetLineIndex: number | null
+  readonly content: string
 }
 
 const assertObject = (value: unknown, message: string): Record<string, unknown> => {
@@ -301,8 +331,21 @@ const parseProcessPlantArtifactSourceFile = (value: unknown): ProcessPlantArtifa
   }
 }
 
-const parseStringArray = (value: unknown, message: string): ReadonlyArray<string> =>
-  assertArray(value, message).map(item => assertString(item, message))
+const parseProcessPlantCatalogEntrySource = (value: unknown): ProcessPlantCatalogEntrySource => {
+  const source = assertObject(value, 'process plant catalog entry source is malformed')
+  return {
+    path: assertString(source.path, 'process plant catalog entry source requires path'),
+  }
+}
+
+const parseProcessPlantCatalogRefEntry = (value: unknown): ProcessPlantCatalogRefEntry => {
+  const entry = assertObject(value, 'process plant catalog entry is malformed')
+  return {
+    id: assertString(entry.id, 'process plant catalog entry requires id'),
+    value: assertString(entry.value, 'process plant catalog entry requires value'),
+    ...(entry.source === undefined ? {} : { source: parseProcessPlantCatalogEntrySource(entry.source) }),
+  }
+}
 
 const parseProcessPlantDynamicIcRefPattern = (value: unknown): ProcessPlantDynamicIcRefPattern => {
   const pattern = assertObject(value, 'process plant dynamic I&C pattern is malformed')
@@ -310,6 +353,7 @@ const parseProcessPlantDynamicIcRefPattern = (value: unknown): ProcessPlantDynam
     id: assertString(pattern.id, 'process plant dynamic I&C pattern requires id'),
     pattern: assertString(pattern.pattern, 'process plant dynamic I&C pattern requires pattern'),
     ...(typeof pattern.description === 'string' ? { description: pattern.description } : {}),
+    ...(pattern.source === undefined ? {} : { source: parseProcessPlantCatalogEntrySource(pattern.source) }),
   }
 }
 
@@ -323,13 +367,57 @@ export const readProcessPlantCatalog = async (
   })
   const result = requireOkResult(body.response)
   return {
-    graphRefs: parseStringArray(result.graphRefs, 'process plant catalog result has no graphRefs array'),
-    assemblyRefs: parseStringArray(result.assemblyRefs, 'process plant catalog result has no assemblyRefs array'),
-    graphFragmentRefs: parseStringArray(result.graphFragmentRefs, 'process plant catalog result has no graphFragmentRefs array'),
-    graphFragmentInstancePresetRefs: parseStringArray(result.graphFragmentInstancePresetRefs, 'process plant catalog result has no graphFragmentInstancePresetRefs array'),
-    icRefs: parseStringArray(result.icRefs, 'process plant catalog result has no icRefs array'),
+    graphRefs: assertArray(result.graphRefs, 'process plant catalog result has no graphRefs array').map(parseProcessPlantCatalogRefEntry),
+    assemblyRefs: assertArray(result.assemblyRefs, 'process plant catalog result has no assemblyRefs array').map(parseProcessPlantCatalogRefEntry),
+    graphFragmentRefs: assertArray(result.graphFragmentRefs, 'process plant catalog result has no graphFragmentRefs array').map(parseProcessPlantCatalogRefEntry),
+    graphFragmentInstancePresetRefs: assertArray(result.graphFragmentInstancePresetRefs, 'process plant catalog result has no graphFragmentInstancePresetRefs array').map(parseProcessPlantCatalogRefEntry),
+    icRefs: assertArray(result.icRefs, 'process plant catalog result has no icRefs array').map(parseProcessPlantCatalogRefEntry),
     dynamicIcRefPatterns: assertArray(result.dynamicIcRefPatterns, 'process plant catalog result has no dynamicIcRefPatterns array').map(parseProcessPlantDynamicIcRefPattern),
-    surfaceIds: parseStringArray(result.surfaceIds, 'process plant catalog result has no surfaceIds array'),
+    surfaceIds: assertArray(result.surfaceIds, 'process plant catalog result has no surfaceIds array').map(parseProcessPlantCatalogRefEntry),
+  }
+}
+
+const parseProcessPlantCatalogSectionId = (value: unknown): ProcessPlantCatalogSectionId => {
+  const section = assertString(value, 'process plant catalog source requires section')
+  if (
+    section !== 'graphRefs'
+    && section !== 'assemblyRefs'
+    && section !== 'graphFragmentRefs'
+    && section !== 'graphFragmentInstancePresetRefs'
+    && section !== 'icRefs'
+    && section !== 'dynamicIcRefPatterns'
+    && section !== 'surfaceIds'
+  ) {
+    throw new Error(`unsupported process plant catalog section: ${section}`)
+  }
+  return section
+}
+
+export const readProcessPlantCatalogSource = async (
+  controlInstanceId: ControlInstanceId,
+  section: ProcessPlantCatalogSectionId,
+  id: string,
+): Promise<ProcessPlantCatalogSourceFile> => {
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.catalog.source',
+    payload: { section, id },
+  })
+  const result = requireOkResult(body.response)
+  const language = assertString(result.language, 'process plant catalog source requires language')
+  if (language !== 'json' && language !== 'typescript') throw new Error(`unsupported process plant catalog source language: ${language}`)
+  const targetLineIndex = result.targetLineIndex
+  if (targetLineIndex !== null && (typeof targetLineIndex !== 'number' || !Number.isInteger(targetLineIndex) || targetLineIndex < 0)) {
+    throw new Error('process plant catalog source requires nullable nonnegative targetLineIndex')
+  }
+  return {
+    section: parseProcessPlantCatalogSectionId(result.section),
+    id: assertString(result.id, 'process plant catalog source requires id'),
+    value: assertString(result.value, 'process plant catalog source requires value'),
+    path: assertString(result.path, 'process plant catalog source requires path'),
+    language,
+    targetLineIndex,
+    content: assertString(result.content, 'process plant catalog source requires content'),
   }
 }
 

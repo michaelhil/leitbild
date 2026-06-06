@@ -28,27 +28,39 @@ export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogCon
   id: 'process-plant.pwr-reference',
   graphSpecs: [{
     ref: processPlantPressurizedWaterReactorGraphRef,
+    sourcePath: 'src/packs/process-plant/specs/pressurized-water-reactor.graph.json',
     graph: () => pressurizedWaterReactorPlantSpec,
   }, {
     ref: processPlantPressurizedWaterReactorSixLoopGraphRef,
+    sourcePath: 'src/packs/process-plant/specs/pressurized-water-reactor-6-loop.graph.json',
     graph: () => pressurizedWaterReactorSixLoopPlantSpec,
   }],
   assemblies: [{
     ref: processPlantPwrReferenceAssemblyRef,
+    sourcePath: 'src/packs/process-plant/assembly/pwr-reference-assembly.ts',
     assemble: assemblePwrReferencePlantGraph,
   }],
-  graphFragments: pwrReferenceGraphFragmentEntries,
-  graphFragmentInstancePresets: pwrReferenceGraphFragmentInstancePresetEntries,
+  graphFragments: pwrReferenceGraphFragmentEntries.map(entry => ({
+    ...entry,
+    sourcePath: 'src/packs/process-plant/assembly/pwr-reference-assembly.ts',
+  })),
+  graphFragmentInstancePresets: pwrReferenceGraphFragmentInstancePresetEntries.map(entry => ({
+    ...entry,
+    sourcePath: 'src/packs/process-plant/assembly/pwr-reference-assembly.ts',
+  })),
   icConfigs: [{
     ref: processPlantPressurizedWaterReactorIcRef,
+    sourcePath: 'src/packs/process-plant/specs/reference-ic.ts',
     config: () => pressurizedWaterReactorReferenceIc,
   }, {
     ref: processPlantPressurizedWaterReactorSixLoopIcRef,
+    sourcePath: 'src/packs/process-plant/specs/reference-ic.ts',
     config: () => pressurizedWaterReactorSixLoopReferenceIc,
   }],
   dynamicIcConfigs: [{
     id: 'process-plant.pwr-reference.loop-count-ic',
     refPattern: 'process-plant.pwr.reference.<loopCount>-loop.ic.v2',
+    sourcePath: 'src/packs/process-plant/pwr-reference-catalog-contribution.ts',
     description: 'Reference PWR I&C generated for loop counts 2-26.',
     matches: (icRef: string) => pwrReferenceIcRefPattern.test(icRef),
     config: (icRef: string) => {
@@ -60,10 +72,12 @@ export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogCon
   }],
   graphIcConfigs: [{
     ref: processPlantPwrReferenceGraphIcRef,
+    sourcePath: 'src/packs/process-plant/specs/reference-ic.ts',
     configForGraph: pressurizedWaterReactorReferenceIcForGraph,
   }],
   surfaces: [{
     id: 'unit-overview',
+    sourcePath: 'src/packs/process-plant/surfaces/reference-unit-overview.ts',
     surface: config => processPlantUnitOverviewSurfaceForGraph(config.graph),
   }],
 }
