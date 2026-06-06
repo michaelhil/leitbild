@@ -225,7 +225,8 @@
       "id": "halden-unit-a1",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 0.992 },
         "turbine": { "initialLoadFraction": 0.992 }
@@ -243,7 +244,8 @@
       "id": "halden-unit-a2",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 1.0 },
         "turbine": { "initialLoadFraction": 1.0 }
@@ -261,7 +263,8 @@
       "id": "halden-unit-a3",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 0.986 },
         "turbine": { "initialLoadFraction": 0.986 }
@@ -279,7 +282,8 @@
       "id": "halden-unit-b1",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 0.997 },
         "turbine": { "initialLoadFraction": 0.997 }
@@ -297,7 +301,8 @@
       "id": "halden-unit-b2",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 0.989 },
         "turbine": { "initialLoadFraction": 0.989 }
@@ -315,7 +320,8 @@
       "id": "halden-unit-b3",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 4 },
       "parameters": {
         "core": { "initialPowerFraction": 0.994 },
         "turbine": { "initialLoadFraction": 0.994 }
@@ -333,7 +339,8 @@
       "id": "halden-6-loop",
       "pack": "process-plant",
       "componentLibrary": "process-plant",
-      "graphRef": "process-plant.pressurized-water-reactor-6-loop.v1",
+      "assemblyRef": "process-plant.pwr.reference.v2",
+      "assemblyConfig": { "loopCount": 6 },
       "parameters": {
         "core": { "initialPowerFraction": 1.0 },
         "turbine": { "initialLoadFraction": 1.0 }
@@ -351,9 +358,9 @@
   "runtimeConfigs": {
     "process-plant": {
       "systems": {
-        "halden-unit-a1": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
+        "halden-unit-a1": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-unit-a2": {
-          "icRef": "process-plant.pressurized-water-reactor.ic.v1",
+          "icRef": "process-plant.pwr.reference.graph.ic.v2",
           "schedule": {
             "actions": [
               { "id": "a2-sgtr-start", "atMs": 60000, "type": "setVariable", "path": "sgA.tubeLeakFraction", "value": 0.004 },
@@ -361,9 +368,9 @@
             ]
           }
         },
-        "halden-unit-a3": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
+        "halden-unit-a3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
         "halden-unit-b1": {
-          "icRef": "process-plant.pressurized-water-reactor.ic.v1",
+          "icRef": "process-plant.pwr.reference.graph.ic.v2",
           "schedule": {
             "actions": [
               { "id": "b1-mfw-a-trip", "atMs": 120000, "type": "tripComponent", "componentId": "mainFeedwaterPumpA" },
@@ -376,9 +383,9 @@
             ]
           }
         },
-        "halden-unit-b2": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
-        "halden-unit-b3": { "icRef": "process-plant.pressurized-water-reactor.ic.v1" },
-        "halden-6-loop": { "icRef": "process-plant.pressurized-water-reactor-6-loop.ic.v1" }
+        "halden-unit-b2": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
+        "halden-unit-b3": { "icRef": "process-plant.pwr.reference.graph.ic.v2" },
+        "halden-6-loop": { "icRef": "process-plant.pwr.reference.graph.ic.v2" }
       }
     },
     "ambulance": {},

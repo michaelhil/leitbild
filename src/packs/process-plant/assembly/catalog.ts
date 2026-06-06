@@ -1,4 +1,5 @@
 import type { PlantGraphSpec } from '../graph/index.ts'
+import { assembleModularPlantGraph, processPlantModularGraphAssemblyRef } from './modular-graph-assembly.ts'
 import { assemblePwrReferencePlantGraph, processPlantPwrReferenceAssemblyRef } from './pwr-reference-assembly.ts'
 
 interface ProcessPlantAssemblyAdapter {
@@ -7,6 +8,10 @@ interface ProcessPlantAssemblyAdapter {
 }
 
 const builtInProcessPlantAssemblies: ReadonlyMap<string, ProcessPlantAssemblyAdapter> = new Map([
+  [processPlantModularGraphAssemblyRef, {
+    ref: processPlantModularGraphAssemblyRef,
+    assemble: assembleModularPlantGraph,
+  }],
   [processPlantPwrReferenceAssemblyRef, {
     ref: processPlantPwrReferenceAssemblyRef,
     assemble: assemblePwrReferencePlantGraph,

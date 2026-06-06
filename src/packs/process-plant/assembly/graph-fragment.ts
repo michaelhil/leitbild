@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import {
   componentInstanceSpecSchema,
   connectionIdSchema,
@@ -14,11 +15,21 @@ import {
   type VariablePath,
 } from '../graph/index.ts'
 
+export const graphFragmentSubstitutionSchema = z.object({
+  from: z.string().min(1),
+  to: z.string(),
+}).strict()
 export interface GraphFragmentSubstitution {
   readonly from: string
   readonly to: string
 }
 
+export const graphFragmentSpecSchema = z.object({
+  components: z.array(componentInstanceSpecSchema),
+  connections: z.array(connectionSpecSchema),
+  publishedVariables: z.array(variablePathSchema).optional(),
+  displayProfiles: z.array(processPlantDisplayProfileSchema).optional(),
+}).strict()
 export interface GraphFragmentSpec {
   readonly components: ReadonlyArray<ComponentInstanceSpec>
   readonly connections: ReadonlyArray<ConnectionSpec>
@@ -26,26 +37,45 @@ export interface GraphFragmentSpec {
   readonly displayProfiles?: ReadonlyArray<ProcessPlantDisplayProfile>
 }
 
-export interface GraphFragmentInstance {
-  readonly substitutions?: ReadonlyArray<GraphFragmentSubstitution>
-  readonly componentMetadata?: ProcessGraphMetadata
-  readonly connectionMetadata?: ProcessGraphMetadata
-  readonly componentOverlays?: ReadonlyArray<GraphFragmentComponentOverlay>
-  readonly connectionOverlays?: ReadonlyArray<GraphFragmentConnectionOverlay>
-}
-
+export const graphFragmentComponentOverlaySchema = z.object({
+  id: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  metadata: componentInstanceSpecSchema.shape.metadata.optional(),
+}).strict()
 export interface GraphFragmentComponentOverlay {
   readonly id: string
   readonly parameters?: Readonly<Record<string, unknown>>
   readonly metadata?: ProcessGraphMetadata
 }
 
+export const graphFragmentConnectionOverlaySchema = z.object({
+  id: z.string().min(1),
+  nextId: z.string().min(1).optional(),
+  from: z.string().min(3).optional(),
+  to: z.string().min(3).optional(),
+  metadata: connectionSpecSchema.shape.metadata.optional(),
+}).strict()
 export interface GraphFragmentConnectionOverlay {
   readonly id: string
   readonly nextId?: string
   readonly from?: string
   readonly to?: string
   readonly metadata?: ProcessGraphMetadata
+}
+
+export const graphFragmentInstanceSchema = z.object({
+  substitutions: z.array(graphFragmentSubstitutionSchema).optional(),
+  componentMetadata: componentInstanceSpecSchema.shape.metadata.optional(),
+  connectionMetadata: connectionSpecSchema.shape.metadata.optional(),
+  componentOverlays: z.array(graphFragmentComponentOverlaySchema).optional(),
+  connectionOverlays: z.array(graphFragmentConnectionOverlaySchema).optional(),
+}).strict()
+export interface GraphFragmentInstance {
+  readonly substitutions?: ReadonlyArray<GraphFragmentSubstitution>
+  readonly componentMetadata?: ProcessGraphMetadata
+  readonly connectionMetadata?: ProcessGraphMetadata
+  readonly componentOverlays?: ReadonlyArray<GraphFragmentComponentOverlay>
+  readonly connectionOverlays?: ReadonlyArray<GraphFragmentConnectionOverlay>
 }
 
 const replaceString = (value: string, substitutions: ReadonlyArray<GraphFragmentSubstitution>): string =>
@@ -150,18 +180,55 @@ const applyConnectionOverlays = (
   return next
 }
 
+const cleanComponentOverlay = (overlay: z.infer<typeof graphFragmentComponentOverlaySchema>): GraphFragmentComponentOverlay => ({
+  id: overlay.id,
+  ...(overlay.parameters === undefined ? {} : { parameters: overlay.parameters }),
+  ...(overlay.metadata === undefined ? {} : { metadata: overlay.metadata }),
+})
+
+const cleanConnectionOverlay = (overlay: z.infer<typeof graphFragmentConnectionOverlaySchema>): GraphFragmentConnectionOverlay => ({
+  id: overlay.id,
+  ...(overlay.nextId === undefined ? {} : { nextId: overlay.nextId }),
+  ...(overlay.from === undefined ? {} : { from: overlay.from }),
+  ...(overlay.to === undefined ? {} : { to: overlay.to }),
+  ...(overlay.metadata === undefined ? {} : { metadata: overlay.metadata }),
+})
+
+export const parseGraphFragmentSpec = (fragment: unknown): GraphFragmentSpec => {
+  const parsed = graphFragmentSpecSchema.parse(fragment)
+  return {
+    components: parsed.components,
+    connections: parsed.connections,
+    ...(parsed.publishedVariables === undefined ? {} : { publishedVariables: parsed.publishedVariables }),
+    ...(parsed.displayProfiles === undefined ? {} : { displayProfiles: parsed.displayProfiles }),
+  }
+}
+
+export const parseGraphFragmentInstance = (instance: unknown): GraphFragmentInstance => {
+  const parsed = graphFragmentInstanceSchema.parse(instance)
+  return {
+    ...(parsed.substitutions === undefined ? {} : { substitutions: parsed.substitutions }),
+    ...(parsed.componentMetadata === undefined ? {} : { componentMetadata: parsed.componentMetadata }),
+    ...(parsed.connectionMetadata === undefined ? {} : { connectionMetadata: parsed.connectionMetadata }),
+    ...(parsed.componentOverlays === undefined ? {} : { componentOverlays: parsed.componentOverlays.map(cleanComponentOverlay) }),
+    ...(parsed.connectionOverlays === undefined ? {} : { connectionOverlays: parsed.connectionOverlays.map(cleanConnectionOverlay) }),
+  }
+}
+
 export const instantiateGraphFragment = (
   fragment: GraphFragmentSpec,
   instance: GraphFragmentInstance,
 ): Required<GraphFragmentSpec> => {
-  const substitutions = instance.substitutions ?? []
-  const components = fragment.components.map(component => componentInstanceSpecSchema.parse(replaceValue(component, substitutions)))
-  const connections = fragment.connections.map(connection => connectionSpecSchema.parse(replaceValue(connection, substitutions)))
+  const parsedFragment = parseGraphFragmentSpec(fragment)
+  const parsedInstance = parseGraphFragmentInstance(instance)
+  const substitutions = parsedInstance.substitutions ?? []
+  const components = parsedFragment.components.map(component => componentInstanceSpecSchema.parse(replaceValue(component, substitutions)))
+  const connections = parsedFragment.connections.map(connection => connectionSpecSchema.parse(replaceValue(connection, substitutions)))
   return {
-    components: applyComponentOverlays(components, instance),
-    connections: applyConnectionOverlays(connections, instance),
-    publishedVariables: (fragment.publishedVariables ?? []).map(path => variablePathSchema.parse(replaceString(String(path), substitutions))),
-    displayProfiles: (fragment.displayProfiles ?? []).map(profile => processPlantDisplayProfileSchema.parse(replaceValue(profile, substitutions))),
+    components: applyComponentOverlays(components, parsedInstance),
+    connections: applyConnectionOverlays(connections, parsedInstance),
+    publishedVariables: (parsedFragment.publishedVariables ?? []).map(path => variablePathSchema.parse(replaceString(String(path), substitutions))),
+    displayProfiles: (parsedFragment.displayProfiles ?? []).map(profile => processPlantDisplayProfileSchema.parse(replaceValue(profile, substitutions))),
   }
 }
 

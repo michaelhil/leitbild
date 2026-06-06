@@ -21,6 +21,7 @@ import {
   processPlantUnitOverviewSurface,
   processPlantUnitOverviewSurfaceForGraph,
   processLinkVariableDescriptorSchema,
+  processPlantModularGraphAssemblyRef,
   processPlantPwrReferenceAssemblyRef,
   processPlantPwrReferenceGraphIcRef,
   processPlantPwrReferenceIcRefForLoopCount,
@@ -33,6 +34,31 @@ import {
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 import { scenarios } from '../src/scenarios/index.ts'
+
+const genericLiquidLinkVariables = (labelPrefix: string) => [
+  processLinkVariableDescriptorSchema.parse({
+    path: 'flowKgPerS',
+    label: `${labelPrefix} flow`,
+    kind: 'derived',
+    discipline: 'hydraulic',
+    writable: false,
+    publish: 'telemetry',
+    quantity: 'flowRate',
+    unit: 'kg/s',
+    initialValue: 0,
+  }),
+  processLinkVariableDescriptorSchema.parse({
+    path: 'temperatureC',
+    label: `${labelPrefix} temperature`,
+    kind: 'derived',
+    discipline: 'thermal',
+    writable: false,
+    publish: 'telemetry',
+    quantity: 'temperature',
+    unit: 'degC',
+    initialValue: 20,
+  }),
+]
 
 describe('process plant graph foundation', () => {
   test('compiles the pressurized water reactor graph into indexed components, links, and variables', () => {
@@ -448,11 +474,19 @@ describe('process plant graph foundation', () => {
     expect(String(systems[0]?.graph.specId)).toBe(processPlantPressurizedWaterReactorGraphRef)
   })
 
-  test('Halden process-plant demo declares per-unit initial variation in scenario config', () => {
+  test('built-in PWR demos use assembled graphs while retaining per-unit initial variation', () => {
     const scenario = scenarios.find(candidate => candidate.id === 'halden-process-plant-demo')
     if (!scenario) throw new Error('expected Halden process-plant demo scenario')
+    const osloScenario = scenarios.find(candidate => candidate.id === 'oslo-all-packs-demo')
+    if (!osloScenario) throw new Error('expected Oslo all-packs demo scenario')
 
     const systems = compileProcessPlantSystems(scenario.processSystems)
+    const haldenSixLoop = systems.find(system => system.id === 'halden-6-loop')
+    const demoRuntimeConfig = (input: ScenarioDefinition): { readonly systems?: Record<string, { readonly icRef?: string }> } => {
+      const config = input.runtimeConfigs['process-plant']
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error(`missing process-plant runtime config for ${input.id}`)
+      return config as { readonly systems?: Record<string, { readonly icRef?: string }> }
+    }
     const powerFractions = scenario.processSystems.map(system => {
       const parameters = system.parameters?.core
       if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`missing core variation for ${system.id}`)
@@ -472,7 +506,27 @@ describe('process plant graph foundation', () => {
     })
 
     expect(systems).toHaveLength(7)
-    expect(String(systems.find(system => system.id === 'halden-6-loop')?.graph.specId)).toBe(processPlantPressurizedWaterReactorSixLoopGraphRef)
+    expect(scenario.processSystems.every(system => system.graphRef === undefined)).toBe(true)
+    expect(scenario.processSystems.every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
+    expect(scenario.processSystems.filter(system =>
+      typeof system.assemblyConfig === 'object'
+      && system.assemblyConfig !== null
+      && !Array.isArray(system.assemblyConfig)
+      && (system.assemblyConfig as Record<string, unknown>).loopCount === 4,
+    )).toHaveLength(6)
+    expect(scenario.processSystems.find(system => system.id === 'halden-6-loop')?.assemblyConfig).toEqual({ loopCount: 6 })
+    expect(String(haldenSixLoop?.graph.specId)).toBe('process-plant.pressurized-water-reactor-6-loop.assembled.v2')
+    expect(haldenSixLoop?.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator')).toHaveLength(6)
+    expect(Object.values(demoRuntimeConfig(scenario).systems ?? {}).every(config => config.icRef === processPlantPwrReferenceGraphIcRef)).toBe(true)
+    expect(osloScenario.processSystems.every(system => system.graphRef === undefined)).toBe(true)
+    expect(osloScenario.processSystems.every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
+    expect(osloScenario.processSystems.every(system =>
+      typeof system.assemblyConfig === 'object'
+      && system.assemblyConfig !== null
+      && !Array.isArray(system.assemblyConfig)
+      && (system.assemblyConfig as Record<string, unknown>).loopCount === 4,
+    )).toBe(true)
+    expect(Object.values(demoRuntimeConfig(osloScenario).systems ?? {}).every(config => config.icRef === processPlantPwrReferenceGraphIcRef)).toBe(true)
     expect(new Set(powerFractions).size).toBeGreaterThan(3)
     expect(new Set(pzrPressures).size).toBeGreaterThan(3)
     expect(new Set(sgAInventories).size).toBeGreaterThan(3)
@@ -739,6 +793,308 @@ describe('process plant graph foundation', () => {
         parameters: { slot: 'wrong' },
       }],
     })).toThrow('graph fragment component overlay references unknown id: sourceA')
+  })
+
+  test('assembles a non-PWR modular process plant from reusable fragments', () => {
+    const productConnection = (id: string, from: string, to: string, label: string) => ({
+      id,
+      from,
+      to,
+      connectionKind: 'fluidFlow',
+      service: 'product',
+      nominalFluid: 'generic',
+      designPhase: 'liquid',
+      solverModel: 'sourceSink',
+      variables: genericLiquidLinkVariables(label),
+    })
+    const tankParameters = {
+      nominalInventoryKg: 10_000,
+      initialInventoryFraction: 0.7,
+      initialTemperatureC: 6,
+      makeupFlowKgPerS: 0,
+      maxOutletFlowKgPerS: 30,
+    }
+    const baseGraph = plantGraph({
+      id: 'process-plant.generic-dairy-base.v1',
+      title: 'Generic Dairy Base',
+      fixedStepMs: 250,
+      components: [
+        component('sourceTank', 'processTank', 'Raw Product Tank', tankParameters),
+      ],
+      connections: [],
+      publishedVariables: ['sourceTank.levelPercent'],
+    })
+
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-dairy-process',
+      schemaVersion: 1,
+      title: 'Modular Dairy Process',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.generic-dairy-two-line.v1',
+          title: 'Generic Dairy Two-Line Process',
+          baseGraph,
+          baseOverlays: {
+            componentOverlays: [{
+              id: 'sourceTank',
+              parameters: {
+                nominalInventoryKg: 20_000,
+                maxOutletFlowKgPerS: 60,
+              },
+              metadata: {
+                role: 'raw-product-source',
+                groupId: 'common-feed',
+              },
+            }],
+          },
+          fragments: [{
+            id: 'fermentation-line',
+            fragment: {
+              components: [
+                component('feedPumpA', 'centrifugalPump', 'Feed Pump A', {
+                  nominalFlowKgPerS: 12,
+                  nominalHeadPa: 160_000,
+                  initialRunning: true,
+                }),
+                component('feedValveA', 'processValve', 'Feed Valve A', {
+                  initialPositionFraction: 1,
+                  valveMode: 'control',
+                  cvKgPerSPerSqrtMPa: 4,
+                }),
+                component('fermenterA', 'processTank', 'Fermenter A', {
+                  nominalInventoryKg: 8_000,
+                  initialInventoryFraction: 0.3,
+                  initialTemperatureC: 38,
+                  makeupFlowKgPerS: 0,
+                  maxOutletFlowKgPerS: 12,
+                }),
+              ],
+              connections: [
+                productConnection('source-to-feed-pump-a', 'sourceTank.outlet', 'feedPumpA.inlet', 'Source to feed pump A'),
+                productConnection('feed-pump-a-to-feed-valve-a', 'feedPumpA.outlet', 'feedValveA.inlet', 'Feed pump A to valve A'),
+                productConnection('feed-valve-a-to-fermenter-a', 'feedValveA.outlet', 'fermenterA.inlet', 'Feed valve A to fermenter A'),
+              ],
+              publishedVariables: [
+                'feedPumpA.flowKgPerS',
+                'fermenterA.levelPercent',
+                'feed-valve-a-to-fermenter-a.flowKgPerS',
+              ],
+            },
+          }],
+          instances: [
+            {
+              fragmentRef: 'fermentation-line',
+              componentMetadata: {
+                groupId: 'fermentation-line',
+                trainId: 'A',
+                ordinal: 0,
+              },
+              componentOverlays: [{
+                id: 'fermenterA',
+                parameters: {
+                  initialTemperatureC: 42,
+                },
+                metadata: {
+                  role: 'fermenter',
+                },
+              }],
+            },
+            {
+              fragmentRef: 'fermentation-line',
+              substitutions: [
+                { from: 'feedPumpA', to: 'feedPumpB' },
+                { from: 'feedValveA', to: 'feedValveB' },
+                { from: 'fermenterA', to: 'fermenterB' },
+                { from: ' A', to: ' B' },
+                { from: '-a', to: '-b' },
+              ],
+              componentMetadata: {
+                groupId: 'fermentation-line',
+                trainId: 'B',
+                ordinal: 1,
+              },
+              componentOverlays: [{
+                id: 'feedPumpB',
+                parameters: {
+                  nominalFlowKgPerS: 15,
+                },
+              }, {
+                id: 'fermenterB',
+                parameters: {
+                  nominalInventoryKg: 12_000,
+                  initialTemperatureC: 39,
+                },
+                metadata: {
+                  role: 'fermenter',
+                },
+              }],
+            },
+          ],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    expect(String(system.graph.specId)).toBe('process-plant.generic-dairy-two-line.v1')
+    expect(system.graph.components.map(componentItem => String(componentItem.id))).toEqual(expect.arrayContaining([
+      'sourceTank',
+      'feedPumpA',
+      'feedPumpB',
+      'feedValveA',
+      'feedValveB',
+      'fermenterA',
+      'fermenterB',
+    ]))
+    expect(system.graph.components.find(componentItem => componentItem.id === 'sourceTank')?.parameters).toMatchObject({
+      nominalInventoryKg: 20_000,
+      maxOutletFlowKgPerS: 60,
+    })
+    expect(system.graph.components.find(componentItem => componentItem.id === 'fermenterA')?.parameters).toMatchObject({
+      initialTemperatureC: 42,
+    })
+    expect(system.graph.components.find(componentItem => componentItem.id === 'feedPumpB')?.parameters).toMatchObject({
+      nominalFlowKgPerS: 15,
+    })
+    expect(system.graph.components.find(componentItem => componentItem.id === 'fermenterB')?.metadata).toMatchObject({
+      groupId: 'fermentation-line',
+      trainId: 'B',
+      ordinal: 1,
+      role: 'fermenter',
+    })
+    expect(system.graph.links.map(link => String(link.id))).toEqual(expect.arrayContaining([
+      'source-to-feed-pump-a',
+      'source-to-feed-pump-b',
+      'feed-valve-b-to-fermenter-b',
+    ]))
+    expect(system.graph.variables.map(variable => String(variable.path))).toEqual(expect.arrayContaining([
+      'sourceTank.levelPercent',
+      'feedPumpA.flowKgPerS',
+      'feedPumpB.flowKgPerS',
+      'fermenterA.levelPercent',
+      'fermenterB.levelPercent',
+      'feed-valve-b-to-fermenter-b.flowKgPerS',
+    ]))
+    expect(system.graph.components.some(componentItem => componentItem.kind === 'reactorCore')).toBe(false)
+    expect(system.graph.components.some(componentItem => componentItem.kind === 'steamGenerator')).toBe(false)
+  })
+
+  test('rejects modular graph assemblies that reference missing fragments', () => {
+    const baseGraph = plantGraph({
+      id: 'process-plant.generic-empty-base.v1',
+      title: 'Generic Empty Base',
+      fixedStepMs: 250,
+      components: [
+        component('sourceTank', 'processTank', 'Raw Product Tank', {
+          nominalInventoryKg: 10_000,
+          initialInventoryFraction: 0.7,
+          initialTemperatureC: 6,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 30,
+        }),
+      ],
+      connections: [],
+    })
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-missing-fragment',
+      schemaVersion: 1,
+      title: 'Modular Missing Fragment',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.invalid-modular.v1',
+          title: 'Invalid Modular Plant',
+          baseGraph,
+          instances: [{ fragmentRef: 'missing-fragment' }],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('modular graph instance references unknown fragment: missing-fragment')
+  })
+
+  test('imports and customizes an existing process plant graph through generic modular assembly', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-pwr-reference-import',
+      schemaVersion: 1,
+      title: 'Modular PWR Reference Import',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.reference-pwr-overlaid.v1',
+          title: 'Reference PWR Overlaid Through Modular Assembly',
+          baseGraphRef: processPlantPressurizedWaterReactorGraphRef,
+          baseOverlays: {
+            componentOverlays: [{
+              id: 'core',
+              parameters: {
+                ratedPowerMw: 2_450,
+              },
+              metadata: {
+                role: 'heat-source',
+                groupId: 'reactor-island',
+              },
+            }],
+          },
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    expect(String(system.graph.specId)).toBe('process-plant.reference-pwr-overlaid.v1')
+    expect(system.sourceGraph.components).toHaveLength(pressurizedWaterReactorPlantSpec.components.length)
+    expect(system.sourceGraph.connections).toHaveLength(pressurizedWaterReactorPlantSpec.connections.length)
+    expect(system.sourceGraph.components.find(componentItem => componentItem.id === 'core')).toMatchObject({
+      parameters: { ratedPowerMw: 2_450 },
+      metadata: {
+        role: 'heat-source',
+        groupId: 'reactor-island',
+      },
+    })
+    expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator')).toHaveLength(4)
+    expect(system.graph.components.find(componentItem => componentItem.id === 'mainSteamHeader')?.ports.inletD).toMatchObject({
+      kind: 'steam',
+      direction: 'in',
+    })
   })
 
   test('assembles reference PWR variants through process system assembly refs', () => {
