@@ -25,6 +25,7 @@ const namedGraphFragmentSchema = z.object({
   id: z.string().min(1),
   fragment: graphFragmentSpecSchema.optional(),
   fragmentRef: z.string().min(1).optional(),
+  fragmentConfig: z.unknown().optional(),
 }).strict().superRefine((fragment, ctx) => {
   const sourceCount = [fragment.fragment !== undefined, fragment.fragmentRef !== undefined].filter(Boolean).length
   if (sourceCount !== 1) {
@@ -32,6 +33,13 @@ const namedGraphFragmentSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: sourceCount > 1 ? ['fragmentRef'] : ['fragment'],
       message: 'modular graph fragment must define exactly one of fragment or fragmentRef',
+    })
+  }
+  if (fragment.fragmentConfig !== undefined && fragment.fragmentRef === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fragmentConfig'],
+      message: 'modular graph fragmentConfig requires fragmentRef',
     })
   }
 })
@@ -58,6 +66,7 @@ const modularGraphAssemblyConfigSchema = z.object({
   baseGraphRef: z.string().min(1).optional(),
   baseFragment: graphFragmentSpecSchema.optional(),
   baseFragmentRef: z.string().min(1).optional(),
+  baseFragmentConfig: z.unknown().optional(),
   baseOverlays: graphFragmentInstanceSchema.optional(),
   fragments: z.array(namedGraphFragmentSchema).default([]),
   instances: z.array(graphFragmentInstanceConfigSchema).default([]),
@@ -83,6 +92,13 @@ const modularGraphAssemblyConfigSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ['fixedStepMs'],
       message: 'modular graph assembly fixedStepMs is required when base source is a fragment',
+    })
+  }
+  if (config.baseFragmentConfig !== undefined && config.baseFragmentRef === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['baseFragmentConfig'],
+      message: 'modular graph assembly baseFragmentConfig requires baseFragmentRef',
     })
   }
   const fragmentIds = new Set<string>()
@@ -130,7 +146,7 @@ const graphFromBaseFragment = (
 const graphSourceFor = (config: ModularGraphAssemblyConfig): PlantGraphSpec => {
   if (config.baseGraphRef !== undefined) return resolveProcessPlantGraphSpec(config.baseGraphRef)
   if (config.baseFragment !== undefined) return graphFromBaseFragment(config, parseGraphFragmentSpec(config.baseFragment))
-  if (config.baseFragmentRef !== undefined) return graphFromBaseFragment(config, resolveProcessPlantGraphFragmentSpec(config.baseFragmentRef))
+  if (config.baseFragmentRef !== undefined) return graphFromBaseFragment(config, resolveProcessPlantGraphFragmentSpec(config.baseFragmentRef, config.baseFragmentConfig))
   return plantGraphSpecSchema.parse(config.baseGraph)
 }
 
@@ -163,7 +179,7 @@ const fragmentById = (
     fragment.id,
     fragment.fragmentRef === undefined
       ? parseGraphFragmentSpec(fragment.fragment)
-      : resolveProcessPlantGraphFragmentSpec(fragment.fragmentRef),
+      : resolveProcessPlantGraphFragmentSpec(fragment.fragmentRef, fragment.fragmentConfig),
   ]))
 
 const combinedArray = <T>(

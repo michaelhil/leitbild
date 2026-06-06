@@ -20,7 +20,7 @@ export interface ProcessPlantAssemblyCatalogEntry {
 export interface ProcessPlantGraphFragmentCatalogEntry {
   readonly ref: string
   readonly sourcePath?: string
-  readonly fragment: () => GraphFragmentSpec
+  readonly fragment: (config: unknown) => GraphFragmentSpec
 }
 
 export interface ProcessPlantGraphFragmentInstancePresetCatalogEntry {

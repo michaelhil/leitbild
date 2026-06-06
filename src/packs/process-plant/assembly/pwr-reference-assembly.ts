@@ -21,10 +21,9 @@ import {
 } from './graph-fragment.ts'
 
 export const processPlantPwrReferenceAssemblyRef = 'process-plant.pwr.reference.v2'
+export const processPlantPwrReferenceBaseFragmentRef = 'process-plant.pwr.reference.base-fragment.v2'
 export const processPlantPwrReferenceLoopTemplateFragmentRef = 'process-plant.pwr.reference.loop-template-fragment.v2'
 export const processPlantPwrReferenceLoopInstancePresetRef = 'process-plant.pwr.reference.loop-instance.v2'
-export const processPlantPwrReferenceBaseFragmentRefForLoopCount = (loopCount: number): string =>
-  `process-plant.pwr.reference.${loopCount}-loop.base-fragment.v2`
 
 const defaultLoopIds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const templateLoopId = 'A'
@@ -34,11 +33,15 @@ const safetyTrainIds = ['A', 'B'] as const
 const loopIdSchema = z.string().regex(/^[A-Z]$/, 'PWR reference assembly loop ids must be single uppercase letters')
 type SafetyTrainId = (typeof safetyTrainIds)[number]
 
-const pwrReferenceAssemblyConfigSchema = z.object({
+const pwrReferenceLoopConfigBaseSchema = z.object({
   loopCount: z.number().int().min(2).max(defaultLoopIds.length),
   loopIds: z.array(loopIdSchema).min(2).max(defaultLoopIds.length).optional(),
-  title: z.string().min(1).optional(),
-}).strict().superRefine((config, ctx) => {
+}).strict()
+
+const assertPwrReferenceLoopConfig = (
+  config: z.infer<typeof pwrReferenceLoopConfigBaseSchema>,
+  ctx: z.RefinementCtx,
+): void => {
   if (config.loopIds !== undefined && config.loopIds.length !== config.loopCount) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -54,8 +57,15 @@ const pwrReferenceAssemblyConfigSchema = z.object({
       message: 'loopIds must be unique',
     })
   }
-})
+}
 
+const pwrReferenceLoopConfigSchema = pwrReferenceLoopConfigBaseSchema.superRefine(assertPwrReferenceLoopConfig)
+
+const pwrReferenceAssemblyConfigSchema = pwrReferenceLoopConfigBaseSchema.extend({
+  title: z.string().min(1).optional(),
+}).strict().superRefine(assertPwrReferenceLoopConfig)
+
+type PwrReferenceLoopConfig = z.infer<typeof pwrReferenceLoopConfigSchema>
 type PwrReferenceAssemblyConfig = z.infer<typeof pwrReferenceAssemblyConfigSchema>
 
 const pwrReferenceLoopInstancePresetConfigSchema = z.object({
@@ -422,6 +432,11 @@ const pwrReferenceBaseFragmentForLoopIds = (
 const pwrReferenceLoopTemplateFragment = (): Required<GraphFragmentSpec> =>
   loopOwnedFragment(pwrReferenceSourceGraph(), templateLoopId)
 
+const pwrReferenceLoopIdsForConfig = (input: unknown): ReadonlyArray<string> => {
+  const config: PwrReferenceLoopConfig = pwrReferenceLoopConfigSchema.parse(input)
+  return config.loopIds ?? defaultLoopIds.slice(0, config.loopCount)
+}
+
 const pwrReferenceBaseGraphForLoopIds = (
   sourceGraph: PlantGraphSpec,
   loopIds: ReadonlyArray<string>,
@@ -438,19 +453,16 @@ const pwrReferenceBaseGraphForLoopIds = (
 
 export const pwrReferenceGraphFragmentEntries: ReadonlyArray<{
   readonly ref: string
-  readonly fragment: () => GraphFragmentSpec
+  readonly fragment: (config: unknown) => GraphFragmentSpec
 }> = [
+  {
+    ref: processPlantPwrReferenceBaseFragmentRef,
+    fragment: config => pwrReferenceBaseFragmentForLoopIds(pwrReferenceLoopIdsForConfig(config)),
+  },
   {
     ref: processPlantPwrReferenceLoopTemplateFragmentRef,
     fragment: pwrReferenceLoopTemplateFragment,
   },
-  ...defaultLoopIds.slice(1).map((_, index) => {
-    const loopCount = index + 2
-    return {
-      ref: processPlantPwrReferenceBaseFragmentRefForLoopCount(loopCount),
-      fragment: () => pwrReferenceBaseFragmentForLoopIds(defaultLoopIds.slice(0, loopCount)),
-    }
-  }),
 ]
 
 export const pwrReferenceGraphFragmentInstancePresetEntries: ReadonlyArray<{

@@ -26,7 +26,7 @@ import {
   listProcessPlantAssemblyRefs,
   listProcessPlantGraphRefs,
   processPlantModularGraphAssemblyRef,
-  processPlantPwrReferenceBaseFragmentRefForLoopCount,
+  processPlantPwrReferenceBaseFragmentRef,
   processPlantPwrReferenceAssemblyRef,
   processPlantPwrReferenceGraphIcRef,
   processPlantPwrReferenceIcRefForLoopCount,
@@ -569,9 +569,10 @@ describe('process plant graph foundation', () => {
       processPlantPwrReferenceAssemblyRef,
     ]))
     expect(listProcessPlantGraphFragmentRefs()).toEqual(expect.arrayContaining([
-      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceBaseFragmentRef,
       processPlantPwrReferenceLoopTemplateFragmentRef,
     ]))
+    expect(listProcessPlantGraphFragmentRefs()).not.toContain('process-plant.pwr.reference.23-loop.base-fragment.v2')
     expect(listProcessPlantGraphFragmentInstancePresetRefs()).toEqual(expect.arrayContaining([
       processPlantPwrReferenceLoopInstancePresetRef,
     ]))
@@ -635,9 +636,10 @@ describe('process plant graph foundation', () => {
       }),
     ]))
     expect(catalog.graphFragmentRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
-      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceBaseFragmentRef,
       processPlantPwrReferenceLoopTemplateFragmentRef,
     ]))
+    expect(catalog.graphFragmentRefs.map(entry => entry.value)).not.toContain('process-plant.pwr.reference.23-loop.base-fragment.v2')
     expect(catalog.graphFragmentInstancePresetRefs.map(entry => entry.value)).toEqual(expect.arrayContaining([
       processPlantPwrReferenceLoopInstancePresetRef,
     ]))
@@ -1457,7 +1459,7 @@ describe('process plant graph foundation', () => {
 
   test('assembles imported process plant fragments through the generic modular path', () => {
     expect(listProcessPlantGraphFragmentRefs()).toEqual(expect.arrayContaining([
-      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceBaseFragmentRef,
       processPlantPwrReferenceLoopTemplateFragmentRef,
     ]))
     expect(listProcessPlantGraphFragmentInstancePresetRefs()).toEqual(expect.arrayContaining([
@@ -1483,7 +1485,8 @@ describe('process plant graph foundation', () => {
           id: 'process-plant.reference-pwr-two-loop.imported-fragments.v1',
           title: 'Reference PWR Two-Loop From Imported Fragments',
           fixedStepMs: 250,
-          baseFragmentRef: processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+          baseFragmentRef: processPlantPwrReferenceBaseFragmentRef,
+          baseFragmentConfig: { loopCount: 2 },
           fragments: [{
             id: 'pwr-reference-loop',
             fragmentRef: processPlantPwrReferenceLoopTemplateFragmentRef,
