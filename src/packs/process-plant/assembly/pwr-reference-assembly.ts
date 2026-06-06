@@ -15,6 +15,9 @@ import { pressurizedWaterReactorSixLoopPlantSpec } from '../specs/pressurized-wa
 import { composePlantGraph, instantiateGraphFragment, type GraphFragmentSpec, type GraphFragmentSubstitution } from './graph-fragment.ts'
 
 export const processPlantPwrReferenceAssemblyRef = 'process-plant.pwr.reference.v2'
+export const processPlantPwrReferenceLoopTemplateFragmentRef = 'process-plant.pwr.reference.loop-template-fragment.v2'
+export const processPlantPwrReferenceBaseFragmentRefForLoopCount = (loopCount: number): string =>
+  `process-plant.pwr.reference.${loopCount}-loop.base-fragment.v2`
 
 const defaultLoopIds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const templateLoopId = 'A'
@@ -336,16 +339,67 @@ const displayLoopIdsFor = (
 ): ReadonlyArray<string> =>
   loopIds.slice(0, Math.min(loopIds.length, defaultDisplayLoopCount))
 
+const pwrReferenceSourceGraph = (): PlantGraphSpec =>
+  structuredClone(pressurizedWaterReactorSixLoopPlantSpec) as PlantGraphSpec
+
+const graphFragmentFromGraph = (graph: PlantGraphSpec): Required<GraphFragmentSpec> => ({
+  components: graph.components,
+  connections: graph.connections,
+  publishedVariables: graph.publishedVariables,
+  displayProfiles: graph.displayProfiles,
+})
+
+const pwrReferenceBaseFragmentForLoopIds = (
+  loopIds: ReadonlyArray<string>,
+): Required<GraphFragmentSpec> => {
+  const base = baseGraphWithoutLoopFragments(pwrReferenceSourceGraph())
+  return graphFragmentFromGraph(plantGraphSpecSchema.parse({
+    ...base,
+    components: base.components.map(component => addSharedLoopParameters(component, loopIds)),
+  }))
+}
+
+const pwrReferenceLoopTemplateFragment = (): Required<GraphFragmentSpec> =>
+  loopOwnedFragment(pwrReferenceSourceGraph(), templateLoopId)
+
+const pwrReferenceBaseGraphForLoopIds = (
+  sourceGraph: PlantGraphSpec,
+  loopIds: ReadonlyArray<string>,
+): PlantGraphSpec => {
+  const fragment = pwrReferenceBaseFragmentForLoopIds(loopIds)
+  return plantGraphSpecSchema.parse({
+    ...sourceGraph,
+    components: fragment.components,
+    connections: fragment.connections,
+    publishedVariables: fragment.publishedVariables,
+    displayProfiles: fragment.displayProfiles,
+  })
+}
+
+export const pwrReferenceGraphFragmentEntries: ReadonlyArray<{
+  readonly ref: string
+  readonly fragment: () => GraphFragmentSpec
+}> = [
+  {
+    ref: processPlantPwrReferenceLoopTemplateFragmentRef,
+    fragment: pwrReferenceLoopTemplateFragment,
+  },
+  ...defaultLoopIds.slice(1).map((_, index) => {
+    const loopCount = index + 2
+    return {
+      ref: processPlantPwrReferenceBaseFragmentRefForLoopCount(loopCount),
+      fragment: () => pwrReferenceBaseFragmentForLoopIds(defaultLoopIds.slice(0, loopCount)),
+    }
+  }),
+]
+
 export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec => {
   const config: PwrReferenceAssemblyConfig = pwrReferenceAssemblyConfigSchema.parse(input)
   const loopIds = config.loopIds ?? defaultLoopIds.slice(0, config.loopCount)
   const displayLoopIds = displayLoopIdsFor(loopIds)
-  const sourceGraph = structuredClone(pressurizedWaterReactorSixLoopPlantSpec) as PlantGraphSpec
-  const baseGraph = plantGraphSpecSchema.parse({
-    ...baseGraphWithoutLoopFragments(sourceGraph),
-    components: baseGraphWithoutLoopFragments(sourceGraph).components.map(component => addSharedLoopParameters(component, loopIds)),
-  })
-  const template = loopOwnedFragment(sourceGraph, templateLoopId)
+  const sourceGraph = pwrReferenceSourceGraph()
+  const baseGraph = pwrReferenceBaseGraphForLoopIds(sourceGraph, loopIds)
+  const template = pwrReferenceLoopTemplateFragment()
   const loopFragments = loopIds.map(loopId => instantiateLoopFragment(template, loopIds, loopId))
 
   return composePlantGraph({

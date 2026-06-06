@@ -22,9 +22,12 @@ import {
   processPlantUnitOverviewSurfaceForGraph,
   processLinkVariableDescriptorSchema,
   processPlantModularGraphAssemblyRef,
+  processPlantPwrReferenceBaseFragmentRefForLoopCount,
   processPlantPwrReferenceAssemblyRef,
   processPlantPwrReferenceGraphIcRef,
   processPlantPwrReferenceIcRefForLoopCount,
+  processPlantPwrReferenceLoopTemplateFragmentRef,
+  listProcessPlantGraphFragmentRefs,
   resolveProcessPlantIcConfig,
   resolveProcessPlantIcConfigForGraph,
   instantiateGraphFragment,
@@ -479,6 +482,14 @@ describe('process plant graph foundation', () => {
     if (!scenario) throw new Error('expected Halden process-plant demo scenario')
     const osloScenario = scenarios.find(candidate => candidate.id === 'oslo-all-packs-demo')
     if (!osloScenario) throw new Error('expected Oslo all-packs demo scenario')
+    const fixedPwrGraphRefs = new Set([
+      processPlantPressurizedWaterReactorGraphRef,
+      processPlantPressurizedWaterReactorSixLoopGraphRef,
+    ])
+    const fixedPwrIcRefs = new Set([
+      'process-plant.pressurized-water-reactor.ic.v1',
+      'process-plant.pressurized-water-reactor-6-loop.ic.v1',
+    ])
 
     const systems = compileProcessPlantSystems(scenario.processSystems)
     const haldenSixLoop = systems.find(system => system.id === 'halden-6-loop')
@@ -487,6 +498,11 @@ describe('process plant graph foundation', () => {
       if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error(`missing process-plant runtime config for ${input.id}`)
       return config as { readonly systems?: Record<string, { readonly icRef?: string }> }
     }
+    const builtInProcessPlantScenarios = scenarios.filter(candidate => candidate.processSystems.length > 0)
+    const allBuiltInProcessSystems = builtInProcessPlantScenarios.flatMap(candidate => candidate.processSystems)
+    const allBuiltInProcessPlantRuntimeConfigs = builtInProcessPlantScenarios.flatMap(candidate =>
+      Object.values(demoRuntimeConfig(candidate).systems ?? {}),
+    )
     const powerFractions = scenario.processSystems.map(system => {
       const parameters = system.parameters?.core
       if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) throw new Error(`missing core variation for ${system.id}`)
@@ -506,6 +522,8 @@ describe('process plant graph foundation', () => {
     })
 
     expect(systems).toHaveLength(7)
+    expect(allBuiltInProcessSystems.some(system => system.graphRef !== undefined && fixedPwrGraphRefs.has(system.graphRef))).toBe(false)
+    expect(allBuiltInProcessPlantRuntimeConfigs.some(config => config.icRef !== undefined && fixedPwrIcRefs.has(config.icRef))).toBe(false)
     expect(scenario.processSystems.every(system => system.graphRef === undefined)).toBe(true)
     expect(scenario.processSystems.every(system => system.assemblyRef === processPlantPwrReferenceAssemblyRef)).toBe(true)
     expect(scenario.processSystems.filter(system =>
@@ -1039,6 +1057,57 @@ describe('process plant graph foundation', () => {
     expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('modular graph instance references unknown fragment: missing-fragment')
   })
 
+  test('rejects modular graph assemblies that import unknown fragment refs', () => {
+    const baseGraph = plantGraph({
+      id: 'process-plant.generic-import-base.v1',
+      title: 'Generic Import Base',
+      fixedStepMs: 250,
+      components: [
+        component('sourceTank', 'processTank', 'Raw Product Tank', {
+          nominalInventoryKg: 10_000,
+          initialInventoryFraction: 0.7,
+          initialTemperatureC: 6,
+          makeupFlowKgPerS: 0,
+          maxOutletFlowKgPerS: 30,
+        }),
+      ],
+      connections: [],
+    })
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-unknown-imported-fragment',
+      schemaVersion: 1,
+      title: 'Modular Unknown Imported Fragment',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.invalid-imported-fragment.v1',
+          title: 'Invalid Imported Fragment Plant',
+          baseGraph,
+          fragments: [{
+            id: 'imported',
+            fragmentRef: 'process-plant.no-such-fragment.v1',
+          }],
+          instances: [{ fragmentRef: 'imported' }],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant graph fragmentRef: process-plant.no-such-fragment.v1')
+  })
+
   test('imports and customizes an existing process plant graph through generic modular assembly', () => {
     const scenario = scenarioDefinitionSchema.parse({
       id: 'modular-pwr-reference-import',
@@ -1095,6 +1164,120 @@ describe('process plant graph foundation', () => {
       kind: 'steam',
       direction: 'in',
     })
+  })
+
+  test('assembles imported process plant fragments through the generic modular path', () => {
+    expect(listProcessPlantGraphFragmentRefs()).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceLoopTemplateFragmentRef,
+    ]))
+
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'modular-pwr-imported-fragments',
+      schemaVersion: 1,
+      title: 'Modular PWR Imported Fragments',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantModularGraphAssemblyRef,
+        assemblyConfig: {
+          id: 'process-plant.reference-pwr-two-loop.imported-fragments.v1',
+          title: 'Reference PWR Two-Loop From Imported Fragments',
+          fixedStepMs: 250,
+          baseFragmentRef: processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+          fragments: [{
+            id: 'pwr-reference-loop',
+            fragmentRef: processPlantPwrReferenceLoopTemplateFragmentRef,
+          }],
+          instances: [{
+            fragmentRef: 'pwr-reference-loop',
+          }, {
+            fragmentRef: 'pwr-reference-loop',
+            substitutions: [
+              { from: 'feedwaterControlValveA', to: 'feedwaterControlValveB' },
+              { from: 'auxFeedwaterValveA', to: 'auxFeedwaterValveB' },
+              { from: 'mainSteamIsolationValveA', to: 'mainSteamIsolationValveB' },
+              { from: 'safetyAccumulatorA', to: 'safetyAccumulatorB' },
+              { from: 'sgA', to: 'sgB' },
+              { from: 'rcpA', to: 'rcpB' },
+              { from: 'hotLegA', to: 'hotLegB' },
+              { from: 'coldLegA', to: 'coldLegB' },
+              { from: 'inletA', to: 'inletB' },
+              { from: 'outletA', to: 'outletB' },
+              { from: 'SG-A', to: 'SG-B' },
+              { from: 'RCP-A', to: 'RCP-B' },
+              { from: 'MFW-A', to: 'MFW-B' },
+              { from: 'AFW-A', to: 'AFW-B' },
+              { from: 'MSIV-A', to: 'MSIV-B' },
+              { from: 'RCP-1', to: 'RCP-2' },
+              { from: 'ACCUM-1', to: 'ACCUM-2' },
+              { from: 'TE-411', to: 'TE-421' },
+              { from: 'secondary.sg.a', to: 'secondary.sg.b' },
+              { from: 'secondary.mfw.a', to: 'secondary.mfw.b' },
+              { from: 'secondary.msiv.a', to: 'secondary.msiv.b' },
+              { from: 'afw.a', to: 'afw.b' },
+              { from: 'rcs.rcp.1', to: 'rcs.rcp.2' },
+              { from: 'rcs.loop1', to: 'rcs.loop2' },
+              { from: 'ess.accumulator.1', to: 'ess.accumulator.2' },
+              { from: 'loop 1', to: 'loop 2' },
+              { from: 'sg-a', to: 'sg-b' },
+              { from: 'rcp-a', to: 'rcp-b' },
+              { from: 'hot-leg-a', to: 'hot-leg-b' },
+              { from: 'cold-leg-a', to: 'cold-leg-b' },
+              { from: 'control-valve-a', to: 'control-valve-b' },
+              { from: 'valve-a', to: 'valve-b' },
+              { from: 'msiv-a', to: 'msiv-b' },
+              { from: '.a.', to: '.b.' },
+              { from: ' A', to: ' B' },
+            ],
+            componentOverlays: [{
+              id: 'rcpB',
+              parameters: {
+                primaryLoopId: 'B',
+              },
+            }],
+            connectionOverlays: [{
+              id: 'safety-bus-a-to-rcpB',
+              nextId: 'safety-bus-b-to-rcpB',
+              from: 'safetyBusB.outlet',
+            }],
+          }],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    expect(String(system.graph.specId)).toBe('process-plant.reference-pwr-two-loop.imported-fragments.v1')
+    expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator').map(componentItem => String(componentItem.id))).toEqual([
+      'sgA',
+      'sgB',
+    ])
+    expect(system.graph.components.filter(componentItem =>
+      componentItem.kind === 'centrifugalPump'
+      && !!componentItem.parameters
+      && typeof componentItem.parameters === 'object'
+      && !Array.isArray(componentItem.parameters)
+      && typeof (componentItem.parameters as Record<string, unknown>).primaryLoopId === 'string',
+    ).map(componentItem => String(componentItem.id))).toEqual([
+      'rcpA',
+      'rcpB',
+    ])
+    expect(system.graph.components.find(componentItem => componentItem.id === 'core')?.ports.hotLegB).toMatchObject({
+      kind: 'hydraulicThermal',
+      direction: 'out',
+    })
+    expect(String(system.graph.components[system.graph.links.find(link => link.id === 'safety-bus-b-to-rcpB')?.fromComponentIndex ?? -1]?.id)).toBe('safetyBusB')
   })
 
   test('assembles reference PWR variants through process system assembly refs', () => {
