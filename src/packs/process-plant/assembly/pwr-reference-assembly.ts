@@ -18,8 +18,11 @@ export const processPlantPwrReferenceAssemblyRef = 'process-plant.pwr.reference.
 
 const defaultLoopIds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
 const templateLoopId = 'A'
+const defaultDisplayLoopCount = 2
+const safetyTrainIds = ['A', 'B'] as const
 
 const loopIdSchema = z.string().regex(/^[A-Z]$/, 'PWR reference assembly loop ids must be single uppercase letters')
+type SafetyTrainId = (typeof safetyTrainIds)[number]
 
 const pwrReferenceAssemblyConfigSchema = z.object({
   loopCount: z.number().int().min(2).max(defaultLoopIds.length),
@@ -105,8 +108,8 @@ const componentMetadata = (
   return base
 }
 
-const trainIdForLoop = (loopIds: ReadonlyArray<string>, loopId: string): 'A' | 'B' =>
-  loopIds.indexOf(loopId) % 2 === 0 ? 'A' : 'B'
+const trainIdForLoop = (loopIds: ReadonlyArray<string>, loopId: string): SafetyTrainId =>
+  loopIds.indexOf(loopId) % safetyTrainIds.length === 0 ? 'A' : 'B'
 
 const loopSubstitutions = (
   loopIds: ReadonlyArray<string>,
@@ -225,23 +228,16 @@ const withLoopMetadata = (
   })),
 })
 
-const withSafetyTrainAssignment = (
-  fragment: Required<GraphFragmentSpec>,
+const safetyTrainConnectionOverlay = (
   loopIds: ReadonlyArray<string>,
   loopId: string,
-): Required<GraphFragmentSpec> => {
+) => {
   const trainId = trainIdForLoop(loopIds, loopId)
   const trainLower = trainId.toLowerCase()
   return {
-    ...fragment,
-    connections: fragment.connections.map(connection => {
-      if (!String(connection.to).startsWith(`rcp${loopId}.`) || !String(connection.id).includes('safety-bus')) return connection
-      return {
-        ...connection,
-        id: `safety-bus-${trainLower}-to-rcp${loopId}` as never,
-        from: `safetyBus${trainId}.outlet` as never,
-      }
-    }),
+    id: `safety-bus-a-to-rcp${loopId}`,
+    nextId: `safety-bus-${trainLower}-to-rcp${loopId}`,
+    from: `safetyBus${trainId}.outlet`,
   }
 }
 
@@ -269,8 +265,9 @@ const instantiateLoopFragment = (
 ): Required<GraphFragmentSpec> => {
   const instantiated = instantiateGraphFragment(template, {
     substitutions: loopSubstitutions(loopIds, loopId),
+    connectionOverlays: [safetyTrainConnectionOverlay(loopIds, loopId)],
   })
-  return withSafetyTrainAssignment(withLoopMetadata(instantiated, loopIds, loopId), loopIds, loopId)
+  return withLoopMetadata(instantiated, loopIds, loopId)
 }
 
 const loopTemplateDisplayFields = (
@@ -313,11 +310,11 @@ const instantiateDisplayField = (
 const displayProfilesFor = (
   sourceGraph: PlantGraphSpec,
   loopIds: ReadonlyArray<string>,
+  displayLoopIds: ReadonlyArray<string>,
 ): ReadonlyArray<ProcessPlantDisplayProfile> => {
   const componentLoopById = buildComponentLoopMap(sourceGraph.components)
   const connectionLoopById = buildConnectionLoopMap(sourceGraph.connections, componentLoopById)
   const templateFieldsByGroup = loopTemplateDisplayFields(sourceGraph)
-  const visibleLoopIds = loopIds.slice(0, Math.min(loopIds.length, 2))
   return sourceGraph.displayProfiles.map((profile): ProcessPlantDisplayProfile => ({
     ...profile,
     groups: profile.groups.map((group): ProcessPlantDisplayGroup => {
@@ -327,16 +324,22 @@ const displayProfilesFor = (
         ...group,
         fields: [
           ...baseFields,
-          ...visibleLoopIds.flatMap(loopId => templateFields.map(field => instantiateDisplayField(field, loopIds, loopId))),
+          ...displayLoopIds.flatMap(loopId => templateFields.map(field => instantiateDisplayField(field, loopIds, loopId))),
         ],
       }
     }).filter(group => group.fields.length > 0),
   })).filter(profile => profile.groups.length > 0)
 }
 
+const displayLoopIdsFor = (
+  loopIds: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  loopIds.slice(0, Math.min(loopIds.length, defaultDisplayLoopCount))
+
 export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec => {
   const config: PwrReferenceAssemblyConfig = pwrReferenceAssemblyConfigSchema.parse(input)
   const loopIds = config.loopIds ?? defaultLoopIds.slice(0, config.loopCount)
+  const displayLoopIds = displayLoopIdsFor(loopIds)
   const sourceGraph = structuredClone(pressurizedWaterReactorSixLoopPlantSpec) as PlantGraphSpec
   const baseGraph = plantGraphSpecSchema.parse({
     ...baseGraphWithoutLoopFragments(sourceGraph),
@@ -350,6 +353,6 @@ export const assemblePwrReferencePlantGraph = (input: unknown): PlantGraphSpec =
     id: `process-plant.pressurized-water-reactor-${loopIds.length}-loop.assembled.v2`,
     title: config.title ?? `Reference PWR ${loopIds.length}-loop plant`,
     fragments: loopFragments,
-    displayProfiles: displayProfilesFor(sourceGraph, loopIds),
+    displayProfiles: displayProfilesFor(sourceGraph, loopIds, displayLoopIds),
   })
 }

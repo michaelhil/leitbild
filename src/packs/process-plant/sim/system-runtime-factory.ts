@@ -29,7 +29,7 @@ export const createProcessPlantSystemRuntimes = (config: {
     const systemConfig = config.runtimeConfig.systems[system.id]
     const telemetryConfig: ProcessPlantTelemetryConfig | undefined = systemConfig?.telemetry
     const scheduleConfig: ProcessPlantScheduleConfig | undefined = systemConfig?.schedule
-    const protectionConfig = protectionConfigFor(systemConfig)
+    const protectionConfig = protectionConfigFor(systemConfig, system)
     const restoredRuntimeSnapshot = restoredRuntimeSnapshotFor(config.runtimeState, system.id)
     const runtime = createProcessPlantRuntime({
       system,

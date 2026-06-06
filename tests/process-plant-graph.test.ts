@@ -22,8 +22,11 @@ import {
   processPlantUnitOverviewSurfaceForGraph,
   processLinkVariableDescriptorSchema,
   processPlantPwrReferenceAssemblyRef,
+  processPlantPwrReferenceGraphIcRef,
   processPlantPwrReferenceIcRefForLoopCount,
   resolveProcessPlantIcConfig,
+  resolveProcessPlantIcConfigForGraph,
+  instantiateGraphFragment,
   assertProcessPlantIcRulesValid,
   tagIdForLookup,
   variableDescriptorSchema,
@@ -640,6 +643,104 @@ describe('process plant graph foundation', () => {
     })).toThrow('process system assemblyConfig requires assemblyRef')
   })
 
+  test('instantiates generic process plant graph fragments with substitutions and structural overlays', () => {
+    const fragment = instantiateGraphFragment({
+      components: [
+        {
+          id: 'sourceA' as never,
+          kind: 'demoSource' as never,
+          label: 'Source A',
+          parameters: { slot: 'A' },
+          variables: [],
+        },
+        {
+          id: 'sinkA' as never,
+          kind: 'demoSink' as never,
+          label: 'Sink A',
+          parameters: { slot: 'A' },
+          variables: [],
+        },
+      ],
+      connections: [{
+        id: 'signal-a' as never,
+        from: 'sourceA.out' as never,
+        to: 'sinkA.in' as never,
+        connectionKind: 'controlSignal',
+        variables: [],
+      }],
+      publishedVariables: ['sourceA.output' as never],
+      displayProfiles: [{
+        id: 'demo-profile' as never,
+        label: 'Demo profile',
+        groups: [{
+          id: 'signals' as never,
+          label: 'Signals',
+          fields: [{
+            key: 'source' as never,
+            label: 'Source',
+            path: 'sourceA.output' as never,
+          }],
+        }],
+      }],
+    }, {
+      substitutions: [
+        { from: 'sourceA', to: 'sourceC' },
+        { from: 'sinkA', to: 'sinkC' },
+        { from: 'signal-a', to: 'signal-c' },
+        { from: ' A', to: ' C' },
+      ],
+      componentMetadata: { groupId: 'train-c' },
+      connectionMetadata: { groupId: 'train-c' },
+      componentOverlays: [{
+        id: 'sourceC',
+        parameters: { slot: 'C', gain: 2 },
+        metadata: { role: 'source' },
+      }],
+      connectionOverlays: [{
+        id: 'signal-c',
+        nextId: 'signal-final-c',
+        from: 'sourceC.altOut',
+        metadata: { role: 'command-path' },
+      }],
+    })
+
+    expect(fragment.components.find(componentItem => componentItem.id === 'sourceC')).toMatchObject({
+      label: 'Source C',
+      parameters: { slot: 'C', gain: 2 },
+      metadata: { groupId: 'train-c', role: 'source' },
+    })
+    expect(fragment.components.find(componentItem => componentItem.id === 'sinkC')).toMatchObject({
+      metadata: { groupId: 'train-c' },
+    })
+    expect(fragment.connections[0]).toMatchObject({
+      id: 'signal-final-c',
+      from: 'sourceC.altOut',
+      to: 'sinkC.in',
+      metadata: { groupId: 'train-c', role: 'command-path' },
+    })
+    expect(fragment.publishedVariables.map(String)).toEqual(['sourceC.output'])
+    expect(String(fragment.displayProfiles[0]?.groups[0]?.fields[0]?.path)).toBe('sourceC.output')
+  })
+
+  test('rejects generic graph fragment overlays that miss their instantiated target', () => {
+    expect(() => instantiateGraphFragment({
+      components: [{
+        id: 'sourceA' as never,
+        kind: 'demoSource' as never,
+        label: 'Source A',
+        parameters: { slot: 'A' },
+        variables: [],
+      }],
+      connections: [],
+    }, {
+      substitutions: [{ from: 'sourceA', to: 'sourceB' }],
+      componentOverlays: [{
+        id: 'sourceA',
+        parameters: { slot: 'wrong' },
+      }],
+    })).toThrow('graph fragment component overlay references unknown id: sourceA')
+  })
+
   test('assembles reference PWR variants through process system assembly refs', () => {
     for (const loopCount of [2, 5, 9]) {
       const scenario = scenarioDefinitionSchema.parse({
@@ -695,6 +796,100 @@ describe('process plant graph foundation', () => {
     }
   })
 
+  test('uses the generic fragment assembly path for reference PWR variants with custom loop ids', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'assembled-pwr-custom-loop-config',
+      schemaVersion: 1,
+      title: 'Assembled PWR Custom Loop Config',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig: {
+          loopCount: 3,
+          loopIds: ['A', 'D', 'H'],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator').map(componentItem => String(componentItem.id))).toEqual([
+      'sgA',
+      'sgD',
+      'sgH',
+    ])
+    expect(system.graph.components.map(componentItem => String(componentItem.id))).not.toContain('sgB')
+    expect(system.graph.components.find(componentItem => componentItem.id === 'core')?.ports.hotLegH).toMatchObject({
+      kind: 'hydraulicThermal',
+      direction: 'out',
+    })
+    expect(system.graph.components.find(componentItem => componentItem.id === 'mainSteamHeader')?.ports.inletH).toMatchObject({
+      kind: 'steam',
+      direction: 'in',
+    })
+
+    const safetyLinkFor = (id: string) => {
+      const link = system.graph.links.find(linkItem => linkItem.id === id)
+      if (!link) throw new Error(`expected safety train link: ${id}`)
+      return link
+    }
+    expect(String(system.graph.components[safetyLinkFor('safety-bus-b-to-rcpD').fromComponentIndex]?.id)).toBe('safetyBusB')
+    expect(String(system.graph.components[safetyLinkFor('safety-bus-a-to-rcpH').fromComponentIndex]?.id)).toBe('safetyBusA')
+
+    const displayPaths = system.sourceGraph.displayProfiles.flatMap(profile =>
+      profile.groups.flatMap(group => group.fields.map(field => String(field.path))),
+    )
+    expect(displayPaths).toContain('sgA.levelPercent')
+    expect(displayPaths).toContain('sgD.levelPercent')
+    expect(displayPaths).not.toContain('sgH.levelPercent')
+  })
+
+  test('rejects inconsistent reference PWR assembly config explicitly', () => {
+    const scenarioFor = (assemblyConfig: Record<string, unknown>): ScenarioDefinition => scenarioDefinitionSchema.parse({
+      id: 'assembled-pwr-invalid-config',
+      schemaVersion: 1,
+      title: 'Assembled PWR Invalid Config',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig,
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenarioFor({
+      loopCount: 3,
+      loopIds: ['A', 'B'],
+    }).processSystems[0]!)).toThrow('loopIds length must match loopCount')
+
+    expect(() => compileProcessPlantSystem(scenarioFor({
+      loopCount: 3,
+      loopIds: ['A', 'B', 'A'],
+    }).processSystems[0]!)).toThrow('loopIds must be unique')
+  })
+
   test('generates loop-aware reference I&C for assembled PWR variants', () => {
     const scenario = scenarioDefinitionSchema.parse({
       id: 'assembled-pwr-ic-9',
@@ -726,6 +921,45 @@ describe('process plant graph foundation', () => {
     expect(lowRcpFlowRule.condition).toMatchObject({ type: 'vote', required: 7 })
     expect(JSON.stringify(lowRcpFlowRule.condition)).toContain('rcpI.loopFlowKgPerS')
     expect(JSON.stringify(lowRcpFlowRule.condition)).not.toContain('rcpJ.loopFlowKgPerS')
+    expect(() => assertProcessPlantIcRulesValid(system, ic.rules)).not.toThrow()
+  })
+
+  test('derives reference PWR I&C loop ids from the compiled graph', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'assembled-pwr-graph-derived-ic',
+      schemaVersion: 1,
+      title: 'Assembled PWR Graph Derived I&C',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig: {
+          loopCount: 3,
+          loopIds: ['A', 'D', 'H'],
+        },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const ic = resolveProcessPlantIcConfigForGraph(processPlantPwrReferenceGraphIcRef, system.graph)
+    const lowRcpFlowRule = ic.rules.find(ruleItem => ruleItem.id === 'reactor-low-rcp-flow-trip')
+    if (!lowRcpFlowRule) throw new Error('expected low RCP flow rule')
+
+    expect(lowRcpFlowRule.condition).toMatchObject({ type: 'vote', required: 3 })
+    expect(JSON.stringify(lowRcpFlowRule.condition)).toContain('rcpA.loopFlowKgPerS')
+    expect(JSON.stringify(lowRcpFlowRule.condition)).toContain('rcpD.loopFlowKgPerS')
+    expect(JSON.stringify(lowRcpFlowRule.condition)).toContain('rcpH.loopFlowKgPerS')
+    expect(JSON.stringify(lowRcpFlowRule.condition)).not.toContain('rcpB.loopFlowKgPerS')
     expect(() => assertProcessPlantIcRulesValid(system, ic.rules)).not.toThrow()
   })
 

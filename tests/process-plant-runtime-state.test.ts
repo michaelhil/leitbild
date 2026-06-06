@@ -11,6 +11,7 @@ import {
   processPlantControlWriteCommandKind,
   processPlantIcLifecycleCommandKind,
   processPlantPwrReferenceAssemblyRef,
+  processPlantPwrReferenceGraphIcRef,
   processPlantPressurizedWaterReactorIcRef,
   processPlantPack,
   processPlantUnitPackDataSchema,
@@ -1972,6 +1973,50 @@ describe('process plant pack runtime', () => {
         activeFirstOut: [],
       },
     })
+
+    await connection.close()
+  })
+
+  test('loads graph-derived reference I&C for assembled custom-loop PWR systems', async () => {
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPwrReferenceGraphIcRef,
+          },
+        },
+      }, {
+        graph: undefined,
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig: {
+          loopCount: 3,
+          loopIds: ['A', 'D', 'H'],
+        },
+      }),
+      runtimeStateStore: createMemoryStateStore(),
+    })
+
+    const catalog = await connection.query(query('process-plant.ic.catalog', { systemId: 'plant' }))
+    expect(catalog.ok).toBe(true)
+    if (!catalog.ok) throw new Error(catalog.reason)
+    const ic = (catalog.result as {
+      readonly ic: {
+        readonly rules: ReadonlyArray<{
+          readonly id: string
+          readonly watchedSignals: ReadonlyArray<{ readonly path: string }>
+        }>
+      }
+    }).ic
+    const lowRcpFlow = ic.rules.find(rule => rule.id === 'reactor-low-rcp-flow-trip')
+    if (!lowRcpFlow) throw new Error('expected graph-derived low RCP flow rule')
+    const watchedPaths = lowRcpFlow.watchedSignals.map(signal => signal.path)
+    expect(watchedPaths).toContain('rcpA.loopFlowKgPerS')
+    expect(watchedPaths).toContain('rcpD.loopFlowKgPerS')
+    expect(watchedPaths).toContain('rcpH.loopFlowKgPerS')
+    expect(watchedPaths).not.toContain('rcpB.loopFlowKgPerS')
+    expect(ic.rules.map(rule => rule.id)).toContain('sg-h-tube-leak-indication')
+    expect(ic.rules.map(rule => rule.id)).not.toContain('sg-b-tube-leak-indication')
 
     await connection.close()
   })

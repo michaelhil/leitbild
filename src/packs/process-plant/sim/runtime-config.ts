@@ -6,7 +6,8 @@ import {
   processPlantProtectionConfigSchema,
   type ProcessPlantProtectionConfig,
 } from '../runtime/index.ts'
-import { resolveProcessPlantIcConfig } from '../specs/index.ts'
+import { resolveProcessPlantIcConfig, resolveProcessPlantIcConfigForGraph } from '../specs/index.ts'
+import type { CompiledProcessPlantSystem } from '../process-systems.ts'
 import { processPlantSimRuntimeId } from './constants.ts'
 
 export const processPlantRuntimeSystemConfigSchema = z.object({
@@ -40,9 +41,14 @@ export const processPlantRuntimeConfigFor = (
 
 export const protectionConfigFor = (
   systemConfig: ProcessPlantRuntimeSystemConfig | undefined,
+  system?: CompiledProcessPlantSystem,
 ): ProcessPlantProtectionConfig | undefined => {
   if (systemConfig?.protection !== undefined) return systemConfig.protection
-  if (systemConfig?.icRef !== undefined) return resolveProcessPlantIcConfig(systemConfig.icRef)
+  if (systemConfig?.icRef !== undefined) {
+    return system === undefined
+      ? resolveProcessPlantIcConfig(systemConfig.icRef)
+      : resolveProcessPlantIcConfigForGraph(systemConfig.icRef, system.graph)
+  }
   return undefined
 }
 
