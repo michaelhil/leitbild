@@ -460,5 +460,3 @@ const steamGeneratorLoopIdsFor = (graph: CompiledPlantGraph): LoopLetters =>
 
 export const processPlantUnitOverviewSurfaceForGraph = (graph: CompiledPlantGraph) =>
   createProcessPlantUnitOverviewSurface(steamGeneratorLoopIdsFor(graph).slice(0, Math.max(steamGeneratorCountFor(graph), 1)))
-
-export const processPlantReferenceSurfaces = [processPlantUnitOverviewSurface] as const

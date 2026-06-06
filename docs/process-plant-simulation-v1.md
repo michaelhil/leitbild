@@ -109,11 +109,13 @@ The full plant run is assembled from a Leitbild Scenario Definition. The scenari
 }
 ```
 
-`graphRef` points to a pack-owned graph catalog entry. Use it when a scenario wants to instantiate an existing validated graph one or many times. A process system may alternatively provide an inline `graph` object for a fully scenario-authored topology. It must define exactly one of `graph` or `graphRef`; unknown refs fail before runtime.
+`graphRef` points to a pack-owned graph catalog entry. Use it when a scenario wants to instantiate an existing validated graph one or many times. A process system may alternatively provide an inline `graph` object for a fully scenario-authored topology, or an `assemblyRef` plus `assemblyConfig` when it wants a reusable modular assembly to generate the final graph. A process system must define exactly one graph source; unknown refs fail before runtime.
 
 Per-system `parameters` and `initialState` configure an instance without changing topology. `parameters` overlays component parameter objects before graph compilation. `initialState` sets declared runtime variable values before the first solver tick. `initialState` is initialization, not an operator command, so it can set declared state variables that are read-only during runtime. Runtime commands and scheduled process actions still require writable variables.
 
-This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can either instantiate a known graph by ref or author a complete plant graph as scenario/config data, then Leitbild validates and compiles it before runtime. Do not patch topology through `parameters` or `initialState`; use a different `graphRef` or inline `graph` when topology must change.
+This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can instantiate a known graph by ref, compose a graph from modular fragments, or author a complete plant graph as scenario/config data; Leitbild validates and compiles the result before runtime. Do not patch topology through `parameters` or `initialState`; use a different graph source when topology must change.
+
+Reusable process-plant assets are registered through generic catalog contributions. A contribution can provide graph specs, graph assemblies, reusable graph fragments, fragment instance presets, I&C refs, graph-aware I&C refs, and process surfaces. PWR is one contributor to this catalog, not a special case in the generic query or runtime layer. The catalog is inspectable through `process-plant.catalog.list`.
 
 The reusable machinery remains code-owned:
 
@@ -444,7 +446,7 @@ The scenario activates:
 - `ambulance`
 - `weather`
 
-It instantiates six independent process systems from `graphRef: "process-plant.pressurized-water-reactor.v1"` in two nearby Halden clusters. Each unit has its own `systemId`, reference I&C config, runtime state, schedule, and operational projection object. Two units have scheduled process faults: one SGTR-like transient and one feedwater/loop degradation path. Other units continue normally.
+It instantiates independent process systems from the PWR reference assembly in two nearby Halden clusters. Most units use a four-loop assembly config, while the variant unit uses a six-loop assembly config. Each unit has its own `systemId`, graph-aware reference I&C config, runtime state, schedule, and operational projection object. Two units have scheduled process faults: one SGTR-like transient and one feedwater/loop degradation path. Other units continue normally.
 
 The same scenario includes hospitals, incidents, ambulances already moving at startup, reserve ambulances, and a moving weather front. At 30 seconds the scenario emits `operational.demand.requested` from one plant unit. Ambulance handles that demand through the generic interaction layer by creating an incident target, not through a plant-specific ambulance hook.
 
@@ -487,7 +489,7 @@ The rule language supports:
 - optional explicit `clearCondition` and `clearDelayMs` for alarm hysteresis and chatter control
 - latching, reset-on-clear behavior, and explicit reset conditions
 
-Definitions belong to one explicit process system. A reusable `graphRef` may provide default I&C definitions for its plant model, and a scenario or runtime config may enable, disable, add, or parameterize definitions for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
+Definitions belong to one explicit process system. Reusable catalog contributions may provide I&C refs for a plant model, and a scenario or runtime config may enable an I&C ref or provide inline rules for a specific `systemId`. There is no implicit current unit, no cross-unit alarm namespace, and no fleet-wide protection state.
 
 Runtime ordering is:
 
@@ -895,6 +897,7 @@ V1 should use the existing generic pack query route. Do not add `/api/process-pl
 
 Implemented queries:
 
+- `process-plant.catalog.list`
 - `process-plant.systems.list`
 - `process-plant.graph.read`
 - `process-plant.variables.read`
@@ -909,6 +912,10 @@ Implemented queries:
 - `process-plant.trends.read`
 - `process-plant.ic.status`
 - `process-plant.ic.catalog`
+- `process-plant.surfaces.list`
+- `process-plant.surface.read`
+- `process-plant.surface.snapshot`
+- `process-plant.surface.project`
 - `process-plant.alarms.status`
 - `process-plant.alarms.summary`
 - `process-plant.alarms.history`
@@ -938,13 +945,13 @@ Candidate future events:
 - `process-plant.variable.thresholdCrossed`
 - `process-plant.modeChanged`
 
-The current implementation covers graph/spec validation, a headless fixed-step runtime and testbed, pack runtime lifecycle integration, runtime-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, procedure tag compatibility validation, persistent I&C lifecycle state, validated I&C writes, command gates, and writable-variable command paths. Process-control UI surfaces remain a follow-up.
+The current implementation covers graph/spec validation, generic catalog contribution discovery, modular graph assembly, a headless fixed-step runtime and testbed, pack runtime lifecycle integration, runtime-private snapshot/restore, query routing, signal resolution/read/search, external condition evaluation, procedure tag compatibility validation, persistent I&C lifecycle state, validated I&C writes, command gates, writable-variable command paths, and compiled process surface reads/snapshots/projections.
 
 Process-plant runtime config may also define pack-owned timed actions and telemetry sampling per process system. This is deliberately inside the pack boundary, not in core scenario scripting. Core knows that the process-plant pack runtime has a private config object; the process-plant pack owns the meaning of timed pump trips, valve writes, rod movements, and trend retention.
 
 Every pack runtime-configured system key must match a declared process system id. Unknown keys are rejected before runtime starts. This keeps typoed multi-unit scenarios from silently running without the intended I&C, schedule, or telemetry configuration.
 
-Reference I&C behavior is enabled explicitly with `icRef`. The first built-in reference is `process-plant.pressurized-water-reactor.ic.v1`, which is designed for the built-in `process-plant.pressurized-water-reactor.v1` graph. It is implemented as a small catalog assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
+Reference I&C behavior is enabled explicitly with `icRef`. Built-in PWR refs are contributed through the generic process-plant catalog. Fixed refs such as `process-plant.pressurized-water-reactor.ic.v1` remain available for fixed reference graphs, while `process-plant.pwr.reference.graph.ic.v2` derives loop ids from the compiled graph and is preferred for assembled PWR variants. The implementation is assembled from family modules for pressurizer, steam-generator, reactor-coolant-pump, and balance-of-plant rules. It contributes normal pressure-band actions, protection-like reference actions, and alarm/trip annunciation for SGTR, loss of feedwater, RCP trip/coastdown, pressurizer pressure/level events, turbine/load reduction, and condenser backpressure.
 
 Reusable controller behavior in the reference set is expressed through authoring helpers that expand into ordinary I&C rules. For example, the pressurizer pressure controller is generated as low-demand, high-demand, and normal-band rules that write heaters and spray through the same queued write path. The runtime still sees only the typed rule language; there is no separate controller interpreter.
 
@@ -960,7 +967,7 @@ Example runtime config:
     "process-plant": {
       "systems": {
         "unit-2": {
-          "icRef": "process-plant.pressurized-water-reactor.ic.v1",
+          "icRef": "process-plant.pwr.reference.graph.ic.v2",
           "telemetry": {
             "sampleIntervalMs": 5000,
             "variables": ["core.powerMw", "sgA.levelPercent", "turbine.electricMw"]
@@ -1021,7 +1028,7 @@ The performance strategy is architectural:
 
 V1 acceptance should include a headless performance test for the first reactor graph. A useful target is simulating one hour of plant time faster than real time in headless mode, or maintaining stable real-time execution under expected UI query load.
 
-The current multi-system benchmark runs six independent copies of the expanded four-loop plant graph for five minutes of simulated time, with different scheduled faults per system. Six is only a useful measurement fixture, not a design target. The same model should support arbitrary `n` systems and mixed graph refs, such as four systems using one graph ref and eight using another. The systems use `graphRef: "process-plant.pressurized-water-reactor.v1"` so the graph is catalog-resolved instead of repeated as six inline JSON objects. The benchmark records three selected variables per system and compares runtime with a single-system run on the current local machine.
+The current multi-system benchmark runs independent copies of assembled reference PWR graphs for five minutes of simulated time, with different scheduled faults per system. Six is only a useful measurement fixture, not a design target. The same model supports arbitrary `n` systems and mixed graph sources, such as four systems using one assembly config and eight using another. The benchmark records three selected variables per system and compares runtime with a single-system run on the current local machine.
 
 ![Multi-system process plant benchmark](./assets/process-plant-six-unit-trace.svg)
 

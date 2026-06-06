@@ -60,6 +60,7 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - The pack now has a real headless runtime/testbed plus Control Instance provider integration.
 - The generic query surface can inspect systems, graph topology, variables, published telemetry, and runtime status without new HTTP routes.
 - The generic query surface can also read configured trend buffers through `process-plant.trends.read`.
+- Reusable process-plant assets are catalog contributions. The generic contribution catalog now covers graph refs, graph assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, and process surfaces. PWR contributes to that catalog; generic runtime/query code should not import PWR graph or surface modules directly.
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.
 - The current built-in graph can now exercise the first primary/secondary energy path in headless tests.

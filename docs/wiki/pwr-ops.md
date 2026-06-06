@@ -8,13 +8,16 @@ type: pack
 !!! note "Status"
     Leitbild now has a pack-owned PWR transient diagnostic kernel in the process-plant pack. The model is a deterministic lumped operational simulator, not a licensing-basis thermal-hydraulic safety analysis code.
 
-PWR operations in Leitbild live in the `process-plant` pack. The current built-in reference graph is `process-plant.pressurized-water-reactor.v1`.
+PWR operations in Leitbild live in the `process-plant` pack. PWR is a catalog contributor: it contributes fixed reference graph refs, a modular reference assembly, reusable loop/base fragments, graph-aware reference I&C, and the unit overview surface to the generic process-plant catalog.
+
+The current fixed reference graph is `process-plant.pressurized-water-reactor.v1`. Modular PWR scenarios should prefer `assemblyRef: "process-plant.pwr.reference.assembly.v2"` with an explicit loop-count/loop-id config, then use graph-aware I&C through `icRef: "process-plant.pwr.reference.graph.ic.v2"` so alarms, trips, controllers, and overview displays derive their loop set from the compiled graph.
 
 ## Runtime Model
 
 The PWR runtime uses the normal process-plant architecture:
 
 - scenario-owned component graph and parameters
+- catalog-backed graph refs, modular assemblies, graph fragments, I&C refs, and process surfaces
 - typed component/link variables with stable paths, units, tags, and writability
 - fixed-step runtime with validated commands
 - reference I&C rules for alarms, trips, permissives, interlocks, and automatic writes

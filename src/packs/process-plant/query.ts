@@ -3,6 +3,7 @@ import type { PackQueryRequest, PackQueryResponse } from '../../core/packs/proto
 import { answerProcessPlantIcQuery, processPlantIcQueryKinds } from './ic-query.ts'
 import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 import { failure } from './queries/common.ts'
+import { answerProcessPlantCatalogQuery, processPlantCatalogQueryKinds } from './queries/catalog-query.ts'
 import { answerProcessPlantControlQuery, processPlantControlQueryKinds } from './queries/control-query.ts'
 import { answerProcessPlantGraphQuery, processPlantGraphQueryKinds } from './queries/graph-query.ts'
 import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from './queries/runtime-query.ts'
@@ -11,6 +12,7 @@ import { answerProcessPlantSurfaceQuery, processPlantSurfaceQueryKinds } from '.
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 
 export const processPlantQueryKinds = [
+  ...processPlantCatalogQueryKinds,
   ...processPlantGraphQueryKinds,
   ...processPlantVariableQueryKinds,
   ...processPlantSignalQueryKinds,
@@ -26,7 +28,8 @@ export const answerProcessPlantQuery = (config: {
   readonly at: IsoTimestamp
 }): PackQueryResponse => {
   try {
-    return answerProcessPlantIcQuery(config)
+    return answerProcessPlantCatalogQuery(config)
+      ?? answerProcessPlantIcQuery(config)
       ?? answerProcessPlantGraphQuery(config)
       ?? answerProcessPlantVariableQuery(config)
       ?? answerProcessPlantSignalQuery(config)

@@ -289,11 +289,16 @@ Current built-in query kinds:
 - `process-plant.conditions.evaluate`
 - `process-plant.procedure-tags.validate`
 - `process-plant.control.validate`
+- `process-plant.catalog.list`
 - `process-plant.runtime.status`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
 - `process-plant.ic.status`
 - `process-plant.ic.catalog`
+- `process-plant.surfaces.list`
+- `process-plant.surface.read`
+- `process-plant.surface.snapshot`
+- `process-plant.surface.project`
 - `process-plant.alarms.status`
 - `process-plant.alarms.summary`
 - `process-plant.alarms.history`
@@ -310,7 +315,9 @@ Process-plant I&C is the pack's simplified instrumentation-and-control substrate
 
 Process-plant permissives and interlocks are command gates, not hidden component side effects. They resolve target signals through graph-owned bindings and constrain the same queued write path used by operators, scenarios, AI agents, and internal I&C write effects. `process-plant.procedure-tags.validate` is a read-only compatibility helper for external procedure tag appendices; it reports missing or mismatched tags but does not parse or execute procedure documents.
 
-Process-plant may also provide reference I&C behavior through an explicit per-system `icRef`. The current built-in reference is `process-plant.pressurized-water-reactor.ic.v1` for the built-in pressurized-water-reactor graph. It supplies reference plant automation and annunciation for common transients; it does not supply procedure execution, operator guidance, or EOP branching. A system config must choose either `icRef` or inline `protection`, not both.
+Process-plant reusable assets are registered through generic catalog contributions rather than hardcoded in the generic runtime/query layer. Contributions can provide graph specs, assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, and process surfaces. `process-plant.catalog.list` exposes those contributed refs/ids for tooling and UI discovery.
+
+Process-plant may also provide reference I&C behavior through an explicit per-system `icRef`. Built-in PWR refs are contributed through the same process-plant catalog. Fixed refs such as `process-plant.pressurized-water-reactor.ic.v1` remain available for fixed reference graphs; graph-aware refs such as `process-plant.pwr.reference.graph.ic.v2` derive loop ids from the compiled graph and are preferred for modular PWR variants. Reference I&C supplies plant automation and annunciation for common transients; it does not supply procedure execution, operator guidance, or EOP branching. A system config must choose either `icRef` or inline `protection`, not both.
 
 Process-plant graph queries now expose compiled connection metadata as `connectionKind`, optional fluid `service`, `nominalFluid`, `designPhase`, `solverModel`, and indexed incoming/outgoing adjacency. Consumers should use the pack query surface rather than parsing scenario files directly when they need the runtime topology.
 
@@ -318,7 +325,7 @@ Process-plant variable queries expose both component variables and link-local va
 
 Process-plant runtime config may define timed process actions and telemetry sampling per process system. This makes multi-system scenarios possible without adding a fleet-wide process abstraction to Leitbild core: a scenario can instantiate any number of independent `processSystems`, and each system can have its own telemetry variables and schedule. Pack runtime config system keys must match declared process system ids exactly; unknown keys are rejected because they almost always indicate a scenario authoring typo. The process-plant pack runtime persists runtime snapshots, fired scheduled actions, and telemetry buffers per system in runtime-private state; it does not write dense process trends into the Control Instance event journal. Runtime snapshots include graph identity and compiled variable paths, and restores fail visibly when runtime-private state no longer matches the compiled process graph.
 
-Process-plant systems may use either an inline `graph` or a pack-owned `graphRef`. `graphRef` is the preferred shape for scenarios that instantiate existing graphs such as `process-plant.pressurized-water-reactor.v1` many times. A process system must define exactly one graph source, and unknown refs fail in the process-plant compiler before runtime starts. Per-system `parameters` overlay component parameters before graph compilation, while `initialState` initializes declared runtime variables before the first solver tick. Neither field may mutate topology.
+Process-plant systems may use an inline `graph`, a pack-owned `graphRef`, or an `assemblyRef` with `assemblyConfig`. `graphRef` is the preferred shape for scenarios that instantiate existing graphs many times. `assemblyRef` is the preferred shape when the final graph should be generated from reusable fragments, for example PWR variants with different loop counts or a non-PWR plant assembled from shared process fragments. A process system must define exactly one graph source, and unknown refs fail in the process-plant compiler before runtime starts. Per-system `parameters` overlay component parameters before graph compilation, while `initialState` initializes declared runtime variables before the first solver tick. Neither field may mutate topology.
 
 ## Interaction Contributions
 

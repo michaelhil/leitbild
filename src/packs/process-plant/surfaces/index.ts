@@ -1,3 +1,4 @@
+export * from './catalog.ts'
 export * from './compiler.ts'
 export * from './model.ts'
 export * from './projection.ts'

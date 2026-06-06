@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { scenarioDefinitionSchema, type ScenarioDefinition } from '../src/core/model/index.ts'
+import { scenarioDefinitionSchema, type IsoTimestamp, type ScenarioDefinition } from '../src/core/model/index.ts'
 import {
+  answerProcessPlantQuery,
   compilePlantGraph,
   compileProcessSurface,
   compileProcessPlantSystem,
@@ -31,8 +32,10 @@ import {
   processPlantPwrReferenceIcRefForLoopCount,
   processPlantPwrReferenceLoopInstancePresetRef,
   processPlantPwrReferenceLoopTemplateFragmentRef,
+  listProcessPlantIcRefs,
   listProcessPlantGraphFragmentInstancePresetRefs,
   listProcessPlantGraphFragmentRefs,
+  listProcessPlantSurfaceIds,
   resolveProcessPlantIcConfig,
   resolveProcessPlantIcConfigForGraph,
   instantiateGraphFragment,
@@ -572,6 +575,55 @@ describe('process plant graph foundation', () => {
     expect(listProcessPlantGraphFragmentInstancePresetRefs()).toEqual(expect.arrayContaining([
       processPlantPwrReferenceLoopInstancePresetRef,
     ]))
+    expect(listProcessPlantIcRefs()).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceGraphIcRef,
+    ]))
+    expect(listProcessPlantSurfaceIds()).toEqual(expect.arrayContaining([
+      'unit-overview',
+    ]))
+  })
+
+  test('process plant catalog query exposes generic contributed refs', () => {
+    const response = answerProcessPlantQuery({
+      request: {
+        packId: 'process-plant',
+        kind: 'process-plant.catalog.list',
+        payload: {},
+      },
+      systems: new Map(),
+      at: '2026-01-01T00:00:00.000Z' as IsoTimestamp,
+    })
+    expect(response.ok).toBe(true)
+    if (!response.ok) throw new Error(response.reason)
+    const catalog = response.result as {
+      readonly graphRefs: ReadonlyArray<string>
+      readonly assemblyRefs: ReadonlyArray<string>
+      readonly graphFragmentRefs: ReadonlyArray<string>
+      readonly graphFragmentInstancePresetRefs: ReadonlyArray<string>
+      readonly icRefs: ReadonlyArray<string>
+      readonly surfaceIds: ReadonlyArray<string>
+    }
+    expect(catalog.graphRefs).toEqual(expect.arrayContaining([
+      processPlantPressurizedWaterReactorGraphRef,
+      processPlantPressurizedWaterReactorSixLoopGraphRef,
+    ]))
+    expect(catalog.assemblyRefs).toEqual(expect.arrayContaining([
+      processPlantModularGraphAssemblyRef,
+      processPlantPwrReferenceAssemblyRef,
+    ]))
+    expect(catalog.graphFragmentRefs).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceLoopTemplateFragmentRef,
+    ]))
+    expect(catalog.graphFragmentInstancePresetRefs).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceLoopInstancePresetRef,
+    ]))
+    expect(catalog.icRefs).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceGraphIcRef,
+    ]))
+    expect(catalog.surfaceIds).toEqual(expect.arrayContaining([
+      'unit-overview',
+    ]))
   })
 
   test('process plant catalog contributions reject duplicate refs across contributors', () => {
@@ -579,12 +631,20 @@ describe('process plant graph foundation', () => {
     const assemblyRef = 'process-plant.duplicate.assembly.v1'
     const fragmentRef = 'process-plant.duplicate.fragment.v1'
     const presetRef = 'process-plant.duplicate.preset.v1'
+    const icRef = 'process-plant.duplicate.ic.v1'
+    const dynamicIcResolverId = 'process-plant.duplicate.dynamic-ic'
+    const graphIcRef = 'process-plant.duplicate.graph.ic.v1'
+    const surfaceId = 'duplicate-surface'
     const first: ProcessPlantCatalogContribution = {
       id: 'first',
       graphSpecs: [{ ref: graphRef, graph: () => pressurizedWaterReactorPlantSpec }],
       assemblies: [{ ref: assemblyRef, assemble: () => pressurizedWaterReactorPlantSpec }],
       graphFragments: [{ ref: fragmentRef, fragment: () => ({ components: [], connections: [] }) }],
       graphFragmentInstancePresets: [{ ref: presetRef, instance: () => ({}) }],
+      icConfigs: [{ ref: icRef, config: () => ({ rules: [] }) }],
+      dynamicIcConfigs: [{ id: dynamicIcResolverId, matches: () => false, config: () => ({ rules: [] }) }],
+      graphIcConfigs: [{ ref: graphIcRef, configForGraph: () => ({ rules: [] }) }],
+      surfaces: [{ id: surfaceId, surface: () => processPlantUnitOverviewSurface }],
     }
 
     expect(() => collectProcessPlantCatalog([
@@ -603,6 +663,26 @@ describe('process plant graph foundation', () => {
       first,
       { id: 'duplicate-preset', graphFragmentInstancePresets: [{ ref: presetRef, instance: () => ({}) }] },
     ])).toThrow(`process plant catalog duplicate graph fragment instance presetRef "${presetRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-ic', icConfigs: [{ ref: icRef, config: () => ({ rules: [] }) }] },
+    ])).toThrow(`process plant catalog duplicate icRef "${icRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-graph-ic', graphIcConfigs: [{ ref: graphIcRef, configForGraph: () => ({ rules: [] }) }] },
+    ])).toThrow(`process plant catalog duplicate icRef "${graphIcRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-cross-ic', graphIcConfigs: [{ ref: icRef, configForGraph: () => ({ rules: [] }) }] },
+    ])).toThrow(`process plant catalog duplicate icRef "${icRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-dynamic-ic', dynamicIcConfigs: [{ id: dynamicIcResolverId, matches: () => false, config: () => ({ rules: [] }) }] },
+    ])).toThrow(`process plant catalog duplicate dynamic icRef resolver id "${dynamicIcResolverId}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-surface', surfaces: [{ id: surfaceId, surface: () => processPlantUnitOverviewSurface }] },
+    ])).toThrow(`process plant catalog duplicate surfaceId "${surfaceId}"`)
   })
 
   test('rejects duplicate primary loop pump ownership before runtime', () => {
