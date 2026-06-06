@@ -5,7 +5,7 @@ import { listProcessPlantAssemblyRefs } from '../assembly/catalog.ts'
 import { listProcessPlantGraphFragmentInstancePresetRefs } from '../assembly/graph-fragment-instance-preset-catalog.ts'
 import { listProcessPlantGraphFragmentRefs } from '../assembly/graph-fragment-catalog.ts'
 import { listProcessPlantGraphRefs } from '../specs/catalog.ts'
-import { listProcessPlantIcRefs } from '../specs/ic-catalog.ts'
+import { listProcessPlantDynamicIcRefPatterns, listProcessPlantIcRefs } from '../specs/ic-catalog.ts'
 import { listProcessPlantSurfaceIds } from '../surfaces/catalog.ts'
 import { success } from './common.ts'
 
@@ -27,6 +27,7 @@ export const answerProcessPlantCatalogQuery = (config: {
     graphFragmentRefs: listProcessPlantGraphFragmentRefs(),
     graphFragmentInstancePresetRefs: listProcessPlantGraphFragmentInstancePresetRefs(),
     icRefs: listProcessPlantIcRefs(),
+    dynamicIcRefPatterns: listProcessPlantDynamicIcRefPatterns(),
     surfaceIds: listProcessPlantSurfaceIds(),
   }, config.at)
 }

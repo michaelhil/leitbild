@@ -115,7 +115,7 @@ Per-system `parameters` and `initialState` configure an instance without changin
 
 This keeps plant topology config-owned rather than hardcoded in TypeScript while avoiding huge repeated graph blobs in common scenarios. A future AI agent can instantiate a known graph by ref, compose a graph from modular fragments, or author a complete plant graph as scenario/config data; Leitbild validates and compiles the result before runtime. Do not patch topology through `parameters` or `initialState`; use a different graph source when topology must change.
 
-Reusable process-plant assets are registered through generic catalog contributions. A contribution can provide graph specs, graph assemblies, reusable graph fragments, fragment instance presets, I&C refs, graph-aware I&C refs, and process surfaces. PWR is one contributor to this catalog, not a special case in the generic query or runtime layer. The catalog is inspectable through `process-plant.catalog.list`.
+Reusable process-plant assets are registered through generic catalog contributions. A contribution can provide graph specs, graph assemblies, reusable graph fragments, fragment instance presets, I&C refs, graph-aware I&C refs, dynamic I&C ref patterns, and process surfaces. PWR is one contributor to this catalog, not a special case in the generic query or runtime layer. The catalog is inspectable through `process-plant.catalog.list` and through the read-only process-plant catalog view in the operational UI.
 
 The reusable machinery remains code-owned:
 

@@ -1925,6 +1925,106 @@ body.rail-resizing {
   font-size: 13px;
 }
 
+.process-catalog-modal {
+  width: min(920px, calc(100vw - 56px));
+}
+
+.process-catalog-body {
+  background: var(--panel);
+}
+
+.process-catalog-sections {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.process-catalog-section {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.process-catalog-section > header {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-catalog-section > header strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.process-catalog-section > header span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.process-catalog-rows {
+  display: grid;
+  gap: 5px;
+}
+
+.process-catalog-row {
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-strong) 58%, transparent);
+}
+
+.process-catalog-row > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.process-catalog-row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-catalog-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-catalog-row button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.process-catalog-row button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--border) 45%, transparent);
+}
+
 .process-component-source-backdrop {
   position: fixed;
   inset: 0;

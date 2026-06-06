@@ -51,6 +51,7 @@
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
+    readonly openProcessPlantCatalog?: (object: OperationalObject) => void
     readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
@@ -92,6 +93,7 @@
     openProcedureSystem,
     openProcedureSystemAt,
     openProcessPlantArtifact,
+    openProcessPlantCatalog,
     procedureSummariesForObject = () => emptyProcedureRunSummaries,
     beginPlacement,
     cancelPlacement,
@@ -207,6 +209,7 @@
       {openProcedureSystem}
       {openProcedureSystemAt}
       {openProcessPlantArtifact}
+      {openProcessPlantCatalog}
       {procedureSummariesForObject}
       proceduresVisible={fieldVisible(entry.row.category.id, proceduresFieldKey)}
     />

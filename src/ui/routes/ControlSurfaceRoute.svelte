@@ -158,6 +158,7 @@
   let GridOverviewPanel = $state<Component | null>(null)
   let ProcedureSystemModal = $state<Component | null>(null)
   let ProcessPlantArtifactModal = $state<Component | null>(null)
+  let ProcessPlantCatalogModal = $state<Component | null>(null)
   let processSurfaceWindows = $state<ReadonlyArray<ProcessSurfaceWindowEntry>>([])
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
   let floatingWindowSequence = 0
@@ -167,6 +168,7 @@
     readonly object: OperationalObject
     readonly artifact: ProcessPlantArtifactKind
   } | null>(null)
+  let processPlantCatalogModal = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
@@ -177,6 +179,7 @@
   let gridOverviewPanelLoadPromise: Promise<Component> | null = null
   let procedureSystemModalLoadPromise: Promise<Component> | null = null
   let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
+  let processPlantCatalogModalLoadPromise: Promise<Component> | null = null
   let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -631,6 +634,20 @@
     }
   }
 
+  const loadProcessPlantCatalogModal = async (): Promise<void> => {
+    if (ProcessPlantCatalogModal) return
+    processPlantCatalogModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../process-surface/ProcessPlantCatalogModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcessPlantCatalogModal = await processPlantCatalogModalLoadPromise
+    } catch (err) {
+      processPlantCatalogModalLoadPromise = null
+      throw err
+    }
+  }
+
   const startStep = (id: StartupStepId): void => {
     markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
@@ -772,6 +789,16 @@
 
   const closeProcessPlantArtifact = (): void => {
     processPlantArtifactModal = null
+  }
+
+  const openProcessPlantCatalog = (object: OperationalObject): void => {
+    if (object.packId !== 'process-plant') return
+    processPlantCatalogModal = object
+    void loadProcessPlantCatalogModal()
+  }
+
+  const closeProcessPlantCatalog = (): void => {
+    processPlantCatalogModal = null
   }
 
   const processPlantSystemIdFor = (object: OperationalObject): string | null => {
@@ -1430,6 +1457,7 @@
         {openProcedureSystem}
         {openProcedureSystemAt}
         {openProcessPlantArtifact}
+        {openProcessPlantCatalog}
         {procedureSummariesForObject}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
@@ -1551,6 +1579,13 @@
       close={closeProcessPlantArtifact}
     />
   {/if}
+{/if}
+
+{#if processPlantCatalogModal && ProcessPlantCatalogModal && controlInstanceId}
+  <ProcessPlantCatalogModal
+    {controlInstanceId}
+    close={closeProcessPlantCatalog}
+  />
 {/if}
 
 {#if startupModalVisible}

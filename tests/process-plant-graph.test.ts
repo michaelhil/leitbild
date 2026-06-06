@@ -601,6 +601,11 @@ describe('process plant graph foundation', () => {
       readonly graphFragmentRefs: ReadonlyArray<string>
       readonly graphFragmentInstancePresetRefs: ReadonlyArray<string>
       readonly icRefs: ReadonlyArray<string>
+      readonly dynamicIcRefPatterns: ReadonlyArray<{
+        readonly id: string
+        readonly pattern: string
+        readonly description?: string
+      }>
       readonly surfaceIds: ReadonlyArray<string>
     }
     expect(catalog.graphRefs).toEqual(expect.arrayContaining([
@@ -620,6 +625,12 @@ describe('process plant graph foundation', () => {
     ]))
     expect(catalog.icRefs).toEqual(expect.arrayContaining([
       processPlantPwrReferenceGraphIcRef,
+    ]))
+    expect(catalog.dynamicIcRefPatterns).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'process-plant.pwr-reference.loop-count-ic',
+        pattern: 'process-plant.pwr.reference.<loopCount>-loop.ic.v2',
+      }),
     ]))
     expect(catalog.surfaceIds).toEqual(expect.arrayContaining([
       'unit-overview',
@@ -642,7 +653,7 @@ describe('process plant graph foundation', () => {
       graphFragments: [{ ref: fragmentRef, fragment: () => ({ components: [], connections: [] }) }],
       graphFragmentInstancePresets: [{ ref: presetRef, instance: () => ({}) }],
       icConfigs: [{ ref: icRef, config: () => ({ rules: [] }) }],
-      dynamicIcConfigs: [{ id: dynamicIcResolverId, matches: () => false, config: () => ({ rules: [] }) }],
+      dynamicIcConfigs: [{ id: dynamicIcResolverId, refPattern: 'process-plant.duplicate.<count>.ic.v1', matches: () => false, config: () => ({ rules: [] }) }],
       graphIcConfigs: [{ ref: graphIcRef, configForGraph: () => ({ rules: [] }) }],
       surfaces: [{ id: surfaceId, surface: () => processPlantUnitOverviewSurface }],
     }
@@ -677,8 +688,11 @@ describe('process plant graph foundation', () => {
     ])).toThrow(`process plant catalog duplicate icRef "${icRef}"`)
     expect(() => collectProcessPlantCatalog([
       first,
-      { id: 'duplicate-dynamic-ic', dynamicIcConfigs: [{ id: dynamicIcResolverId, matches: () => false, config: () => ({ rules: [] }) }] },
+      { id: 'duplicate-dynamic-ic', dynamicIcConfigs: [{ id: dynamicIcResolverId, refPattern: 'process-plant.duplicate.<count>.ic.v2', matches: () => false, config: () => ({ rules: [] }) }] },
     ])).toThrow(`process plant catalog duplicate dynamic icRef resolver id "${dynamicIcResolverId}"`)
+    expect(() => collectProcessPlantCatalog([
+      { id: 'empty-dynamic-ic-pattern', dynamicIcConfigs: [{ id: 'empty-dynamic-ic', refPattern: '', matches: () => false, config: () => ({ rules: [] }) }] },
+    ])).toThrow(`process plant catalog dynamic icRef resolver "empty-dynamic-ic" has empty refPattern`)
     expect(() => collectProcessPlantCatalog([
       first,
       { id: 'duplicate-surface', surfaces: [{ id: surfaceId, surface: () => processPlantUnitOverviewSurface }] },

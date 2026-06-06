@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClipboardList, FileText, GitBranch, MonitorCog, X } from 'lucide-svelte'
+  import { ClipboardList, FileText, GitBranch, Library, MonitorCog, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -25,6 +25,7 @@
     readonly openProcedureSystem?: (object: OperationalObject) => void
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
+    readonly openProcessPlantCatalog?: (object: OperationalObject) => void
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly proceduresVisible: boolean
   }
@@ -44,6 +45,7 @@
     openProcedureSystem,
     openProcedureSystemAt,
     openProcessPlantArtifact,
+    openProcessPlantCatalog,
     procedureSummaries = emptyProcedureRunSummaries,
     proceduresVisible,
   }: Props = $props()
@@ -111,6 +113,7 @@
       && openProcessPlantArtifact !== undefined
       && processSystemIdAvailable,
   )
+  const processCatalogAvailable = $derived(object.packId === 'process-plant' && openProcessPlantCatalog !== undefined)
   const openProcedureSummary = (summary: ProcedureRunSummary): void => {
     if (openProcedureSystemAt) {
       openProcedureSystemAt(object, summary)
@@ -190,6 +193,16 @@
           />
         {/if}
         {#if processArtifactAvailable}
+          {#if processCatalogAvailable}
+            <IconButton
+              label="Open process plant catalog"
+              title="Process plant catalog"
+              icon={Library}
+              size={13}
+              variant="bare"
+              onClick={() => openProcessPlantCatalog(object)}
+            />
+          {/if}
           <IconButton
             label="Open plant specification source for {object.label}"
             title="Plant specification source"
@@ -205,6 +218,16 @@
             size={13}
             variant="bare"
             onClick={() => openProcessPlantArtifact?.(object, 'compiled-graph-mermaid')}
+          />
+        {/if}
+        {#if !processArtifactAvailable && processCatalogAvailable}
+          <IconButton
+            label="Open process plant catalog"
+            title="Process plant catalog"
+            icon={Library}
+            size={13}
+            variant="bare"
+            onClick={() => openProcessPlantCatalog(object)}
           />
         {/if}
       </span>

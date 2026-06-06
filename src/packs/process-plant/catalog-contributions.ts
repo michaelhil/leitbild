@@ -32,6 +32,8 @@ export interface ProcessPlantIcCatalogEntry {
 
 export interface ProcessPlantDynamicIcCatalogEntry {
   readonly id: string
+  readonly refPattern: string
+  readonly description?: string
   readonly matches: (icRef: string) => boolean
   readonly config: (icRef: string) => ProcessPlantIcConfig
   readonly listedRefs?: () => ReadonlyArray<string>
@@ -143,6 +145,16 @@ const collectIcEntries = (
   return { icConfigsByRef, graphIcConfigsByRef }
 }
 
+const collectDynamicIcEntries = (
+  contributions: ReadonlyArray<ProcessPlantCatalogContribution>,
+): ReadonlyMap<string, ProcessPlantDynamicIcCatalogEntry> => {
+  const entriesById = collectEntriesById('dynamic icRef resolver id', contributions, contribution => contribution.dynamicIcConfigs)
+  for (const entry of entriesById.values()) {
+    if (entry.refPattern.length === 0) throw new Error(`process plant catalog dynamic icRef resolver "${entry.id}" has empty refPattern`)
+  }
+  return entriesById
+}
+
 export const collectProcessPlantCatalog = (
   contributions: ReadonlyArray<ProcessPlantCatalogContribution>,
 ): ProcessPlantCatalog => {
@@ -153,7 +165,7 @@ export const collectProcessPlantCatalog = (
     graphFragmentsByRef: collectEntries('graph fragmentRef', contributions, contribution => contribution.graphFragments),
     graphFragmentInstancePresetsByRef: collectEntries('graph fragment instance presetRef', contributions, contribution => contribution.graphFragmentInstancePresets),
     ...icEntries,
-    dynamicIcConfigsById: collectEntriesById('dynamic icRef resolver id', contributions, contribution => contribution.dynamicIcConfigs),
+    dynamicIcConfigsById: collectDynamicIcEntries(contributions),
     surfacesById: collectEntriesById('surfaceId', contributions, contribution => contribution.surfaces),
   }
 }

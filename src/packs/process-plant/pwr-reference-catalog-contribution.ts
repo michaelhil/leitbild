@@ -48,6 +48,8 @@ export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogCon
   }],
   dynamicIcConfigs: [{
     id: 'process-plant.pwr-reference.loop-count-ic',
+    refPattern: 'process-plant.pwr.reference.<loopCount>-loop.ic.v2',
+    description: 'Reference PWR I&C generated for loop counts 2-26.',
     matches: (icRef: string) => pwrReferenceIcRefPattern.test(icRef),
     config: (icRef: string) => {
       const match = pwrReferenceIcRefPattern.exec(icRef)

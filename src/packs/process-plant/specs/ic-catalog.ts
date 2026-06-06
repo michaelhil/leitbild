@@ -29,3 +29,16 @@ export const listProcessPlantIcRefs = (): ReadonlyArray<string> => [
   ...processPlantCatalog.graphIcConfigsByRef.keys(),
   ...[...processPlantCatalog.dynamicIcConfigsById.values()].flatMap(entry => entry.listedRefs?.() ?? []),
 ]
+
+export interface ProcessPlantDynamicIcRefPattern {
+  readonly id: string
+  readonly pattern: string
+  readonly description?: string
+}
+
+export const listProcessPlantDynamicIcRefPatterns = (): ReadonlyArray<ProcessPlantDynamicIcRefPattern> =>
+  [...processPlantCatalog.dynamicIcConfigsById.values()].map(entry => ({
+    id: entry.id,
+    pattern: entry.refPattern,
+    ...(entry.description === undefined ? {} : { description: entry.description }),
+  }))

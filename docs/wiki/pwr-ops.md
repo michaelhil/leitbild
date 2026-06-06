@@ -12,6 +12,8 @@ PWR operations in Leitbild live in the `process-plant` pack. PWR is a catalog co
 
 The current fixed reference graph is `process-plant.pressurized-water-reactor.v1`. Modular PWR scenarios should prefer `assemblyRef: "process-plant.pwr.reference.assembly.v2"` with an explicit loop-count/loop-id config, then use graph-aware I&C through `icRef: "process-plant.pwr.reference.graph.ic.v2"` so alarms, trips, controllers, and overview displays derive their loop set from the compiled graph.
 
+The process-plant catalog view exposes the fixed PWR refs, the modular assembly ref, the reusable fragment refs, and the dynamic I&C pattern `process-plant.pwr.reference.<loopCount>-loop.ic.v2`.
+
 ## Runtime Model
 
 The PWR runtime uses the normal process-plant architecture:
