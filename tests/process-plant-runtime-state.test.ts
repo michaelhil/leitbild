@@ -10,6 +10,7 @@ import {
   pressurizedWaterReactorPlantSpec,
   processPlantControlWriteCommandKind,
   processPlantIcLifecycleCommandKind,
+  processPlantPwrReferenceAssemblyRef,
   processPlantPressurizedWaterReactorIcRef,
   processPlantPack,
   processPlantUnitPackDataSchema,
@@ -1096,6 +1097,39 @@ describe('process plant pack runtime', () => {
     expect(body.csfs.find(csf => csf.id === 'subcriticality')?.status).toBe('challenged')
     expect(body.csfs.find(csf => csf.id === 'core-cooling')?.signalsRead.length).toBeGreaterThan(0)
     expect(body.csfs.find(csf => csf.id === 'not-modeled-yet')?.status).toBe('unknown')
+
+    await connection.close()
+  })
+
+  test('evaluates heat-sink CSF from assembled steam generator topology', async () => {
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({}, {
+        graph: undefined,
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig: { loopCount: 9 },
+      }),
+      runtimeStateStore: createMemoryStateStore(),
+    })
+
+    const result = await connection.query(query('process-plant.procedure-csfs.evaluate', {
+      systemId: 'plant',
+      csfs: ['heat-sink'],
+    }))
+    expect(result.ok).toBe(true)
+    if (!result.ok) throw new Error(result.reason)
+    const body = result.result as {
+      readonly csfs: ReadonlyArray<{
+        readonly id: string
+        readonly signalsRead: ReadonlyArray<{
+          readonly variable: { readonly path: string }
+        }>
+      }>
+    }
+    const heatSink = body.csfs.find(csf => csf.id === 'heat-sink')
+    if (!heatSink) throw new Error('expected heat-sink CSF result')
+
+    expect(heatSink.signalsRead.map(signal => signal.variable.path)).toContain('sgI.levelPercent')
 
     await connection.close()
   })

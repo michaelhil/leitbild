@@ -1,6 +1,22 @@
 import { z } from 'zod'
+import { idSchema } from '../../../core/model/index.ts'
 import { defineComponent, headerVariables, valveVariables } from './component-definition-helpers.ts'
-import { type ComponentDefinition, type ComponentKind, variablePathSchema } from './model.ts'
+import { type ComponentDefinition, type ComponentKind, type PortDefinition, variablePathSchema } from './model.ts'
+
+const headerPortIdsSchema = z.array(idSchema).min(1).max(128)
+
+const headerPortIdsFrom = (parameters: unknown): ReadonlyArray<string> => {
+  const parsed = z.object({
+    portIds: headerPortIdsSchema.optional(),
+  }).passthrough().parse(parameters)
+  return parsed.portIds ?? []
+}
+
+const headerPortsFor = (portIds: ReadonlyArray<string>, kind: PortDefinition['kind']): Readonly<Record<string, PortDefinition>> =>
+  Object.fromEntries(portIds.flatMap(portId => [
+    [`inlet${portId}`, { kind, direction: 'in' as const }],
+    [`outlet${portId}`, { kind, direction: 'out' as const }],
+  ]))
 
 const valvePositionControllerSchema = z.object({
   kind: z.literal('proportionalPosition'),
@@ -53,7 +69,9 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       mixingTimeConstantS: z.number().finite().positive().optional(),
       pressureTimeConstantS: z.number().finite().positive().optional(),
       distributionMode: z.enum(['demandWeighted', 'pressureWeighted']).optional(),
+      portIds: headerPortIdsSchema.optional(),
     }).strict(),
+    resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'hydraulicThermal'),
     variables: headerVariables('Process header'),
   }),
   defineComponent({
@@ -105,7 +123,9 @@ export const junctionComponentDefinitions: ReadonlyArray<ComponentDefinition> = 
       mixingTimeConstantS: z.number().finite().positive().optional(),
       pressureTimeConstantS: z.number().finite().positive().optional(),
       distributionMode: z.enum(['demandWeighted', 'pressureWeighted']).optional(),
+      portIds: headerPortIdsSchema.optional(),
     }).strict(),
+    resolveAdditionalPorts: ({ parameters }) => headerPortsFor(headerPortIdsFrom(parameters), 'steam'),
     variables: headerVariables('Steam header'),
   }),
   defineComponent({

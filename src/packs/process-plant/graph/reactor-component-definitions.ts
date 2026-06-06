@@ -1,6 +1,14 @@
 import { z } from 'zod'
+import { idSchema } from '../../../core/model/index.ts'
 import type { ComponentDefinition, ComponentKind } from './model.ts'
 import { defineComponent, normalized, variable } from './component-definition-helpers.ts'
+
+const primaryLoopIdsFrom = (parameters: unknown): ReadonlyArray<string> => {
+  const parsed = z.object({
+    primaryLoopIds: z.array(idSchema).min(1).max(64).optional(),
+  }).passthrough().parse(parameters)
+  return parsed.primaryLoopIds ?? []
+}
 
 export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
   defineComponent({
@@ -23,8 +31,14 @@ export const reactorComponentDefinitions: ReadonlyArray<ComponentDefinition> = [
       rodDemand: { kind: 'controlSignal', direction: 'in' },
       tripSignal: { kind: 'logicSignal', direction: 'in' },
     },
+    resolveAdditionalPorts: ({ parameters }) =>
+      Object.fromEntries(primaryLoopIdsFrom(parameters).flatMap(loopId => [
+        [`hotLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'out' as const }],
+        [`coldLeg${loopId}`, { kind: 'hydraulicThermal' as const, direction: 'in' as const }],
+      ])),
     parametersSchema: z.object({
       ratedPowerMw: z.number().finite().positive(),
+      primaryLoopIds: z.array(idSchema).min(1).max(64).optional(),
       initialPowerFraction: normalized,
       initialCoolantInletTemperatureC: z.number().finite().optional(),
       coolantThermalTimeConstantS: z.number().finite().positive().optional(),

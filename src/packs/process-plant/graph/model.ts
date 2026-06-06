@@ -239,6 +239,16 @@ export const portDefinitionSchema = z.object({
 })
 export type PortDefinition = z.infer<typeof portDefinitionSchema>
 
+export const processGraphMetadataSchema = z.object({
+  role: idSchema.optional(),
+  groupId: idSchema.optional(),
+  loopId: idSchema.optional(),
+  trainId: idSchema.optional(),
+  ordinal: z.number().int().nonnegative().optional(),
+  equipmentClass: idSchema.optional(),
+}).strict()
+export type ProcessGraphMetadata = z.infer<typeof processGraphMetadataSchema>
+
 const validateQuantityUnit = (
   descriptor: { readonly quantity: ProcessQuantity; readonly unit: ProcessUnit },
   ctx: z.RefinementCtx,
@@ -421,6 +431,7 @@ export const componentInstanceSpecSchema = z.object({
   kind: componentKindSchema,
   label: z.string().min(1),
   parameters: z.unknown(),
+  metadata: processGraphMetadataSchema.optional(),
   variables: z.array(componentVariableBindingOverrideSchema).default([]),
 }).strict()
 export type ComponentInstanceSpec = z.infer<typeof componentInstanceSpecSchema>
@@ -435,6 +446,7 @@ export const connectionSpecSchema = z.object({
   designPhase: designPhaseSchema.optional(),
   solverModel: fluidSolverModelSchema.optional(),
   physical: connectionPhysicalSpecSchema.optional(),
+  metadata: processGraphMetadataSchema.optional(),
   variables: z.array(processLinkVariableDescriptorSchema).default([]),
 }).strict().superRefine((connection, ctx) => {
   const fluidMetadata = connection.service !== undefined
@@ -474,6 +486,10 @@ export interface ComponentDefinition {
   readonly kind: ComponentKind
   readonly label: string
   readonly ports: Readonly<Record<string, PortDefinition>>
+  readonly resolveAdditionalPorts?: (context: {
+    readonly component: ComponentInstanceSpec
+    readonly parameters: unknown
+  }) => Readonly<Record<string, PortDefinition>>
   readonly parametersSchema: z.ZodType<unknown>
   readonly variables: ReadonlyArray<ComponentVariableDescriptor>
 }
@@ -491,6 +507,7 @@ export interface CompiledComponent {
   readonly kind: ComponentKind
   readonly label: string
   readonly parameters: unknown
+  readonly metadata?: ProcessGraphMetadata
   readonly ports: Readonly<Record<string, CompiledPort>>
   readonly variables: ReadonlyArray<VariableDescriptor>
 }
@@ -510,6 +527,7 @@ export interface CompiledProcessLink {
   readonly designPhase?: DesignPhase
   readonly solverModel?: FluidSolverModel
   readonly physical?: ConnectionPhysicalSpec
+  readonly metadata?: ProcessGraphMetadata
   readonly variables: ReadonlyArray<VariableDescriptor>
 }
 

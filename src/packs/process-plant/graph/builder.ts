@@ -10,6 +10,7 @@ import type {
   DesignPhase,
   FluidKind,
   FluidSolverModel,
+  ProcessGraphMetadata,
   ProcessLinkVariableDescriptor,
   PlantGraphId,
   PlantGraphSpec,
@@ -24,11 +25,13 @@ export const component = (
   label: string,
   parameters: unknown,
   variables: ReadonlyArray<ComponentVariableBindingOverride> = [],
+  metadata?: ProcessGraphMetadata,
 ): ComponentInstanceSpec => ({
   id: id as ComponentId,
   kind: kind as ComponentKind,
   label,
   parameters,
+  ...(metadata === undefined ? {} : { metadata }),
   variables: [...variables],
 })
 
@@ -43,6 +46,7 @@ export const connect = (
     readonly designPhase?: DesignPhase
     readonly solverModel?: FluidSolverModel
     readonly physical?: ConnectionPhysicalSpec
+    readonly metadata?: ProcessGraphMetadata
     readonly variables?: ReadonlyArray<ProcessLinkVariableDescriptor>
   } = {},
 ) => ({
@@ -55,6 +59,7 @@ export const connect = (
   ...(options.designPhase === undefined ? {} : { designPhase: options.designPhase }),
   ...(options.solverModel === undefined ? {} : { solverModel: options.solverModel }),
   ...(options.physical === undefined ? {} : { physical: options.physical }),
+  ...(options.metadata === undefined ? {} : { metadata: options.metadata }),
   ...(options.variables === undefined ? {} : { variables: options.variables }),
 })
 

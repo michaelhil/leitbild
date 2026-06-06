@@ -64,48 +64,47 @@ const anyCondition = (conditions: ReadonlyArray<ProcessPlantIcCondition>): Proce
 
 const procedureCsfDefinitions: Readonly<Record<string, {
   readonly label: string
-  readonly condition: ProcessPlantIcCondition
+  readonly condition: (system: ProcessPlantSystemRuntime) => ProcessPlantIcCondition
 }>> = {
   subcriticality: {
     label: 'Subcriticality',
-    condition: allConditions([
+    condition: () => allConditions([
       pathCondition('core.effectiveReactivityPcm', '<', 0),
       pathCondition('core.rodInsertionFraction', '>=', 0.95),
     ]),
   },
   'core-cooling': {
     label: 'Core cooling',
-    condition: allConditions([
+    condition: () => allConditions([
       pathCondition('core.coreCoolingAvailabilityFraction', '>=', 0.25),
       pathCondition('core.fuelHeatupRateCPerS', '<=', 0.5),
     ]),
   },
   'heat-sink': {
     label: 'Heat sink',
-    condition: anyCondition([
-      pathCondition('sgA.levelPercent', '>', 25),
-      pathCondition('sgB.levelPercent', '>', 25),
-      pathCondition('sgC.levelPercent', '>', 25),
-      pathCondition('sgD.levelPercent', '>', 25),
-    ]),
+    condition: (system) => {
+      const steamGenerators = system.system.graph.components.filter(component => component.kind === 'steamGenerator')
+      if (steamGenerators.length === 0) throw new Error('process plant heat-sink CSF requires at least one steam generator component')
+      return anyCondition(steamGenerators.map(component => pathCondition(`${component.id}.levelPercent`, '>', 25)))
+    },
   },
   'rcs-integrity': {
     label: 'RCS integrity',
-    condition: allConditions([
+    condition: () => allConditions([
       pathCondition('vessel.primaryLeakFlowKgPerS', '<', 20),
       pathCondition('pressurizer.reliefValvePositionFraction', '<', 0.1),
     ]),
   },
   containment: {
     label: 'Containment',
-    condition: allConditions([
+    condition: () => allConditions([
       pathCondition('containment.pressureMPa', '<', 0.24),
       pathCondition('containment.radiationSourceTermMSvPerH', '<', 0.5),
     ]),
   },
   'rcs-inventory': {
     label: 'RCS inventory',
-    condition: allConditions([
+    condition: () => allConditions([
       pathCondition('vessel.primaryCoolantInventoryKg', '>', 240_000),
       pathCondition('pressurizer.levelPercent', '>', 15),
     ]),
@@ -343,7 +342,7 @@ const evaluateProcedureCsfs = (
       const evaluation = evaluateProcessPlantIcCondition({
         system: system.system,
         runtime: system.runtime,
-        condition: definition.condition,
+        condition: definition.condition(system),
       })
       return {
         id: csf,

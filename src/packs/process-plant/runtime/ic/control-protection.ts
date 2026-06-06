@@ -39,6 +39,7 @@ import {
 } from './control-protection-rule-state.ts'
 export * from './control-protection-model.ts'
 export * from './control-protection-conditions.ts'
+export { assertProcessPlantIcRulesValid } from './control-protection-validation.ts'
 export type {
   ProcessPlantIcCatalog,
   ProcessPlantIcRuleCatalogEntry,

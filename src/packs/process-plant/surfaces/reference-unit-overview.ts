@@ -3,10 +3,10 @@ import { processSurfaceDefinitionSchema } from './model.ts'
 
 const fourLoopLetters = ['A', 'B', 'C', 'D'] as const
 const sixLoopLetters = ['A', 'B', 'C', 'D', 'E', 'F'] as const
-type LoopLetter = typeof sixLoopLetters[number]
+type LoopLetter = string
 type LoopLetters = ReadonlyArray<LoopLetter>
 
-const lowerLoop = (loop: LoopLetter): Lowercase<LoopLetter> => loop.toLowerCase() as Lowercase<LoopLetter>
+const lowerLoop = (loop: LoopLetter): string => loop.toLowerCase()
 
 const rcpXFor = (sgX: number): number => sgX - 6
 
@@ -61,7 +61,13 @@ const rcpWidget = (loop: LoopLetter, x: number, rank: number) => {
 }
 
 const primaryLoopLaneY = (loops: LoopLetters, base: number, loop: LoopLetter): number =>
-  base + loopIndex(loops, loop) * (loops.length > 4 ? 30 : 42)
+  base + loopIndex(loops, loop) * primaryLoopLaneSpacingFor(loops)
+
+const primaryLoopLaneSpacingFor = (loops: LoopLetters): number => {
+  if (loops.length > 6) return 24
+  if (loops.length > 4) return 30
+  return 42
+}
 
 const primaryLoopPaths = (loops: LoopLetters, loop: LoopLetter, sgX: number) => {
   const lower = lowerLoop(loop)
@@ -155,9 +161,10 @@ const secondaryPaths = (loop: LoopLetter, sgX: number) => {
   ] as const
 }
 
-const sgXs: Record<LoopLetter, number> = { A: 464, B: 688, C: 912, D: 1136, E: 1360, F: 1584 }
+const sgXFor = (index: number): number => 464 + index * 224
 
-const designWidthFor = (loops: LoopLetters): number => loops.length > 4 ? 2048 : 1600
+const designWidthFor = (loops: LoopLetters): number =>
+  Math.max(1600, sgXFor(Math.max(0, loops.length - 1)) + 464)
 
 const secondaryZoneXFor = (designWidth: number): number => designWidth - 292
 
@@ -166,19 +173,19 @@ const headerX = 544
 const headerWidthFor = (designWidth: number): number => secondaryZoneXFor(designWidth) - headerX - 4
 
 const loopHeaderPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> =>
-  Object.fromEntries(loops.map(loop => [
+  Object.fromEntries(loops.map((loop, index) => [
     `in${loop}`,
-    { x: sgXs[loop] + 113 - headerX, y: 58 },
+    { x: sgXFor(index) + 113 - headerX, y: 58 },
   ]))
 
 const loopFeedwaterPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> =>
-  Object.fromEntries(loops.map(loop => [
+  Object.fromEntries(loops.map((loop, index) => [
     `out${loop}`,
-    { x: sgXs[loop] + 113 - headerX, y: 0 },
+    { x: sgXFor(index) + 113 - headerX, y: 0 },
   ]))
 
 const reactorVesselPorts = (loops: LoopLetters): Record<string, { readonly x: number; readonly y: number }> => {
-  const spacing = loops.length > 4 ? 30 : 42
+  const spacing = primaryLoopLaneSpacingFor(loops)
   const ports: Record<string, { readonly x: number; readonly y: number }> = {}
   for (const [index, loop] of loops.entries()) {
     ports[`hotLeg${loop}`] = { x: 196, y: 74 + index * spacing }
@@ -295,8 +302,8 @@ const createProcessPlantUnitOverviewSurface = (loops: LoopLetters) => {
       ports: { surgeLine: { x: 76, y: 126 } },
       style: { tone: 'primary' },
     },
-    ...loops.map((loop, index) => sgWidget(loop, sgXs[loop], index)),
-    ...loops.map((loop, index) => rcpWidget(loop, rcpXFor(sgXs[loop]), index + 10)),
+    ...loops.map((loop, index) => sgWidget(loop, sgXFor(index), index)),
+    ...loops.map((loop, index) => rcpWidget(loop, rcpXFor(sgXFor(index)), index + 10)),
     {
       id: 'main-steam-header',
       type: 'numericReadout',
@@ -397,8 +404,8 @@ const createProcessPlantUnitOverviewSurface = (loops: LoopLetters) => {
     },
   ],
   paths: [
-    ...loops.flatMap(loop => primaryLoopPaths(loops, loop, sgXs[loop])),
-    ...loops.flatMap(loop => secondaryPaths(loop, sgXs[loop])),
+    ...loops.flatMap((loop, index) => primaryLoopPaths(loops, loop, sgXFor(index))),
+    ...loops.flatMap((loop, index) => secondaryPaths(loop, sgXFor(index))),
     {
       id: 'main-steam-to-turbine',
       label: 'Main steam to turbine',
@@ -435,9 +442,23 @@ export const processPlantSixLoopUnitOverviewSurface = createProcessPlantUnitOver
 const steamGeneratorCountFor = (graph: CompiledPlantGraph): number =>
   graph.components.filter(component => component.kind === 'steamGenerator').length
 
+const steamGeneratorLoopIdsFor = (graph: CompiledPlantGraph): LoopLetters =>
+  graph.components
+    .filter(component => component.kind === 'steamGenerator')
+    .map(component => {
+      const id = String(component.id)
+      const inferredLoopId = id.startsWith('sg') ? id.slice(2) : id
+      return {
+        loopId: component.metadata?.loopId ?? inferredLoopId,
+        ordinal: component.metadata?.ordinal ?? Number.MAX_SAFE_INTEGER,
+      }
+    })
+    .sort((left, right) => left.ordinal === right.ordinal
+      ? left.loopId.localeCompare(right.loopId)
+      : left.ordinal - right.ordinal)
+    .map(entry => entry.loopId)
+
 export const processPlantUnitOverviewSurfaceForGraph = (graph: CompiledPlantGraph) =>
-  steamGeneratorCountFor(graph) > fourLoopLetters.length
-    ? processPlantSixLoopUnitOverviewSurface
-    : processPlantUnitOverviewSurface
+  createProcessPlantUnitOverviewSurface(steamGeneratorLoopIdsFor(graph).slice(0, Math.max(steamGeneratorCountFor(graph), 1)))
 
 export const processPlantReferenceSurfaces = [processPlantUnitOverviewSurface] as const

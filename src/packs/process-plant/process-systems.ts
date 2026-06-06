@@ -11,6 +11,7 @@ import {
   type VariablePath,
 } from './graph/index.ts'
 import { processPlantComponentRegistry } from './graph/index.ts'
+import { resolveProcessPlantAssemblySpec } from './assembly/index.ts'
 import { resolveProcessPlantGraphSpec } from './specs/index.ts'
 import { assertProcessPlantVariableValueValid } from './runtime/variable-validation.ts'
 
@@ -89,6 +90,13 @@ const assertInitialStateTargetsDeclaredVariables = (
   }
 }
 
+const graphSourceFor = (definition: ScenarioProcessSystemDefinition): unknown => {
+  if (definition.assemblyRef !== undefined) {
+    return resolveProcessPlantAssemblySpec(definition.assemblyRef, definition.assemblyConfig ?? {})
+  }
+  return definition.graphRef === undefined ? definition.graph : resolveProcessPlantGraphSpec(definition.graphRef)
+}
+
 export const compileProcessPlantSystem = (
   definition: ScenarioProcessSystemDefinition,
 ): CompiledProcessPlantSystem => {
@@ -99,7 +107,7 @@ export const compileProcessPlantSystem = (
     throw new Error(`unsupported process plant component library: ${definition.componentLibrary}`)
   }
   const graph = applyComponentParameterOverlays(
-    cloneGraphSpec(definition.graphRef === undefined ? definition.graph : resolveProcessPlantGraphSpec(definition.graphRef)),
+    cloneGraphSpec(graphSourceFor(definition)),
     definition.parameters,
   )
   const compiledGraph = compilePlantGraph(graph, processPlantComponentRegistry)

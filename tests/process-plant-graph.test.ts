@@ -19,7 +19,12 @@ import {
   processPlantDemoTransients,
   processPlantSixLoopUnitOverviewSurface,
   processPlantUnitOverviewSurface,
+  processPlantUnitOverviewSurfaceForGraph,
   processLinkVariableDescriptorSchema,
+  processPlantPwrReferenceAssemblyRef,
+  processPlantPwrReferenceIcRefForLoopCount,
+  resolveProcessPlantIcConfig,
+  assertProcessPlantIcRulesValid,
   tagIdForLookup,
   variableDescriptorSchema,
   type PlantGraphSpec,
@@ -110,6 +115,113 @@ describe('process plant graph foundation', () => {
       'sg-e-steam-to-msiv-e.flowKgPerS',
       'feedwater-control-valve-f-to-sg-f.flowKgPerS',
     ]))
+  })
+
+  test('preserves strict graph metadata on components and connections', () => {
+    const graphWithMetadata = structuredClone(pressurizedWaterReactorPlantSpec) as PlantGraphSpec
+    graphWithMetadata.components = graphWithMetadata.components.map(componentSpec => componentSpec.id === 'sgA'
+      ? {
+          ...componentSpec,
+          metadata: {
+            role: 'heat-sink',
+            groupId: 'primary-loop',
+            loopId: 'A',
+            ordinal: 0,
+            equipmentClass: 'steam-generator',
+          },
+        }
+      : componentSpec)
+    graphWithMetadata.connections = graphWithMetadata.connections.map(connectionSpec => connectionSpec.id === 'sg-a-steam-to-msiv-a'
+      ? {
+          ...connectionSpec,
+          metadata: {
+            role: 'main-steam-path',
+            groupId: 'primary-loop',
+            loopId: 'A',
+            ordinal: 0,
+          },
+        }
+      : connectionSpec)
+
+    const compiled = compilePlantGraph(graphWithMetadata, processPlantComponentRegistry)
+
+    expect(compiled.components.find(componentItem => componentItem.id === 'sgA')?.metadata).toEqual({
+      role: 'heat-sink',
+      groupId: 'primary-loop',
+      loopId: 'A',
+      ordinal: 0,
+      equipmentClass: 'steam-generator',
+    })
+    expect(compiled.links.find(link => link.id === 'sg-a-steam-to-msiv-a')?.metadata).toEqual({
+      role: 'main-steam-path',
+      groupId: 'primary-loop',
+      loopId: 'A',
+      ordinal: 0,
+    })
+  })
+
+  test('rejects unknown graph metadata fields', () => {
+    const invalid = structuredClone(pressurizedWaterReactorPlantSpec) as unknown as {
+      components: Array<Record<string, unknown>>
+    }
+    invalid.components[0] = {
+      ...invalid.components[0],
+      metadata: {
+        role: 'reactor-core',
+        hiddenBehavior: 'not-allowed',
+      },
+    }
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('Unrecognized key')
+  })
+
+  test('requires component-declared dynamic ports before links can use higher loop ids', () => {
+    const invalid = structuredClone(pressurizedWaterReactorPlantSpec) as PlantGraphSpec
+    invalid.connections = invalid.connections.map(connectionSpec => connectionSpec.id === 'rcs-hot-leg-a'
+      ? { ...connectionSpec, from: 'core.hotLegG' as never }
+      : connectionSpec)
+
+    expect(() => compilePlantGraph(invalid, processPlantComponentRegistry)).toThrow('connection rcs-hot-leg-a references unknown port: core.hotLegG')
+
+    const valid = structuredClone(invalid) as PlantGraphSpec
+    valid.components = valid.components.map(componentSpec => componentSpec.id === 'core'
+      ? {
+          ...componentSpec,
+          parameters: {
+            ...(componentSpec.parameters as Record<string, unknown>),
+            primaryLoopIds: ['G'],
+          },
+        }
+      : componentSpec)
+    const compiled = compilePlantGraph(valid, processPlantComponentRegistry)
+
+    expect(compiled.components.find(componentItem => componentItem.id === 'core')?.ports.hotLegG).toMatchObject({
+      kind: 'hydraulicThermal',
+      direction: 'out',
+    })
+  })
+
+  test('resolves declared header port ids as typed ports', () => {
+    const valid = structuredClone(pressurizedWaterReactorPlantSpec) as PlantGraphSpec
+    valid.components = valid.components.map(componentSpec => componentSpec.id === 'mainSteamHeader'
+      ? {
+          ...componentSpec,
+          parameters: {
+            ...(componentSpec.parameters as Record<string, unknown>),
+            portIds: ['G'],
+          },
+        }
+      : componentSpec)
+    valid.connections = valid.connections.map(connectionSpec => connectionSpec.id === 'msiv-a-to-main-steam-header'
+      ? { ...connectionSpec, to: 'mainSteamHeader.inletG' as never }
+      : connectionSpec)
+
+    const compiled = compilePlantGraph(valid, processPlantComponentRegistry)
+
+    expect(compiled.components.find(componentItem => componentItem.id === 'mainSteamHeader')?.ports.inletG).toMatchObject({
+      kind: 'steam',
+      direction: 'in',
+    })
   })
 
   test('compiles the reference process surface against real graph variables and topology', () => {
@@ -483,7 +595,7 @@ describe('process plant graph foundation', () => {
         schemaVersion: 1,
         regions: [],
       },
-    })).toThrow('process system must define exactly one of graph or graphRef')
+    })).toThrow('process system must define exactly one of graph, graphRef, or assemblyRef')
   })
 
   test('rejects process systems without a graph source', () => {
@@ -503,7 +615,145 @@ describe('process plant graph foundation', () => {
         schemaVersion: 1,
         regions: [],
       },
-    })).toThrow('process system must define exactly one of graph or graphRef')
+    })).toThrow('process system must define exactly one of graph, graphRef, or assemblyRef')
+  })
+
+  test('rejects process system assemblyConfig without assemblyRef', () => {
+    expect(() => scenarioDefinitionSchema.parse({
+      id: 'assembly-config-without-ref',
+      schemaVersion: 1,
+      title: 'Assembly Config Without Ref',
+      packs: ['process-plant'],
+      world: { environment: {} },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        graphRef: processPlantPressurizedWaterReactorGraphRef,
+        assemblyConfig: { loopCount: 5 },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    })).toThrow('process system assemblyConfig requires assemblyRef')
+  })
+
+  test('assembles reference PWR variants through process system assembly refs', () => {
+    for (const loopCount of [2, 5, 9]) {
+      const scenario = scenarioDefinitionSchema.parse({
+        id: `assembled-pwr-${loopCount}`,
+        schemaVersion: 1,
+        title: `Assembled PWR ${loopCount}`,
+        packs: ['process-plant'],
+        world: {
+          startsAt: '2026-01-01T09:00:00.000Z',
+          environment: {},
+        },
+        initialObjects: [],
+        processSystems: [{
+          id: 'plant',
+          pack: 'process-plant',
+          componentLibrary: 'process-plant',
+          assemblyRef: processPlantPwrReferenceAssemblyRef,
+          assemblyConfig: { loopCount },
+        }],
+        surface: {
+          schemaVersion: 1,
+          regions: [],
+        },
+      }) as ScenarioDefinition
+
+      const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+      const loopIds = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.slice(0, loopCount).split('')
+      const primaryLoopPumps = system.graph.components.filter(componentItem =>
+        componentItem.kind === 'centrifugalPump'
+        && !!componentItem.parameters
+        && typeof componentItem.parameters === 'object'
+        && !Array.isArray(componentItem.parameters)
+        && typeof (componentItem.parameters as Record<string, unknown>).primaryLoopId === 'string',
+      )
+
+      expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator')).toHaveLength(loopCount)
+      expect(primaryLoopPumps).toHaveLength(loopCount)
+      expect(system.graph.components.filter(componentItem => componentItem.kind === 'steamGenerator').map(componentItem => String(componentItem.id))).toEqual(loopIds.map(loopId => `sg${loopId}`))
+      expect(primaryLoopPumps.map(componentItem => String(componentItem.id))).toEqual(loopIds.map(loopId => `rcp${loopId}`))
+      expect(system.graph.components.find(componentItem => componentItem.id === 'core')?.ports[`hotLeg${loopIds.at(-1)}`]).toMatchObject({
+        kind: 'hydraulicThermal',
+        direction: 'out',
+      })
+      expect(system.graph.components.find(componentItem => componentItem.id === 'mainSteamHeader')?.ports[`inlet${loopIds.at(-1)}`]).toMatchObject({
+        kind: 'steam',
+        direction: 'in',
+      })
+      const surface = compileProcessSurface({
+        definition: processPlantUnitOverviewSurfaceForGraph(system.graph),
+        graph: system.graph,
+      })
+      expect(surface.widgets.map(widget => widget.id)).toContain(`sg-${loopIds.at(-1)?.toLowerCase()}`)
+    }
+  })
+
+  test('generates loop-aware reference I&C for assembled PWR variants', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'assembled-pwr-ic-9',
+      schemaVersion: 1,
+      title: 'Assembled PWR I&C 9',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: processPlantPwrReferenceAssemblyRef,
+        assemblyConfig: { loopCount: 9 },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+    const system = compileProcessPlantSystem(scenario.processSystems[0]!)
+    const ic = resolveProcessPlantIcConfig(processPlantPwrReferenceIcRefForLoopCount(9))
+    const lowRcpFlowRule = ic.rules.find(ruleItem => ruleItem.id === 'reactor-low-rcp-flow-trip')
+    if (!lowRcpFlowRule) throw new Error('expected low RCP flow rule')
+
+    expect(lowRcpFlowRule.condition).toMatchObject({ type: 'vote', required: 7 })
+    expect(JSON.stringify(lowRcpFlowRule.condition)).toContain('rcpI.loopFlowKgPerS')
+    expect(JSON.stringify(lowRcpFlowRule.condition)).not.toContain('rcpJ.loopFlowKgPerS')
+    expect(() => assertProcessPlantIcRulesValid(system, ic.rules)).not.toThrow()
+  })
+
+  test('rejects unknown process plant assembly refs explicitly', () => {
+    const scenario = scenarioDefinitionSchema.parse({
+      id: 'unknown-assembly-ref',
+      schemaVersion: 1,
+      title: 'Unknown Assembly Ref',
+      packs: ['process-plant'],
+      world: {
+        startsAt: '2026-01-01T09:00:00.000Z',
+        environment: {},
+      },
+      initialObjects: [],
+      processSystems: [{
+        id: 'plant',
+        pack: 'process-plant',
+        componentLibrary: 'process-plant',
+        assemblyRef: 'process-plant.unknown-assembly.v1',
+        assemblyConfig: { loopCount: 5 },
+      }],
+      surface: {
+        schemaVersion: 1,
+        regions: [],
+      },
+    }) as ScenarioDefinition
+
+    expect(() => compileProcessPlantSystem(scenario.processSystems[0]!)).toThrow('unknown process plant assemblyRef: process-plant.unknown-assembly.v1')
   })
 
   test('rejects unknown process plant graph refs explicitly', () => {

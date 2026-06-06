@@ -82,6 +82,27 @@ const compilePorts = (definition: ComponentDefinition): Readonly<Record<string, 
     },
   ]))
 
+const resolveComponentPorts = (
+  componentId: ComponentId,
+  definition: ComponentDefinition,
+  component: PlantGraphSpec['components'][number],
+  parameters: unknown,
+): Readonly<Record<string, PortDefinition>> => {
+  const additionalPorts = definition.resolveAdditionalPorts?.({ component, parameters }) ?? {}
+  const ports = { ...definition.ports }
+  for (const [name, port] of Object.entries(additionalPorts)) {
+    const existing = ports[name]
+    if (existing !== undefined) {
+      if (existing.kind !== port.kind || existing.direction !== port.direction) {
+        throw new Error(`component ${componentId} additional port conflicts with static port: ${name}`)
+      }
+      continue
+    }
+    ports[name] = port
+  }
+  return ports
+}
+
 const compatiblePortKinds = (from: PortDefinition, to: PortDefinition): boolean => {
   if (from.kind === to.kind) return true
   if (from.kind === 'hydraulicThermal' && (to.kind === 'hydraulic' || to.kind === 'thermal')) return true
@@ -290,19 +311,24 @@ export const compilePlantGraph = (
 
   const componentIndexById = new Map<ComponentId, number>()
   const definitions = new Map<ComponentId, ComponentDefinition>()
+  const portDefinitions = new Map<ComponentId, Readonly<Record<string, PortDefinition>>>()
   const components: CompiledComponent[] = spec.components.map((component, index) => {
     const definition = resolveDefinition(registry, component.kind)
     assertComponentVariableOverridesValid(component.id, definition, component.variables)
     const overrideByPath = new Map(component.variables.map(override => [override.path, override]))
+    const parameters = parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`)
+    const ports = resolveComponentPorts(component.id, definition, component, parameters)
     componentIndexById.set(component.id, index)
     definitions.set(component.id, definition)
+    portDefinitions.set(component.id, ports)
     const compiled: CompiledComponent = {
       index,
       id: component.id,
       kind: component.kind,
       label: component.label,
-      parameters: parseWithContext(definition.parametersSchema, component.parameters, `component ${component.id} parameters`),
-      ports: compilePorts(definition),
+      parameters,
+      ...(component.metadata === undefined ? {} : { metadata: component.metadata }),
+      ports: compilePorts({ ...definition, ports }),
       variables: definition.variables.map(variable => applyComponentVariableOverride({
         ...variable,
         path: variablePathFor(component.id, variable.path),
@@ -325,8 +351,11 @@ export const compilePlantGraph = (
     const fromDefinition = definitions.get(from.componentId)
     const toDefinition = definitions.get(to.componentId)
     if (!fromDefinition || !toDefinition) throw new Error(`connection ${connection.id} failed to resolve component definitions`)
-    const fromPort = fromDefinition.ports[from.portName]
-    const toPort = toDefinition.ports[to.portName]
+    const fromPorts = portDefinitions.get(from.componentId)
+    const toPorts = portDefinitions.get(to.componentId)
+    if (!fromPorts || !toPorts) throw new Error(`connection ${connection.id} failed to resolve component ports`)
+    const fromPort = fromPorts[from.portName]
+    const toPort = toPorts[to.portName]
     if (!fromPort) throw new Error(`connection ${connection.id} references unknown port: ${from.componentId}.${from.portName}`)
     if (!toPort) throw new Error(`connection ${connection.id} references unknown port: ${to.componentId}.${to.portName}`)
     if (!compatiblePortKinds(fromPort, toPort)) throw new Error(`connection ${connection.id} has incompatible port kinds: ${fromPort.kind} -> ${toPort.kind}`)
@@ -351,6 +380,7 @@ export const compilePlantGraph = (
       ...(connection.designPhase === undefined ? {} : { designPhase: connection.designPhase }),
       ...(connection.solverModel === undefined ? {} : { solverModel: connection.solverModel }),
       ...(connection.physical === undefined ? {} : { physical: connection.physical }),
+      ...(connection.metadata === undefined ? {} : { metadata: connection.metadata }),
       variables: connection.variables.map(variable => ({
         ...variable,
         path: processLinkVariablePathFor(connection.id, variable.path),

@@ -74,6 +74,8 @@ export interface ScenarioProcessSystemDefinition {
   readonly componentLibrary: string
   readonly graph?: unknown
   readonly graphRef?: string
+  readonly assemblyRef?: string
+  readonly assemblyConfig?: Record<string, unknown>
   readonly parameters?: Record<string, unknown>
   readonly initialState?: Record<string, unknown>
 }
@@ -262,16 +264,27 @@ export const scenarioProcessSystemDefinitionSchema = z.object({
   componentLibrary: idSchema,
   graph: z.unknown().optional(),
   graphRef: idSchema.optional(),
+  assemblyRef: idSchema.optional(),
+  assemblyConfig: z.record(z.string(), z.unknown()).optional(),
   parameters: z.record(z.string(), z.unknown()).optional(),
   initialState: z.record(z.string(), z.unknown()).optional(),
 }).superRefine((definition, ctx) => {
   const hasGraph = definition.graph !== undefined
   const hasGraphRef = definition.graphRef !== undefined
-  if (hasGraph === hasGraphRef) {
+  const hasAssemblyRef = definition.assemblyRef !== undefined
+  const sourceCount = [hasGraph, hasGraphRef, hasAssemblyRef].filter(Boolean).length
+  if (sourceCount !== 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'process system must define exactly one of graph or graphRef',
-      path: hasGraph ? ['graphRef'] : ['graph'],
+      message: 'process system must define exactly one of graph, graphRef, or assemblyRef',
+      path: sourceCount > 1 ? ['assemblyRef'] : ['graph'],
+    })
+  }
+  if (definition.assemblyConfig !== undefined && !hasAssemblyRef) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'process system assemblyConfig requires assemblyRef',
+      path: ['assemblyConfig'],
     })
   }
 })
