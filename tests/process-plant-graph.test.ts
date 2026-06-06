@@ -21,6 +21,9 @@ import {
   processPlantUnitOverviewSurface,
   processPlantUnitOverviewSurfaceForGraph,
   processLinkVariableDescriptorSchema,
+  collectProcessPlantCatalog,
+  listProcessPlantAssemblyRefs,
+  listProcessPlantGraphRefs,
   processPlantModularGraphAssemblyRef,
   processPlantPwrReferenceBaseFragmentRefForLoopCount,
   processPlantPwrReferenceAssemblyRef,
@@ -36,6 +39,7 @@ import {
   assertProcessPlantIcRulesValid,
   tagIdForLookup,
   variableDescriptorSchema,
+  type ProcessPlantCatalogContribution,
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 import { scenarios } from '../src/scenarios/index.ts'
@@ -550,6 +554,55 @@ describe('process plant graph foundation', () => {
     expect(new Set(powerFractions).size).toBeGreaterThan(3)
     expect(new Set(pzrPressures).size).toBeGreaterThan(3)
     expect(new Set(sgAInventories).size).toBeGreaterThan(3)
+  })
+
+  test('process plant catalog contributions expose graph assembly fragment and preset refs', () => {
+    expect(listProcessPlantGraphRefs()).toEqual(expect.arrayContaining([
+      processPlantPressurizedWaterReactorGraphRef,
+      processPlantPressurizedWaterReactorSixLoopGraphRef,
+    ]))
+    expect(listProcessPlantAssemblyRefs()).toEqual(expect.arrayContaining([
+      processPlantModularGraphAssemblyRef,
+      processPlantPwrReferenceAssemblyRef,
+    ]))
+    expect(listProcessPlantGraphFragmentRefs()).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceBaseFragmentRefForLoopCount(2),
+      processPlantPwrReferenceLoopTemplateFragmentRef,
+    ]))
+    expect(listProcessPlantGraphFragmentInstancePresetRefs()).toEqual(expect.arrayContaining([
+      processPlantPwrReferenceLoopInstancePresetRef,
+    ]))
+  })
+
+  test('process plant catalog contributions reject duplicate refs across contributors', () => {
+    const graphRef = 'process-plant.duplicate.graph.v1'
+    const assemblyRef = 'process-plant.duplicate.assembly.v1'
+    const fragmentRef = 'process-plant.duplicate.fragment.v1'
+    const presetRef = 'process-plant.duplicate.preset.v1'
+    const first: ProcessPlantCatalogContribution = {
+      id: 'first',
+      graphSpecs: [{ ref: graphRef, graph: () => pressurizedWaterReactorPlantSpec }],
+      assemblies: [{ ref: assemblyRef, assemble: () => pressurizedWaterReactorPlantSpec }],
+      graphFragments: [{ ref: fragmentRef, fragment: () => ({ components: [], connections: [] }) }],
+      graphFragmentInstancePresets: [{ ref: presetRef, instance: () => ({}) }],
+    }
+
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-graph', graphSpecs: [{ ref: graphRef, graph: () => pressurizedWaterReactorSixLoopPlantSpec }] },
+    ])).toThrow(`process plant catalog duplicate graphRef "${graphRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-assembly', assemblies: [{ ref: assemblyRef, assemble: () => pressurizedWaterReactorSixLoopPlantSpec }] },
+    ])).toThrow(`process plant catalog duplicate assemblyRef "${assemblyRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-fragment', graphFragments: [{ ref: fragmentRef, fragment: () => ({ components: [], connections: [] }) }] },
+    ])).toThrow(`process plant catalog duplicate graph fragmentRef "${fragmentRef}"`)
+    expect(() => collectProcessPlantCatalog([
+      first,
+      { id: 'duplicate-preset', graphFragmentInstancePresets: [{ ref: presetRef, instance: () => ({}) }] },
+    ])).toThrow(`process plant catalog duplicate graph fragment instance presetRef "${presetRef}"`)
   })
 
   test('rejects duplicate primary loop pump ownership before runtime', () => {

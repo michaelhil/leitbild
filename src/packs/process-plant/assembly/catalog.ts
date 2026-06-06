@@ -1,28 +1,29 @@
 import type { PlantGraphSpec } from '../graph/index.ts'
 import { assembleModularPlantGraph, processPlantModularGraphAssemblyRef } from './modular-graph-assembly.ts'
-import { assemblePwrReferencePlantGraph, processPlantPwrReferenceAssemblyRef } from './pwr-reference-assembly.ts'
+import {
+  collectProcessPlantCatalog,
+  processPlantCatalogContributions,
+  type ProcessPlantCatalogContribution,
+} from '../catalog-contributions.ts'
 
-interface ProcessPlantAssemblyAdapter {
-  readonly ref: string
-  readonly assemble: (config: unknown) => PlantGraphSpec
-}
-
-const builtInProcessPlantAssemblies: ReadonlyMap<string, ProcessPlantAssemblyAdapter> = new Map([
-  [processPlantModularGraphAssemblyRef, {
+const processPlantModularGraphAssemblyContribution: ProcessPlantCatalogContribution = {
+  id: 'process-plant.modular-graph-assembly',
+  assemblies: [{
     ref: processPlantModularGraphAssemblyRef,
     assemble: assembleModularPlantGraph,
   }],
-  [processPlantPwrReferenceAssemblyRef, {
-    ref: processPlantPwrReferenceAssemblyRef,
-    assemble: assemblePwrReferencePlantGraph,
-  }],
+}
+
+const processPlantAssemblyCatalog = collectProcessPlantCatalog([
+  processPlantModularGraphAssemblyContribution,
+  ...processPlantCatalogContributions,
 ])
 
 export const resolveProcessPlantAssemblySpec = (assemblyRef: string, config: unknown): PlantGraphSpec => {
-  const adapter = builtInProcessPlantAssemblies.get(assemblyRef)
+  const adapter = processPlantAssemblyCatalog.assembliesByRef.get(assemblyRef)
   if (!adapter) throw new Error(`unknown process plant assemblyRef: ${assemblyRef}`)
   return adapter.assemble(config)
 }
 
 export const listProcessPlantAssemblyRefs = (): ReadonlyArray<string> =>
-  [...builtInProcessPlantAssemblies.keys()]
+  [...processPlantAssemblyCatalog.assembliesByRef.keys()]
