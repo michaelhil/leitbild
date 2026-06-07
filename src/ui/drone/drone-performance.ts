@@ -2,6 +2,7 @@ export interface DroneScenePerformanceSnapshot {
   readonly fps: number
   readonly frameMs: number
   readonly frameP95Ms: number
+  readonly renderMs: number
   readonly jankPercent: number
   readonly drawCalls: number
   readonly triangles: number
@@ -22,7 +23,7 @@ export interface DroneFramePerformanceTracker {
   readonly beginFrame: (nowMs: number) => void
   readonly endFrame: (nowMs: number) => {
     readonly shouldReport: boolean
-    readonly frameMs: number
+    readonly renderMs: number
   }
   readonly updateWorld: (config: {
     readonly loadMs: number
@@ -61,8 +62,10 @@ const average = (
   values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length
 
 export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTracker => {
-  const frameDurations: number[] = []
+  const frameIntervals: number[] = []
+  const renderDurations: number[] = []
   let frameStartedAtMs = 0
+  let previousFrameStartedAtMs = 0
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
@@ -70,21 +73,23 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lines = 0
   let points = 0
 
-  const pushFrame = (durationMs: number): void => {
-    frameDurations.push(durationMs)
-    if (frameDurations.length > sampleSize) frameDurations.shift()
+  const pushSample = (samples: number[], value: number): void => {
+    samples.push(value)
+    if (samples.length > sampleSize) samples.shift()
   }
 
   return {
     beginFrame: (nowMs: number): void => {
+      if (previousFrameStartedAtMs > 0) pushSample(frameIntervals, nowMs - previousFrameStartedAtMs)
+      previousFrameStartedAtMs = nowMs
       frameStartedAtMs = nowMs
     },
-    endFrame: (nowMs: number): { readonly shouldReport: boolean; readonly frameMs: number } => {
-      const frameMs = Math.max(0, nowMs - frameStartedAtMs)
-      pushFrame(frameMs)
+    endFrame: (nowMs: number): { readonly shouldReport: boolean; readonly renderMs: number } => {
+      const renderMs = Math.max(0, nowMs - frameStartedAtMs)
+      pushSample(renderDurations, renderMs)
       const shouldReport = nowMs - lastReportAtMs >= reportIntervalMs
       if (shouldReport) lastReportAtMs = nowMs
-      return { shouldReport, frameMs }
+      return { shouldReport, renderMs }
     },
     updateWorld: (config): void => {
       worldLoadMs = config.loadMs
@@ -94,13 +99,14 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       points = config.points
     },
     snapshot: (renderInfo): DroneScenePerformanceSnapshot => {
-      const avgFrameMs = average(frameDurations)
-      const jankFrames = frameDurations.filter(value => value >= jankThresholdMs).length
+      const avgFrameMs = average(frameIntervals)
+      const jankFrames = frameIntervals.filter(value => value >= jankThresholdMs).length
       return {
         fps: avgFrameMs <= 0 ? 0 : 1000 / avgFrameMs,
         frameMs: avgFrameMs,
-        frameP95Ms: percentile(frameDurations, 0.95),
-        jankPercent: frameDurations.length === 0 ? 0 : jankFrames / frameDurations.length * 100,
+        frameP95Ms: percentile(frameIntervals, 0.95),
+        renderMs: average(renderDurations),
+        jankPercent: frameIntervals.length === 0 ? 0 : jankFrames / frameIntervals.length * 100,
         drawCalls: renderInfo.drawCalls,
         triangles: renderInfo.triangles,
         geometries: renderInfo.geometries,

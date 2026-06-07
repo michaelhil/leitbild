@@ -509,12 +509,13 @@
         <div class="perf-grid">
           <span>FPS {scenePerformance ? Math.round(scenePerformance.fps) : '-'}</span>
           <span>P95 {scenePerformance ? Math.round(scenePerformance.frameP95Ms) : '-'} ms</span>
+          <span>CPU {scenePerformance ? scenePerformance.renderMs.toFixed(1) : '-'} ms</span>
           <span>JANK {scenePerformance ? Math.round(scenePerformance.jankPercent) : '-'}%</span>
           <span>DRAW {scenePerformance ? scenePerformance.drawCalls : '-'}</span>
           <span>TRI {scenePerformance ? Math.round(scenePerformance.triangles / 1000) : '-'}k</span>
           <span>GEO {scenePerformance ? scenePerformance.geometries : '-'}</span>
           <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
-          <span>{scenePerformance?.quality ?? '-'}</span>
+          <span>QL {scenePerformance?.quality ?? '-'}</span>
           <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
