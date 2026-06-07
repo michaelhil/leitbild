@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 import type {
   DroneMapWorldSnapshot,
-  DroneWorldLineFeature,
   DroneWorldPoint,
   DroneWorldPolygonFeature,
 } from './drone-map-world.ts'
+import { createTransportDecal } from './drone-transport-renderer.ts'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
@@ -28,19 +28,6 @@ const surfacePalette = (
   if (feature.className === 'industrial') return '#b9afa6'
   if (feature.className === 'commercial') return '#cbc2b1'
   return '#9aae88'
-}
-
-const roadPalette = (
-  feature: DroneWorldLineFeature,
-): string => {
-  if (feature.kind === 'rail') return '#556070'
-  if (feature.kind === 'waterway') return '#2aa7c7'
-  if (feature.className === 'motorway') return '#db7c59'
-  if (feature.className === 'trunk') return '#df9957'
-  if (feature.className === 'primary') return '#d7b858'
-  if (feature.className === 'secondary') return '#d9cf83'
-  if (feature.className === 'tertiary') return '#ded69f'
-  return '#ece8dc'
 }
 
 const polygonArea = (ring: ReadonlyArray<DroneWorldPoint>): number => {
@@ -126,7 +113,7 @@ const createBaseGround = (
     metalness: 0.01,
     ...(texture === null ? {} : { map: texture }),
   })
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 8, 8), material)
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 1, 1), material)
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -0.05
   ground.receiveShadow = true
@@ -149,12 +136,10 @@ const addBucketGeometry = (
 ): void => {
   const existing = buckets.get(key)
   if (existing) {
-    geometry.computeBoundingSphere()
     existing.geometries.push(geometry)
     material.dispose()
     return
   }
-  geometry.computeBoundingSphere()
   buckets.set(key, {
     material,
     geometries: [geometry],
@@ -225,7 +210,7 @@ const createMergedSurfaceMeshes = (
     if (!shape) continue
     const color = surfacePalette(feature)
     const isWater = feature.kind === 'water'
-    const geometry = new THREE.ShapeGeometry(shape, 8)
+    const geometry = new THREE.ShapeGeometry(shape, 4)
     geometry.rotateX(-Math.PI / 2)
     geometry.translate(0, isWater ? 0.035 : 0.01, 0)
     addBucketGeometry(
@@ -262,10 +247,7 @@ const createMergedBuildingMeshes = (
         : '#c9c4ba'
     const wallGeometry = new THREE.ExtrudeGeometry(shape, {
       depth: height,
-      bevelEnabled: height > 14,
-      bevelSize: height > 14 ? 0.14 : 0,
-      bevelThickness: height > 14 ? 0.14 : 0,
-      bevelSegments: height > 14 ? 1 : 0,
+      bevelEnabled: false,
     })
     wallGeometry.rotateX(-Math.PI / 2)
     wallGeometry.translate(0, minHeight, 0)
@@ -277,7 +259,7 @@ const createMergedBuildingMeshes = (
       { receiveShadow: true, castShadow: false },
     )
 
-    const roofGeometry = new THREE.ShapeGeometry(shape, 8)
+    const roofGeometry = new THREE.ShapeGeometry(shape, 4)
     roofGeometry.rotateX(-Math.PI / 2)
     roofGeometry.translate(0, minHeight + height + 0.08, 0)
     addBucketGeometry(
@@ -289,139 +271,6 @@ const createMergedBuildingMeshes = (
     )
   }
   return meshesFromBuckets(buckets)
-}
-
-const createRibbonGeometryForLines = (
-  lines: ReadonlyArray<DroneWorldLineFeature>,
-  y: number,
-): THREE.BufferGeometry => {
-  const positions: number[] = []
-  const indices: number[] = []
-  for (const line of lines) {
-    for (let index = 0; index < line.path.length - 1; index += 1) {
-      const start = line.path[index]!
-      const end = line.path[index + 1]!
-      const dx = end.x - start.x
-      const dz = end.z - start.z
-      const length = Math.hypot(dx, dz)
-      if (length < 0.2) continue
-      const nx = -dz / length * line.widthM / 2
-      const nz = dx / length * line.widthM / 2
-      const base = positions.length / 3
-      positions.push(
-        start.x + nx, y, start.z + nz,
-        start.x - nx, y, start.z - nz,
-        end.x + nx, y, end.z + nz,
-        end.x - nx, y, end.z - nz,
-      )
-      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
-    }
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  geometry.computeBoundingSphere()
-  return geometry
-}
-
-const createLineMeshes = (
-  lines: ReadonlyArray<DroneWorldLineFeature>,
-): THREE.Group => {
-  const group = new THREE.Group()
-  const buckets = new Map<string, { readonly material: THREE.Material; readonly lines: DroneWorldLineFeature[]; readonly y: number }>()
-  for (const line of lines) {
-    const color = roadPalette(line)
-    const key = `${line.kind}:${line.className}:${color}`
-    const existing = buckets.get(key)
-    if (existing) {
-      existing.lines.push(line)
-      continue
-    }
-    buckets.set(key, {
-      material: new THREE.MeshStandardMaterial({
-        color,
-        roughness: line.kind === 'waterway' ? 0.5 : 0.82,
-        metalness: line.kind === 'waterway' ? 0.04 : 0.01,
-        transparent: line.kind === 'waterway',
-        opacity: line.kind === 'waterway' ? 0.78 : 1,
-      }),
-      lines: [line],
-      y: line.kind === 'waterway' ? 0.08 : 0.07,
-    })
-  }
-  for (const bucket of buckets.values()) {
-    const geometry = createRibbonGeometryForLines(bucket.lines, bucket.y)
-    const position = geometry.getAttribute('position')
-    if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
-      geometry.dispose()
-      bucket.material.dispose()
-      continue
-    }
-    const mesh = new THREE.Mesh(geometry, bucket.material)
-    mesh.receiveShadow = true
-    group.add(mesh)
-  }
-  return group
-}
-
-const createLaneMarkingsGeometry = (
-  lines: ReadonlyArray<DroneWorldLineFeature>,
-): THREE.BufferGeometry => {
-  const positions: number[] = []
-  const indices: number[] = []
-  let dashCount = 0
-  for (const line of lines) {
-    if (line.kind !== 'road' || line.widthM < 8) continue
-    for (let index = 0; index < line.path.length - 1; index += 1) {
-      const start = line.path[index]!
-      const end = line.path[index + 1]!
-      const dx = end.x - start.x
-      const dz = end.z - start.z
-      const segmentLength = Math.hypot(dx, dz)
-      if (segmentLength < 24) continue
-      const ux = dx / segmentLength
-      const uz = dz / segmentLength
-      const nx = -uz
-      const nz = ux
-      const halfLength = 4.5
-      const halfWidth = 0.325
-      for (let distance = 12; distance < segmentLength - 8 && dashCount < 420; distance += 36) {
-        const centerX = start.x + ux * distance
-        const centerZ = start.z + uz * distance
-        const base = positions.length / 3
-        positions.push(
-          centerX + ux * halfLength + nx * halfWidth, 0.095, centerZ + uz * halfLength + nz * halfWidth,
-          centerX + ux * halfLength - nx * halfWidth, 0.095, centerZ + uz * halfLength - nz * halfWidth,
-          centerX - ux * halfLength + nx * halfWidth, 0.095, centerZ - uz * halfLength + nz * halfWidth,
-          centerX - ux * halfLength - nx * halfWidth, 0.095, centerZ - uz * halfLength - nz * halfWidth,
-        )
-        indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
-        dashCount += 1
-      }
-    }
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  geometry.computeBoundingSphere()
-  return geometry
-}
-
-const createLaneMarkings = (
-  lines: ReadonlyArray<DroneWorldLineFeature>,
-): THREE.Mesh | null => {
-  const geometry = createLaneMarkingsGeometry(lines)
-  const position = geometry.getAttribute('position')
-  if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
-    geometry.dispose()
-    return null
-  }
-  return new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({ color: '#f8fafc', transparent: true, opacity: 0.78 }),
-  )
 }
 
 const seededRandom = (
@@ -533,8 +382,8 @@ const createPoiBeacons = (
   const ringMaterial = new THREE.MeshBasicMaterial({ color: '#bae6fd', transparent: true, opacity: 0.54 })
   const points = snapshot.points.slice(0, 36)
   if (points.length === 0) return group
-  const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 12), beaconMaterial, points.length)
-  const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 8, 40), ringMaterial, points.length)
+  const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 10), beaconMaterial, points.length)
+  const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 6, 28), ringMaterial, points.length)
   const dummy = new THREE.Object3D()
   for (const [index, point] of points.entries()) {
     dummy.position.set(point.point.x, 9, point.point.z)
@@ -558,7 +407,7 @@ const createDistantHills = (
 ): THREE.Mesh => {
   const inner = radiusM * 1.08
   const outer = radiusM * 1.75
-  const segments = 96
+  const segments = 64
   const positions: number[] = []
   const indices: number[] = []
   for (let index = 0; index <= segments; index += 1) {
@@ -608,7 +457,7 @@ const createAtmosphereDome = (
       }
     `,
   })
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(radiusM * 3.5, 32, 16), material)
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(radiusM * 3.5, 24, 12), material)
   dome.frustumCulled = false
   return dome
 }
@@ -627,13 +476,17 @@ export const createDroneMapWorldGroup = (
   const group = createFallbackWorldGroup(snapshot.radiusM)
   const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons)
   const buildingGroup = createMergedBuildingMeshes(snapshot.polygons)
-  const roadGroup = createLineMeshes(snapshot.lines)
-  const laneMarkings = createLaneMarkings(snapshot.lines)
-  if (laneMarkings) roadGroup.add(laneMarkings)
-  group.add(surfaceGroup, roadGroup, buildingGroup, createVegetation(snapshot), createPoiBeacons(snapshot))
+  const transportDecal = createTransportDecal(snapshot)
+  group.add(
+    surfaceGroup,
+    ...(transportDecal === null ? [] : [transportDecal]),
+    buildingGroup,
+    createVegetation(snapshot),
+    createPoiBeacons(snapshot),
+  )
   group.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-      child.receiveShadow = true
+      child.receiveShadow = child.userData.receiveShadow === false ? false : true
     }
     child.matrixAutoUpdate = false
     child.updateMatrix()
