@@ -9,7 +9,9 @@ import { droneEnvironmentFromRuntimeConfigValue, droneProfilesFromRuntimeConfigV
 import { droneSimRuntimeId } from './constants.ts'
 import { createDroneSimEngine } from './engine.ts'
 
-const tickIntervalMs = 100
+const tickIntervalMs = 50
+const physicsStepMs = 50
+const maxCatchupMs = 500
 
 const emit = (
   handlers: ReadonlySet<PackRuntimeEventHandler>,
@@ -58,16 +60,29 @@ export const createLocalDronePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const handlers = new Set<PackRuntimeEventHandler>()
     let clock = initialClock(config)
     let lastWallMs = Date.now()
+    let remainderMs = 0
 
     const advance = (): void => {
       const nowWallMs = Date.now()
       const wallElapsedMs = Math.max(0, nowWallMs - lastWallMs)
       lastWallMs = nowWallMs
       if (clock.paused || wallElapsedMs <= 0) return
-      const elapsedMs = wallElapsedMs * clock.speed
-      const at = new Date(Date.parse(clock.currentTime) + elapsedMs).toISOString() as IsoTimestamp
-      clock = { ...clock, currentTime: at, updatedAt: nowIso() }
-      emit(handlers, engine.tick(elapsedMs, at))
+      let elapsedMs = Math.min(wallElapsedMs * clock.speed + remainderMs, maxCatchupMs)
+      if (elapsedMs < physicsStepMs) {
+        remainderMs = elapsedMs
+        return
+      }
+      const emitted: PackRuntimeEvent[] = []
+      let currentTimeMs = Date.parse(clock.currentTime)
+      while (elapsedMs >= physicsStepMs) {
+        currentTimeMs += physicsStepMs
+        const at = new Date(currentTimeMs).toISOString() as IsoTimestamp
+        emitted.push(...engine.tick(physicsStepMs, at))
+        elapsedMs -= physicsStepMs
+      }
+      remainderMs = elapsedMs
+      clock = { ...clock, currentTime: new Date(currentTimeMs).toISOString() as IsoTimestamp, updatedAt: nowIso() }
+      emit(handlers, emitted)
     }
 
     const interval = setInterval(advance, tickIntervalMs)
@@ -98,6 +113,7 @@ export const createLocalDronePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       setClock: async (nextClock: SimulationClockState): Promise<void> => {
         clock = nextClock
         lastWallMs = Date.now()
+        remainderMs = 0
       },
       close: async (): Promise<void> => {
         clearInterval(interval)

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
+  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
@@ -11,7 +11,7 @@
   import { sendControlInstanceCommand } from '../control-instance-client.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
-  import { createDroneScene, type DroneSceneHandle, type DroneSceneViewMode } from './drone-scene.ts'
+  import { createDroneScene, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -31,8 +31,8 @@
 
   const viewportMargin = 12
   const offsetStepPx = 28
-  const sendIntervalMs = 180
-  const activeKeepaliveMs = 360
+  const sendIntervalMs = 70
+  const activeKeepaliveMs = 140
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const manualKeyCodes = new Set([
@@ -64,11 +64,17 @@
   let mouseAxes = $state<DroneManualAxes>(zeroAxes)
   let mouseControlEnabled = $state(false)
   let mouseCaptured = $state(false)
+  let scenePerformance = $state<DroneScenePerformanceSnapshot | null>(null)
+  let lastCommandRoundTripMs = $state<number | null>(null)
+  let commandRateHz = $state(0)
   let keys = new Set<string>()
+  let commandSendTimes: number[] = []
   let lastSendMs = 0
   let lastAxesSignature = '0.00|0.00|0.00|0.00'
   let manualSendInFlight = false
   let animationId = 0
+  let lastGamepadRefreshMs = 0
+  let gamepadSignature = ''
 
   const droneObjects = $derived(objects.filter(candidate => dronePackDataSchema.safeParse(candidate.packData).success))
   const selectedObject = $derived.by(() =>
@@ -119,16 +125,23 @@
     status = `Controlling ${next.label}`
   }
 
-  const refreshGamepads = (): void => {
+  const refreshGamepads = (force = false): void => {
+    const nowMs = performance.now()
+    if (!force && nowMs - lastGamepadRefreshMs < 350) return
+    lastGamepadRefreshMs = nowMs
     if (!navigator.getGamepads) {
-      gamepads = []
-      selectedGamepadIndex = null
+      if (gamepads.length > 0) gamepads = []
+      if (selectedGamepadIndex !== null) selectedGamepadIndex = null
       return
     }
     const connected = navigator.getGamepads()
       .filter((pad): pad is Gamepad => pad !== null)
       .map(pad => ({ index: pad.index, id: pad.id || `Gamepad ${pad.index + 1}` }))
-    gamepads = connected
+    const nextSignature = connected.map(pad => `${pad.index}:${pad.id}`).join('|')
+    if (nextSignature !== gamepadSignature) {
+      gamepads = connected
+      gamepadSignature = nextSignature
+    }
     if (!gamepadSelectionLocked && selectedGamepadIndex === null && connected[0]) selectedGamepadIndex = connected[0].index
     if (selectedGamepadIndex !== null && !connected.some(pad => pad.index === selectedGamepadIndex)) {
       selectedGamepadIndex = gamepadSelectionLocked ? null : connected[0]?.index ?? null
@@ -195,7 +208,14 @@
   const axesAreActive = (axes: DroneManualAxes): boolean =>
     Math.abs(axes.forward) > 0 || Math.abs(axes.right) > 0 || Math.abs(axes.vertical) > 0 || Math.abs(axes.yaw) > 0
 
+  const recordCommandSent = (startedAtMs: number): void => {
+    commandSendTimes = [...commandSendTimes, startedAtMs].filter(value => startedAtMs - value <= 2_000)
+    commandRateHz = commandSendTimes.length / 2
+  }
+
   const sendManualControl = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
+    const startedAtMs = performance.now()
+    recordCommandSent(startedAtMs)
     const activeGamepad = selectedGamepadIndex === null ? null : gamepads.find(pad => pad.index === selectedGamepadIndex)
     const source = sourceKind === 'gamepad' && activeGamepad
       ? { kind: 'gamepad' as const, gamepadIndex: activeGamepad.index, label: activeGamepad.id }
@@ -209,9 +229,10 @@
         droneId: selectedObject.id,
         axes,
         inputSource: source,
-        commandTtlMs: 650,
+        commandTtlMs: 450,
       },
     })
+    lastCommandRoundTripMs = performance.now() - startedAtMs
     status = body.result.ok ? 'Manual control accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
@@ -253,6 +274,11 @@
   const pollInput = (): void => {
     refreshGamepads()
     const nowMs = performance.now()
+    const activeCommandTimes = commandSendTimes.filter(value => nowMs - value <= 2_000)
+    if (activeCommandTimes.length !== commandSendTimes.length) {
+      commandSendTimes = activeCommandTimes
+      commandRateHz = activeCommandTimes.length / 2
+    }
     const sample = combinedAxes()
     const axes = sample.axes
     const signature = axesSignature(axes)
@@ -359,6 +385,10 @@
     }
   }
 
+  const onGamepadConnectionChange = (): void => {
+    refreshGamepads(true)
+  }
+
   runOnMount(() => {
     if (!sceneElement) throw new Error('drone scene element was not mounted')
     sceneHandle = createDroneScene({
@@ -375,16 +405,19 @@
       onWorldStatus: message => {
         status = message
       },
+      onPerformance: snapshot => {
+        scenePerformance = snapshot
+      },
     })
-    refreshGamepads()
+    refreshGamepads(true)
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
     window.addEventListener('blur', onWindowBlur)
     window.addEventListener('mousemove', onMouseMove)
     document.addEventListener('visibilitychange', onVisibilityChange)
     document.addEventListener('pointerlockchange', onPointerLockChange)
-    window.addEventListener('gamepadconnected', refreshGamepads)
-    window.addEventListener('gamepaddisconnected', refreshGamepads)
+    window.addEventListener('gamepadconnected', onGamepadConnectionChange)
+    window.addEventListener('gamepaddisconnected', onGamepadConnectionChange)
     animationId = requestAnimationFrame(pollInput)
     return () => {
       cancelAnimationFrame(animationId)
@@ -394,8 +427,8 @@
       window.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       document.removeEventListener('pointerlockchange', onPointerLockChange)
-      window.removeEventListener('gamepadconnected', refreshGamepads)
-      window.removeEventListener('gamepaddisconnected', refreshGamepads)
+      window.removeEventListener('gamepadconnected', onGamepadConnectionChange)
+      window.removeEventListener('gamepaddisconnected', onGamepadConnectionChange)
       if (mouseCaptured) document.exitPointerLock()
       sceneHandle?.destroy()
       sceneHandle = null
@@ -468,6 +501,24 @@
           <span>RIGHT {liveAxes.right.toFixed(2)}</span>
           <span>VERT {liveAxes.vertical.toFixed(2)}</span>
           <span>YAW {liveAxes.yaw.toFixed(2)}</span>
+        </div>
+      </section>
+
+      <section>
+        <h3><Activity size={15} /> Performance</h3>
+        <div class="perf-grid">
+          <span>FPS {scenePerformance ? Math.round(scenePerformance.fps) : '-'}</span>
+          <span>P95 {scenePerformance ? Math.round(scenePerformance.frameP95Ms) : '-'} ms</span>
+          <span>JANK {scenePerformance ? Math.round(scenePerformance.jankPercent) : '-'}%</span>
+          <span>DRAW {scenePerformance ? scenePerformance.drawCalls : '-'}</span>
+          <span>TRI {scenePerformance ? Math.round(scenePerformance.triangles / 1000) : '-'}k</span>
+          <span>GEO {scenePerformance ? scenePerformance.geometries : '-'}</span>
+          <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
+          <span>{scenePerformance?.quality ?? '-'}</span>
+          <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
+          <span>CMD {commandRateHz.toFixed(1)} Hz</span>
+          <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
+          <span>BUILD {scenePerformance ? Math.round(scenePerformance.worldBuildMs) : '-'} ms</span>
         </div>
       </section>
 
@@ -662,7 +713,8 @@
     gap: 8px;
   }
 
-  .axis-grid {
+  .axis-grid,
+  .perf-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
@@ -670,10 +722,21 @@
     color: #cbd5e1;
   }
 
-  .axis-grid span {
+  .perf-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .axis-grid span,
+  .perf-grid span {
+    min-width: 0;
     padding: 6px;
+    overflow: hidden;
     background: #111827;
     border: 1px solid rgb(148 163 184 / 0.18);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .contact-list {

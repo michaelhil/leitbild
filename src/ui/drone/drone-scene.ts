@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
 import { loadDroneMapWorld } from './drone-map-world.ts'
+import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 import { createDroneMapWorldGroup, createFallbackWorldGroup } from './drone-world-renderer.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
+export type { DroneScenePerformanceSnapshot }
 
 export interface DroneSceneHandle {
   readonly destroy: () => void
@@ -18,6 +20,7 @@ interface DroneSceneConfig {
   readonly onReady?: () => void
   readonly onError?: (message: string) => void
   readonly onWorldStatus?: (message: string) => void
+  readonly onPerformance?: (snapshot: DroneScenePerformanceSnapshot) => void
 }
 
 interface LocalPoint {
@@ -29,6 +32,29 @@ interface LocalPoint {
 interface MeshEntry {
   readonly signature: string
   readonly mesh: THREE.Group
+  readonly visual: VisualPose
+}
+
+interface ObjectPose {
+  readonly key: string
+  readonly local: LocalPoint
+  readonly yawRad: number
+  readonly pitchRad: number
+  readonly rollRad: number
+  readonly scale: number
+  readonly velocityEastMps: number
+  readonly velocityNorthMps: number
+  readonly verticalSpeedMps: number
+  readonly yawRateRadPerSec: number
+  readonly receivedAtMs: number
+  readonly data: DronePackData | null
+}
+
+interface VisualPose {
+  target: ObjectPose
+  readonly position: THREE.Vector3
+  readonly rotation: THREE.Euler
+  scale: number
 }
 
 const metersPerDegreeLat = 111_320
@@ -80,6 +106,24 @@ const enableShadows = (object: THREE.Object3D): void => {
 }
 
 const disposeMaterial = (material: THREE.Material): void => {
+  const maybeTextured = material as THREE.Material & {
+    readonly map?: THREE.Texture | null
+    readonly normalMap?: THREE.Texture | null
+    readonly roughnessMap?: THREE.Texture | null
+    readonly metalnessMap?: THREE.Texture | null
+    readonly emissiveMap?: THREE.Texture | null
+    readonly alphaMap?: THREE.Texture | null
+  }
+  for (const texture of [
+    maybeTextured.map,
+    maybeTextured.normalMap,
+    maybeTextured.roughnessMap,
+    maybeTextured.metalnessMap,
+    maybeTextured.emissiveMap,
+    maybeTextured.alphaMap,
+  ]) {
+    texture?.dispose()
+  }
   material.dispose()
 }
 
@@ -245,12 +289,92 @@ const centerDistanceM = (
     (a.lat - b.lat) * metersPerDegreeLat,
   )
 
+const poseFor = (
+  object: OperationalObject,
+  center: { readonly lon: number; readonly lat: number },
+  receivedAtMs: number,
+): ObjectPose | null => {
+  const local = localPointFor(object, center)
+  if (!local) return null
+  const parsed = dronePackDataSchema.safeParse(object.packData)
+  const data = parsed.success ? parsed.data : null
+  const yawDeg = data?.kinematics.yawDeg ?? 0
+  const manualYawRateDegPerSec = data?.control.mode === 'manual' && data.control.manualAxes
+    ? data.control.manualAxes.yaw * data.profile.dynamics.maxYawRateDegPerSec
+    : 0
+  return {
+    key: `${object.revision}:${object.timestamps.updatedAt}:${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`,
+    local,
+    yawRad: yawDeg * Math.PI / 180,
+    pitchRad: (data?.kinematics.pitchDeg ?? 0) * Math.PI / 180,
+    rollRad: -(data?.kinematics.rollDeg ?? 0) * Math.PI / 180,
+    scale: data?.profile.visual.scale ?? 1,
+    velocityEastMps: data?.kinematics.velocityEastMps ?? 0,
+    velocityNorthMps: data?.kinematics.velocityNorthMps ?? 0,
+    verticalSpeedMps: data?.kinematics.verticalSpeedMps ?? 0,
+    yawRateRadPerSec: manualYawRateDegPerSec * Math.PI / 180,
+    receivedAtMs,
+    data,
+  }
+}
+
+const predictedPose = (
+  pose: ObjectPose,
+  nowMs: number,
+): {
+  readonly position: THREE.Vector3
+  readonly yawRad: number
+  readonly pitchRad: number
+  readonly rollRad: number
+  readonly scale: number
+} => {
+  const elapsedSeconds = clamp((nowMs - pose.receivedAtMs) / 1000, 0, 0.32)
+  return {
+    position: new THREE.Vector3(
+      pose.local.x + pose.velocityEastMps * elapsedSeconds,
+      pose.local.y + pose.verticalSpeedMps * elapsedSeconds,
+      pose.local.z - pose.velocityNorthMps * elapsedSeconds,
+    ),
+    yawRad: pose.yawRad + pose.yawRateRadPerSec * elapsedSeconds,
+    pitchRad: pose.pitchRad,
+    rollRad: pose.rollRad,
+    scale: pose.scale,
+  }
+}
+
+const shortestAngleDeltaRad = (
+  from: number,
+  to: number,
+): number => {
+  const full = Math.PI * 2
+  return ((to - from + Math.PI) % full + full) % full - Math.PI
+}
+
+const smoothVisualPose = (
+  visual: VisualPose,
+  desired: ReturnType<typeof predictedPose>,
+  dtSeconds: number,
+  reset: boolean,
+  viewMode: DroneSceneViewMode,
+): void => {
+  const distance = visual.position.distanceTo(desired.position)
+  const shouldSnap = reset || distance > 160
+  const alpha = shouldSnap ? 1 : 1 - Math.exp(-dtSeconds * (viewMode === 'fpv' ? 18 : 10))
+  visual.position.lerp(desired.position, alpha)
+  visual.rotation.y += shortestAngleDeltaRad(visual.rotation.y, desired.yawRad) * alpha
+  visual.rotation.x += shortestAngleDeltaRad(visual.rotation.x, desired.pitchRad) * alpha
+  visual.rotation.z += shortestAngleDeltaRad(visual.rotation.z, desired.rollRad) * alpha
+  visual.scale += (desired.scale - visual.scale) * alpha
+}
+
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
   const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 5_000)
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
+  let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.45)
+  renderer.setPixelRatio(pixelRatio)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.08
@@ -260,8 +384,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const keyLight = new THREE.DirectionalLight('#ffffff', 2.4)
   keyLight.position.set(-160, 450, 220)
   keyLight.castShadow = true
-  keyLight.shadow.mapSize.width = 2048
-  keyLight.shadow.mapSize.height = 2048
+  keyLight.shadow.mapSize.width = 1024
+  keyLight.shadow.mapSize.height = 1024
   keyLight.shadow.camera.near = 10
   keyLight.shadow.camera.far = 1_200
   keyLight.shadow.camera.left = -650
@@ -278,8 +402,31 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   scene.add(weatherLayer)
   const objectMeshes = new Map<string, MeshEntry>()
   let worldCenter: { readonly lon: number; readonly lat: number } | null = null
+  let worldCenterKey = ''
   let worldLoadGeneration = 0
   let worldLoadController: AbortController | null = null
+  const performanceTracker = createDroneFramePerformanceTracker()
+  const applyPixelRatio = (nextRatio: number, nextQuality: DroneScenePerformanceSnapshot['quality']): void => {
+    const clamped = clamp(nextRatio, 0.9, Math.min(window.devicePixelRatio || 1, 1.45))
+    if (Math.abs(clamped - pixelRatio) < 0.03 && nextQuality === renderQuality) return
+    pixelRatio = clamped
+    renderQuality = nextQuality
+    renderer.setPixelRatio(pixelRatio)
+    resize()
+  }
+  const maybeAdaptQuality = (snapshot: DroneScenePerformanceSnapshot): void => {
+    if (snapshot.frameP95Ms > 46 && pixelRatio > 1) {
+      applyPixelRatio(pixelRatio - 0.18, 'rescue')
+      return
+    }
+    if (snapshot.frameP95Ms > 30 && pixelRatio > 1.1) {
+      applyPixelRatio(pixelRatio - 0.1, 'balanced')
+      return
+    }
+    if (snapshot.frameP95Ms < 18 && pixelRatio < Math.min(window.devicePixelRatio || 1, 1.45)) {
+      applyPixelRatio(pixelRatio + 0.06, pixelRatio + 0.06 >= 1.4 ? 'high' : 'balanced')
+    }
+  }
   const loadWorldFor = (center: { readonly lon: number; readonly lat: number }): void => {
     worldLoadController?.abort()
     const controller = new AbortController()
@@ -288,18 +435,29 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     config.onWorldStatus?.('Loading map-derived scenery')
     void (async (): Promise<void> => {
       try {
+        const loadStartedAtMs = performance.now()
         const snapshot = await loadDroneMapWorld({
           center,
           radiusM: 1_850,
           zoom: 14,
           signal: controller.signal,
         })
+        const loadMs = performance.now() - loadStartedAtMs
         if (generation !== worldLoadGeneration) return
+        const buildStartedAtMs = performance.now()
         const nextLayer = createDroneMapWorldGroup(snapshot)
+        const buildMs = performance.now() - buildStartedAtMs
         scene.remove(environmentLayer)
         disposeObject(environmentLayer)
         environmentLayer = nextLayer
         scene.add(environmentLayer)
+        performanceTracker.updateWorld({
+          loadMs,
+          buildMs,
+          polygons: snapshot.polygons.length,
+          lines: snapshot.lines.length,
+          points: snapshot.points.length,
+        })
         config.onWorldStatus?.(`Map scenery loaded: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines`)
       } catch (err) {
         if (generation !== worldLoadGeneration || controller.signal.aborted) return
@@ -321,18 +479,27 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   let frame = 0
   let readyNotified = false
   let animationId = 0
+  let lastFrameMs = performance.now()
   const render = (): void => {
+    const frameStartedAtMs = performance.now()
+    performanceTracker.beginFrame(frameStartedAtMs)
+    const dtSeconds = clamp((frameStartedAtMs - lastFrameMs) / 1000, 0.001, 0.08)
+    lastFrameMs = frameStartedAtMs
     frame += 1
     const objects = config.getObjects()
     const focusDroneId = config.getFocusDroneId()
     const desiredCenter = centerFor(objects, focusDroneId)
+    const previousWorldCenterKey = worldCenterKey
     if (worldCenter === null) {
       worldCenter = desiredCenter
+      worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
       loadWorldFor(worldCenter)
     } else if (centerDistanceM(worldCenter, desiredCenter) > 520) {
       worldCenter = desiredCenter
+      worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
       loadWorldFor(worldCenter)
     }
+    const recentered = previousWorldCenterKey !== '' && previousWorldCenterKey !== worldCenterKey
     const center = worldCenter ?? desiredCenter
     const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)
@@ -347,8 +514,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       objectMeshes.delete(id)
     }
     for (const object of objects) {
-      const local = localPointFor(object, center)
-      if (!local) continue
+      const pose = poseFor(object, center, frameStartedAtMs)
+      if (!pose) continue
       const droneData = dronePackDataSchema.safeParse(object.packData)
       const signature = meshSignatureFor(object)
       const existing = objectMeshes.get(object.id)
@@ -361,22 +528,36 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
             }
             const mesh = createMeshFor(object)
             objectLayer.add(mesh)
-            const next = { signature, mesh }
+            const next = {
+              signature,
+              mesh,
+              visual: {
+                target: pose,
+                position: new THREE.Vector3(pose.local.x, pose.local.y, pose.local.z),
+                rotation: new THREE.Euler(pose.pitchRad, pose.yawRad, pose.rollRad, 'YXZ'),
+                scale: pose.scale,
+              },
+            }
             objectMeshes.set(object.id, next)
             return next
           })()
+      if (entry.visual.target.key !== pose.key) entry.visual.target = pose
+      const desired = predictedPose(entry.visual.target, frameStartedAtMs)
+      smoothVisualPose(entry.visual, desired, dtSeconds, recentered, config.getViewMode())
       const mesh = entry.mesh
-      mesh.position.set(local.x, local.y, local.z)
+      mesh.position.copy(entry.visual.position)
       mesh.rotation.order = 'YXZ'
-      mesh.rotation.y = droneData.success ? droneData.data.kinematics.yawDeg * Math.PI / 180 : 0
-      mesh.rotation.x = droneData.success ? droneData.data.kinematics.pitchDeg * Math.PI / 180 : 0
-      mesh.rotation.z = droneData.success ? -droneData.data.kinematics.rollDeg * Math.PI / 180 : 0
-      mesh.scale.setScalar(droneData.success ? droneData.data.profile.visual.scale : 1)
+      mesh.rotation.copy(entry.visual.rotation)
+      mesh.scale.setScalar(entry.visual.scale)
       mesh.traverse(child => {
         if (child.userData.rotor === true) child.rotation.y += 1.8
       })
       if (object.id === focusDroneId) {
-        focusPoint = local
+        focusPoint = {
+          x: entry.visual.position.x,
+          y: entry.visual.position.y,
+          z: entry.visual.position.z,
+        }
         focusData = droneData.success ? droneData.data : null
       }
     }
@@ -424,6 +605,20 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       if (!readyNotified && frame > 2) {
         readyNotified = true
         config.onReady?.()
+      }
+      const frameFinishedAtMs = performance.now()
+      const frameResult = performanceTracker.endFrame(frameFinishedAtMs)
+      if (frameResult.shouldReport) {
+        const snapshot = performanceTracker.snapshot({
+          drawCalls: renderer.info.render.calls,
+          triangles: renderer.info.render.triangles,
+          geometries: renderer.info.memory.geometries,
+          textures: renderer.info.memory.textures,
+          pixelRatio,
+          quality: renderQuality,
+        })
+        maybeAdaptQuality(snapshot)
+        config.onPerformance?.(snapshot)
       }
     } catch (err) {
       config.onError?.(err instanceof Error ? err.message : String(err))

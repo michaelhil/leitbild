@@ -126,136 +126,250 @@ const createBaseGround = (
     metalness: 0.01,
     ...(texture === null ? {} : { map: texture }),
   })
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 96, 96), material)
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 8, 8), material)
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -0.05
   ground.receiveShadow = true
   return ground
 }
 
-const createSurfaceMesh = (
-  feature: DroneWorldPolygonFeature,
-): THREE.Mesh | null => {
-  const shape = shapeFor(feature.rings)
-  if (!shape) return null
-  const geometry = new THREE.ShapeGeometry(shape, 16)
-  geometry.rotateX(-Math.PI / 2)
-  const material = new THREE.MeshStandardMaterial({
-    color: surfacePalette(feature),
-    roughness: feature.kind === 'water' ? 0.45 : 0.9,
-    metalness: feature.kind === 'water' ? 0.08 : 0.01,
-    transparent: feature.kind === 'water',
-    opacity: feature.kind === 'water' ? 0.82 : 0.88,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.y = feature.kind === 'water' ? 0.035 : 0.01
-  mesh.receiveShadow = true
-  return mesh
+interface GeometryBucket {
+  readonly material: THREE.Material
+  readonly geometries: THREE.BufferGeometry[]
+  readonly receiveShadow: boolean
+  readonly castShadow: boolean
 }
 
-const createBuildingMesh = (
-  feature: DroneWorldPolygonFeature,
-): THREE.Group | null => {
-  const shape = shapeFor(feature.rings)
-  const height = feature.heightM ?? 8
-  if (!shape || height < 1) return null
-  const minHeight = feature.minHeightM ?? 0
-  const group = new THREE.Group()
-  const wallMaterial = makeMaterial(
-    feature.className === 'industrial' ? '#a8a29e' : feature.className === 'commercial' ? '#b8b4a7' : '#c9c4ba',
-    0.76,
-    0.03,
-  )
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: height,
-    bevelEnabled: true,
-    bevelSize: 0.22,
-    bevelThickness: 0.22,
-    bevelSegments: 1,
+const addBucketGeometry = (
+  buckets: Map<string, GeometryBucket>,
+  key: string,
+  material: THREE.Material,
+  geometry: THREE.BufferGeometry,
+  config: { readonly receiveShadow: boolean; readonly castShadow: boolean },
+): void => {
+  const existing = buckets.get(key)
+  if (existing) {
+    geometry.computeBoundingSphere()
+    existing.geometries.push(geometry)
+    material.dispose()
+    return
+  }
+  geometry.computeBoundingSphere()
+  buckets.set(key, {
+    material,
+    geometries: [geometry],
+    receiveShadow: config.receiveShadow,
+    castShadow: config.castShadow,
   })
-  geometry.rotateX(-Math.PI / 2)
-  const building = new THREE.Mesh(geometry, wallMaterial)
-  building.position.y = minHeight
-  building.castShadow = true
-  building.receiveShadow = true
-  group.add(building)
+}
 
-  const roofGeometry = new THREE.ShapeGeometry(shape, 12)
-  roofGeometry.rotateX(-Math.PI / 2)
-  const roof = new THREE.Mesh(roofGeometry, makeMaterial('#6b7280', 0.84, 0.02))
-  roof.position.y = minHeight + height + 0.08
-  roof.receiveShadow = true
-  group.add(roof)
+const mergeGeometries = (
+  geometries: ReadonlyArray<THREE.BufferGeometry>,
+): THREE.BufferGeometry | null => {
+  const positions: number[] = []
+  const indices: number[] = []
+  let vertexOffset = 0
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute('position')
+    if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
+      geometry.dispose()
+      continue
+    }
+    for (let index = 0; index < position.count; index += 1) {
+      positions.push(position.getX(index), position.getY(index), position.getZ(index))
+    }
+    const geometryIndex = geometry.getIndex()
+    if (geometryIndex) {
+      for (let index = 0; index < geometryIndex.count; index += 1) {
+        indices.push(geometryIndex.getX(index) + vertexOffset)
+      }
+    } else {
+      for (let index = 0; index < position.count; index += 1) {
+        indices.push(vertexOffset + index)
+      }
+    }
+    vertexOffset += position.count
+    geometry.dispose()
+  }
+  if (positions.length === 0 || indices.length === 0) return null
+  const merged = new THREE.BufferGeometry()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.setIndex(indices)
+  merged.computeVertexNormals()
+  merged.computeBoundingSphere()
+  return merged
+}
 
-  if (height > 9) {
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry, 42),
-      new THREE.LineBasicMaterial({ color: '#475569', transparent: true, opacity: 0.22 }),
-    )
-    edges.position.y = minHeight + 0.02
-    group.add(edges)
+const meshesFromBuckets = (
+  buckets: ReadonlyMap<string, GeometryBucket>,
+): THREE.Group => {
+  const group = new THREE.Group()
+  for (const bucket of buckets.values()) {
+    const geometry = mergeGeometries(bucket.geometries)
+    if (!geometry) continue
+    const mesh = new THREE.Mesh(geometry, bucket.material)
+    mesh.receiveShadow = bucket.receiveShadow
+    mesh.castShadow = bucket.castShadow
+    group.add(mesh)
   }
   return group
 }
 
-const createRibbonGeometry = (
-  path: ReadonlyArray<DroneWorldPoint>,
-  widthM: number,
+const createMergedSurfaceMeshes = (
+  polygons: ReadonlyArray<DroneWorldPolygonFeature>,
+): THREE.Group => {
+  const buckets = new Map<string, GeometryBucket>()
+  for (const feature of polygons) {
+    if (feature.kind === 'building') continue
+    const shape = shapeFor(feature.rings)
+    if (!shape) continue
+    const color = surfacePalette(feature)
+    const isWater = feature.kind === 'water'
+    const geometry = new THREE.ShapeGeometry(shape, 8)
+    geometry.rotateX(-Math.PI / 2)
+    geometry.translate(0, isWater ? 0.035 : 0.01, 0)
+    addBucketGeometry(
+      buckets,
+      `${feature.kind}:${feature.className}:${color}`,
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness: isWater ? 0.45 : 0.9,
+        metalness: isWater ? 0.08 : 0.01,
+        transparent: isWater,
+        opacity: isWater ? 0.82 : 0.88,
+      }),
+      geometry,
+      { receiveShadow: true, castShadow: false },
+    )
+  }
+  return meshesFromBuckets(buckets)
+}
+
+const createMergedBuildingMeshes = (
+  polygons: ReadonlyArray<DroneWorldPolygonFeature>,
+): THREE.Group => {
+  const buckets = new Map<string, GeometryBucket>()
+  for (const feature of polygons) {
+    if (feature.kind !== 'building') continue
+    const shape = shapeFor(feature.rings)
+    const height = feature.heightM ?? 8
+    if (!shape || height < 1) continue
+    const minHeight = feature.minHeightM ?? 0
+    const wallColor = feature.className === 'industrial'
+      ? '#a8a29e'
+      : feature.className === 'commercial'
+        ? '#b8b4a7'
+        : '#c9c4ba'
+    const wallGeometry = new THREE.ExtrudeGeometry(shape, {
+      depth: height,
+      bevelEnabled: height > 14,
+      bevelSize: height > 14 ? 0.14 : 0,
+      bevelThickness: height > 14 ? 0.14 : 0,
+      bevelSegments: height > 14 ? 1 : 0,
+    })
+    wallGeometry.rotateX(-Math.PI / 2)
+    wallGeometry.translate(0, minHeight, 0)
+    addBucketGeometry(
+      buckets,
+      `building-wall:${feature.className}:${wallColor}`,
+      makeMaterial(wallColor, 0.76, 0.03),
+      wallGeometry,
+      { receiveShadow: true, castShadow: false },
+    )
+
+    const roofGeometry = new THREE.ShapeGeometry(shape, 8)
+    roofGeometry.rotateX(-Math.PI / 2)
+    roofGeometry.translate(0, minHeight + height + 0.08, 0)
+    addBucketGeometry(
+      buckets,
+      'building-roof:#6b7280',
+      makeMaterial('#6b7280', 0.84, 0.02),
+      roofGeometry,
+      { receiveShadow: true, castShadow: false },
+    )
+  }
+  return meshesFromBuckets(buckets)
+}
+
+const createRibbonGeometryForLines = (
+  lines: ReadonlyArray<DroneWorldLineFeature>,
   y: number,
 ): THREE.BufferGeometry => {
   const positions: number[] = []
   const indices: number[] = []
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const start = path[index]!
-    const end = path[index + 1]!
-    const dx = end.x - start.x
-    const dz = end.z - start.z
-    const length = Math.hypot(dx, dz)
-    if (length < 0.2) continue
-    const nx = -dz / length * widthM / 2
-    const nz = dx / length * widthM / 2
-    const base = positions.length / 3
-    positions.push(
-      start.x + nx, y, start.z + nz,
-      start.x - nx, y, start.z - nz,
-      end.x + nx, y, end.z + nz,
-      end.x - nx, y, end.z - nz,
-    )
-    indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
+  for (const line of lines) {
+    for (let index = 0; index < line.path.length - 1; index += 1) {
+      const start = line.path[index]!
+      const end = line.path[index + 1]!
+      const dx = end.x - start.x
+      const dz = end.z - start.z
+      const length = Math.hypot(dx, dz)
+      if (length < 0.2) continue
+      const nx = -dz / length * line.widthM / 2
+      const nz = dx / length * line.widthM / 2
+      const base = positions.length / 3
+      positions.push(
+        start.x + nx, y, start.z + nz,
+        start.x - nx, y, start.z - nz,
+        end.x + nx, y, end.z + nz,
+        end.x - nx, y, end.z - nz,
+      )
+      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
+    }
   }
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
   return geometry
 }
 
-const createLineMesh = (
-  feature: DroneWorldLineFeature,
-): THREE.Mesh | null => {
-  const geometry = createRibbonGeometry(feature.path, feature.widthM, feature.kind === 'waterway' ? 0.08 : 0.07)
-  const position = geometry.getAttribute('position')
-  if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
-    geometry.dispose()
-    return null
-  }
-  const material = new THREE.MeshStandardMaterial({
-    color: roadPalette(feature),
-    roughness: feature.kind === 'waterway' ? 0.5 : 0.82,
-    metalness: feature.kind === 'waterway' ? 0.04 : 0.01,
-    transparent: feature.kind === 'waterway',
-    opacity: feature.kind === 'waterway' ? 0.78 : 1,
-  })
-  const mesh = new THREE.Mesh(geometry, material)
-  mesh.receiveShadow = true
-  return mesh
-}
-
-const createLaneMarkings = (
+const createLineMeshes = (
   lines: ReadonlyArray<DroneWorldLineFeature>,
 ): THREE.Group => {
   const group = new THREE.Group()
-  const material = new THREE.MeshBasicMaterial({ color: '#f8fafc', transparent: true, opacity: 0.78 })
+  const buckets = new Map<string, { readonly material: THREE.Material; readonly lines: DroneWorldLineFeature[]; readonly y: number }>()
+  for (const line of lines) {
+    const color = roadPalette(line)
+    const key = `${line.kind}:${line.className}:${color}`
+    const existing = buckets.get(key)
+    if (existing) {
+      existing.lines.push(line)
+      continue
+    }
+    buckets.set(key, {
+      material: new THREE.MeshStandardMaterial({
+        color,
+        roughness: line.kind === 'waterway' ? 0.5 : 0.82,
+        metalness: line.kind === 'waterway' ? 0.04 : 0.01,
+        transparent: line.kind === 'waterway',
+        opacity: line.kind === 'waterway' ? 0.78 : 1,
+      }),
+      lines: [line],
+      y: line.kind === 'waterway' ? 0.08 : 0.07,
+    })
+  }
+  for (const bucket of buckets.values()) {
+    const geometry = createRibbonGeometryForLines(bucket.lines, bucket.y)
+    const position = geometry.getAttribute('position')
+    if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
+      geometry.dispose()
+      bucket.material.dispose()
+      continue
+    }
+    const mesh = new THREE.Mesh(geometry, bucket.material)
+    mesh.receiveShadow = true
+    group.add(mesh)
+  }
+  return group
+}
+
+const createLaneMarkingsGeometry = (
+  lines: ReadonlyArray<DroneWorldLineFeature>,
+): THREE.BufferGeometry => {
+  const positions: number[] = []
+  const indices: number[] = []
   let dashCount = 0
   for (const line of lines) {
     if (line.kind !== 'road' || line.widthM < 8) continue
@@ -268,18 +382,46 @@ const createLaneMarkings = (
       if (segmentLength < 24) continue
       const ux = dx / segmentLength
       const uz = dz / segmentLength
-      const yaw = Math.atan2(ux, uz)
+      const nx = -uz
+      const nz = ux
+      const halfLength = 4.5
+      const halfWidth = 0.325
       for (let distance = 12; distance < segmentLength - 8 && dashCount < 420; distance += 36) {
-        const dash = new THREE.Mesh(new THREE.PlaneGeometry(0.65, 9), material)
-        dash.rotation.x = -Math.PI / 2
-        dash.rotation.z = -yaw
-        dash.position.set(start.x + ux * distance, 0.095, start.z + uz * distance)
-        group.add(dash)
+        const centerX = start.x + ux * distance
+        const centerZ = start.z + uz * distance
+        const base = positions.length / 3
+        positions.push(
+          centerX + ux * halfLength + nx * halfWidth, 0.095, centerZ + uz * halfLength + nz * halfWidth,
+          centerX + ux * halfLength - nx * halfWidth, 0.095, centerZ + uz * halfLength - nz * halfWidth,
+          centerX - ux * halfLength + nx * halfWidth, 0.095, centerZ - uz * halfLength + nz * halfWidth,
+          centerX - ux * halfLength - nx * halfWidth, 0.095, centerZ - uz * halfLength - nz * halfWidth,
+        )
+        indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
         dashCount += 1
       }
     }
   }
-  return group
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+const createLaneMarkings = (
+  lines: ReadonlyArray<DroneWorldLineFeature>,
+): THREE.Mesh | null => {
+  const geometry = createLaneMarkingsGeometry(lines)
+  const position = geometry.getAttribute('position')
+  if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
+    geometry.dispose()
+    return null
+  }
+  return new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({ color: '#f8fafc', transparent: true, opacity: 0.78 }),
+  )
 }
 
 const seededRandom = (
@@ -375,9 +517,9 @@ const createVegetation = (
     dummy.updateMatrix()
     canopy.setMatrixAt(index, dummy.matrix)
   }
-  trunk.castShadow = true
   trunk.receiveShadow = true
-  canopy.castShadow = true
+  trunk.castShadow = false
+  canopy.castShadow = false
   canopy.receiveShadow = true
   group.add(trunk, canopy)
   return group
@@ -389,14 +531,25 @@ const createPoiBeacons = (
   const group = new THREE.Group()
   const beaconMaterial = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0ea5e9', emissiveIntensity: 0.7, roughness: 0.35 })
   const ringMaterial = new THREE.MeshBasicMaterial({ color: '#bae6fd', transparent: true, opacity: 0.54 })
-  for (const point of snapshot.points.slice(0, 36)) {
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 12), beaconMaterial)
-    stem.position.set(point.point.x, 9, point.point.z)
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(4, 0.08, 8, 40), ringMaterial)
-    ring.position.set(point.point.x, 18.2, point.point.z)
-    ring.rotation.x = Math.PI / 2
-    group.add(stem, ring)
+  const points = snapshot.points.slice(0, 36)
+  if (points.length === 0) return group
+  const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 12), beaconMaterial, points.length)
+  const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 8, 40), ringMaterial, points.length)
+  const dummy = new THREE.Object3D()
+  for (const [index, point] of points.entries()) {
+    dummy.position.set(point.point.x, 9, point.point.z)
+    dummy.rotation.set(0, 0, 0)
+    dummy.scale.set(1, 1, 1)
+    dummy.updateMatrix()
+    stems.setMatrixAt(index, dummy.matrix)
+    dummy.position.set(point.point.x, 18.2, point.point.z)
+    dummy.rotation.set(Math.PI / 2, 0, 0)
+    dummy.updateMatrix()
+    rings.setMatrixAt(index, dummy.matrix)
   }
+  stems.instanceMatrix.needsUpdate = true
+  rings.instanceMatrix.needsUpdate = true
+  group.add(stems, rings)
   return group
 }
 
@@ -472,29 +625,18 @@ export const createDroneMapWorldGroup = (
   snapshot: DroneMapWorldSnapshot,
 ): THREE.Group => {
   const group = createFallbackWorldGroup(snapshot.radiusM)
-  const surfaceGroup = new THREE.Group()
-  const buildingGroup = new THREE.Group()
-  const roadGroup = new THREE.Group()
-  for (const polygon of snapshot.polygons) {
-    if (polygon.kind === 'building') {
-      const building = createBuildingMesh(polygon)
-      if (building) buildingGroup.add(building)
-      continue
-    }
-    const surface = createSurfaceMesh(polygon)
-    if (surface) surfaceGroup.add(surface)
-  }
-  for (const line of snapshot.lines) {
-    const mesh = createLineMesh(line)
-    if (mesh) roadGroup.add(mesh)
-  }
-  roadGroup.add(createLaneMarkings(snapshot.lines))
+  const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons)
+  const buildingGroup = createMergedBuildingMeshes(snapshot.polygons)
+  const roadGroup = createLineMeshes(snapshot.lines)
+  const laneMarkings = createLaneMarkings(snapshot.lines)
+  if (laneMarkings) roadGroup.add(laneMarkings)
   group.add(surfaceGroup, roadGroup, buildingGroup, createVegetation(snapshot), createPoiBeacons(snapshot))
   group.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-      child.castShadow = child.castShadow || child.position.y > 0.2
       child.receiveShadow = true
     }
+    child.matrixAutoUpdate = false
+    child.updateMatrix()
   })
   group.userData.worldSummary = {
     key: snapshot.key,

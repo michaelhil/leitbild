@@ -46,8 +46,8 @@ import { bearingDeg, clamp, horizontalDistanceM, movePointByMeters, normalizeAng
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
 import { integrateDronePhysics } from './physics.ts'
 
-const emitMinIntervalMs = 180
-const defaultTickMs = 100
+const emitMinIntervalMs = 80
+const defaultTickMs = 50
 const hoverArrivalRadiusM = 2.5
 const guidedSlowRadiusM = 45
 

@@ -117,6 +117,28 @@ describe('drone pack', () => {
     expect(movedData.energy.remainingWh).toBeLessThan(movedData.profile.energy.capacityWh)
   })
 
+  test('manual control emits motion updates at the low-latency cadence', async () => {
+    const controlled = drone({ id: 'drone:cadence', point: point(10.75, 59.91) })
+    const engine = createDroneSimEngine({
+      controlInstanceId,
+      objects: [controlled],
+      startedAt: '2026-06-07T10:00:00.000Z' as never,
+    })
+    const result = await engine.handleCommand(command(manualControlCommandKind, {
+      droneId: controlled.id,
+      axes: { forward: 1, right: 0, vertical: 0, yaw: 0 },
+      inputSource: { kind: 'keyboard', label: 'test keyboard' },
+      commandTtlMs: 2_000,
+    }, [controlled.id]))
+    expect(result.result.ok).toBe(true)
+    const first = engine.tick(50, '2026-06-07T10:00:00.050Z' as never)
+    const second = engine.tick(50, '2026-06-07T10:00:00.100Z' as never)
+    const third = engine.tick(50, '2026-06-07T10:00:00.150Z' as never)
+    expect(first.some(event => event.type === 'object.upserted')).toBe(true)
+    expect(second.some(event => event.type === 'object.upserted')).toBe(false)
+    expect(third.some(event => event.type === 'object.upserted')).toBe(true)
+  })
+
   test('runtime environment config is applied to physics and drone pack data', () => {
     const environment = droneEnvironmentFromRuntimeConfigValue({
       environment: {
