@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
   createProcessPlantMultiSystemTestbed,
@@ -9,11 +7,17 @@ import {
   type CompiledComponent,
   type CompiledProcessPlantSystem,
   type ProcessPlantMultiSystemConfig,
-  type ProcessPlantMultiSystemSnapshot,
   type ProcessPlantScheduledAction,
-  type ProcessPlantTelemetrySeries,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
+import {
+  evaluateProcessPlantCredibilityTarget,
+  processPlantCredibilityCaseResultSummaries,
+  processPlantCredibilityTraceForCase,
+  renderProcessPlantCredibilityReportSvg,
+  writeProcessPlantCredibilityArtifacts,
+  type ProcessPlantCredibilityTarget,
+} from './credibility-harness.ts'
 
 const durationMs = 600_000
 const stepMs = 1_000
@@ -94,68 +98,7 @@ interface CredibilityCase {
   readonly actions: (system: CompiledProcessPlantSystem) => ReadonlyArray<ProcessPlantScheduledAction>
 }
 
-type Measurement =
-  | {
-      readonly kind: 'point'
-      readonly path: VariablePath
-      readonly atMs: number
-    }
-  | {
-      readonly kind: 'minAfter'
-      readonly path: VariablePath
-      readonly afterMs: number
-    }
-  | {
-      readonly kind: 'maxAfter'
-      readonly path: VariablePath
-      readonly afterMs: number
-    }
-  | {
-      readonly kind: 'delta'
-      readonly path: VariablePath
-      readonly fromMs: number
-      readonly toMs: number
-    }
-
-interface TargetRange {
-  readonly min?: number
-  readonly max?: number
-}
-
-interface CredibilityTarget {
-  readonly id: string
-  readonly caseId: CaseId
-  readonly label: string
-  readonly signal: string
-  readonly expectation: string
-  readonly measure: Measurement
-  readonly acceptable: TargetRange
-  readonly severity: 'gate' | 'watch'
-  readonly sourceRefs: ReadonlyArray<SourceRefId>
-}
-
-interface TargetResult {
-  readonly targetId: string
-  readonly caseId: CaseId
-  readonly label: string
-  readonly signal: string
-  readonly expectation: string
-  readonly observed: number
-  readonly acceptable: TargetRange
-  readonly passed: boolean
-  readonly severity: CredibilityTarget['severity']
-  readonly sourceRefs: ReadonlyArray<SourceRefId>
-}
-
-interface CaseResultSummary {
-  readonly caseId: CaseId
-  readonly title: string
-  readonly eventFamily: string
-  readonly targetCount: number
-  readonly passedTargetCount: number
-  readonly failedGateTargetCount: number
-  readonly failedWatchTargetCount: number
-}
+type CredibilityTarget = ProcessPlantCredibilityTarget<CaseId, SourceRefId>
 
 const scheduledComponentTrip = (
   id: string,
@@ -789,165 +732,13 @@ const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
     }
   })
 
-const seriesFor = (
-  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
-  path: VariablePath,
-): ProcessPlantTelemetrySeries => {
-  const series = telemetry.find(candidate => candidate.path === path)
-  if (!series) throw new Error(`missing PWR credibility telemetry series: ${path}`)
-  return series
-}
-
-const numericValue = (series: ProcessPlantTelemetrySeries, index: number): number => {
-  const point = series.points[index]
-  if (!point) throw new Error(`missing PWR credibility telemetry point ${series.path} at index ${index}`)
-  if (typeof point.value !== 'number') throw new Error(`PWR credibility variable is not numeric: ${series.path}`)
-  return point.value
-}
-
-const valueAtOrAfter = (
-  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
-  path: VariablePath,
-  elapsedMs: number,
-): number => {
-  const series = seriesFor(telemetry, path)
-  const index = series.points.findIndex(point => point.elapsedMs >= elapsedMs)
-  if (index < 0) throw new Error(`missing PWR credibility point for ${path} at ${elapsedMs}ms`)
-  return numericValue(series, index)
-}
-
-const valuesAfter = (
-  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
-  path: VariablePath,
-  elapsedMs: number,
-): ReadonlyArray<number> => {
-  const series = seriesFor(telemetry, path)
-  const values = series.points
-    .filter(point => point.elapsedMs >= elapsedMs)
-    .map(point => {
-      if (typeof point.value !== 'number') throw new Error(`PWR credibility variable is not numeric: ${path}`)
-      return point.value
-    })
-  if (values.length === 0) throw new Error(`missing PWR credibility points for ${path} after ${elapsedMs}ms`)
-  return values
-}
-
-const measureValue = (
-  telemetry: ReadonlyArray<ProcessPlantTelemetrySeries>,
-  measure: Measurement,
-): number => {
-  if (measure.kind === 'point') return valueAtOrAfter(telemetry, measure.path, measure.atMs)
-  if (measure.kind === 'minAfter') return Math.min(...valuesAfter(telemetry, measure.path, measure.afterMs))
-  if (measure.kind === 'maxAfter') return Math.max(...valuesAfter(telemetry, measure.path, measure.afterMs))
-  return valueAtOrAfter(telemetry, measure.path, measure.toMs) - valueAtOrAfter(telemetry, measure.path, measure.fromMs)
-}
-
-const rangeContains = (value: number, range: TargetRange): boolean =>
-  (range.min === undefined || value >= range.min)
-  && (range.max === undefined || value <= range.max)
-
-const evaluateTarget = (
-  trace: ProcessPlantMultiSystemSnapshot,
-  target: CredibilityTarget,
-): TargetResult => {
-  if (!trace.telemetry) throw new Error(`PWR credibility trace missing telemetry for ${trace.systemId}`)
-  const observed = measureValue(trace.telemetry, target.measure)
-  return {
-    targetId: target.id,
-    caseId: target.caseId,
-    label: target.label,
-    signal: target.signal,
-    expectation: target.expectation,
-    observed,
-    acceptable: target.acceptable,
-    passed: rangeContains(observed, target.acceptable),
-    severity: target.severity,
-    sourceRefs: target.sourceRefs,
-  }
-}
-
-const traceForCase = (
-  traces: ReadonlyArray<ProcessPlantMultiSystemSnapshot>,
-  caseId: CaseId,
-): ProcessPlantMultiSystemSnapshot => {
-  const trace = traces.find(candidate => candidate.systemId === caseId)
-  if (!trace) throw new Error(`missing PWR credibility trace for case: ${caseId}`)
-  return trace
-}
-
-const formatRange = (range: TargetRange): string => {
-  if (range.min !== undefined && range.max !== undefined) return `${range.min} to ${range.max}`
-  if (range.min !== undefined) return `>= ${range.min}`
-  if (range.max !== undefined) return `<= ${range.max}`
-  return 'record only'
-}
-
-const svgEscape = (value: string): string =>
-  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
-
-const renderSvg = (
-  results: ReadonlyArray<TargetResult>,
-  wallMs: number,
-): string => {
-  const rowHeight = 34
-  const grouped = cases.map(testCase => ({
-    testCase,
-    results: results.filter(result => result.caseId === testCase.id),
-  }))
-  const height = 138 + grouped.reduce((total, group) => total + 48 + group.results.length * rowHeight, 0)
-  const rows = grouped.map((group, groupIndex) => {
-    const groupY = 116 + grouped.slice(0, groupIndex).reduce((total, previous) => total + 48 + previous.results.length * rowHeight, 0)
-    const targetRows = group.results.map((result, index) => {
-      const y = groupY + 42 + index * rowHeight
-      const statusColor = result.passed ? '#15803d' : result.severity === 'gate' ? '#b91c1c' : '#a16207'
-      const status = result.passed ? 'PASS' : result.severity === 'gate' ? 'FAIL' : 'WATCH'
-      return `
-        <g transform="translate(52 ${y})">
-          <rect x="0" y="-21" width="1096" height="30" rx="4" fill="${index % 2 === 0 ? '#ffffff' : '#f8fafc'}" stroke="#e5e7eb"/>
-          <text x="12" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="${statusColor}">${status}</text>
-          <text x="82" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#111827">${svgEscape(result.label)}</text>
-          <text x="590" y="-2" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#475569">obs ${result.observed.toFixed(3)} / target ${svgEscape(formatRange(result.acceptable))}</text>
-        </g>`
-    }).join('')
-    return `
-      <g>
-        <text x="50" y="${groupY}" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#111827">${svgEscape(group.testCase.title)}</text>
-        <text x="50" y="${groupY + 21}" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#64748b">${svgEscape(group.testCase.eventFamily)}</text>
-        ${targetRows}
-      </g>`
-  }).join('')
-  const failedGates = results.filter(result => !result.passed && result.severity === 'gate').length
-  const failedWatch = results.filter(result => !result.passed && result.severity === 'watch').length
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}" viewBox="0 0 1200 ${height}">
-  <rect width="1200" height="${height}" fill="#eef2f7"/>
-  <text x="50" y="42" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#111827">PWR Credibility Target Report</text>
-  <text x="50" y="68" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#475569">Source-backed target envelopes against the modular PWR assembly. Gate failures: ${failedGates}; watch misses: ${failedWatch}; wall ${wallMs.toFixed(0)}ms.</text>
-  <text x="50" y="92" font-family="Inter, system-ui, sans-serif" font-size="12" fill="#64748b">Scope: operational/training credibility, not licensing-basis safety analysis.</text>
-  ${rows}
-</svg>`
-}
-
-const caseResultSummaries = (results: ReadonlyArray<TargetResult>): ReadonlyArray<CaseResultSummary> =>
-  cases.map(testCase => {
-    const caseTargets = results.filter(result => result.caseId === testCase.id)
-    return {
-      caseId: testCase.id,
-      title: testCase.title,
-      eventFamily: testCase.eventFamily,
-      targetCount: caseTargets.length,
-      passedTargetCount: caseTargets.filter(result => result.passed).length,
-      failedGateTargetCount: caseTargets.filter(result => !result.passed && result.severity === 'gate').length,
-      failedWatchTargetCount: caseTargets.filter(result => !result.passed && result.severity === 'watch').length,
-    }
-  })
-
 const main = async (): Promise<void> => {
   const runConfigs = configs()
   const started = performance.now()
   const traces = createProcessPlantMultiSystemTestbed(runConfigs).runFor(durationMs, stepMs)
   const wallMs = performance.now() - started
-  const results = targets.map(target => evaluateTarget(traceForCase(traces, target.caseId), target))
-  const caseResults = caseResultSummaries(results)
+  const results = targets.map(target => evaluateProcessPlantCredibilityTarget(processPlantCredibilityTraceForCase(traces, target.caseId), target))
+  const caseResults = processPlantCredibilityCaseResultSummaries(cases, results)
   const failedGateTargets = results.filter(result => !result.passed && result.severity === 'gate')
   const failedWatchTargets = results.filter(result => !result.passed && result.severity === 'watch')
   const firstGraph = runConfigs[0]?.system.graph
@@ -984,9 +775,18 @@ const main = async (): Promise<void> => {
     },
   }
 
-  await mkdir(dirname(summaryJsonPath), { recursive: true })
-  await writeFile(summaryJsonPath, `${JSON.stringify(summary, null, 2)}\n`)
-  await writeFile(reportSvgPath, renderSvg(results, wallMs))
+  await writeProcessPlantCredibilityArtifacts({
+    summaryJsonPath,
+    reportSvgPath,
+    summary,
+    reportSvg: renderProcessPlantCredibilityReportSvg({
+      title: 'PWR Credibility Target Report',
+      subtitle: `Source-backed target envelopes against the modular PWR assembly. Gate failures: ${failedGateTargets.length}; watch misses: ${failedWatchTargets.length}; wall ${wallMs.toFixed(0)}ms.`,
+      scope: 'Scope: operational/training credibility, not licensing-basis safety analysis.',
+      cases,
+      results,
+    }),
+  })
 
   console.log(JSON.stringify({
     caseCount: summary.caseCount,

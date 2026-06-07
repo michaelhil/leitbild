@@ -21,8 +21,10 @@ import type { ProcessPlantCatalogContribution } from './catalog-contributions.ts
 
 export const processPlantPressurizedWaterReactorGraphRef = 'process-plant.pressurized-water-reactor.v1'
 export const processPlantPressurizedWaterReactorSixLoopGraphRef = 'process-plant.pressurized-water-reactor-6-loop.v1'
+export const processPlantPwrReferenceCredibilityEvidenceId = 'process-plant.pwr.reference.credibility.v1'
 
 const pwrReferenceIcRefPattern = /^process-plant\.pwr\.reference\.(\d+)-loop\.ic\.v2$/u
+const pwrReferenceAssembledGraphSpecIdPattern = /^process-plant\.pressurized-water-reactor-\d+-loop\.assembled\.v2$/u
 
 export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogContribution = {
   id: 'process-plant.pwr-reference',
@@ -79,5 +81,32 @@ export const processPlantPwrReferenceCatalogContribution: ProcessPlantCatalogCon
     id: 'unit-overview',
     sourcePath: 'src/packs/process-plant/surfaces/reference-unit-overview.ts',
     surface: config => processPlantUnitOverviewSurfaceForGraph(config.graph),
+  }],
+  credibilityEvidence: [{
+    id: processPlantPwrReferenceCredibilityEvidenceId,
+    title: 'PWR reference credibility targets',
+    description: 'Source-backed operational target envelopes for reference PWR transients and accident families.',
+    scope: 'Operational/training credibility for the process-plant PWR reference family; not licensing-basis safety analysis.',
+    generatedFromCommand: 'bun run process-plant:credibility',
+    sourcePath: 'src/packs/process-plant/pwr-reference-catalog-contribution.ts',
+    appliesToGraph: graph =>
+      String(graph.specId) === processPlantPressurizedWaterReactorGraphRef
+      || pwrReferenceAssembledGraphSpecIdPattern.test(String(graph.specId)),
+    artifacts: [
+      {
+        id: 'summary',
+        title: 'Target summary JSON',
+        language: 'json',
+        contentType: 'application/json',
+        path: 'docs/assets/process-plant-pwr-credibility-summary.json',
+      },
+      {
+        id: 'report',
+        title: 'Target report SVG',
+        language: 'svg',
+        contentType: 'image/svg+xml',
+        path: 'docs/assets/process-plant-pwr-credibility-report.svg',
+      },
+    ],
   }],
 }

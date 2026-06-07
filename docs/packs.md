@@ -205,6 +205,18 @@ A scenario object of type `unit` declares:
 
 The local process-plant pack runtime projects runtime/I&C state back onto that object at the pack runtime tick. The projection includes status tone, status label, active alarm/trip counts, summary, and selected rail fields such as thermal power, electric output, pressurizer pressure, steam-generator level, radiation, and containment pressure. The process variable table remains the source of truth; the projection is only the shared operational picture for map, rail, AI overview, and cross-pack awareness.
 
+## Drone Operational Simulation
+
+The drone pack is the first high-interaction vehicle-control pack built on the same pack/runtime/query/interaction boundaries.
+
+A drone is an ordinary operational object for Leitbild-wide awareness, but its continuous flight mechanics remain inside the drone pack runtime. Drone pack data includes validated profile, kinematics, energy, control, health, payload, sensor, and optional swarm state. Profiles are declarative data, so surveillance, supply, and effect-capable drones are examples rather than hard-coded object classes.
+
+The browser samples keyboard and Gamepad API state only as an input device boundary. It sends validated `drone.manual_control`, `drone.navigate_to`, `drone.swarm_command`, `drone.configure_profile`, and `drone.attack` commands through the normal Control Instance API. The runtime remains authoritative; multiple browsers and multiple flight windows see the same projected state.
+
+Drone effects use generic interaction signals. The drone runtime may emit `drone.attack.requested`, and the pack interaction handler returns constrained object-upsert/notification effects after validating capability, payload, range, and target state. It does not import or mutate another pack's private model.
+
+Pack-specific Three.js flight views live under `src/ui/drone`. They consume object/query state and render a procedural operational scene; they must not become a second simulation path.
+
 ## Spatial Field Contributions
 
 Packs that need spatial fields, such as weather or a future wildfire pack, should use the shared spatial-index wrapper in `src/core/spatial/*` rather than importing geospatial indexing libraries directly. V1 uses H3 behind that wrapper because it gives globally stable hierarchical cells, viewport coverage, parent/child aggregation, and deterministic ids that work across users and reloads.
@@ -320,9 +332,9 @@ Process-plant I&C is the pack's simplified instrumentation-and-control substrate
 
 Process-plant permissives and interlocks are command gates, not hidden component side effects. They resolve target signals through graph-owned bindings and constrain the same queued write path used by operators, scenarios, AI agents, and internal I&C write effects. `process-plant.procedure-tags.validate` is a read-only compatibility helper for external procedure tag appendices; it reports missing or mismatched tags but does not parse or execute procedure documents.
 
-Process-plant reusable assets are registered through generic catalog contributions rather than hardcoded in the generic runtime/query layer. Contributions can provide graph specs, assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, dynamic I&C ref patterns, and process surfaces. `process-plant.catalog.list` exposes those contributed refs/ids for tooling and UI discovery; the operational UI includes a read-only process-plant catalog view for browsing and copying them.
+Process-plant reusable assets are registered through generic catalog contributions rather than hardcoded in the generic runtime/query layer. Contributions can provide graph specs, assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, dynamic I&C ref patterns, process surfaces, and credibility evidence. `process-plant.catalog.list` exposes those contributed refs/ids for tooling and UI discovery; the operational UI includes a read-only process-plant catalog view for browsing and copying them.
 
-Process-plant credibility evidence is exposed through generic read-only evidence queries. `process-plant.credibility.list` returns evidence sets applicable to one compiled system, and `process-plant.credibility.read` returns a named generated artifact. Current PWR evidence is one registered evidence contributor; generic UI reads the evidence query and does not import PWR-specific models.
+Process-plant credibility evidence is exposed through generic read-only evidence queries. `process-plant.credibility.list` returns evidence sets applicable to one compiled system, and `process-plant.credibility.read` returns a named generated artifact. Evidence applicability is matched against compiled graph identity/topology by catalog contributors. Current PWR evidence is one registered evidence contributor; generic query/UI code reads the evidence catalog and does not import PWR-specific models.
 
 Process-plant may also provide reference I&C behavior through an explicit per-system `icRef`. Built-in PWR refs are contributed through the same process-plant catalog. Fixed refs such as `process-plant.pressurized-water-reactor.ic.v1` remain available for fixed reference graphs; graph-aware refs such as `process-plant.pwr.reference.graph.ic.v2` derive loop ids from the compiled graph and are preferred for modular PWR variants. Reference I&C supplies plant automation and annunciation for common transients; it does not supply procedure execution, operator guidance, or EOP branching. A system config must choose either `icRef` or inline `protection`, not both.
 

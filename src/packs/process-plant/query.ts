@@ -12,6 +12,8 @@ import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './q
 import { answerProcessPlantSurfaceQuery, processPlantSurfaceQueryKinds } from './queries/surface-query.ts'
 import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from './queries/variable-query.ts'
 
+export { processPlantCredibilityEvidenceForGraph } from './queries/credibility-query.ts'
+
 export const processPlantQueryKinds = [
   ...processPlantCatalogQueryKinds,
   ...processPlantCredibilityQueryKinds,

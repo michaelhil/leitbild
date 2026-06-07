@@ -5,28 +5,15 @@ import { z } from 'zod'
 import type { IsoTimestamp } from '../../../core/model/index.ts'
 import { idSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
+import {
+  processPlantCatalog,
+  type ProcessPlantCatalog,
+  type ProcessPlantCredibilityArtifactCatalogEntry,
+  type ProcessPlantCredibilityEvidenceCatalogEntry,
+} from '../catalog-contributions.ts'
+import type { CompiledPlantGraph } from '../graph/index.ts'
 import type { ProcessPlantSystemRuntime } from '../system-runtime.ts'
 import { requireSystem, success } from './common.ts'
-
-type CredibilityArtifactLanguage = 'json' | 'svg'
-
-interface CredibilityArtifactRef {
-  readonly id: string
-  readonly title: string
-  readonly language: CredibilityArtifactLanguage
-  readonly contentType: string
-  readonly path: string
-}
-
-interface CredibilityEvidenceRef {
-  readonly id: string
-  readonly title: string
-  readonly description: string
-  readonly scope: string
-  readonly generatedFromCommand: string
-  readonly appliesToSystem: (system: ProcessPlantSystemRuntime) => boolean
-  readonly artifacts: ReadonlyArray<CredibilityArtifactRef>
-}
 
 const credibilityListPayloadSchema = z.object({
   systemId: idSchema,
@@ -44,37 +31,6 @@ export const processPlantCredibilityQueryKinds = [
   'process-plant.credibility.list',
   'process-plant.credibility.read',
 ] as const
-
-const pwrReferenceEvidence: CredibilityEvidenceRef = {
-  id: 'process-plant.pwr.reference.credibility.v1',
-  title: 'PWR reference credibility targets',
-  description: 'Source-backed operational target envelopes for reference PWR transients and accident families.',
-  scope: 'Operational/training credibility for the process-plant PWR reference family; not licensing-basis safety analysis.',
-  generatedFromCommand: 'bun run process-plant:credibility',
-  appliesToSystem: system =>
-    String(system.system.graph.specId) === 'process-plant.pressurized-water-reactor.v1'
-    || /^process-plant\.pressurized-water-reactor-\d+-loop\.assembled\.v2$/.test(String(system.system.graph.specId)),
-  artifacts: [
-    {
-      id: 'summary',
-      title: 'Target summary JSON',
-      language: 'json',
-      contentType: 'application/json',
-      path: 'docs/assets/process-plant-pwr-credibility-summary.json',
-    },
-    {
-      id: 'report',
-      title: 'Target report SVG',
-      language: 'svg',
-      contentType: 'image/svg+xml',
-      path: 'docs/assets/process-plant-pwr-credibility-report.svg',
-    },
-  ],
-}
-
-const credibilityEvidenceRefs: ReadonlyArray<CredibilityEvidenceRef> = [
-  pwrReferenceEvidence,
-]
 
 const safeEvidenceArtifactPath = (path: string): string => {
   const normalized = normalize(path)
@@ -94,7 +50,7 @@ const artifactContentFor = (path: string): string => {
   return readFileSync(`${sourceRoot}/${safePath}`, 'utf8')
 }
 
-const artifactRefView = (artifact: CredibilityArtifactRef): Record<string, unknown> => ({
+const artifactRefView = (artifact: ProcessPlantCredibilityArtifactCatalogEntry): Record<string, unknown> => ({
   id: artifact.id,
   title: artifact.title,
   language: artifact.language,
@@ -102,7 +58,7 @@ const artifactRefView = (artifact: CredibilityArtifactRef): Record<string, unkno
   path: artifact.path,
 })
 
-const evidenceRefView = (evidence: CredibilityEvidenceRef): Record<string, unknown> => ({
+const evidenceRefView = (evidence: ProcessPlantCredibilityEvidenceCatalogEntry): Record<string, unknown> => ({
   id: evidence.id,
   title: evidence.title,
   description: evidence.description,
@@ -111,22 +67,28 @@ const evidenceRefView = (evidence: CredibilityEvidenceRef): Record<string, unkno
   artifacts: evidence.artifacts.map(artifactRefView),
 })
 
-const evidenceForSystem = (system: ProcessPlantSystemRuntime): ReadonlyArray<CredibilityEvidenceRef> =>
-  credibilityEvidenceRefs.filter(evidence => evidence.appliesToSystem(system))
+export const processPlantCredibilityEvidenceForGraph = (
+  graph: CompiledPlantGraph,
+  catalog: ProcessPlantCatalog = processPlantCatalog,
+): ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry> =>
+  [...catalog.credibilityEvidenceById.values()].filter(evidence => evidence.appliesToGraph(graph))
+
+const evidenceForSystem = (system: ProcessPlantSystemRuntime): ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry> =>
+  processPlantCredibilityEvidenceForGraph(system.system.graph)
 
 const requireEvidence = (
   system: ProcessPlantSystemRuntime,
   evidenceId: string,
-): CredibilityEvidenceRef => {
+): ProcessPlantCredibilityEvidenceCatalogEntry => {
   const evidence = evidenceForSystem(system).find(candidate => candidate.id === evidenceId)
   if (!evidence) throw new Error(`process plant credibility evidence not found for system ${system.system.id}: ${evidenceId}`)
   return evidence
 }
 
 const requireArtifact = (
-  evidence: CredibilityEvidenceRef,
+  evidence: ProcessPlantCredibilityEvidenceCatalogEntry,
   artifactId: string,
-): CredibilityArtifactRef => {
+): ProcessPlantCredibilityArtifactCatalogEntry => {
   const artifact = evidence.artifacts.find(candidate => candidate.id === artifactId)
   if (!artifact) throw new Error(`process plant credibility artifact not found for ${evidence.id}: ${artifactId}`)
   return artifact

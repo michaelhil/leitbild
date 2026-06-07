@@ -1,0 +1,238 @@
+{
+  "id": "oslo-drone-operations",
+  "schemaVersion": 1,
+  "title": "Oslo drone operations",
+  "description": "A shared drone-control and swarm scenario with individually simulated drones, ambulance targets, configurable profiles, and map-visible sensor/effect ranges.",
+  "packs": ["ambulance", "drone"],
+  "missionId": "mission:oslo-drone-search-and-intercept",
+  "runtimeOverrides": {},
+  "world": {
+    "startsAt": "2026-01-01T10:00:00.000Z",
+    "mapCenter": [10.7522, 59.9139],
+    "environment": {
+      "city": "Oslo",
+      "mode": "drone-operations"
+    }
+  },
+  "objects": [
+    {
+      "pack": "ambulance",
+      "type": "hospital",
+      "id": "facility:ous-drone",
+      "label": "Oslo University Hospital",
+      "position": [10.7387, 59.9365],
+      "traumaBeds": { "total": 4, "available": 2 }
+    },
+    {
+      "pack": "ambulance",
+      "type": "ambulance",
+      "id": "amb:drone-target-a12",
+      "label": "Ambulance A-12",
+      "atObject": "facility:ous-drone",
+      "equipment": ["defibrillator", "ventilator"]
+    },
+    {
+      "pack": "ambulance",
+      "type": "ambulance",
+      "id": "amb:drone-target-a21",
+      "label": "Ambulance A-21",
+      "position": [10.7605, 59.9144],
+      "equipment": ["defibrillator"]
+    },
+    {
+      "pack": "ambulance",
+      "type": "incident",
+      "id": "incident:drone-search-zone",
+      "label": "Riverside missing patient search",
+      "position": [10.7442, 59.9068],
+      "triage": "yellow",
+      "victims": { "state": "unknown" }
+    },
+    {
+      "pack": "drone",
+      "type": "drone",
+      "id": "drone:oslo-survey-1",
+      "label": "Survey 1",
+      "position": [10.7488, 59.9141],
+      "profileId": "quad-surveillance",
+      "altitudeM": 55,
+      "headingDeg": 35,
+      "swarm": {
+        "swarmId": "swarm:oslo-blue",
+        "role": "leader",
+        "slot": [0, 0, 0],
+        "separationRadiusM": 10
+      }
+    },
+    {
+      "pack": "drone",
+      "type": "drone",
+      "id": "drone:oslo-survey-2",
+      "label": "Survey 2",
+      "position": [10.7479, 59.9137],
+      "profileId": "micro-observer",
+      "altitudeM": 48,
+      "headingDeg": 35,
+      "swarm": {
+        "swarmId": "swarm:oslo-blue",
+        "role": "member",
+        "slot": [18, -18, 0],
+        "separationRadiusM": 8
+      }
+    },
+    {
+      "pack": "drone",
+      "type": "drone",
+      "id": "drone:oslo-supply-1",
+      "label": "Supply 1",
+      "position": [10.7429, 59.9160],
+      "profileId": "heavy-supply",
+      "altitudeM": 38,
+      "headingDeg": 92
+    },
+    {
+      "pack": "drone",
+      "type": "drone",
+      "id": "drone:oslo-interceptor-1",
+      "label": "Interceptor 1",
+      "position": [10.7570, 59.9138],
+      "profileId": "interceptor-effect",
+      "altitudeM": 42,
+      "headingDeg": 260
+    }
+  ],
+  "initialContexts": [],
+  "runtimeConfigs": {
+    "ambulance": {},
+    "drone": {
+      "profiles": [
+        {
+          "id": "micro-observer",
+          "label": "Micro Observer",
+          "description": "Small quiet observation drone with limited endurance and low speed.",
+          "airframe": {
+            "kind": "quadrotor",
+            "rotorCount": 4,
+            "massKg": 0.78,
+            "diagonalSizeM": 0.24,
+            "dragAreaM2": 0.035
+          },
+          "dynamics": {
+            "maxHorizontalSpeedMps": 11,
+            "maxVerticalSpeedMps": 3,
+            "maxAccelerationMps2": 4.5,
+            "maxYawRateDegPerSec": 180,
+            "maxTiltDeg": 32,
+            "serviceCeilingM": 220
+          },
+          "energy": {
+            "capacityWh": 38,
+            "reserveWh": 8,
+            "nominalVoltageV": 14.8,
+            "hoverPowerW": 115,
+            "cruisePowerW": 160,
+            "payloadPowerW": 8
+          },
+          "capabilities": [
+            { "id": "manual-control", "kind": "manual_control", "label": "Manual control" },
+            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation" },
+            { "id": "swarm-member", "kind": "swarm_member", "label": "Swarm member" },
+            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance" }
+          ],
+          "sensors": [
+            {
+              "id": "wide-camera",
+              "kind": "electro_optical",
+              "label": "Wide camera",
+              "rangeM": 450,
+              "fovDeg": 100,
+              "updateIntervalMs": 500
+            }
+          ],
+          "payloads": [],
+          "visual": {
+            "color": "#7c3aed",
+            "accentColor": "#f5f3ff",
+            "scale": 0.78
+          }
+        }
+      ]
+    }
+  },
+  "processSystems": [],
+  "surface": {
+    "schemaVersion": 1,
+    "regions": [
+      {
+        "id": "main-map",
+        "primitive": "map",
+        "visible": true,
+        "config": {
+          "center": [10.7522, 59.9139],
+          "zoom": 13.5,
+          "layers": ["objects", "routes", "highlights"]
+        }
+      },
+      {
+        "id": "rail",
+        "primitive": "objectRail",
+        "visible": true,
+        "config": {
+          "width": 420,
+          "sections": [
+            {
+              "categoryId": "drones",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["profile", "mode", "altitude", "battery", "health", "payloads"]
+            },
+            {
+              "categoryId": "ambulances",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["destination", "capabilities"]
+            },
+            {
+              "categoryId": "incidents",
+              "visible": true,
+              "collapsed": false,
+              "visibleFields": ["triage", "victims"]
+            }
+          ]
+        }
+      },
+      {
+        "id": "guidance",
+        "primitive": "guidanceOverlay",
+        "visible": true,
+        "config": {}
+      },
+      {
+        "id": "footer",
+        "primitive": "systemFooter",
+        "visible": true,
+        "config": {}
+      }
+    ]
+  },
+  "script": {
+    "steps": [
+      {
+        "id": "drone-ops-briefing",
+        "at": { "kind": "after_scenario_start", "seconds": 2 },
+        "actions": [
+          {
+            "type": "show_guidance",
+            "guidance": {
+              "id": "drone-ops-briefing",
+              "title": "Drone operations",
+              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are individually simulated and share this control instance across connected browsers.",
+              "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
+              "dismissible": true
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

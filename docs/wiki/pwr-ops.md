@@ -73,7 +73,7 @@ Use these local checks before demoing PWR behavior:
 - `bun run process-plant:extended-validation`
 - `bun run process-plant:credibility`
 
-The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`; it also runs graph-aware reference I&C so protection response is part of transient credibility. The process-unit UI exposes these artifacts through the generic process-plant credibility evidence view.
+The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`; it also runs graph-aware reference I&C so protection response is part of transient credibility. The runner uses the generic process-plant credibility harness for target evaluation/report generation, while the PWR script owns PWR cases, targets, sources, assembly config, and I&C setup. The process-unit UI exposes these artifacts through the generic process-plant credibility evidence view.
 
 The current credibility run has no gate or watch failures across 10 transient cases and 34 active targets. This means the simplified operational target envelopes are green; it does not mean the model is licensing-grade thermal-hydraulics.
 

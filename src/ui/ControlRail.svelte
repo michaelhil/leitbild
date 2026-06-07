@@ -53,6 +53,8 @@
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
     readonly openProcessPlantCatalog?: (object: OperationalObject) => void
     readonly openProcessPlantCredibility?: (object: OperationalObject) => void
+    readonly openDroneControl?: (object: OperationalObject) => void
+    readonly openDroneProfileEditor?: (object: OperationalObject) => void
     readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
     readonly beginPlacement: (type: PackCreateObjectType) => void
     readonly cancelPlacement: () => void
@@ -96,6 +98,8 @@
     openProcessPlantArtifact,
     openProcessPlantCatalog,
     openProcessPlantCredibility,
+    openDroneControl,
+    openDroneProfileEditor,
     procedureSummariesForObject = () => emptyProcedureRunSummaries,
     beginPlacement,
     cancelPlacement,
@@ -213,6 +217,8 @@
       {openProcessPlantArtifact}
       {openProcessPlantCatalog}
       {openProcessPlantCredibility}
+      {openDroneControl}
+      {openDroneProfileEditor}
       {procedureSummariesForObject}
       proceduresVisible={fieldVisible(entry.row.category.id, proceduresFieldKey)}
     />

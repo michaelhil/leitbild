@@ -3,6 +3,7 @@ import type { LeitbildPack } from './core/packs/protocol.ts'
 import { ambulancePack } from './packs/ambulance/pack.ts'
 import { aviationPack } from './packs/aviation/pack.ts'
 import { aviationReferenceDatasetBuilders } from './packs/aviation/reference-datasets.ts'
+import { dronePack } from './packs/drone/pack.ts'
 import { electricGridPack } from './packs/electric-grid/pack.ts'
 import { electricGridReferenceDatasetBuilders } from './packs/electric-grid/reference-datasets.ts'
 import { processPlantPack } from './packs/process-plant/pack.ts'
@@ -22,6 +23,7 @@ export const leitbildPacks: ReadonlyArray<LeitbildPack> = [
   ambulancePack,
   trafficPack,
   weatherPack,
+  dronePack,
   processPlantPack,
   withReferenceDatasetBuilders(aviationPack, aviationReferenceDatasetBuilders),
   withReferenceDatasetBuilders(electricGridPack, electricGridReferenceDatasetBuilders),

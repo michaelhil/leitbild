@@ -8,16 +8,17 @@ import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/ad
 import { createVatsimPackRuntimeAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
 import { createAviationMultiPackRuntimeAdapter } from './packs/aviation/sim/multi/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from './packs/electric-grid/sim/adapter.ts'
+import { createLocalDronePackRuntimeAdapter } from './packs/drone/sim/adapter.ts'
 import type { PackRuntimeAdapter } from './simulation/protocol.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant/sim/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
-import { createBuiltinScenarios } from './scenarios/index.ts'
+import { builtinMissions, createBuiltinScenarios } from './scenarios/index.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const scenarios = await createBuiltinScenarios(routing)
-const scenarioCatalog = createScenarioCatalog({ packs: leitbildPacks, scenarios })
+const scenarioCatalog = createScenarioCatalog({ packs: leitbildPacks, scenarios, missions: builtinMissions })
 
 // OpenSky requires OAuth2 client_credentials. If the operator hasn't provisioned
 // them (e.g. local dev, demo machines without an OpenSky account), we skip
@@ -56,6 +57,7 @@ const registry = createControlInstanceRegistry({
     createLocalAmbulancePackRuntimeAdapter({ routing }),
     createLocalTrafficPackRuntimeAdapter({ routing }),
     createLocalWeatherPackRuntimeAdapter(),
+    createLocalDronePackRuntimeAdapter(),
     createLocalProcessPlantPackRuntimeAdapter(),
     createLocalElectricGridPackRuntimeAdapter(),
     createAviationNoopPackRuntimeAdapter(),

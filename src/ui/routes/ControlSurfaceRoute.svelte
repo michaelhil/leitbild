@@ -112,6 +112,11 @@
     readonly objectId: ObjectId
   }
 
+  interface DroneWindowEntry {
+    readonly id: string
+    readonly objectId: ObjectId
+  }
+
   interface ProcedureSystemWindowEntry {
     readonly id: string
     readonly objectId: ObjectId
@@ -121,6 +126,11 @@
   }
 
   interface ProcessSurfaceWindowModel extends ProcessSurfaceWindowEntry {
+    readonly object: OperationalObject
+    readonly index: number
+  }
+
+  interface DroneWindowModel extends DroneWindowEntry {
     readonly object: OperationalObject
     readonly index: number
   }
@@ -160,7 +170,11 @@
   let ProcessPlantArtifactModal = $state<Component | null>(null)
   let ProcessPlantCatalogModal = $state<Component | null>(null)
   let ProcessPlantCredibilityModal = $state<Component | null>(null)
+  let DroneControlModal = $state<Component | null>(null)
+  let DroneProfileEditorModal = $state<Component | null>(null)
   let processSurfaceWindows = $state<ReadonlyArray<ProcessSurfaceWindowEntry>>([])
+  let droneControlWindows = $state<ReadonlyArray<DroneWindowEntry>>([])
+  let droneProfileEditorWindows = $state<ReadonlyArray<DroneWindowEntry>>([])
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
   let floatingWindowSequence = 0
   let procedureRuns = $state<ReadonlyArray<ProcedureRunState>>([])
@@ -183,6 +197,8 @@
   let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
   let processPlantCatalogModalLoadPromise: Promise<Component> | null = null
   let processPlantCredibilityModalLoadPromise: Promise<Component> | null = null
+  let droneControlModalLoadPromise: Promise<Component> | null = null
+  let droneProfileEditorModalLoadPromise: Promise<Component> | null = null
   let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -665,6 +681,34 @@
     }
   }
 
+  const loadDroneControlModal = async (): Promise<void> => {
+    if (DroneControlModal) return
+    droneControlModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../drone/DroneControlModal.svelte')
+      return module.default
+    })()
+    try {
+      DroneControlModal = await droneControlModalLoadPromise
+    } catch (err) {
+      droneControlModalLoadPromise = null
+      throw err
+    }
+  }
+
+  const loadDroneProfileEditorModal = async (): Promise<void> => {
+    if (DroneProfileEditorModal) return
+    droneProfileEditorModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../drone/DroneProfileEditorModal.svelte')
+      return module.default
+    })()
+    try {
+      DroneProfileEditorModal = await droneProfileEditorModalLoadPromise
+    } catch (err) {
+      droneProfileEditorModalLoadPromise = null
+      throw err
+    }
+  }
+
   const startStep = (id: StartupStepId): void => {
     markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
@@ -798,6 +842,38 @@
     processSurfaceWindows = processSurfaceWindows.filter(entry => entry.id !== windowId)
   }
 
+  const openDroneControl = (object: OperationalObject): void => {
+    if (object.packId !== 'drone') return
+    droneControlWindows = [
+      ...droneControlWindows,
+      {
+        id: nextFloatingWindowId('drone-control', object.id),
+        objectId: object.id,
+      },
+    ]
+    void loadDroneControlModal()
+  }
+
+  const closeDroneControl = (windowId: string): void => {
+    droneControlWindows = droneControlWindows.filter(entry => entry.id !== windowId)
+  }
+
+  const openDroneProfileEditor = (object: OperationalObject): void => {
+    if (object.packId !== 'drone') return
+    droneProfileEditorWindows = [
+      ...droneProfileEditorWindows,
+      {
+        id: nextFloatingWindowId('drone-profile', object.id),
+        objectId: object.id,
+      },
+    ]
+    void loadDroneProfileEditorModal()
+  }
+
+  const closeDroneProfileEditor = (windowId: string): void => {
+    droneProfileEditorWindows = droneProfileEditorWindows.filter(entry => entry.id !== windowId)
+  }
+
   const openProcessPlantArtifact = (object: OperationalObject, artifact: ProcessPlantArtifactKind): void => {
     if (processPlantSystemIdFor(object) === null) return
     processPlantArtifactModal = { object, artifact }
@@ -855,6 +931,20 @@
     }),
   )
 
+  const droneControlWindowModels = $derived<ReadonlyArray<DroneWindowModel>>(
+    droneControlWindows.flatMap((entry, index) => {
+      const object = objectById.get(entry.objectId)
+      return object === undefined ? [] : [{ ...entry, object, index }]
+    }),
+  )
+
+  const droneProfileEditorWindowModels = $derived<ReadonlyArray<DroneWindowModel>>(
+    droneProfileEditorWindows.flatMap((entry, index) => {
+      const object = objectById.get(entry.objectId)
+      return object === undefined ? [] : [{ ...entry, object, index }]
+    }),
+  )
+
   const procedureSystemWindowModels = $derived<ReadonlyArray<ProcedureSystemWindowModel>>(
     procedureSystemWindows.flatMap((entry, index) => {
       const object = objectById.get(entry.objectId)
@@ -870,6 +960,14 @@
       const nextProcessSurfaceWindows = processSurfaceWindows.filter(entry => liveObjectIds.has(entry.objectId))
       if (nextProcessSurfaceWindows.length !== processSurfaceWindows.length) {
         processSurfaceWindows = nextProcessSurfaceWindows
+      }
+      const nextDroneControlWindows = droneControlWindows.filter(entry => liveObjectIds.has(entry.objectId))
+      if (nextDroneControlWindows.length !== droneControlWindows.length) {
+        droneControlWindows = nextDroneControlWindows
+      }
+      const nextDroneProfileEditorWindows = droneProfileEditorWindows.filter(entry => liveObjectIds.has(entry.objectId))
+      if (nextDroneProfileEditorWindows.length !== droneProfileEditorWindows.length) {
+        droneProfileEditorWindows = nextDroneProfileEditorWindows
       }
       const nextProcedureSystemWindows = procedureSystemWindows.filter(entry => liveObjectIds.has(entry.objectId))
       if (nextProcedureSystemWindows.length !== procedureSystemWindows.length) {
@@ -1486,6 +1584,8 @@
         {openProcessPlantArtifact}
         {openProcessPlantCatalog}
         {openProcessPlantCredibility}
+        {openDroneControl}
+        {openDroneProfileEditor}
         {procedureSummariesForObject}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
@@ -1561,6 +1661,29 @@
     />
     {/if}
   </div>
+{/if}
+
+{#if DroneControlModal && controlInstanceId}
+  {#each droneControlWindowModels as windowEntry (windowEntry.id)}
+    <DroneControlModal
+      {controlInstanceId}
+      object={windowEntry.object}
+      {objects}
+      windowOffsetIndex={windowEntry.index}
+      close={() => closeDroneControl(windowEntry.id)}
+    />
+  {/each}
+{/if}
+
+{#if DroneProfileEditorModal && controlInstanceId}
+  {#each droneProfileEditorWindowModels as windowEntry (windowEntry.id)}
+    <DroneProfileEditorModal
+      {controlInstanceId}
+      object={windowEntry.object}
+      windowOffsetIndex={windowEntry.index}
+      close={() => closeDroneProfileEditor(windowEntry.id)}
+    />
+  {/each}
 {/if}
 
 {#if ProcessSurfaceModal && controlInstanceId}

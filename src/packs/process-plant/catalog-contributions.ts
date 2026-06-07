@@ -59,6 +59,27 @@ export interface ProcessPlantSurfaceCatalogEntry {
   }) => ProcessSurfaceDefinition
 }
 
+export type ProcessPlantCredibilityArtifactLanguage = 'json' | 'svg'
+
+export interface ProcessPlantCredibilityArtifactCatalogEntry {
+  readonly id: string
+  readonly title: string
+  readonly language: ProcessPlantCredibilityArtifactLanguage
+  readonly contentType: string
+  readonly path: string
+}
+
+export interface ProcessPlantCredibilityEvidenceCatalogEntry {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly scope: string
+  readonly generatedFromCommand: string
+  readonly sourcePath?: string
+  readonly appliesToGraph: (graph: CompiledPlantGraph) => boolean
+  readonly artifacts: ReadonlyArray<ProcessPlantCredibilityArtifactCatalogEntry>
+}
+
 export interface ProcessPlantCatalogContribution {
   readonly id: string
   readonly graphSpecs?: ReadonlyArray<ProcessPlantGraphSpecCatalogEntry>
@@ -69,6 +90,7 @@ export interface ProcessPlantCatalogContribution {
   readonly dynamicIcConfigs?: ReadonlyArray<ProcessPlantDynamicIcCatalogEntry>
   readonly graphIcConfigs?: ReadonlyArray<ProcessPlantGraphIcCatalogEntry>
   readonly surfaces?: ReadonlyArray<ProcessPlantSurfaceCatalogEntry>
+  readonly credibilityEvidence?: ReadonlyArray<ProcessPlantCredibilityEvidenceCatalogEntry>
 }
 
 export interface ProcessPlantCatalog {
@@ -80,6 +102,7 @@ export interface ProcessPlantCatalog {
   readonly dynamicIcConfigsById: ReadonlyMap<string, ProcessPlantDynamicIcCatalogEntry>
   readonly graphIcConfigsByRef: ReadonlyMap<string, ProcessPlantGraphIcCatalogEntry>
   readonly surfacesById: ReadonlyMap<string, ProcessPlantSurfaceCatalogEntry>
+  readonly credibilityEvidenceById: ReadonlyMap<string, ProcessPlantCredibilityEvidenceCatalogEntry>
 }
 
 const collectEntries = <TEntry extends { readonly ref: string }>(
@@ -163,6 +186,21 @@ const collectDynamicIcEntries = (
   return entriesById
 }
 
+const collectCredibilityEvidenceEntries = (
+  contributions: ReadonlyArray<ProcessPlantCatalogContribution>,
+): ReadonlyMap<string, ProcessPlantCredibilityEvidenceCatalogEntry> => {
+  const entriesById = collectEntriesById('credibility evidence id', contributions, contribution => contribution.credibilityEvidence)
+  for (const entry of entriesById.values()) {
+    const artifactIds = new Set<string>()
+    for (const artifact of entry.artifacts) {
+      if (artifact.id.length === 0) throw new Error(`process plant credibility evidence "${entry.id}" has empty artifact id`)
+      if (artifactIds.has(artifact.id)) throw new Error(`process plant credibility evidence "${entry.id}" has duplicate artifact id: ${artifact.id}`)
+      artifactIds.add(artifact.id)
+    }
+  }
+  return entriesById
+}
+
 export const collectProcessPlantCatalog = (
   contributions: ReadonlyArray<ProcessPlantCatalogContribution>,
 ): ProcessPlantCatalog => {
@@ -175,6 +213,7 @@ export const collectProcessPlantCatalog = (
     ...icEntries,
     dynamicIcConfigsById: collectDynamicIcEntries(contributions),
     surfacesById: collectEntriesById('surfaceId', contributions, contribution => contribution.surfaces),
+    credibilityEvidenceById: collectCredibilityEvidenceEntries(contributions),
   }
 }
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClipboardList, FileText, GitBranch, Library, MonitorCog, ShieldCheck, X } from 'lucide-svelte'
+  import { ClipboardList, FileText, Gamepad2, GitBranch, Library, MonitorCog, Settings2, ShieldCheck, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -27,6 +27,8 @@
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
     readonly openProcessPlantCatalog?: (object: OperationalObject) => void
     readonly openProcessPlantCredibility?: (object: OperationalObject) => void
+    readonly openDroneControl?: (object: OperationalObject) => void
+    readonly openDroneProfileEditor?: (object: OperationalObject) => void
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly proceduresVisible: boolean
   }
@@ -48,6 +50,8 @@
     openProcessPlantArtifact,
     openProcessPlantCatalog,
     openProcessPlantCredibility,
+    openDroneControl,
+    openDroneProfileEditor,
     procedureSummaries = emptyProcedureRunSummaries,
     proceduresVisible,
   }: Props = $props()
@@ -121,6 +125,8 @@
       && openProcessPlantCredibility !== undefined
       && processSystemIdAvailable,
   )
+  const droneControlAvailable = $derived(object.packId === 'drone' && openDroneControl !== undefined)
+  const droneProfileEditorAvailable = $derived(object.packId === 'drone' && openDroneProfileEditor !== undefined)
   const openProcedureSummary = (summary: ProcedureRunSummary): void => {
     if (openProcedureSystemAt) {
       openProcedureSystemAt(object, summary)
@@ -245,6 +251,26 @@
             size={13}
             variant="bare"
             onClick={() => openProcessPlantCatalog(object)}
+          />
+        {/if}
+        {#if droneControlAvailable}
+          <IconButton
+            label="Open drone flight window for {object.label}"
+            title="Drone flight window"
+            icon={Gamepad2}
+            size={13}
+            variant="bare"
+            onClick={() => openDroneControl?.(object)}
+          />
+        {/if}
+        {#if droneProfileEditorAvailable}
+          <IconButton
+            label="Open drone profile editor for {object.label}"
+            title="Drone profile editor"
+            icon={Settings2}
+            size={13}
+            variant="bare"
+            onClick={() => openDroneProfileEditor?.(object)}
           />
         {/if}
       </span>

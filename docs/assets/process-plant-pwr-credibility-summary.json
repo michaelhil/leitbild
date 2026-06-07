@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-07T17:04:56.475Z",
+  "generatedAt": "2026-06-07T19:48:55.799Z",
   "durationMs": 600000,
   "stepMs": 1000,
   "sampleIntervalMs": 2000,
@@ -12,8 +12,8 @@
   "targetCount": 34,
   "failedGateTargetCount": 0,
   "failedWatchTargetCount": 0,
-  "wallMs": 14378.233583000001,
-  "realtimeFactor": 417.2974354161318,
+  "wallMs": 15593.903583,
+  "realtimeFactor": 384.76574951643397,
   "graph": {
     "componentCount": 86,
     "linkCount": 134,

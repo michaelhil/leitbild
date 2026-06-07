@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { scenarioDefinitionSchema, type IsoTimestamp, type ScenarioDefinition } from '../src/core/model/index.ts'
 import {
   answerProcessPlantQuery,
@@ -21,6 +23,7 @@ import {
   processPlantSixLoopUnitOverviewSurface,
   processPlantUnitOverviewSurface,
   processPlantUnitOverviewSurfaceForGraph,
+  processPlantCredibilityEvidenceForGraph,
   processLinkVariableDescriptorSchema,
   collectProcessPlantCatalog,
   listProcessPlantAssemblyRefs,
@@ -46,6 +49,8 @@ import {
   type PlantGraphSpec,
 } from '../src/packs/process-plant/index.ts'
 import { scenarios } from '../src/scenarios/index.ts'
+
+const workspaceRoot = join(import.meta.dir, '..')
 
 const genericLiquidLinkVariables = (labelPrefix: string) => [
   processLinkVariableDescriptorSchema.parse({
@@ -784,6 +789,58 @@ describe('process plant graph foundation', () => {
       first,
       { id: 'duplicate-surface', surfaces: [{ id: surfaceId, surface: () => processPlantUnitOverviewSurface }] },
     ])).toThrow(`process plant catalog duplicate surfaceId "${surfaceId}"`)
+    expect(() => collectProcessPlantCatalog([{
+      id: 'duplicate-evidence-artifacts',
+      credibilityEvidence: [{
+        id: 'process-plant.test.evidence.v1',
+        title: 'Duplicate evidence artifacts',
+        description: 'Invalid test fixture.',
+        scope: 'Architecture validation.',
+        generatedFromCommand: 'bun test',
+        appliesToGraph: () => true,
+        artifacts: [
+          {
+            id: 'summary',
+            title: 'Summary A',
+            language: 'json',
+            contentType: 'application/json',
+            path: 'docs/assets/a.json',
+          },
+          {
+            id: 'summary',
+            title: 'Summary B',
+            language: 'json',
+            contentType: 'application/json',
+            path: 'docs/assets/b.json',
+          },
+        ],
+      }],
+    }])).toThrow('process plant credibility evidence "process-plant.test.evidence.v1" has duplicate artifact id: summary')
+  })
+
+  test('keeps generic credibility query, UI, and harness paths free of PWR assumptions', () => {
+    const genericFiles = [
+      'scripts/process-plant/credibility-harness.ts',
+      'src/packs/process-plant/queries/credibility-query.ts',
+      'src/packs/process-plant/query.ts',
+      'src/ui/process-surface/process-surface-client.ts',
+      'src/ui/process-surface/ProcessPlantCredibilityModal.svelte',
+    ]
+    const forbidden = [
+      /\bpwr\b/iu,
+      /pressurized-water-reactor/iu,
+      /processPlantPwr/u,
+      /steamGenerator/u,
+      /reactorCore/u,
+    ]
+    const violations = genericFiles.flatMap(file => {
+      const source = readFileSync(join(workspaceRoot, file), 'utf8')
+      return forbidden
+        .filter(pattern => pattern.test(source))
+        .map(pattern => `${file}: ${pattern}`)
+    })
+
+    expect(violations).toEqual([])
   })
 
   test('rejects duplicate primary loop pump ownership before runtime', () => {
@@ -1244,6 +1301,30 @@ describe('process plant graph foundation', () => {
     ]))
     expect(system.graph.components.some(componentItem => componentItem.kind === 'reactorCore')).toBe(false)
     expect(system.graph.components.some(componentItem => componentItem.kind === 'steamGenerator')).toBe(false)
+
+    expect(processPlantCredibilityEvidenceForGraph(system.graph).map(evidence => evidence.id)).not.toContain('process-plant.pwr.reference.credibility.v1')
+
+    const nonPwrEvidenceCatalog = collectProcessPlantCatalog([{
+      id: 'test.generic-dairy-evidence',
+      credibilityEvidence: [{
+        id: 'process-plant.generic-dairy.architecture-evidence.v1',
+        title: 'Generic dairy modular assembly evidence',
+        description: 'Test-scoped evidence that a non-PWR assembled graph can use the same process-plant evidence contribution path.',
+        scope: 'Architecture validation for generic modular process-plant assembly.',
+        generatedFromCommand: 'bun test tests/process-plant-graph.test.ts',
+        appliesToGraph: graph => String(graph.specId) === 'process-plant.generic-dairy-two-line.v1',
+        artifacts: [{
+          id: 'summary',
+          title: 'Architecture evidence summary',
+          language: 'json',
+          contentType: 'application/json',
+          path: 'docs/assets/process-plant-generic-dairy-architecture-evidence.json',
+        }],
+      }],
+    }])
+    expect(processPlantCredibilityEvidenceForGraph(system.graph, nonPwrEvidenceCatalog).map(evidence => evidence.id)).toEqual([
+      'process-plant.generic-dairy.architecture-evidence.v1',
+    ])
   })
 
   test('rejects modular graph assemblies that reference missing fragments', () => {

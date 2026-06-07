@@ -11,16 +11,20 @@ import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/a
 import { weatherPack } from '../src/packs/weather/pack.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
+import { dronePack } from '../src/packs/drone/pack.ts'
+import { createLocalDronePackRuntimeAdapter } from '../src/packs/drone/sim/adapter.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import type { PackRuntimeAdapter, PackScenarioRuntimeConfig } from '../src/simulation/protocol.ts'
+import { builtinMissions } from '../src/scenarios/index.ts'
 
-export const testPacks = [ambulancePack, trafficPack, weatherPack, processPlantPack, aviationPack, electricGridPack] as const
+export const testPacks = [ambulancePack, trafficPack, weatherPack, dronePack, processPlantPack, aviationPack, electricGridPack] as const
 
 export const createTestScenarioCatalog = (): ScenarioCatalog => createScenarioCatalog({
   packs: testPacks,
   scenarios,
+  missions: builtinMissions,
   defaultScenarioId: osloAmbulanceScenario.id,
 })
 
@@ -29,6 +33,7 @@ export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapte
   createAviationNoopPackRuntimeAdapter(),
   createLocalTrafficPackRuntimeAdapter(),
   createLocalWeatherPackRuntimeAdapter(),
+  createLocalDronePackRuntimeAdapter(),
   createLocalProcessPlantPackRuntimeAdapter(),
   createLocalElectricGridPackRuntimeAdapter(),
 ]
