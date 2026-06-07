@@ -21,14 +21,15 @@ The current implementation supports:
 - multiple open flight windows in one browser, each bound to one drone
 - multiple remote browsers controlling the same Control Instance through the existing command/runtime path
 - map-visible drones, sensor footprints, and effect ranges
-- 2D and 3D Three.js drone flight windows
-- procedural deterministic 3D environment generated from the active object/map context, with drones, ambulances, and other assets rendered as scene objects
+- 2D, 3D chase, and FPV Three.js drone flight windows
+- procedural deterministic 3D environment generated from the active object/map context, with drones, ambulances, other assets, roads, water, buildings, vegetation, weather cues, and HUD telemetry rendered as scene objects
 - configurable drone profiles through scenario runtime config, per-object scenario config, and a profile editor modal
 - swarm commands that preserve every member as an individual object
+- read-only sensor-contact projections with range, field-of-view, visibility, precipitation, bearing, and confidence filtering
 - validated drone effect commands that can damage or destroy drone and non-drone operational assets through the generic interaction-signal/effect path
 - a formal mission definition for drone search, support, and effect demonstration
 
-The current implementation does not yet include a full mission runner, rich vector-tile building extrusion, sensor contact classification, RF/link modeling, collision physics, weather effects, or a full autopilot stack. Those are deliberate next layers, not hidden production claims.
+The current implementation does not yet include a full mission runner, rich vector-tile building extrusion, RF/link modeling, collision physics, or a full autopilot stack. Those are deliberate next layers, not hidden production claims.
 
 ## Architecture
 
@@ -53,6 +54,7 @@ The drone pack owns:
 - drone command schemas
 - scenario object expansion for `pack: "drone", type: "drone"`
 - fixed-step flight simulation
+- typed environment/wind/weather model
 - local runtime adapter emissions
 - map area features for sensor/effect ranges
 - drone scene/read-model queries
@@ -70,6 +72,7 @@ Primary implementation:
 - `src/packs/drone/commands.ts`: validated command kinds and payload schemas
 - `src/packs/drone/scenario.ts`: scenario expansion and runtime profile override parsing
 - `src/packs/drone/sim/engine.ts`: fixed-step flight, control arbitration, energy, swarm, and command handling
+- `src/packs/drone/sim/physics.ts`: pure multicopter physics/environment integration for wind, drag, attitude, and energy
 - `src/packs/drone/sim/adapter.ts`: Runtime Hub adapter and bounded projected emissions
 - `src/packs/drone/sim/object-state.ts`: creation and projection of drone OperationalObjects
 - `src/packs/drone/query.ts`: read-only scene, profile, controller-binding, and map-feature queries
@@ -88,7 +91,7 @@ Scenario and tests:
 
 - `src/scenarios/oslo-drone-operations.scenario.json`: built-in mixed ambulance/drone scenario
 - `src/scenarios/index.ts`: built-in drone mission definition and scenario registration
-- `tests/drone-pack.test.ts`: scenario expansion, manual flight, swarm individuality, effect handling, scene query, command rejection, and catalog validity
+- `tests/drone-pack.test.ts`: scenario expansion, manual flight, environment physics, swarm individuality, effect handling, scene query, sensor contacts, command rejection, and catalog validity
 
 ## Drone Profile Model
 
@@ -110,7 +113,22 @@ Built-in examples are:
 - `heavy-supply`
 - `interceptor-effect`
 
-Scenario runtime config can add or override profiles. The `oslo-drone-operations` scenario adds `micro-observer` entirely through config.
+Scenario runtime config can add or override profiles and set environment conditions. The `oslo-drone-operations` scenario adds `micro-observer` entirely through config and sets wind, gust, precipitation, visibility, and air density.
+
+## Environment Model
+
+The drone runtime accepts typed environment config:
+
+- `windSpeedMps`
+- `windDirectionDeg`
+- `gustSpeedMps`
+- `turbulenceIntensity`
+- `precipitation`
+- `precipitationIntensity`
+- `visibilityM`
+- `airDensityKgM3`
+
+Environment is not cosmetic. The runtime samples the environment into each drone's pack data and uses it in the physics step. Wind changes air-relative speed, drag, attitude, and energy use. Visibility and precipitation feed sensor-contact confidence and the FPV/Three.js weather presentation.
 
 ## Flight Model
 
@@ -119,13 +137,14 @@ The runtime uses a compact fixed-step multicopter approximation:
 1. Resolve the current control mode.
 2. Expire stale manual inputs by command TTL.
 3. Convert manual, guided, land, return-to-launch, or swarm intent into desired local velocity, vertical speed, and yaw rate.
-4. Clamp desired motion by profile limits.
-5. Rate-limit velocity change by acceleration.
-6. Integrate local meters to WGS84 lon/lat.
-7. Integrate altitude and yaw.
-8. Drain energy based on hover, cruise, payload power, speed, and timestep.
-9. Apply low-energy behavior: below reserve, return-to-launch is preferred; at zero energy, the drone becomes disabled.
-10. Project changed state back as ordinary object-upsert events at a bounded runtime cadence.
+4. Convert ground-velocity intent to an acceleration-limited physics step.
+5. Apply air-relative drag from wind/gust, drag area, air density, and payload mass.
+6. Estimate pitch/roll from acceleration so FPV and external views reflect vehicle effort.
+7. Integrate local meters to WGS84 lon/lat.
+8. Integrate altitude and yaw.
+9. Drain energy based on hover, cruise, payload power, airspeed, climb power, turbulence, precipitation, and timestep.
+10. Apply low-energy behavior: below reserve, return-to-launch is preferred; at zero energy, the drone becomes disabled.
+11. Project changed state back as ordinary object-upsert events at a bounded runtime cadence.
 
 This follows the broad shape of real multicopter control systems without trying to reproduce PX4 or ArduPilot internals. PX4 documents multicopter position/velocity/attitude control concepts; ArduPilot separates operator modes such as Guided, Auto, RTL, Land, Loiter, and Stabilize; MAVLink separates navigation waypoints from mission/action commands. Leitbild uses those patterns as modeling anchors, while keeping the runtime inspectable and deterministic.
 
@@ -180,7 +199,7 @@ A swarm is not a visual clone cloud. Every member remains an ordinary `Operation
 - telemetry
 - projected state
 
-The first swarm implementation supports a command-level group target plus per-member formation offsets. Supported command vocabulary includes navigation, search, patrol, converge, disperse, hold, land, and manual takeover payload shapes. The current engine implements the core navigate/formation path and state transition; richer patrol/search coverage patterns are the next implementation layer.
+The first swarm implementation supports a command-level group target plus per-member formation offsets. Supported command vocabulary includes navigation, search-area placement, disperse, hold, and land. Manual takeover is a normal per-drone manual-control command. Richer patrol/search coverage patterns are the next implementation layer.
 
 The design keeps swarm behavior simple on purpose:
 
@@ -227,7 +246,7 @@ Controls:
 
 The browser exposes Bluetooth Xbox-style controllers through the standard Gamepad API on supported Windows/macOS/browser combinations. Leitbild does not talk directly to Bluetooth hardware; it consumes `navigator.getGamepads()` and browser gamepad events.
 
-Multiple flight windows can be open at once. Each window carries its own selected controller, target selector, view mode, and command state. Multiple remote browsers work because the runtime receives normal Control Instance commands and projects canonical object state back to every client.
+Multiple flight windows can be open at once. Each window carries its own selected controller, target selector, view mode, FPV/chase/2D camera state, sensor-contact panel, and command state. Multiple remote browsers work because the runtime receives normal Control Instance commands and projects canonical object state back to every client.
 
 ## Three.js Scene
 
@@ -240,15 +259,28 @@ The scene renders:
 - ambulances as recognizable ambulance meshes
 - generic operational assets as markers
 - ground, roads, water, park space, and building proxies
-- 2D overhead and 3D chase camera modes
+- road markings, roofs, windows, vegetation, shadows, fog, rain/snow streaks, and rotor animation
+- 2D overhead, 3D chase, and first-person FPV camera modes
+- flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
 The first environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. It currently creates credible proxy scenery around the active object set. A future map-fidelity pass should consume vector tile/building/road/water features from the self-hosted map artifact and extrude/symbolize those features instead of using deterministic proxy roads/buildings.
 
 The renderer owns its WebGL lifecycle:
 
 - resize observer updates the camera and renderer size
-- per-frame object meshes are disposed before replacement
+- object meshes are cached and updated in place; only disappeared or visually changed objects are disposed/rebuilt
 - modal close disposes renderer resources and removes the canvas
+
+## Surveillance Contacts
+
+Sensor contacts are exposed as a read-only pack query and in the flight modal's sensor panel. A contact is produced only when:
+
+- the observing object is an active drone
+- the target has a point position and is active
+- the target is within sensor range and local visibility
+- the target is inside the sensor field of view unless the sensor is omnidirectional
+
+Contacts include the observing drone id, sensor id, target id/label, distance, bearing, and confidence. Confidence is intentionally simple and inspectable: it drops with range and precipitation, with thermal sensors penalized less by precipitation. Contacts do not mutate target objects and do not become a second source of truth.
 
 ## Queries
 
@@ -258,6 +290,7 @@ The drone runtime exposes read-only pack queries:
 - `drone.controllerBindings`: controller binding metadata shape
 - `drone.profiles`: active profile catalog
 - `drone.mapFeatures`: sensor footprints and effect ranges for map rendering
+- `drone.sensorContacts`: read-only surveillance contacts from active drone sensors
 
 Queries do not mutate runtime state. UI and future AI/procedure tooling should use queries for rich drone read models rather than copying runtime-private mechanics into core objects.
 
@@ -278,6 +311,16 @@ Runtime config can declare reusable profile overrides:
 {
   "runtimeConfigs": {
     "drone": {
+      "environment": {
+        "windSpeedMps": 5.5,
+        "windDirectionDeg": 215,
+        "gustSpeedMps": 2.8,
+        "turbulenceIntensity": 0.32,
+        "precipitation": "rain",
+        "precipitationIntensity": 0.18,
+        "visibilityM": 6500,
+        "airDensityKgM3": 1.225
+      },
       "profiles": [
         {
           "id": "micro-observer",
@@ -325,9 +368,11 @@ Important tested behaviors:
 
 - drone scenario expansion is config-driven and aviation-independent
 - manual control moves one drone without moving another
+- runtime environment config changes energy, attitude, and pack data
 - swarm command keeps every member as an individual object
 - attack effects damage non-drone assets through interaction handlers
 - scene projection returns one entry per drone
+- sensor contacts honor range/FOV filtering
 - invalid attack commands fail explicitly
 - the built-in drone scenario and mission are catalog-valid together
 
@@ -338,7 +383,7 @@ Highest-value next work:
 - vector-tile-derived 3D world: roads, water, landuse, buildings, and object anchors from the self-hosted map artifact
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands
-- sensor/contact model: field of view, occlusion approximations, contact confidence, classification, and shared sightings
+- deeper sensor model: occlusion approximations, contact classification, shared sightings, and sensor update cadence
 - communications model: control-link quality, latency, loss-of-link, geofence and return behavior
 - credibility benchmarks: acceptance envelopes for speed, climb rate, turn/yaw rate, endurance, RTL, landing, and swarm convergence
 - operator UX: map-side swarm tasking, formation editor, target zones, mission progress panel, and controller diagnostics

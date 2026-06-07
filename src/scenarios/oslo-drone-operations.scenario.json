@@ -105,6 +105,16 @@
   "runtimeConfigs": {
     "ambulance": {},
     "drone": {
+      "environment": {
+        "windSpeedMps": 5.5,
+        "windDirectionDeg": 215,
+        "gustSpeedMps": 2.8,
+        "turbulenceIntensity": 0.32,
+        "precipitation": "rain",
+        "precipitationIntensity": 0.18,
+        "visibilityM": 6500,
+        "airDensityKgM3": 1.225
+      },
       "profiles": [
         {
           "id": "micro-observer",

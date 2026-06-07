@@ -5,7 +5,7 @@ import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionCo
 import { droneCommandKinds } from '../commands.ts'
 import { dronePackId } from '../model.ts'
 import { answerDroneQuery, droneQueryKinds } from '../query.ts'
-import { droneProfilesFromRuntimeConfigValue } from '../scenario.ts'
+import { droneEnvironmentFromRuntimeConfigValue, droneProfilesFromRuntimeConfigValue } from '../scenario.ts'
 import { droneSimRuntimeId } from './constants.ts'
 import { createDroneSimEngine } from './engine.ts'
 
@@ -47,10 +47,12 @@ export const createLocalDronePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   queryKinds: droneQueryKinds,
   connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
     const profiles = droneProfilesFromRuntimeConfigValue(config.scenario?.runtimeConfig)
+    const environment = droneEnvironmentFromRuntimeConfigValue(config.scenario?.runtimeConfig)
     const engine = createDroneSimEngine({
       controlInstanceId: config.controlInstanceId,
       objects: initialObjectsFor(config),
       profiles,
+      environment,
       ...(config.scenario?.world.startsAt === undefined ? {} : { startedAt: config.scenario.world.startsAt }),
     })
     const handlers = new Set<PackRuntimeEventHandler>()

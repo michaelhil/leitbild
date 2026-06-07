@@ -28,21 +28,23 @@ import {
 } from '../commands.ts'
 import { droneAttackSignal } from '../interactions.ts'
 import {
+  defaultDroneEnvironment,
   defaultDroneProfiles,
   droneHasCapability,
   droneGuidedTargetSchema,
   dronePackDataSchema,
   requireDroneProfile,
+  type DroneEnvironment,
   type DroneGuidedTarget,
-  type DroneKinematics,
   type DroneManualAxes,
   type DronePackData,
   type DroneProfile,
   type DroneSwarmMembership,
 } from '../model.ts'
 import { droneSimAdapterId, droneSimPackId, droneSimRuntimeId } from './constants.ts'
-import { bearingDeg, clamp, horizontalDistanceM, limitRate, movePointByMeters, normalizeAngleDeg, offsetMeters, shortestAngleDeltaDeg } from './flight-math.ts'
+import { bearingDeg, clamp, horizontalDistanceM, movePointByMeters, normalizeAngleDeg, offsetMeters } from './flight-math.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
+import { integrateDronePhysics } from './physics.ts'
 
 const emitMinIntervalMs = 180
 const defaultTickMs = 100
@@ -63,6 +65,7 @@ interface DroneEngineState {
   readonly controlInstanceId: ControlInstanceId
   readonly objects: Map<string, OperationalObject>
   readonly profiles: ReadonlyArray<DroneProfile>
+  readonly environment: DroneEnvironment
   readonly homePoints: Map<string, { readonly point: GeoJsonPoint; readonly altitudeM: number }>
   nextObjectNumber: number
   clock: IsoTimestamp
@@ -409,26 +412,12 @@ const desiredVelocityToTarget = (
   }
 }
 
-const energyUseWh = (
-  data: DronePackData,
-  horizontalSpeedMps: number,
-  verticalSpeedMps: number,
-  elapsedSeconds: number,
-): number => {
-  const speedRatio = clamp(horizontalSpeedMps / data.profile.dynamics.maxHorizontalSpeedMps, 0, 1)
-  const climbFactor = verticalSpeedMps > 0 ? verticalSpeedMps / data.profile.dynamics.maxVerticalSpeedMps : 0
-  const powerW = data.profile.energy.hoverPowerW
-    + (data.profile.energy.cruisePowerW - data.profile.energy.hoverPowerW) * speedRatio
-    + data.profile.energy.hoverPowerW * 0.35 * climbFactor
-    + data.profile.energy.payloadPowerW
-  return powerW * elapsedSeconds / 3_600
-}
-
 const integrateDrone = (
   object: OperationalObject,
   data: DronePackData,
   elapsedSeconds: number,
   at: IsoTimestamp,
+  environment: DroneEnvironment,
 ): { readonly object: OperationalObject; readonly changed: boolean } => {
   if (data.health.state === 'destroyed' || data.health.state === 'disabled') return { object, changed: false }
   const point = pointFor(object)
@@ -460,26 +449,29 @@ const integrateDrone = (
   if (control.mode === 'land') {
     targetVerticalMps = data.kinematics.altitudeM <= 0.15 ? 0 : -Math.min(data.profile.dynamics.maxVerticalSpeedMps, 2.2)
   }
-  const maxVelocityDelta = data.profile.dynamics.maxAccelerationMps2 * elapsedSeconds
-  const nextEastMps = limitRate(data.kinematics.velocityEastMps, targetEastMps, maxVelocityDelta)
-  const nextNorthMps = limitRate(data.kinematics.velocityNorthMps, targetNorthMps, maxVelocityDelta)
-  const nextVerticalMps = limitRate(data.kinematics.verticalSpeedMps, targetVerticalMps, maxVelocityDelta)
-  const nextYawDeg = normalizeAngleDeg(data.kinematics.yawDeg + clamp(
-    shortestAngleDeltaDeg(data.kinematics.yawDeg, targetYawDeg),
-    -data.profile.dynamics.maxYawRateDegPerSec * elapsedSeconds,
-    data.profile.dynamics.maxYawRateDegPerSec * elapsedSeconds,
-  ))
+  const physics = integrateDronePhysics({
+    objectId: object.id,
+    data,
+    target: {
+      eastMps: targetEastMps,
+      northMps: targetNorthMps,
+      verticalMps: targetVerticalMps,
+      yawDeg: targetYawDeg,
+    },
+    environment,
+    elapsedSeconds,
+    at,
+  })
   const nextAltitudeM = clamp(
-    data.kinematics.altitudeM + nextVerticalMps * elapsedSeconds,
+    data.kinematics.altitudeM + physics.kinematics.verticalSpeedMps * elapsedSeconds,
     data.profile.dynamics.minAltitudeM,
     data.profile.dynamics.serviceCeilingM,
   )
   const nextPoint = movePointByMeters(point, {
-    eastM: nextEastMps * elapsedSeconds,
-    northM: nextNorthMps * elapsedSeconds,
+    eastM: physics.kinematics.velocityEastMps * elapsedSeconds,
+    northM: physics.kinematics.velocityNorthMps * elapsedSeconds,
   })
-  const horizontalSpeed = Math.hypot(nextEastMps, nextNorthMps)
-  const consumedWh = energyUseWh(data, horizontalSpeed, nextVerticalMps, elapsedSeconds)
+  const consumedWh = physics.consumedWh
   const remainingWh = Math.max(0, data.energy.remainingWh - consumedWh)
   const lowEnergy = remainingWh <= data.profile.energy.reserveWh
   const nextControl = lowEnergy && control.mode !== 'land' && control.mode !== 'return_to_launch'
@@ -490,16 +482,13 @@ const integrateDrone = (
     : data.health
   const nextData: DronePackData = {
     ...data,
+    environment,
     control: nextControl,
     kinematics: {
+      ...physics.kinematics,
       altitudeM: nextAltitudeM,
-      verticalSpeedMps: nextAltitudeM <= data.profile.dynamics.minAltitudeM && nextVerticalMps < 0 ? 0 : nextVerticalMps,
-      velocityEastMps: nextEastMps,
-      velocityNorthMps: nextNorthMps,
-      yawDeg: nextYawDeg,
-      pitchDeg: clamp(targetNorthMps / data.profile.dynamics.maxHorizontalSpeedMps * data.profile.dynamics.maxTiltDeg, -data.profile.dynamics.maxTiltDeg, data.profile.dynamics.maxTiltDeg),
-      rollDeg: clamp(targetEastMps / data.profile.dynamics.maxHorizontalSpeedMps * data.profile.dynamics.maxTiltDeg, -data.profile.dynamics.maxTiltDeg, data.profile.dynamics.maxTiltDeg),
-    } satisfies DroneKinematics,
+      verticalSpeedMps: nextAltitudeM <= data.profile.dynamics.minAltitudeM && physics.kinematics.verticalSpeedMps < 0 ? 0 : physics.kinematics.verticalSpeedMps,
+    },
     energy: {
       remainingWh,
       consumedWh: data.energy.consumedWh + consumedWh,
@@ -511,6 +500,8 @@ const integrateDrone = (
     horizontalDistanceM(point, nextPoint) > 0.05
     || Math.abs(nextData.kinematics.altitudeM - data.kinematics.altitudeM) > 0.02
     || Math.abs(nextData.energy.remainingWh - data.energy.remainingWh) > 0.005
+    || Math.abs(nextData.kinematics.pitchDeg - data.kinematics.pitchDeg) > 0.1
+    || Math.abs(nextData.kinematics.rollDeg - data.kinematics.rollDeg) > 0.1
     || nextData.control.mode !== data.control.mode
     || nextData.health.state !== data.health.state
   )
@@ -525,6 +516,7 @@ export const createDroneSimEngine = (config: {
   readonly controlInstanceId: ControlInstanceId
   readonly objects: ReadonlyArray<OperationalObject>
   readonly profiles?: ReadonlyArray<DroneProfile>
+  readonly environment?: DroneEnvironment
   readonly startedAt?: IsoTimestamp
 }): DroneSimEngine => {
   const objects = new Map<string, OperationalObject>()
@@ -543,6 +535,7 @@ export const createDroneSimEngine = (config: {
     controlInstanceId: config.controlInstanceId,
     objects,
     profiles: config.profiles ?? defaultDroneProfiles,
+    environment: config.environment ?? defaultDroneEnvironment,
     homePoints,
     nextObjectNumber: nextNumberAfter(objects.values()),
     clock: config.startedAt ?? nowIso(),
@@ -564,7 +557,7 @@ export const createDroneSimEngine = (config: {
     for (const object of [...state.objects.values()]) {
       const data = parseDroneObject(object)
       if (!data) continue
-      const integrated = integrateDrone(object, data, elapsedSeconds, at)
+      const integrated = integrateDrone(object, data, elapsedSeconds, at, state.environment)
       if (!integrated.changed) continue
       updateObject(state, integrated.object)
       if (emitAllowed) events.push(packRuntimeObjectEvent(integrated.object, at))

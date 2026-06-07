@@ -71,6 +71,23 @@ export const droneEnergyModelSchema = z.object({
 })
 export type DroneEnergyModel = z.infer<typeof droneEnergyModelSchema>
 
+export const dronePrecipitationSchema = z.enum(['none', 'rain', 'snow'])
+export type DronePrecipitation = z.infer<typeof dronePrecipitationSchema>
+
+export const droneEnvironmentSchema = z.object({
+  windSpeedMps: z.number().finite().min(0).max(80).default(0),
+  windDirectionDeg: z.number().finite().min(0).max(360).default(0),
+  gustSpeedMps: z.number().finite().min(0).max(60).default(0),
+  turbulenceIntensity: z.number().finite().min(0).max(1).default(0),
+  precipitation: dronePrecipitationSchema.default('none'),
+  precipitationIntensity: z.number().finite().min(0).max(1).default(0),
+  visibilityM: z.number().finite().positive().max(100_000).default(20_000),
+  airDensityKgM3: z.number().finite().positive().max(2).default(1.225),
+}).strict()
+export type DroneEnvironment = z.infer<typeof droneEnvironmentSchema>
+
+export const defaultDroneEnvironment: DroneEnvironment = droneEnvironmentSchema.parse({})
+
 export const droneSensorSchema = z.object({
   id: idSchema,
   kind: z.string().min(1).max(64),
@@ -231,6 +248,7 @@ export const dronePackDataSchema = z.object({
   profile: droneProfileSchema,
   kinematics: droneKinematicsSchema,
   energy: droneEnergyStateSchema,
+  environment: droneEnvironmentSchema.default(defaultDroneEnvironment),
   control: droneControlStateSchema,
   health: droneHealthStateDataSchema,
   swarm: droneSwarmMembershipSchema.optional(),
@@ -398,4 +416,14 @@ export interface DroneControllerBinding {
   readonly inputKind?: DroneInputSource['kind']
   readonly label?: string
   readonly inputExpiresAt?: IsoTimestamp
+}
+
+export interface DroneSensorContact {
+  readonly droneId: ObjectId
+  readonly sensorId: string
+  readonly targetId: ObjectId
+  readonly targetLabel: string
+  readonly distanceM: number
+  readonly bearingDeg: number
+  readonly confidence: number
 }

@@ -218,12 +218,50 @@ Implemented in the first drone pass:
 - tests for scenario expansion, manual flight isolation, swarm individuality, effects, scene query, command rejection, and built-in catalog validity
 - `docs/wiki/drone-ops.md` as the operational/implementation handbook
 
+Implemented in the V2 fidelity pass:
+
+- typed environment config for wind, gust, turbulence, precipitation, visibility, and air density
+- pure `src/packs/drone/sim/physics.ts` integration for air-relative drag, wind/gust effects, acceleration-limited velocity, pitch/roll attitude estimates, payload mass, and weather-sensitive energy use
+- built-in Oslo drone scenario environment config, so weather is visible through normal scenario data
+- first-person FPV camera mode attached to the selected drone body frame
+- flight HUD with altitude, speed, battery, heading, pitch/roll, wind, precipitation, and visibility
+- cached Three.js object meshes, rotor animation, shadows, road markings, windows, vegetation, fog/visibility, and rain/snow streaks
+- read-only `drone.sensorContacts` query and pilot-panel contact list with range/FOV/visibility/precipitation confidence filtering
+- tests for environment physics and sensor-contact filtering
+
 Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
 - vector-tile-derived 3D world geometry from the self-hosted map artifact
 - richer swarm search/patrol/separation/cohesion behavior
-- sensor contact model and shared detections
+- deeper sensor model for occlusion, classification, shared detections, and update cadence
 - communications/link loss/geofence model
 - browser visual verification on the deployed route with screenshots/canvas checks
 - credibility benchmarking harness for flight and swarm acceptance envelopes
+
+## V2 Fidelity Pass Targets
+
+The second pass raises the target from "functional drone pack" to "credible browser-based drone/FPV simulator foundation". The goal is still not to embed a certified autopilot or full SITL stack inside Leitbild. The goal is to move the architecture toward the same separations used by mature systems: vehicle model, controller/autopilot, environment, sensors/effects, renderer, and operator UI.
+
+Research anchors for this pass:
+
+- PX4 multicopter control architecture separates position, velocity, attitude, and angular-rate loops. Leitbild should keep the simplified model, but it should expose the same conceptual layers instead of direct position teleportation.
+- ArduPilot Copter modes distinguish manual/stabilized flight, guided point flight, return-to-launch, land, and mission/auto behavior. Leitbild's modes should remain explicit and mode-dependent.
+- AirSim and similar simulators separate visual rendering from vehicle physics and sensor models. Leitbild's Three.js scene must remain a visualization of runtime truth, not the simulation authority.
+- The browser Gamepad API is a polling API. Leitbild should keep reading current gamepad state every animation frame and send bounded, TTL-based commands to the runtime.
+- Three.js `InstancedMesh` and cached object graphs should be used where many repeated visual elements would otherwise create excessive draw calls.
+
+V2 acceptance criteria:
+
+- The runtime accepts a typed drone environment config containing wind, gust/turbulence, precipitation, visibility, and air-density inputs.
+- Manual, hold, guided, swarm, land, and return-to-launch modes use a shared physics integration path with acceleration limits, air-relative drag, wind effects, attitude estimates, and energy use that changes with climb, speed, payload, and wind.
+- FPV is a first-class flight mode in the modal. The camera sits on the selected drone, follows its yaw/pitch/roll, and displays flight HUD data useful enough to fly by sight.
+- The Three.js scene updates meshes in place instead of rebuilding all object meshes every frame.
+- The visual world has enough cues for FPV: roads, lane markings, water, vegetation, building massing/windows/roofs, shadows, fog/visibility, weather streaks, drones, ambulances, and other operational assets.
+- No new HTTP server, JavaScript file, aviation dependency, or browser-authoritative simulation path is introduced.
+
+V2 scoped deferrals:
+
+- Real PX4/ArduPilot SITL, WebAssembly flight dynamics, and JSBSim-style aircraft modeling are deferred until there is a measured need or a concrete benchmarking target that the TypeScript model cannot meet.
+- Decoding PMTiles/vector tiles directly into the Three.js modal is deferred unless it can be done through an existing core map artifact boundary without adding brittle UI-to-map internals. The modal can improve procedural map-context generation now and reserve a clean vector ingestion seam for a later pass.
+- A full mission autopilot runner remains separate from this pass. V2 strengthens flight, FPV, environment, and visual fidelity first.

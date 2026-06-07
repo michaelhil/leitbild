@@ -35,6 +35,7 @@ export const droneTelemetry = (data: DronePackData, at: IsoTimestamp): Telemetry
       altitude: telemetrySignal({ at, id: 'altitude', label: 'Altitude', unit: 'm', value: data.kinematics.altitudeM }),
       speed: telemetrySignal({ at, id: 'speed', label: 'Ground speed', unit: 'm/s', value: speedMps }),
       verticalSpeed: telemetrySignal({ at, id: 'verticalSpeed', label: 'Vertical speed', unit: 'm/s', value: data.kinematics.verticalSpeedMps }),
+      wind: telemetrySignal({ at, id: 'wind', label: 'Wind', unit: 'm/s', value: data.environment.windSpeedMps }),
       battery: telemetrySignal({
         at,
         id: 'battery',

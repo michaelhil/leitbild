@@ -209,13 +209,13 @@ The local process-plant pack runtime projects runtime/I&C state back onto that o
 
 The drone pack is the first high-interaction vehicle-control pack built on the same pack/runtime/query/interaction boundaries.
 
-A drone is an ordinary operational object for Leitbild-wide awareness, but its continuous flight mechanics remain inside the drone pack runtime. Drone pack data includes validated profile, kinematics, energy, control, health, payload, sensor, and optional swarm state. Profiles are declarative data, so surveillance, supply, and effect-capable drones are examples rather than hard-coded object classes.
+A drone is an ordinary operational object for Leitbild-wide awareness, but its continuous flight mechanics remain inside the drone pack runtime. Drone pack data includes validated profile, kinematics, energy, sampled environment, control, health, payload, sensor, and optional swarm state. Profiles are declarative data, so surveillance, supply, and effect-capable drones are examples rather than hard-coded object classes.
 
 The browser samples keyboard and Gamepad API state only as an input device boundary. It sends validated `drone.manual_control`, `drone.navigate_to`, `drone.swarm_command`, `drone.configure_profile`, and `drone.attack` commands through the normal Control Instance API. The runtime remains authoritative; multiple browsers and multiple flight windows see the same projected state.
 
-Drone effects use generic interaction signals. The drone runtime may emit `drone.attack.requested`, and the pack interaction handler returns constrained object-upsert/notification effects after validating capability, payload, range, and target state. It does not import or mutate another pack's private model.
+Drone effects use generic interaction signals. The drone runtime may emit `drone.attack.requested`, and the pack interaction handler returns constrained object-upsert/notification effects after validating capability, payload, range, and target state. It does not import or mutate another pack's private model. Surveillance contacts are read-only pack query projections; they do not mutate targets or become a second operational truth source.
 
-Pack-specific Three.js flight views live under `src/ui/drone`. They consume object/query state and render a procedural operational scene; they must not become a second simulation path.
+Pack-specific Three.js flight views live under `src/ui/drone`. They consume object/query state and render a procedural operational scene with chase, top-down, and FPV camera modes; they must not become a second simulation path.
 
 ## Spatial Field Contributions
 

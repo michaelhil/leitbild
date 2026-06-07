@@ -7,6 +7,7 @@
     setDroneModeCommandKind,
   } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
+  import { droneSensorContacts } from '../../packs/drone/query.ts'
   import { sendControlInstanceCommand } from '../control-instance-client.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -54,6 +55,9 @@
     const parsed = dronePackDataSchema.safeParse(object.packData)
     return parsed.success ? parsed.data : null
   })
+  const groundSpeedMps = $derived(data ? Math.hypot(data.kinematics.velocityEastMps, data.kinematics.velocityNorthMps) : 0)
+  const batteryPercent = $derived(data ? data.energy.remainingWh / data.profile.energy.capacityWh * 100 : 0)
+  const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === object.id).slice(0, 4))
 
   const windowStyle = $derived.by(() => {
     const offset = windowOffsetIndex * offsetStepPx
@@ -267,13 +271,38 @@
     </div>
     <div class="header-actions">
       <button class:active={viewMode === '3d'} type="button" title="3D view" aria-label="3D view" onclick={() => viewMode = '3d'}>3D</button>
+      <button class:active={viewMode === 'fpv'} type="button" title="First-person view" aria-label="First-person view" onclick={() => viewMode = 'fpv'}>FPV</button>
       <button class:active={viewMode === '2d'} type="button" title="2D view" aria-label="2D view" onclick={() => viewMode = '2d'}>2D</button>
       <IconButton label="Close drone flight window" icon={X} onClick={close} />
     </div>
   </header>
 
   <div class="drone-window-body">
-    <div bind:this={sceneElement} class="drone-scene"></div>
+    <div class="scene-shell">
+      <div bind:this={sceneElement} class="drone-scene"></div>
+      {#if data}
+        <div class="flight-hud" aria-label="Flight telemetry">
+          <div class="hud-row">
+            <span>ALT {Math.round(data.kinematics.altitudeM)} m</span>
+            <span>SPD {groundSpeedMps.toFixed(1)} m/s</span>
+            <span>BAT {Math.round(batteryPercent)}%</span>
+          </div>
+          <div class="hud-horizon">
+            <span></span>
+          </div>
+          <div class="hud-row">
+            <span>HDG {Math.round(data.kinematics.yawDeg)}°</span>
+            <span>P {data.kinematics.pitchDeg.toFixed(1)}°</span>
+            <span>R {data.kinematics.rollDeg.toFixed(1)}°</span>
+          </div>
+          <div class="hud-row muted">
+            <span>WIND {data.environment.windSpeedMps.toFixed(1)} m/s</span>
+            <span>{data.environment.precipitation}</span>
+            <span>VIS {Math.round(data.environment.visibilityM / 100) / 10} km</span>
+          </div>
+        </div>
+      {/if}
+    </div>
     <aside class="drone-control-panel">
       <section>
         <h3><Keyboard size={15} /> Manual</h3>
@@ -301,6 +330,17 @@
           <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
           <button type="button" onclick={() => void setMode('land')}><PlaneLanding size={15} /> Land</button>
           <button type="button" onclick={() => void setMode('return_to_launch')}><RotateCcw size={15} /> Return</button>
+        </div>
+      </section>
+
+      <section>
+        <h3><Crosshair size={15} /> Sensors</h3>
+        <div class="contact-list">
+          {#each sensorContacts as contact (`${contact.sensorId}:${contact.targetId}`)}
+            <span>{contact.targetLabel} · {Math.round(contact.distanceM)} m · {Math.round(contact.confidence * 100)}%</span>
+          {:else}
+            <span>No contacts</span>
+          {/each}
         </div>
       </section>
 
@@ -417,6 +457,18 @@
     min-height: 0;
   }
 
+  .scene-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .drone-scene {
+    width: 100%;
+    height: 100%;
+  }
+
   .drone-scene :global(canvas) {
     display: block;
     width: 100%;
@@ -452,6 +504,23 @@
     border: 1px solid rgb(148 163 184 / 0.18);
   }
 
+  .contact-list {
+    display: grid;
+    gap: 5px;
+    color: #cbd5e1;
+    font-size: 12px;
+  }
+
+  .contact-list span {
+    min-width: 0;
+    padding: 6px;
+    overflow: hidden;
+    border: 1px solid rgb(148 163 184 / 0.18);
+    background: #111827;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .command-grid {
     flex-wrap: wrap;
   }
@@ -474,6 +543,77 @@
     opacity: 0.48;
   }
 
+  .flight-hud {
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    display: grid;
+    gap: 7px;
+    width: min(520px, calc(100% - 32px));
+    transform: translateX(-50%);
+    color: #e0f2fe;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 1px 8px rgb(2 6 23 / 0.8);
+    pointer-events: none;
+  }
+
+  .hud-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .hud-row span {
+    min-width: 0;
+    padding: 4px 7px;
+    overflow: hidden;
+    border: 1px solid rgb(125 211 252 / 0.35);
+    background: rgb(15 23 42 / 0.42);
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .hud-row.muted {
+    color: #bae6fd;
+    font-size: 11px;
+  }
+
+  .hud-horizon {
+    position: relative;
+    height: 24px;
+  }
+
+  .hud-horizon::before,
+  .hud-horizon::after {
+    position: absolute;
+    top: 50%;
+    width: calc(50% - 34px);
+    height: 1px;
+    background: #facc15;
+    content: '';
+  }
+
+  .hud-horizon::before {
+    left: 0;
+  }
+
+  .hud-horizon::after {
+    right: 0;
+  }
+
+  .hud-horizon span {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    border-top: 2px solid #facc15;
+    border-left: 2px solid #facc15;
+    transform: translate(-50%, -30%) rotate(45deg);
+  }
+
   @media (max-width: 720px) {
     .drone-window-header {
       align-items: flex-start;
@@ -488,6 +628,11 @@
       grid-template-columns: 1fr;
       grid-template-rows: minmax(260px, 1fr) auto;
       overflow: hidden;
+    }
+
+    .flight-hud {
+      bottom: 10px;
+      font-size: 10px;
     }
 
     .drone-control-panel {

@@ -6,8 +6,8 @@ import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
 import { attackCommandKind, manualControlCommandKind, swarmCommandKind } from '../src/packs/drone/commands.ts'
 import { createDroneAttackInteractionHandler, droneAttackSignal } from '../src/packs/drone/interactions.ts'
 import { defaultDroneProfiles, dronePackDataSchema, requireDroneProfile } from '../src/packs/drone/model.ts'
-import { droneSceneObjects } from '../src/packs/drone/query.ts'
-import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
+import { droneSceneObjects, droneSensorContacts } from '../src/packs/drone/query.ts'
+import { droneEnvironmentFromRuntimeConfigValue, droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { droneSimRuntimeId } from '../src/packs/drone/sim/constants.ts'
 import { createDroneSimEngine } from '../src/packs/drone/sim/engine.ts'
 import { createScenarioDroneObject } from '../src/packs/drone/sim/object-state.ts'
@@ -116,6 +116,59 @@ describe('drone pack', () => {
     expect(movedData.energy.remainingWh).toBeLessThan(movedData.profile.energy.capacityWh)
   })
 
+  test('runtime environment config is applied to physics and drone pack data', () => {
+    const environment = droneEnvironmentFromRuntimeConfigValue({
+      environment: {
+        windSpeedMps: 12,
+        windDirectionDeg: 90,
+        gustSpeedMps: 4,
+        turbulenceIntensity: 0.4,
+        precipitation: 'rain',
+        precipitationIntensity: 0.3,
+        visibilityM: 4_000,
+        airDensityKgM3: 1.2,
+      },
+    })
+    const at = '2026-06-07T10:00:00.000Z' as never
+    const calmEngine = createDroneSimEngine({
+      controlInstanceId,
+      objects: [drone({ id: 'drone:calm', point: point(10.75, 59.91) })],
+      startedAt: at,
+    })
+    const windyEngine = createDroneSimEngine({
+      controlInstanceId,
+      objects: [drone({ id: 'drone:windy', point: point(10.75, 59.91) })],
+      environment,
+      startedAt: at,
+    })
+    calmEngine.tick(1_000, '2026-06-07T10:00:01.000Z' as never)
+    windyEngine.tick(1_000, '2026-06-07T10:00:01.000Z' as never)
+    const calmData = dronePackDataSchema.parse(calmEngine.snapshot().objects[0]!.packData)
+    const windyData = dronePackDataSchema.parse(windyEngine.snapshot().objects[0]!.packData)
+    expect(windyData.environment.windSpeedMps).toBe(12)
+    expect(windyData.energy.remainingWh).toBeLessThan(calmData.energy.remainingWh)
+    expect(Math.abs(windyData.kinematics.rollDeg)).toBeGreaterThan(0)
+  })
+
+  test('manual diagonal control respects the profile horizontal speed envelope', async () => {
+    const controlled = drone({ id: 'drone:diagonal-limit', point: point(10.75, 59.91) })
+    const engine = createDroneSimEngine({
+      controlInstanceId,
+      objects: [controlled],
+    })
+    const result = await engine.handleCommand(command(manualControlCommandKind, {
+      droneId: controlled.id,
+      axes: { forward: 1, right: 1, vertical: 0, yaw: 0 },
+      inputSource: { kind: 'keyboard', label: 'test keyboard' },
+      commandTtlMs: 5_000,
+    }, [controlled.id]))
+    expect(result.result.ok).toBe(true)
+    engine.tick(5_000, '2026-06-07T10:00:05.000Z' as never)
+    const data = dronePackDataSchema.parse(engine.snapshot().objects[0]!.packData)
+    const speedMps = Math.hypot(data.kinematics.velocityEastMps, data.kinematics.velocityNorthMps)
+    expect(speedMps).toBeLessThanOrEqual(data.profile.dynamics.maxHorizontalSpeedMps + 0.0001)
+  })
+
   test('swarm commands keep each drone as an individual simulated object', async () => {
     const drones = [
       drone({ id: 'drone:swarm-1', point: point(10.75, 59.91) }),
@@ -202,6 +255,45 @@ describe('drone pack', () => {
     const scene = droneSceneObjects(objects)
     expect(scene.map(item => item.id)).toEqual(['drone:scene-1' as ObjectId, 'drone:scene-2' as ObjectId])
     expect(scene[1]?.profileId).toBe('heavy-supply')
+  })
+
+  test('sensor contacts are read-only surveillance projections with field-of-view filtering', () => {
+    const observer = drone({ id: 'drone:observer', point: point(10.75, 59.91) })
+    const targetAhead: OperationalObject = {
+      id: 'amb:visible-target' as ObjectId,
+      kind: 'mobile_entity',
+      packId: 'ambulance' as PackId,
+      label: 'Visible target',
+      lifecycle: 'active',
+      revision: 0,
+      spatial: {
+        position: {
+          point: point(10.75, 59.911),
+          observedAt: nowIso(),
+        },
+        frame: { kind: 'wgs84' },
+      },
+      operational: { status: 'available', priority: 'normal', mode: 'simulated' },
+      alerts: [],
+      provenance: { source: 'simulator' },
+      timestamps: { createdAt: nowIso(), updatedAt: nowIso() },
+    }
+    const targetBehind: OperationalObject = {
+      ...targetAhead,
+      id: 'amb:hidden-target' as ObjectId,
+      label: 'Hidden target',
+      spatial: {
+        ...targetAhead.spatial,
+        position: {
+          point: point(10.75, 59.909),
+          observedAt: nowIso(),
+        },
+      },
+    }
+    const contacts = droneSensorContacts([observer, targetAhead, targetBehind])
+    expect(contacts.some(contact => contact.targetId === targetAhead.id)).toBe(true)
+    expect(contacts.some(contact => contact.targetId === targetBehind.id)).toBe(false)
+    expect(contacts[0]?.confidence).toBeGreaterThan(0)
   })
 
   test('runtime rejects attack commands from non-existent drones explicitly', async () => {

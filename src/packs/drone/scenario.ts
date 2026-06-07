@@ -7,11 +7,14 @@ import {
 } from '../../core/model/index.ts'
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
+  defaultDroneEnvironment,
   defaultDroneProfiles,
+  droneEnvironmentSchema,
   droneProfileCatalogSchema,
   droneProfileSchema,
   droneSwarmMembershipSchema,
   requireDroneProfile,
+  type DroneEnvironment,
   type DroneProfile,
 } from './model.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './sim/object-state.ts'
@@ -23,6 +26,7 @@ const lonLatSchema = z.tuple([
 
 const droneRuntimeConfigSchema = z.object({
   profiles: z.array(droneProfileSchema).default([]),
+  environment: droneEnvironmentSchema.default(defaultDroneEnvironment),
 }).strict()
 
 const droneSpecSchema = z.object({
@@ -71,6 +75,13 @@ export const droneProfilesFromRuntimeConfigValue = (
     profileById.set(profile.id, profile)
   }
   return [...profileById.values()]
+}
+
+export const droneEnvironmentFromRuntimeConfigValue = (
+  rawConfig: unknown,
+): DroneEnvironment => {
+  if (rawConfig === undefined) return defaultDroneEnvironment
+  return droneRuntimeConfigSchema.parse(rawConfig).environment
 }
 
 export const droneScenarioSupport: PackScenarioSupport = {

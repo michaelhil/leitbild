@@ -1,19 +1,21 @@
 import { z } from 'zod'
 import { geoJsonPolygonSchema, nowIso, type GeoJsonPoint, type IsoTimestamp, type OperationalObject } from '../../core/model/index.ts'
 import type { PackMapAreaFeature, PackQueryRequest, PackQueryResponse } from '../../core/packs/protocol.ts'
-import { defaultDroneProfiles, dronePackDataSchema, type DroneControllerBinding, type DroneProfile, type DroneSceneObject } from './model.ts'
-import { movePointByMeters } from './sim/flight-math.ts'
+import { defaultDroneProfiles, dronePackDataSchema, type DroneControllerBinding, type DroneProfile, type DroneSceneObject, type DroneSensorContact } from './model.ts'
+import { bearingDeg, horizontalDistanceM, movePointByMeters, normalizeAngleDeg, shortestAngleDeltaDeg } from './sim/flight-math.ts'
 
 export const droneSceneQueryKind = 'drone.scene'
 export const droneControllerBindingsQueryKind = 'drone.controllerBindings'
 export const droneProfilesQueryKind = 'drone.profiles'
 export const droneMapFeaturesQueryKind = 'drone.mapFeatures'
+export const droneSensorContactsQueryKind = 'drone.sensorContacts'
 
 export const droneQueryKinds = [
   droneSceneQueryKind,
   droneControllerBindingsQueryKind,
   droneProfilesQueryKind,
   droneMapFeaturesQueryKind,
+  droneSensorContactsQueryKind,
 ] as const
 
 const mapFeaturesPayloadSchema = z.object({
@@ -44,6 +46,9 @@ const droneDataFor = (object: OperationalObject) => {
   const parsed = dronePackDataSchema.safeParse(object.packData)
   return parsed.success ? parsed.data : null
 }
+
+const pointFor = (object: OperationalObject): GeoJsonPoint | null =>
+  object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
 
 export const droneSceneObjects = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<DroneSceneObject> =>
   objects.flatMap(object => {
@@ -77,6 +82,44 @@ export const droneControllerBindings = (objects: ReadonlyArray<OperationalObject
       ...(data.control.inputExpiresAt === undefined ? {} : { inputExpiresAt: data.control.inputExpiresAt }),
     }]
   })
+
+export const droneSensorContacts = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<DroneSensorContact> => {
+  const contacts: DroneSensorContact[] = []
+  for (const drone of objects) {
+    const data = droneDataFor(drone)
+    const dronePoint = pointFor(drone)
+    if (!data || !dronePoint || data.health.state === 'destroyed' || data.health.state === 'disabled') continue
+    for (const target of objects) {
+      if (target.id === drone.id) continue
+      const targetPoint = pointFor(target)
+      if (!targetPoint || target.lifecycle === 'inactive') continue
+      const distanceM = horizontalDistanceM(dronePoint, targetPoint)
+      const bearing = bearingDeg(dronePoint, targetPoint)
+      const bearingDelta = Math.abs(shortestAngleDeltaDeg(data.kinematics.yawDeg, bearing))
+      for (const sensor of data.profile.sensors) {
+        const effectiveRangeM = Math.min(
+          sensor.rangeM,
+          data.environment.visibilityM * (sensor.kind.includes('thermal') ? 1.45 : 1),
+        )
+        if (distanceM > effectiveRangeM) continue
+        if (sensor.fovDeg < 359 && bearingDelta > sensor.fovDeg / 2) continue
+        const precipitationPenalty = data.environment.precipitation === 'none'
+          ? 0
+          : data.environment.precipitationIntensity * (sensor.kind.includes('thermal') ? 0.1 : 0.22)
+        contacts.push({
+          droneId: drone.id,
+          sensorId: sensor.id,
+          targetId: target.id,
+          targetLabel: target.label,
+          distanceM,
+          bearingDeg: normalizeAngleDeg(bearing),
+          confidence: Math.max(0.05, Math.min(1, 1 - distanceM / Math.max(1, effectiveRangeM) * 0.58 - precipitationPenalty)),
+        })
+      }
+    }
+  }
+  return contacts.sort((left, right) => right.confidence - left.confidence || left.distanceM - right.distanceM)
+}
 
 const circlePolygon = (
   center: GeoJsonPoint,
@@ -164,6 +207,9 @@ export const answerDroneQuery = (config: {
     }
     if (config.request.kind === droneProfilesQueryKind) {
       return ok(config.request, { profiles: config.profiles ?? defaultDroneProfiles }, at)
+    }
+    if (config.request.kind === droneSensorContactsQueryKind) {
+      return ok(config.request, { contacts: droneSensorContacts(config.objects) }, at)
     }
     if (config.request.kind === droneMapFeaturesQueryKind) {
       const payload = mapFeaturesPayloadSchema.parse(config.request.payload)
