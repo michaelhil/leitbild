@@ -75,13 +75,26 @@ export const reactorKineticsPowerStep = (config: {
 }): number => {
   const ratedPower = Math.max(1, config.ratedPowerMw)
   const pcmScale = Math.max(1, config.pcmPerEfoldPerSecond)
+  const currentPower = Math.max(0, config.currentPowerMw)
+  const maxDelta = ratedPower * Math.max(0, config.maxPowerRampFractionPerS) * config.dtSeconds
+  const shutdownReactivityThresholdPcm = -500
+  if (config.effectiveReactivityPcm <= shutdownReactivityThresholdPcm) {
+    const shutdownRatePerS = Math.max(-8, config.effectiveReactivityPcm / pcmScale)
+    const shutdownTarget = currentPower * Math.exp(shutdownRatePerS * config.dtSeconds)
+    return boundedApproach({
+      current: currentPower,
+      target: Math.max(0, shutdownTarget),
+      maxDelta,
+    })
+  }
+
   const exponent = Math.max(-1.5, Math.min(1.5, config.effectiveReactivityPcm / pcmScale))
   const unboundedTarget = Math.max(0, config.nominalCriticalPowerMw) * Math.exp(exponent)
   const boundedTarget = Math.max(0, Math.min(ratedPower * Math.max(0, config.maxPowerFraction), unboundedTarget))
   return boundedApproach({
-    current: Math.max(0, config.currentPowerMw),
+    current: currentPower,
     target: boundedTarget,
-    maxDelta: ratedPower * Math.max(0, config.maxPowerRampFractionPerS) * config.dtSeconds,
+    maxDelta,
   })
 }
 

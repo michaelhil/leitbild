@@ -63,7 +63,7 @@ The core now exposes:
 - `core.coreHeatRemovalDeficitMw`
 - `core.fuelHeatupRateCPerS`
 
-Primary-flow loss affects core cooling availability and fuel heatup. The model remains compact and deterministic, but RCP coastdown and loss-of-flow scenarios now have a clearer thermal consequence.
+Primary-flow loss affects core cooling availability and fuel heatup. The model remains compact and deterministic, but RCP coastdown and loss-of-flow scenarios now have a clearer thermal consequence. Reference I&C trips the reactor on low RCP flow while the RCP loop variables continue to show coastdown toward natural-circulation flow.
 
 ## Credibility Evidence
 
@@ -73,9 +73,9 @@ Use these local checks before demoing PWR behavior:
 - `bun run process-plant:extended-validation`
 - `bun run process-plant:credibility`
 
-The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`.
+The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`; it also runs graph-aware reference I&C so protection response is part of transient credibility.
 
-The current credibility run has no gate failures. The remaining watch item is all-RCP-trip fuel heatup-rate calibration, which is retained as visible residual scope rather than hidden behind a relaxed target.
+The current credibility run has no gate or watch failures across the active target set. This means the simplified operational target envelopes are green; it does not mean the model is licensing-grade thermal-hydraulics.
 
 Primary inventory accounting now caps fan-out charging/injection branches by their source component flow. This prevents a modular loop assembly from turning one charging pump into one independent makeup source per loop.
 

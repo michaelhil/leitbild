@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1386" viewBox="0 0 1200 1386">
   <rect width="1200" height="1386" fill="#f8fafc"/>
   <text x="48" y="42" font-family="Inter, system-ui, sans-serif" font-size="25" font-weight="800" fill="#111827">Process Plant Extended Validation</text>
-  <text x="48" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">15 ten-minute validation runs. Checks: 117/117 passed. Realtime factor: 424.7x.</text>
+  <text x="48" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">15 ten-minute validation runs. Checks: 117/117 passed. Realtime factor: 290.1x.</text>
   
     <g>
       <rect x="48" y="92" width="350" height="210" rx="10" fill="#ffffff" stroke="#d1d5db"/>

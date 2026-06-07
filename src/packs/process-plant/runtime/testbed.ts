@@ -1,6 +1,12 @@
 import type { CompiledProcessPlantSystem } from '../process-systems.ts'
+import type { ControlInstanceId } from '../../../core/model/index.ts'
 import { createProcessPlantScheduleRunner, type ProcessPlantScheduleConfig } from './schedule.ts'
 import { createProcessPlantTelemetryRecorder, type ProcessPlantTelemetryConfig, type ProcessPlantTelemetrySeries } from './telemetry.ts'
+import {
+  createProcessPlantProtectionRunner,
+  type ProcessPlantIcConfig,
+  type ProcessPlantIcSnapshot,
+} from './ic/control-protection.ts'
 import { createProcessPlantRuntime } from './runtime.ts'
 import type { ProcessPlantRuntime, ProcessPlantRuntimeSnapshot } from './model.ts'
 import type { PwrTransientDiagnostics } from './pwr-transient-kernel.ts'
@@ -24,6 +30,7 @@ export const createProcessPlantTestbed = (system: CompiledProcessPlantSystem): P
 export interface ProcessPlantMultiSystemConfig {
   readonly system: CompiledProcessPlantSystem
   readonly schedule?: ProcessPlantScheduleConfig
+  readonly protection?: ProcessPlantIcConfig
   readonly telemetry?: ProcessPlantTelemetryConfig
 }
 
@@ -31,6 +38,7 @@ export interface ProcessPlantMultiSystemSnapshot {
   readonly systemId: string
   readonly runtime: ProcessPlantRuntimeSnapshot
   readonly pwrTransientDiagnostics: PwrTransientDiagnostics
+  readonly protection?: ProcessPlantIcSnapshot
   readonly telemetry?: ReadonlyArray<ProcessPlantTelemetrySeries>
 }
 
@@ -41,11 +49,15 @@ export interface ProcessPlantMultiSystemTestbed {
 export const createProcessPlantMultiSystemTestbed = (
   configs: ReadonlyArray<ProcessPlantMultiSystemConfig>,
 ): ProcessPlantMultiSystemTestbed => {
+  const controlInstanceId = 'control-instance:process-plant-testbed' as ControlInstanceId
   const systemIds = new Set<string>()
   const systems = configs.map(config => {
     if (systemIds.has(config.system.id)) throw new Error(`duplicate process plant multi-system id: ${config.system.id}`)
     systemIds.add(config.system.id)
     const runtime = createProcessPlantRuntime({ system: config.system })
+    const protection = config.protection === undefined
+      ? undefined
+      : createProcessPlantProtectionRunner({ system: config.system, protection: config.protection })
     const telemetry = config.telemetry === undefined
       ? undefined
       : createProcessPlantTelemetryRecorder({ systemId: config.system.id, telemetry: config.telemetry })
@@ -57,6 +69,7 @@ export const createProcessPlantMultiSystemTestbed = (
     return {
       system: config.system,
       runtime,
+      protection,
       telemetry,
       schedule,
     }
@@ -73,6 +86,12 @@ export const createProcessPlantMultiSystemTestbed = (
         for (const system of systems) {
           system.schedule.applyDueActions(system.runtime, nextElapsedMs)
           system.runtime.tick(tickMs)
+          system.protection?.evaluate({
+            runtime: system.runtime,
+            elapsedMs: system.runtime.elapsedMs(),
+            controlInstanceId,
+            sourceRuntimeId: 'process-plant-testbed',
+          })
           system.telemetry?.recordDueSamples(system.runtime)
         }
         simulatedMs = nextElapsedMs
@@ -81,6 +100,7 @@ export const createProcessPlantMultiSystemTestbed = (
         systemId: system.system.id,
         runtime: system.runtime.snapshot(),
         pwrTransientDiagnostics: system.runtime.pwrTransientDiagnostics(),
+        ...(system.protection === undefined ? {} : { protection: system.protection.snapshot() }),
         ...(system.telemetry === undefined ? {} : { telemetry: system.telemetry.series() }),
       }))
     },

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-07T16:09:43.144Z",
+  "generatedAt": "2026-06-07T16:31:00.502Z",
   "durationMs": 600000,
   "stepMs": 1000,
   "sampleIntervalMs": 2000,
@@ -9,11 +9,11 @@
     "loopCount": 4
   },
   "caseCount": 6,
-  "targetCount": 18,
+  "targetCount": 19,
   "failedGateTargetCount": 0,
-  "failedWatchTargetCount": 1,
-  "wallMs": 8169.587375,
-  "realtimeFactor": 440.65873033153036,
+  "failedWatchTargetCount": 0,
+  "wallMs": 11015.522165999999,
+  "realtimeFactor": 326.8115615174007,
   "graph": {
     "componentCount": 86,
     "linkCount": 134,
@@ -100,7 +100,7 @@
       "id": "all-rcp-trip",
       "title": "Loss Of Forced Primary Flow",
       "eventFamily": "NRC SRP 15.3.1 loss of forced reactor coolant flow",
-      "description": "All reactor coolant pumps trip; loop flow should coast down and core cooling indicators should respond.",
+      "description": "All reactor coolant pumps trip; loop flow should coast down, reference protection should trip the reactor, and core cooling indicators should respond.",
       "sourceRefs": [
         "nrc-srp-ch15",
         "nrc-trace",
@@ -127,7 +127,7 @@
       "label": "Pressurizer pressure remains in the reference operating band",
       "signal": "pressurizer.pressureMPa final value",
       "expectation": "Stable PWR operation should remain close to nominal RCS pressure.",
-      "observed": 15.187635584601749,
+      "observed": 15.474886728138607,
       "acceptable": {
         "min": 14.8,
         "max": 15.8
@@ -231,7 +231,7 @@
       "label": "SGTR produces measurable primary-to-secondary leakage",
       "signal": "sgA.primaryToSecondaryLeakKgPerS max after T+100s",
       "expectation": "A tube leak should create an affected-SG leak path without contaminating unrelated SGs.",
-      "observed": 108.0779514083437,
+      "observed": 110.71178646373518,
       "acceptable": {
         "min": 40,
         "max": 220
@@ -249,7 +249,7 @@
       "label": "SGTR drains primary inventory",
       "signal": "vessel.primaryCoolantInventoryKg delta from T+80s to final",
       "expectation": "Primary-to-secondary leakage should produce a durable RCS inventory consequence.",
-      "observed": -23018.940451393166,
+      "observed": -54049.01171333587,
       "acceptable": {
         "min": -80000,
         "max": -8000
@@ -267,7 +267,7 @@
       "label": "Affected secondary radiation rises",
       "signal": "sgA.secondaryRadiationMSvPerH max after T+100s",
       "expectation": "SGTR diagnosis should be visible through affected secondary radiation.",
-      "observed": 73.7894548312174,
+      "observed": 75.7984340746129,
       "acceptable": {
         "min": 20
       },
@@ -284,7 +284,7 @@
       "label": "Primary boundary leak creates containment release flow",
       "signal": "vessel-release-to-containment.flowKgPerS max after T+100s",
       "expectation": "A primary-boundary break should move mass from RCS to containment.",
-      "observed": 879.3861383457413,
+      "observed": 891.9330282317569,
       "acceptable": {
         "min": 50
       },
@@ -301,7 +301,7 @@
       "label": "Containment pressure rises after release",
       "signal": "containment.pressureMPa delta from T+80s to final",
       "expectation": "Containment should respond thermodynamically to primary mass-energy release.",
-      "observed": 0.2261388698753059,
+      "observed": 0.2812893189389133,
       "acceptable": {
         "min": 0.01
       },
@@ -318,7 +318,7 @@
       "label": "Accumulator injects after depressurization",
       "signal": "safetyAccumulatorA.outletFlowKgPerS max after T+100s",
       "expectation": "Passive safety injection should become visible as RCS pressure falls below the accumulator head.",
-      "observed": 52.69339045488959,
+      "observed": 52.357081944300646,
       "acceptable": {
         "min": 1
       },
@@ -367,17 +367,34 @@
       ]
     },
     {
+      "targetId": "rcp-reactor-trip-power-suppression",
+      "caseId": "all-rcp-trip",
+      "label": "Reference protection suppresses fission power after low-flow trip",
+      "signal": "core.powerMw final value",
+      "expectation": "Loss of forced primary flow should actuate reactor protection and reduce fission power to a shutdown-range value.",
+      "observed": 1.898476348233326e-93,
+      "acceptable": {
+        "max": 100
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
       "targetId": "rcp-fuel-heatup-bounded",
       "caseId": "all-rcp-trip",
       "label": "Fuel heatup remains bounded in the demo window",
-      "signal": "core.fuelHeatupRateCPerS max after T+120s",
-      "expectation": "The compact model should show thermal consequence without claiming severe-accident fidelity.",
-      "observed": 3.8151165655506247,
+      "signal": "core.fuelHeatupRateCPerS max after T+90s",
+      "expectation": "The compact model should show bounded thermal consequence during pump coastdown and protection response without claiming severe-accident fidelity.",
+      "observed": 1.0212993210427612,
       "acceptable": {
         "min": 0.01,
         "max": 2
       },
-      "passed": false,
+      "passed": true,
       "severity": "watch",
       "sourceRefs": [
         "nrc-trace",
@@ -436,6 +453,7 @@
       ]
     }
   ],
+  "icRef": "process-plant.pwr.reference.graph.ic.v2",
   "artifacts": {
     "summaryJsonPath": "docs/assets/process-plant-pwr-credibility-summary.json",
     "reportSvgPath": "docs/assets/process-plant-pwr-credibility-report.svg"

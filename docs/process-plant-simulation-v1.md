@@ -1042,7 +1042,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one assembled four-loop system in roughly 0.68 seconds and five minutes of six assembled four-loop systems in roughly 3.93 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 5.8x wall-clock penalty for 6x the plant count, and roughly 76x faster than real time for the six-system case at the current fidelity. The current assembled four-loop graph has 86 components, 134 links, and 1,149 variables per system. The runtime keeps the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and avoiding per-tick graph parsing. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not new orchestration layers.
+Recent benchmark results on the current local hardware simulate five minutes of one assembled four-loop system in roughly 0.93 seconds and five minutes of six assembled four-loop systems in roughly 3.83 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 4.1x wall-clock penalty for 6x the plant count, and roughly 78x faster than real time for the six-system case at the current fidelity. The current assembled four-loop graph has 86 components, 134 links, and 1,149 variables per system. The runtime keeps the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and avoiding per-tick graph parsing. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 
@@ -1095,14 +1095,14 @@ The PWR credibility runner adds a source-backed target layer above the trend acc
 bun run process-plant:credibility
 ```
 
-It compiles the same modular four-loop PWR assembly and evaluates representative operational target envelopes for steady operation, loss of feedwater with AFW, SGTR, small LOCA, all-RCP trip, and loss of offsite power. The target references are public/open sources and project scope documents such as NRC SRP Chapter 15, IAEA SSG-2, OECD/NEA benchmark framing, and the local Leitbild PWR model scope. This is a credibility audit for operational demos, not licensing-basis validation.
+It compiles the same modular four-loop PWR assembly, applies graph-aware reference I&C through `process-plant.pwr.reference.graph.ic.v2`, and evaluates representative operational target envelopes for steady operation, loss of feedwater with AFW, SGTR, small LOCA, all-RCP trip, and loss of offsite power. The target references are public/open sources and project scope documents such as NRC SRP Chapter 15, IAEA SSG-2, OECD/NEA benchmark framing, and the local Leitbild PWR model scope. This is a credibility audit for operational demos, not licensing-basis validation.
 
 Generated artifacts:
 
 - [process-plant-pwr-credibility-report.svg](./assets/process-plant-pwr-credibility-report.svg)
 - [process-plant-pwr-credibility-summary.json](./assets/process-plant-pwr-credibility-summary.json)
 
-The current run has no gate failures. One watch target remains for all-RCP-trip fuel heatup rate calibration; it is intentionally kept visible as residual model-deepening scope rather than hidden by broad thresholds.
+The current run has no gate or watch failures across the active source-backed target set. All-RCP-trip behavior now checks RCP coastdown, low-flow protection power suppression, core-cooling diagnostic response, and bounded fuel-heatup indication during the coastdown/protection response. Remaining model-deepening scope is tracked as future fidelity work, not hidden inside broad thresholds.
 
 ## Implementation Phases
 

@@ -6,8 +6,8 @@
   "caseCount": 15,
   "checkCount": 117,
   "failedCheckCount": 0,
-  "wallMs": 21189.066666000002,
-  "realtimeFactor": 424.7473539946622,
+  "wallMs": 31021.4905,
+  "realtimeFactor": 290.12145628528066,
   "minRealtimeFactor": 12,
   "checks": [
     {
@@ -710,7 +710,7 @@
       "caseId": "long-steady-state",
       "description": "extended validation remains faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=424.7x min=12.0x"
+      "details": "realtimeFactor=290.1x min=12.0x"
     }
   ],
   "artifacts": {

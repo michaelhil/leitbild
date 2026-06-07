@@ -1101,8 +1101,9 @@ describe('process plant runtime', () => {
     const trippedFissionPower = Number(runtime.readVariable(valueOf('core.powerMw')))
     const decayHeat = Number(runtime.readVariable(valueOf('core.decayHeatMw')))
     const heatToCoolant = Number(runtime.readVariable(valueOf('core.heatToCoolantMw')))
-    expect(trippedFissionPower).toBeLessThan(initialFissionPower)
+    expect(trippedFissionPower).toBeLessThan(initialFissionPower * 0.1)
     expect(decayHeat).toBeGreaterThan(0)
+    expect(decayHeat).toBeGreaterThan(trippedFissionPower)
     expect(heatToCoolant).toBeGreaterThan(trippedFissionPower)
   })
 
@@ -1157,6 +1158,8 @@ describe('process plant runtime', () => {
     expect(Number(runtime.readVariable(valueOf('turbine.loadFraction')))).toBeCloseTo(0, 6)
     expect(runtime.readVariable(valueOf('mainFeedwaterPumpA.running'))).toBe(false)
     expect(runtime.readVariable(valueOf('mainFeedwaterPumpB.running'))).toBe(false)
+    expect(Number(runtime.readVariable(valueOf('core.powerMw')))).toBeLessThan(100)
+    expect(Number(runtime.readVariable(valueOf('core.decayHeatMw')))).toBeGreaterThan(Number(runtime.readVariable(valueOf('core.powerMw'))))
 
     const bypassValvePosition = Number(runtime.readVariable(valueOf('turbineBypassValve.effectivePositionFraction')))
     const bypassFlow = Number(runtime.readVariable(valueOf('turbine-bypass-valve-to-condenser.flowKgPerS')))

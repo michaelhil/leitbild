@@ -22,6 +22,8 @@ const reactorAction = annunciator({
 const lowRcpFlowVoteThresholdFor = (loops: ReadonlyArray<ProcessPlantReferenceLoop>): number =>
   Math.max(1, Math.ceil(loops.length * 0.75))
 
+const lowRcpFlowTripThresholdKgPerS = 3_000
+
 export const reactorReferenceIcRules = (
   loops: ReadonlyArray<ProcessPlantReferenceLoop>,
 ): ReadonlyArray<ProcessPlantIcRule> => [
@@ -83,13 +85,13 @@ export const reactorReferenceIcRules = (
     ruleClass: 'protection',
     modeLabel: 'power operation',
     modeCondition: comparison({ path: 'core.powerMw' }, '>', 100),
-    condition: vote(lowRcpFlowVoteThresholdFor(loops), loops.map(loop => comparison({ path: `rcp${loop}.loopFlowKgPerS` }, '<', 1_000))),
+    condition: vote(lowRcpFlowVoteThresholdFor(loops), loops.map(loop => comparison({ path: `rcp${loop}.loopFlowKgPerS` }, '<', lowRcpFlowTripThresholdKgPerS))),
     delayMs: 2_000,
     effects: [
       trip({
         id: 'low-rcp-flow-trip',
         title: 'Reactor low RCP flow trip',
-        message: `${lowRcpFlowVoteThresholdFor(loops)} or more reactor coolant pump loops are below the reference low-flow trip threshold.`,
+        message: `${lowRcpFlowVoteThresholdFor(loops)} or more reactor coolant pump loops are below ${lowRcpFlowTripThresholdKgPerS} kg/s.`,
         annunciator: reactorAction,
       }),
       ...reactorTripBreakerWrites('low-rcp-flow-trip'),
