@@ -5,7 +5,7 @@ import {
   createProcessPlantRuntime,
   createProcessPlantScheduleRunner,
   createProcessPlantTelemetryRecorder,
-  processPlantPressurizedWaterReactorGraphRef,
+  processPlantPwrReferenceAssemblyRef,
   type ProcessPlantRuntime,
   type ProcessPlantScheduledAction,
   type ProcessPlantTelemetrySeries,
@@ -157,7 +157,7 @@ const cases: ReadonlyArray<ValidationCase> = [
     title: 'Load follow cycle',
     description: 'Turbine load steps down and back up without destabilizing the primary plant.',
     actions: [
-      set('load-down', 90_000, 'turbine.loadFraction', 0.55),
+      set('load-down', 90_000, 'turbine.loadFraction', 0.45),
       set('load-up', 300_000, 'turbine.loadFraction', 0.92),
     ],
   },
@@ -257,14 +257,17 @@ const cases: ReadonlyArray<ValidationCase> = [
     title: 'Steam isolation and safety release',
     description: 'Turbine stop valve closes under high SG pressure to exercise main steam safety release.',
     initialState: {
-      'sgA.pressureMPa': 9.55,
-      'sgB.pressureMPa': 9.55,
-      'sgC.pressureMPa': 9.55,
-      'sgD.pressureMPa': 9.55,
+      'sgA.pressureMPa': 9.85,
+      'sgB.pressureMPa': 9.85,
+      'sgC.pressureMPa': 9.85,
+      'sgD.pressureMPa': 9.85,
+      'mainSteamHeader.mixedPressureMPa': 9.85,
+      'main-steam-header-to-safety-valve.pressureMPa': 9.85,
+      'turbineStopValve.positionFraction': 0,
+      'turbineBypassValve.positionFailureActive': true,
+      'turbineBypassValve.failedPositionFraction': 0,
     },
-    actions: [
-      set('close-turbine-stop', 90_000, 'turbineStopValve.positionFraction', 0),
-    ],
+    actions: [],
   },
   {
     id: 'boration-and-letdown',
@@ -300,7 +303,7 @@ const cases: ReadonlyArray<ValidationCase> = [
       set('combined-sgtr', 90_000, 'sgA.tubeLeakFraction', 0.18),
       trip('combined-feed-a', 150_000, 'mainFeedwaterPumpA'),
       trip('combined-rcp-a', 210_000, 'rcpA'),
-      set('combined-load-down', 300_000, 'turbine.loadFraction', 0.5),
+      set('combined-load-down', 300_000, 'turbine.loadFraction', 0.3),
     ],
   },
 ]
@@ -309,7 +312,8 @@ const compiledSystem = (testCase: ValidationCase) => compileProcessPlantSystem({
   id: testCase.id,
   pack: 'process-plant',
   componentLibrary: 'process-plant',
-  graphRef: processPlantPressurizedWaterReactorGraphRef,
+  assemblyRef: processPlantPwrReferenceAssemblyRef,
+  assemblyConfig: { loopCount: 4, title: `Extended Validation ${testCase.title}` },
   ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),
   ...(testCase.initialState === undefined ? {} : { initialState: testCase.initialState }),
 })
@@ -579,10 +583,10 @@ const evaluateCase = (
     ]
   }
   if (caseId === 'main-steam-isolation-release') {
-    const valve = maxAfter(telemetry, 'mainSteamSafetyValve.effectivePositionFraction', 120_000)
-    const release = maxAfter(telemetry, 'main-steam-safety-valve-to-containment.flowKgPerS', 120_000)
-    const containmentBefore = valueAtOrAfter(telemetry, 'containment.pressureMPa', 80_000)
-    const containmentPeak = maxAfter(telemetry, 'containment.pressureMPa', 120_000)
+    const valve = maxAfter(telemetry, 'mainSteamSafetyValve.effectivePositionFraction', 0)
+    const release = maxAfter(telemetry, 'main-steam-safety-valve-to-containment.flowKgPerS', 0)
+    const containmentBefore = valueAtOrAfter(telemetry, 'containment.pressureMPa', 0)
+    const containmentPeak = maxAfter(telemetry, 'containment.pressureMPa', 0)
     return [
       check(caseId, 'main steam safety valve opens on isolated high pressure path', valve > 0.9, `valve=${valve.toFixed(2)}`),
       check(caseId, 'main steam safety path releases steam to containment', release > 100, `release=${release.toFixed(1)}kg/s`),

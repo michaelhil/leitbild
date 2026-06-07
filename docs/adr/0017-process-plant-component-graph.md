@@ -64,9 +64,11 @@ The first process slice is a lumped-parameter directional model, not analysis-gr
 - `process-plant.control.write` is a real provider command for writable variables; invalid writes are rejected before they enter the solver queue.
 - Provider-private state restores process runtimes after reload without turning variables into operational objects.
 - The current built-in graph can now exercise the first primary/secondary energy path in headless tests.
-- Multi-unit process scenarios do not need a separate cluster runtime. A scenario can instantiate multiple process systems, each with the same graph and different schedules/telemetry config. The current six-unit benchmark runs six expanded plant graphs independently in one provider.
+- Multi-unit process scenarios do not need a separate cluster runtime. A scenario can instantiate multiple process systems, each with the same graph or assembly ref and different schedules/telemetry config. The current six-unit benchmark runs six assembled PWR graphs independently in one provider.
 - Physics-deepening work must preserve the optimized execution model: compile once, use the variable table as the only authoritative state, reuse compiled adjacency indexes, and avoid per-tick graph parsing or new shadow state.
-- Acceptance traces are now part of the process-plant engineering loop. Physics changes should be exercised through representative headless cases such as baseline, SGTR-like leak, loss of feedwater, RCP coastdown, relief opening, and turbine load reduction, using the real graphRef/runtime rather than a second diagnostic model.
+- Acceptance traces are now part of the process-plant engineering loop. Physics changes should be exercised through representative headless cases such as baseline, SGTR-like leak, loss of feedwater, RCP coastdown, relief opening, and turbine load reduction, using the real modular assembly/runtime rather than a second diagnostic model.
+- Source-backed PWR credibility targets sit above acceptance traces. They document target envelopes and source references, fail gate-level misses, and leave watch-level calibration items visible.
+- Runtime accounting must avoid creating mass or energy merely because a modular assembly fans one source out across repeated loop branches. The reactor-vessel inventory behavior caps charging and injection fan-out by source component flow before crediting boundary inflow.
 
 ## Guardrails
 

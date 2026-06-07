@@ -10,6 +10,7 @@
     processPlantDemoTransientCommands,
     processPlantDemoTransients,
     type ProcessPlantDemoTransient,
+    type ProcessPlantDemoTransientContext,
   } from '../../packs/process-plant/demo-transients.ts'
   import type { CompiledProcessSurface, ProcessSurfaceValue } from '../../packs/process-plant/surfaces/index.ts'
   import { statusToneColor } from '../status-presentation.ts'
@@ -19,6 +20,7 @@
   import ProcessSurfaceRenderer from './ProcessSurfaceRenderer.svelte'
   import {
     emptyProcessSurfaceAlarmSnapshot,
+    listProcessPlantVariablePaths,
     listProcessSurfaces,
     readProcessSurface,
     readProcessSurfaceProjection,
@@ -89,6 +91,7 @@
   let error = $state<string | null>(null)
   let surface = $state<CompiledProcessSurface | null>(null)
   let values = $state<ReadonlyMap<string, ProcessSurfaceValue>>(new Map())
+  let systemVariablePaths = $state<ProcessPlantDemoTransientContext['variablePaths']>([])
   let alarms = $state<ProcessSurfaceAlarmSnapshot>(emptyProcessSurfaceAlarmSnapshot)
   let projection = $state<ProcessSurfaceProjection | null>(null)
   let activeLensId = $state<string>('all')
@@ -221,6 +224,14 @@
     }
   }
 
+  const currentDemoTransientContext = (): ProcessPlantDemoTransientContext => ({
+    variablePaths: Array.from(new Set([
+      ...systemVariablePaths,
+      ...(surface?.bindingPaths ?? []),
+      ...Array.from(values.values()).map(value => value.path),
+    ])),
+  })
+
   const runDemoTransient = async (transient: ProcessPlantDemoTransient): Promise<void> => {
     if (transientRunningId !== null) return
     const systemId = loadedSystemId ?? systemIdFor(object)
@@ -229,7 +240,11 @@
     transientRunningId = transient.id
     error = null
     try {
-      const commands = processPlantDemoTransientCommands(transient, transientInputs[transient.id] ?? {})
+      const commands = processPlantDemoTransientCommands(
+        transient,
+        transientInputs[transient.id] ?? {},
+        currentDemoTransientContext(),
+      )
       for (const command of commands) {
         const response = await sendControlInstanceCommand(controlInstanceId, {
           kind: processPlantControlWriteCommandKind,
@@ -386,14 +401,17 @@
         loading = true
         error = null
         values = new Map()
+        systemVariablePaths = []
         alarms = emptyProcessSurfaceAlarmSnapshot
         const surfaces = await listProcessSurfaces(selectedControlInstanceId, selectedSystemId)
         const first = surfaces[0]
         if (!first) throw new Error(`no process displays are available for ${selectedSystemId}`)
         const nextSurface = await readProcessSurface(selectedControlInstanceId, selectedSystemId, first.id)
+        const nextVariablePaths = await listProcessPlantVariablePaths(selectedControlInstanceId, selectedSystemId)
         if (cancelled) return
         loadedSystemId = selectedSystemId
         surface = nextSurface
+        systemVariablePaths = nextVariablePaths
         projection = null
         activeLensId = nextSurface.lenses[0]?.id ?? 'all'
         widgetPositions = readProcessSurfaceLayout({

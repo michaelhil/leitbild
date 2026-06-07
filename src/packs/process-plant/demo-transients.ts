@@ -5,6 +5,10 @@ export interface ProcessPlantDemoTransientCommand {
   readonly value: number | boolean
 }
 
+export interface ProcessPlantDemoTransientContext {
+  readonly variablePaths: ReadonlyArray<VariablePath>
+}
+
 export interface ProcessPlantDemoTransientField {
   readonly id: string
   readonly label: string
@@ -21,7 +25,10 @@ export interface ProcessPlantDemoTransient {
   readonly label: string
   readonly description: string
   readonly fields: ReadonlyArray<ProcessPlantDemoTransientField>
-  readonly commands: (values: Readonly<Record<string, number>>) => ReadonlyArray<ProcessPlantDemoTransientCommand>
+  readonly commands: (
+    values: Readonly<Record<string, number>>,
+    context: ProcessPlantDemoTransientContext,
+  ) => ReadonlyArray<ProcessPlantDemoTransientCommand>
 }
 
 const path = (value: string): VariablePath => value as VariablePath
@@ -40,6 +47,37 @@ const fieldValue = (
 }
 
 const percentToFraction = (value: number): number => value / 100
+
+const sortedMatchingPaths = (
+  context: ProcessPlantDemoTransientContext,
+  pattern: RegExp,
+  label: string,
+): ReadonlyArray<VariablePath> => {
+  const matches = context.variablePaths
+    .filter(candidate => pattern.test(candidate))
+    .sort((left, right) => String(left).localeCompare(String(right)))
+  if (matches.length === 0) {
+    throw new Error(`current process plant surface exposes no ${label} variables`)
+  }
+  return matches
+}
+
+const booleanCommandsForMatchingPaths = (
+  context: ProcessPlantDemoTransientContext,
+  pattern: RegExp,
+  label: string,
+  value: boolean,
+): ReadonlyArray<ProcessPlantDemoTransientCommand> =>
+  sortedMatchingPaths(context, pattern, label).map(matchedPath => ({ path: matchedPath, value }))
+
+const requiredPathFromContext = (
+  context: ProcessPlantDemoTransientContext,
+  value: string,
+): VariablePath => {
+  const candidate = path(value)
+  if (context.variablePaths.includes(candidate)) return candidate
+  throw new Error(`current process plant surface exposes no ${value} variable`)
+}
 
 const sgTubeLeakFields = [{
   id: 'leakPercent',
@@ -88,22 +126,18 @@ export const processPlantDemoTransients: ReadonlyArray<ProcessPlantDemoTransient
   {
     id: 'trip-all-rcps',
     label: 'Trip all RCPs',
-    description: 'Trip the four reactor coolant pumps; loop flow and pump status respond through the primary system.',
+    description: 'Trip every reactor coolant pump exposed by the current plant surface; loop flow and pump status respond through the primary system.',
     fields: [],
-    commands: () => ['A', 'B', 'C', 'D'].map(loop => ({
-      path: path(`rcp${loop}.running`),
-      value: false,
-    })),
+    commands: (_values, context) =>
+      booleanCommandsForMatchingPaths(context, /^rcp[^.]+\.running$/, 'reactor coolant pump running', false),
   },
   {
     id: 'loss-main-feedwater',
     label: 'Loss of main feedwater',
-    description: 'Trip both main feedwater pumps; feedwater flow and SG levels respond as the runtime evolves.',
+    description: 'Trip every main feedwater pump exposed by the current plant surface; feedwater flow and SG levels respond as the runtime evolves.',
     fields: [],
-    commands: () => [
-      { path: path('mainFeedwaterPumpA.running'), value: false },
-      { path: path('mainFeedwaterPumpB.running'), value: false },
-    ],
+    commands: (_values, context) =>
+      booleanCommandsForMatchingPaths(context, /^mainFeedwaterPump[^.]+\.running$/, 'main feedwater pump running', false),
   },
   {
     id: 'sg-b-feedwater-runback',
@@ -152,10 +186,9 @@ export const processPlantDemoTransients: ReadonlyArray<ProcessPlantDemoTransient
     label: 'Loss of offsite power',
     description: 'Open offsite breakers and mark the grid unavailable; safety buses and EDG start logic respond.',
     fields: [],
-    commands: () => [
-      { path: path('offsiteGrid.available'), value: false },
-      { path: path('offsiteBreakerA.closed'), value: false },
-      { path: path('offsiteBreakerB.closed'), value: false },
+    commands: (_values, context) => [
+      { path: requiredPathFromContext(context, 'offsiteGrid.available'), value: false },
+      ...booleanCommandsForMatchingPaths(context, /^offsiteBreaker[^.]+\.closed$/, 'offsite breaker closed', false),
     ],
   },
 ] as const
@@ -168,4 +201,5 @@ export const defaultProcessPlantDemoTransientInputs = (
 export const processPlantDemoTransientCommands = (
   transient: ProcessPlantDemoTransient,
   values: Readonly<Record<string, number>>,
-): ReadonlyArray<ProcessPlantDemoTransientCommand> => transient.commands(values)
+  context: ProcessPlantDemoTransientContext,
+): ReadonlyArray<ProcessPlantDemoTransientCommand> => transient.commands(values, context)

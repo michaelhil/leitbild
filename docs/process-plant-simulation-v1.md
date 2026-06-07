@@ -898,8 +898,10 @@ V1 should use the existing generic pack query route. Do not add `/api/process-pl
 Implemented queries:
 
 - `process-plant.catalog.list`
+- `process-plant.catalog.source`
 - `process-plant.systems.list`
 - `process-plant.graph.read`
+- `process-plant.artifact.read`
 - `process-plant.variables.read`
 - `process-plant.variables.search`
 - `process-plant.signals.resolve`
@@ -907,7 +909,9 @@ Implemented queries:
 - `process-plant.signals.search`
 - `process-plant.conditions.evaluate`
 - `process-plant.procedure-tags.validate`
+- `process-plant.control.validate`
 - `process-plant.runtime.status`
+- `process-plant.transient.diagnostics`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
 - `process-plant.ic.status`
@@ -1038,7 +1042,7 @@ Generated artifacts:
 - [process-plant-six-unit-trace.csv](./assets/process-plant-six-unit-trace.csv)
 - [process-plant-six-unit-performance.json](./assets/process-plant-six-unit-performance.json)
 
-Recent benchmark results on the current local hardware simulate five minutes of one system in roughly 0.22 seconds and five minutes of six systems in roughly 0.90 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 4.1x wall-clock penalty for 6x the plant count, and roughly 332x faster than real time for the six-system case at the current fidelity. The current graph has 44 components, 58 links, and 341 variables per system after adding primary inventory, primary pressure publication, and steam-generator tube-leak variables. The recent runtime refactor achieved this by keeping the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and removing full-snapshot invariant allocation from normal fixed-step execution. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not extra runtime graph scans or new orchestration layers.
+Recent benchmark results on the current local hardware simulate five minutes of one assembled four-loop system in roughly 0.68 seconds and five minutes of six assembled four-loop systems in roughly 3.93 seconds, using median wall time over three measured runs after a warm-up run. That is roughly a 5.8x wall-clock penalty for 6x the plant count, and roughly 76x faster than real time for the six-system case at the current fidelity. The current assembled four-loop graph has 86 components, 134 links, and 1,149 variables per system. The runtime keeps the public path-based model while moving hot-loop storage to variable slots, compiling per-phase behavior invocations once, sampling telemetry directly, using compiled adjacency indexes for link lookups, and avoiding per-tick graph parsing. The physics-deepening passes have kept those optimizations: richer core, steam-generator, feedwater-pump, pressurizer, process-tank, condenser-inventory, primary-loop inertia, and primary-inventory/SGTR behavior added declared variables and arithmetic, not new orchestration layers.
 
 Use `PROCESS_PLANT_BENCHMARK_WRITE_ARTIFACTS=false bun run process-plant:benchmark` when checking a deployed or remote machine. That mode prints the same performance JSON and machine metadata without rewriting documentation artifacts. Artifact-producing benchmark runs should be intentional because the SVG/CSV/JSON files are part of the repo documentation.
 
@@ -1050,7 +1054,7 @@ The process-plant pack now has a compact acceptance trace harness:
 bun run process-plant:acceptance
 ```
 
-The harness compiles the real `process-plant.pressurized-water-reactor.v1` graphRef, runs representative headless cases, records selected published variables, samples final PWR transient diagnostics, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, transient kernel, component behaviors, and process-link behaviors that runtime-backed simulations use.
+The harness compiles the modular PWR reference assembly `process-plant.pwr.reference.v2` with a four-loop assembly config, runs representative headless cases, records selected published variables, samples final PWR transient diagnostics, writes inspectable artifacts, and fails if high-level physical expectations are violated. It is deliberately not a second simulator. It uses the same graph compiler, fixed-step runtime, schedule runner, telemetry recorder, transient kernel, component behaviors, and process-link behaviors that runtime-backed simulations use.
 
 Current acceptance cases:
 
@@ -1082,6 +1086,23 @@ PROCESS_PLANT_ACCEPTANCE_WRITE_CSV=1 bun run process-plant:acceptance
 ```
 
 Acceptance plots are now part of the engineering loop for physics changes. When deepening a component or link behavior, add or adjust trend checks so the expected physical direction is visible and tested. Do not rely only on isolated variable assertions.
+
+## PWR Credibility Targets
+
+The PWR credibility runner adds a source-backed target layer above the trend acceptance suite:
+
+```sh
+bun run process-plant:credibility
+```
+
+It compiles the same modular four-loop PWR assembly and evaluates representative operational target envelopes for steady operation, loss of feedwater with AFW, SGTR, small LOCA, all-RCP trip, and loss of offsite power. The target references are public/open sources and project scope documents such as NRC SRP Chapter 15, IAEA SSG-2, OECD/NEA benchmark framing, and the local Leitbild PWR model scope. This is a credibility audit for operational demos, not licensing-basis validation.
+
+Generated artifacts:
+
+- [process-plant-pwr-credibility-report.svg](./assets/process-plant-pwr-credibility-report.svg)
+- [process-plant-pwr-credibility-summary.json](./assets/process-plant-pwr-credibility-summary.json)
+
+The current run has no gate failures. One watch target remains for all-RCP-trip fuel heatup rate calibration; it is intentionally kept visible as residual model-deepening scope rather than hidden by broad thresholds.
 
 ## Implementation Phases
 

@@ -1,5 +1,5 @@
 import type { ComponentBehaviorDefinition } from '../behavior-contract.ts'
-import { componentVariablePath } from '../behavior-contract.ts'
+import { componentVariablePath, processLinkVariablePath } from '../behavior-contract.ts'
 import {
   approach,
   clamp,
@@ -11,7 +11,6 @@ import {
 } from '../component-helpers.ts'
 import {
   averageIncomingComponentLinkValue as averageIncomingLinkValue,
-  flowWeightedProcessLinkValueByService,
   sumProcessLinkValueByService as sumLinkValueByService,
 } from '../component-link-helpers.ts'
 import { flowWeightedIncomingLinkValue, sumIncomingLinkValue } from '../links/link-flow-helpers.ts'
@@ -23,6 +22,96 @@ import {
 } from '../physics.ts'
 import { primarySystemPressurizer, primarySystemReactorCore, primarySystemReactorVessel } from '../system-topology.ts'
 import { saturationTemperatureCFromPressureMPa, waterDeltaTFromHeatMw } from '../thermophysics.ts'
+
+type ReactorBehaviorSystem = Parameters<ComponentBehaviorDefinition['update']>[0]['system']
+type ReactorBehaviorContext = Parameters<ComponentBehaviorDefinition['update']>[0]['context']
+type ReactorBehaviorLink = ReactorBehaviorSystem['graph']['links'][number]
+
+interface BoundaryInflow {
+  readonly flowKgPerS: number
+  readonly soluteConcentrationPpm: number | null
+}
+
+interface SourceBoundaryFlowGroup {
+  branchFlowKgPerS: number
+  soluteWeightedTotal: number
+  soluteWeightKgPerS: number
+}
+
+const sourceFlowCapKgPerS = (
+  system: ReactorBehaviorSystem,
+  sourceComponentIndex: number,
+  context: ReactorBehaviorContext,
+): number | null => {
+  const component = system.graph.components[sourceComponentIndex]
+  if (!component) return null
+  for (const localPath of ['flowKgPerS', 'outletFlowKgPerS']) {
+    const path = componentVariablePath(component, localPath)
+    if (context.has(path)) return Math.max(0, context.readNumber(path))
+  }
+  return null
+}
+
+const boundaryInflowByService = (
+  system: ReactorBehaviorSystem,
+  context: ReactorBehaviorContext,
+  service: string,
+  linkMatches: (link: ReactorBehaviorLink) => boolean,
+): BoundaryInflow => {
+  const groups = new Map<number, SourceBoundaryFlowGroup>()
+  for (const link of system.graph.links) {
+    if (link.service !== service || !linkMatches(link)) continue
+    const flowPath = processLinkVariablePath(link, 'flowKgPerS')
+    if (!context.has(flowPath)) continue
+    const branchFlow = Math.max(0, context.readNumber(flowPath))
+    const group = groups.get(link.fromComponentIndex) ?? {
+      branchFlowKgPerS: 0,
+      soluteWeightedTotal: 0,
+      soluteWeightKgPerS: 0,
+    }
+    group.branchFlowKgPerS += branchFlow
+    const solutePath = processLinkVariablePath(link, 'soluteConcentrationPpm')
+    if (branchFlow > 0 && context.has(solutePath)) {
+      group.soluteWeightedTotal += context.readNumber(solutePath) * branchFlow
+      group.soluteWeightKgPerS += branchFlow
+    }
+    groups.set(link.fromComponentIndex, group)
+  }
+
+  let flowKgPerS = 0
+  let soluteWeightedTotal = 0
+  let soluteWeightKgPerS = 0
+  for (const [sourceComponentIndex, group] of groups) {
+    const cap = sourceFlowCapKgPerS(system, sourceComponentIndex, context)
+    const creditedFlow = cap === null ? group.branchFlowKgPerS : Math.min(group.branchFlowKgPerS, cap)
+    flowKgPerS += creditedFlow
+    if (creditedFlow > 0 && group.soluteWeightKgPerS > 0) {
+      soluteWeightedTotal += (group.soluteWeightedTotal / group.soluteWeightKgPerS) * creditedFlow
+      soluteWeightKgPerS += creditedFlow
+    }
+  }
+
+  return {
+    flowKgPerS,
+    soluteConcentrationPpm: soluteWeightKgPerS <= 0 ? null : soluteWeightedTotal / soluteWeightKgPerS,
+  }
+}
+
+const combineBoundaryInflows = (inflows: ReadonlyArray<BoundaryInflow>): BoundaryInflow => {
+  const flowKgPerS = inflows.reduce((total, inflow) => total + inflow.flowKgPerS, 0)
+  const soluteWeightedTotal = inflows.reduce(
+    (total, inflow) => total + (inflow.soluteConcentrationPpm === null ? 0 : inflow.soluteConcentrationPpm * inflow.flowKgPerS),
+    0,
+  )
+  const soluteWeightKgPerS = inflows.reduce(
+    (total, inflow) => total + (inflow.soluteConcentrationPpm === null ? 0 : inflow.flowKgPerS),
+    0,
+  )
+  return {
+    flowKgPerS,
+    soluteConcentrationPpm: soluteWeightKgPerS <= 0 ? null : soluteWeightedTotal / soluteWeightKgPerS,
+  }
+}
 
 export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefinition> = [
   {
@@ -212,18 +301,17 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
     update: ({ system, component, context }): void => {
       const nominalInventory = parameterNumber(component, 'nominalPrimaryCoolantInventoryKg')
       const currentInventory = context.readNumber(componentVariablePath(component, 'primaryCoolantInventoryKg'))
-      const chargingFlow = sumLinkValueByService(system, 'flowKgPerS', context, 'charging', link => {
-        const toComponent = system.graph.components[link.toComponentIndex]
-        return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
-      })
       const primaryBoundaryLink = (link: { readonly toComponentIndex: number }): boolean => {
         const toComponent = system.graph.components[link.toComponentIndex]
         return toComponent?.kind === 'reactorCore' || toComponent?.kind === 'reactorVessel' || toComponent?.kind === 'pressurizer'
       }
-      const primaryInjectionFlow = (
-        sumLinkValueByService(system, 'flowKgPerS', context, 'primaryInjection')
-        + sumLinkValueByService(system, 'flowKgPerS', context, 'safetyInjection')
-      )
+      const chargingInflow = boundaryInflowByService(system, context, 'charging', primaryBoundaryLink)
+      const injectionInflow = combineBoundaryInflows([
+        boundaryInflowByService(system, context, 'primaryInjection', primaryBoundaryLink),
+        boundaryInflowByService(system, context, 'safetyInjection', primaryBoundaryLink),
+      ])
+      const chargingFlow = chargingInflow.flowKgPerS
+      const primaryInjectionFlow = injectionInflow.flowKgPerS
       const letdownFlow = Math.max(
         sumLinkValueByService(system, 'flowKgPerS', context, 'letdown'),
         optionalParameterNumber(component, 'normalLetdownFlowKgPerS', 0),
@@ -234,13 +322,10 @@ export const reactorBehaviorDefinitions: ReadonlyArray<ComponentBehaviorDefiniti
       const totalInflow = chargingFlow + primaryInjectionFlow
       const netInventoryFlow = totalInflow - letdownFlow - reliefFlow - primaryLeakFlow - tubeLeakFlow
       const currentBoron = context.readNumber(componentVariablePath(component, 'boronConcentrationPpm'))
-      const chargingBoron = flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'charging', primaryBoundaryLink) ?? currentBoron
-      const injectionBoron = (
-        flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'primaryInjection', primaryBoundaryLink)
-        ?? flowWeightedProcessLinkValueByService(system, 'soluteConcentrationPpm', context, 'safetyInjection', primaryBoundaryLink)
+      const chargingBoron = chargingInflow.soluteConcentrationPpm ?? currentBoron
+      const injectionBoron = injectionInflow.soluteConcentrationPpm
         ?? averageIncomingLinkValue(system, component, 'soluteConcentrationPpm', context, link => link.service === 'primaryInjection' || link.service === 'safetyInjection')
         ?? currentBoron
-      )
       const nextInventory = inventoryBalanceStep({
         currentInventory,
         inflowKgPerS: totalInflow,

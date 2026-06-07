@@ -111,25 +111,34 @@
     feedwater: [],
     pressure: [],
   })
-  const sgLetters = ['A', 'B', 'C', 'D', 'E', 'F'] as const
-  type SgLetter = typeof sgLetters[number]
-  const currentSgLetter = (): SgLetter | null => {
-    const suffix = widget.id.match(/^sg-([a-f])$/)?.[1]?.toUpperCase()
-    return sgLetters.find(letter => letter === suffix) ?? null
+  const collectSgPeerIds = (): ReadonlyArray<string> => {
+    const peerIds = new Set<string>()
+    for (const key of values.keys()) {
+      const componentMatch = key.match(/^sg([A-Za-z0-9_-]+)\./)
+      const steamMatch = key.match(/^sg-([A-Za-z0-9_-]+)-steam-to-msiv-\1\.flowKgPerS$/)
+      const feedwaterMatch = key.match(/^feedwater-control-valve-([A-Za-z0-9_-]+)-to-sg-\1\.flowKgPerS$/)
+      const peerId = componentMatch?.[1] ?? steamMatch?.[1] ?? feedwaterMatch?.[1]
+      if (peerId !== undefined && peerId.length > 0) peerIds.add(peerId.toUpperCase())
+    }
+    return Array.from(peerIds).sort((left, right) => left.localeCompare(right))
   }
-  const sgPeerValuePath = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation', letter: SgLetter): string => {
-    const lower = letter.toLowerCase()
-    if (key === 'level') return `sg${letter}.levelPercent`
-    if (key === 'pressure') return `sg${letter}.pressureMPa`
-    if (key === 'radiation') return `sg${letter}.secondaryRadiationMSvPerH`
+  const currentSgPeerId = (): string | null => {
+    const suffix = widget.id.match(/^sg-(.+)$/)?.[1]?.toUpperCase()
+    return suffix ?? null
+  }
+  const sgPeerValuePath = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation', peerId: string): string => {
+    const lower = peerId.toLowerCase()
+    if (key === 'level') return `sg${peerId}.levelPercent`
+    if (key === 'pressure') return `sg${peerId}.pressureMPa`
+    if (key === 'radiation') return `sg${peerId}.secondaryRadiationMSvPerH`
     if (key === 'steam') return `sg-${lower}-steam-to-msiv-${lower}.flowKgPerS`
     return `feedwater-control-valve-${lower}-to-sg-${lower}.flowKgPerS`
   }
   const peerAverageFor = (key: 'level' | 'pressure' | 'steam' | 'feedwater' | 'radiation'): number | null => {
-    const currentLetter = currentSgLetter()
-    const peerValues = sgLetters
-      .filter(letter => letter !== currentLetter)
-      .map(letter => values.get(sgPeerValuePath(key, letter))?.value)
+    const currentPeerId = currentSgPeerId()
+    const peerValues = collectSgPeerIds()
+      .filter(peerId => peerId !== currentPeerId)
+      .map(peerId => values.get(sgPeerValuePath(key, peerId))?.value)
       .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
     if (peerValues.length === 0) return null
     return peerValues.reduce((total, value) => total + value, 0) / peerValues.length

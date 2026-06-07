@@ -6,8 +6,8 @@
   "caseCount": 15,
   "checkCount": 117,
   "failedCheckCount": 0,
-  "wallMs": 17087.517,
-  "realtimeFactor": 526.7002806785796,
+  "wallMs": 21189.066666000002,
+  "realtimeFactor": 424.7473539946622,
   "minRealtimeFactor": 12,
   "checks": [
     {
@@ -32,7 +32,7 @@
       "caseId": "long-steady-state",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.8 max=59.8%"
+      "details": "min=54.4 max=61.2%"
     },
     {
       "caseId": "long-steady-state",
@@ -80,7 +80,7 @@
       "caseId": "load-follow-cycle",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=53.4 max=67.1%"
+      "details": "min=54.2 max=61.2%"
     },
     {
       "caseId": "load-follow-cycle",
@@ -92,13 +92,13 @@
       "caseId": "load-follow-cycle",
       "description": "load step down lowers turbine output",
       "passed": true,
-      "details": "before=721.5 min=332.8MW"
+      "details": "before=801.9 min=495.0MW"
     },
     {
       "caseId": "load-follow-cycle",
       "description": "load step up recovers turbine output",
       "passed": true,
-      "details": "recovered=807.2MW"
+      "details": "recovered=828.1MW"
     },
     {
       "caseId": "moderate-sgtr",
@@ -116,13 +116,13 @@
       "caseId": "moderate-sgtr",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=3.41e-13 aux=0.00e+0kg/s"
+      "details": "main=4.55e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.8 max=70.6%"
+      "details": "min=54.4 max=65.0%"
     },
     {
       "caseId": "moderate-sgtr",
@@ -134,19 +134,19 @@
       "caseId": "moderate-sgtr",
       "description": "SGTR produces leak flow",
       "passed": true,
-      "details": "leak=136.69kg/s"
+      "details": "leak=135.09kg/s"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "SGTR raises secondary radiation",
       "passed": true,
-      "details": "radiation=96.961mSv/h"
+      "details": "radiation=95.914mSv/h"
     },
     {
       "caseId": "moderate-sgtr",
       "description": "SGTR drains primary inventory",
       "passed": true,
-      "details": "before=284982 end=261891kg"
+      "details": "before=284982 end=261786kg"
     },
     {
       "caseId": "multi-sg-leak",
@@ -164,13 +164,13 @@
       "caseId": "multi-sg-leak",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=2.27e-13 aux=0.00e+0kg/s"
+      "details": "main=4.55e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "multi-sg-leak",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.8 max=64.2%"
+      "details": "min=54.4 max=61.2%"
     },
     {
       "caseId": "multi-sg-leak",
@@ -182,13 +182,13 @@
       "caseId": "multi-sg-leak",
       "description": "first secondary leak path becomes active",
       "passed": true,
-      "details": "sgB=70.83kg/s"
+      "details": "sgB=70.09kg/s"
     },
     {
       "caseId": "multi-sg-leak",
       "description": "second secondary leak path becomes active independently",
       "passed": true,
-      "details": "sgC=84.70kg/s"
+      "details": "sgC=83.01kg/s"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -212,7 +212,7 @@
       "caseId": "loss-feedwater-no-recovery",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=6.9 max=59.8%"
+      "details": "min=7.0 max=61.2%"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -224,7 +224,7 @@
       "caseId": "loss-feedwater-no-recovery",
       "description": "loss of feedwater materially lowers SG level",
       "passed": true,
-      "details": "before=58.3 end=6.9%"
+      "details": "before=58.6 end=7.0%"
     },
     {
       "caseId": "loss-feedwater-no-recovery",
@@ -254,7 +254,7 @@
       "caseId": "loss-feedwater-afw-recovery",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=6.9 max=59.8%"
+      "details": "min=7.0 max=61.2%"
     },
     {
       "caseId": "loss-feedwater-afw-recovery",
@@ -272,13 +272,13 @@
       "caseId": "loss-feedwater-afw-recovery",
       "description": "auxiliary feedwater reaches aligned branch",
       "passed": true,
-      "details": "maxAux=105.0kg/s"
+      "details": "maxAux=70.0kg/s"
     },
     {
       "caseId": "loss-feedwater-afw-recovery",
       "description": "auxiliary feedwater prevents severe dryout in aligned SG",
       "passed": true,
-      "details": "endLevel=25.9%"
+      "details": "endLevel=21.1%"
     },
     {
       "caseId": "rcp-pair-coastdown",
@@ -302,7 +302,7 @@
       "caseId": "rcp-pair-coastdown",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=52.7 max=100.0%"
+      "details": "min=55.0 max=78.6%"
     },
     {
       "caseId": "rcp-pair-coastdown",
@@ -314,19 +314,19 @@
       "caseId": "rcp-pair-coastdown",
       "description": "first tripped RCP flow coasts down",
       "passed": true,
-      "details": "before=3946 end=0kg/s"
+      "details": "before=3946 end=260kg/s"
     },
     {
       "caseId": "rcp-pair-coastdown",
       "description": "second tripped RCP does not instantly collapse",
       "passed": true,
-      "details": "before=3946 short=2138kg/s"
+      "details": "before=3946 short=2257kg/s"
     },
     {
       "caseId": "rcp-pair-coastdown",
       "description": "second tripped RCP materially lowers flow",
       "passed": true,
-      "details": "before=3946 end=0kg/s"
+      "details": "before=3946 end=260kg/s"
     },
     {
       "caseId": "station-blackout-diesel-recovery",
@@ -344,13 +344,13 @@
       "caseId": "station-blackout-diesel-recovery",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "station-blackout-diesel-recovery",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=55.0 max=95.7%"
+      "details": "min=41.8 max=61.2%"
     },
     {
       "caseId": "station-blackout-diesel-recovery",
@@ -398,7 +398,7 @@
       "caseId": "degraded-voltage",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=55.0 max=95.6%"
+      "details": "min=55.0 max=61.2%"
     },
     {
       "caseId": "degraded-voltage",
@@ -440,7 +440,7 @@
       "caseId": "cooling-water-loss",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=55.0 max=87.2%"
+      "details": "min=55.0 max=61.2%"
     },
     {
       "caseId": "cooling-water-loss",
@@ -458,7 +458,7 @@
       "caseId": "cooling-water-loss",
       "description": "cooling-water loss raises condenser backpressure",
       "passed": true,
-      "details": "before=17029 peak=71813Pa"
+      "details": "before=19779 peak=73111Pa"
     },
     {
       "caseId": "pressurizer-control-challenge",
@@ -482,7 +482,7 @@
       "caseId": "pressurizer-control-challenge",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.8 max=59.8%"
+      "details": "min=54.4 max=61.2%"
     },
     {
       "caseId": "pressurizer-control-challenge",
@@ -494,7 +494,7 @@
       "caseId": "pressurizer-control-challenge",
       "description": "relief path carries steam when opened",
       "passed": true,
-      "details": "relief=33.84kg/s"
+      "details": "relief=33.85kg/s"
     },
     {
       "caseId": "pressurizer-control-challenge",
@@ -524,7 +524,7 @@
       "caseId": "main-steam-isolation-release",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=55.0 max=94.7%"
+      "details": "min=55.0 max=62.8%"
     },
     {
       "caseId": "main-steam-isolation-release",
@@ -542,13 +542,13 @@
       "caseId": "main-steam-isolation-release",
       "description": "main steam safety path releases steam to containment",
       "passed": true,
-      "details": "release=1263.8kg/s"
+      "details": "release=691.4kg/s"
     },
     {
       "caseId": "main-steam-isolation-release",
       "description": "steam release raises containment pressure",
       "passed": true,
-      "details": "before=0.103 peak=0.577MPa"
+      "details": "before=0.101 peak=0.119MPa"
     },
     {
       "caseId": "boration-and-letdown",
@@ -572,7 +572,7 @@
       "caseId": "boration-and-letdown",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=54.8 max=59.8%"
+      "details": "min=54.4 max=61.2%"
     },
     {
       "caseId": "boration-and-letdown",
@@ -590,13 +590,13 @@
       "caseId": "boration-and-letdown",
       "description": "vessel boron concentration rises after borated makeup",
       "passed": true,
-      "details": "before=1232.4 end=1424.3ppm"
+      "details": "before=1232.6 end=1424.6ppm"
     },
     {
       "caseId": "boration-and-letdown",
       "description": "boron increase produces negative reactivity feedback",
       "passed": true,
-      "details": "minBoronFeedback=-17.9pcm"
+      "details": "minBoronFeedback=-18.0pcm"
     },
     {
       "caseId": "large-break-loca",
@@ -614,13 +614,13 @@
       "caseId": "large-break-loca",
       "description": "feedwater headers preserve flow balance",
       "passed": true,
-      "details": "main=3.41e-13 aux=0.00e+0kg/s"
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
     },
     {
       "caseId": "large-break-loca",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=49.8 max=80.3%"
+      "details": "min=54.2 max=73.0%"
     },
     {
       "caseId": "large-break-loca",
@@ -632,13 +632,13 @@
       "caseId": "large-break-loca",
       "description": "large break produces primary leak flow",
       "passed": true,
-      "details": "release=1104.1kg/s"
+      "details": "release=1102.7kg/s"
     },
     {
       "caseId": "large-break-loca",
-      "description": "containment sump accumulates released coolant",
+      "description": "containment receives released primary mass",
       "passed": true,
-      "details": "sump=13151kg"
+      "details": "incomingMass=1106.0kg/s sump=14kg"
     },
     {
       "caseId": "large-break-loca",
@@ -674,7 +674,7 @@
       "caseId": "combined-stress",
       "description": "steam generator levels stay bounded",
       "passed": true,
-      "details": "min=36.3 max=96.6%"
+      "details": "min=39.1 max=77.5%"
     },
     {
       "caseId": "combined-stress",
@@ -686,7 +686,7 @@
       "caseId": "combined-stress",
       "description": "combined stress includes SGTR leak",
       "passed": true,
-      "details": "sgtr=104.23kg/s"
+      "details": "sgtr=103.23kg/s"
     },
     {
       "caseId": "combined-stress",
@@ -698,19 +698,19 @@
       "caseId": "combined-stress",
       "description": "combined stress lowers tripped loop flow",
       "passed": true,
-      "details": "before=3946 end=0kg/s"
+      "details": "before=3946 end=260kg/s"
     },
     {
       "caseId": "combined-stress",
       "description": "combined stress lowers turbine output after load cut",
       "passed": true,
-      "details": "before=388.1 end=206.3MW"
+      "details": "before=544.3 end=286.0MW"
     },
     {
       "caseId": "long-steady-state",
       "description": "extended validation remains faster than realtime",
       "passed": true,
-      "details": "realtimeFactor=526.7x min=12.0x"
+      "details": "realtimeFactor=424.7x min=12.0x"
     }
   ],
   "artifacts": {

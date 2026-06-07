@@ -1,4 +1,5 @@
 import type { ControlInstanceId } from '../../core/model/index.ts'
+import type { VariablePath } from '../../packs/process-plant/graph/index.ts'
 import type {
   CompiledProcessSurface,
   ProcessSurfaceAlarmAnnunciator,
@@ -419,6 +420,26 @@ export const readProcessPlantCatalogSource = async (
     targetLineIndex,
     content: assertString(result.content, 'process plant catalog source requires content'),
   }
+}
+
+export const listProcessPlantVariablePaths = async (
+  controlInstanceId: ControlInstanceId,
+  systemId: string,
+): Promise<ReadonlyArray<VariablePath>> => {
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.variables.search',
+    payload: { systemId },
+  })
+  const result = requireOkResult(body.response)
+  const systems = assertArray(result.systems, 'process plant variables search result has no systems array')
+  for (const item of systems) {
+    const system = assertObject(item, 'process plant variables search system is malformed')
+    if (assertString(system.systemId, 'process plant variables search system requires systemId') !== systemId) continue
+    return assertArray(system.variables, 'process plant variables search system has no variables array')
+      .map(variable => assertString(assertObject(variable, 'process plant variable is malformed').path, 'process plant variable requires path') as VariablePath)
+  }
+  throw new Error(`process plant variables search did not return system ${systemId}`)
 }
 
 export const listProcessSurfaces = async (

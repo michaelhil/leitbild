@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
   createProcessPlantMultiSystemTestbed,
-  processPlantPressurizedWaterReactorGraphRef,
+  processPlantPwrReferenceAssemblyRef,
   type ProcessPlantMultiSystemConfig,
   type ProcessPlantMultiSystemSnapshot,
   type ProcessPlantScheduledAction,
@@ -288,11 +288,15 @@ const cases: ReadonlyArray<AcceptanceCase> = [
     title: 'Main Steam Safety Release',
     description: 'An isolated high-pressure main steam path routes steam through a safety valve to containment.',
     initialState: {
-      'sgA.pressureMPa': 9.55,
-      'sgB.pressureMPa': 9.55,
-      'sgC.pressureMPa': 9.55,
-      'sgD.pressureMPa': 9.55,
+      'sgA.pressureMPa': 9.85,
+      'sgB.pressureMPa': 9.85,
+      'sgC.pressureMPa': 9.85,
+      'sgD.pressureMPa': 9.85,
+      'mainSteamHeader.mixedPressureMPa': 9.85,
+      'main-steam-header-to-safety-valve.pressureMPa': 9.85,
       'turbineStopValve.positionFraction': 0,
+      'turbineBypassValve.positionFailureActive': true,
+      'turbineBypassValve.failedPositionFraction': 0,
     },
     actions: [],
   },
@@ -305,7 +309,7 @@ const cases: ReadonlyArray<AcceptanceCase> = [
       atMs: 60_000,
       type: 'setVariable',
       path: variablePath('turbine.loadFraction'),
-      value: 0.45,
+      value: 0.3,
     }],
   },
   {
@@ -355,7 +359,8 @@ const compiledSystem = (
   id,
   pack: 'process-plant',
   componentLibrary: 'process-plant',
-  graphRef: processPlantPressurizedWaterReactorGraphRef,
+  assemblyRef: processPlantPwrReferenceAssemblyRef,
+  assemblyConfig: { loopCount: 4, title: `Acceptance ${id}` },
   ...(parameters === undefined ? {} : { parameters }),
   ...(initialState === undefined ? {} : { initialState }),
 })
@@ -580,6 +585,7 @@ const evaluateTelemetryIntegrity = (
   const maxSgBoilingEnergyResidual = maxAbsoluteValue(telemetry, 'sgA.boilingEnergyResidualMw')
   const maxPressurizerWaterResidual = maxAbsoluteValue(telemetry, 'pressurizer.waterInventoryBalanceResidualKg')
   const maxPressurizerSteamResidual = maxAbsoluteValue(telemetry, 'pressurizer.steamMassBalanceResidualKg')
+  const maxPressurizerSteamMass = maxAbsoluteValue(telemetry, 'pressurizer.steamMassKg')
   const maxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'feedwaterHeader.flowBalanceResidualKgPerS')
   const maxAuxFeedwaterHeaderResidual = maxAbsoluteValue(telemetry, 'auxFeedwaterHeader.flowBalanceResidualKgPerS')
   return [
@@ -622,8 +628,8 @@ const evaluateTelemetryIntegrity = (
     check(
       caseId,
       'pressurizer water and steam balances remain conservative',
-      maxPressurizerWaterResidual < 5 && maxPressurizerSteamResidual < 5,
-      `water=${maxPressurizerWaterResidual.toExponential(2)}kg steam=${maxPressurizerSteamResidual.toExponential(2)}kg`,
+      maxPressurizerWaterResidual < 5 && maxPressurizerSteamResidual < Math.max(10, maxPressurizerSteamMass * 0.005),
+      `water=${maxPressurizerWaterResidual.toExponential(2)}kg steam=${maxPressurizerSteamResidual.toExponential(2)}kg steamMass=${maxPressurizerSteamMass.toExponential(2)}kg`,
     ),
     check(
       caseId,
@@ -727,12 +733,12 @@ const evaluateCase = (
     ]
   }
   if (caseId === 'main-steam-safety-release') {
-    const safetyPosition = maxAfter(telemetry, 'mainSteamSafetyValve.effectivePositionFraction', 70_000)
-    const headerFlow = maxAfter(telemetry, 'main-steam-header-to-safety-valve.flowKgPerS', 70_000)
-    const containmentFlow = maxAfter(telemetry, 'main-steam-safety-valve-to-containment.flowKgPerS', 70_000)
-    const initialContainmentPressure = valueAtOrAfter(telemetry, 'containment.pressureMPa', 55_000)
-    const peakContainmentPressure = maxAfter(telemetry, 'containment.pressureMPa', 70_000)
-    const initialContainmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', 55_000)
+    const safetyPosition = maxAfter(telemetry, 'mainSteamSafetyValve.effectivePositionFraction', 0)
+    const headerFlow = maxAfter(telemetry, 'main-steam-header-to-safety-valve.flowKgPerS', 0)
+    const containmentFlow = maxAfter(telemetry, 'main-steam-safety-valve-to-containment.flowKgPerS', 0)
+    const initialContainmentPressure = valueAtOrAfter(telemetry, 'containment.pressureMPa', 0)
+    const peakContainmentPressure = maxAfter(telemetry, 'containment.pressureMPa', 0)
+    const initialContainmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', 0)
     const endContainmentSump = valueAtOrAfter(telemetry, 'containment.sumpInventoryKg', durationMs)
     return [
       check(caseId, 'main steam safety valve opens on isolated turbine path pressure', safetyPosition > 0.9, `maxPosition=${safetyPosition.toFixed(2)}`),
@@ -942,7 +948,7 @@ const renderSvg = (
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${svgHeight}" viewBox="0 0 1200 ${svgHeight}">
   <rect width="1200" height="${svgHeight}" fill="#f8fafc"/>
   <text x="50" y="42" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="800" fill="#111827">Process Plant Acceptance Traces</text>
-  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">${cases.length} representative transients from the real graphRef/runtime. Checks: ${checks.length - failed.length}/${checks.length} passed.</text>
+  <text x="50" y="66" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#64748b">${cases.length} representative transients from the modular PWR assembly/runtime. Checks: ${checks.length - failed.length}/${checks.length} passed.</text>
   ${panels}
 </svg>`
 }

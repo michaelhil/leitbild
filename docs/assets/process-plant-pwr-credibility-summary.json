@@ -1,0 +1,443 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-07T16:09:43.144Z",
+  "durationMs": 600000,
+  "stepMs": 1000,
+  "sampleIntervalMs": 2000,
+  "assemblyRef": "process-plant.pwr.reference.v2",
+  "assemblyConfig": {
+    "loopCount": 4
+  },
+  "caseCount": 6,
+  "targetCount": 18,
+  "failedGateTargetCount": 0,
+  "failedWatchTargetCount": 1,
+  "wallMs": 8169.587375,
+  "realtimeFactor": 440.65873033153036,
+  "graph": {
+    "componentCount": 86,
+    "linkCount": 134,
+    "variableCount": 1149
+  },
+  "sourceRefs": {
+    "nrc-srp-ch15": {
+      "id": "nrc-srp-ch15",
+      "title": "NRC NUREG-0800 Chapter 15",
+      "url": "https://www.nrc.gov/reading-rm/doc-collections/nuregs/staff/sr0800/ch15/index.html",
+      "note": "Event-family taxonomy for LWR transient and accident analysis."
+    },
+    "iaea-ssg-2": {
+      "id": "iaea-ssg-2",
+      "title": "IAEA SSG-2 Rev. 1 deterministic safety analysis guide",
+      "url": "https://nucleus.iaea.org/sites/committees/Set%20of%20valid%20safety%20standards%20202409/safety%20standards_%20valid%20set/SSG-2%20Rev%201%20Deterministic%20Safety%20Analysis%20for%20Nuclear%20Power%20Plants.pdf",
+      "note": "Verification, validation, input qualification, assumptions, and documentation discipline."
+    },
+    "nrc-trace": {
+      "id": "nrc-trace",
+      "title": "NRC thermal-hydraulic computer codes",
+      "url": "https://www.nrc.gov/about-nrc/regulatory/research/safetycodes.html",
+      "note": "Boundary marker for phenomena handled by licensing-grade system codes, not by Leitbild."
+    },
+    "oecd-nea-mslb": {
+      "id": "oecd-nea-mslb",
+      "title": "OECD/NEA PWR Main Steam-Line Break benchmark",
+      "url": "https://harbor.oecd-nea.org/jcms/pl_32205/pressurised-water-reactor-main-steam-line-break-mslb-benchmark",
+      "note": "Benchmark pattern for event sequence, setpoints, plant conditions, and trace comparisons."
+    },
+    "leitbild-pwr-scope": {
+      "id": "leitbild-pwr-scope",
+      "title": "Leitbild PWR operational-simulator scope",
+      "url": "docs/wiki/pwr-ops.md",
+      "note": "Local scope boundary: deterministic lumped operational simulator, not a licensing-basis safety-analysis code."
+    }
+  },
+  "cases": [
+    {
+      "id": "steady-power",
+      "title": "Steady Power Operation",
+      "eventFamily": "Normal full-power operation",
+      "description": "Six hundred seconds without a fault should stay close to the reference operating band.",
+      "sourceRefs": [
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "id": "loss-feedwater-afw",
+      "title": "Loss Of Feedwater With AFW",
+      "eventFamily": "NRC SRP 15.2.7 loss of normal feedwater flow",
+      "description": "Main feedwater trips; auxiliary feedwater starts and should preserve a secondary heat sink.",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "id": "sgtr",
+      "title": "Steam Generator Tube Leak",
+      "eventFamily": "NRC SRP 15.6.3 steam generator tube failure indication",
+      "description": "Primary-to-secondary leakage should drain RCS inventory and produce affected-secondary radiation.",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "id": "small-loca",
+      "title": "Small LOCA With Accumulator Response",
+      "eventFamily": "NRC SRP 15.6.5 loss-of-coolant accident spectrum",
+      "description": "A primary boundary leak should depressurize, send mass to containment, and actuate passive inventory support.",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "nrc-trace",
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "id": "all-rcp-trip",
+      "title": "Loss Of Forced Primary Flow",
+      "eventFamily": "NRC SRP 15.3.1 loss of forced reactor coolant flow",
+      "description": "All reactor coolant pumps trip; loop flow should coast down and core cooling indicators should respond.",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "nrc-trace",
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "id": "loss-offsite-power",
+      "title": "Loss Of Offsite Power",
+      "eventFamily": "NRC SRP 15.2.6 loss of nonemergency AC power",
+      "description": "Offsite power is lost; emergency diesels should restore safety buses and essential loads.",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "targetId": "steady-pzr-pressure-band",
+      "caseId": "steady-power",
+      "label": "Pressurizer pressure remains in the reference operating band",
+      "signal": "pressurizer.pressureMPa final value",
+      "expectation": "Stable PWR operation should remain close to nominal RCS pressure.",
+      "observed": 15.187635584601749,
+      "acceptable": {
+        "min": 14.8,
+        "max": 15.8
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "steady-sg-level-band",
+      "caseId": "steady-power",
+      "label": "Steam-generator level remains controllable",
+      "signal": "sgA.levelPercent final value",
+      "expectation": "Normal operation should not drift toward dryout or high-level challenge.",
+      "observed": 54.44797712445485,
+      "acceptable": {
+        "min": 45,
+        "max": 70
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "steady-turbine-output-band",
+      "caseId": "steady-power",
+      "label": "Electric output remains in the reference plant range",
+      "signal": "turbine.electricMw final value",
+      "expectation": "The reference plant should produce a plausible large-PWR electrical output at power.",
+      "observed": 801.512687844322,
+      "acceptable": {
+        "min": 650,
+        "max": 950
+      },
+      "passed": true,
+      "severity": "watch",
+      "sourceRefs": [
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "lofw-level-decline",
+      "caseId": "loss-feedwater-afw",
+      "label": "Loss of feedwater visibly lowers SG level before recovery",
+      "signal": "sgA.levelPercent delta from T+80s to T+170s",
+      "expectation": "Normal feedwater loss should deplete secondary inventory before AFW recovery.",
+      "observed": -25.512747635797137,
+      "acceptable": {
+        "max": -8
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2"
+      ]
+    },
+    {
+      "targetId": "lofw-afw-flow",
+      "caseId": "loss-feedwater-afw",
+      "label": "Auxiliary feedwater reaches the affected SG branch",
+      "signal": "aux-feedwater-valve-a-to-sg-a.flowKgPerS max after T+190s",
+      "expectation": "AFW should provide a visible secondary heat-sink recovery path.",
+      "observed": 105,
+      "acceptable": {
+        "min": 20
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "lofw-no-dryout",
+      "caseId": "loss-feedwater-afw",
+      "label": "AFW recovery avoids SG dryout in the demo window",
+      "signal": "sgA.levelPercent min after T+60s",
+      "expectation": "The modeled recovery should preserve a usable heat sink during the scenario.",
+      "observed": 25.101682089273297,
+      "acceptable": {
+        "min": 5
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "iaea-ssg-2",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "sgtr-leak-flow",
+      "caseId": "sgtr",
+      "label": "SGTR produces measurable primary-to-secondary leakage",
+      "signal": "sgA.primaryToSecondaryLeakKgPerS max after T+100s",
+      "expectation": "A tube leak should create an affected-SG leak path without contaminating unrelated SGs.",
+      "observed": 108.0779514083437,
+      "acceptable": {
+        "min": 40,
+        "max": 220
+      },
+      "passed": true,
+      "severity": "watch",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "sgtr-primary-inventory-loss",
+      "caseId": "sgtr",
+      "label": "SGTR drains primary inventory",
+      "signal": "vessel.primaryCoolantInventoryKg delta from T+80s to final",
+      "expectation": "Primary-to-secondary leakage should produce a durable RCS inventory consequence.",
+      "observed": -23018.940451393166,
+      "acceptable": {
+        "min": -80000,
+        "max": -8000
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2"
+      ]
+    },
+    {
+      "targetId": "sgtr-radiation-indication",
+      "caseId": "sgtr",
+      "label": "Affected secondary radiation rises",
+      "signal": "sgA.secondaryRadiationMSvPerH max after T+100s",
+      "expectation": "SGTR diagnosis should be visible through affected secondary radiation.",
+      "observed": 73.7894548312174,
+      "acceptable": {
+        "min": 20
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "loca-primary-release",
+      "caseId": "small-loca",
+      "label": "Primary boundary leak creates containment release flow",
+      "signal": "vessel-release-to-containment.flowKgPerS max after T+100s",
+      "expectation": "A primary-boundary break should move mass from RCS to containment.",
+      "observed": 879.3861383457413,
+      "acceptable": {
+        "min": 50
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "nrc-trace"
+      ]
+    },
+    {
+      "targetId": "loca-containment-pressure-rise",
+      "caseId": "small-loca",
+      "label": "Containment pressure rises after release",
+      "signal": "containment.pressureMPa delta from T+80s to final",
+      "expectation": "Containment should respond thermodynamically to primary mass-energy release.",
+      "observed": 0.2261388698753059,
+      "acceptable": {
+        "min": 0.01
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "iaea-ssg-2"
+      ]
+    },
+    {
+      "targetId": "loca-accumulator-flow",
+      "caseId": "small-loca",
+      "label": "Accumulator injects after depressurization",
+      "signal": "safetyAccumulatorA.outletFlowKgPerS max after T+100s",
+      "expectation": "Passive safety injection should become visible as RCS pressure falls below the accumulator head.",
+      "observed": 52.69339045488959,
+      "acceptable": {
+        "min": 1
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "rcp-coastdown",
+      "caseId": "all-rcp-trip",
+      "label": "Forced primary flow coasts down rather than teleporting to zero",
+      "signal": "rcpA.loopFlowKgPerS delta from T+88s to T+110s",
+      "expectation": "RCP trip should show inertia/coastdown, not an instant hydraulic collapse.",
+      "observed": -2541.913100908879,
+      "acceptable": {
+        "min": -5000,
+        "max": -500
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "rcp-cooling-availability-response",
+      "caseId": "all-rcp-trip",
+      "label": "Core cooling availability responds to loss of forced flow",
+      "signal": "core.coreCoolingAvailabilityFraction min after T+120s",
+      "expectation": "Loss of forced primary flow should be visible in core cooling diagnostics.",
+      "observed": 0.08,
+      "acceptable": {
+        "min": 0.04,
+        "max": 0.35
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "nrc-trace",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "rcp-fuel-heatup-bounded",
+      "caseId": "all-rcp-trip",
+      "label": "Fuel heatup remains bounded in the demo window",
+      "signal": "core.fuelHeatupRateCPerS max after T+120s",
+      "expectation": "The compact model should show thermal consequence without claiming severe-accident fidelity.",
+      "observed": 3.8151165655506247,
+      "acceptable": {
+        "min": 0.01,
+        "max": 2
+      },
+      "passed": false,
+      "severity": "watch",
+      "sourceRefs": [
+        "nrc-trace",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "loop-safety-bus-a-recovery",
+      "caseId": "loss-offsite-power",
+      "label": "Safety bus A recovers after diesel start",
+      "signal": "safetyBusA.voltageFraction min after T+150s",
+      "expectation": "LOOP should be visible but recover essential safety bus voltage after EDG start.",
+      "observed": 1,
+      "acceptable": {
+        "min": 0.9
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "loop-safety-bus-b-recovery",
+      "caseId": "loss-offsite-power",
+      "label": "Safety bus B recovers after diesel start",
+      "signal": "safetyBusB.voltageFraction min after T+150s",
+      "expectation": "LOOP should be visible but recover redundant safety bus voltage after EDG start.",
+      "observed": 1,
+      "acceptable": {
+        "min": 0.9
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    },
+    {
+      "targetId": "loop-essential-loads-served",
+      "caseId": "loss-offsite-power",
+      "label": "Essential plant-control loads remain served after recovery",
+      "signal": "plantControlsLoadA.servedFraction min after T+150s",
+      "expectation": "Emergency power recovery should preserve essential control loads.",
+      "observed": 1,
+      "acceptable": {
+        "min": 0.99
+      },
+      "passed": true,
+      "severity": "gate",
+      "sourceRefs": [
+        "nrc-srp-ch15",
+        "leitbild-pwr-scope"
+      ]
+    }
+  ],
+  "artifacts": {
+    "summaryJsonPath": "docs/assets/process-plant-pwr-credibility-summary.json",
+    "reportSvgPath": "docs/assets/process-plant-pwr-credibility-report.svg"
+  }
+}

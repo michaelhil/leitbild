@@ -290,7 +290,9 @@ Current built-in query kinds:
 - `process-plant.procedure-tags.validate`
 - `process-plant.control.validate`
 - `process-plant.catalog.list`
+- `process-plant.catalog.source`
 - `process-plant.runtime.status`
+- `process-plant.transient.diagnostics`
 - `process-plant.telemetry.published`
 - `process-plant.trends.read`
 - `process-plant.ic.status`
@@ -299,6 +301,7 @@ Current built-in query kinds:
 - `process-plant.surface.read`
 - `process-plant.surface.snapshot`
 - `process-plant.surface.project`
+- `process-plant.artifact.read`
 - `process-plant.alarms.status`
 - `process-plant.alarms.summary`
 - `process-plant.alarms.history`

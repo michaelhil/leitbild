@@ -331,6 +331,7 @@ describe('process plant runtime', () => {
       const commands = processPlantDemoTransientCommands(
         transient,
         defaultProcessPlantDemoTransientInputs(transient),
+        { variablePaths: system.graph.variables.map(variable => variable.path) },
       )
       for (const command of commands) {
         runtime.writeCommand({
@@ -389,6 +390,7 @@ describe('process plant runtime', () => {
       const commands = processPlantDemoTransientCommands(
         transient,
         defaultProcessPlantDemoTransientInputs(transient),
+        { variablePaths: system.graph.variables.map(variable => variable.path) },
       )
       for (const command of commands) {
         runtime.writeCommand({

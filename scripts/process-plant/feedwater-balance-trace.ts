@@ -4,7 +4,7 @@ import {
   compileProcessPlantSystem,
   createProcessPlantTelemetryRecorder,
   createProcessPlantRuntime,
-  processPlantPressurizedWaterReactorGraphRef,
+  processPlantPwrReferenceAssemblyRef,
   type ProcessPlantTelemetrySeries,
   type VariablePath,
 } from '../../src/packs/process-plant/index.ts'
@@ -273,7 +273,8 @@ const run = async (): Promise<void> => {
     id: 'balance-trace',
     pack: 'process-plant',
     componentLibrary: 'process-plant',
-    graphRef: processPlantPressurizedWaterReactorGraphRef,
+    assemblyRef: processPlantPwrReferenceAssemblyRef,
+    assemblyConfig: { loopCount: 4, title: 'Feedwater Balance Trace' },
   })
   const runtime = createProcessPlantRuntime({ system })
   const telemetry = createProcessPlantTelemetryRecorder({

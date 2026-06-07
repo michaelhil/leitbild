@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import {
   compileProcessPlantSystem,
   createProcessPlantMultiSystemTestbed,
-  processPlantPressurizedWaterReactorGraphRef,
+  processPlantPwrReferenceAssemblyRef,
   type ProcessPlantMultiSystemConfig,
   type ProcessPlantTelemetrySeries,
   type VariablePath,
@@ -58,7 +58,8 @@ const compiledSystem = (id: string) => compileProcessPlantSystem({
   id,
   pack: 'process-plant',
   componentLibrary: 'process-plant',
-  graphRef: processPlantPressurizedWaterReactorGraphRef,
+  assemblyRef: processPlantPwrReferenceAssemblyRef,
+  assemblyConfig: { loopCount: 4, title: `Benchmark ${id}` },
 })
 
 const telemetryConfig = {

@@ -10,7 +10,7 @@ type: pack
 
 PWR operations in Leitbild live in the `process-plant` pack. PWR is a catalog contributor: it contributes fixed reference graph refs, a modular reference assembly, reusable loop/base fragments, graph-aware reference I&C, and the unit overview surface to the generic process-plant catalog.
 
-The current fixed reference graph is `process-plant.pressurized-water-reactor.v1`. Modular PWR scenarios should prefer `assemblyRef: "process-plant.pwr.reference.assembly.v2"` with an explicit loop-count/loop-id config, then use graph-aware I&C through `icRef: "process-plant.pwr.reference.graph.ic.v2"` so alarms, trips, controllers, and overview displays derive their loop set from the compiled graph.
+The current fixed reference graph is `process-plant.pressurized-water-reactor.v1`. Modular PWR scenarios should prefer `assemblyRef: "process-plant.pwr.reference.v2"` with an explicit loop-count/loop-id config, then use graph-aware I&C through `icRef: "process-plant.pwr.reference.graph.ic.v2"` so alarms, trips, controllers, and overview displays derive their loop set from the compiled graph.
 
 The process-plant catalog view exposes the fixed PWR refs, the modular assembly ref, the reusable fragment refs, and the dynamic I&C pattern `process-plant.pwr.reference.<loopCount>-loop.ic.v2`.
 
@@ -64,6 +64,20 @@ The core now exposes:
 - `core.fuelHeatupRateCPerS`
 
 Primary-flow loss affects core cooling availability and fuel heatup. The model remains compact and deterministic, but RCP coastdown and loss-of-flow scenarios now have a clearer thermal consequence.
+
+## Credibility Evidence
+
+Use these local checks before demoing PWR behavior:
+
+- `bun run process-plant:acceptance`
+- `bun run process-plant:extended-validation`
+- `bun run process-plant:credibility`
+
+The acceptance and extended-validation harnesses now compile the modular PWR assembly, not the fixed graph, so they exercise the same path used by modular PWR scenarios. The credibility runner records source-backed operational target envelopes in `docs/assets/process-plant-pwr-credibility-summary.json` and `docs/assets/process-plant-pwr-credibility-report.svg`.
+
+The current credibility run has no gate failures. The remaining watch item is all-RCP-trip fuel heatup-rate calibration, which is retained as visible residual scope rather than hidden behind a relaxed target.
+
+Primary inventory accounting now caps fan-out charging/injection branches by their source component flow. This prevents a modular loop assembly from turning one charging pump into one independent makeup source per loop.
 
 ## Typed PWR Fault Actions
 

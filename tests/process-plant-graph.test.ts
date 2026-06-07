@@ -338,12 +338,14 @@ describe('process plant graph foundation', () => {
   test('reference demo transients target writable graph variables', () => {
     const graph = compilePlantGraph(pressurizedWaterReactorPlantSpec, processPlantComponentRegistry)
     const variablesByPath = new Map(graph.variables.map(variable => [String(variable.path), variable]))
+    const transientContext = { variablePaths: graph.variables.map(variable => variable.path) }
 
     expect(processPlantDemoTransients).toHaveLength(7)
     for (const transient of processPlantDemoTransients) {
       const commands = processPlantDemoTransientCommands(
         transient,
         defaultProcessPlantDemoTransientInputs(transient),
+        transientContext,
       )
       expect(commands.length).toBeGreaterThan(0)
       for (const command of commands) {
