@@ -159,6 +159,7 @@
   let ProcedureSystemModal = $state<Component | null>(null)
   let ProcessPlantArtifactModal = $state<Component | null>(null)
   let ProcessPlantCatalogModal = $state<Component | null>(null)
+  let ProcessPlantCredibilityModal = $state<Component | null>(null)
   let processSurfaceWindows = $state<ReadonlyArray<ProcessSurfaceWindowEntry>>([])
   let procedureSystemWindows = $state<ReadonlyArray<ProcedureSystemWindowEntry>>([])
   let floatingWindowSequence = 0
@@ -169,6 +170,7 @@
     readonly artifact: ProcessPlantArtifactKind
   } | null>(null)
   let processPlantCatalogModal = $state<OperationalObject | null>(null)
+  let processPlantCredibilityModal = $state<OperationalObject | null>(null)
   let theme = $state<ThemeMode>('light')
   let weatherLayerVisible = $state(true)
   let scenarioOptions = $state<ReadonlyArray<ScenarioListItem>>([])
@@ -180,6 +182,7 @@
   let procedureSystemModalLoadPromise: Promise<Component> | null = null
   let processPlantArtifactModalLoadPromise: Promise<Component> | null = null
   let processPlantCatalogModalLoadPromise: Promise<Component> | null = null
+  let processPlantCredibilityModalLoadPromise: Promise<Component> | null = null
   let pendingRealtimeControlInstanceId = $state<ControlInstanceId | null>(null)
   let postReadyPreloadStarted = false
   let startupAutoDismissTimer: number | null = null
@@ -648,6 +651,20 @@
     }
   }
 
+  const loadProcessPlantCredibilityModal = async (): Promise<void> => {
+    if (ProcessPlantCredibilityModal) return
+    processPlantCredibilityModalLoadPromise ??= (async (): Promise<Component> => {
+      const module = await import('../process-surface/ProcessPlantCredibilityModal.svelte')
+      return module.default
+    })()
+    try {
+      ProcessPlantCredibilityModal = await processPlantCredibilityModalLoadPromise
+    } catch (err) {
+      processPlantCredibilityModalLoadPromise = null
+      throw err
+    }
+  }
+
   const startStep = (id: StartupStepId): void => {
     markStartup(`${id}:start`)
     startupSteps = startStartupStep(startupSteps, id)
@@ -799,6 +816,16 @@
 
   const closeProcessPlantCatalog = (): void => {
     processPlantCatalogModal = null
+  }
+
+  const openProcessPlantCredibility = (object: OperationalObject): void => {
+    if (processPlantSystemIdFor(object) === null) return
+    processPlantCredibilityModal = object
+    void loadProcessPlantCredibilityModal()
+  }
+
+  const closeProcessPlantCredibility = (): void => {
+    processPlantCredibilityModal = null
   }
 
   const processPlantSystemIdFor = (object: OperationalObject): string | null => {
@@ -1458,6 +1485,7 @@
         {openProcedureSystemAt}
         {openProcessPlantArtifact}
         {openProcessPlantCatalog}
+        {openProcessPlantCredibility}
         {procedureSummariesForObject}
         beginPlacement={placement.begin}
         cancelPlacement={placement.cancel}
@@ -1586,6 +1614,17 @@
     {controlInstanceId}
     close={closeProcessPlantCatalog}
   />
+{/if}
+
+{#if processPlantCredibilityModal && ProcessPlantCredibilityModal && controlInstanceId}
+  {@const credibilitySystemId = processPlantSystemIdFor(processPlantCredibilityModal)}
+  {#if credibilitySystemId}
+    <ProcessPlantCredibilityModal
+      {controlInstanceId}
+      systemId={credibilitySystemId}
+      close={closeProcessPlantCredibility}
+    />
+  {/if}
 {/if}
 
 {#if startupModalVisible}

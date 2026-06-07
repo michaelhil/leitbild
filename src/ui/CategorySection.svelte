@@ -35,6 +35,7 @@
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
     readonly openProcessPlantCatalog?: (object: OperationalObject) => void
+    readonly openProcessPlantCredibility?: (object: OperationalObject) => void
     readonly procedureSummariesForObject?: (object: OperationalObject) => ProcedureRunSummaryGroup
     readonly proceduresVisible: boolean
   }
@@ -63,6 +64,7 @@
     openProcedureSystemAt,
     openProcessPlantArtifact,
     openProcessPlantCatalog,
+    openProcessPlantCredibility,
     procedureSummariesForObject,
     proceduresVisible,
   }: Props = $props()
@@ -135,6 +137,7 @@
         {openProcedureSystemAt}
         {openProcessPlantArtifact}
         {openProcessPlantCatalog}
+        {openProcessPlantCredibility}
         procedureSummaries={procedureSummariesForObject?.(entry.object)}
         {proceduresVisible}
       />

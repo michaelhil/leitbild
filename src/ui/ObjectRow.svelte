@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ClipboardList, FileText, GitBranch, Library, MonitorCog, X } from 'lucide-svelte'
+  import { ClipboardList, FileText, GitBranch, Library, MonitorCog, ShieldCheck, X } from 'lucide-svelte'
   import type { OperationalObject } from '../core/model/index.ts'
   import type { PackObjectField, PackObjectPresentation, PackObjectStatusPresentation } from '../core/packs/protocol.ts'
   import IconButton from './components/IconButton.svelte'
@@ -26,6 +26,7 @@
     readonly openProcedureSystemAt?: (object: OperationalObject, summary?: ProcedureRunSummary) => void
     readonly openProcessPlantArtifact?: (object: OperationalObject, artifact: ProcessPlantArtifactKind) => void
     readonly openProcessPlantCatalog?: (object: OperationalObject) => void
+    readonly openProcessPlantCredibility?: (object: OperationalObject) => void
     readonly procedureSummaries?: ProcedureRunSummaryGroup
     readonly proceduresVisible: boolean
   }
@@ -46,6 +47,7 @@
     openProcedureSystemAt,
     openProcessPlantArtifact,
     openProcessPlantCatalog,
+    openProcessPlantCredibility,
     procedureSummaries = emptyProcedureRunSummaries,
     proceduresVisible,
   }: Props = $props()
@@ -114,6 +116,11 @@
       && processSystemIdAvailable,
   )
   const processCatalogAvailable = $derived(object.packId === 'process-plant' && openProcessPlantCatalog !== undefined)
+  const processCredibilityAvailable = $derived(
+    object.packId === 'process-plant'
+      && openProcessPlantCredibility !== undefined
+      && processSystemIdAvailable,
+  )
   const openProcedureSummary = (summary: ProcedureRunSummary): void => {
     if (openProcedureSystemAt) {
       openProcedureSystemAt(object, summary)
@@ -219,6 +226,16 @@
             variant="bare"
             onClick={() => openProcessPlantArtifact?.(object, 'compiled-graph-mermaid')}
           />
+          {#if processCredibilityAvailable}
+            <IconButton
+              label="Open credibility evidence for {object.label}"
+              title="Credibility evidence"
+              icon={ShieldCheck}
+              size={13}
+              variant="bare"
+              onClick={() => openProcessPlantCredibility?.(object)}
+            />
+          {/if}
         {/if}
         {#if !processArtifactAvailable && processCatalogAvailable}
           <IconButton

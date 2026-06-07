@@ -146,6 +146,37 @@ export interface ProcessPlantCatalogSourceFile {
   readonly content: string
 }
 
+export type ProcessPlantCredibilityArtifactLanguage = 'json' | 'svg'
+
+export interface ProcessPlantCredibilityArtifactRef {
+  readonly id: string
+  readonly title: string
+  readonly language: ProcessPlantCredibilityArtifactLanguage
+  readonly contentType: string
+  readonly path: string
+}
+
+export interface ProcessPlantCredibilityEvidence {
+  readonly id: string
+  readonly title: string
+  readonly description: string
+  readonly scope: string
+  readonly generatedFromCommand: string
+  readonly artifacts: ReadonlyArray<ProcessPlantCredibilityArtifactRef>
+}
+
+export interface ProcessPlantCredibilityList {
+  readonly systemId: string
+  readonly evidence: ReadonlyArray<ProcessPlantCredibilityEvidence>
+}
+
+export interface ProcessPlantCredibilityArtifact {
+  readonly systemId: string
+  readonly evidence: ProcessPlantCredibilityEvidence
+  readonly artifact: ProcessPlantCredibilityArtifactRef
+  readonly content: string
+}
+
 const assertObject = (value: unknown, message: string): Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(message)
   return value as Record<string, unknown>
@@ -394,6 +425,35 @@ const parseProcessPlantCatalogSectionId = (value: unknown): ProcessPlantCatalogS
   return section
 }
 
+const parseProcessPlantCredibilityArtifactLanguage = (value: unknown): ProcessPlantCredibilityArtifactLanguage => {
+  const language = assertString(value, 'process plant credibility artifact requires language')
+  if (language !== 'json' && language !== 'svg') throw new Error(`unsupported process plant credibility artifact language: ${language}`)
+  return language
+}
+
+const parseProcessPlantCredibilityArtifactRef = (value: unknown): ProcessPlantCredibilityArtifactRef => {
+  const artifact = assertObject(value, 'process plant credibility artifact ref is malformed')
+  return {
+    id: assertString(artifact.id, 'process plant credibility artifact requires id'),
+    title: assertString(artifact.title, 'process plant credibility artifact requires title'),
+    language: parseProcessPlantCredibilityArtifactLanguage(artifact.language),
+    contentType: assertString(artifact.contentType, 'process plant credibility artifact requires contentType'),
+    path: assertString(artifact.path, 'process plant credibility artifact requires path'),
+  }
+}
+
+const parseProcessPlantCredibilityEvidence = (value: unknown): ProcessPlantCredibilityEvidence => {
+  const evidence = assertObject(value, 'process plant credibility evidence is malformed')
+  return {
+    id: assertString(evidence.id, 'process plant credibility evidence requires id'),
+    title: assertString(evidence.title, 'process plant credibility evidence requires title'),
+    description: assertString(evidence.description, 'process plant credibility evidence requires description'),
+    scope: assertString(evidence.scope, 'process plant credibility evidence requires scope'),
+    generatedFromCommand: assertString(evidence.generatedFromCommand, 'process plant credibility evidence requires generatedFromCommand'),
+    artifacts: assertArray(evidence.artifacts, 'process plant credibility evidence requires artifacts').map(parseProcessPlantCredibilityArtifactRef),
+  }
+}
+
 export const readProcessPlantCatalogSource = async (
   controlInstanceId: ControlInstanceId,
   section: ProcessPlantCatalogSectionId,
@@ -419,6 +479,42 @@ export const readProcessPlantCatalogSource = async (
     language,
     targetLineIndex,
     content: assertString(result.content, 'process plant catalog source requires content'),
+  }
+}
+
+export const listProcessPlantCredibilityEvidence = async (
+  controlInstanceId: ControlInstanceId,
+  systemId: string,
+): Promise<ProcessPlantCredibilityList> => {
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.credibility.list',
+    payload: { systemId },
+  })
+  const result = requireOkResult(body.response)
+  return {
+    systemId: assertString(result.systemId, 'process plant credibility list requires systemId'),
+    evidence: assertArray(result.evidence, 'process plant credibility list requires evidence').map(parseProcessPlantCredibilityEvidence),
+  }
+}
+
+export const readProcessPlantCredibilityArtifact = async (
+  controlInstanceId: ControlInstanceId,
+  systemId: string,
+  evidenceId: string,
+  artifactId: string,
+): Promise<ProcessPlantCredibilityArtifact> => {
+  const body = await queryControlInstancePack(controlInstanceId, {
+    packId: 'process-plant',
+    kind: 'process-plant.credibility.read',
+    payload: { systemId, evidenceId, artifactId },
+  })
+  const result = requireOkResult(body.response)
+  return {
+    systemId: assertString(result.systemId, 'process plant credibility read requires systemId'),
+    evidence: parseProcessPlantCredibilityEvidence(result.evidence),
+    artifact: parseProcessPlantCredibilityArtifactRef(result.artifact),
+    content: assertString(result.content, 'process plant credibility artifact requires content'),
   }
 }
 

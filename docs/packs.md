@@ -291,6 +291,8 @@ Current built-in query kinds:
 - `process-plant.control.validate`
 - `process-plant.catalog.list`
 - `process-plant.catalog.source`
+- `process-plant.credibility.list`
+- `process-plant.credibility.read`
 - `process-plant.runtime.status`
 - `process-plant.transient.diagnostics`
 - `process-plant.telemetry.published`
@@ -319,6 +321,8 @@ Process-plant I&C is the pack's simplified instrumentation-and-control substrate
 Process-plant permissives and interlocks are command gates, not hidden component side effects. They resolve target signals through graph-owned bindings and constrain the same queued write path used by operators, scenarios, AI agents, and internal I&C write effects. `process-plant.procedure-tags.validate` is a read-only compatibility helper for external procedure tag appendices; it reports missing or mismatched tags but does not parse or execute procedure documents.
 
 Process-plant reusable assets are registered through generic catalog contributions rather than hardcoded in the generic runtime/query layer. Contributions can provide graph specs, assemblies, graph fragments, fragment presets, I&C refs, graph-aware I&C refs, dynamic I&C ref patterns, and process surfaces. `process-plant.catalog.list` exposes those contributed refs/ids for tooling and UI discovery; the operational UI includes a read-only process-plant catalog view for browsing and copying them.
+
+Process-plant credibility evidence is exposed through generic read-only evidence queries. `process-plant.credibility.list` returns evidence sets applicable to one compiled system, and `process-plant.credibility.read` returns a named generated artifact. Current PWR evidence is one registered evidence contributor; generic UI reads the evidence query and does not import PWR-specific models.
 
 Process-plant may also provide reference I&C behavior through an explicit per-system `icRef`. Built-in PWR refs are contributed through the same process-plant catalog. Fixed refs such as `process-plant.pressurized-water-reactor.ic.v1` remain available for fixed reference graphs; graph-aware refs such as `process-plant.pwr.reference.graph.ic.v2` derive loop ids from the compiled graph and are preferred for modular PWR variants. Reference I&C supplies plant automation and annunciation for common transients; it does not supply procedure execution, operator guidance, or EOP branching. A system config must choose either `icRef` or inline `protection`, not both.
 

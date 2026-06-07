@@ -5,6 +5,7 @@ import type { ProcessPlantSystemRuntime } from './system-runtime.ts'
 import { failure } from './queries/common.ts'
 import { answerProcessPlantCatalogQuery, processPlantCatalogQueryKinds } from './queries/catalog-query.ts'
 import { answerProcessPlantControlQuery, processPlantControlQueryKinds } from './queries/control-query.ts'
+import { answerProcessPlantCredibilityQuery, processPlantCredibilityQueryKinds } from './queries/credibility-query.ts'
 import { answerProcessPlantGraphQuery, processPlantGraphQueryKinds } from './queries/graph-query.ts'
 import { answerProcessPlantRuntimeQuery, processPlantRuntimeQueryKinds } from './queries/runtime-query.ts'
 import { answerProcessPlantSignalQuery, processPlantSignalQueryKinds } from './queries/signal-query.ts'
@@ -13,6 +14,7 @@ import { answerProcessPlantVariableQuery, processPlantVariableQueryKinds } from 
 
 export const processPlantQueryKinds = [
   ...processPlantCatalogQueryKinds,
+  ...processPlantCredibilityQueryKinds,
   ...processPlantGraphQueryKinds,
   ...processPlantVariableQueryKinds,
   ...processPlantSignalQueryKinds,
@@ -29,6 +31,7 @@ export const answerProcessPlantQuery = (config: {
 }): PackQueryResponse => {
   try {
     return answerProcessPlantCatalogQuery(config)
+      ?? answerProcessPlantCredibilityQuery(config)
       ?? answerProcessPlantIcQuery(config)
       ?? answerProcessPlantGraphQuery(config)
       ?? answerProcessPlantVariableQuery(config)

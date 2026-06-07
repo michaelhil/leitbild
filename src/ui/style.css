@@ -2045,6 +2045,210 @@ body.rail-resizing {
   height: min(720px, calc(100vh - 96px));
 }
 
+.process-credibility-modal {
+  width: min(1180px, calc(100vw - 56px));
+}
+
+.process-credibility-body {
+  background: var(--panel);
+}
+
+.process-credibility-layout {
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+}
+
+.process-credibility-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  border-right: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 70%, var(--panel));
+}
+
+.process-credibility-list button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.process-credibility-list button.active,
+.process-credibility-list button:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.process-credibility-list button span,
+.process-credibility-evidence-header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.process-credibility-list strong,
+.process-credibility-evidence-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-credibility-list small,
+.process-credibility-evidence-header span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.process-credibility-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
+}
+
+.process-credibility-evidence-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-strong) 52%, var(--panel));
+}
+
+.process-credibility-evidence-header code {
+  width: max-content;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-credibility-artifact-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.process-credibility-artifact-tabs button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--panel);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.process-credibility-artifact-tabs button.active,
+.process-credibility-artifact-tabs button:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+}
+
+.process-credibility-summary {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.process-credibility-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.process-credibility-metrics div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-strong) 62%, var(--panel));
+}
+
+.process-credibility-metrics span,
+.process-credibility-case-row small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.process-credibility-metrics strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.process-credibility-cases {
+  display: grid;
+  gap: 5px;
+}
+
+.process-credibility-case-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(96px, auto);
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-strong) 45%, transparent);
+}
+
+.process-credibility-case-row span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-credibility-case-row strong {
+  color: #15803d;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.process-credibility-svg {
+  min-height: 100%;
+  overflow: auto;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.process-credibility-svg svg {
+  display: block;
+  max-width: none;
+}
+
 .process-component-source-backdrop {
   position: fixed;
   inset: 0;

@@ -253,6 +253,38 @@ describe('process plant pack runtime', () => {
     expect(graphResult.metadata.componentCount).toBeGreaterThan(20)
     expect(graphResult.metadata.linkCount).toBeGreaterThan(20)
 
+    const credibilityList = await connection.query(query('process-plant.credibility.list', {
+      systemId: 'plant',
+    }))
+    expect(credibilityList.ok).toBe(true)
+    if (!credibilityList.ok) throw new Error(credibilityList.reason)
+    const credibilityEntries = (credibilityList.result as {
+      readonly evidence: ReadonlyArray<{
+        readonly id: string
+        readonly title: string
+        readonly artifacts: ReadonlyArray<{ readonly id: string; readonly language: string; readonly path: string }>
+      }>
+    }).evidence
+    expect(credibilityEntries.map(entry => entry.id)).toContain('process-plant.pwr.reference.credibility.v1')
+    const pwrCredibility = credibilityEntries.find(entry => entry.id === 'process-plant.pwr.reference.credibility.v1')
+    expect(pwrCredibility?.artifacts.map(artifact => artifact.id).sort()).toEqual(['report', 'summary'])
+
+    const credibilitySummary = await connection.query(query('process-plant.credibility.read', {
+      systemId: 'plant',
+      evidenceId: 'process-plant.pwr.reference.credibility.v1',
+      artifactId: 'summary',
+    }))
+    expect(credibilitySummary.ok).toBe(true)
+    if (!credibilitySummary.ok) throw new Error(credibilitySummary.reason)
+    const credibilitySummaryResult = credibilitySummary.result as {
+      readonly artifact: { readonly language: string; readonly contentType: string }
+      readonly content: string
+    }
+    expect(credibilitySummaryResult.artifact.language).toBe('json')
+    expect(credibilitySummaryResult.artifact.contentType).toBe('application/json')
+    expect(credibilitySummaryResult.content).toContain('"schemaVersion": 1')
+    expect(credibilitySummaryResult.content).toContain('"targetCount": 34')
+
     await connection.close()
   })
 
@@ -1564,6 +1596,87 @@ describe('process plant pack runtime', () => {
 
     await connection.close()
   })
+
+  test('procedure-facing queries observe reference I&C trip response after a real transient', async () => {
+    const connection = await createLocalProcessPlantPackRuntimeAdapter().connect({
+      controlInstanceId,
+      scenario: scenarioConfig({
+        systems: {
+          plant: {
+            icRef: processPlantPwrReferenceGraphIcRef,
+          },
+        },
+      }),
+      runtimeStateStore: createMemoryStateStore(),
+    })
+
+    for (const loop of ['A', 'B', 'C', 'D']) {
+      const accepted = await connection.sendCommand(command({
+        systemId: 'plant',
+        tagId: `RCP-${loop}-RUN`,
+        value: false,
+      }))
+      expect(accepted.ok).toBe(true)
+    }
+    await Bun.sleep(12_200)
+
+    const condition = await connection.query(query('process-plant.conditions.evaluate', {
+      systemId: 'plant',
+      condition: {
+        type: 'all',
+        conditions: [
+          { type: 'comparison', signal: { tagId: 'TRIP-BKR-A' }, operator: '==', value: false },
+          { type: 'comparison', signal: { tagId: 'TRIP-BKR-B' }, operator: '==', value: false },
+          { type: 'comparison', signal: { tagId: 'ROD-POS-AVG' }, operator: '>=', value: 0.95 },
+        ],
+      },
+    }))
+    expect(condition.ok).toBe(true)
+    if (!condition.ok) throw new Error(condition.reason)
+    expect((condition.result as { readonly matches: boolean }).matches).toBe(true)
+
+    const csfs = await connection.query(query('process-plant.procedure-csfs.evaluate', {
+      systemId: 'plant',
+      csfs: ['subcriticality', 'core-cooling'],
+    }))
+    expect(csfs.ok).toBe(true)
+    if (!csfs.ok) throw new Error(csfs.reason)
+    const csfResults = (csfs.result as {
+      readonly csfs: ReadonlyArray<{ readonly id: string; readonly status: string }>
+    }).csfs
+    expect(csfResults.find(csf => csf.id === 'subcriticality')?.status).toBe('satisfied')
+    expect(csfResults.find(csf => csf.id === 'core-cooling')?.status).toBe('satisfied')
+
+    const procedureRead = await connection.query(query('process-plant.procedure-tags.read', {
+      systemId: 'plant',
+      tags: [
+        {
+          id: 'ROD-POS-AVG',
+          simPath: 'rcs.rod.position.avg',
+          units: 'steps_withdrawn',
+          equipment: 'rod-control-system',
+        },
+        {
+          id: 'NIS-PR-AVG',
+          simPath: 'nis.power_range.avg',
+          units: 'percent',
+          equipment: 'nuclear-instrumentation',
+        },
+      ],
+    }))
+    expect(procedureRead.ok).toBe(true)
+    if (!procedureRead.ok) throw new Error(procedureRead.reason)
+    const tags = (procedureRead.result as {
+      readonly tags: ReadonlyArray<{
+        readonly id: string
+        readonly procedureValue?: { readonly value: unknown; readonly formatted: string }
+      }>
+    }).tags
+    expect(tags.find(tag => tag.id === 'ROD-POS-AVG')?.procedureValue?.formatted).toBe('0 steps withdrawn')
+    expect(Number(tags.find(tag => tag.id === 'NIS-PR-AVG')?.procedureValue?.value)).toBeLessThan(1_000)
+
+    await connection.close()
+  }, { timeout: 20_000 })
 
   test('rejects invalid I&C write targets before runtime starts', async () => {
     await expect(createLocalProcessPlantPackRuntimeAdapter().connect({

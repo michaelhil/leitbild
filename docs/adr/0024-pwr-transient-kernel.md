@@ -43,6 +43,8 @@ These actions compile to the same validated `setVariable` command path as operat
 
 The process-plant pack now has a clear Module for PWR transient observability and a typed Interface for scenario fault authoring. This gives procedures, UI, AI agents, and tests a single read-only place to inspect major transient state without scraping many variables.
 
+Generated credibility evidence for the PWR reference family is exposed through generic process-plant evidence queries. This keeps benchmark artifacts browseable from the UI without making generic UI code import PWR-specific runtime or graph modules.
+
 This is intentionally a Goldilocks model: lumped and deterministic, not RELAP/TRACE/CFD. It is suitable for Leitbild operational scenarios, alarm logic, overviews, and runbook exercises. It is not a licensing-basis safety analysis code.
 
 Future deepening should continue inside the same boundaries:
