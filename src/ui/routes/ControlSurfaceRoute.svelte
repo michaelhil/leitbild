@@ -247,7 +247,8 @@
   const gridOverviewVisible = $derived(
     gridOverviewAvailable && (categoryMapVisibility[gridOverviewCategoryId] ?? true),
   )
-  const richOperationalUiReady = $derived(!mapVisible || mapReady)
+  const mapStartupFailed = $derived(startupSteps.find(step => step.id === 'map')?.status === 'failed')
+  const richOperationalUiReady = $derived(!mapVisible || mapReady || mapStartupFailed)
   const debugMapInput = $derived(new URLSearchParams(location.search).get('debugMapInput') === '1')
   const debugStartup = new URLSearchParams(location.search).get('debugStartup') === '1'
   const categoryRows = $derived<ReadonlyArray<CategoryRow>>(categoryRowsForSurface(allCategoryRows, railConfig))

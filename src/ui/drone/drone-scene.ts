@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
+import { loadDroneMapWorld } from './drone-map-world.ts'
+import { createDroneMapWorldGroup, createFallbackWorldGroup } from './drone-world-renderer.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
 
@@ -10,11 +12,12 @@ export interface DroneSceneHandle {
 
 interface DroneSceneConfig {
   readonly container: HTMLElement
-  readonly focusDroneId: string
+  readonly getFocusDroneId: () => string
   readonly getObjects: () => ReadonlyArray<OperationalObject>
   readonly getViewMode: () => DroneSceneViewMode
   readonly onReady?: () => void
   readonly onError?: (message: string) => void
+  readonly onWorldStatus?: (message: string) => void
 }
 
 interface LocalPoint {
@@ -164,100 +167,6 @@ const createGenericAssetMesh = (color: string): THREE.Group => {
   return group
 }
 
-const deterministicHeight = (x: number, z: number): number => {
-  const value = Math.sin(x * 0.017 + 2.1) * Math.cos(z * 0.013 - 1.7)
-  return 5 + Math.abs(value) * 26
-}
-
-const addProceduralEnvironment = (scene: THREE.Scene): THREE.Group => {
-  const group = new THREE.Group()
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(1_800, 1_800, 32, 32),
-    new THREE.MeshStandardMaterial({ color: '#64748b', roughness: 0.92, metalness: 0.02 }),
-  )
-  ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.02
-  ground.receiveShadow = true
-  group.add(ground)
-  const park = new THREE.Mesh(
-    new THREE.CircleGeometry(170, 48),
-    new THREE.MeshStandardMaterial({ color: '#166534', roughness: 0.9, transparent: true, opacity: 0.82 }),
-  )
-  park.rotation.x = -Math.PI / 2
-  park.position.set(-180, 0.01, 120)
-  group.add(park)
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(1_800, 220),
-    new THREE.MeshStandardMaterial({ color: '#0e7490', roughness: 0.45, metalness: 0.05, transparent: true, opacity: 0.72 }),
-  )
-  water.rotation.x = -Math.PI / 2
-  water.position.set(0, 0.02, 420)
-  group.add(water)
-  const roadMaterial = new THREE.MeshStandardMaterial({ color: '#1f2937', roughness: 0.86 })
-  const laneMaterial = new THREE.MeshStandardMaterial({ color: '#f8fafc', roughness: 0.72 })
-  for (const [x, z, rot, length, width] of [
-    [0, 0, 0.12, 1_600, 18],
-    [-260, -120, -0.58, 1_200, 14],
-    [280, 90, 0.8, 1_050, 12],
-    [40, -310, Math.PI / 2, 1_400, 16],
-  ] as const) {
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(width, length), roadMaterial)
-    road.rotation.x = -Math.PI / 2
-    road.rotation.z = rot
-    road.position.set(x, 0.04, z)
-    group.add(road)
-    for (let offset = -length / 2 + 32; offset < length / 2; offset += 64) {
-      const lane = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 22), laneMaterial)
-      lane.rotation.x = -Math.PI / 2
-      lane.rotation.z = rot
-      lane.position.set(
-        x + Math.sin(rot) * offset,
-        0.055,
-        z + Math.cos(rot) * offset,
-      )
-      group.add(lane)
-    }
-  }
-  const buildingMaterial = new THREE.MeshStandardMaterial({ color: '#cbd5e1', roughness: 0.74, metalness: 0.03 })
-  const roofMaterial = new THREE.MeshStandardMaterial({ color: '#475569', roughness: 0.8 })
-  const windowMaterial = new THREE.MeshStandardMaterial({ color: '#dbeafe', roughness: 0.5, metalness: 0.04, emissive: '#1e3a8a', emissiveIntensity: 0.08 })
-  for (let x = -760; x <= 760; x += 95) {
-    for (let z = -720; z <= 300; z += 95) {
-      const skip = Math.abs(x) < 65 || Math.abs(z) < 50 || Math.hypot(x + 180, z - 120) < 200
-      if (skip) continue
-      const height = deterministicHeight(x, z)
-      const building = new THREE.Mesh(new THREE.BoxGeometry(42, height, 48), buildingMaterial)
-      building.position.set(x + Math.sin(z) * 6, height / 2, z + Math.cos(x) * 6)
-      const roof = new THREE.Mesh(new THREE.BoxGeometry(44, 0.8, 50), roofMaterial)
-      roof.position.set(building.position.x, height + 0.45, building.position.z)
-      group.add(building, roof)
-      for (let floor = 4; floor < height - 2; floor += 5.5) {
-        for (const side of [-1, 1]) {
-          const windows = new THREE.Mesh(new THREE.BoxGeometry(30, 1.2, 0.08), windowMaterial)
-          windows.position.set(building.position.x, floor, building.position.z + side * 24.04)
-          group.add(windows)
-        }
-      }
-    }
-  }
-  const trunkMaterial = new THREE.MeshStandardMaterial({ color: '#7c2d12', roughness: 0.86 })
-  const canopyMaterial = new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.92 })
-  for (let index = 0; index < 90; index += 1) {
-    const angle = index * 2.39996
-    const radius = 75 + (index % 9) * 14
-    const x = -180 + Math.cos(angle) * radius
-    const z = 120 + Math.sin(angle) * radius
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 5, 8), trunkMaterial)
-    trunk.position.set(x, 2.5, z)
-    const canopy = new THREE.Mesh(new THREE.SphereGeometry(4.4 + (index % 3), 12, 8), canopyMaterial)
-    canopy.position.set(x, 7.5, z)
-    group.add(trunk, canopy)
-  }
-  enableShadows(group)
-  scene.add(group)
-  return group
-}
-
 const meshSignatureFor = (object: OperationalObject): string => {
   const droneData = dronePackDataSchema.safeParse(object.packData)
   if (droneData.success) return `drone:${droneData.data.profile.visual.color}`
@@ -327,6 +236,15 @@ const setFogFor = (scene: THREE.Scene, environment: DroneEnvironment): void => {
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
 
+const centerDistanceM = (
+  a: { readonly lon: number; readonly lat: number },
+  b: { readonly lon: number; readonly lat: number },
+): number =>
+  Math.hypot(
+    (a.lon - b.lon) * metersPerDegreeLonAt((a.lat + b.lat) / 2),
+    (a.lat - b.lat) * metersPerDegreeLat,
+  )
+
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
@@ -334,6 +252,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
   renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.toneMapping = THREE.ACESFilmicToneMapping
+  renderer.toneMappingExposure = 1.08
   renderer.shadowMap.enabled = true
   renderer.shadowMap.type = THREE.PCFShadowMap
   config.container.appendChild(renderer.domElement)
@@ -350,12 +270,43 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   keyLight.shadow.camera.bottom = -650
   const ambient = new THREE.HemisphereLight('#dbeafe', '#475569', 1.25)
   scene.add(keyLight, ambient)
-  const environmentLayer = addProceduralEnvironment(scene)
+  let environmentLayer = createFallbackWorldGroup()
+  scene.add(environmentLayer)
   const objectLayer = new THREE.Group()
   scene.add(objectLayer)
   const weatherLayer = createWeatherLayer()
   scene.add(weatherLayer)
   const objectMeshes = new Map<string, MeshEntry>()
+  let worldCenter: { readonly lon: number; readonly lat: number } | null = null
+  let worldLoadGeneration = 0
+  let worldLoadController: AbortController | null = null
+  const loadWorldFor = (center: { readonly lon: number; readonly lat: number }): void => {
+    worldLoadController?.abort()
+    const controller = new AbortController()
+    const generation = ++worldLoadGeneration
+    worldLoadController = controller
+    config.onWorldStatus?.('Loading map-derived scenery')
+    void (async (): Promise<void> => {
+      try {
+        const snapshot = await loadDroneMapWorld({
+          center,
+          radiusM: 1_850,
+          zoom: 14,
+          signal: controller.signal,
+        })
+        if (generation !== worldLoadGeneration) return
+        const nextLayer = createDroneMapWorldGroup(snapshot)
+        scene.remove(environmentLayer)
+        disposeObject(environmentLayer)
+        environmentLayer = nextLayer
+        scene.add(environmentLayer)
+        config.onWorldStatus?.(`Map scenery loaded: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines`)
+      } catch (err) {
+        if (generation !== worldLoadGeneration || controller.signal.aborted) return
+        config.onWorldStatus?.(`Map scenery unavailable: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })()
+  }
   const resize = (): void => {
     const rect = config.container.getBoundingClientRect()
     const width = Math.max(1, Math.floor(rect.width))
@@ -373,8 +324,17 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const render = (): void => {
     frame += 1
     const objects = config.getObjects()
-    const center = centerFor(objects, config.focusDroneId)
-    const environment = focusEnvironment(objects, config.focusDroneId)
+    const focusDroneId = config.getFocusDroneId()
+    const desiredCenter = centerFor(objects, focusDroneId)
+    if (worldCenter === null) {
+      worldCenter = desiredCenter
+      loadWorldFor(worldCenter)
+    } else if (centerDistanceM(worldCenter, desiredCenter) > 520) {
+      worldCenter = desiredCenter
+      loadWorldFor(worldCenter)
+    }
+    const center = worldCenter ?? desiredCenter
+    const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)
     updateWeather(weatherLayer, environment, frame)
     let focusPoint: LocalPoint | null = null
@@ -415,7 +375,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       mesh.traverse(child => {
         if (child.userData.rotor === true) child.rotation.y += 1.8
       })
-      if (object.id === config.focusDroneId) {
+      if (object.id === focusDroneId) {
         focusPoint = local
         focusData = droneData.success ? droneData.data : null
       }
@@ -474,6 +434,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   return {
     destroy: (): void => {
       cancelAnimationFrame(animationId)
+      worldLoadController?.abort()
       observer.disconnect()
       disposeObject(environmentLayer)
       disposeObject(objectLayer)

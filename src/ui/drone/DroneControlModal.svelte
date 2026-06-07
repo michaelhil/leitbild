@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Crosshair, Gamepad2, Keyboard, LocateFixed, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
+  import { Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
@@ -35,29 +35,54 @@
   const activeKeepaliveMs = 360
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
+  const manualKeyCodes = new Set([
+    'KeyW',
+    'KeyA',
+    'KeyS',
+    'KeyD',
+    'KeyQ',
+    'KeyE',
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Space',
+    'ShiftLeft',
+    'ShiftRight',
+  ])
 
   let sceneElement = $state<HTMLDivElement | null>(null)
   let sceneHandle: DroneSceneHandle | null = null
   let viewMode = $state<DroneSceneViewMode>('3d')
+  let selectedDroneId = $state<string>('')
   let status = $state('Opening flight view')
   let gamepads = $state<ReadonlyArray<{ readonly index: number; readonly id: string }>>([])
   let selectedGamepadIndex = $state<number | null>(null)
   let gamepadSelectionLocked = false
   let selectedTargetId = $state<string>('')
   let liveAxes = $state<DroneManualAxes>(zeroAxes)
+  let mouseAxes = $state<DroneManualAxes>(zeroAxes)
+  let mouseControlEnabled = $state(false)
+  let mouseCaptured = $state(false)
   let keys = new Set<string>()
   let lastSendMs = 0
   let lastAxesSignature = '0.00|0.00|0.00|0.00'
   let manualSendInFlight = false
   let animationId = 0
 
+  const droneObjects = $derived(objects.filter(candidate => dronePackDataSchema.safeParse(candidate.packData).success))
+  const selectedObject = $derived.by(() =>
+    droneObjects.find(candidate => candidate.id === selectedDroneId)
+    ?? droneObjects.find(candidate => candidate.id === object.id)
+    ?? droneObjects[0]
+    ?? object)
   const data = $derived.by(() => {
-    const parsed = dronePackDataSchema.safeParse(object.packData)
+    const parsed = dronePackDataSchema.safeParse(selectedObject.packData)
     return parsed.success ? parsed.data : null
   })
   const groundSpeedMps = $derived(data ? Math.hypot(data.kinematics.velocityEastMps, data.kinematics.velocityNorthMps) : 0)
   const batteryPercent = $derived(data ? data.energy.remainingWh / data.profile.energy.capacityWh * 100 : 0)
-  const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === object.id).slice(0, 4))
+  const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === selectedObject.id).slice(0, 4))
 
   const windowStyle = $derived.by(() => {
     const offset = windowOffsetIndex * offsetStepPx
@@ -73,9 +98,26 @@
     return `left:${left}px;top:${top}px;width:${width}px;height:${height}px`
   })
 
-  const targetOptions = $derived(objects.filter(candidate => candidate.id !== object.id && (
+  const targetOptions = $derived(objects.filter(candidate => candidate.id !== selectedObject.id && (
     candidate.spatial.position?.point !== undefined || candidate.spatial.geometry?.type === 'Point'
   )))
+
+  $effect(() => {
+    const nextSelectedId = selectedObject.id
+    if (selectedDroneId !== nextSelectedId) selectedDroneId = nextSelectedId
+  })
+
+  const selectDrone = (event: Event): void => {
+    const value = event.currentTarget instanceof HTMLSelectElement ? event.currentTarget.value : ''
+    const next = droneObjects.find(candidate => candidate.id === value)
+    if (!next) return
+    selectedDroneId = next.id
+    selectedTargetId = selectedTargetId === next.id ? '' : selectedTargetId
+    keys = new Set()
+    mouseAxes = zeroAxes
+    liveAxes = zeroAxes
+    status = `Controlling ${next.label}`
+  }
 
   const refreshGamepads = (): void => {
     if (!navigator.getGamepads) {
@@ -127,16 +169,24 @@
     }
   }
 
-  const combinedAxes = (): DroneManualAxes => {
+  type ManualInputSourceKind = 'keyboard' | 'mouse' | 'gamepad'
+
+  const combinedAxes = (): { readonly axes: DroneManualAxes; readonly sourceKind: ManualInputSourceKind } => {
     const keyboard = keyboardAxes()
+    const mouse = mouseControlEnabled ? mouseAxes : zeroAxes
     const gamepad = gamepadAxes()
-    if (!gamepad) return keyboard
-    return {
-      forward: axis(keyboard.forward + gamepad.forward),
-      right: axis(keyboard.right + gamepad.right),
-      vertical: axis(keyboard.vertical + gamepad.vertical),
-      yaw: axis(keyboard.yaw + gamepad.yaw),
+    const axes = {
+      forward: axis(keyboard.forward + mouse.forward + (gamepad?.forward ?? 0)),
+      right: axis(keyboard.right + mouse.right + (gamepad?.right ?? 0)),
+      vertical: axis(keyboard.vertical + mouse.vertical + (gamepad?.vertical ?? 0)),
+      yaw: axis(keyboard.yaw + mouse.yaw + (gamepad?.yaw ?? 0)),
     }
+    const sourceKind = axesAreActive(gamepad ?? zeroAxes)
+      ? 'gamepad'
+      : axesAreActive(mouse)
+        ? 'mouse'
+        : 'keyboard'
+    return { axes, sourceKind }
   }
 
   const axesSignature = (axes: DroneManualAxes): string =>
@@ -145,16 +195,18 @@
   const axesAreActive = (axes: DroneManualAxes): boolean =>
     Math.abs(axes.forward) > 0 || Math.abs(axes.right) > 0 || Math.abs(axes.vertical) > 0 || Math.abs(axes.yaw) > 0
 
-  const sendManualControl = async (axes: DroneManualAxes): Promise<void> => {
+  const sendManualControl = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
     const activeGamepad = selectedGamepadIndex === null ? null : gamepads.find(pad => pad.index === selectedGamepadIndex)
-    const source = activeGamepad
+    const source = sourceKind === 'gamepad' && activeGamepad
       ? { kind: 'gamepad' as const, gamepadIndex: activeGamepad.index, label: activeGamepad.id }
-      : { kind: 'keyboard' as const, label: 'Keyboard' }
+      : sourceKind === 'mouse'
+        ? { kind: 'mouse' as const, label: mouseCaptured ? 'Mouse pointer lock' : 'Mouse' }
+        : { kind: 'keyboard' as const, label: 'Keyboard' }
     const body = await sendControlInstanceCommand(controlInstanceId, {
       kind: manualControlCommandKind,
-      targetObjectIds: [object.id],
+      targetObjectIds: [selectedObject.id],
       payload: {
-        droneId: object.id,
+        droneId: selectedObject.id,
         axes,
         inputSource: source,
         commandTtlMs: 650,
@@ -163,9 +215,9 @@
     status = body.result.ok ? 'Manual control accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
-  const sendManualControlSafely = async (axes: DroneManualAxes): Promise<void> => {
+  const sendManualControlSafely = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
     try {
-      await sendManualControl(axes)
+      await sendManualControl(axes, sourceKind)
     } catch (err) {
       status = err instanceof Error ? err.message : String(err)
     } finally {
@@ -176,9 +228,9 @@
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
     const body = await sendControlInstanceCommand(controlInstanceId, {
       kind: setDroneModeCommandKind,
-      targetObjectIds: [object.id],
+      targetObjectIds: [selectedObject.id],
       payload: {
-        droneId: object.id,
+        droneId: selectedObject.id,
         mode,
       },
     })
@@ -189,9 +241,9 @@
     if (!selectedTargetId) return
     const body = await sendControlInstanceCommand(controlInstanceId, {
       kind: attackCommandKind,
-      targetObjectIds: [object.id, selectedTargetId as ObjectId],
+      targetObjectIds: [selectedObject.id, selectedTargetId as ObjectId],
       payload: {
-        attackerId: object.id,
+        attackerId: selectedObject.id,
         targetId: selectedTargetId,
       },
     })
@@ -201,7 +253,8 @@
   const pollInput = (): void => {
     refreshGamepads()
     const nowMs = performance.now()
-    const axes = combinedAxes()
+    const sample = combinedAxes()
+    const axes = sample.axes
     const signature = axesSignature(axes)
     const active = axesAreActive(axes)
     if (signature !== axesSignature(liveAxes)) liveAxes = axes
@@ -211,31 +264,106 @@
       lastSendMs = nowMs
       lastAxesSignature = signature
       manualSendInFlight = true
-      void sendManualControlSafely(axes)
+      void sendManualControlSafely(axes, sample.sourceKind)
     }
     animationId = requestAnimationFrame(pollInput)
   }
 
+  const resetManualInputs = (): void => {
+    keys = new Set()
+    mouseAxes = zeroAxes
+  }
+
+  const handledKeyboardEvent = (event: KeyboardEvent): boolean =>
+    manualKeyCodes.has(event.code)
+
   const onKeydown = (event: KeyboardEvent): void => {
+    const handled = handledKeyboardEvent(event)
+    if (handled) event.preventDefault()
     if (event.repeat) return
     if (event.code === 'Escape') {
       event.preventDefault()
+      if (mouseCaptured) {
+        document.exitPointerLock()
+        return
+      }
       close()
       return
     }
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return
-    keys.add(event.code)
+    if (handled) keys.add(event.code)
   }
 
   const onKeyup = (event: KeyboardEvent): void => {
+    if (handledKeyboardEvent(event)) event.preventDefault()
     keys.delete(event.code)
+  }
+
+  const onWindowBlur = (): void => {
+    resetManualInputs()
+  }
+
+  const onVisibilityChange = (): void => {
+    if (document.visibilityState !== 'visible') resetManualInputs()
+  }
+
+  const onPointerLockChange = (): void => {
+    mouseCaptured = document.pointerLockElement === sceneElement
+    if (!mouseCaptured) mouseAxes = zeroAxes
+  }
+
+  const requestMouseCapture = (): void => {
+    if (!mouseControlEnabled || !sceneElement) return
+    try {
+      sceneElement.focus()
+      sceneElement.requestPointerLock()
+      status = 'Mouse flight requested'
+    } catch (err) {
+      status = err instanceof Error ? err.message : String(err)
+    }
+  }
+
+  const toggleMouseControl = (): void => {
+    mouseControlEnabled = !mouseControlEnabled
+    mouseAxes = zeroAxes
+    if (!mouseControlEnabled && mouseCaptured) document.exitPointerLock()
+    status = mouseControlEnabled ? 'Mouse flight armed; click the scene' : 'Mouse flight disabled'
+  }
+
+  const centerMouseStick = (): void => {
+    mouseAxes = zeroAxes
+  }
+
+  const onScenePointerDown = (event: PointerEvent): void => {
+    if (!mouseControlEnabled || event.button !== 0) return
+    event.preventDefault()
+    requestMouseCapture()
+  }
+
+  const onSceneWheel = (event: WheelEvent): void => {
+    if (!mouseControlEnabled) return
+    event.preventDefault()
+    const delta = event.deltaY < 0 ? 0.18 : -0.18
+    mouseAxes = {
+      ...mouseAxes,
+      vertical: axis(mouseAxes.vertical + delta),
+    }
+  }
+
+  const onMouseMove = (event: MouseEvent): void => {
+    if (!mouseCaptured || !mouseControlEnabled) return
+    mouseAxes = {
+      ...mouseAxes,
+      forward: axis(mouseAxes.forward - event.movementY * 0.0035),
+      yaw: axis(mouseAxes.yaw + event.movementX * 0.0045),
+    }
   }
 
   runOnMount(() => {
     if (!sceneElement) throw new Error('drone scene element was not mounted')
     sceneHandle = createDroneScene({
       container: sceneElement,
-      focusDroneId: object.id,
+      getFocusDroneId: () => selectedDroneId,
       getObjects: () => objects,
       getViewMode: () => viewMode,
       onReady: () => {
@@ -244,10 +372,17 @@
       onError: message => {
         status = message
       },
+      onWorldStatus: message => {
+        status = message
+      },
     })
     refreshGamepads()
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
+    window.addEventListener('blur', onWindowBlur)
+    window.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    document.addEventListener('pointerlockchange', onPointerLockChange)
     window.addEventListener('gamepadconnected', refreshGamepads)
     window.addEventListener('gamepaddisconnected', refreshGamepads)
     animationId = requestAnimationFrame(pollInput)
@@ -255,8 +390,13 @@
       cancelAnimationFrame(animationId)
       window.removeEventListener('keydown', onKeydown)
       window.removeEventListener('keyup', onKeyup)
+      window.removeEventListener('blur', onWindowBlur)
+      window.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      document.removeEventListener('pointerlockchange', onPointerLockChange)
       window.removeEventListener('gamepadconnected', refreshGamepads)
       window.removeEventListener('gamepaddisconnected', refreshGamepads)
+      if (mouseCaptured) document.exitPointerLock()
       sceneHandle?.destroy()
       sceneHandle = null
     }
@@ -266,8 +406,8 @@
 <section class="drone-window" style={windowStyle} aria-label="Drone flight window">
   <header class="drone-window-header">
     <div>
-      <h2>{object.label}</h2>
-      <span>{data?.profile.label ?? 'Invalid drone'} · {data?.control.mode ?? object.operational.status} · {data ? Math.round(data.energy.remainingWh / data.profile.energy.capacityWh * 100) : 0}%</span>
+      <h2>{selectedObject.label}</h2>
+      <span>{data?.profile.label ?? 'Invalid drone'} · {data?.control.mode ?? selectedObject.operational.status} · {data ? Math.round(data.energy.remainingWh / data.profile.energy.capacityWh * 100) : 0}%</span>
     </div>
     <div class="header-actions">
       <button class:active={viewMode === '3d'} type="button" title="3D view" aria-label="3D view" onclick={() => viewMode = '3d'}>3D</button>
@@ -279,7 +419,15 @@
 
   <div class="drone-window-body">
     <div class="scene-shell">
-      <div bind:this={sceneElement} class="drone-scene"></div>
+      <div
+        bind:this={sceneElement}
+        class="drone-scene"
+        role="application"
+        aria-label="Drone 3D flight scene"
+        tabindex="-1"
+        onpointerdown={onScenePointerDown}
+        onwheel={onSceneWheel}
+      ></div>
       {#if data}
         <div class="flight-hud" aria-label="Flight telemetry">
           <div class="hud-row">
@@ -305,6 +453,15 @@
     </div>
     <aside class="drone-control-panel">
       <section>
+        <h3><LocateFixed size={15} /> Drone</h3>
+        <select value={selectedDroneId} aria-label="Controlled drone" onchange={selectDrone}>
+          {#each droneObjects as droneObject (droneObject.id)}
+            <option value={droneObject.id}>{droneObject.label}</option>
+          {/each}
+        </select>
+      </section>
+
+      <section>
         <h3><Keyboard size={15} /> Manual</h3>
         <div class="axis-grid">
           <span>FWD {liveAxes.forward.toFixed(2)}</span>
@@ -312,6 +469,16 @@
           <span>VERT {liveAxes.vertical.toFixed(2)}</span>
           <span>YAW {liveAxes.yaw.toFixed(2)}</span>
         </div>
+      </section>
+
+      <section>
+        <h3><MousePointer2 size={15} /> Mouse</h3>
+        <div class="command-grid">
+          <button class:active={mouseControlEnabled} type="button" onclick={toggleMouseControl}><MousePointer2 size={15} /> {mouseControlEnabled ? 'Armed' : 'Arm'}</button>
+          <button type="button" disabled={!mouseControlEnabled} onclick={requestMouseCapture}><LocateFixed size={15} /> Capture</button>
+          <button type="button" onclick={centerMouseStick}><RotateCcw size={15} /> Center</button>
+        </div>
+        <span class="mouse-status">{mouseCaptured ? 'Pointer locked' : mouseControlEnabled ? 'Click scene to fly' : 'Disabled'}</span>
       </section>
 
       <section>
@@ -446,6 +613,11 @@
     border-color: #60a5fa;
   }
 
+  .drone-control-panel button.active {
+    background: #2563eb;
+    border-color: #60a5fa;
+  }
+
   .drone-window-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 280px;
@@ -508,6 +680,11 @@
     display: grid;
     gap: 5px;
     color: #cbd5e1;
+    font-size: 12px;
+  }
+
+  .mouse-status {
+    color: #93c5fd;
     font-size: 12px;
   }
 

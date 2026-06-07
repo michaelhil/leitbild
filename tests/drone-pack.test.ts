@@ -3,7 +3,7 @@ import type { ActorId, CommandEnvelope, CommandId, ControlInstanceId, GeoJsonPoi
 import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
 import { leitbildPacks } from '../src/app-assembly.ts'
 import { createScenarioCatalog } from '../src/core/scenarios/catalog.ts'
-import { attackCommandKind, manualControlCommandKind, swarmCommandKind } from '../src/packs/drone/commands.ts'
+import { attackCommandKind, manualControlCommandKind, manualControlPayloadSchema, swarmCommandKind } from '../src/packs/drone/commands.ts'
 import { createDroneAttackInteractionHandler, droneAttackSignal } from '../src/packs/drone/interactions.ts'
 import { defaultDroneProfiles, dronePackDataSchema, requireDroneProfile } from '../src/packs/drone/model.ts'
 import { droneSceneObjects, droneSensorContacts } from '../src/packs/drone/query.ts'
@@ -12,6 +12,7 @@ import { droneSimRuntimeId } from '../src/packs/drone/sim/constants.ts'
 import { createDroneSimEngine } from '../src/packs/drone/sim/engine.ts'
 import { createScenarioDroneObject } from '../src/packs/drone/sim/object-state.ts'
 import { builtinMissions, scenarios } from '../src/scenarios/index.ts'
+import { localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
 
 const controlInstanceId = 'test-drone-control' as ControlInstanceId
 const actorId = 'actor:test-pilot' as ActorId
@@ -167,6 +168,27 @@ describe('drone pack', () => {
     const data = dronePackDataSchema.parse(engine.snapshot().objects[0]!.packData)
     const speedMps = Math.hypot(data.kinematics.velocityEastMps, data.kinematics.velocityNorthMps)
     expect(speedMps).toBeLessThanOrEqual(data.profile.dynamics.maxHorizontalSpeedMps + 0.0001)
+  })
+
+  test('manual control accepts mouse as a first-class input source', () => {
+    const parsed = manualControlPayloadSchema.parse({
+      droneId: 'drone:mouse-controlled',
+      axes: { forward: 0.4, right: 0, vertical: 0.1, yaw: -0.2 },
+      inputSource: { kind: 'mouse', label: 'Mouse pointer lock' },
+      commandTtlMs: 650,
+    })
+    expect(parsed.inputSource.kind).toBe('mouse')
+    expect(parsed.axes.forward).toBe(0.4)
+  })
+
+  test('drone map world projection keeps east positive x and north negative z', () => {
+    const center = { lon: 10.75, lat: 59.91 }
+    const east = localPointFromLonLat(10.7501, 59.91, center)
+    const north = localPointFromLonLat(10.75, 59.9101, center)
+    expect(east.x).toBeGreaterThan(5)
+    expect(Math.abs(east.z)).toBeLessThan(0.01)
+    expect(north.z).toBeLessThan(-10)
+    expect(Math.abs(north.x)).toBeLessThan(0.01)
   })
 
   test('swarm commands keep each drone as an individual simulated object', async () => {

@@ -30,7 +30,7 @@
   const ready = $derived(startupIsReady(steps))
   const failed = $derived(startupHasFailed(steps))
   const failedStep = $derived(steps.find(step => step.status === 'failed') ?? null)
-  const canClose = $derived(!closeWhenReadyOnly || ready)
+  const canClose = $derived(!closeWhenReadyOnly || ready || failed)
 
   const clearCloseTimers = (): void => {
     if (closeDelayTimer !== null) window.clearTimeout(closeDelayTimer)

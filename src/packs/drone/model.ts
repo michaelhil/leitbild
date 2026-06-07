@@ -180,7 +180,7 @@ export const droneManualAxesSchema = z.object({
 export type DroneManualAxes = z.infer<typeof droneManualAxesSchema>
 
 export const droneInputSourceSchema = z.object({
-  kind: z.enum(['keyboard', 'gamepad', 'map', 'scenario', 'ai', 'operator']),
+  kind: z.enum(['keyboard', 'mouse', 'gamepad', 'map', 'scenario', 'ai', 'operator']),
   label: z.string().min(1).max(120).optional(),
   gamepadIndex: z.number().int().nonnegative().max(16).optional(),
   clientId: clientIdSchema.optional(),
