@@ -4,7 +4,7 @@ import type {
   DroneWorldPoint,
   DroneWorldPolygonFeature,
 } from './drone-map-world.ts'
-import { createTransportDecal } from './drone-transport-renderer.ts'
+import { createTransportGeometryGroup } from './drone-transport-renderer.ts'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
@@ -476,10 +476,10 @@ export const createDroneMapWorldGroup = (
   const group = createFallbackWorldGroup(snapshot.radiusM)
   const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons)
   const buildingGroup = createMergedBuildingMeshes(snapshot.polygons)
-  const transportDecal = createTransportDecal(snapshot)
+  const transportGroup = createTransportGeometryGroup(snapshot)
   group.add(
     surfaceGroup,
-    ...(transportDecal === null ? [] : [transportDecal]),
+    transportGroup,
     buildingGroup,
     createVegetation(snapshot),
     createPoiBeacons(snapshot),
