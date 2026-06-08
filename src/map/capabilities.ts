@@ -133,6 +133,7 @@ export const sceneryRecipeSchema = z.object({
   label: z.string().min(1),
   intendedUse: z.string().min(1),
   sourceTilesetId: z.literal(mapTilesetId),
+  scenarioPackIds: z.array(z.string().min(1)).optional(),
   featureKinds: z.array(sceneryFeatureKindSchema).min(1),
   minZoom: z.number().int().min(0).max(24),
   maxZoom: z.number().int().min(0).max(24),
@@ -410,6 +411,7 @@ export const defaultSceneryRecipes: ReadonlyArray<SceneryRecipe> = [
     label: 'Drone urban flight scenery',
     intendedUse: 'Low-altitude Babylon.js flight visualization with roads, buildings, water, vegetation, labels, and operational points of interest derived from the canonical vector map.',
     sourceTilesetId: mapTilesetId,
+    scenarioPackIds: ['drone'],
     featureKinds: [
       'aeroway',
       'building',

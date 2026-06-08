@@ -187,32 +187,65 @@ const scenarioPositionsFromValue = (value: unknown): ReadonlyArray<readonly [num
   return positions
 }
 
-const scenarioPathsFromEnv = async (): Promise<ReadonlyArray<string>> => {
+const scenarioMatchesRecipe = (
+  value: unknown,
+  recipe: typeof defaultSceneryRecipes[number],
+): boolean => {
+  const packIds = recipe.scenarioPackIds
+  if (!packIds || packIds.length === 0) return true
+  if (value === null || typeof value !== 'object') return false
+  const packs = (value as Record<string, unknown>).packs
+  if (!Array.isArray(packs)) return false
+  return packs.some(pack => typeof pack === 'string' && packIds.includes(pack))
+}
+
+const scenarioPathsFromEnv = async (): Promise<{
+  readonly paths: ReadonlyArray<string>
+  readonly explicit: boolean
+}> => {
   const raw = process.env.LEITBILD_SCENERY_SCENARIOS
   if (raw && raw.trim().length > 0) {
-    return raw.split(',').map(part => resolve(part.trim())).filter(path => path.length > 0)
+    return {
+      explicit: true,
+      paths: raw.split(',').map(part => resolve(part.trim())).filter(path => path.length > 0),
+    }
   }
   const scenarioDir = resolve('src', 'scenarios')
   const entries = await readdir(scenarioDir, { withFileTypes: true })
-  return entries
-    .filter(entry => entry.isFile() && entry.name.endsWith('.scenario.json'))
-    .map(entry => join(scenarioDir, entry.name))
+  return {
+    explicit: false,
+    paths: entries
+      .filter(entry => entry.isFile() && entry.name.endsWith('.scenario.json'))
+      .map(entry => join(scenarioDir, entry.name)),
+  }
 }
 
-const boundsFromScenarioConfigs = async (): Promise<Bounds> => {
-  const paths = await scenarioPathsFromEnv()
+const boundsFromScenarioConfigs = async (
+  recipe: typeof defaultSceneryRecipes[number],
+): Promise<Bounds> => {
+  const discovery = await scenarioPathsFromEnv()
   const points: Array<readonly [number, number]> = []
-  for (const path of paths) {
+  let matchedScenarioCount = 0
+  for (const path of discovery.paths) {
     const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
+    if (!discovery.explicit && !scenarioMatchesRecipe(parsed, recipe)) continue
+    matchedScenarioCount += 1
     points.push(...scenarioPositionsFromValue(parsed))
   }
   if (points.length === 0) {
-    throw new Error('No scenario positions were found; set LEITBILD_SCENERY_BOUNDS, center/radius, or LEITBILD_SCENERY_ALLOW_FULL_BOUNDS=1')
+    const recipeContext = recipe.scenarioPackIds && recipe.scenarioPackIds.length > 0
+      ? ` for recipe ${recipe.id} packs ${recipe.scenarioPackIds.join(',')}`
+      : ''
+    throw new Error(`No scenario positions were found${recipeContext}; set LEITBILD_SCENERY_BOUNDS, center/radius, LEITBILD_SCENERY_SCENARIOS, or LEITBILD_SCENERY_ALLOW_FULL_BOUNDS=1`)
   }
+  if (matchedScenarioCount === 0) throw new Error(`No scenario configs matched scenery recipe ${recipe.id}`)
   return expandedBoundsForPoints(points, positiveNumberEnv('LEITBILD_SCENERY_SCENARIO_RADIUS_M', 8_000))
 }
 
-const parseBounds = async (headerBounds: Bounds): Promise<Bounds> => {
+const parseBounds = async (
+  headerBounds: Bounds,
+  recipe: typeof defaultSceneryRecipes[number],
+): Promise<Bounds> => {
   const rawBounds = process.env.LEITBILD_SCENERY_BOUNDS
   if (rawBounds) {
     const parts = rawBounds.split(',').map(part => Number(part.trim()))
@@ -235,7 +268,7 @@ const parseBounds = async (headerBounds: Bounds): Promise<Bounds> => {
   }
 
   if (process.env.LEITBILD_SCENERY_ALLOW_FULL_BOUNDS === '1') return headerBounds
-  return await boundsFromScenarioConfigs()
+  return await boundsFromScenarioConfigs(recipe)
 }
 
 const mapWithConcurrency = async <Input, Output>(
@@ -282,7 +315,7 @@ const bounds = await parseBounds({
   minLat: header.minLat,
   maxLon: header.maxLon,
   maxLat: header.maxLat,
-})
+}, recipe)
 await rm(join(outputRoot, recipe.id), { recursive: true, force: true })
 await rm(join(outputRoot, 'manifest.json'), { force: true })
 let decodedTileCount = 0
@@ -417,4 +450,18 @@ const parsedManifest = sceneryAssetManifestSchema.parse(manifest satisfies {
   readonly tiles: ReadonlyArray<SceneryAssetTileSummary>
 })
 await Bun.write(join(outputRoot, 'manifest.json'), `${JSON.stringify(parsedManifest, null, 2)}\n`)
-console.log(JSON.stringify(parsedManifest, null, 2))
+console.log(JSON.stringify({
+  schemaVersion: parsedManifest.schemaVersion,
+  artifactFormat: parsedManifest.artifactFormat,
+  tileEncoding: parsedManifest.tileEncoding,
+  tilesetId: parsedManifest.tilesetId,
+  sourceTilesetId: parsedManifest.sourceTilesetId,
+  sourcePmtilesPath: parsedManifest.sourcePmtilesPath,
+  builtAt: parsedManifest.builtAt,
+  bounds: parsedManifest.bounds,
+  zooms: parsedManifest.zooms,
+  lodLevels: parsedManifest.lodLevels,
+  inputArtifacts: parsedManifest.inputArtifacts,
+  outputRoot: parsedManifest.outputRoot,
+  counts: parsedManifest.counts,
+}, null, 2))

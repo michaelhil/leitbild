@@ -186,6 +186,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(scenery[0]!.artifact.lodStrategy).toBe('hierarchical-screen-space-error')
     expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
+    expect(scenery[0]!.recipes.find(recipe => recipe.id === 'drone-urban-flight')?.scenarioPackIds).toEqual(['drone'])
   })
 
   test('marks corrupt terrain artifacts unavailable instead of advertising fake elevation', async () => {
