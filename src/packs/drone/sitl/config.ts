@@ -49,7 +49,7 @@ export const parseDroneSitlRuntimeConfig = (
   const parsed = runtimeConfigSchema.parse(rawConfig ?? {})
   const endpointText = parsed.mavlink.endpoint
     ?? env.LEITBILD_DRONE_MAVLINK_ENDPOINT
-    ?? 'udp://127.0.0.1:14540?localPort=14540'
+    ?? 'udp://127.0.0.1:14580?localPort=14540'
   const modelById = new Map(defaultDroneVehicleModels.map(model => [model.id, model]))
   for (const model of droneVehicleModelCatalogSchema.parse({ models: parsed.models }).models) {
     modelById.set(model.id, model)

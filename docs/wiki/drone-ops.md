@@ -110,7 +110,7 @@ Scenario runtime config can add or override vehicle models:
       "autopilot": "px4",
       "world": "oslo",
       "mavlink": {
-        "endpoint": "udp://127.0.0.1:14540",
+        "endpoint": "udp://127.0.0.1:14580?localPort=14540",
         "systemIdBase": 1
       },
       "models": [
@@ -210,7 +210,7 @@ Drone SITL runs as a separate non-HTTP systemd process:
 - selected stack unit: `leitbild-drone-sitl.service`
 - default stack: PX4 Gazebo
 - alternate stack: ArduPilot Gazebo via `LEITBILD_DRONE_SITL_STACK=ardupilot`
-- Leitbild MAVLink endpoint: `LEITBILD_DRONE_MAVLINK_ENDPOINT=udp://127.0.0.1:14540?localPort=14540`
+- Leitbild MAVLink endpoint: `LEITBILD_DRONE_MAVLINK_ENDPOINT=udp://127.0.0.1:14580?localPort=14540`
 
 The deploy script copies the SITL units, runs `bun run drone:sitl:setup` for the selected stack, enables `leitbild-drone-sitl`, then restarts the main Leitbild service. The main service depends on the selected SITL unit but does not contain a second server or a hidden browser simulation path.
 

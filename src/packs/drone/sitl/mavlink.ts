@@ -230,6 +230,9 @@ export interface MavlinkClient {
 
 const endpointPattern = /^udp:\/\/([^:/]+):(\d+)(?:\?localPort=(\d+))?$/
 
+const isLoopbackHost = (host: string): boolean =>
+  host === 'localhost' || host === '127.0.0.1'
+
 export const parseMavlinkEndpoint = (value: string): MavlinkEndpoint => {
   const match = endpointPattern.exec(value)
   if (!match) throw new Error(`invalid MAVLink endpoint "${value}"; expected udp://host:port?localPort=port`)
@@ -237,6 +240,9 @@ export const parseMavlinkEndpoint = (value: string): MavlinkEndpoint => {
   const localPort = match[3] === undefined ? port : Number(match[3])
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) throw new Error(`invalid MAVLink remote port: ${match[2]}`)
   if (!Number.isInteger(localPort) || localPort <= 0 || localPort > 65_535) throw new Error(`invalid MAVLink local port: ${match[3] ?? match[2]}`)
+  if (isLoopbackHost(match[1]!) && port === localPort) {
+    throw new Error(`invalid MAVLink endpoint "${value}"; loopback remote port must differ from localPort`)
+  }
   return {
     host: match[1]!,
     port,
@@ -693,6 +699,7 @@ export const createMavlinkClient = (config: {
     readonly messageId: number
     readonly payload: Buffer
   }): void => {
+    if (frame.systemId === sourceSystemId) return
     const payload = frame.payload
     if (frame.messageId === mavMsg.heartbeat && payload.length >= 9) {
       const customMode = payload.readUInt32LE(0)

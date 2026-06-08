@@ -88,7 +88,7 @@ const drone = (config: {
     headingDeg: config.headingDeg ?? 0,
     at,
     systemId: config.systemId ?? 1,
-    endpoint: 'udp://127.0.0.1:14540?localPort=14540',
+    endpoint: 'udp://127.0.0.1:14580?localPort=14540',
   })
 }
 
@@ -155,7 +155,7 @@ describe('drone pack', () => {
           autopilot: 'px4',
           world: 'oslo',
           mavlink: {
-            endpoint: 'udp://127.0.0.1:14540?localPort=14540',
+            endpoint: 'udp://127.0.0.1:14580?localPort=14540',
             systemIdBase: 42,
           },
           models: [model],
@@ -173,7 +173,7 @@ describe('drone pack', () => {
     expect(data.vehicle.systemId).toBe(42)
     expect(data.link).toMatchObject({
       state: 'connecting',
-      endpoint: 'udp://127.0.0.1:14540?localPort=14540',
+      endpoint: 'udp://127.0.0.1:14580?localPort=14540',
     })
     expect(data.pose.altitudeM).toBe(55)
     expect(data.pose.headingDeg).toBe(37)
@@ -208,16 +208,26 @@ describe('drone pack', () => {
   test('SITL runtime parser accepts scenario vehicle system id metadata separately from client source ids', () => {
     const parsed = parseDroneSitlRuntimeConfig({
       mavlink: {
-        endpoint: 'udp://127.0.0.1:14540',
+        endpoint: 'udp://127.0.0.1:14580?localPort=14540',
         systemIdBase: 8,
         sourceSystemId: 245,
         sourceComponentId: 190,
       },
     }, {})
 
-    expect(parsed.endpointText).toBe('udp://127.0.0.1:14540')
+    expect(parsed.endpointText).toBe('udp://127.0.0.1:14580?localPort=14540')
+    expect(parsed.endpoint.port).toBe(14580)
+    expect(parsed.endpoint.localPort).toBe(14540)
     expect(parsed.sourceSystemId).toBe(245)
     expect(parsed.sourceComponentId).toBe(190)
+  })
+
+  test('SITL runtime parser rejects loopback endpoints that would receive Leitbild heartbeats from itself', () => {
+    expect(() => parseDroneSitlRuntimeConfig({
+      mavlink: {
+        endpoint: 'udp://127.0.0.1:14540',
+      },
+    }, {})).toThrow('loopback remote port must differ from localPort')
   })
 
   test('scene projection uses canonical SITL telemetry fields', () => {
@@ -475,7 +485,7 @@ describe('drone pack', () => {
     expect(droneRuntime?.runtimeId).toBe(droneSitlRuntimeId)
     expect(droneObjects.length).toBeGreaterThan(0)
     expect(firstDroneData.schemaVersion).toBe(2)
-    expect(firstDroneData.link.endpoint).toBe('udp://127.0.0.1:14540')
+    expect(firstDroneData.link.endpoint).toBe('udp://127.0.0.1:14580?localPort=14540')
     expect('profile' in firstDroneData).toBe(false)
     expect('kinematics' in firstDroneData).toBe(false)
     expect('energy' in firstDroneData).toBe(false)

@@ -108,7 +108,7 @@
       "autopilot": "px4",
       "world": "oslo-drone-operations",
       "mavlink": {
-        "endpoint": "udp://127.0.0.1:14540",
+        "endpoint": "udp://127.0.0.1:14580?localPort=14540",
         "systemIdBase": 1
       },
       "models": [
