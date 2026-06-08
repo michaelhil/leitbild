@@ -9,6 +9,10 @@ import { createTransportGeometryGroup } from './drone-transport-renderer.ts'
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
 
+const maxCachedRenderableWorlds = 4
+
+const cachedRenderableWorlds = new Map<string, THREE.Group>()
+
 const makeMaterial = (
   color: string,
   roughness = 0.72,
@@ -248,6 +252,7 @@ interface GeometryBucket {
   readonly geometries: THREE.BufferGeometry[]
   readonly receiveShadow: boolean
   readonly castShadow: boolean
+  readonly needsNormals: boolean
 }
 
 const addBucketGeometry = (
@@ -255,7 +260,7 @@ const addBucketGeometry = (
   key: string,
   material: THREE.Material,
   geometry: THREE.BufferGeometry,
-  config: { readonly receiveShadow: boolean; readonly castShadow: boolean },
+  config: { readonly receiveShadow: boolean; readonly castShadow: boolean; readonly needsNormals: boolean },
 ): void => {
   const existing = buckets.get(key)
   if (existing) {
@@ -268,11 +273,13 @@ const addBucketGeometry = (
     geometries: [geometry],
     receiveShadow: config.receiveShadow,
     castShadow: config.castShadow,
+    needsNormals: config.needsNormals,
   })
 }
 
 const mergeGeometries = (
   geometries: ReadonlyArray<THREE.BufferGeometry>,
+  needsNormals: boolean,
 ): THREE.BufferGeometry | null => {
   const positions: number[] = []
   const uvs: number[] = []
@@ -311,7 +318,7 @@ const mergeGeometries = (
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   merged.setIndex(indices)
-  merged.computeVertexNormals()
+  if (needsNormals) merged.computeVertexNormals()
   merged.computeBoundingSphere()
   return merged
 }
@@ -321,12 +328,13 @@ const meshesFromBuckets = (
 ): THREE.Group => {
   const group = new THREE.Group()
   for (const bucket of buckets.values()) {
-    const geometry = mergeGeometries(bucket.geometries)
+    const geometry = mergeGeometries(bucket.geometries, bucket.needsNormals)
     if (!geometry) continue
     const mesh = new THREE.Mesh(geometry, bucket.material)
     mesh.receiveShadow = bucket.receiveShadow
     mesh.castShadow = bucket.castShadow
     mesh.userData.receiveShadow = bucket.receiveShadow
+    mesh.userData.castShadow = bucket.castShadow
     group.add(mesh)
   }
   return group
@@ -347,12 +355,8 @@ const createMergedSurfaceMeshes = (
     geometry.translate(0, surfaceYOffset(feature), 0)
     const material = isWater
       ? createWaterMaterial()
-      : new THREE.MeshStandardMaterial({
+      : new THREE.MeshBasicMaterial({
           color,
-          roughness: 0.9,
-          metalness: 0.01,
-          transparent: false,
-          opacity: 1,
         })
     if (isWater) material.userData.droneWaterMaterial = true
     configureSurfaceDepth(material, feature)
@@ -361,7 +365,7 @@ const createMergedSurfaceMeshes = (
       isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
       material,
       geometry,
-      { receiveShadow: !isWater, castShadow: false },
+      { receiveShadow: false, castShadow: false, needsNormals: false },
     )
   }
   return meshesFromBuckets(buckets)
@@ -395,7 +399,7 @@ const createMergedBuildingMeshes = (
       `building-wall:${feature.className}:${wallColor}`,
       createBuildingWallMaterial(wallColor),
       wallGeometry,
-      { receiveShadow: true, castShadow: true },
+      { receiveShadow: false, castShadow: false, needsNormals: true },
     )
 
     const roofGeometry = new THREE.ShapeGeometry(shape, 4)
@@ -403,7 +407,7 @@ const createMergedBuildingMeshes = (
     roofGeometry.translate(0, minHeight + height + 0.32, 0)
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
     const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
-    const roofMaterial = makeMaterial(roofColor, 0.88, 0.02)
+    const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
     roofMaterial.polygonOffset = true
     roofMaterial.polygonOffsetFactor = -2
     roofMaterial.polygonOffsetUnits = -16
@@ -412,7 +416,7 @@ const createMergedBuildingMeshes = (
       `building-roof:${Math.round(roofShade * 10)}`,
       roofMaterial,
       roofGeometry,
-      { receiveShadow: true, castShadow: false },
+      { receiveShadow: false, castShadow: false, needsNormals: false },
     )
   }
   return meshesFromBuckets(buckets)
@@ -547,8 +551,10 @@ const createRooftopFixtures = (
   }
   hvac.instanceMatrix.needsUpdate = true
   vent.instanceMatrix.needsUpdate = true
-  hvac.receiveShadow = true
-  vent.receiveShadow = true
+  hvac.receiveShadow = false
+  vent.receiveShadow = false
+  hvac.castShadow = false
+  vent.castShadow = false
   group.add(hvac, vent)
   return group
 }
@@ -621,12 +627,12 @@ const createVegetation = (
     dummy.updateMatrix()
     canopyTop.setMatrixAt(index, dummy.matrix)
   }
-  trunk.receiveShadow = true
+  trunk.receiveShadow = false
   trunk.castShadow = false
   canopy.castShadow = false
-  canopy.receiveShadow = true
+  canopy.receiveShadow = false
   canopyTop.castShadow = false
-  canopyTop.receiveShadow = true
+  canopyTop.receiveShadow = false
   group.add(trunk, canopy, canopyTop)
   return group
 }
@@ -682,7 +688,7 @@ const createDistantHills = (
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   const mesh = new THREE.Mesh(geometry, makeMaterial('#64748b', 0.96, 0.01))
-  mesh.receiveShadow = true
+  mesh.receiveShadow = false
   return mesh
 }
 
@@ -719,6 +725,139 @@ const createAtmosphereDome = (
   return dome
 }
 
+const renderableWorldKeyFor = (
+  snapshot: DroneMapWorldSnapshot,
+): string =>
+  `${snapshot.key}:${snapshot.center.lon.toFixed(6)}:${snapshot.center.lat.toFixed(6)}`
+
+const disposeMaterial = (material: THREE.Material): void => {
+  const maybeTextured = material as THREE.Material & {
+    readonly map?: THREE.Texture | null
+    readonly normalMap?: THREE.Texture | null
+    readonly roughnessMap?: THREE.Texture | null
+    readonly metalnessMap?: THREE.Texture | null
+    readonly emissiveMap?: THREE.Texture | null
+    readonly alphaMap?: THREE.Texture | null
+  }
+  for (const texture of [
+    maybeTextured.map,
+    maybeTextured.normalMap,
+    maybeTextured.roughnessMap,
+    maybeTextured.metalnessMap,
+    maybeTextured.emissiveMap,
+    maybeTextured.alphaMap,
+  ]) {
+    texture?.dispose()
+  }
+  material.dispose()
+}
+
+const disposeRenderableWorldTemplate = (
+  group: THREE.Object3D,
+): void => {
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
+    geometries.add(child.geometry)
+    if (Array.isArray(child.material)) {
+      for (const material of child.material) materials.add(material)
+    } else {
+      materials.add(child.material)
+    }
+  })
+  for (const geometry of geometries) geometry.dispose()
+  for (const material of materials) disposeMaterial(material)
+}
+
+const markSharedWorldGeometries = (
+  group: THREE.Object3D,
+): void => {
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
+    child.geometry.userData.droneSharedWorldGeometry = true
+  })
+}
+
+const collectWaterMaterials = (
+  group: THREE.Object3D,
+): THREE.ShaderMaterial[] => {
+  const waterMaterials: THREE.ShaderMaterial[] = []
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh)) return
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    for (const material of materials) {
+      if (material.userData.droneWaterMaterial === true && material instanceof THREE.ShaderMaterial) waterMaterials.push(material)
+    }
+  })
+  return waterMaterials
+}
+
+const cloneMaterialForScene = (
+  material: THREE.Material,
+): THREE.Material => {
+  const cloned = material.clone()
+  cloned.userData = { ...material.userData }
+  const sourceTextured = material as THREE.Material & {
+    readonly map?: THREE.Texture | null
+    readonly normalMap?: THREE.Texture | null
+    readonly roughnessMap?: THREE.Texture | null
+    readonly metalnessMap?: THREE.Texture | null
+    readonly emissiveMap?: THREE.Texture | null
+    readonly alphaMap?: THREE.Texture | null
+  }
+  const clonedTextured = cloned as THREE.Material & {
+    map?: THREE.Texture | null
+    normalMap?: THREE.Texture | null
+    roughnessMap?: THREE.Texture | null
+    metalnessMap?: THREE.Texture | null
+    emissiveMap?: THREE.Texture | null
+    alphaMap?: THREE.Texture | null
+  }
+  const cloneTexture = (texture: THREE.Texture | null | undefined): THREE.Texture | null => {
+    if (!texture) return null
+    const clonedTexture = texture.clone()
+    clonedTexture.needsUpdate = true
+    return clonedTexture
+  }
+  clonedTextured.map = cloneTexture(sourceTextured.map)
+  clonedTextured.normalMap = cloneTexture(sourceTextured.normalMap)
+  clonedTextured.roughnessMap = cloneTexture(sourceTextured.roughnessMap)
+  clonedTextured.metalnessMap = cloneTexture(sourceTextured.metalnessMap)
+  clonedTextured.emissiveMap = cloneTexture(sourceTextured.emissiveMap)
+  clonedTextured.alphaMap = cloneTexture(sourceTextured.alphaMap)
+  return cloned
+}
+
+const cloneRenderableWorld = (
+  template: THREE.Group,
+): THREE.Group => {
+  const clone = template.clone(true)
+  clone.traverse(child => {
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
+    child.material = Array.isArray(child.material)
+      ? child.material.map(material => cloneMaterialForScene(material))
+      : cloneMaterialForScene(child.material)
+    child.matrixAutoUpdate = false
+  })
+  clone.userData.droneWaterMaterials = collectWaterMaterials(clone)
+  return clone
+}
+
+const rememberRenderableWorld = (
+  key: string,
+  template: THREE.Group,
+): void => {
+  cachedRenderableWorlds.set(key, template)
+  while (cachedRenderableWorlds.size > maxCachedRenderableWorlds) {
+    const oldestKey = cachedRenderableWorlds.keys().next().value
+    if (typeof oldestKey !== 'string') break
+    const evicted = cachedRenderableWorlds.get(oldestKey)
+    cachedRenderableWorlds.delete(oldestKey)
+    if (evicted) disposeRenderableWorldTemplate(evicted)
+  }
+}
+
 export const createFallbackWorldGroup = (
   radiusM = 1_600,
 ): THREE.Group => {
@@ -727,7 +866,7 @@ export const createFallbackWorldGroup = (
   return group
 }
 
-export const createDroneMapWorldGroup = (
+const buildDroneMapWorldTemplate = (
   snapshot: DroneMapWorldSnapshot,
 ): THREE.Group => {
   const group = createFallbackWorldGroup(snapshot.radiusM)
@@ -744,7 +883,8 @@ export const createDroneMapWorldGroup = (
   )
   group.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-      child.receiveShadow = child.userData.receiveShadow === false ? false : true
+      if (typeof child.userData.receiveShadow === 'boolean') child.receiveShadow = child.userData.receiveShadow
+      if (typeof child.userData.castShadow === 'boolean') child.castShadow = child.userData.castShadow
     }
     child.matrixAutoUpdate = false
     child.updateMatrix()
@@ -759,20 +899,33 @@ export const createDroneMapWorldGroup = (
   return group
 }
 
+export const createDroneMapWorldGroup = (
+  snapshot: DroneMapWorldSnapshot,
+): THREE.Group => {
+  const key = renderableWorldKeyFor(snapshot)
+  const cached = cachedRenderableWorlds.get(key)
+  if (cached) {
+    cachedRenderableWorlds.delete(key)
+    cachedRenderableWorlds.set(key, cached)
+    return cloneRenderableWorld(cached)
+  }
+  const template = buildDroneMapWorldTemplate(snapshot)
+  markSharedWorldGeometries(template)
+  rememberRenderableWorld(key, template)
+  return cloneRenderableWorld(template)
+}
+
 export const tickDroneMapWorldGroup = (
   group: THREE.Object3D,
   nowMs: number,
   viewMode: '2d' | '3d' | 'fpv',
 ): void => {
   const timeSeconds = viewMode === '2d' ? 0 : nowMs / 1000
-  group.traverse(child => {
-    if (!(child instanceof THREE.Mesh)) return
-    const materials = Array.isArray(child.material) ? child.material : [child.material]
-    for (const material of materials) {
-      if (material.userData.droneWaterMaterial !== true) continue
-      const uniformed = material as THREE.ShaderMaterial
-      const uniform = uniformed.uniforms.timeSeconds
-      if (uniform) uniform.value = timeSeconds
-    }
-  })
+  const waterMaterials = group.userData.droneWaterMaterials
+  if (!Array.isArray(waterMaterials)) return
+  for (const material of waterMaterials) {
+    if (!(material instanceof THREE.ShaderMaterial)) continue
+    const uniform = material.uniforms.timeSeconds
+    if (uniform) uniform.value = timeSeconds
+  }
 }

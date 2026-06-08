@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
-import { loadDroneMapWorld } from './drone-map-world.ts'
+import { loadCachedDroneMapWorld } from './drone-map-world.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 import { createDroneMapWorldGroup, createFallbackWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
 
@@ -58,6 +58,8 @@ interface VisualPose {
 }
 
 const metersPerDegreeLat = 111_320
+const worldCenterBucketM = 900
+let activeDroneSceneCount = 0
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -140,7 +142,10 @@ const disposeObject = (object: THREE.Object3D): void => {
       }
     }
   })
-  for (const geometry of geometries) geometry.dispose()
+  for (const geometry of geometries) {
+    if (geometry.userData.droneSharedWorldGeometry === true) continue
+    geometry.dispose()
+  }
   for (const material of materials) disposeMaterial(material)
 }
 
@@ -289,6 +294,22 @@ const centerDistanceM = (
     (a.lat - b.lat) * metersPerDegreeLat,
   )
 
+const bucketWorldCenter = (
+  center: { readonly lon: number; readonly lat: number },
+): { readonly lon: number; readonly lat: number } => {
+  const lonMeters = center.lon * metersPerDegreeLonAt(center.lat)
+  const latMeters = center.lat * metersPerDegreeLat
+  return {
+    lon: Math.round(lonMeters / worldCenterBucketM) * worldCenterBucketM / metersPerDegreeLonAt(center.lat),
+    lat: Math.round(latMeters / worldCenterBucketM) * worldCenterBucketM / metersPerDegreeLat,
+  }
+}
+
+const worldCenterKeyFor = (
+  center: { readonly lon: number; readonly lat: number },
+): string =>
+  `${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`
+
 const poseFor = (
   object: OperationalObject,
   center: { readonly lon: number; readonly lat: number },
@@ -379,10 +400,11 @@ const applyCameraProjection = (
 }
 
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
+  activeDroneSceneCount += 1
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
   const camera = new THREE.PerspectiveCamera(58, 1, 0.25, 5_000)
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
   let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.45)
   renderer.setPixelRatio(pixelRatio)
@@ -390,19 +412,19 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.08
   renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap
+  renderer.shadowMap.type = THREE.PCFShadowMap
   config.container.appendChild(renderer.domElement)
   const keyLight = new THREE.DirectionalLight('#ffffff', 2.4)
   keyLight.position.set(-160, 450, 220)
   keyLight.castShadow = true
-  keyLight.shadow.mapSize.width = 2048
-  keyLight.shadow.mapSize.height = 2048
+  keyLight.shadow.mapSize.width = 1024
+  keyLight.shadow.mapSize.height = 1024
   keyLight.shadow.camera.near = 10
-  keyLight.shadow.camera.far = 1_800
-  keyLight.shadow.camera.left = -950
-  keyLight.shadow.camera.right = 950
-  keyLight.shadow.camera.top = 950
-  keyLight.shadow.camera.bottom = -950
+  keyLight.shadow.camera.far = 1_200
+  keyLight.shadow.camera.left = -520
+  keyLight.shadow.camera.right = 520
+  keyLight.shadow.camera.top = 520
+  keyLight.shadow.camera.bottom = -520
   const ambient = new THREE.HemisphereLight('#dbeafe', '#475569', 1.08)
   scene.add(keyLight, ambient)
   let environmentLayer = createFallbackWorldGroup()
@@ -415,7 +437,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   let worldCenter: { readonly lon: number; readonly lat: number } | null = null
   let worldCenterKey = ''
   let worldLoadGeneration = 0
-  let worldLoadController: AbortController | null = null
+  let destroyed = false
   const performanceTracker = createDroneFramePerformanceTracker()
   const applyPixelRatio = (nextRatio: number, nextQuality: DroneScenePerformanceSnapshot['quality']): void => {
     const clamped = clamp(nextRatio, 0.9, Math.min(window.devicePixelRatio || 1, 1.45))
@@ -439,22 +461,18 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     }
   }
   const loadWorldFor = (center: { readonly lon: number; readonly lat: number }): void => {
-    worldLoadController?.abort()
-    const controller = new AbortController()
     const generation = ++worldLoadGeneration
-    worldLoadController = controller
     config.onWorldStatus?.('Loading map-derived scenery')
     void (async (): Promise<void> => {
       try {
         const loadStartedAtMs = performance.now()
-        const snapshot = await loadDroneMapWorld({
+        const snapshot = await loadCachedDroneMapWorld({
           center,
           radiusM: 4_250,
           zoom: 14,
-          signal: controller.signal,
         })
         const loadMs = performance.now() - loadStartedAtMs
-        if (generation !== worldLoadGeneration) return
+        if (destroyed || generation !== worldLoadGeneration) return
         const buildStartedAtMs = performance.now()
         const nextLayer = createDroneMapWorldGroup(snapshot)
         const buildMs = performance.now() - buildStartedAtMs
@@ -465,13 +483,14 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         performanceTracker.updateWorld({
           loadMs,
           buildMs,
+          tiles: snapshot.tileCount,
           polygons: snapshot.polygons.length,
           lines: snapshot.lines.length,
           points: snapshot.points.length,
         })
         config.onWorldStatus?.(`Map scenery loaded: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines`)
       } catch (err) {
-        if (generation !== worldLoadGeneration || controller.signal.aborted) return
+        if (destroyed || generation !== worldLoadGeneration) return
         config.onWorldStatus?.(`Map scenery unavailable: ${err instanceof Error ? err.message : String(err)}`)
       }
     })()
@@ -500,14 +519,16 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const objects = config.getObjects()
     const focusDroneId = config.getFocusDroneId()
     const desiredCenter = centerFor(objects, focusDroneId)
+    const desiredWorldCenter = bucketWorldCenter(desiredCenter)
+    const desiredWorldCenterKey = worldCenterKeyFor(desiredWorldCenter)
     const previousWorldCenterKey = worldCenterKey
     if (worldCenter === null) {
-      worldCenter = desiredCenter
-      worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
+      worldCenter = desiredWorldCenter
+      worldCenterKey = desiredWorldCenterKey
       loadWorldFor(worldCenter)
-    } else if (centerDistanceM(worldCenter, desiredCenter) > 1_250) {
-      worldCenter = desiredCenter
-      worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
+    } else if (worldCenterKey !== desiredWorldCenterKey || centerDistanceM(worldCenter, desiredCenter) > 1_550) {
+      worldCenter = desiredWorldCenter
+      worldCenterKey = desiredWorldCenterKey
       loadWorldFor(worldCenter)
     }
     const recentered = previousWorldCenterKey !== '' && previousWorldCenterKey !== worldCenterKey
@@ -606,13 +627,15 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       camera.lookAt(focus.x, focus.y + 2, focus.z)
     }
     try {
+      const renderStartedAtMs = performance.now()
       renderer.render(scene, camera)
+      const renderFinishedAtMs = performance.now()
       if (!readyNotified && frame > 2) {
         readyNotified = true
         config.onReady?.()
       }
       const frameFinishedAtMs = performance.now()
-      const frameResult = performanceTracker.endFrame(frameFinishedAtMs)
+      const frameResult = performanceTracker.endFrame(frameFinishedAtMs, renderFinishedAtMs - renderStartedAtMs)
       if (frameResult.shouldReport) {
         const snapshot = performanceTracker.snapshot({
           drawCalls: renderer.info.render.calls,
@@ -621,6 +644,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           textures: renderer.info.memory.textures,
           pixelRatio,
           quality: renderQuality,
+          activeScenes: activeDroneSceneCount,
         })
         maybeAdaptQuality(snapshot)
         config.onPerformance?.(snapshot)
@@ -633,8 +657,10 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   animationId = requestAnimationFrame(render)
   return {
     destroy: (): void => {
+      if (destroyed) return
+      destroyed = true
+      activeDroneSceneCount = Math.max(0, activeDroneSceneCount - 1)
       cancelAnimationFrame(animationId)
-      worldLoadController?.abort()
       observer.disconnect()
       disposeObject(environmentLayer)
       disposeObject(objectLayer)

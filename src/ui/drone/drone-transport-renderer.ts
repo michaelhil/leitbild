@@ -87,11 +87,9 @@ const makeRoadMaterial = (
   color: string,
   transparent = false,
   opacity = 1,
-): THREE.MeshStandardMaterial =>
-  new THREE.MeshStandardMaterial({
+): THREE.MeshBasicMaterial =>
+  new THREE.MeshBasicMaterial({
     color,
-    roughness: 0.88,
-    metalness: 0.01,
     transparent,
     opacity,
     depthWrite: !transparent,
@@ -187,7 +185,6 @@ const createRibbonGeometry = (
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
 }
@@ -269,7 +266,6 @@ const createRoadEdgeLineGeometry = (
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
 }
@@ -313,7 +309,6 @@ const createRoadMarkingGeometry = (
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
-  geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
 }
@@ -374,7 +369,6 @@ const mergeGeometries = (
   const merged = new THREE.BufferGeometry()
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   merged.setIndex(indices)
-  merged.computeVertexNormals()
   merged.computeBoundingSphere()
   return merged
 }

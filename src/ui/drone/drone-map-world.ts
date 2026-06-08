@@ -55,6 +55,12 @@ export interface DroneMapWorldSnapshot {
   readonly points: ReadonlyArray<DroneWorldPointFeature>
 }
 
+export interface DroneMapWorldCacheStats {
+  readonly size: number
+  readonly hits: number
+  readonly misses: number
+}
+
 interface TileCoord {
   readonly x: number
   readonly y: number
@@ -573,6 +579,31 @@ const decodeLayer = (
 }
 
 const maxWorldZoom = 14
+const maxCachedWorldSnapshots = 6
+
+let worldCacheHits = 0
+let worldCacheMisses = 0
+
+const cachedWorldSnapshots = new Map<string, Promise<DroneMapWorldSnapshot>>()
+
+const cacheKeyFor = (config: {
+  readonly center: DroneWorldCenter
+  readonly radiusM: number
+  readonly zoom: number
+}): string =>
+  `${config.zoom}:${Math.round(config.radiusM)}:${config.center.lon.toFixed(6)}:${config.center.lat.toFixed(6)}`
+
+const rememberCachedWorld = (
+  key: string,
+  promise: Promise<DroneMapWorldSnapshot>,
+): void => {
+  cachedWorldSnapshots.set(key, promise)
+  while (cachedWorldSnapshots.size > maxCachedWorldSnapshots) {
+    const oldestKey = cachedWorldSnapshots.keys().next().value
+    if (typeof oldestKey !== 'string') break
+    cachedWorldSnapshots.delete(oldestKey)
+  }
+}
 
 export const loadDroneMapWorld = async (config: {
   readonly center: DroneWorldCenter
@@ -608,3 +639,33 @@ export const loadDroneMapWorld = async (config: {
     points,
   }
 }
+
+export const loadCachedDroneMapWorld = async (config: {
+  readonly center: DroneWorldCenter
+  readonly radiusM?: number
+  readonly zoom?: number
+}): Promise<DroneMapWorldSnapshot> => {
+  const radiusM = config.radiusM ?? 4_250
+  const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
+  const key = cacheKeyFor({ center: config.center, radiusM, zoom })
+  const existing = cachedWorldSnapshots.get(key)
+  if (existing) {
+    worldCacheHits += 1
+    return existing
+  }
+  worldCacheMisses += 1
+  const promise = loadDroneMapWorld({ center: config.center, radiusM, zoom })
+  rememberCachedWorld(key, promise)
+  try {
+    return await promise
+  } catch (err) {
+    cachedWorldSnapshots.delete(key)
+    throw err
+  }
+}
+
+export const droneMapWorldCacheStats = (): DroneMapWorldCacheStats => ({
+  size: cachedWorldSnapshots.size,
+  hits: worldCacheHits,
+  misses: worldCacheMisses,
+})

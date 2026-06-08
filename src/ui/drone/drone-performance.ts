@@ -2,6 +2,7 @@ export interface DroneScenePerformanceSnapshot {
   readonly fps: number
   readonly frameMs: number
   readonly frameP95Ms: number
+  readonly frameCpuMs: number
   readonly renderMs: number
   readonly jankPercent: number
   readonly drawCalls: number
@@ -12,7 +13,9 @@ export interface DroneScenePerformanceSnapshot {
   readonly quality: 'high' | 'balanced' | 'rescue'
   readonly worldLoadMs: number
   readonly worldBuildMs: number
+  readonly activeScenes: number
   readonly worldFeatures: {
+    readonly tiles: number
     readonly polygons: number
     readonly lines: number
     readonly points: number
@@ -21,13 +24,14 @@ export interface DroneScenePerformanceSnapshot {
 
 export interface DroneFramePerformanceTracker {
   readonly beginFrame: (nowMs: number) => void
-  readonly endFrame: (nowMs: number) => {
+  readonly endFrame: (nowMs: number, renderMs: number) => {
     readonly shouldReport: boolean
     readonly renderMs: number
   }
   readonly updateWorld: (config: {
     readonly loadMs: number
     readonly buildMs: number
+    readonly tiles: number
     readonly polygons: number
     readonly lines: number
     readonly points: number
@@ -39,6 +43,7 @@ export interface DroneFramePerformanceTracker {
     readonly textures: number
     readonly pixelRatio: number
     readonly quality: DroneScenePerformanceSnapshot['quality']
+    readonly activeScenes: number
   }) => DroneScenePerformanceSnapshot
 }
 
@@ -63,12 +68,14 @@ const average = (
 
 export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTracker => {
   const frameIntervals: number[] = []
+  const frameCpuDurations: number[] = []
   const renderDurations: number[] = []
   let frameStartedAtMs = 0
   let previousFrameStartedAtMs = 0
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
+  let tiles = 0
   let polygons = 0
   let lines = 0
   let points = 0
@@ -84,8 +91,9 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       previousFrameStartedAtMs = nowMs
       frameStartedAtMs = nowMs
     },
-    endFrame: (nowMs: number): { readonly shouldReport: boolean; readonly renderMs: number } => {
-      const renderMs = Math.max(0, nowMs - frameStartedAtMs)
+    endFrame: (nowMs: number, renderMs: number): { readonly shouldReport: boolean; readonly renderMs: number } => {
+      const frameCpuMs = Math.max(0, nowMs - frameStartedAtMs)
+      pushSample(frameCpuDurations, frameCpuMs)
       pushSample(renderDurations, renderMs)
       const shouldReport = nowMs - lastReportAtMs >= reportIntervalMs
       if (shouldReport) lastReportAtMs = nowMs
@@ -94,6 +102,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
     updateWorld: (config): void => {
       worldLoadMs = config.loadMs
       worldBuildMs = config.buildMs
+      tiles = config.tiles
       polygons = config.polygons
       lines = config.lines
       points = config.points
@@ -105,6 +114,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         fps: avgFrameMs <= 0 ? 0 : 1000 / avgFrameMs,
         frameMs: avgFrameMs,
         frameP95Ms: percentile(frameIntervals, 0.95),
+        frameCpuMs: average(frameCpuDurations),
         renderMs: average(renderDurations),
         jankPercent: frameIntervals.length === 0 ? 0 : jankFrames / frameIntervals.length * 100,
         drawCalls: renderInfo.drawCalls,
@@ -115,7 +125,8 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         quality: renderInfo.quality,
         worldLoadMs,
         worldBuildMs,
-        worldFeatures: { polygons, lines, points },
+        activeScenes: renderInfo.activeScenes,
+        worldFeatures: { tiles, polygons, lines, points },
       }
     },
   }
