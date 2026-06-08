@@ -25,6 +25,7 @@ import {
 } from '../src/packs/drone/query.ts'
 import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/sitl/object-state.ts'
+import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
@@ -202,6 +203,21 @@ describe('drone pack', () => {
 
     const data = dronePackDataSchema.parse(second.packData)
     expect(data.vehicle.systemId).toBe(9)
+  })
+
+  test('SITL runtime parser accepts scenario vehicle system id metadata separately from client source ids', () => {
+    const parsed = parseDroneSitlRuntimeConfig({
+      mavlink: {
+        endpoint: 'udp://127.0.0.1:14540',
+        systemIdBase: 8,
+        sourceSystemId: 245,
+        sourceComponentId: 190,
+      },
+    }, {})
+
+    expect(parsed.endpointText).toBe('udp://127.0.0.1:14540')
+    expect(parsed.sourceSystemId).toBe(245)
+    expect(parsed.sourceComponentId).toBe(190)
   })
 
   test('scene projection uses canonical SITL telemetry fields', () => {

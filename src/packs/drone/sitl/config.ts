@@ -21,6 +21,7 @@ const runtimeConfigSchema = z.object({
   world: z.string().min(1).max(128).default('default'),
   mavlink: z.object({
     endpoint: z.string().min(1).max(240).optional(),
+    systemIdBase: z.number().int().min(1).max(240).optional(),
     sourceSystemId: z.number().int().min(1).max(255).optional(),
     sourceComponentId: z.number().int().min(1).max(255).optional(),
     heartbeatTimeoutMs: z.number().int().positive().max(120_000).optional(),
