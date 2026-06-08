@@ -250,6 +250,19 @@ export interface MavlinkClient {
   }) => Promise<void>
 }
 
+export interface MavlinkClientConfig {
+  readonly endpoint: MavlinkEndpoint
+  readonly sourceSystemId?: number
+  readonly sourceComponentId?: number
+  readonly heartbeatTimeoutMs?: number
+  readonly commandTimeoutMs?: number
+}
+
+export interface SharedMavlinkClientLease {
+  readonly client: MavlinkClient
+  readonly release: () => Promise<void>
+}
+
 const endpointPattern = /^udp:\/\/([^:/]+):(\d+)(?:\?localPort=(\d+))?$/
 
 const isLoopbackHost = (host: string): boolean =>
@@ -269,6 +282,84 @@ export const parseMavlinkEndpoint = (value: string): MavlinkEndpoint => {
     host: match[1]!,
     port,
     localPort,
+  }
+}
+
+interface SharedMavlinkClientEntry {
+  readonly client: MavlinkClient
+  readonly openPromise: Promise<void>
+  refCount: number
+  closingPromise?: Promise<void>
+}
+
+const sharedMavlinkClients = new Map<string, SharedMavlinkClientEntry>()
+
+const sharedMavlinkClientKey = (config: MavlinkClientConfig): string => {
+  const endpoint = config.endpoint
+  const sourceSystemId = config.sourceSystemId ?? 245
+  const sourceComponentId = config.sourceComponentId ?? 190
+  return `${endpoint.host}:${endpoint.port}:${endpoint.localPort}:${sourceSystemId}:${sourceComponentId}`
+}
+
+const closeSharedMavlinkEntry = async (
+  key: string,
+  entry: SharedMavlinkClientEntry,
+): Promise<void> => {
+  if (entry.closingPromise === undefined) entry.closingPromise = entry.client.close()
+  try {
+    await entry.closingPromise
+  } finally {
+    if (entry.refCount === 0 && sharedMavlinkClients.get(key) === entry) sharedMavlinkClients.delete(key)
+  }
+}
+
+export const acquireSharedMavlinkClient = async (
+  config: MavlinkClientConfig,
+): Promise<SharedMavlinkClientLease> => {
+  const key = sharedMavlinkClientKey(config)
+  const existing = sharedMavlinkClients.get(key)
+  if (existing?.closingPromise !== undefined && existing.refCount === 0) {
+    await existing.closingPromise
+    if (sharedMavlinkClients.get(key) === existing) sharedMavlinkClients.delete(key)
+  }
+
+  let entry = sharedMavlinkClients.get(key)
+  if (entry === undefined) {
+    const client = createMavlinkClient(config)
+    entry = {
+      client,
+      refCount: 0,
+      openPromise: client.open(),
+    }
+    sharedMavlinkClients.set(key, entry)
+  }
+
+  entry.refCount += 1
+  let released = false
+
+  try {
+    await entry.openPromise
+  } catch (err) {
+    entry.refCount -= 1
+    if (entry.refCount === 0 && sharedMavlinkClients.get(key) === entry) {
+      try {
+        await closeSharedMavlinkEntry(key, entry)
+      } catch (closeErr) {
+        console.warn(`MAVLink shared client cleanup failed after open error: ${closeErr instanceof Error ? closeErr.message : String(closeErr)}`)
+      }
+    }
+    throw err
+  }
+
+  return {
+    client: entry.client,
+    release: async (): Promise<void> => {
+      if (released) return
+      released = true
+      entry.refCount -= 1
+      if (entry.refCount > 0) return
+      await closeSharedMavlinkEntry(key, entry)
+    },
   }
 }
 
@@ -614,13 +705,7 @@ export const missionItemForPoint = (config: {
   missionType: config.missionType ?? 0,
 })
 
-export const createMavlinkClient = (config: {
-  readonly endpoint: MavlinkEndpoint
-  readonly sourceSystemId?: number
-  readonly sourceComponentId?: number
-  readonly heartbeatTimeoutMs?: number
-  readonly commandTimeoutMs?: number
-}): MavlinkClient => {
+export const createMavlinkClient = (config: MavlinkClientConfig): MavlinkClient => {
   const socket = dgram.createSocket('udp4')
   const endpoint = config.endpoint
   const sourceSystemId = config.sourceSystemId ?? 245
@@ -646,6 +731,7 @@ export const createMavlinkClient = (config: {
   let sequence = 0
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
   let opened = false
+  const endpointLabel = `${endpoint.host}:${endpoint.port} local ${endpoint.localPort}`
 
   const notify = (): void => {
     for (const subscriber of subscribers) subscriber()
@@ -895,6 +981,14 @@ export const createMavlinkClient = (config: {
     }
   }
 
+  const handleMessage = (message: Buffer): void => {
+    for (const frame of decodeMavlinkFrames(message)) parseFrame(frame)
+  }
+
+  const handleSocketError = (err: Error): void => {
+    console.warn(`MAVLink UDP socket error on ${endpointLabel}: ${err.message}`)
+  }
+
   const open = async (): Promise<void> => {
     if (opened) return
     await new Promise<void>((resolve, reject) => {
@@ -910,9 +1004,8 @@ export const createMavlinkClient = (config: {
       socket.once('listening', success)
       socket.bind(endpoint.localPort)
     })
-    socket.on('message', (message) => {
-      for (const frame of decodeMavlinkFrames(message)) parseFrame(frame)
-    })
+    socket.on('error', handleSocketError)
+    socket.on('message', handleMessage)
     heartbeatTimer = setInterval(() => {
       void sendPayload(mavMsg.heartbeat, messagePayload.heartbeat())
     }, 1_000)
@@ -947,6 +1040,8 @@ export const createMavlinkClient = (config: {
     }
     pendingMissions.clear()
     if (!opened) return
+    socket.off('message', handleMessage)
+    socket.off('error', handleSocketError)
     await new Promise<void>((resolve) => socket.close(() => resolve()))
     opened = false
   }

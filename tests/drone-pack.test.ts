@@ -1,3 +1,4 @@
+import dgram from 'node:dgram'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
@@ -28,7 +29,7 @@ import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone
 import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
 import { droneManualControlReadiness } from '../src/packs/drone/control-readiness.ts'
-import { decodeMavlinkFrames } from '../src/packs/drone/sitl/mavlink.ts'
+import { acquireSharedMavlinkClient, decodeMavlinkFrames, parseMavlinkEndpoint, type SharedMavlinkClientLease } from '../src/packs/drone/sitl/mavlink.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
@@ -185,6 +186,81 @@ const globalPositionIntPayloadForTest = (config: {
   payload.writeInt16LE(0, 24)
   payload.writeUInt16LE(Math.round(config.headingDeg * 100), 26)
   return payload
+}
+
+type UdpSocketForTest = ReturnType<typeof dgram.createSocket>
+
+interface MavlinkHeartbeatResponderForTest {
+  readonly endpointText: string
+  readonly close: () => Promise<void>
+}
+
+const bindUdpSocketForTest = async (): Promise<UdpSocketForTest> => {
+  const socket = dgram.createSocket('udp4')
+  await new Promise<void>((resolve, reject) => {
+    const fail = (err: Error): void => {
+      socket.off('listening', success)
+      reject(err)
+    }
+    const success = (): void => {
+      socket.off('error', fail)
+      resolve()
+    }
+    socket.once('error', fail)
+    socket.once('listening', success)
+    socket.bind(0, '127.0.0.1')
+  })
+  return socket
+}
+
+const udpSocketPortForTest = (socket: UdpSocketForTest): number => {
+  const address = socket.address()
+  if (typeof address === 'string') throw new Error(`expected UDP address object, got ${address}`)
+  return address.port
+}
+
+const closeUdpSocketForTest = async (socket: UdpSocketForTest): Promise<void> => {
+  await new Promise<void>((resolve) => socket.close(() => resolve()))
+}
+
+const heartbeatPayloadForTest = (): Buffer => {
+  const payload = Buffer.alloc(9)
+  payload.writeUInt32LE(0, 0)
+  payload.writeUInt8(2, 4)
+  payload.writeUInt8(12, 5)
+  payload.writeUInt8(0, 6)
+  payload.writeUInt8(4, 7)
+  payload.writeUInt8(3, 8)
+  return payload
+}
+
+const startMavlinkHeartbeatResponderForTest = async (): Promise<MavlinkHeartbeatResponderForTest> => {
+  const localProbe = await bindUdpSocketForTest()
+  const localPort = udpSocketPortForTest(localProbe)
+  await closeUdpSocketForTest(localProbe)
+
+  const remoteSocket = await bindUdpSocketForTest()
+  const remotePort = udpSocketPortForTest(remoteSocket)
+  let seq = 0
+  remoteSocket.on('message', (_message, remote) => {
+    const frame = encodeMavlink1FrameForTest({
+      seq,
+      systemId: 1,
+      componentId: 1,
+      messageId: 0,
+      payload: heartbeatPayloadForTest(),
+      crcExtra: 50,
+    })
+    seq = (seq + 1) & 0xff
+    remoteSocket.send(frame, remote.port, remote.address)
+  })
+
+  return {
+    endpointText: `udp://127.0.0.1:${remotePort}?localPort=${localPort}`,
+    close: async (): Promise<void> => {
+      await closeUdpSocketForTest(remoteSocket)
+    },
+  }
 }
 
 describe('drone pack', () => {
@@ -411,6 +487,28 @@ describe('drone pack', () => {
     expect(decoded[0]?.messageId).toBe(33)
     expect(decoded[0]?.payload.readInt32LE(4)).toBe(473_979_709)
     expect(decoded[0]?.payload.readInt32LE(8)).toBe(85_461_638)
+  })
+
+  test('shared MAVLink leases reuse one UDP client for a physical SITL endpoint', async () => {
+    const responder = await startMavlinkHeartbeatResponderForTest()
+    let firstLease: SharedMavlinkClientLease | undefined
+    let secondLease: SharedMavlinkClientLease | undefined
+
+    try {
+      const endpoint = parseMavlinkEndpoint(responder.endpointText)
+      firstLease = await acquireSharedMavlinkClient({ endpoint, heartbeatTimeoutMs: 1_000 })
+      secondLease = await acquireSharedMavlinkClient({ endpoint, heartbeatTimeoutMs: 1_000 })
+
+      expect(secondLease.client).toBe(firstLease.client)
+      expect(secondLease.client.vehicle(1)?.autopilot).toBe('px4')
+
+      await firstLease.release()
+      expect(secondLease.client.vehicle(1)?.systemId).toBe(1)
+    } finally {
+      if (secondLease !== undefined) await secondLease.release()
+      if (firstLease !== undefined) await firstLease.release()
+      await responder.close()
+    }
   })
 
   test('controller bindings are derived from drone control state only', () => {

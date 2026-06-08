@@ -51,7 +51,7 @@ import { answerDroneQuery, droneQueryKinds } from '../query.ts'
 import { droneManualControlReadiness } from '../control-readiness.ts'
 import { droneSitlAdapterId, droneSitlRuntimeId } from './constants.ts'
 import { parseDroneSitlRuntimeConfig, type DroneSitlRuntimeConfig } from './config.ts'
-import { createMavlinkClient, mavCmd, missionItemForPoint, type MavlinkClient, type MavlinkVehicleState } from './mavlink.ts'
+import { acquireSharedMavlinkClient, mavCmd, missionItemForPoint, type MavlinkClient, type SharedMavlinkClientLease, type MavlinkVehicleState } from './mavlink.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
 
 const commandAccepted = (command: CommandEnvelope, acceptedAt: IsoTimestamp): CommandResult => ({
@@ -328,13 +328,24 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   queryKinds: droneQueryKinds,
   connect: async (config): Promise<PackRuntimeConnection> => {
     const runtimeConfig = parseDroneSitlRuntimeConfig(config.scenario?.runtimeConfig ?? {})
-    const clients = runtimeConfig.endpoints.map(endpoint => createMavlinkClient({
-      endpoint,
-      sourceSystemId: runtimeConfig.sourceSystemId,
-      sourceComponentId: runtimeConfig.sourceComponentId,
-      heartbeatTimeoutMs: runtimeConfig.heartbeatTimeoutMs,
-      commandTimeoutMs: runtimeConfig.commandTimeoutMs,
-    }))
+    let clientLeases: ReadonlyArray<SharedMavlinkClientLease> = []
+    const acquiredLeases: SharedMavlinkClientLease[] = []
+    try {
+      for (const endpoint of runtimeConfig.endpoints) {
+        acquiredLeases.push(await acquireSharedMavlinkClient({
+          endpoint,
+          sourceSystemId: runtimeConfig.sourceSystemId,
+          sourceComponentId: runtimeConfig.sourceComponentId,
+          heartbeatTimeoutMs: runtimeConfig.heartbeatTimeoutMs,
+          commandTimeoutMs: runtimeConfig.commandTimeoutMs,
+        }))
+      }
+      clientLeases = acquiredLeases
+    } catch (err) {
+      for (const lease of acquiredLeases) await lease.release()
+      throw err
+    }
+    const clients = clientLeases.map(lease => lease.client)
     const objects = new Map<string, OperationalObject>()
     for (const object of config.initialObjects ?? config.scenario?.initialObjects ?? []) {
       const data = parseDroneObject(object)
@@ -425,7 +436,6 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       emit(events)
     }
 
-    await Promise.all(clients.map(client => client.open()))
     const unsubscribeClients = clients.map(client => client.subscribe(projectVehicles))
     projectVehicles()
 
@@ -816,7 +826,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         closed = true
         for (const unsubscribeClient of unsubscribeClients) unsubscribeClient()
         handlers.clear()
-        await Promise.all(clients.map(client => client.close()))
+        await Promise.all(clientLeases.map(lease => lease.release()))
       },
     }
   },
