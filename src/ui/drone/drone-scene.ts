@@ -367,10 +367,21 @@ const smoothVisualPose = (
   visual.scale += (desired.scale - visual.scale) * alpha
 }
 
+const applyCameraProjection = (
+  camera: THREE.PerspectiveCamera,
+  config: { readonly fov: number; readonly near: number; readonly far: number },
+): void => {
+  if (camera.fov === config.fov && camera.near === config.near && camera.far === config.far) return
+  camera.fov = config.fov
+  camera.near = config.near
+  camera.far = config.far
+  camera.updateProjectionMatrix()
+}
+
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
-  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 8_000)
+  const camera = new THREE.PerspectiveCamera(58, 1, 0.25, 5_000)
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
   let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.45)
@@ -503,7 +514,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const center = worldCenter ?? desiredCenter
     const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)
-    tickDroneMapWorldGroup(environmentLayer, frameStartedAtMs)
+    const viewMode = config.getViewMode()
+    tickDroneMapWorldGroup(environmentLayer, frameStartedAtMs, viewMode)
     updateWeather(weatherLayer, environment, frame)
     let focusPoint: LocalPoint | null = null
     let focusData: DronePackData | null = null
@@ -544,7 +556,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           })()
       if (entry.visual.target.key !== pose.key) entry.visual.target = pose
       const desired = predictedPose(entry.visual.target, frameStartedAtMs)
-      smoothVisualPose(entry.visual, desired, dtSeconds, recentered, config.getViewMode())
+      smoothVisualPose(entry.visual, desired, dtSeconds, recentered, viewMode)
       const mesh = entry.mesh
       mesh.position.copy(entry.visual.position)
       mesh.rotation.order = 'YXZ'
@@ -564,18 +576,13 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     }
     const focus = focusPoint ?? { x: 0, y: 35, z: 0 }
     camera.up.set(0, 1, 0)
-    if (config.getViewMode() === '2d') {
-      if (camera.fov !== 46) {
-        camera.fov = 46
-        camera.updateProjectionMatrix()
-      }
-      camera.position.set(focus.x, Math.max(260, focus.y + 520), focus.z + 0.1)
+    if (viewMode === '2d') {
+      const cameraHeight = Math.max(300, focus.y + 560)
+      applyCameraProjection(camera, { fov: 42, near: 80, far: 1_850 })
+      camera.position.set(focus.x, cameraHeight, focus.z + 0.1)
       camera.lookAt(focus.x, 0, focus.z)
-    } else if (config.getViewMode() === 'fpv' && focusData) {
-      if (camera.fov !== 82) {
-        camera.fov = 82
-        camera.updateProjectionMatrix()
-      }
+    } else if (viewMode === 'fpv' && focusData) {
+      applyCameraProjection(camera, { fov: 82, near: 0.18, far: 4_500 })
       const yawRad = focusData.kinematics.yawDeg * Math.PI / 180
       const pitchRad = focusData.kinematics.pitchDeg * Math.PI / 180
       const rollRad = focusData.kinematics.rollDeg * Math.PI / 180
@@ -594,10 +601,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       )
       camera.rotateZ(-rollRad)
     } else {
-      if (camera.fov !== 58) {
-        camera.fov = 58
-        camera.updateProjectionMatrix()
-      }
+      applyCameraProjection(camera, { fov: 58, near: 1.5, far: 3_200 })
       camera.position.set(focus.x - 85, focus.y + 46, focus.z + 115)
       camera.lookAt(focus.x, focus.y + 2, focus.z)
     }

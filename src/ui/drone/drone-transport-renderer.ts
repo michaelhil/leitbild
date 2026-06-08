@@ -329,6 +329,9 @@ const addBucketGeometry = (
     material.dispose()
     return
   }
+  material.polygonOffset = true
+  material.polygonOffsetFactor = -2
+  material.polygonOffsetUnits = -config.renderOrder * 6
   const existing = buckets.get(key)
   if (existing) {
     existing.geometries.push(geometry)
@@ -403,15 +406,15 @@ export const createTransportGeometryGroup = (
   addBucketGeometry(
     buckets,
     'waterway-casing',
-    makeRoadMaterial('#075985', true, 0.5),
-    createRibbonGeometry(waterways, line => line.widthM + 4, 0.075),
+    makeRoadMaterial('#075985'),
+    createRibbonGeometry(waterways, line => line.widthM + 4, 0.22),
     { receiveShadow: false, renderOrder: 1 },
   )
   addBucketGeometry(
     buckets,
     'waterway-fill',
-    makeRoadMaterial('#1fa8d1', true, 0.82),
-    createRibbonGeometry(waterways, line => line.widthM, 0.095),
+    makeRoadMaterial('#1fa8d1'),
+    createRibbonGeometry(waterways, line => line.widthM, 0.26),
     { receiveShadow: false, renderOrder: 2 },
   )
 
@@ -420,14 +423,14 @@ export const createTransportGeometryGroup = (
     buckets,
     'rail-casing',
     makeRoadMaterial('#1f2937'),
-    createRibbonGeometry(rails, line => line.widthM + 3.5, 0.105),
+    createRibbonGeometry(rails, line => line.widthM + 3.5, 0.29),
     { receiveShadow: true, renderOrder: 3 },
   )
   addBucketGeometry(
     buckets,
     'rail-fill',
     makeRoadMaterial('#94a3b8'),
-    createRibbonGeometry(rails, line => line.widthM, 0.13),
+    createRibbonGeometry(rails, line => line.widthM, 0.34),
     { receiveShadow: true, renderOrder: 4 },
   )
 
@@ -436,14 +439,14 @@ export const createTransportGeometryGroup = (
     buckets,
     'road-shoulder',
     makeRoadMaterial('#d7d0bf'),
-    createRibbonGeometry(roads, line => line.widthM + Math.max(6.5, line.widthM * 0.28), 0.1),
+    createRibbonGeometry(roads, line => line.widthM + Math.max(6.5, line.widthM * 0.28), 0.32),
     { receiveShadow: true, renderOrder: 5 },
   )
   addBucketGeometry(
     buckets,
     'road-casing',
     makeRoadMaterial('#29313a'),
-    createRibbonGeometry(roads, line => line.widthM + Math.max(3.5, line.widthM * 0.16), 0.115),
+    createRibbonGeometry(roads, line => line.widthM + Math.max(3.5, line.widthM * 0.16), 0.37),
     { receiveShadow: true, renderOrder: 5 },
   )
   for (const [key, styledRoads] of linesByStyle(roads)) {
@@ -454,7 +457,7 @@ export const createTransportGeometryGroup = (
       buckets,
       `road-fill:${key}`,
       makeRoadMaterial(color),
-      createRibbonGeometry(styledRoads, item => item.widthM, 0.14),
+      createRibbonGeometry(styledRoads, item => item.widthM, 0.43),
       { receiveShadow: true, renderOrder: 6 },
     )
   }
@@ -463,21 +466,21 @@ export const createTransportGeometryGroup = (
     buckets,
     'road-marking-shadow',
     new THREE.MeshBasicMaterial({ color: '#0f172a', transparent: true, opacity: 0.32, depthWrite: false }),
-    createRoadMarkingGeometry(roads, { y: 0.168, halfWidthM: 0.46, halfLengthM: 5.2 }),
+    createRoadMarkingGeometry(roads, { y: 0.49, halfWidthM: 0.46, halfLengthM: 5.2 }),
     { receiveShadow: false, renderOrder: 8 },
   )
   addBucketGeometry(
     buckets,
     'road-edge-lines',
     new THREE.MeshBasicMaterial({ color: '#e7e5d2', transparent: true, opacity: 0.72, depthWrite: false }),
-    createRoadEdgeLineGeometry(roads, { y: 0.176, halfWidthM: 0.16 }),
+    createRoadEdgeLineGeometry(roads, { y: 0.53, halfWidthM: 0.16 }),
     { receiveShadow: false, renderOrder: 8 },
   )
   addBucketGeometry(
     buckets,
     'road-marking-fill',
     new THREE.MeshBasicMaterial({ color: '#fefce8', transparent: true, opacity: 0.96, depthWrite: false }),
-    createRoadMarkingGeometry(roads, { y: 0.18, halfWidthM: 0.22, halfLengthM: 4.7 }),
+    createRoadMarkingGeometry(roads, { y: 0.57, halfWidthM: 0.22, halfLengthM: 4.7 }),
     { receiveShadow: false, renderOrder: 9 },
   )
 

@@ -122,7 +122,7 @@ const createBaseGround = (
   })
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 1, 1), material)
   ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.16
+  ground.position.y = -0.35
   ground.receiveShadow = true
   return ground
 }
@@ -131,10 +131,10 @@ const surfaceYOffset = (
   feature: DroneWorldPolygonFeature,
 ): number => {
   const jitter = (stableHash(`${feature.kind}:${feature.className}`) % 7) * 0.0015
-  if (feature.kind === 'water') return 0.072
-  if (feature.kind === 'landuse') return 0.032 + jitter
-  if (feature.kind === 'landcover') return 0.014 + jitter
-  return 0.024 + jitter
+  if (feature.kind === 'water') return 0.16
+  if (feature.kind === 'landuse') return 0.085 + jitter
+  if (feature.kind === 'landcover') return 0.035 + jitter
+  return 0.07 + jitter
 }
 
 const configureSurfaceDepth = (
@@ -142,24 +142,24 @@ const configureSurfaceDepth = (
   feature: DroneWorldPolygonFeature,
 ): void => {
   material.polygonOffset = true
-  material.polygonOffsetFactor = -1
+  material.polygonOffsetFactor = -2
   material.polygonOffsetUnits = feature.kind === 'water'
-    ? -8
+    ? -18
     : feature.kind === 'landuse'
-      ? -5
-      : -3
+      ? -12
+      : -7
 }
 
 const createWaterMaterial = (): THREE.ShaderMaterial =>
   new THREE.ShaderMaterial({
-    transparent: true,
-    depthWrite: false,
+    transparent: false,
+    depthWrite: true,
     uniforms: {
       timeSeconds: { value: 0 },
       deepColor: { value: colorFromHex('#0d5f83') },
       shallowColor: { value: colorFromHex('#54c4d8') },
       foamColor: { value: colorFromHex('#d9fbff') },
-      opacity: { value: 0.84 },
+      opacity: { value: 1 },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -326,6 +326,7 @@ const meshesFromBuckets = (
     const mesh = new THREE.Mesh(geometry, bucket.material)
     mesh.receiveShadow = bucket.receiveShadow
     mesh.castShadow = bucket.castShadow
+    mesh.userData.receiveShadow = bucket.receiveShadow
     group.add(mesh)
   }
   return group
@@ -399,13 +400,17 @@ const createMergedBuildingMeshes = (
 
     const roofGeometry = new THREE.ShapeGeometry(shape, 4)
     roofGeometry.rotateX(-Math.PI / 2)
-    roofGeometry.translate(0, minHeight + height + 0.08, 0)
+    roofGeometry.translate(0, minHeight + height + 0.32, 0)
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
     const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
+    const roofMaterial = makeMaterial(roofColor, 0.88, 0.02)
+    roofMaterial.polygonOffset = true
+    roofMaterial.polygonOffsetFactor = -2
+    roofMaterial.polygonOffsetUnits = -16
     addBucketGeometry(
       buckets,
       `building-roof:${Math.round(roofShade * 10)}`,
-      makeMaterial(roofColor, 0.88, 0.02),
+      roofMaterial,
       roofGeometry,
       { receiveShadow: true, castShadow: false },
     )
@@ -757,8 +762,9 @@ export const createDroneMapWorldGroup = (
 export const tickDroneMapWorldGroup = (
   group: THREE.Object3D,
   nowMs: number,
+  viewMode: '2d' | '3d' | 'fpv',
 ): void => {
-  const timeSeconds = nowMs / 1000
+  const timeSeconds = viewMode === '2d' ? 0 : nowMs / 1000
   group.traverse(child => {
     if (!(child instanceof THREE.Mesh)) return
     const materials = Array.isArray(child.material) ? child.material : [child.material]
