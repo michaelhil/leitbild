@@ -1,7 +1,6 @@
 import {
-  sceneryAssetManifestSchema,
   sceneryAssetTileEncoding,
-  type SceneryAssetManifest,
+  sceneryAssetTileSummaryResponseSchema,
   type SceneryAssetTileSummary,
 } from '../../map/scenery.ts'
 
@@ -42,6 +41,7 @@ export type DroneWorldSceneryStatus =
       readonly recipeId: string
       readonly tileTemplate: string
       readonly manifestUrl: string
+      readonly tileSummaryUrl: string
       readonly path?: string
     }
   | {
@@ -298,14 +298,15 @@ const sceneryStatusFromManifest = (
     const recipeId = stringValue(recipe?.id)
     const tileTemplate = stringValue(artifact?.currentTileTemplate)
     const manifestUrl = stringValue(artifact?.manifestUrl)
+    const tileSummaryUrl = stringValue(artifact?.tileSummaryUrl)
     const tileEncoding = stringValue(artifact?.tileEncoding)
     const format = stringValue(artifact?.format)
-    if (format !== 'directory-glb' || tileEncoding !== sceneryAssetTileEncoding || !recipeId || !tileTemplate || !manifestUrl) {
+    if (format !== 'directory-glb' || tileEncoding !== sceneryAssetTileEncoding || !recipeId || !tileTemplate || !manifestUrl || !tileSummaryUrl) {
       return { status: 'unknown', reason: 'scenery capability is available but GLB artifact metadata is incomplete' }
     }
     return path
-      ? { status: 'available', recipeId, tileTemplate, manifestUrl, path }
-      : { status: 'available', recipeId, tileTemplate, manifestUrl }
+      ? { status: 'available', recipeId, tileTemplate, manifestUrl, tileSummaryUrl, path }
+      : { status: 'available', recipeId, tileTemplate, manifestUrl, tileSummaryUrl }
   }
 
   if (availabilityStatus === 'unavailable') {
@@ -352,15 +353,39 @@ export const loadDroneWorldSceneryStatus = async (config: {
   }
 }
 
-const loadSceneryManifest = async (config: {
+const tileSummaryUrlFor = (config: {
   readonly status: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>
+  readonly tiles: ReadonlyArray<TileCoord>
+  readonly zoom: number
+}): string => {
+  const xs = config.tiles.map(tile => tile.x)
+  const ys = config.tiles.map(tile => tile.y)
+  const params = new URLSearchParams({
+    recipeId: config.status.recipeId,
+    z: String(config.zoom),
+    minX: String(Math.min(...xs)),
+    maxX: String(Math.max(...xs)),
+    minY: String(Math.min(...ys)),
+    maxY: String(Math.max(...ys)),
+  })
+  return `${config.status.tileSummaryUrl}?${params.toString()}`
+}
+
+const loadSceneryTileSummaries = async (config: {
+  readonly status: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>
+  readonly tiles: ReadonlyArray<TileCoord>
+  readonly zoom: number
   readonly signal?: AbortSignal
-}): Promise<SceneryAssetManifest> => {
-  const response = await fetch(config.status.manifestUrl, config.signal ? { signal: config.signal } : undefined)
-  if (!response.ok) throw new Error(`scenery manifest query failed with HTTP ${response.status}`)
-  const parsed = sceneryAssetManifestSchema.safeParse(await response.json())
-  if (!parsed.success) throw new Error(`scenery manifest failed schema validation: ${parsed.error.message}`)
-  return parsed.data
+}): Promise<ReadonlyArray<SceneryAssetTileSummary>> => {
+  if (config.tiles.length === 0) return []
+  const response = await fetch(tileSummaryUrlFor(config), config.signal ? { signal: config.signal } : undefined)
+  if (!response.ok) throw new Error(`scenery tile summary query failed with HTTP ${response.status}`)
+  const parsed = sceneryAssetTileSummaryResponseSchema.safeParse(await response.json())
+  if (!parsed.success) throw new Error(`scenery tile summary failed schema validation: ${parsed.error.message}`)
+  if (parsed.data.recipeId !== config.status.recipeId || parsed.data.z !== config.zoom) {
+    throw new Error('scenery tile summary response does not match the requested recipe and zoom')
+  }
+  return parsed.data.tiles
 }
 
 const sceneryUrlFor = (
@@ -376,7 +401,7 @@ const sceneryUrlFor = (
 const summaryKey = (summary: Pick<SceneryAssetTileSummary, 'recipeId' | 'z' | 'x' | 'y'>): string =>
   `${summary.recipeId}:${summary.z}/${summary.x}/${summary.y}`
 
-const coverageForTiles = (
+export const coverageForSceneryTiles = (
   tiles: ReadonlyArray<DroneSceneryTileAsset>,
 ): DroneWorldSceneryCoverage => {
   const decoded = {
@@ -434,12 +459,14 @@ const loadAssetDroneMapWorld = async (config: {
   readonly signal?: AbortSignal
   readonly scenery: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>
 }): Promise<DroneMapWorldSnapshot> => {
-  const manifest = await loadSceneryManifest({
+  const desiredTiles = tileRangeFor(config.center, config.radiusM, config.zoom)
+  const summaries = await loadSceneryTileSummaries({
     status: config.scenery,
+    tiles: desiredTiles,
+    zoom: config.zoom,
     ...(config.signal === undefined ? {} : { signal: config.signal }),
   })
-  const desiredTiles = tileRangeFor(config.center, config.radiusM, config.zoom)
-  const available = new Map(manifest.tiles.map(summary => [summaryKey(summary), summary]))
+  const available = new Map(summaries.map(summary => [summaryKey(summary), summary]))
   const tiles = desiredTiles
     .flatMap(tile => {
       const summary = available.get(summaryKey({ ...tile, recipeId: config.scenery.recipeId }))
@@ -457,7 +484,7 @@ const loadAssetDroneMapWorld = async (config: {
     scenerySource: 'asset-tiles',
     tileCount: tiles.length,
     tiles,
-    coverage: coverageForTiles(tiles),
+    coverage: coverageForSceneryTiles(tiles),
   }
 }
 

@@ -11,6 +11,7 @@ import {
 import {
   currentPmtilesResponse,
   currentSceneryManifestResponse,
+  currentSceneryTileSummaryResponse,
   currentSceneryTileResponse,
   currentTerrainPmtilesResponse,
   currentTerrainRasterTileResponse,
@@ -214,9 +215,50 @@ describe('vector map artifacts', () => {
       counts: { writtenTileCount: 1 },
     })
 
+    const summary = await currentSceneryTileSummaryResponse(
+      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4758&maxY=4758'),
+      { rootDir },
+    )
+    expect(summary.status).toBe(200)
+    const summaryBody = await summary.json()
+    expect(summaryBody).toMatchObject({
+      schemaVersion: 1,
+      recipeId: 'drone-urban-flight',
+      z: 14,
+      range: { minX: 8686, maxX: 8686, minY: 4758, maxY: 4758 },
+      tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
+      tiles: [{ recipeId: 'drone-urban-flight', x: 8686, y: 4758 }],
+    })
+    expect(summaryBody.counts).toBeUndefined()
+
+    const emptySummary = await currentSceneryTileSummaryResponse(
+      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4759&maxY=4759'),
+      { rootDir },
+    )
+    expect(emptySummary.status).toBe(200)
+    expect(await emptySummary.json()).toMatchObject({ tiles: [] })
+
+    const tooLargeSummary = await currentSceneryTileSummaryResponse(
+      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=0&maxX=32&minY=0&maxY=32'),
+      { rootDir },
+    )
+    expect(tooLargeSummary.status).toBe(400)
+    expect(await tooLargeSummary.json()).toMatchObject({
+      ok: false,
+      error: 'scenery tile summary query is too large',
+      maxTileCount: 512,
+    })
+
     const missingManifest = await currentSceneryManifestResponse({ rootDir: join(rootDir, 'missing') })
     expect(missingManifest.status).toBe(503)
     expect(await missingManifest.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest unavailable' })
+
+    const missingSummary = await currentSceneryTileSummaryResponse(
+      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4758&maxY=4758'),
+      { rootDir: join(rootDir, 'missing') },
+    )
+    expect(missingSummary.status).toBe(503)
+    expect(await missingSummary.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest unavailable' })
 
     const corruptRoot = await mkdtemp(join(tmpdir(), 'leitbild-map-test-corrupt-scenery-'))
     await mkdir(join(corruptRoot, 'current', 'scenery'), { recursive: true })

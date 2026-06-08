@@ -171,6 +171,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(scenery[0]!.availability.status).toBe('unavailable')
     expect(scenery[0]!.artifact.format).toBe('directory-glb')
     expect(scenery[0]!.artifact.tileEncoding).toBe('model/gltf-binary')
+    expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
   })
 
@@ -205,6 +206,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
       status: 'available',
       path: join(mapRoot, 'current', 'scenery', 'manifest.json'),
     })
+    expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
   })
 

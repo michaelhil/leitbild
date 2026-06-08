@@ -138,6 +138,21 @@ export const sceneryAssetTileSummarySchema = z.object({
 })
 export type SceneryAssetTileSummary = z.infer<typeof sceneryAssetTileSummarySchema>
 
+export const sceneryAssetTileSummaryResponseSchema = z.object({
+  schemaVersion: z.literal(1),
+  recipeId: z.string().min(1),
+  z: z.number().int().min(0).max(24),
+  range: z.object({
+    minX: z.number().int().min(0),
+    maxX: z.number().int().min(0),
+    minY: z.number().int().min(0),
+    maxY: z.number().int().min(0),
+  }),
+  tileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
+  tiles: z.array(sceneryAssetTileSummarySchema),
+})
+export type SceneryAssetTileSummaryResponse = z.infer<typeof sceneryAssetTileSummaryResponseSchema>
+
 export const sceneryAssetManifestSchema = z.object({
   schemaVersion: z.literal(1),
   artifactFormat: z.literal(sceneryAssetFormat),

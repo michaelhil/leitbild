@@ -21,7 +21,7 @@ import '@babylonjs/loaders/glTF'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { dronePackDataSchema, type DronePackData } from '../../packs/drone/model.ts'
 import { loadDroneMapWorldForScene } from './drone-map-world-loader.ts'
-import type { DroneMapWorldSnapshot, DroneSceneryTileAsset } from './drone-map-world.ts'
+import { coverageForSceneryTiles, type DroneMapWorldSnapshot, type DroneSceneryTileAsset } from './drone-map-world.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 import { terrainHeightAt, type DroneTerrainModel } from './drone-terrain.ts'
 
@@ -85,7 +85,9 @@ const fullWorldRadiusM = 4_250
 const droneWorldZoom = 14
 const maxDroneScenePixelRatio = 1.15
 const maxCachedTileContainers = 256
-const tileLoadConcurrency = 10
+const tileLoadConcurrency = 4
+const sceneryTileLoadTimeoutMs = 8_500
+const sceneryStageBuildBudgetMs = 9_500
 let activeDroneSceneCount = 0
 
 const cachedTileContainers = new Map<string, Promise<AssetContainer>>()
@@ -266,6 +268,19 @@ export interface DroneWorldLoadSpec {
   readonly zoom: number
 }
 
+interface BuiltWorldNode {
+  readonly root: TransformNode
+  readonly requestedTileCount: number
+  readonly loadedTileCount: number
+  readonly skippedTileCount: number
+  readonly coverage: DroneMapWorldSnapshot['coverage']
+}
+
+interface LoadedSceneryTile {
+  readonly root: TransformNode
+  readonly tile: DroneSceneryTileAsset
+}
+
 export const droneWorldLoadSpecsFor = (
   _reason: DroneWorldStreamDecision['reason'],
 ): ReadonlyArray<DroneWorldLoadSpec> => [
@@ -427,11 +442,16 @@ const createBaseWorld = (
   return root
 }
 
+const tileContainerCacheKey = (
+  tile: DroneSceneryTileAsset,
+): string =>
+  `${tile.recipeId}:${tile.z}/${tile.x}/${tile.y}:${tile.byteLength}`
+
 const loadTileContainer = async (
   scene: Scene,
   tile: DroneSceneryTileAsset,
 ): Promise<AssetContainer> => {
-  const key = `${tile.recipeId}:${tile.z}/${tile.x}/${tile.y}:${tile.byteLength}`
+  const key = tileContainerCacheKey(tile)
   const cached = cachedTileContainers.get(key)
   if (cached) {
     cachedTileContainers.delete(key)
@@ -456,6 +476,35 @@ const loadTileContainer = async (
     void disposeEvicted()
   }
   return await promise
+}
+
+const disposeContainerWhenReady = async (
+  promise: Promise<AssetContainer>,
+): Promise<void> => {
+  try {
+    const container = await promise
+    container.dispose()
+  } catch (err) {
+    console.warn('Skipped Babylon scenery tile did not finish loading', err)
+  }
+}
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId)
+  }
 }
 
 const terrainY = (terrain: DroneTerrainModel | undefined, x: number, z: number): number =>
@@ -486,30 +535,68 @@ const createWorldNode = async (
   scene: Scene,
   snapshot: DroneMapWorldSnapshot,
   terrain?: DroneTerrainModel,
-): Promise<TransformNode> => {
+): Promise<BuiltWorldNode> => {
   const root = createBaseWorld(scene, snapshot.radiusM, terrain)
-  const tileRoots = await mapWithConcurrency(snapshot.tiles, tileLoadConcurrency, async tile => {
-    const container = await loadTileContainer(scene, tile)
-    const entries = container.instantiateModelsToScene(sourceName => `${tile.id}:${sourceName}`, false)
-    const tileRoot = new TransformNode(`tile:${tile.id}`, scene)
-    tileRoot.parent = root
-    tileRoot.position.set(tile.localOrigin.x, terrainY(terrain, tile.localOrigin.x, tile.localOrigin.z), tile.localOrigin.z)
-    for (const node of entries.rootNodes) {
-      if (node instanceof TransformNode) node.parent = tileRoot
+  const tileLoadDeadlineMs = performance.now() + sceneryStageBuildBudgetMs
+  const tileResults = await mapWithConcurrency(snapshot.tiles, tileLoadConcurrency, async tile => {
+    if (performance.now() >= tileLoadDeadlineMs) {
+      console.warn(`Skipping Babylon scenery tile ${tile.id}; stage tile budget exhausted`)
+      return null
     }
-    for (const mesh of tileRoot.getChildMeshes(false)) freezeStaticMesh(mesh)
-    tileRoot.freezeWorldMatrix()
-    return tileRoot
+    const tilePromise = loadTileContainer(scene, tile)
+    try {
+      const remainingBudgetMs = Math.max(1, tileLoadDeadlineMs - performance.now())
+      const container = await withTimeout(
+        tilePromise,
+        Math.min(sceneryTileLoadTimeoutMs, remainingBudgetMs),
+        `Babylon scenery tile ${tile.id} did not load within the interactive stage budget`,
+      )
+      const entries = container.instantiateModelsToScene(sourceName => `${tile.id}:${sourceName}`, false)
+      const tileRoot = new TransformNode(`tile:${tile.id}`, scene)
+      tileRoot.parent = root
+      tileRoot.position.set(tile.localOrigin.x, terrainY(terrain, tile.localOrigin.x, tile.localOrigin.z), tile.localOrigin.z)
+      for (const node of entries.rootNodes) {
+        if (node instanceof TransformNode) node.parent = tileRoot
+      }
+      for (const mesh of tileRoot.getChildMeshes(false)) freezeStaticMesh(mesh)
+      tileRoot.freezeWorldMatrix()
+      return { root: tileRoot, tile }
+    } catch (err) {
+      cachedTileContainers.delete(tileContainerCacheKey(tile))
+      void disposeContainerWhenReady(tilePromise)
+      console.warn(`Skipping Babylon scenery tile ${tile.id}`, err)
+      return null
+    }
   })
-  for (const tileRoot of tileRoots) tileRoot.parent = root
+  const loadedResults = tileResults.filter((result): result is LoadedSceneryTile => result !== null)
+  const skippedTileCount = snapshot.tiles.length - loadedResults.length
+  const baseCoverage = coverageForSceneryTiles(loadedResults.map(result => result.tile))
+  const coverage = skippedTileCount === 0
+    ? baseCoverage
+    : {
+        ...baseCoverage,
+        notes: [
+          ...baseCoverage.notes,
+          `${skippedTileCount} scenery tiles did not load within the interactive tile budget.`,
+        ],
+      }
+  for (const tileResult of loadedResults) tileResult.root.parent = root
   root.metadata = {
     key: snapshot.key,
-    tileCount: snapshot.tileCount,
-    coverage: snapshot.coverage,
+    tileCount: loadedResults.length,
+    requestedTileCount: snapshot.tileCount,
+    skippedTileCount,
+    coverage,
     scenerySource: snapshot.scenerySource,
     terrain: terrain?.kind ?? 'flat',
   }
-  return root
+  return {
+    root,
+    requestedTileCount: snapshot.tileCount,
+    loadedTileCount: loadedResults.length,
+    skippedTileCount,
+    coverage,
+  }
 }
 
 const cameraTargetFor = (
@@ -615,10 +702,10 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         const next = await createWorldNode(scene, result.snapshot, result.terrainModel)
         const builtAt = performance.now()
         if (destroyed || generation !== worldLoadGeneration) {
-          next.dispose(false, true)
+          next.root.dispose(false, true)
           return
         }
-        replaceWorld(next)
+        replaceWorld(next.root)
         worldCenter = decision.center
         worldCenterKey = decision.key
         pendingWorldCenterKey = ''
@@ -628,19 +715,20 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           loadMs: loadedAt - loadStarted,
           buildMs: builtAt - loadedAt,
           source: result.source,
-          tiles: result.snapshot.tileCount,
-          polygons: result.snapshot.coverage.selected.polygons,
-          lines: result.snapshot.coverage.selected.lines,
-          points: result.snapshot.coverage.selected.points,
-          buildings: result.snapshot.coverage.selected.buildings,
-          roads: result.snapshot.coverage.selected.roads,
-          water: result.snapshot.coverage.selected.waterPolygons + result.snapshot.coverage.selected.waterways,
-          vegetation: result.snapshot.coverage.selected.vegetationPolygons,
-          roadLabels: result.snapshot.coverage.selected.roadLabels,
+          tiles: next.loadedTileCount,
+          polygons: next.coverage.selected.polygons,
+          lines: next.coverage.selected.lines,
+          points: next.coverage.selected.points,
+          buildings: next.coverage.selected.buildings,
+          roads: next.coverage.selected.roads,
+          water: next.coverage.selected.waterPolygons + next.coverage.selected.waterways,
+          vegetation: next.coverage.selected.vegetationPolygons,
+          roadLabels: next.coverage.selected.roadLabels,
           terrain: result.terrain.status,
           terrainSurface: result.terrainModel.kind === 'dem' ? 'dem' : 'flat',
         })
-        config.onWorldStatus?.(`${spec.stage} Babylon scenery ready · ${result.snapshot.tileCount} tiles`)
+        const skippedText = next.skippedTileCount > 0 ? ` · ${next.skippedTileCount} skipped` : ''
+        config.onWorldStatus?.(`${spec.stage} Babylon scenery ready · ${next.loadedTileCount}/${next.requestedTileCount} tiles${skippedText}`)
         notifyReadyOnce()
       }
     } catch (err) {
