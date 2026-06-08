@@ -13,10 +13,11 @@ export interface DroneScenePerformanceSnapshot {
   readonly quality: 'high' | 'balanced' | 'rescue'
   readonly worldLoadMs: number
   readonly worldBuildMs: number
-  readonly worldSource: 'worker' | 'main'
+  readonly worldSource: 'worker'
   readonly activeScenes: number
   readonly worldFeatures: {
-    readonly sceneryStage: 'fallback' | 'near' | 'full'
+    readonly sceneryStage: 'placeholder' | 'near' | 'full'
+    readonly scenerySource: 'precompiled' | 'compile-through'
     readonly tiles: number
     readonly polygons: number
     readonly lines: number
@@ -40,6 +41,7 @@ export interface DroneFramePerformanceTracker {
   }
   readonly updateWorld: (config: {
     readonly sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage']
+    readonly scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource']
     readonly loadMs: number
     readonly buildMs: number
     readonly source: DroneScenePerformanceSnapshot['worldSource']
@@ -95,7 +97,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
-  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'main'
+  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'worker'
   let tiles = 0
   let polygons = 0
   let lines = 0
@@ -108,7 +110,8 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lineFragmentsMerged = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
-  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'fallback'
+  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'placeholder'
+  let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = 'compile-through'
 
   const pushSample = (samples: number[], value: number): void => {
     samples.push(value)
@@ -131,6 +134,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
     },
     updateWorld: (config): void => {
       sceneryStage = config.sceneryStage
+      scenerySource = config.scenerySource
       worldLoadMs = config.loadMs
       worldBuildMs = config.buildMs
       worldSource = config.source
@@ -169,6 +173,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         activeScenes: renderInfo.activeScenes,
         worldFeatures: {
           sceneryStage,
+          scenerySource,
           tiles,
           polygons,
           lines,

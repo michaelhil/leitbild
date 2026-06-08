@@ -33,6 +33,7 @@ try {
 }
 
 const terrainPath = join(config.rootDir, 'current', 'terrain.pmtiles')
+const sceneryManifestPath = join(config.rootDir, 'current', 'scenery', 'manifest.json')
 let terrain: { readonly status: 'available'; readonly metadata: Awaited<ReturnType<typeof readTerrainPmtilesMetadata>> } | { readonly status: 'unavailable'; readonly error: string }
 try {
   terrain = {
@@ -53,6 +54,7 @@ console.log(JSON.stringify({
   currentTarget,
   currentPmtilesSizeBytes: await sizeOf(join(config.rootDir, 'current', 'norway.pmtiles')),
   currentTerrainPmtilesSizeBytes: await sizeOf(terrainPath),
+  currentSceneryManifestSizeBytes: await sizeOf(sceneryManifestPath),
   terrain,
   releaseCount: releases.length,
   releases: releases.sort(),

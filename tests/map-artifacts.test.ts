@@ -10,6 +10,8 @@ import {
 } from '../src/map/capabilities.ts'
 import {
   currentPmtilesResponse,
+  currentSceneryManifestResponse,
+  currentSceneryTileResponse,
   currentTerrainPmtilesResponse,
   currentTerrainRasterTileResponse,
   currentTerrainTileJsonResponse,
@@ -143,6 +145,40 @@ describe('vector map artifacts', () => {
       rootDir: join(rootDir, 'missing'),
     })
     expect(missingTile?.status).toBe(503)
+  })
+
+  test('scenery artifact routes expose the single scenery-tile path explicitly', async () => {
+    __clearManifestCacheForTests()
+    const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
+    const currentDir = join(rootDir, 'current')
+    await mkdir(currentDir)
+    await Bun.write(join(currentDir, 'norway.pmtiles'), 'not-a-real-pmtiles')
+
+    const manifest = await currentSceneryManifestResponse({ rootDir }, { referenceRoot: await mkdtemp(join(tmpdir(), 'leitbild-reference-test-')) })
+    expect(manifest.status).toBe(200)
+    expect(await manifest.json()).toMatchObject({
+      kind: 'scenery',
+      availability: {
+        status: 'available',
+        mode: 'compile-through',
+      },
+    })
+
+    const invalidTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/27/0/0.json'), { rootDir })
+    expect(invalidTile?.status).toBe(400)
+
+    const invalidRecipe = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/bad_recipe/14/0/0.json'), { rootDir })
+    expect(invalidRecipe?.status).toBe(400)
+
+    const corruptSource = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/0/0/0.json'), { rootDir })
+    expect(corruptSource?.status).toBe(415)
+    expect(await corruptSource?.json()).toMatchObject({ ok: false, error: 'scenery source map artifact is not a readable PMTiles archive' })
+
+    const missingSource = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/0/0/0.json'), {
+      rootDir: join(rootDir, 'missing'),
+    })
+    expect(missingSource?.status).toBe(503)
+    expect(await missingSource?.json()).toMatchObject({ ok: false, error: 'scenery source vector map artifact unavailable' })
   })
 
   test('reference dataset PMTiles route serves promoted datasets from the manifest', async () => {

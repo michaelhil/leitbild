@@ -1,4 +1,4 @@
-import { loadDroneMapWorld, type DroneMapWorldSnapshot, type DroneWorldCenter } from './drone-map-world.ts'
+import { loadCachedDroneMapWorld, type DroneMapWorldSnapshot, type DroneWorldCenter } from './drone-map-world.ts'
 
 interface DroneMapWorldWorkerRequest {
   readonly id: string
@@ -50,7 +50,7 @@ globalThis.addEventListener('message', (event: MessageEvent<unknown>) => {
       return
     }
     try {
-      const snapshot = await loadDroneMapWorld({
+      const snapshot = await loadCachedDroneMapWorld({
         center: request.center,
         radiusM: request.radiusM,
         zoom: request.zoom,

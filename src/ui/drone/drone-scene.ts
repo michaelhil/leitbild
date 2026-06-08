@@ -524,7 +524,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     readonly worldResult: DroneMapWorldLoadResult
   }): string => {
     const snapshot = config.worldResult.snapshot
-    const fallbackSuffix = config.worldResult.fallbackReason ? `; worker fallback: ${config.worldResult.fallbackReason}` : ''
     const terrainSuffix = config.worldResult.terrain.status === 'available'
       ? `; terrain ${config.worldResult.terrain.demEncoding}/${config.worldResult.terrainModel.kind}`
       : `; terrain ${config.worldResult.terrain.status}`
@@ -532,7 +531,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const noteSuffix = snapshot.coverage.notes.length > 0 ? `; ${snapshot.coverage.notes[0]}` : ''
     const stageLabel = config.stage === 'near' ? 'Nearby map scenery' : 'Full map scenery'
     const enrichmentSuffix = config.stage === 'near' ? '; loading full operating area' : ''
-    return `${stageLabel} loaded via ${config.worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${fallbackSuffix}${noteSuffix}${enrichmentSuffix}`
+    return `${stageLabel} loaded via ${config.worldResult.source}/${snapshot.scenerySource}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${noteSuffix}${enrichmentSuffix}`
   }
   const applyWorldResult = (result: {
     readonly center: { readonly lon: number; readonly lat: number }
@@ -555,6 +554,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     worldRecenterRevision += 1
     performanceTracker.updateWorld({
       sceneryStage: result.stage,
+      scenerySource: snapshot.scenerySource,
       loadMs: result.loadMs,
       buildMs,
       source: result.worldResult.source,

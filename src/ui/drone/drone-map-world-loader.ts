@@ -1,5 +1,4 @@
 import {
-  loadCachedDroneMapWorld,
   loadDroneWorldTerrainStatus,
   type DroneMapWorldSnapshot,
   type DroneWorldCenter,
@@ -7,14 +6,13 @@ import {
 } from './drone-map-world.ts'
 import { loadDroneTerrainModel, type DroneTerrainModel } from './drone-terrain.ts'
 
-export type DroneMapWorldLoadSource = 'worker' | 'main'
+export type DroneMapWorldLoadSource = 'worker'
 
 export interface DroneMapWorldLoadResult {
   readonly snapshot: DroneMapWorldSnapshot
   readonly source: DroneMapWorldLoadSource
   readonly terrain: DroneWorldTerrainStatus
   readonly terrainModel: DroneTerrainModel
-  readonly fallbackReason?: string
 }
 
 interface DroneMapWorldWorkerRequest {
@@ -141,16 +139,8 @@ export const loadDroneMapWorldForScene = async (config: {
 }): Promise<DroneMapWorldLoadResult> => {
   const radiusM = config.radiusM ?? 4_250
   const zoom = config.zoom ?? 14
-  try {
-    const snapshot = await loadWithWorker({ center: config.center, radiusM, zoom })
-    const terrain = await loadDroneWorldTerrainStatus()
-    const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
-    return { snapshot, source: 'worker', terrain, terrainModel }
-  } catch (err) {
-    const fallbackReason = err instanceof Error ? err.message : String(err)
-    const snapshot = await loadCachedDroneMapWorld({ center: config.center, radiusM, zoom })
-    const terrain = await loadDroneWorldTerrainStatus()
-    const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
-    return { snapshot, source: 'main', terrain, terrainModel, fallbackReason }
-  }
+  const snapshot = await loadWithWorker({ center: config.center, radiusM, zoom })
+  const terrain = await loadDroneWorldTerrainStatus()
+  const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
+  return { snapshot, source: 'worker', terrain, terrainModel }
 }

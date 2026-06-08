@@ -1,5 +1,4 @@
-import { VectorTile } from '@mapbox/vector-tile'
-import { PbfReader } from 'pbf'
+import { sceneryTileSchema, type SceneryPoint, type SceneryTile } from '../../map/scenery.ts'
 
 export interface DroneWorldCenter {
   readonly lon: number
@@ -80,6 +79,25 @@ export type DroneWorldTerrainStatus =
       readonly reason: string
     }
 
+export type DroneWorldSceneryStatus =
+  | {
+      readonly status: 'available'
+      readonly mode: 'precompiled' | 'compile-through'
+      readonly recipeId: string
+      readonly tileTemplate: string
+      readonly manifestUrl: string
+      readonly path?: string
+    }
+  | {
+      readonly status: 'unavailable'
+      readonly reason: string
+      readonly path?: string
+    }
+  | {
+      readonly status: 'unknown'
+      readonly reason: string
+    }
+
 export interface DroneWorldFeatureCount {
   readonly polygons: number
   readonly lines: number
@@ -106,6 +124,7 @@ export interface DroneMapWorldSnapshot {
   readonly center: DroneWorldCenter
   readonly radiusM: number
   readonly zoom: number
+  readonly scenerySource: 'precompiled' | 'compile-through'
   readonly tileCount: number
   readonly polygons: ReadonlyArray<DroneWorldPolygonFeature>
   readonly lines: ReadonlyArray<DroneWorldLineFeature>
@@ -125,29 +144,7 @@ interface TileCoord {
   readonly z: number
 }
 
-interface GeoJsonGeometry {
-  readonly type: string
-  readonly coordinates: unknown
-}
-
-interface GeoJsonFeature {
-  readonly type: 'Feature'
-  readonly geometry: GeoJsonGeometry | null
-  readonly properties?: Record<string, unknown> | null
-}
-
 const metersPerDegreeLat = 111_320
-
-const maxDecodedFeaturesForLayer = (
-  layerId: string,
-): number => {
-  if (layerId === 'building') return 14_000
-  if (layerId === 'transportation') return 12_000
-  if (layerId === 'transportation_name') return 8_000
-  if (layerId === 'landcover' || layerId === 'landuse') return 8_000
-  if (layerId === 'poi' || layerId === 'place') return 5_000
-  return 6_000
-}
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -204,90 +201,6 @@ const tileKeyFor = (
   const first = tiles[0]
   const last = tiles[tiles.length - 1]
   return `${zoom}:${first?.x ?? 0}:${first?.y ?? 0}:${last?.x ?? 0}:${last?.y ?? 0}`
-}
-
-const fetchTile = async (
-  tile: TileCoord,
-  signal: AbortSignal | undefined,
-): Promise<VectorTile | null> => {
-  const response = await fetch(
-    `/map/tiles/current/${tile.z}/${tile.x}/${tile.y}.mvt`,
-    signal === undefined ? undefined : { signal },
-  )
-  if (response.status === 204 || response.status === 404) return null
-  if (!response.ok) throw new Error(`vector tile ${tile.z}/${tile.x}/${tile.y} failed: ${response.status}`)
-  const buffer = await response.arrayBuffer()
-  if (buffer.byteLength === 0) return null
-  const pbf = new PbfReader(new Uint8Array(buffer)) as unknown as ConstructorParameters<typeof VectorTile>[0]
-  return new VectorTile(pbf)
-}
-
-const stringProperty = (
-  properties: Record<string, unknown>,
-  key: string,
-  fallback = '',
-): string => {
-  const value = properties[key]
-  return typeof value === 'string' && value.length > 0 ? value : fallback
-}
-
-const optionalStringProperty = (
-  properties: Record<string, unknown>,
-  key: string,
-): string | undefined => {
-  const value = properties[key]
-  return typeof value === 'string' && value.length > 0 ? value : undefined
-}
-
-const booleanLikeProperty = (
-  properties: Record<string, unknown>,
-  key: string,
-): boolean => {
-  const value = properties[key]
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'number') return value !== 0
-  return typeof value === 'string' && ['yes', 'true', '1'].includes(value.toLowerCase())
-}
-
-const numberProperty = (
-  properties: Record<string, unknown>,
-  keys: ReadonlyArray<string>,
-): number | null => {
-  for (const key of keys) {
-    const value = properties[key]
-    if (typeof value === 'number' && Number.isFinite(value)) return value
-    if (typeof value === 'string') {
-      const parsed = Number.parseFloat(value)
-      if (Number.isFinite(parsed)) return parsed
-    }
-  }
-  return null
-}
-
-const booleanPropertyValue = (
-  properties: Record<string, unknown>,
-  keys: ReadonlyArray<string>,
-): boolean | undefined => {
-  for (const key of keys) {
-    const value = properties[key]
-    if (typeof value === 'boolean') return value
-    if (typeof value === 'number' && Number.isFinite(value)) return value !== 0
-    if (typeof value === 'string' && value.length > 0) {
-      const normalized = value.toLowerCase()
-      if (['yes', 'true', '1'].includes(normalized)) return true
-      if (['no', 'false', '0'].includes(normalized)) return false
-    }
-  }
-  return undefined
-}
-
-const stableHash = (value: string): number => {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
 }
 
 const pointDistanceM = (
@@ -383,106 +296,23 @@ const polygonAreaM2 = (
   return Math.max(0, Math.abs(ringAreaM2(outer)) - holes)
 }
 
-const deterministicBuildingHeight = (
-  id: string,
-  className: string,
-): number => {
-  const hash = stableHash(`${id}:${className}`)
-  const urbanBoost = className === 'commercial' || className === 'industrial' ? 1.35 : 1
-  return (6 + (hash % 11) * 2.6 + ((hash >>> 8) % 7) * 1.4) * urbanBoost
+interface VectorTilePoint {
+  readonly x: number
+  readonly y: number
 }
 
-const buildingHeightFor = (
-  id: string,
-  className: string,
-  properties: Record<string, unknown>,
-): number => {
-  const explicit = numberProperty(properties, ['render_height', 'height'])
-  if (explicit !== null) return Math.max(2.5, Math.min(220, explicit))
-  const levels = numberProperty(properties, ['building:levels', 'levels'])
-  if (levels !== null) return Math.max(2.5, Math.min(180, levels * 3.2))
-  return deterministicBuildingHeight(id, className)
-}
-
-const lineWidthFor = (
-  kind: DroneWorldLineKind,
-  className: string,
-): number => {
-  if (kind === 'aeroway') {
-    if (className === 'runway') return 42
-    if (className === 'taxiway') return 14
-    return 8
-  }
-  if (kind === 'rail') return 4.8
-  if (kind === 'waterway') return className === 'river' ? 14 : 5
-  if (className === 'motorway' || className === 'motorway_link') return 26
-  if (className === 'trunk' || className === 'trunk_link') return 22
-  if (className === 'primary') return 18
-  if (className === 'secondary') return 13
-  if (className === 'tertiary') return 9
-  if (className === 'residential' || className === 'unclassified' || className === 'street') return 6.4
-  if (className === 'living_street' || className === 'pedestrian') return 4.8
-  if (className === 'service') return 5.2
-  if (className === 'track') return 3.8
-  if (className === 'path' || className === 'footway' || className === 'cycleway') return 2.4
-  if (className === 'minor') return 6
-  return 4.2
-}
-
-const lineVerticalOffsetM = (config: {
-  readonly isBridge: boolean
-  readonly isTunnel: boolean
-  readonly layer?: number
-}): number => {
-  if (config.isBridge) return 3.2 + Math.max(0, config.layer ?? 0) * 2
-  if (config.isTunnel) return -1.4
-  return 0
-}
-
-const coordinatePair = (value: unknown): readonly [number, number] | null => {
-  if (!Array.isArray(value) || value.length < 2) return null
-  const lon = value[0]
-  const lat = value[1]
-  return typeof lon === 'number' && typeof lat === 'number' && Number.isFinite(lon) && Number.isFinite(lat)
-    ? [lon, lat]
-    : null
-}
-
-const ringFromCoordinates = (
-  coordinates: unknown,
+const localPointFromTilePoint = (
+  point: VectorTilePoint,
+  tile: TileCoord,
+  extent: number,
   center: DroneWorldCenter,
-): ReadonlyArray<DroneWorldPoint> => {
-  if (!Array.isArray(coordinates)) return []
-  return coordinates.flatMap(item => {
-    const pair = coordinatePair(item)
-    return pair ? [localPointFromLonLat(pair[0], pair[1], center)] : []
-  })
-}
-
-const lineFromCoordinates = (
-  coordinates: unknown,
-  center: DroneWorldCenter,
-): ReadonlyArray<DroneWorldPoint> =>
-  ringFromCoordinates(coordinates, center)
-
-const polygonRingsFromCoordinates = (
-  coordinates: unknown,
-  center: DroneWorldCenter,
-): ReadonlyArray<ReadonlyArray<DroneWorldPoint>> => {
-  if (!Array.isArray(coordinates)) return []
-  return coordinates
-    .map(ring => ringFromCoordinates(ring, center))
-    .filter(ring => ring.length >= 3)
-}
-
-const multiPolygonRingsFromCoordinates = (
-  coordinates: unknown,
-  center: DroneWorldCenter,
-): ReadonlyArray<ReadonlyArray<ReadonlyArray<DroneWorldPoint>>> => {
-  if (!Array.isArray(coordinates)) return []
-  return coordinates
-    .map(polygon => polygonRingsFromCoordinates(polygon, center))
-    .filter(rings => rings.length > 0)
+): DroneWorldPoint => {
+  const size = extent * 2 ** tile.z
+  const worldX = point.x + extent * tile.x
+  const worldY = point.y + extent * tile.y
+  const lon = worldX * 360 / size - 180
+  const lat = 360 / Math.PI * Math.atan(Math.exp((1 - worldY * 2 / size) * Math.PI)) - 90
+  return localPointFromLonLat(lon, lat, center)
 }
 
 const polygonSortValue = (
@@ -773,223 +603,6 @@ const sceneryCoverageFor = (config: {
   }
 }
 
-const decodePolygonFeature = (
-  id: string,
-  kind: DroneWorldPolygonKind,
-  className: string,
-  geometry: GeoJsonGeometry,
-  properties: Record<string, unknown>,
-  center: DroneWorldCenter,
-  radiusM: number,
-): ReadonlyArray<DroneWorldPolygonFeature> => {
-  const polygons = geometry.type === 'Polygon'
-    ? [polygonRingsFromCoordinates(geometry.coordinates, center)]
-    : geometry.type === 'MultiPolygon'
-      ? multiPolygonRingsFromCoordinates(geometry.coordinates, center)
-      : []
-  return polygons.flatMap((rings, index) => {
-    const firstRing = rings[0] ?? []
-    const distanceM = polygonDistanceM(rings)
-    if (firstRing.length < 3 || distanceM > radiusM * 1.08) return []
-    const areaM2 = polygonAreaM2(rings)
-    if (areaM2 < 3) return []
-    const heightM = kind === 'building' ? buildingHeightFor(id, className, properties) : undefined
-    const minHeightM = kind === 'building'
-      ? numberProperty(properties, ['render_min_height', 'min_height']) ?? undefined
-      : undefined
-    const name = optionalStringProperty(properties, 'name')
-    const subclass = optionalStringProperty(properties, 'subclass')
-    return [{
-      id: `${id}:${index}`,
-      kind,
-      className,
-      ...(name === undefined ? {} : { name }),
-      ...(subclass === undefined ? {} : { subclass }),
-      rings,
-      distanceM,
-      areaM2,
-      ...(heightM === undefined ? {} : { heightM }),
-      ...(minHeightM === undefined ? {} : { minHeightM }),
-    }]
-  })
-}
-
-const decodeLineFeature = (
-  id: string,
-  sourceRef: string | undefined,
-  kind: DroneWorldLineKind,
-  className: string,
-  geometry: GeoJsonGeometry,
-  properties: Record<string, unknown>,
-  center: DroneWorldCenter,
-  radiusM: number,
-): ReadonlyArray<DroneWorldLineFeature> => {
-  const brunnel = optionalStringProperty(properties, 'brunnel')
-  const isBridge = brunnel === 'bridge' || booleanLikeProperty(properties, 'bridge')
-  const isTunnel = brunnel === 'tunnel' || booleanLikeProperty(properties, 'tunnel')
-  const layer = numberProperty(properties, ['layer']) ?? undefined
-  const surface = optionalStringProperty(properties, 'surface')
-  const name = optionalStringProperty(properties, 'name')
-  const subclass = optionalStringProperty(properties, 'subclass')
-  const service = optionalStringProperty(properties, 'service')
-  const access = optionalStringProperty(properties, 'access')
-  const maxspeedKph = numberProperty(properties, ['maxspeed']) ?? undefined
-  const oneway = booleanPropertyValue(properties, ['oneway'])
-  const verticalOffsetM = lineVerticalOffsetM({ isBridge, isTunnel, ...(layer === undefined ? {} : { layer }) })
-  const paths = geometry.type === 'LineString'
-    ? [lineFromCoordinates(geometry.coordinates, center)]
-    : geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)
-      ? geometry.coordinates.map(line => lineFromCoordinates(line, center))
-      : []
-  return paths.flatMap((path, index) => {
-    if (path.length < 2) return []
-    const distanceM = pathDistanceM(path)
-    if (distanceM > radiusM * 1.06) return []
-    const lengthM = pathLengthM(path)
-    if (lengthM < 0.8) return []
-    return [{
-      id: `${id}:${index}`,
-      ...(sourceRef === undefined ? {} : { sourceRef }),
-      kind,
-      className,
-      ...(subclass === undefined ? {} : { subclass }),
-      ...(name === undefined ? {} : { name }),
-      ...(surface === undefined ? {} : { surface }),
-      ...(brunnel === undefined ? {} : { brunnel }),
-      ...(layer === undefined ? {} : { layer }),
-      ...(service === undefined ? {} : { service }),
-      ...(access === undefined ? {} : { access }),
-      ...(maxspeedKph === undefined ? {} : { maxspeedKph }),
-      ...(oneway === undefined ? {} : { oneway }),
-      isBridge,
-      isTunnel,
-      path,
-      widthM: lineWidthFor(kind, className),
-      verticalOffsetM,
-      distanceM,
-      lengthM,
-    }]
-  })
-}
-
-const pathLabelPoint = (
-  path: ReadonlyArray<DroneWorldPoint>,
-): DroneWorldPoint | null => {
-  if (path.length === 0) return null
-  if (path.length === 1) return path[0] ?? null
-  const total = pathLengthM(path)
-  if (total <= Number.EPSILON) return path[Math.floor(path.length / 2)] ?? null
-  const target = total / 2
-  let travelled = 0
-  for (let index = 0; index < path.length - 1; index += 1) {
-    const start = path[index]!
-    const end = path[index + 1]!
-    const length = Math.hypot(end.x - start.x, end.z - start.z)
-    if (travelled + length >= target) {
-      const t = (target - travelled) / Math.max(0.001, length)
-      return {
-        x: start.x + (end.x - start.x) * t,
-        z: start.z + (end.z - start.z) * t,
-      }
-    }
-    travelled += length
-  }
-  return path[path.length - 1] ?? null
-}
-
-const decodeLineLabelFeature = (
-  id: string,
-  kind: DroneWorldPointKind,
-  className: string,
-  label: string,
-  geometry: GeoJsonGeometry,
-  center: DroneWorldCenter,
-  radiusM: number,
-): ReadonlyArray<DroneWorldPointFeature> => {
-  const paths = geometry.type === 'LineString'
-    ? [lineFromCoordinates(geometry.coordinates, center)]
-    : geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)
-      ? geometry.coordinates.map(line => lineFromCoordinates(line, center))
-      : []
-  return paths.flatMap((path, index) => {
-    if (path.length < 2 || pathLengthM(path) < 20) return []
-    const point = pathLabelPoint(path)
-    if (!point || horizontalDistanceFromCenterM(point) > radiusM) return []
-    return [{ id: `${id}:${index}`, kind, className, label, point }]
-  })
-}
-
-const decodePointFeature = (
-  id: string,
-  kind: DroneWorldPointKind,
-  className: string,
-  label: string,
-  geometry: GeoJsonGeometry,
-  center: DroneWorldCenter,
-  radiusM: number,
-): ReadonlyArray<DroneWorldPointFeature> => {
-  const point = coordinatePair(geometry.coordinates)
-  if (!point) return []
-  const local = localPointFromLonLat(point[0], point[1], center)
-  if (horizontalDistanceFromCenterM(local) > radiusM) return []
-  return [{ id, kind, className, label, point: local }]
-}
-
-const decodeLayer = (
-  tile: VectorTile,
-  tileCoord: TileCoord,
-  layerId: string,
-  center: DroneWorldCenter,
-  radiusM: number,
-): {
-  readonly polygons: ReadonlyArray<DroneWorldPolygonFeature>
-  readonly lines: ReadonlyArray<DroneWorldLineFeature>
-  readonly points: ReadonlyArray<DroneWorldPointFeature>
-} => {
-  const layer = tile.layers[layerId]
-  if (!layer) return { polygons: [], lines: [], points: [] }
-  const polygons: DroneWorldPolygonFeature[] = []
-  const lines: DroneWorldLineFeature[] = []
-  const points: DroneWorldPointFeature[] = []
-  const featureCount = Math.min(layer.length, maxDecodedFeaturesForLayer(layerId))
-  for (let index = 0; index < featureCount; index += 1) {
-    const vectorFeature = layer.feature(index)
-    const feature = vectorFeature.toGeoJSON(tileCoord.x, tileCoord.y, tileCoord.z) as GeoJsonFeature
-    if (!feature.geometry) continue
-    const properties = feature.properties ?? {}
-    const className = stringProperty(properties, 'class', stringProperty(properties, 'type', layerId))
-    const id = `${tileCoord.z}/${tileCoord.x}/${tileCoord.y}:${layerId}:${vectorFeature.id ?? index}`
-    const sourceRef = vectorFeature.id === undefined ? undefined : `${layerId}:${vectorFeature.id}`
-    if (layerId === 'building') {
-      polygons.push(...decodePolygonFeature(id, 'building', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'aeroway') {
-      polygons.push(...decodePolygonFeature(id, 'aeroway', className, feature.geometry, properties, center, radiusM))
-      lines.push(...decodeLineFeature(id, sourceRef, 'aeroway', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'water') {
-      polygons.push(...decodePolygonFeature(id, 'water', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'landcover') {
-      polygons.push(...decodePolygonFeature(id, 'landcover', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'landuse') {
-      polygons.push(...decodePolygonFeature(id, 'landuse', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'waterway') {
-      lines.push(...decodeLineFeature(id, sourceRef, 'waterway', className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'transportation') {
-      const kind = className === 'rail' ? 'rail' : 'road'
-      lines.push(...decodeLineFeature(id, sourceRef, kind, className, feature.geometry, properties, center, radiusM))
-    } else if (layerId === 'transportation_name') {
-      const label = optionalStringProperty(properties, 'name')
-      if (label) points.push(...decodeLineLabelFeature(id, 'road_label', className, label, feature.geometry, center, radiusM))
-    } else if (layerId === 'poi') {
-      const label = stringProperty(properties, 'name', className)
-      points.push(...decodePointFeature(id, 'poi', className, label, feature.geometry, center, radiusM))
-    } else if (layerId === 'place') {
-      const label = stringProperty(properties, 'name', className)
-      points.push(...decodePointFeature(id, 'place', className, label, feature.geometry, center, radiusM))
-    }
-  }
-  return { polygons, lines, points }
-}
-
 const maxWorldZoom = 14
 const maxCachedWorldSnapshots = 6
 const tileDecodeConcurrency = 14
@@ -1085,16 +698,73 @@ const terrainStatusFromManifest = (
   return { status: 'unknown', reason: 'terrain capability has an invalid availability status' }
 }
 
+const sceneryStatusFromManifest = (
+  value: unknown,
+): DroneWorldSceneryStatus => {
+  const manifest = recordValue(value)
+  const tilesets = Array.isArray(manifest?.tilesets) ? manifest.tilesets : null
+  if (!tilesets) return { status: 'unknown', reason: 'map capability manifest has no tilesets array' }
+  const scenery = tilesets
+    .map(recordValue)
+    .find(tileset => tileset?.kind === 'scenery')
+  if (!scenery) return { status: 'unavailable', reason: 'scenery capability is not advertised' }
+
+  const availability = recordValue(scenery.availability)
+  const artifact = recordValue(scenery.artifact)
+  const recipes = Array.isArray(scenery.recipes)
+    ? scenery.recipes.map(recordValue).filter((recipe): recipe is Record<string, unknown> => recipe !== null)
+    : []
+  const recipe = recipes.find(candidate => candidate.detail === 'flight-visual') ?? recipes[0]
+  const availabilityStatus = stringValue(availability?.status)
+  const mode = stringValue(availability?.mode)
+  const path = stringValue(availability?.path)
+  if (availabilityStatus === 'available') {
+    const recipeId = stringValue(recipe?.id)
+    const tileTemplate = stringValue(artifact?.currentTileTemplate)
+    const manifestUrl = stringValue(artifact?.manifestUrl)
+    if ((mode !== 'precompiled' && mode !== 'compile-through') || !recipeId || !tileTemplate || !manifestUrl) {
+      return { status: 'unknown', reason: 'scenery capability is available but artifact metadata is incomplete' }
+    }
+    return path
+      ? { status: 'available', mode, recipeId, tileTemplate, manifestUrl, path }
+      : { status: 'available', mode, recipeId, tileTemplate, manifestUrl }
+  }
+
+  if (availabilityStatus === 'unavailable') {
+    const reason = stringValue(availability?.error) ?? 'scenery artifact is not present'
+    return path
+      ? { status: 'unavailable', reason, path }
+      : { status: 'unavailable', reason }
+  }
+
+  return { status: 'unknown', reason: 'scenery capability has an invalid availability status' }
+}
+
+const loadMapCapabilityManifestBody = async (signal: AbortSignal | undefined): Promise<unknown> => {
+  const response = await fetch('/map/capabilities.json', signal ? { signal } : undefined)
+  if (!response.ok) throw new Error(`map capability query failed with HTTP ${response.status}`)
+  return await response.json() as unknown
+}
+
 export const loadDroneWorldTerrainStatus = async (config: {
   readonly signal?: AbortSignal
 } = {}): Promise<DroneWorldTerrainStatus> => {
   try {
-    const response = await fetch('/map/capabilities.json', config.signal ? { signal: config.signal } : undefined)
-    if (!response.ok) {
-      return { status: 'unavailable', reason: `map capability query failed with HTTP ${response.status}` }
+    return terrainStatusFromManifest(await loadMapCapabilityManifestBody(config.signal))
+  } catch (error) {
+    if (config.signal?.aborted) throw error
+    return {
+      status: 'unavailable',
+      reason: error instanceof Error ? `map capability query failed: ${error.message}` : `map capability query failed: ${String(error)}`,
     }
-    const body = await response.json() as unknown
-    return terrainStatusFromManifest(body)
+  }
+}
+
+export const loadDroneWorldSceneryStatus = async (config: {
+  readonly signal?: AbortSignal
+} = {}): Promise<DroneWorldSceneryStatus> => {
+  try {
+    return sceneryStatusFromManifest(await loadMapCapabilityManifestBody(config.signal))
   } catch (error) {
     if (config.signal?.aborted) throw error
     return {
@@ -1123,6 +793,195 @@ const rememberCachedWorld = (
   }
 }
 
+const sceneryUrlFor = (
+  status: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>,
+  tile: TileCoord,
+): string =>
+  status.tileTemplate
+    .replace('{recipeId}', encodeURIComponent(status.recipeId))
+    .replace('{z}', String(tile.z))
+    .replace('{x}', String(tile.x))
+    .replace('{y}', String(tile.y))
+
+const localPointFromSceneryPoint = (
+  point: SceneryPoint,
+  tile: SceneryTile['tile'],
+  center: DroneWorldCenter,
+): DroneWorldPoint =>
+  localPointFromTilePoint({ x: point[0], y: point[1] }, tile, tile.extent, center)
+
+const decodeSceneryPolygon = (
+  feature: SceneryTile['features']['polygons'][number],
+  tile: SceneryTile['tile'],
+  center: DroneWorldCenter,
+  radiusM: number,
+): ReadonlyArray<DroneWorldPolygonFeature> => {
+  const rings = feature.rings
+    .map(ring => ring.map(point => localPointFromSceneryPoint(point, tile, center)))
+    .filter(ring => ring.length >= 3)
+  const firstRing = rings[0]
+  if (!firstRing || firstRing.length < 3) return []
+  const distanceM = polygonDistanceM(rings)
+  if (distanceM > radiusM * 1.08) return []
+  const areaM2 = polygonAreaM2(rings)
+  if (areaM2 < 3) return []
+  return [{
+    id: feature.id,
+    kind: feature.kind,
+    className: feature.className,
+    ...(feature.name === undefined ? {} : { name: feature.name }),
+    ...(feature.subclass === undefined ? {} : { subclass: feature.subclass }),
+    rings,
+    distanceM,
+    areaM2,
+    ...(feature.heightM === undefined ? {} : { heightM: feature.heightM }),
+    ...(feature.minHeightM === undefined ? {} : { minHeightM: feature.minHeightM }),
+  }]
+}
+
+const decodeSceneryLine = (
+  feature: SceneryTile['features']['lines'][number],
+  tile: SceneryTile['tile'],
+  center: DroneWorldCenter,
+  radiusM: number,
+): ReadonlyArray<DroneWorldLineFeature> => {
+  const path = feature.path.map(point => localPointFromSceneryPoint(point, tile, center))
+  if (path.length < 2) return []
+  const distanceM = pathDistanceM(path)
+  if (distanceM > radiusM * 1.06) return []
+  const lengthM = pathLengthM(path)
+  if (lengthM < 0.8) return []
+  return [{
+    id: feature.id,
+    ...(feature.sourceRef === undefined ? {} : { sourceRef: feature.sourceRef }),
+    kind: feature.kind,
+    className: feature.className,
+    ...(feature.subclass === undefined ? {} : { subclass: feature.subclass }),
+    ...(feature.name === undefined ? {} : { name: feature.name }),
+    ...(feature.surface === undefined ? {} : { surface: feature.surface }),
+    ...(feature.brunnel === undefined ? {} : { brunnel: feature.brunnel }),
+    ...(feature.layer === undefined ? {} : { layer: feature.layer }),
+    ...(feature.service === undefined ? {} : { service: feature.service }),
+    ...(feature.access === undefined ? {} : { access: feature.access }),
+    ...(feature.maxspeedKph === undefined ? {} : { maxspeedKph: feature.maxspeedKph }),
+    ...(feature.oneway === undefined ? {} : { oneway: feature.oneway }),
+    isBridge: feature.isBridge,
+    isTunnel: feature.isTunnel,
+    path,
+    widthM: feature.widthM,
+    verticalOffsetM: feature.verticalOffsetM,
+    distanceM,
+    lengthM,
+  }]
+}
+
+const decodeSceneryLabel = (
+  feature: SceneryTile['features']['labels'][number],
+  tile: SceneryTile['tile'],
+  center: DroneWorldCenter,
+  radiusM: number,
+): ReadonlyArray<DroneWorldPointFeature> => {
+  const point = localPointFromSceneryPoint(feature.point, tile, center)
+  if (horizontalDistanceFromCenterM(point) > radiusM) return []
+  return [{
+    id: feature.id,
+    kind: feature.kind,
+    className: feature.className,
+    label: feature.label,
+    point,
+  }]
+}
+
+const decodeSceneryTile = (
+  sceneryTile: SceneryTile,
+  center: DroneWorldCenter,
+  radiusM: number,
+): {
+  readonly polygons: ReadonlyArray<DroneWorldPolygonFeature>
+  readonly lines: ReadonlyArray<DroneWorldLineFeature>
+  readonly points: ReadonlyArray<DroneWorldPointFeature>
+} => ({
+  polygons: sceneryTile.features.polygons.flatMap(feature => decodeSceneryPolygon(feature, sceneryTile.tile, center, radiusM)),
+  lines: sceneryTile.features.lines.flatMap(feature => decodeSceneryLine(feature, sceneryTile.tile, center, radiusM)),
+  points: sceneryTile.features.labels.flatMap(feature => decodeSceneryLabel(feature, sceneryTile.tile, center, radiusM)),
+})
+
+const fetchSceneryTile = async (
+  status: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>,
+  tile: TileCoord,
+  signal: AbortSignal | undefined,
+): Promise<SceneryTile | null> => {
+  const response = await fetch(sceneryUrlFor(status, tile), signal === undefined ? undefined : { signal })
+  if (response.status === 204 || response.status === 404) return null
+  if (!response.ok) throw new Error(`scenery tile ${tile.z}/${tile.x}/${tile.y} failed: ${response.status}`)
+  const parsed = sceneryTileSchema.safeParse(await response.json())
+  if (!parsed.success) throw new Error(`scenery tile ${tile.z}/${tile.x}/${tile.y} failed schema validation: ${parsed.error.message}`)
+  return parsed.data
+}
+
+const assembleWorldSnapshot = (config: {
+  readonly key: string
+  readonly center: DroneWorldCenter
+  readonly radiusM: number
+  readonly zoom: number
+  readonly tileCount: number
+  readonly decodedPolygons: ReadonlyArray<DroneWorldPolygonFeature>
+  readonly decodedLines: ReadonlyArray<DroneWorldLineFeature>
+  readonly decodedPoints: ReadonlyArray<DroneWorldPointFeature>
+  readonly scenerySource: DroneMapWorldSnapshot['scenerySource']
+}): DroneMapWorldSnapshot => {
+  const mergedLines = mergeDroneWorldLinesForScenery(config.decodedLines)
+  const polygons = selectWorldPolygons(config.decodedPolygons, config.radiusM)
+  const lines = selectWorldLines(mergedLines, config.radiusM)
+  const points = selectWorldPoints(config.decodedPoints)
+  const coverage = sceneryCoverageFor({
+    decoded: { polygons: config.decodedPolygons, lines: config.decodedLines, points: config.decodedPoints },
+    mergedLines,
+    selectedPolygons: polygons,
+    selectedLines: lines,
+    selectedPoints: points,
+  })
+  return {
+    key: config.key,
+    center: config.center,
+    radiusM: config.radiusM,
+    zoom: config.zoom,
+    scenerySource: config.scenerySource,
+    tileCount: config.tileCount,
+    polygons,
+    lines,
+    points,
+    coverage,
+  }
+}
+
+const loadSceneryDroneMapWorld = async (config: {
+  readonly center: DroneWorldCenter
+  readonly radiusM: number
+  readonly zoom: number
+  readonly signal?: AbortSignal
+  readonly scenery: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>
+}): Promise<DroneMapWorldSnapshot> => {
+  const tiles = tileRangeFor(config.center, config.radiusM, config.zoom)
+  const decoded = await mapWithConcurrency(tiles, tileDecodeConcurrency, async tile => {
+    const sceneryTile = await fetchSceneryTile(config.scenery, tile, config.signal)
+    return sceneryTile
+      ? decodeSceneryTile(sceneryTile, config.center, config.radiusM)
+      : { polygons: [], lines: [], points: [] }
+  })
+  return assembleWorldSnapshot({
+    key: tileKeyFor(config.center, config.radiusM, config.zoom),
+    center: config.center,
+    radiusM: config.radiusM,
+    zoom: config.zoom,
+    tileCount: tiles.length,
+    decodedPolygons: decoded.flatMap(item => item.polygons),
+    decodedLines: decoded.flatMap(item => item.lines),
+    decodedPoints: decoded.flatMap(item => item.points),
+    scenerySource: config.scenery.mode,
+  })
+}
+
 export const loadDroneMapWorld = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM?: number
@@ -1131,42 +990,17 @@ export const loadDroneMapWorld = async (config: {
 }): Promise<DroneMapWorldSnapshot> => {
   const radiusM = config.radiusM ?? 4_250
   const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
-  const tiles = tileRangeFor(config.center, radiusM, zoom)
-  const decoded = await mapWithConcurrency(tiles, tileDecodeConcurrency, async tile => {
-    const vectorTile = await fetchTile(tile, config.signal)
-    if (!vectorTile) return { polygons: [], lines: [], points: [] }
-    const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'transportation_name', 'building', 'aeroway', 'place', 'poi']
-    const layerFeatures = layers.map(layer => decodeLayer(vectorTile, tile, layer, config.center, radiusM))
-    return {
-      polygons: layerFeatures.flatMap(layer => layer.polygons),
-      lines: layerFeatures.flatMap(layer => layer.lines),
-      points: layerFeatures.flatMap(layer => layer.points),
-    }
-  })
-  const decodedPolygons = decoded.flatMap(item => item.polygons)
-  const decodedLines = decoded.flatMap(item => item.lines)
-  const decodedPoints = decoded.flatMap(item => item.points)
-  const mergedLines = mergeDroneWorldLinesForScenery(decodedLines)
-  const polygons = selectWorldPolygons(decodedPolygons, radiusM)
-  const lines = selectWorldLines(mergedLines, radiusM)
-  const points = selectWorldPoints(decodedPoints)
-  return {
-    key: tileKeyFor(config.center, radiusM, zoom),
+  const scenery = await loadDroneWorldSceneryStatus(config.signal === undefined ? {} : { signal: config.signal })
+  if (scenery.status !== 'available') {
+    throw new Error(`scenery capability unavailable: ${scenery.reason}`)
+  }
+  return await loadSceneryDroneMapWorld({
     center: config.center,
     radiusM,
     zoom,
-    tileCount: tiles.length,
-    polygons,
-    lines,
-    points,
-    coverage: sceneryCoverageFor({
-      decoded: { polygons: decodedPolygons, lines: decodedLines, points: decodedPoints },
-      mergedLines,
-      selectedPolygons: polygons,
-      selectedLines: lines,
-      selectedPoints: points,
-    }),
-  }
+    ...(config.signal === undefined ? {} : { signal: config.signal }),
+    scenery,
+  })
 }
 
 export const loadCachedDroneMapWorld = async (config: {

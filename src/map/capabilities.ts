@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { readTerrainPmtilesMetadata, type TerrainDemEncoding } from './terrain-artifact.ts'
+import { sceneryTileEncoding } from './scenery.ts'
 
 // Map Capability Manifest v2.
 // Top-level shape:
@@ -12,6 +13,7 @@ import { readTerrainPmtilesMetadata, type TerrainDemEncoding } from './terrain-a
 
 export const mapTilesetId = 'leitbild-osm-norway'
 export const terrainTilesetId = 'leitbild-terrain-norway'
+export const sceneryTilesetId = 'leitbild-scenery-norway'
 export const mapManifestSchemaVersion = 2 as const
 export const mapManifestSchemaVersionLiteral = z.literal(2)
 
@@ -101,6 +103,63 @@ export const terrainTilesetSchema = z.object({
 })
 export type TerrainTileset = z.infer<typeof terrainTilesetSchema>
 
+// --- Precompiled scenery tileset entry ------------------------------------
+
+export const sceneryAvailabilitySchema = z.object({
+  status: z.enum(['available', 'unavailable']),
+  mode: z.enum(['precompiled', 'compile-through']).optional(),
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  modifiedAt: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
+})
+export type SceneryAvailability = z.infer<typeof sceneryAvailabilitySchema>
+
+export const sceneryFeatureKindSchema = z.enum([
+  'aeroway',
+  'building',
+  'landcover',
+  'landuse',
+  'place',
+  'poi',
+  'transportation',
+  'transportation_name',
+  'water',
+  'waterway',
+])
+export type SceneryFeatureKind = z.infer<typeof sceneryFeatureKindSchema>
+
+export const sceneryRecipeSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  label: z.string().min(1),
+  intendedUse: z.string().min(1),
+  sourceTilesetId: z.literal(mapTilesetId),
+  featureKinds: z.array(sceneryFeatureKindSchema).min(1),
+  minZoom: z.number().int().min(0).max(24),
+  maxZoom: z.number().int().min(0).max(24),
+  detail: z.enum(['navigation', 'flight-visual', 'analysis']),
+})
+export type SceneryRecipe = z.infer<typeof sceneryRecipeSchema>
+
+export const sceneryTilesetSchema = z.object({
+  kind: z.literal('scenery'),
+  id: z.literal(sceneryTilesetId),
+  schemaVersion: z.literal(1),
+  region: z.object({
+    id: z.literal('norway'),
+    sourceTilesetId: z.literal(mapTilesetId),
+  }),
+  artifact: z.object({
+    format: z.literal('directory-json'),
+    tileEncoding: z.literal(sceneryTileEncoding),
+    manifestUrl: z.literal('/map/scenery/current/manifest.json'),
+    currentTileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.json'),
+  }),
+  recipes: z.array(sceneryRecipeSchema).min(1),
+  availability: sceneryAvailabilitySchema,
+})
+export type SceneryTileset = z.infer<typeof sceneryTilesetSchema>
+
 // --- Reference tileset entry (per-dataset manifest fragments on disk) ------
 
 const tilesetSourceSchema = z.object({
@@ -151,6 +210,7 @@ export type ReferenceTileset = z.infer<typeof referenceTilesetSchema>
 export const tilesetEntrySchema = z.discriminatedUnion('kind', [
   baseTilesetSchema,
   terrainTilesetSchema,
+  sceneryTilesetSchema,
   referenceTilesetSchema,
 ])
 export type TilesetEntry = z.infer<typeof tilesetEntrySchema>
@@ -307,6 +367,9 @@ export const terrainPmtilesPathForRoot = (mapRoot: string): string =>
 const terrainMetadataPathForRoot = (mapRoot: string): string =>
   resolve(mapRoot, 'current', 'terrain.json')
 
+export const sceneryManifestPathForRoot = (mapRoot: string): string =>
+  resolve(mapRoot, 'current', 'scenery', 'manifest.json')
+
 export const createTerrainTileset = (config: {
   readonly availability: TerrainAvailability
   readonly artifact?: {
@@ -339,6 +402,49 @@ export const createTerrainTileset = (config: {
   verticalDatum: 'orthometric-msl',
   availability: config.availability,
 })
+
+export const defaultSceneryRecipes: ReadonlyArray<SceneryRecipe> = [
+  sceneryRecipeSchema.parse({
+    id: 'drone-urban-flight',
+    label: 'Drone urban flight scenery',
+    intendedUse: 'Low-altitude Three.js flight visualization with roads, buildings, water, vegetation, labels, and operational points of interest derived from the canonical vector map.',
+    sourceTilesetId: mapTilesetId,
+    featureKinds: [
+      'aeroway',
+      'building',
+      'landcover',
+      'landuse',
+      'place',
+      'poi',
+      'transportation',
+      'transportation_name',
+      'water',
+      'waterway',
+    ],
+    minZoom: 12,
+    maxZoom: 14,
+    detail: 'flight-visual',
+  }),
+]
+
+export const createSceneryTileset = (availability: SceneryAvailability): SceneryTileset =>
+  sceneryTilesetSchema.parse({
+    kind: 'scenery',
+    id: sceneryTilesetId,
+    schemaVersion: 1,
+    region: {
+      id: 'norway',
+      sourceTilesetId: mapTilesetId,
+    },
+    artifact: {
+      format: 'directory-json',
+      tileEncoding: 'leitbild-scenery-json-v1',
+      manifestUrl: '/map/scenery/current/manifest.json',
+      currentTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.json',
+    },
+    recipes: defaultSceneryRecipes,
+    availability,
+  })
 
 /**
  * Synchronous manifest with the base OSM tileset only. Used by style.ts (which
@@ -490,6 +596,43 @@ const terrainArtifactFor = async (mapRoot: string): Promise<{
   }
 }
 
+const sceneryArtifactFor = async (mapRoot: string): Promise<SceneryAvailability> => {
+  const path = sceneryManifestPathForRoot(mapRoot)
+  try {
+    const info = await stat(path)
+    return {
+      status: info.isFile() && info.size > 0 ? 'available' : 'unavailable',
+      ...(info.isFile() && info.size > 0 ? { mode: 'precompiled' as const } : {}),
+      path,
+      sizeBytes: info.size,
+      modifiedAt: info.mtime.toISOString(),
+      ...(info.isFile() && info.size > 0 ? {} : { error: 'scenery manifest is empty or not a file' }),
+    }
+  } catch (error) {
+    const sourcePath = resolve(mapRoot, 'current', 'norway.pmtiles')
+    try {
+      const sourceInfo = await stat(sourcePath)
+      if (sourceInfo.isFile() && sourceInfo.size > 0) {
+        return {
+          status: 'available',
+          mode: 'compile-through',
+          path: sourcePath,
+          sizeBytes: sourceInfo.size,
+          modifiedAt: sourceInfo.mtime.toISOString(),
+        }
+      }
+    } catch {
+      // Report the missing scenery artifact below; source-vector absence is
+      // visible through the base map artifact status.
+    }
+    return {
+      status: 'unavailable',
+      path,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
 const terrainStamp = async (mapRoot: string): Promise<{ readonly id: string; readonly mtimeMs: number }> => {
   try {
     const s = await stat(terrainPmtilesPathForRoot(mapRoot))
@@ -505,6 +648,15 @@ const terrainMetadataStamp = async (mapRoot: string): Promise<{ readonly id: str
     return { id: 'terrain-metadata', mtimeMs: s.mtimeMs }
   } catch {
     return { id: 'terrain-metadata', mtimeMs: -1 }
+  }
+}
+
+const sceneryStamp = async (mapRoot: string): Promise<{ readonly id: string; readonly mtimeMs: number }> => {
+  try {
+    const s = await stat(sceneryManifestPathForRoot(mapRoot))
+    return { id: 'scenery', mtimeMs: s.mtimeMs }
+  } catch {
+    return { id: 'scenery', mtimeMs: -1 }
   }
 }
 
@@ -525,6 +677,7 @@ export const loadMapCapabilityManifest = async (
     ...await buildStamps(config.referenceRoot, datasetIds),
     await terrainStamp(mapRoot),
     await terrainMetadataStamp(mapRoot),
+    await sceneryStamp(mapRoot),
   ]
   if (cache && stampsMatch(cache.stamps, freshStamps)) return cache.manifest
 
@@ -535,9 +688,10 @@ export const loadMapCapabilityManifest = async (
   }
   const terrainArtifact = await terrainArtifactFor(mapRoot)
   const terrain = createTerrainTileset(terrainArtifact)
+  const scenery = createSceneryTileset(await sceneryArtifactFor(mapRoot))
   const manifest = mapCapabilityManifestSchema.parse({
     schemaVersion: mapManifestSchemaVersion,
-    tilesets: [createBaseTileset(), terrain, ...referenceTilesets],
+    tilesets: [createBaseTileset(), terrain, scenery, ...referenceTilesets],
   })
   cache = { manifest, stamps: freshStamps }
   return manifest
@@ -558,3 +712,6 @@ export const findReferenceTilesets = (manifest: MapCapabilityManifest): Readonly
 
 export const findTerrainTilesets = (manifest: MapCapabilityManifest): ReadonlyArray<TerrainTileset> =>
   manifest.tilesets.filter((t): t is TerrainTileset => t.kind === 'terrain')
+
+export const findSceneryTilesets = (manifest: MapCapabilityManifest): ReadonlyArray<SceneryTileset> =>
+  manifest.tilesets.filter((t): t is SceneryTileset => t.kind === 'scenery')

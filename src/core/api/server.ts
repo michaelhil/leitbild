@@ -10,6 +10,8 @@ import {
   currentTerrainRasterTileResponse,
   currentTerrainTileJsonResponse,
   currentVectorTileResponse,
+  currentSceneryManifestResponse,
+  currentSceneryTileResponse,
   mapGlyphResponse,
   mapCapabilitiesResponse,
   mapStyleResponse,
@@ -216,6 +218,11 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       if (url.pathname.startsWith('/map/terrain/current/')) {
         const terrainResponse = await currentTerrainRasterTileResponse(url, mapArtifacts)
         if (terrainResponse) return secure(terrainResponse)
+      }
+      if (url.pathname === '/map/scenery/current/manifest.json') return secure(await currentSceneryManifestResponse(mapArtifacts))
+      if (url.pathname.startsWith('/map/scenery/current/')) {
+        const sceneryResponse = await currentSceneryTileResponse(url, mapArtifacts)
+        if (sceneryResponse) return secure(sceneryResponse)
       }
       if (url.pathname.startsWith('/map/datasets/')) {
         const referenceVectorTileResponse = await referenceDatasetVectorTileResponse(url)

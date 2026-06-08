@@ -21,6 +21,7 @@ const snapshot: DroneMapWorldSnapshot = {
   center: { lon: 10.75, lat: 59.91 },
   radiusM: 600,
   zoom: 14,
+  scenerySource: 'compile-through',
   tileCount: 1,
   polygons: [
     {
@@ -106,6 +107,7 @@ const blockedVegetationSnapshot: DroneMapWorldSnapshot = {
   center: { lon: 10.75, lat: 59.91 },
   radiusM: 250,
   zoom: 14,
+  scenerySource: 'compile-through',
   tileCount: 1,
   polygons: [
     {

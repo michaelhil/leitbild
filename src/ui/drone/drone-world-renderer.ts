@@ -319,16 +319,13 @@ interface SceneryExclusionIndex {
 const getBucket = (
   buckets: Map<string, GeometryBucket>,
   key: string,
-  material: THREE.Material,
+  materialFactory: () => THREE.Material,
   config: { readonly receiveShadow: boolean; readonly castShadow: boolean; readonly needsNormals: boolean },
 ): GeometryBucket => {
   const existing = buckets.get(key)
-  if (existing) {
-    material.dispose()
-    return existing
-  }
+  if (existing) return existing
   const bucket = {
-    material,
+    material: materialFactory(),
     positions: [],
     uvs: [],
     indices: [],
@@ -450,18 +447,20 @@ const createMergedSurfaceMeshes = (
     if (feature.kind === 'building') continue
     const color = surfacePalette(feature)
     const isWater = feature.kind === 'water'
-    const material = isWater
-      ? createWaterMaterial()
-      : new THREE.MeshBasicMaterial({
-          color,
-        })
-    if (isWater) material.userData.droneWaterMaterial = true
-    material.userData.droneSceneryKind = isWater ? 'water-surface' : 'ground-surface'
-    configureSurfaceDepth(material, feature)
     const bucket = getBucket(
       buckets,
       isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
-      material,
+      () => {
+        const material = isWater
+          ? createWaterMaterial()
+          : new THREE.MeshBasicMaterial({
+              color,
+            })
+        if (isWater) material.userData.droneWaterMaterial = true
+        material.userData.droneSceneryKind = isWater ? 'water-surface' : 'ground-surface'
+        configureSurfaceDepth(material, feature)
+        return material
+      },
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
     appendHorizontalPolygon(bucket, feature.rings, surfaceYOffset(feature), terrain)
@@ -489,22 +488,24 @@ const createMergedBuildingMeshes = (
     const wallBucket = getBucket(
       buckets,
       `building-wall:${feature.className}:${wallColor}`,
-      createBuildingWallMaterial(wallColor, feature.className),
+      () => createBuildingWallMaterial(wallColor, feature.className),
       { receiveShadow: false, castShadow: false, needsNormals: true },
     )
     appendBuildingWalls(wallBucket, feature.rings, minHeight, height, terrain)
 
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
-    const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
-    const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
-    roofMaterial.userData.droneSceneryKind = 'building-roof'
-    roofMaterial.polygonOffset = true
-    roofMaterial.polygonOffsetFactor = -2
-    roofMaterial.polygonOffsetUnits = -16
     const roofBucket = getBucket(
       buckets,
       `building-roof:${Math.round(roofShade * 10)}`,
-      roofMaterial,
+      () => {
+        const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
+        const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
+        roofMaterial.userData.droneSceneryKind = 'building-roof'
+        roofMaterial.polygonOffset = true
+        roofMaterial.polygonOffsetFactor = -2
+        roofMaterial.polygonOffsetUnits = -16
+        return roofMaterial
+      },
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
     appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32, terrain)

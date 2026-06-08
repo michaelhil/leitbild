@@ -632,6 +632,7 @@
           <span>LBL {scenePerformance ? scenePerformance.worldFeatures.roadLabels : '-'}</span>
           <span>MRG {scenePerformance ? scenePerformance.worldFeatures.lineFragmentsMerged : '-'}</span>
           <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
+          <span>MAP {scenePerformance?.worldFeatures.scenerySource ?? '-'}</span>
           <span>TRN {scenePerformance?.worldFeatures.terrain ?? '-'}</span>
           <span>DEM {scenePerformance?.worldFeatures.terrainSurface ?? '-'}</span>
           <span>LOAD {scenePerformance ? Math.round(scenePerformance.worldLoadMs) : '-'} ms</span>
