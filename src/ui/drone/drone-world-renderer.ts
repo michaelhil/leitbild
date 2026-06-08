@@ -199,52 +199,11 @@ const createWaterMaterial = (): THREE.ShaderMaterial =>
 
 const createBuildingWallMaterial = (
   color: string,
-): THREE.ShaderMaterial =>
-  new THREE.ShaderMaterial({
-    uniforms: {
-      baseColor: { value: colorFromHex(color) },
-      windowColor: { value: colorFromHex('#c7e5ff') },
-      darkWindowColor: { value: colorFromHex('#263241') },
-      sunDirection: { value: new THREE.Vector3(-0.42, 0.75, 0.34).normalize() },
-    },
-    vertexShader: `
-      varying vec3 vWorldPosition;
-      varying vec3 vWorldNormal;
-      void main() {
-        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
-        vWorldNormal = normalize(mat3(modelMatrix) * normal);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform vec3 baseColor;
-      uniform vec3 windowColor;
-      uniform vec3 darkWindowColor;
-      uniform vec3 sunDirection;
-      varying vec3 vWorldPosition;
-      varying vec3 vWorldNormal;
-
-      float hash(vec2 p) {
-        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-      }
-
-      void main() {
-        vec3 n = normalize(vWorldNormal);
-        float light = 0.46 + max(dot(n, sunDirection), 0.0) * 0.48;
-        float verticalWall = 1.0 - smoothstep(0.42, 0.78, abs(n.y));
-        vec2 facadeCoord = abs(n.x) > abs(n.z) ? vec2(vWorldPosition.z, vWorldPosition.y) : vec2(vWorldPosition.x, vWorldPosition.y);
-        vec2 cell = vec2(fract(facadeCoord.x / 5.4), fract(facadeCoord.y / 3.55));
-        vec2 floorId = floor(facadeCoord / vec2(5.4, 3.55));
-        float windowMask = step(0.22, cell.x) * step(cell.x, 0.74) * step(0.24, cell.y) * step(cell.y, 0.68);
-        float litMask = step(0.73, hash(floorId));
-        float grime = hash(floor(vWorldPosition.xz * 0.055)) * 0.12;
-        vec3 facade = baseColor * (light + grime);
-        vec3 glass = mix(darkWindowColor, windowColor, litMask);
-        vec3 color = mix(facade, glass, windowMask * verticalWall * 0.72);
-        gl_FragColor = vec4(color, 1.0);
-      }
-    `,
+): THREE.MeshStandardMaterial =>
+  new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.84,
+    metalness: 0.02,
   })
 
 interface GeometryBucket {
@@ -917,10 +876,10 @@ export const createDroneMapWorldGroup = (
 
 export const tickDroneMapWorldGroup = (
   group: THREE.Object3D,
-  nowMs: number,
-  viewMode: '2d' | '3d' | 'fpv',
+  _nowMs: number,
+  _viewMode: '2d' | '3d' | 'fpv',
 ): void => {
-  const timeSeconds = viewMode === '2d' ? 0 : nowMs / 1000
+  const timeSeconds = 0
   const waterMaterials = group.userData.droneWaterMaterials
   if (!Array.isArray(waterMaterials)) return
   for (const material of waterMaterials) {

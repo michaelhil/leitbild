@@ -14,10 +14,6 @@ export interface DroneScenePerformanceSnapshot {
   readonly worldLoadMs: number
   readonly worldBuildMs: number
   readonly activeScenes: number
-  readonly renderBudget: {
-    readonly role: 'primary' | 'background' | 'hidden'
-    readonly targetFps: number
-  }
   readonly worldFeatures: {
     readonly tiles: number
     readonly polygons: number
@@ -48,7 +44,6 @@ export interface DroneFramePerformanceTracker {
     readonly pixelRatio: number
     readonly quality: DroneScenePerformanceSnapshot['quality']
     readonly activeScenes: number
-    readonly renderBudget: DroneScenePerformanceSnapshot['renderBudget']
   }) => DroneScenePerformanceSnapshot
 }
 
@@ -114,9 +109,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
     },
     snapshot: (renderInfo): DroneScenePerformanceSnapshot => {
       const avgFrameMs = average(frameIntervals)
-      const targetFrameMs = renderInfo.renderBudget.targetFps <= 0 ? jankThresholdMs : 1000 / renderInfo.renderBudget.targetFps
-      const budgetAwareJankThresholdMs = Math.max(jankThresholdMs, targetFrameMs * 1.35)
-      const jankFrames = frameIntervals.filter(value => value >= budgetAwareJankThresholdMs).length
+      const jankFrames = frameIntervals.filter(value => value >= jankThresholdMs).length
       return {
         fps: avgFrameMs <= 0 ? 0 : 1000 / avgFrameMs,
         frameMs: avgFrameMs,
@@ -133,7 +126,6 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         worldLoadMs,
         worldBuildMs,
         activeScenes: renderInfo.activeScenes,
-        renderBudget: renderInfo.renderBudget,
         worldFeatures: { tiles, polygons, lines, points },
       }
     },

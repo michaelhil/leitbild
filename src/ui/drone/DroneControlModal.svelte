@@ -11,6 +11,17 @@
   import { sendControlInstanceCommand } from '../control-instance-client.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
+  import {
+    actionForKeyCode,
+    assignDroneKeyBinding,
+    defaultDroneKeyBindings,
+    droneKeyBindingDefinitions,
+    formatKeyCode,
+    readDroneKeyBindings,
+    writeDroneKeyBindings,
+    type DroneKeyBindingAction,
+    type DroneKeyBindingMap,
+  } from './drone-key-bindings.ts'
   import { createDroneScene, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
 
   interface Props {
@@ -35,21 +46,8 @@
   const activeKeepaliveMs = 140
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
-  const manualKeyCodes = new Set([
-    'KeyW',
-    'KeyA',
-    'KeyS',
-    'KeyD',
-    'KeyQ',
-    'KeyE',
-    'ArrowUp',
-    'ArrowDown',
-    'ArrowLeft',
-    'ArrowRight',
-    'Space',
-    'ShiftLeft',
-    'ShiftRight',
-  ])
+  const flightBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'flight')
+  const cameraBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'camera')
 
   let sceneElement = $state<HTMLDivElement | null>(null)
   let sceneHandle: DroneSceneHandle | null = null
@@ -65,6 +63,8 @@
   let mouseControlEnabled = $state(false)
   let mouseCaptured = $state(false)
   let scenePerformance = $state<DroneScenePerformanceSnapshot | null>(null)
+  let keyBindings = $state<DroneKeyBindingMap>(defaultDroneKeyBindings())
+  let bindingCaptureAction = $state<DroneKeyBindingAction | null>(null)
   let lastCommandRoundTripMs = $state<number | null>(null)
   let commandRateHz = $state(0)
   let keys = new Set<string>()
@@ -158,11 +158,39 @@
   const axis = (value: number): number =>
     Math.abs(value) < deadband ? 0 : Math.max(-1, Math.min(1, value))
 
+  const persistKeyBindings = (nextBindings: DroneKeyBindingMap): void => {
+    keyBindings = nextBindings
+    try {
+      writeDroneKeyBindings(localStorage, nextBindings)
+    } catch (err) {
+      status = err instanceof Error ? `Key bindings not saved: ${err.message}` : `Key bindings not saved: ${String(err)}`
+    }
+  }
+
+  const assignKeyBinding = (action: DroneKeyBindingAction, code: string): void => {
+    const nextBindings = assignDroneKeyBinding(keyBindings, action, code)
+    persistKeyBindings(nextBindings)
+    bindingCaptureAction = null
+    keys = new Set()
+  }
+
+  const resetKeyBindings = (): void => {
+    persistKeyBindings(defaultDroneKeyBindings())
+    bindingCaptureAction = null
+    keys = new Set()
+    status = 'Key bindings reset'
+  }
+
+  const isActionPressed = (action: DroneKeyBindingAction): boolean => {
+    const code = keyBindings[action]
+    return code !== '' && keys.has(code)
+  }
+
   const keyboardAxes = (): DroneManualAxes => ({
-    forward: (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) + (keys.has('KeyS') || keys.has('ArrowDown') ? -1 : 0),
-    right: (keys.has('KeyD') ? 1 : 0) + (keys.has('KeyA') ? -1 : 0),
-    vertical: (keys.has('Space') ? 1 : 0) + (keys.has('ShiftLeft') || keys.has('ShiftRight') ? -1 : 0),
-    yaw: (keys.has('KeyE') || keys.has('ArrowRight') ? 1 : 0) + (keys.has('KeyQ') || keys.has('ArrowLeft') ? -1 : 0),
+    forward: (isActionPressed('flight.forward') ? 1 : 0) + (isActionPressed('flight.backward') ? -1 : 0),
+    right: (isActionPressed('flight.right') ? 1 : 0) + (isActionPressed('flight.left') ? -1 : 0),
+    vertical: (isActionPressed('flight.climb') ? 1 : 0) + (isActionPressed('flight.descend') ? -1 : 0),
+    yaw: (isActionPressed('flight.yawRight') ? 1 : 0) + (isActionPressed('flight.yawLeft') ? -1 : 0),
   })
 
   const gamepadAxes = (): DroneManualAxes | null => {
@@ -300,10 +328,44 @@
     mouseAxes = zeroAxes
   }
 
+  const keyboardEventTargetIsTextInput = (target: EventTarget | null): boolean =>
+    target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement
+
+  const handleCameraKeyAction = (action: DroneKeyBindingAction | null): boolean => {
+    if (action === 'camera.view3d') {
+      viewMode = '3d'
+      return true
+    }
+    if (action === 'camera.viewFpv') {
+      viewMode = 'fpv'
+      return true
+    }
+    if (action === 'camera.view2d') {
+      viewMode = '2d'
+      return true
+    }
+    return false
+  }
+
   const handledKeyboardEvent = (event: KeyboardEvent): boolean =>
-    manualKeyCodes.has(event.code)
+    bindingCaptureAction !== null || actionForKeyCode(keyBindings, event.code) !== null
 
   const onKeydown = (event: KeyboardEvent): void => {
+    if (bindingCaptureAction !== null) {
+      event.preventDefault()
+      if (event.repeat) return
+      if (event.code === 'Escape') {
+        bindingCaptureAction = null
+        return
+      }
+      if (event.code === 'Backspace' || event.code === 'Delete') {
+        assignKeyBinding(bindingCaptureAction, '')
+        return
+      }
+      assignKeyBinding(bindingCaptureAction, event.code)
+      return
+    }
+    if (keyboardEventTargetIsTextInput(event.target)) return
     const handled = handledKeyboardEvent(event)
     if (handled) event.preventDefault()
     if (event.repeat) return
@@ -316,11 +378,13 @@
       close()
       return
     }
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return
+    const action = actionForKeyCode(keyBindings, event.code)
+    if (handleCameraKeyAction(action)) return
     if (handled) keys.add(event.code)
   }
 
   const onKeyup = (event: KeyboardEvent): void => {
+    if (keyboardEventTargetIsTextInput(event.target)) return
     if (handledKeyboardEvent(event)) event.preventDefault()
     keys.delete(event.code)
   }
@@ -391,9 +455,15 @@
 
   runOnMount(() => {
     if (!sceneElement) throw new Error('drone scene element was not mounted')
+    try {
+      keyBindings = readDroneKeyBindings(localStorage)
+    } catch (err) {
+      status = err instanceof Error ? `Key bindings reset: ${err.message}` : `Key bindings reset: ${String(err)}`
+      keyBindings = defaultDroneKeyBindings()
+    }
     sceneHandle = createDroneScene({
       container: sceneElement,
-      getFocusDroneId: () => selectedDroneId,
+      getFocusDroneId: () => selectedObject.id,
       getObjects: () => objects,
       getViewMode: () => viewMode,
       onReady: () => {
@@ -505,6 +575,38 @@
       </section>
 
       <section>
+        <h3><Keyboard size={15} /> Keys</h3>
+        <div class="key-binding-grid">
+          {#each flightBindingDefinitions as binding (binding.action)}
+            <button
+              class:capturing={bindingCaptureAction === binding.action}
+              type="button"
+              onclick={() => bindingCaptureAction = binding.action}
+            >
+              <span>{binding.label}</span>
+              <strong>{bindingCaptureAction === binding.action ? 'Press key' : formatKeyCode(keyBindings[binding.action])}</strong>
+            </button>
+          {/each}
+        </div>
+        <div class="key-binding-grid compact">
+          {#each cameraBindingDefinitions as binding (binding.action)}
+            <button
+              class:capturing={bindingCaptureAction === binding.action}
+              type="button"
+              onclick={() => bindingCaptureAction = binding.action}
+            >
+              <span>{binding.label}</span>
+              <strong>{bindingCaptureAction === binding.action ? 'Press key' : formatKeyCode(keyBindings[binding.action])}</strong>
+            </button>
+          {/each}
+          <button type="button" onclick={resetKeyBindings}>
+            <span>Reset</span>
+            <strong>Defaults</strong>
+          </button>
+        </div>
+      </section>
+
+      <section>
         <h3><Activity size={15} /> Performance</h3>
         <div class="perf-grid">
           <span>FPS {scenePerformance ? Math.round(scenePerformance.fps) : '-'}</span>
@@ -518,8 +620,6 @@
           <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
           <span>QL {scenePerformance?.quality ?? '-'}</span>
           <span>SCN {scenePerformance ? scenePerformance.activeScenes : '-'}</span>
-          <span>CAP {scenePerformance ? scenePerformance.renderBudget.targetFps : '-'}</span>
-          <span>ROLE {scenePerformance?.renderBudget.role ?? '-'}</span>
           <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
@@ -720,6 +820,7 @@
   }
 
   .axis-grid,
+  .key-binding-grid,
   .perf-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -743,6 +844,43 @@
     border: 1px solid rgb(148 163 184 / 0.18);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .key-binding-grid.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .key-binding-grid button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+    justify-content: initial;
+    min-width: 0;
+    padding: 5px 7px;
+    text-align: left;
+  }
+
+  .key-binding-grid button.capturing {
+    border-color: #facc15;
+    background: #334155;
+  }
+
+  .key-binding-grid button span,
+  .key-binding-grid button strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .key-binding-grid button span {
+    color: #cbd5e1;
+  }
+
+  .key-binding-grid button strong {
+    color: #f8fafc;
+    font-weight: 700;
   }
 
   .contact-list {
