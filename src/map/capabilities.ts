@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
+import { readTerrainPmtilesMetadata, type TerrainDemEncoding } from './terrain-artifact.ts'
 
 // Map Capability Manifest v2.
 // Top-level shape:
@@ -303,8 +304,17 @@ export const createBaseTileset = (): BaseTileset => baseTilesetSchema.parse({
 export const terrainPmtilesPathForRoot = (mapRoot: string): string =>
   resolve(mapRoot, 'current', 'terrain.pmtiles')
 
+const terrainMetadataPathForRoot = (mapRoot: string): string =>
+  resolve(mapRoot, 'current', 'terrain.json')
+
 export const createTerrainTileset = (config: {
   readonly availability: TerrainAvailability
+  readonly artifact?: {
+    readonly demEncoding?: TerrainDemEncoding
+    readonly minZoom?: number
+    readonly maxZoom?: number
+    readonly tileSize?: 256 | 512
+  }
 }): TerrainTileset => terrainTilesetSchema.parse({
   kind: 'terrain',
   id: terrainTilesetId,
@@ -317,13 +327,13 @@ export const createTerrainTileset = (config: {
   artifact: {
     format: 'pmtiles',
     tileEncoding: 'png',
-    demEncoding: 'terrarium',
+    demEncoding: config.artifact?.demEncoding ?? 'terrarium',
     currentTileUrl: '/map/terrain/current.pmtiles',
     currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
     tileJsonUrl: '/map/terrain/current/tiles.json',
-    minZoom: 0,
-    maxZoom: 13,
-    tileSize: 256,
+    minZoom: config.artifact?.minZoom ?? 0,
+    maxZoom: config.artifact?.maxZoom ?? 13,
+    tileSize: config.artifact?.tileSize ?? 256,
   },
   intendedUse: 'Self-hosted raster DEM tiles for terrain mesh generation, hillshade, altitude-above-ground calculations, and low-altitude simulation context.',
   verticalDatum: 'orthometric-msl',
@@ -421,21 +431,61 @@ const buildStamps = async (referenceRoot: string, datasetIds: ReadonlyArray<stri
   return stamps
 }
 
-const terrainAvailabilityFor = async (mapRoot: string): Promise<TerrainAvailability> => {
-  const path = terrainPmtilesPathForRoot(mapRoot)
+const terrainDemEncodingFor = async (mapRoot: string): Promise<TerrainDemEncoding> => {
+  const path = terrainMetadataPathForRoot(mapRoot)
   try {
-    const s = await stat(path)
+    const raw = await readFile(path, 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    const record = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {}
+    const artifact = record.artifact && typeof record.artifact === 'object' && !Array.isArray(record.artifact)
+      ? record.artifact as Record<string, unknown>
+      : {}
+    const source = record.source && typeof record.source === 'object' && !Array.isArray(record.source)
+      ? record.source as Record<string, unknown>
+      : {}
+    const value = artifact.demEncoding ?? source.demEncoding
+    return value === 'mapbox' ? 'mapbox' : 'terrarium'
+  } catch {
+    return 'terrarium'
+  }
+}
+
+const terrainArtifactFor = async (mapRoot: string): Promise<{
+  readonly availability: TerrainAvailability
+  readonly artifact?: {
+    readonly demEncoding: TerrainDemEncoding
+    readonly minZoom: number
+    readonly maxZoom: number
+    readonly tileSize: 256
+  }
+}> => {
+  const path = terrainPmtilesPathForRoot(mapRoot)
+  const demEncoding = await terrainDemEncodingFor(mapRoot)
+  try {
+    const metadata = await readTerrainPmtilesMetadata({ filePath: path, demEncoding })
     return {
-      status: s.isFile() && s.size > 0 ? 'available' : 'unavailable',
-      path,
-      sizeBytes: s.size,
-      modifiedAt: s.mtime.toISOString(),
+      availability: {
+        status: 'available',
+        path,
+        sizeBytes: metadata.sizeBytes,
+        modifiedAt: metadata.modifiedAt,
+      },
+      artifact: {
+        demEncoding: metadata.demEncoding,
+        minZoom: metadata.minZoom,
+        maxZoom: metadata.maxZoom,
+        tileSize: 256,
+      },
     }
   } catch (error) {
     return {
-      status: 'unavailable',
-      path,
-      error: error instanceof Error ? error.message : String(error),
+      availability: {
+        status: 'unavailable',
+        path,
+        error: error instanceof Error ? error.message : String(error),
+      },
     }
   }
 }
@@ -446,6 +496,15 @@ const terrainStamp = async (mapRoot: string): Promise<{ readonly id: string; rea
     return { id: 'terrain', mtimeMs: s.mtimeMs }
   } catch {
     return { id: 'terrain', mtimeMs: -1 }
+  }
+}
+
+const terrainMetadataStamp = async (mapRoot: string): Promise<{ readonly id: string; readonly mtimeMs: number }> => {
+  try {
+    const s = await stat(terrainMetadataPathForRoot(mapRoot))
+    return { id: 'terrain-metadata', mtimeMs: s.mtimeMs }
+  } catch {
+    return { id: 'terrain-metadata', mtimeMs: -1 }
   }
 }
 
@@ -465,6 +524,7 @@ export const loadMapCapabilityManifest = async (
     { id: `map-root:${resolve(mapRoot)}`, mtimeMs: 0 },
     ...await buildStamps(config.referenceRoot, datasetIds),
     await terrainStamp(mapRoot),
+    await terrainMetadataStamp(mapRoot),
   ]
   if (cache && stampsMatch(cache.stamps, freshStamps)) return cache.manifest
 
@@ -473,9 +533,8 @@ export const loadMapCapabilityManifest = async (
     const { tileset } = await readReferenceManifest(config.referenceRoot, id)
     if (tileset) referenceTilesets.push(tileset)
   }
-  const terrain = createTerrainTileset({
-    availability: await terrainAvailabilityFor(mapRoot),
-  })
+  const terrainArtifact = await terrainArtifactFor(mapRoot)
+  const terrain = createTerrainTileset(terrainArtifact)
   const manifest = mapCapabilityManifestSchema.parse({
     schemaVersion: mapManifestSchemaVersion,
     tilesets: [createBaseTileset(), terrain, ...referenceTilesets],

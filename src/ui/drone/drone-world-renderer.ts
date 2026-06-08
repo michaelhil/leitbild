@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type {
   DroneMapWorldSnapshot,
+  DroneWorldLineFeature,
   DroneWorldPoint,
   DroneWorldPolygonFeature,
 } from './drone-map-world.ts'
@@ -292,6 +293,29 @@ interface GeometryBucket {
   readonly needsNormals: boolean
 }
 
+interface Bounds2 {
+  readonly minX: number
+  readonly maxX: number
+  readonly minZ: number
+  readonly maxZ: number
+}
+
+interface IndexedPolygon {
+  readonly feature: DroneWorldPolygonFeature
+  readonly bounds: Bounds2
+}
+
+interface IndexedLine {
+  readonly feature: DroneWorldLineFeature
+  readonly bounds: Bounds2
+  readonly clearanceM: number
+}
+
+interface SceneryExclusionIndex {
+  readonly solidBlockedAt: (point: DroneWorldPoint) => boolean
+  readonly vegetationBlockedAt: (point: DroneWorldPoint) => boolean
+}
+
 const getBucket = (
   buckets: Map<string, GeometryBucket>,
   key: string,
@@ -544,7 +568,7 @@ const stableHash = (value: string): number => {
 
 const polygonBounds = (
   ring: ReadonlyArray<DroneWorldPoint>,
-): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } => {
+): Bounds2 => {
   let minX = Number.POSITIVE_INFINITY
   let maxX = Number.NEGATIVE_INFINITY
   let minZ = Number.POSITIVE_INFINITY
@@ -556,6 +580,140 @@ const polygonBounds = (
     maxZ = Math.max(maxZ, point.z)
   }
   return { minX, maxX, minZ, maxZ }
+}
+
+const boundsContainPoint = (
+  bounds: Bounds2,
+  point: DroneWorldPoint,
+): boolean =>
+  point.x >= bounds.minX && point.x <= bounds.maxX && point.z >= bounds.minZ && point.z <= bounds.maxZ
+
+const expandedBounds = (
+  bounds: Bounds2,
+  expansionM: number,
+): Bounds2 => ({
+  minX: bounds.minX - expansionM,
+  maxX: bounds.maxX + expansionM,
+  minZ: bounds.minZ - expansionM,
+  maxZ: bounds.maxZ + expansionM,
+})
+
+const polygonContainsPoint = (
+  feature: DroneWorldPolygonFeature,
+  point: DroneWorldPoint,
+): boolean => {
+  const outer = feature.rings[0]
+  if (!outer || !pointInRing(point, outer)) return false
+  return !feature.rings.slice(1).some(ring => pointInRing(point, ring))
+}
+
+const lineBounds = (
+  line: DroneWorldLineFeature,
+): Bounds2 => {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
+  for (const point of line.path) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  return { minX, maxX, minZ, maxZ }
+}
+
+const pointSegmentDistanceM = (
+  point: DroneWorldPoint,
+  start: DroneWorldPoint,
+  end: DroneWorldPoint,
+): number => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const lengthSq = dx * dx + dz * dz
+  if (lengthSq <= Number.EPSILON) return Math.hypot(point.x - start.x, point.z - start.z)
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSq))
+  return Math.hypot(point.x - (start.x + dx * t), point.z - (start.z + dz * t))
+}
+
+const pointNearLine = (
+  point: DroneWorldPoint,
+  line: IndexedLine,
+): boolean => {
+  if (!boundsContainPoint(line.bounds, point)) return false
+  for (let index = 0; index < line.feature.path.length - 1; index += 1) {
+    if (pointSegmentDistanceM(point, line.feature.path[index]!, line.feature.path[index + 1]!) <= line.clearanceM) return true
+  }
+  return false
+}
+
+const sceneryExclusionCellSizeM = 96
+
+const cellKeyForPoint = (
+  point: DroneWorldPoint,
+): string =>
+  `${Math.floor(point.x / sceneryExclusionCellSizeM)}:${Math.floor(point.z / sceneryExclusionCellSizeM)}`
+
+const cellKeysForBounds = (
+  bounds: Bounds2,
+): ReadonlyArray<string> => {
+  const keys: string[] = []
+  const minX = Math.floor(bounds.minX / sceneryExclusionCellSizeM)
+  const maxX = Math.floor(bounds.maxX / sceneryExclusionCellSizeM)
+  const minZ = Math.floor(bounds.minZ / sceneryExclusionCellSizeM)
+  const maxZ = Math.floor(bounds.maxZ / sceneryExclusionCellSizeM)
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let z = minZ; z <= maxZ; z += 1) keys.push(`${x}:${z}`)
+  }
+  return keys
+}
+
+const addIndexedValue = <T>(
+  index: Map<string, T[]>,
+  key: string,
+  value: T,
+): void => {
+  const existing = index.get(key)
+  if (existing) {
+    existing.push(value)
+    return
+  }
+  index.set(key, [value])
+}
+
+const createSceneryExclusionIndex = (
+  snapshot: DroneMapWorldSnapshot,
+): SceneryExclusionIndex => {
+  const solidPolygonsByCell = new Map<string, IndexedPolygon[]>()
+  const transportLinesByCell = new Map<string, IndexedLine[]>()
+
+  for (const feature of snapshot.polygons) {
+    if (feature.kind !== 'building' && feature.kind !== 'water' && feature.kind !== 'aeroway') continue
+    const outer = feature.rings[0]
+    if (!outer) continue
+    const indexed = { feature, bounds: polygonBounds(outer) }
+    for (const key of cellKeysForBounds(indexed.bounds)) addIndexedValue(solidPolygonsByCell, key, indexed)
+  }
+
+  for (const feature of snapshot.lines) {
+    if (feature.kind !== 'road' && feature.kind !== 'rail' && feature.kind !== 'aeroway') continue
+    const clearanceM = Math.max(3, feature.widthM * 0.5 + 2.5)
+    const indexed = { feature, clearanceM, bounds: expandedBounds(lineBounds(feature), clearanceM) }
+    for (const key of cellKeysForBounds(indexed.bounds)) addIndexedValue(transportLinesByCell, key, indexed)
+  }
+
+  const solidBlockedAt = (point: DroneWorldPoint): boolean => {
+    const polygons = solidPolygonsByCell.get(cellKeyForPoint(point)) ?? []
+    return polygons.some(item => boundsContainPoint(item.bounds, point) && polygonContainsPoint(item.feature, point))
+  }
+
+  const vegetationBlockedAt = (point: DroneWorldPoint): boolean => {
+    if (solidBlockedAt(point)) return true
+    const lines = transportLinesByCell.get(cellKeyForPoint(point)) ?? []
+    return lines.some(line => pointNearLine(point, line))
+  }
+
+  return { solidBlockedAt, vegetationBlockedAt }
 }
 
 const polygonCentroid = (
@@ -674,6 +832,7 @@ const vegetationFeatures = (
 const createVegetation = (
   snapshot: DroneMapWorldSnapshot,
   terrain: DroneTerrainModel | undefined,
+  exclusionIndex: SceneryExclusionIndex,
 ): THREE.Group => {
   const features = vegetationFeatures(snapshot)
   const group = new THREE.Group()
@@ -694,6 +853,7 @@ const createVegetation = (
         z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
       }
       if (!pointInRing(candidate, outer)) continue
+      if (exclusionIndex.vegetationBlockedAt(candidate)) continue
       positions.push({
         x: candidate.x,
         z: candidate.z,
@@ -1023,16 +1183,17 @@ const buildDroneMapWorldTemplate = (
   terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const group = createFallbackWorldGroup(snapshot.radiusM, terrain)
+  const exclusionIndex = createSceneryExclusionIndex(snapshot)
   const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons, terrain)
   const buildingGroup = createMergedBuildingMeshes(snapshot.polygons, terrain)
-  const transportGroup = createTransportGeometryGroup(snapshot, terrain)
+  const transportGroup = createTransportGeometryGroup(snapshot, terrain, { solidBlockedAt: exclusionIndex.solidBlockedAt })
   group.add(
     surfaceGroup,
     createShorelineEdges(snapshot, terrain),
     transportGroup,
     buildingGroup,
     createRooftopFixtures(snapshot, terrain),
-    createVegetation(snapshot, terrain),
+    createVegetation(snapshot, terrain, exclusionIndex),
     createPoiBeacons(snapshot, terrain),
   )
   group.traverse(child => {
@@ -1049,6 +1210,7 @@ const buildDroneMapWorldTemplate = (
     polygonCount: snapshot.polygons.length,
     lineCount: snapshot.lines.length,
     pointCount: snapshot.points.length,
+    coverage: snapshot.coverage,
     terrain: terrain?.kind ?? 'flat',
   }
   return group

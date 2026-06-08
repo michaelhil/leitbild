@@ -116,7 +116,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(terrain[0]!.artifact.currentTileTemplate).toBe('/map/terrain/current/{z}/{x}/{y}.png')
   })
 
-  test('marks terrain available when a promoted terrain PMTiles artifact exists', async () => {
+  test('marks corrupt terrain artifacts unavailable instead of advertising fake elevation', async () => {
     const root = await refRoot()
     const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
     await mkdir(join(mapRoot, 'current'), { recursive: true })
@@ -125,9 +125,9 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
     const terrain = findTerrainTilesets(manifest)
     expect(terrain.length).toBe(1)
-    expect(terrain[0]!.availability.status).toBe('available')
+    expect(terrain[0]!.availability.status).toBe('unavailable')
     expect(terrain[0]!.availability.path).toBe(join(mapRoot, 'current', 'terrain.pmtiles'))
-    expect(terrain[0]!.availability.sizeBytes).toBeGreaterThan(0)
+    expect(terrain[0]!.availability.error).toContain('PMTiles archive')
   })
 
   test('discovers a promoted reference dataset and appends it', async () => {

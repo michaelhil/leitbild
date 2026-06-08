@@ -25,7 +25,7 @@ The version of the map capability contract, not the OpenStreetMap extract date.
 A discoverable vector tile source layer with geometry, category, intended use, and fields.
 
 **Terrain Tileset**:
-An optional raster DEM PMTiles product advertised as `kind: "terrain"`. The current terrain contract uses Terrarium or Mapbox-encoded PNG tiles at `/map/terrain/current/{z}/{x}/{y}.png`, with TileJSON at `/map/terrain/current/tiles.json`. If `/opt/leitbild/maps/current/terrain.pmtiles` is absent or unreadable, the manifest still advertises the terrain entry with `availability.status: "unavailable"` so renderers and diagnostics do not fabricate elevation.
+An optional raster DEM PMTiles product advertised as `kind: "terrain"`. The current terrain contract uses Terrarium or Mapbox-encoded PNG tiles at `/map/terrain/current/{z}/{x}/{y}.png`, with TileJSON at `/map/terrain/current/tiles.json`. If `/opt/leitbild/maps/current/terrain.pmtiles` is absent, corrupt, or unreadable, the manifest still advertises the terrain entry with `availability.status: "unavailable"` so renderers and diagnostics do not fabricate elevation. `availability.status: "available"` means the promoted artifact has validated as readable PNG DEM PMTiles data.
 
 **Field Availability**:
 `required` means the pipeline expects the field when the layer exists. `optional` means the field is useful when present but callers must handle absence.

@@ -263,12 +263,13 @@ The scene renders:
 - 2D overhead, 3D chase, and first-person FPV camera modes
 - flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
-The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, road-label, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. Additional visual detail is generated only as deterministic transforms of those source features: facades and rooftop fixtures from real building footprints, streetlights and barriers from real road geometry, shoreline edges from real water polygons, and trees from real vegetation/landuse polygons. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
+The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, merges conservative source-identical and named-major transport fragments across tile cuts, then extrudes and symbolizes building, road, road-label, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. Additional visual detail is generated only as deterministic transforms of those source features: facades and rooftop fixtures from real building footprints, streetlights and barriers from real road geometry, shoreline edges from real water polygons, and trees from real vegetation/landuse polygons. Derived details use a bounded spatial exclusion index: vegetation avoids source-backed buildings, water, aeroways, roads, rails, and runways, while road furniture avoids solid map features. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product only after the promoted PMTiles archive validates as readable PNG DEM data. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
 
 The flight modal performance panel separates:
 
 - `TRN`: advertised terrain capability status from `/map/capabilities.json`
 - `DEM`: rendered terrain surface, either `dem` or `flat`
+- `BLD`, `RD`, `WTR`, `VEG`, `LBL`, and `MRG`: selected source-backed buildings, roads, water features, vegetation areas, road labels, and merged transport fragments for the currently streamed world
 
 The renderer owns its WebGL lifecycle:
 
@@ -381,12 +382,13 @@ Important tested behaviors:
 - invalid attack commands fail explicitly
 - the built-in drone scenario and mission are catalog-valid together
 - decoded scenery snapshots generate rich Three.js scene detail from real map features: building walls/roofs, shorelines, road furniture, vegetation, POI markers, and road-label signs
+- scenery regression tests cover transport-fragment merging and verify that derived vegetation is not placed inside source-backed solid features
 
 ## Known Next Work
 
 Highest-value next work:
 
-- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage; the runtime path is ready, but production currently advertises terrain as unavailable until this artifact exists
+- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage; the runtime path is ready, but production currently advertises terrain as unavailable until a valid PNG DEM PMTiles artifact exists
 - richer map-context artifact builds: tree/vegetation density, landmarks, extra landcover classes, building semantics, bridge/tunnel context, non-city scenery variation, and additional licensed reference datasets; these should enter through the vector/reference-data pipeline, not through hidden renderer guesses
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands

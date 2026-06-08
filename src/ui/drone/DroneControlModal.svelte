@@ -624,6 +624,12 @@
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
+          <span>BLD {scenePerformance ? scenePerformance.worldFeatures.buildings : '-'}</span>
+          <span>RD {scenePerformance ? scenePerformance.worldFeatures.roads : '-'}</span>
+          <span>WTR {scenePerformance ? scenePerformance.worldFeatures.water : '-'}</span>
+          <span>VEG {scenePerformance ? scenePerformance.worldFeatures.vegetation : '-'}</span>
+          <span>LBL {scenePerformance ? scenePerformance.worldFeatures.roadLabels : '-'}</span>
+          <span>MRG {scenePerformance ? scenePerformance.worldFeatures.lineFragmentsMerged : '-'}</span>
           <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
           <span>TRN {scenePerformance?.worldFeatures.terrain ?? '-'}</span>
           <span>DEM {scenePerformance?.worldFeatures.terrainSurface ?? '-'}</span>

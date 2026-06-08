@@ -20,6 +20,12 @@ export interface DroneScenePerformanceSnapshot {
     readonly polygons: number
     readonly lines: number
     readonly points: number
+    readonly buildings: number
+    readonly roads: number
+    readonly water: number
+    readonly vegetation: number
+    readonly roadLabels: number
+    readonly lineFragmentsMerged: number
     readonly terrain: 'available' | 'unavailable' | 'unknown'
     readonly terrainSurface: 'dem' | 'flat'
   }
@@ -39,6 +45,12 @@ export interface DroneFramePerformanceTracker {
     readonly polygons: number
     readonly lines: number
     readonly points: number
+    readonly buildings: number
+    readonly roads: number
+    readonly water: number
+    readonly vegetation: number
+    readonly roadLabels: number
+    readonly lineFragmentsMerged: number
     readonly terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain']
     readonly terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface']
   }) => void
@@ -86,6 +98,12 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let polygons = 0
   let lines = 0
   let points = 0
+  let buildings = 0
+  let roads = 0
+  let water = 0
+  let vegetation = 0
+  let roadLabels = 0
+  let lineFragmentsMerged = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
 
@@ -116,6 +134,12 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       polygons = config.polygons
       lines = config.lines
       points = config.points
+      buildings = config.buildings
+      roads = config.roads
+      water = config.water
+      vegetation = config.vegetation
+      roadLabels = config.roadLabels
+      lineFragmentsMerged = config.lineFragmentsMerged
       terrain = config.terrain
       terrainSurface = config.terrainSurface
     },
@@ -139,7 +163,20 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         worldBuildMs,
         worldSource,
         activeScenes: renderInfo.activeScenes,
-        worldFeatures: { tiles, polygons, lines, points, terrain, terrainSurface },
+        worldFeatures: {
+          tiles,
+          polygons,
+          lines,
+          points,
+          buildings,
+          roads,
+          water,
+          vegetation,
+          roadLabels,
+          lineFragmentsMerged,
+          terrain,
+          terrainSurface,
+        },
       }
     },
   }

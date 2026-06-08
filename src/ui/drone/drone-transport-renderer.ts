@@ -118,6 +118,10 @@ interface PathSample {
   readonly y: number
 }
 
+interface TransportSceneryConfig {
+  readonly solidBlockedAt?: (point: DroneWorldPoint) => boolean
+}
+
 const simplifiedPath = (
   path: ReadonlyArray<DroneWorldPoint>,
   minDistanceM: number,
@@ -401,10 +405,13 @@ const collectPathSamples = (config: {
 const createRoadFurnitureGroup = (
   roads: ReadonlyArray<DroneWorldLineFeature>,
   terrain: DroneTerrainModel | undefined,
+  config: TransportSceneryConfig,
 ): THREE.Group => {
   const group = new THREE.Group()
   const streetLights: PathSample[] = []
   const barrierPanels: PathSample[] = []
+  const blocked = (sample: PathSample): boolean =>
+    config.solidBlockedAt?.({ x: sample.x, z: sample.z }) ?? false
   for (const road of roads) {
     if (road.isTunnel || road.lengthM < 35 || road.distanceM > 3_400) continue
     const priority = roadPriority(road.className)
@@ -420,7 +427,7 @@ const createRoadFurnitureGroup = (
           lateralOffsetM: side * sideOffset,
           y: 0.2,
           maxSamples: 1_200 - streetLights.length,
-        }))
+        }).filter(sample => !blocked(sample)))
       }
     }
     if ((road.isBridge || priority >= 70) && barrierPanels.length < 1_000) {
@@ -432,7 +439,7 @@ const createRoadFurnitureGroup = (
           lateralOffsetM: side * Math.max(3.4, road.widthM * 0.5 + 0.7),
           y: 0.74,
           maxSamples: 1_000 - barrierPanels.length,
-        }))
+        }).filter(sample => !blocked(sample)))
       }
     }
   }
@@ -576,6 +583,7 @@ const meshesFromBuckets = (
 export const createTransportGeometryGroup = (
   snapshot: DroneMapWorldSnapshot,
   terrain?: DroneTerrainModel,
+  config: TransportSceneryConfig = {},
 ): THREE.Group => {
   const group = new THREE.Group()
   const lines = transportLinesForDrawing(snapshot.lines)
@@ -680,7 +688,7 @@ export const createTransportGeometryGroup = (
   )
 
   group.add(meshesFromBuckets(buckets))
-  group.add(createRoadFurnitureGroup(roads, terrain))
+  group.add(createRoadFurnitureGroup(roads, terrain, config))
   group.userData.receiveShadow = false
   return group
 }

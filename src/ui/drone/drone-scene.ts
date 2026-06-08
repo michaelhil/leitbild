@@ -529,6 +529,12 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           polygons: snapshot.polygons.length,
           lines: snapshot.lines.length,
           points: snapshot.points.length,
+          buildings: snapshot.coverage.selected.buildings,
+          roads: snapshot.coverage.selected.roads,
+          water: snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways,
+          vegetation: snapshot.coverage.selected.vegetationPolygons,
+          roadLabels: snapshot.coverage.selected.roadLabels,
+          lineFragmentsMerged: snapshot.coverage.lineFragmentsMerged,
           terrain: worldResult.terrain.status,
           terrainSurface: worldResult.terrainModel.kind,
         })
@@ -536,7 +542,9 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         const terrainSuffix = worldResult.terrain.status === 'available'
           ? `; terrain ${worldResult.terrain.demEncoding}/${worldResult.terrainModel.kind}`
           : `; terrain ${worldResult.terrain.status}`
-        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${terrainSuffix}${fallbackSuffix}`)
+        const coverageSuffix = `; ${snapshot.coverage.selected.buildings} buildings, ${snapshot.coverage.selected.roads} roads, ${snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways} water features, ${snapshot.coverage.selected.vegetationPolygons} vegetation areas`
+        const noteSuffix = snapshot.coverage.notes.length > 0 ? `; ${snapshot.coverage.notes[0]}` : ''
+        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${fallbackSuffix}${noteSuffix}`)
       } catch (err) {
         if (destroyed || generation !== worldLoadGeneration) return
         pendingWorldCenterKey = ''

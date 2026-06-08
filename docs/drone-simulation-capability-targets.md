@@ -229,6 +229,9 @@ Implemented in the V2 fidelity pass:
 - optional DEM sampling from advertised terrain PMTiles and terrain-aware draping for ground, roads, buildings, vegetation, and POI affordances
 - moving-world scenery streaming keyed by rounded source-backed map grid centers, so flight away from the start loads new vector-derived scenery instead of remaining in the original block
 - source-backed aeroway and place-layer consumption in the Three.js world
+- conservative transport-fragment merging for source-identical and named-major road/rail/aeroway features so tile cuts do not dominate road continuity
+- source coverage counters for streamed worlds, including buildings, roads, water, vegetation, road labels, and merged line fragments
+- bounded scenery exclusion checks so derived vegetation and road furniture do not occupy source-backed solids or transport corridors
 - read-only `drone.sensorContacts` query and pilot-panel contact list with range/FOV/visibility/precipitation confidence filtering
 - tests for environment physics and sensor-contact filtering
 
@@ -240,13 +243,14 @@ Implemented in the scenery close-out pass:
 - shoreline edge cues derived from real water polygons
 - road furniture, bridge barriers, and road-label signs derived from real road and road-name geometry
 - deterministic vegetation instancing derived from landcover and landuse polygons
+- source-backed exclusion index preventing derived vegetation inside buildings, water, aeroways, roads, rails, and runways
 - DEM loader prefetches unique terrain tiles before sampling the local height grid, reducing avoidable terrain load stalls once a terrain artifact is promoted
-- renderer regression test proving that decoded source-backed features produce the rich Three.js scenery graph
+- renderer regression tests proving that decoded source-backed features produce the rich Three.js scenery graph, that transport fragments merge conservatively, and that blocked vegetation is not emitted
 
 Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
-- first production terrain artifact build from Kartverket DTM or another selected DEM source
+- first production terrain artifact build from Kartverket DTM or another selected DEM source; the manifest now advertises terrain as available only after the PMTiles archive validates as readable PNG DEM data
 - richer vector tile/reference-data builds for extra source-backed detail, especially vegetation density, landmarks, building semantics, rural landcover, bridges/tunnels, and non-city scenery; this is data-pipeline work, not hidden renderer fabrication
 - richer swarm search/patrol/separation/cohesion behavior
 - deeper sensor model for occlusion, classification, shared detections, and update cadence
@@ -278,5 +282,5 @@ V2 acceptance criteria:
 V2 scoped deferrals:
 
 - Real PX4/ArduPilot SITL, WebAssembly flight dynamics, and JSBSim-style aircraft modeling are deferred until there is a measured need or a concrete benchmarking target that the TypeScript model cannot meet.
-- Real DEM terrain remains inactive until a self-hosted terrain PMTiles artifact exists. The modal reads terrain availability from `/map/capabilities.json`, attempts DEM decoding only for advertised real artifacts, and must not synthesize or imply real elevation while the artifact is unavailable.
+- Real DEM terrain remains inactive until a self-hosted terrain PMTiles artifact validates. The modal reads terrain availability from `/map/capabilities.json`, attempts DEM decoding only for advertised real artifacts, and must not synthesize or imply real elevation while the artifact is unavailable.
 - A full mission autopilot runner remains separate from this pass. V2 strengthens flight, FPV, environment, and visual fidelity first.

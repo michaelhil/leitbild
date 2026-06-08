@@ -30,6 +30,7 @@ export interface DroneWorldPolygonFeature {
 
 export interface DroneWorldLineFeature {
   readonly id: string
+  readonly sourceRef?: string
   readonly kind: DroneWorldLineKind
   readonly className: string
   readonly subclass?: string
@@ -79,6 +80,27 @@ export type DroneWorldTerrainStatus =
       readonly reason: string
     }
 
+export interface DroneWorldFeatureCount {
+  readonly polygons: number
+  readonly lines: number
+  readonly points: number
+}
+
+export interface DroneWorldSceneryCoverage {
+  readonly decoded: DroneWorldFeatureCount
+  readonly selected: DroneWorldFeatureCount & {
+    readonly buildings: number
+    readonly roads: number
+    readonly waterPolygons: number
+    readonly waterways: number
+    readonly vegetationPolygons: number
+    readonly roadLabels: number
+    readonly pois: number
+  }
+  readonly lineFragmentsMerged: number
+  readonly notes: ReadonlyArray<string>
+}
+
 export interface DroneMapWorldSnapshot {
   readonly key: string
   readonly center: DroneWorldCenter
@@ -88,6 +110,7 @@ export interface DroneMapWorldSnapshot {
   readonly polygons: ReadonlyArray<DroneWorldPolygonFeature>
   readonly lines: ReadonlyArray<DroneWorldLineFeature>
   readonly points: ReadonlyArray<DroneWorldPointFeature>
+  readonly coverage: DroneWorldSceneryCoverage
 }
 
 export interface DroneMapWorldCacheStats {
@@ -569,6 +592,187 @@ const selectWorldPoints = (
     })
     .slice(0, 240)
 
+const lineMergeEndpointToleranceM = 2.2
+
+const endpointDistanceM = (
+  left: DroneWorldPoint | undefined,
+  right: DroneWorldPoint | undefined,
+): number =>
+  left && right ? Math.hypot(left.x - right.x, left.z - right.z) : Number.POSITIVE_INFINITY
+
+const lineMergeKeyFor = (
+  feature: DroneWorldLineFeature,
+): string | null => {
+  if (feature.sourceRef) return `source:${feature.sourceRef}`
+  const canMergeNamedRoad = feature.kind === 'road'
+    && feature.name !== undefined
+    && feature.name.length > 0
+    && roadClassPriority(feature.className) >= 4
+  if (!canMergeNamedRoad) return null
+  return [
+    'named-road',
+    feature.className,
+    feature.subclass ?? '',
+    feature.name ?? '',
+    feature.brunnel ?? '',
+    feature.layer ?? '',
+    feature.service ?? '',
+    feature.access ?? '',
+    feature.oneway ?? '',
+    feature.widthM,
+    feature.verticalOffsetM,
+  ].join(':')
+}
+
+const withoutDuplicateJoinPoint = (
+  path: ReadonlyArray<DroneWorldPoint>,
+): ReadonlyArray<DroneWorldPoint> =>
+  path.slice(1)
+
+const joinedPath = (
+  left: ReadonlyArray<DroneWorldPoint>,
+  right: ReadonlyArray<DroneWorldPoint>,
+): ReadonlyArray<DroneWorldPoint> | null => {
+  const leftStart = left[0]
+  const leftEnd = left[left.length - 1]
+  const rightStart = right[0]
+  const rightEnd = right[right.length - 1]
+  const candidates: ReadonlyArray<{
+    readonly distanceM: number
+    readonly path: ReadonlyArray<DroneWorldPoint>
+  }> = [
+    { distanceM: endpointDistanceM(leftEnd, rightStart), path: [...left, ...withoutDuplicateJoinPoint(right)] },
+    { distanceM: endpointDistanceM(leftStart, rightEnd), path: [...right, ...withoutDuplicateJoinPoint(left)] },
+    { distanceM: endpointDistanceM(leftEnd, rightEnd), path: [...left, ...withoutDuplicateJoinPoint([...right].reverse())] },
+    { distanceM: endpointDistanceM(leftStart, rightStart), path: [[...right].reverse(), withoutDuplicateJoinPoint(left)].flat() },
+  ].sort((a, b) => a.distanceM - b.distanceM)
+  const best = candidates[0]
+  return best && best.distanceM <= lineMergeEndpointToleranceM ? best.path : null
+}
+
+const mergeLineRun = (
+  first: DroneWorldLineFeature,
+  second: DroneWorldLineFeature,
+  path: ReadonlyArray<DroneWorldPoint>,
+): DroneWorldLineFeature => ({
+  ...first,
+  id: `${first.id}+${second.id}`,
+  path,
+  distanceM: pathDistanceM(path),
+  lengthM: pathLengthM(path),
+})
+
+const mergeLineGroup = (
+  group: ReadonlyArray<DroneWorldLineFeature>,
+): ReadonlyArray<DroneWorldLineFeature> => {
+  const runs = [...group].sort((left, right) => left.id.localeCompare(right.id))
+  let changed = true
+  while (changed) {
+    changed = false
+    for (let leftIndex = 0; leftIndex < runs.length && !changed; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < runs.length; rightIndex += 1) {
+        const mergedPath = joinedPath(runs[leftIndex]!.path, runs[rightIndex]!.path)
+        if (!mergedPath) continue
+        const merged = mergeLineRun(runs[leftIndex]!, runs[rightIndex]!, mergedPath)
+        runs.splice(rightIndex, 1)
+        runs[leftIndex] = merged
+        changed = true
+        break
+      }
+    }
+  }
+  return runs
+}
+
+export const mergeDroneWorldLinesForScenery = (
+  features: ReadonlyArray<DroneWorldLineFeature>,
+): ReadonlyArray<DroneWorldLineFeature> => {
+  const groups = new Map<string, DroneWorldLineFeature[]>()
+  const passthrough: DroneWorldLineFeature[] = []
+  for (const feature of features) {
+    const key = lineMergeKeyFor(feature)
+    if (!key) {
+      passthrough.push(feature)
+      continue
+    }
+    const existing = groups.get(key)
+    if (existing) {
+      existing.push(feature)
+      continue
+    }
+    groups.set(key, [feature])
+  }
+  const merged = [...passthrough]
+  for (const group of groups.values()) {
+    merged.push(...(group.length <= 1 ? group : mergeLineGroup(group)))
+  }
+  return merged.sort((left, right) => lineSortValue(left) - lineSortValue(right))
+}
+
+const sceneryCoverageNotes = (config: {
+  readonly selectedPolygons: ReadonlyArray<DroneWorldPolygonFeature>
+  readonly selectedLines: ReadonlyArray<DroneWorldLineFeature>
+  readonly selectedPoints: ReadonlyArray<DroneWorldPointFeature>
+  readonly decoded: DroneWorldFeatureCount
+  readonly mergedLineCount: number
+}): ReadonlyArray<string> => {
+  const notes: string[] = []
+  if (!config.selectedPolygons.some(feature => feature.kind === 'building')) notes.push('No selected building footprints; 3D buildings are source-data limited for this world.')
+  if (!config.selectedLines.some(feature => feature.kind === 'road')) notes.push('No selected roads; ground transport scenery is source-data limited for this world.')
+  if (!config.selectedPolygons.some(feature => feature.kind === 'water') && !config.selectedLines.some(feature => feature.kind === 'waterway')) {
+    notes.push('No selected water polygons or waterways; marine and river scenery is source-data limited for this world.')
+  }
+  if (!config.selectedPolygons.some(feature => feature.kind === 'landcover' || feature.kind === 'landuse')) {
+    notes.push('No selected landcover or landuse polygons; vegetation and non-city variation are source-data limited for this world.')
+  }
+  if (config.decoded.lines > config.mergedLineCount) {
+    notes.push(`Merged ${config.decoded.lines - config.mergedLineCount} source transport fragments before rendering.`)
+  }
+  return notes
+}
+
+const sceneryCoverageFor = (config: {
+  readonly decoded: {
+    readonly polygons: ReadonlyArray<DroneWorldPolygonFeature>
+    readonly lines: ReadonlyArray<DroneWorldLineFeature>
+    readonly points: ReadonlyArray<DroneWorldPointFeature>
+  }
+  readonly mergedLines: ReadonlyArray<DroneWorldLineFeature>
+  readonly selectedPolygons: ReadonlyArray<DroneWorldPolygonFeature>
+  readonly selectedLines: ReadonlyArray<DroneWorldLineFeature>
+  readonly selectedPoints: ReadonlyArray<DroneWorldPointFeature>
+}): DroneWorldSceneryCoverage => {
+  const selected = {
+    polygons: config.selectedPolygons.length,
+    lines: config.selectedLines.length,
+    points: config.selectedPoints.length,
+    buildings: config.selectedPolygons.filter(feature => feature.kind === 'building').length,
+    roads: config.selectedLines.filter(feature => feature.kind === 'road').length,
+    waterPolygons: config.selectedPolygons.filter(feature => feature.kind === 'water').length,
+    waterways: config.selectedLines.filter(feature => feature.kind === 'waterway').length,
+    vegetationPolygons: config.selectedPolygons.filter(feature => feature.kind === 'landcover' || feature.kind === 'landuse').length,
+    roadLabels: config.selectedPoints.filter(feature => feature.kind === 'road_label').length,
+    pois: config.selectedPoints.filter(feature => feature.kind === 'poi').length,
+  }
+  const decoded = {
+    polygons: config.decoded.polygons.length,
+    lines: config.decoded.lines.length,
+    points: config.decoded.points.length,
+  }
+  return {
+    decoded,
+    selected,
+    lineFragmentsMerged: Math.max(0, decoded.lines - config.mergedLines.length),
+    notes: sceneryCoverageNotes({
+      selectedPolygons: config.selectedPolygons,
+      selectedLines: config.selectedLines,
+      selectedPoints: config.selectedPoints,
+      decoded,
+      mergedLineCount: config.mergedLines.length,
+    }),
+  }
+}
+
 const decodePolygonFeature = (
   id: string,
   kind: DroneWorldPolygonKind,
@@ -612,6 +816,7 @@ const decodePolygonFeature = (
 
 const decodeLineFeature = (
   id: string,
+  sourceRef: string | undefined,
   kind: DroneWorldLineKind,
   className: string,
   geometry: GeoJsonGeometry,
@@ -644,6 +849,7 @@ const decodeLineFeature = (
     if (lengthM < 0.8) return []
     return [{
       id: `${id}:${index}`,
+      ...(sourceRef === undefined ? {} : { sourceRef }),
       kind,
       className,
       ...(subclass === undefined ? {} : { subclass }),
@@ -753,11 +959,12 @@ const decodeLayer = (
     const properties = feature.properties ?? {}
     const className = stringProperty(properties, 'class', stringProperty(properties, 'type', layerId))
     const id = `${tileCoord.z}/${tileCoord.x}/${tileCoord.y}:${layerId}:${vectorFeature.id ?? index}`
+    const sourceRef = vectorFeature.id === undefined ? undefined : `${layerId}:${vectorFeature.id}`
     if (layerId === 'building') {
       polygons.push(...decodePolygonFeature(id, 'building', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'aeroway') {
       polygons.push(...decodePolygonFeature(id, 'aeroway', className, feature.geometry, properties, center, radiusM))
-      lines.push(...decodeLineFeature(id, 'aeroway', className, feature.geometry, properties, center, radiusM))
+      lines.push(...decodeLineFeature(id, sourceRef, 'aeroway', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'water') {
       polygons.push(...decodePolygonFeature(id, 'water', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'landcover') {
@@ -765,10 +972,10 @@ const decodeLayer = (
     } else if (layerId === 'landuse') {
       polygons.push(...decodePolygonFeature(id, 'landuse', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'waterway') {
-      lines.push(...decodeLineFeature(id, 'waterway', className, feature.geometry, properties, center, radiusM))
+      lines.push(...decodeLineFeature(id, sourceRef, 'waterway', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'transportation') {
       const kind = className === 'rail' ? 'rail' : 'road'
-      lines.push(...decodeLineFeature(id, kind, className, feature.geometry, properties, center, radiusM))
+      lines.push(...decodeLineFeature(id, sourceRef, kind, className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'transportation_name') {
       const label = optionalStringProperty(properties, 'name')
       if (label) points.push(...decodeLineLabelFeature(id, 'road_label', className, label, feature.geometry, center, radiusM))
@@ -914,9 +1121,13 @@ export const loadDroneMapWorld = async (config: {
       points: layerFeatures.flatMap(layer => layer.points),
     }
   }))
-  const polygons = selectWorldPolygons(decoded.flatMap(item => item.polygons), radiusM)
-  const lines = selectWorldLines(decoded.flatMap(item => item.lines), radiusM)
-  const points = selectWorldPoints(decoded.flatMap(item => item.points))
+  const decodedPolygons = decoded.flatMap(item => item.polygons)
+  const decodedLines = decoded.flatMap(item => item.lines)
+  const decodedPoints = decoded.flatMap(item => item.points)
+  const mergedLines = mergeDroneWorldLinesForScenery(decodedLines)
+  const polygons = selectWorldPolygons(decodedPolygons, radiusM)
+  const lines = selectWorldLines(mergedLines, radiusM)
+  const points = selectWorldPoints(decodedPoints)
   return {
     key: tileKeyFor(config.center, radiusM, zoom),
     center: config.center,
@@ -926,6 +1137,13 @@ export const loadDroneMapWorld = async (config: {
     polygons,
     lines,
     points,
+    coverage: sceneryCoverageFor({
+      decoded: { polygons: decodedPolygons, lines: decodedLines, points: decodedPoints },
+      mergedLines,
+      selectedPolygons: polygons,
+      selectedLines: lines,
+      selectedPoints: points,
+    }),
   }
 }
 
