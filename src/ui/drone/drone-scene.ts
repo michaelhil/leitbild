@@ -271,6 +271,7 @@ export interface DroneWorldLoadSpec {
 interface BuiltWorldNode {
   readonly root: TransformNode
   readonly requestedTileCount: number
+  readonly selectedTileCount: number
   readonly loadedTileCount: number
   readonly skippedTileCount: number
   readonly coverage: DroneMapWorldSnapshot['coverage']
@@ -279,6 +280,11 @@ interface BuiltWorldNode {
 interface LoadedSceneryTile {
   readonly root: TransformNode
   readonly tile: DroneSceneryTileAsset
+}
+
+interface SceneryBuildLimits {
+  readonly maxTiles: number
+  readonly maxBytes: number
 }
 
 export const droneWorldLoadSpecsFor = (
@@ -510,6 +516,29 @@ const withTimeout = async <T>(
 const terrainY = (terrain: DroneTerrainModel | undefined, x: number, z: number): number =>
   terrain?.kind === 'dem' ? terrainHeightAt(terrain, x, z) : 0
 
+const sceneryBuildLimitsFor = (
+  stage: DroneWorldLoadStage,
+): SceneryBuildLimits =>
+  stage === 'near'
+    ? { maxTiles: 8, maxBytes: 6_500_000 }
+    : { maxTiles: 16, maxBytes: 12_000_000 }
+
+const selectSceneryTilesForBuild = (
+  tiles: ReadonlyArray<DroneSceneryTileAsset>,
+  limits: SceneryBuildLimits,
+): ReadonlyArray<DroneSceneryTileAsset> => {
+  const selected: DroneSceneryTileAsset[] = []
+  let selectedBytes = 0
+  for (const tile of tiles) {
+    if (selected.length >= limits.maxTiles) break
+    const fitsByteBudget = selected.length === 0 || selectedBytes + tile.byteLength <= limits.maxBytes
+    if (!fitsByteBudget) continue
+    selected.push(tile)
+    selectedBytes += tile.byteLength
+  }
+  return selected
+}
+
 const mapWithConcurrency = async <Input, Output>(
   items: ReadonlyArray<Input>,
   concurrency: number,
@@ -533,12 +562,14 @@ const mapWithConcurrency = async <Input, Output>(
 
 const createWorldNode = async (
   scene: Scene,
+  stage: DroneWorldLoadStage,
   snapshot: DroneMapWorldSnapshot,
   terrain?: DroneTerrainModel,
 ): Promise<BuiltWorldNode> => {
   const root = createBaseWorld(scene, snapshot.radiusM, terrain)
   const tileLoadDeadlineMs = performance.now() + sceneryStageBuildBudgetMs
-  const tileResults = await mapWithConcurrency(snapshot.tiles, tileLoadConcurrency, async tile => {
+  const selectedTiles = selectSceneryTilesForBuild(snapshot.tiles, sceneryBuildLimitsFor(stage))
+  const tileResults = await mapWithConcurrency(selectedTiles, tileLoadConcurrency, async tile => {
     if (performance.now() >= tileLoadDeadlineMs) {
       console.warn(`Skipping Babylon scenery tile ${tile.id}; stage tile budget exhausted`)
       return null
@@ -577,7 +608,7 @@ const createWorldNode = async (
         ...baseCoverage,
         notes: [
           ...baseCoverage.notes,
-          `${skippedTileCount} scenery tiles did not load within the interactive tile budget.`,
+          `${skippedTileCount} scenery tiles were deferred by the interactive tile budget.`,
         ],
       }
   for (const tileResult of loadedResults) tileResult.root.parent = root
@@ -593,6 +624,7 @@ const createWorldNode = async (
   return {
     root,
     requestedTileCount: snapshot.tileCount,
+    selectedTileCount: selectedTiles.length,
     loadedTileCount: loadedResults.length,
     skippedTileCount,
     coverage,
@@ -699,7 +731,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         config.onWorldStatus?.(`Loading ${spec.stage} Babylon scenery`)
         const result = await loadDroneMapWorldForScene({ center: decision.center, radiusM: spec.radiusM, zoom: spec.zoom })
         const loadedAt = performance.now()
-        const next = await createWorldNode(scene, result.snapshot, result.terrainModel)
+        const next = await createWorldNode(scene, spec.stage, result.snapshot, result.terrainModel)
         const builtAt = performance.now()
         if (destroyed || generation !== worldLoadGeneration) {
           next.root.dispose(false, true)
@@ -727,8 +759,9 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           terrain: result.terrain.status,
           terrainSurface: result.terrainModel.kind === 'dem' ? 'dem' : 'flat',
         })
-        const skippedText = next.skippedTileCount > 0 ? ` · ${next.skippedTileCount} skipped` : ''
-        config.onWorldStatus?.(`${spec.stage} Babylon scenery ready · ${next.loadedTileCount}/${next.requestedTileCount} tiles${skippedText}`)
+        const attemptText = next.selectedTileCount < next.requestedTileCount ? ` · ${next.selectedTileCount} attempted` : ''
+        const skippedText = next.skippedTileCount > 0 ? ` · ${next.skippedTileCount} deferred` : ''
+        config.onWorldStatus?.(`${spec.stage} Babylon scenery ready · ${next.loadedTileCount}/${next.requestedTileCount} tiles${attemptText}${skippedText}`)
         notifyReadyOnce()
       }
     } catch (err) {
