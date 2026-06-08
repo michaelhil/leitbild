@@ -1,9 +1,10 @@
 import dgram from 'node:dgram'
+import type { RemoteInfo } from 'node:dgram'
 import { describe, expect, test } from 'bun:test'
-import type { ActorId, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
+import type { ActorId, CommandEnvelope, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import type { PackMapAreaFeature, PackQueryResponse } from '../src/core/packs/protocol.ts'
-import { createDroneCommandKind, manualControlPayloadSchema } from '../src/packs/drone/commands.ts'
+import { createDroneCommandKind, manualControlPayloadSchema, takeoffDroneCommandKind } from '../src/packs/drone/commands.ts'
 import { createDroneAttackInteractionHandler, droneAttackSignal } from '../src/packs/drone/interactions.ts'
 import {
   defaultDroneVehicleModels,
@@ -29,7 +30,8 @@ import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone
 import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
 import { droneManualControlReadiness } from '../src/packs/drone/control-readiness.ts'
-import { acquireSharedMavlinkClient, decodeMavlinkFrames, parseMavlinkEndpoint, type SharedMavlinkClientLease } from '../src/packs/drone/sitl/mavlink.ts'
+import { acquireSharedMavlinkClient, decodeMavlinkFrames, mavCmd, parseMavlinkEndpoint, type SharedMavlinkClientLease } from '../src/packs/drone/sitl/mavlink.ts'
+import { createDroneSitlPackRuntimeAdapter } from '../src/packs/drone/sitl/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
@@ -190,9 +192,20 @@ const globalPositionIntPayloadForTest = (config: {
 
 type UdpSocketForTest = ReturnType<typeof dgram.createSocket>
 
+const mavlinkCommandLongMessageIdForTest = 76
+const mavlinkCommandAckMessageIdForTest = 77
+
 interface MavlinkHeartbeatResponderForTest {
   readonly endpointText: string
   readonly close: () => Promise<void>
+}
+
+interface MavlinkHeartbeatResponderConfigForTest {
+  readonly onFrame?: (config: {
+    readonly frame: ReturnType<typeof decodeMavlinkFrames>[number]
+    readonly remote: RemoteInfo
+    readonly socket: UdpSocketForTest
+  }) => void
 }
 
 const bindUdpSocketForTest = async (): Promise<UdpSocketForTest> => {
@@ -234,7 +247,24 @@ const heartbeatPayloadForTest = (): Buffer => {
   return payload
 }
 
-const startMavlinkHeartbeatResponderForTest = async (): Promise<MavlinkHeartbeatResponderForTest> => {
+const commandAckPayloadForTest = (command: number): Buffer => {
+  const payload = Buffer.alloc(3)
+  payload.writeUInt16LE(command, 0)
+  payload.writeUInt8(0, 2)
+  return payload
+}
+
+const sendMavlinkFrameForTest = (
+  socket: UdpSocketForTest,
+  remote: RemoteInfo,
+  frame: Buffer,
+): void => {
+  socket.send(frame, remote.port, remote.address)
+}
+
+const startMavlinkHeartbeatResponderForTest = async (
+  config: MavlinkHeartbeatResponderConfigForTest = {},
+): Promise<MavlinkHeartbeatResponderForTest> => {
   const localProbe = await bindUdpSocketForTest()
   const localPort = udpSocketPortForTest(localProbe)
   await closeUdpSocketForTest(localProbe)
@@ -242,8 +272,11 @@ const startMavlinkHeartbeatResponderForTest = async (): Promise<MavlinkHeartbeat
   const remoteSocket = await bindUdpSocketForTest()
   const remotePort = udpSocketPortForTest(remoteSocket)
   let seq = 0
-  remoteSocket.on('message', (_message, remote) => {
-    const frame = encodeMavlink1FrameForTest({
+  remoteSocket.on('message', (message, remote) => {
+    for (const frame of decodeMavlinkFrames(message)) {
+      config.onFrame?.({ frame, remote, socket: remoteSocket })
+    }
+    const heartbeat = encodeMavlink1FrameForTest({
       seq,
       systemId: 1,
       componentId: 1,
@@ -252,7 +285,7 @@ const startMavlinkHeartbeatResponderForTest = async (): Promise<MavlinkHeartbeat
       crcExtra: 50,
     })
     seq = (seq + 1) & 0xff
-    remoteSocket.send(frame, remote.port, remote.address)
+    sendMavlinkFrameForTest(remoteSocket, remote, heartbeat)
   })
 
   return {
@@ -507,6 +540,94 @@ describe('drone pack', () => {
     } finally {
       if (secondLease !== undefined) await secondLease.release()
       if (firstLease !== undefined) await firstLease.release()
+      await responder.close()
+    }
+  })
+
+  test('SITL takeoff command encodes MAVLink COMMAND_LONG coordinates as latitude then longitude', async () => {
+    const capturedTakeoffParams: number[][] = []
+    const responder = await startMavlinkHeartbeatResponderForTest({
+      onFrame: ({ frame, remote, socket }) => {
+        if (frame.messageId !== mavlinkCommandLongMessageIdForTest || frame.payload.length < 33) return
+        const command = frame.payload.readUInt16LE(28)
+        if (command !== mavCmd.navTakeoff) return
+        capturedTakeoffParams.push(Array.from({ length: 7 }, (_value, index) => frame.payload.readFloatLE(index * 4)))
+        const ack = encodeMavlink1FrameForTest({
+          seq: 211,
+          systemId: 1,
+          componentId: 1,
+          messageId: mavlinkCommandAckMessageIdForTest,
+          payload: commandAckPayloadForTest(command),
+          crcExtra: 143,
+        })
+        sendMavlinkFrameForTest(socket, remote, ack)
+      },
+    })
+    const adapter = createDroneSitlPackRuntimeAdapter()
+    const object = drone({
+      id: 'drone:takeoff-ordering',
+      systemId: 1,
+      point: point(10.7522, 59.9139),
+      altitudeM: 0.2,
+      headingDeg: 98,
+    })
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [object],
+      scenario: {
+        scenarioId: 'scenario:test-drone-takeoff-ordering',
+        runtimeIds: [droneSitlRuntimeId],
+        world: { environment: {} },
+        initialObjects: [object],
+        runtimeConfigs: {
+          drone: {
+            autopilot: 'px4',
+            mavlink: {
+              endpoint: responder.endpointText,
+              linkCount: 1,
+              systemIdBase: 1,
+              heartbeatTimeoutMs: 1_000,
+              commandTimeoutMs: 1_000,
+            },
+          },
+        },
+        runtimeConfig: {
+          autopilot: 'px4',
+          mavlink: {
+            endpoint: responder.endpointText,
+            linkCount: 1,
+            systemIdBase: 1,
+            heartbeatTimeoutMs: 1_000,
+            commandTimeoutMs: 1_000,
+          },
+        },
+      },
+    })
+
+    try {
+      const command: CommandEnvelope = {
+        id: 'command:test-drone-takeoff-ordering' as CommandEnvelope['id'],
+        controlInstanceId,
+        actorId,
+        kind: takeoffDroneCommandKind,
+        targetObjectIds: [object.id],
+        payload: {
+          droneId: object.id,
+          altitudeM: 25,
+        },
+        issuedAt: at,
+      }
+
+      const result = await connection.sendCommand(command)
+
+      expect(result.ok).toBe(true)
+      expect(capturedTakeoffParams).toHaveLength(1)
+      expect(capturedTakeoffParams[0]?.[3]).toBeCloseTo(98, 5)
+      expect(capturedTakeoffParams[0]?.[4]).toBeCloseTo(59.9139, 5)
+      expect(capturedTakeoffParams[0]?.[5]).toBeCloseTo(10.7522, 5)
+      expect(capturedTakeoffParams[0]?.[6]).toBeCloseTo(25, 5)
+    } finally {
+      await connection.close()
       await responder.close()
     }
   })

@@ -308,8 +308,8 @@ const commandWithCurrentPoint = (
       params[1] ?? 0,
       params[2] ?? 0,
       params[3] ?? data.pose.headingDeg,
-      params[4] ?? data.pose.point.coordinates[0],
-      params[5] ?? data.pose.point.coordinates[1],
+      params[4] ?? data.pose.point.coordinates[1],
+      params[5] ?? data.pose.point.coordinates[0],
       params[6] ?? data.pose.altitudeM,
     ],
   })
@@ -537,7 +537,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const payload = takeoffDronePayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
         const { client } = connectedVehicleForData(data)
-        await commandWithCurrentPoint(client, data, mavCmd.navTakeoff, [0, 0, 0, data.pose.headingDeg, data.pose.point.coordinates[0], data.pose.point.coordinates[1], payload.altitudeM])
+        await commandWithCurrentPoint(client, data, mavCmd.navTakeoff, [0, 0, 0, data.pose.headingDeg, data.pose.point.coordinates[1], data.pose.point.coordinates[0], payload.altitudeM])
         return
       }
 
