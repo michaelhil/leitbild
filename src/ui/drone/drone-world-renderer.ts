@@ -5,6 +5,7 @@ import type {
   DroneWorldPolygonFeature,
 } from './drone-map-world.ts'
 import { createTransportGeometryGroup } from './drone-transport-renderer.ts'
+import { terrainHeightAt, type DroneTerrainModel } from './drone-terrain.ts'
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
@@ -20,6 +21,14 @@ const makeMaterial = (
 ): THREE.MeshStandardMaterial =>
   new THREE.MeshStandardMaterial({ color, roughness, metalness })
 
+const terrainY = (
+  terrain: DroneTerrainModel | undefined,
+  x: number,
+  z: number,
+  baseY: number,
+): number =>
+  baseY + (terrain ? terrainHeightAt(terrain, x, z) : 0)
+
 const colorFromHex = (
   color: string,
 ): THREE.Color =>
@@ -33,6 +42,11 @@ const surfacePalette = (
   if (feature.className === 'grass' || feature.className === 'park') return '#5d9b45'
   if (feature.className === 'wetland') return '#4f8a7a'
   if (feature.className === 'sand') return '#d7c88f'
+  if (feature.className === 'farmland' || feature.className === 'farm') return '#9da85d'
+  if (feature.className === 'scrub' || feature.className === 'heath') return '#6f8f57'
+  if (feature.className === 'rock' || feature.className === 'bare_rock') return '#8d9292'
+  if (feature.className === 'cemetery') return '#607f5f'
+  if (feature.className === 'pitch' || feature.className === 'playground') return '#6aa96a'
   if (feature.className === 'hospital') return '#cbdff8'
   if (feature.className === 'industrial') return '#b9afa6'
   if (feature.className === 'commercial') return '#cbc2b1'
@@ -96,6 +110,7 @@ const createGroundTexture = (): THREE.Texture | null => {
 
 const createBaseGround = (
   radiusM: number,
+  terrain?: DroneTerrainModel,
 ): THREE.Mesh => {
   const texture = createGroundTexture()
   const material = new THREE.MeshStandardMaterial({
@@ -104,6 +119,33 @@ const createBaseGround = (
     metalness: 0.01,
     ...(texture === null ? {} : { map: texture }),
   })
+  if (terrain?.kind === 'dem') {
+    const positions: number[] = []
+    const uvs: number[] = []
+    const indices: number[] = []
+    for (let row = 0; row < terrain.gridSize; row += 1) {
+      const z = -terrain.radiusM + row * terrain.sampleSpacingM
+      for (let column = 0; column < terrain.gridSize; column += 1) {
+        const x = -terrain.radiusM + column * terrain.sampleSpacingM
+        positions.push(x, terrainHeightAt(terrain, x, z) - 0.42, z)
+        uvs.push(column / (terrain.gridSize - 1) * 18, row / (terrain.gridSize - 1) * 18)
+      }
+    }
+    for (let row = 0; row < terrain.gridSize - 1; row += 1) {
+      for (let column = 0; column < terrain.gridSize - 1; column += 1) {
+        const base = row * terrain.gridSize + column
+        indices.push(base, base + terrain.gridSize, base + 1, base + 1, base + terrain.gridSize, base + terrain.gridSize + 1)
+      }
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+    geometry.setIndex(indices)
+    geometry.computeVertexNormals()
+    const ground = new THREE.Mesh(geometry, material)
+    ground.receiveShadow = true
+    return ground
+  }
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 1, 1), material)
   ground.rotation.x = -Math.PI / 2
   ground.position.y = -0.35
@@ -233,6 +275,7 @@ const appendHorizontalPolygon = (
   bucket: GeometryBucket,
   rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
   y: number,
+  terrain: DroneTerrainModel | undefined,
 ): void => {
   const normalizedRings = rings.map(openRing).filter(ring => ring.length >= 3)
   const outer = normalizedRings[0]
@@ -245,7 +288,7 @@ const appendHorizontalPolygon = (
   const vertices = [...outer, ...holes.flatMap(ring => ring)]
   const base = bucket.positions.length / 3
   for (const point of vertices) {
-    bucket.positions.push(point.x, y, point.z)
+    bucket.positions.push(point.x, terrainY(terrain, point.x, point.z, y), point.z)
     bucket.uvs.push(point.x * 0.018, point.z * 0.018)
   }
   for (const triangle of triangles) {
@@ -262,8 +305,8 @@ const appendBuildingWalls = (
   rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
   minHeight: number,
   height: number,
+  terrain: DroneTerrainModel | undefined,
 ): void => {
-  const top = minHeight + height
   for (const sourceRing of rings) {
     const ring = openRing(sourceRing)
     if (ring.length < 2) continue
@@ -273,11 +316,13 @@ const appendBuildingWalls = (
       const length = Math.hypot(end.x - start.x, end.z - start.z)
       if (length < 0.1) continue
       const base = bucket.positions.length / 3
+      const startBaseY = terrainY(terrain, start.x, start.z, minHeight)
+      const endBaseY = terrainY(terrain, end.x, end.z, minHeight)
       bucket.positions.push(
-        start.x, minHeight, start.z,
-        end.x, minHeight, end.z,
-        end.x, top, end.z,
-        start.x, top, start.z,
+        start.x, startBaseY, start.z,
+        end.x, endBaseY, end.z,
+        end.x, endBaseY + height, end.z,
+        start.x, startBaseY + height, start.z,
       )
       bucket.uvs.push(0, 0, length * 0.12, 0, length * 0.12, height * 0.18, 0, height * 0.18)
       bucket.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
@@ -317,6 +362,7 @@ const meshesFromBuckets = (
 
 const createMergedSurfaceMeshes = (
   polygons: ReadonlyArray<DroneWorldPolygonFeature>,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const buckets = new Map<string, GeometryBucket>()
   for (const feature of polygons) {
@@ -336,13 +382,14 @@ const createMergedSurfaceMeshes = (
       material,
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
-    appendHorizontalPolygon(bucket, feature.rings, surfaceYOffset(feature))
+    appendHorizontalPolygon(bucket, feature.rings, surfaceYOffset(feature), terrain)
   }
   return meshesFromBuckets(buckets)
 }
 
 const createMergedBuildingMeshes = (
   polygons: ReadonlyArray<DroneWorldPolygonFeature>,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const buckets = new Map<string, GeometryBucket>()
   for (const feature of polygons) {
@@ -363,7 +410,7 @@ const createMergedBuildingMeshes = (
       createBuildingWallMaterial(wallColor),
       { receiveShadow: false, castShadow: false, needsNormals: true },
     )
-    appendBuildingWalls(wallBucket, feature.rings, minHeight, height)
+    appendBuildingWalls(wallBucket, feature.rings, minHeight, height, terrain)
 
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
     const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
@@ -377,7 +424,7 @@ const createMergedBuildingMeshes = (
       roofMaterial,
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
-    appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32)
+    appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32, terrain)
   }
   return meshesFromBuckets(buckets)
 }
@@ -444,6 +491,7 @@ const polygonCentroid = (
 
 const createRooftopFixtures = (
   snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const buildings = snapshot.polygons
     .filter(feature => feature.kind === 'building' && feature.distanceM < Math.min(2_200, snapshot.radiusM * 0.55) && feature.areaM2 > 80)
@@ -475,7 +523,7 @@ const createRooftopFixtures = (
       const height = building.minHeightM ?? 0
       fixtures.push({
         x: candidate.x,
-        y: height + (building.heightM ?? 8) + 0.52,
+        y: terrainY(terrain, candidate.x, candidate.z, height + (building.heightM ?? 8) + 0.52),
         z: candidate.z,
         sx: 1.2 + random() * 2.6,
         sy: 0.45 + random() * 0.9,
@@ -524,10 +572,11 @@ const vegetationFeatures = (
 ): ReadonlyArray<DroneWorldPolygonFeature> =>
   snapshot.polygons.filter(feature =>
     (feature.kind === 'landcover' || feature.kind === 'landuse')
-    && ['wood', 'forest', 'grass', 'park', 'residential'].includes(feature.className))
+    && ['wood', 'forest', 'scrub', 'heath', 'grass', 'park', 'residential'].includes(feature.className))
 
 const createVegetation = (
   snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const features = vegetationFeatures(snapshot)
   const group = new THREE.Group()
@@ -574,15 +623,16 @@ const createVegetation = (
   )
   const dummy = new THREE.Object3D()
   for (const [index, position] of positions.entries()) {
-    dummy.position.set(position.x, 2.6 * position.scale, position.z)
+    const baseY = terrainY(terrain, position.x, position.z, 0)
+    dummy.position.set(position.x, baseY + 2.6 * position.scale, position.z)
     dummy.scale.set(position.scale, position.scale, position.scale)
     dummy.rotation.y = stableHash(`${position.x}:${position.z}`) / 0xffffffff * Math.PI * 2
     dummy.updateMatrix()
     trunk.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(position.x, 7.5 * position.scale, position.z)
+    dummy.position.set(position.x, baseY + 7.5 * position.scale, position.z)
     dummy.updateMatrix()
     canopy.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(position.x + 0.8 * position.scale, 10.2 * position.scale, position.z - 0.4 * position.scale)
+    dummy.position.set(position.x + 0.8 * position.scale, baseY + 10.2 * position.scale, position.z - 0.4 * position.scale)
     dummy.scale.set(position.scale * 0.88, position.scale * 0.82, position.scale * 0.88)
     dummy.updateMatrix()
     canopyTop.setMatrixAt(index, dummy.matrix)
@@ -599,6 +649,7 @@ const createVegetation = (
 
 const createPoiBeacons = (
   snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
   const group = new THREE.Group()
   const beaconMaterial = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0ea5e9', emissiveIntensity: 0.7, roughness: 0.35 })
@@ -609,12 +660,13 @@ const createPoiBeacons = (
   const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 6, 28), ringMaterial, points.length)
   const dummy = new THREE.Object3D()
   for (const [index, point] of points.entries()) {
-    dummy.position.set(point.point.x, 9, point.point.z)
+    const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
+    dummy.position.set(point.point.x, baseY + 9, point.point.z)
     dummy.rotation.set(0, 0, 0)
     dummy.scale.set(1, 1, 1)
     dummy.updateMatrix()
     stems.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(point.point.x, 18.2, point.point.z)
+    dummy.position.set(point.point.x, baseY + 18.2, point.point.z)
     dummy.rotation.set(Math.PI / 2, 0, 0)
     dummy.updateMatrix()
     rings.setMatrixAt(index, dummy.matrix)
@@ -687,8 +739,9 @@ const createAtmosphereDome = (
 
 const renderableWorldKeyFor = (
   snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
 ): string =>
-  `${snapshot.key}:${snapshot.center.lon.toFixed(6)}:${snapshot.center.lat.toFixed(6)}`
+  `${snapshot.key}:${snapshot.center.lon.toFixed(6)}:${snapshot.center.lat.toFixed(6)}:${terrain?.kind ?? 'flat'}:${terrain?.kind === 'dem' ? `${terrain.source.zoom}:${terrain.minHeightM.toFixed(1)}:${terrain.maxHeightM.toFixed(1)}` : 'none'}`
 
 const disposeMaterial = (material: THREE.Material): void => {
   const maybeTextured = material as THREE.Material & {
@@ -820,26 +873,28 @@ const rememberRenderableWorld = (
 
 export const createFallbackWorldGroup = (
   radiusM = 1_600,
+  terrain?: DroneTerrainModel,
 ): THREE.Group => {
   const group = new THREE.Group()
-  group.add(createAtmosphereDome(radiusM), createBaseGround(radiusM), createDistantHills(radiusM))
+  group.add(createAtmosphereDome(radiusM), createBaseGround(radiusM, terrain), createDistantHills(radiusM))
   return group
 }
 
 const buildDroneMapWorldTemplate = (
   snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
-  const group = createFallbackWorldGroup(snapshot.radiusM)
-  const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons)
-  const buildingGroup = createMergedBuildingMeshes(snapshot.polygons)
-  const transportGroup = createTransportGeometryGroup(snapshot)
+  const group = createFallbackWorldGroup(snapshot.radiusM, terrain)
+  const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons, terrain)
+  const buildingGroup = createMergedBuildingMeshes(snapshot.polygons, terrain)
+  const transportGroup = createTransportGeometryGroup(snapshot, terrain)
   group.add(
     surfaceGroup,
     transportGroup,
     buildingGroup,
-    createRooftopFixtures(snapshot),
-    createVegetation(snapshot),
-    createPoiBeacons(snapshot),
+    createRooftopFixtures(snapshot, terrain),
+    createVegetation(snapshot, terrain),
+    createPoiBeacons(snapshot, terrain),
   )
   group.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
@@ -855,21 +910,23 @@ const buildDroneMapWorldTemplate = (
     polygonCount: snapshot.polygons.length,
     lineCount: snapshot.lines.length,
     pointCount: snapshot.points.length,
+    terrain: terrain?.kind ?? 'flat',
   }
   return group
 }
 
 export const createDroneMapWorldGroup = (
   snapshot: DroneMapWorldSnapshot,
+  terrain?: DroneTerrainModel,
 ): THREE.Group => {
-  const key = renderableWorldKeyFor(snapshot)
+  const key = renderableWorldKeyFor(snapshot, terrain)
   const cached = cachedRenderableWorlds.get(key)
   if (cached) {
     cachedRenderableWorlds.delete(key)
     cachedRenderableWorlds.set(key, cached)
     return cloneRenderableWorld(cached)
   }
-  const template = buildDroneMapWorldTemplate(snapshot)
+  const template = buildDroneMapWorldTemplate(snapshot, terrain)
   markSharedWorldGeometries(template)
   rememberRenderableWorld(key, template)
   return cloneRenderableWorld(template)

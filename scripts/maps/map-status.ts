@@ -1,5 +1,6 @@
 import { readdir, readlink, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { readTerrainPmtilesMetadata } from '../../src/map/terrain-artifact.ts'
 import { createMapPipelineConfig } from './config.ts'
 
 const config = createMapPipelineConfig()
@@ -31,12 +32,28 @@ try {
   if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err
 }
 
+const terrainPath = join(config.rootDir, 'current', 'terrain.pmtiles')
+let terrain: { readonly status: 'available'; readonly metadata: Awaited<ReturnType<typeof readTerrainPmtilesMetadata>> } | { readonly status: 'unavailable'; readonly error: string }
+try {
+  terrain = {
+    status: 'available',
+    metadata: await readTerrainPmtilesMetadata({ filePath: terrainPath }),
+  }
+} catch (err) {
+  terrain = {
+    status: 'unavailable',
+    error: err instanceof Error ? err.message : String(err),
+  }
+}
+
 console.log(JSON.stringify({
   rootDir: config.rootDir,
   sourcePath: config.sourcePath,
   sourceSizeBytes: await sizeOf(config.sourcePath),
   currentTarget,
   currentPmtilesSizeBytes: await sizeOf(join(config.rootDir, 'current', 'norway.pmtiles')),
+  currentTerrainPmtilesSizeBytes: await sizeOf(terrainPath),
+  terrain,
   releaseCount: releases.length,
   releases: releases.sort(),
 }, null, 2))

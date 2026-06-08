@@ -626,6 +626,7 @@
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
           <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
           <span>TRN {scenePerformance?.worldFeatures.terrain ?? '-'}</span>
+          <span>DEM {scenePerformance?.worldFeatures.terrainSurface ?? '-'}</span>
           <span>LOAD {scenePerformance ? Math.round(scenePerformance.worldLoadMs) : '-'} ms</span>
           <span>BUILD {scenePerformance ? Math.round(scenePerformance.worldBuildMs) : '-'} ms</span>
         </div>

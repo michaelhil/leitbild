@@ -19,6 +19,8 @@ export interface DroneWorldPolygonFeature {
   readonly id: string
   readonly kind: DroneWorldPolygonKind
   readonly className: string
+  readonly name?: string
+  readonly subclass?: string
   readonly rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>
   readonly distanceM: number
   readonly areaM2: number
@@ -30,8 +32,15 @@ export interface DroneWorldLineFeature {
   readonly id: string
   readonly kind: DroneWorldLineKind
   readonly className: string
+  readonly name?: string
+  readonly surface?: string
+  readonly brunnel?: string
+  readonly layer?: number
+  readonly isBridge: boolean
+  readonly isTunnel: boolean
   readonly path: ReadonlyArray<DroneWorldPoint>
   readonly widthM: number
+  readonly verticalOffsetM: number
   readonly distanceM: number
   readonly lengthM: number
 }
@@ -50,6 +59,9 @@ export type DroneWorldTerrainStatus =
       readonly demEncoding: 'terrarium' | 'mapbox'
       readonly tileTemplate: string
       readonly tileJsonUrl: string
+      readonly minZoom?: number
+      readonly maxZoom?: number
+      readonly tileSize?: 256 | 512
       readonly path?: string
     }
   | {
@@ -179,6 +191,24 @@ const stringProperty = (
 ): string => {
   const value = properties[key]
   return typeof value === 'string' && value.length > 0 ? value : fallback
+}
+
+const optionalStringProperty = (
+  properties: Record<string, unknown>,
+  key: string,
+): string | undefined => {
+  const value = properties[key]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+const booleanLikeProperty = (
+  properties: Record<string, unknown>,
+  key: string,
+): boolean => {
+  const value = properties[key]
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'number') return value !== 0
+  return typeof value === 'string' && ['yes', 'true', '1'].includes(value.toLowerCase())
 }
 
 const numberProperty = (
@@ -339,6 +369,16 @@ const lineWidthFor = (
   return 4.2
 }
 
+const lineVerticalOffsetM = (config: {
+  readonly isBridge: boolean
+  readonly isTunnel: boolean
+  readonly layer?: number
+}): number => {
+  if (config.isBridge) return 3.2 + Math.max(0, config.layer ?? 0) * 2
+  if (config.isTunnel) return -1.4
+  return 0
+}
+
 const coordinatePair = (value: unknown): readonly [number, number] | null => {
   if (!Array.isArray(value) || value.length < 2) return null
   const lon = value[0]
@@ -492,10 +532,14 @@ const decodePolygonFeature = (
     const minHeightM = kind === 'building'
       ? numberProperty(properties, ['render_min_height', 'min_height']) ?? undefined
       : undefined
+    const name = optionalStringProperty(properties, 'name')
+    const subclass = optionalStringProperty(properties, 'subclass')
     return [{
       id: `${id}:${index}`,
       kind,
       className,
+      ...(name === undefined ? {} : { name }),
+      ...(subclass === undefined ? {} : { subclass }),
       rings,
       distanceM,
       areaM2,
@@ -510,9 +554,17 @@ const decodeLineFeature = (
   kind: DroneWorldLineKind,
   className: string,
   geometry: GeoJsonGeometry,
+  properties: Record<string, unknown>,
   center: DroneWorldCenter,
   radiusM: number,
 ): ReadonlyArray<DroneWorldLineFeature> => {
+  const brunnel = optionalStringProperty(properties, 'brunnel')
+  const isBridge = brunnel === 'bridge' || booleanLikeProperty(properties, 'bridge')
+  const isTunnel = brunnel === 'tunnel' || booleanLikeProperty(properties, 'tunnel')
+  const layer = numberProperty(properties, ['layer']) ?? undefined
+  const surface = optionalStringProperty(properties, 'surface')
+  const name = optionalStringProperty(properties, 'name')
+  const verticalOffsetM = lineVerticalOffsetM({ isBridge, isTunnel, ...(layer === undefined ? {} : { layer }) })
   const paths = geometry.type === 'LineString'
     ? [lineFromCoordinates(geometry.coordinates, center)]
     : geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)
@@ -528,8 +580,15 @@ const decodeLineFeature = (
       id: `${id}:${index}`,
       kind,
       className,
+      ...(name === undefined ? {} : { name }),
+      ...(surface === undefined ? {} : { surface }),
+      ...(brunnel === undefined ? {} : { brunnel }),
+      ...(layer === undefined ? {} : { layer }),
+      isBridge,
+      isTunnel,
       path,
       widthM: lineWidthFor(kind, className),
+      verticalOffsetM,
       distanceM,
       lengthM,
     }]
@@ -584,10 +643,10 @@ const decodeLayer = (
     } else if (layerId === 'landuse') {
       polygons.push(...decodePolygonFeature(id, 'landuse', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'waterway') {
-      lines.push(...decodeLineFeature(id, 'waterway', className, feature.geometry, center, radiusM))
+      lines.push(...decodeLineFeature(id, 'waterway', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'transportation') {
       const kind = className === 'rail' ? 'rail' : 'road'
-      lines.push(...decodeLineFeature(id, kind, className, feature.geometry, center, radiusM))
+      lines.push(...decodeLineFeature(id, kind, className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'poi') {
       const label = stringProperty(properties, 'name', className)
       points.push(...decodePointFeature(id, className, label, feature.geometry, center, radiusM))
@@ -614,6 +673,11 @@ const stringValue = (
 ): string | null =>
   typeof value === 'string' && value.length > 0 ? value : null
 
+const finiteNumberValue = (
+  value: unknown,
+): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+
 const terrainStatusFromManifest = (
   value: unknown,
 ): DroneWorldTerrainStatus => {
@@ -633,12 +697,25 @@ const terrainStatusFromManifest = (
     const demEncoding = stringValue(artifact?.demEncoding)
     const tileTemplate = stringValue(artifact?.currentTileTemplate)
     const tileJsonUrl = stringValue(artifact?.tileJsonUrl)
+    const minZoom = finiteNumberValue(artifact?.minZoom)
+    const maxZoom = finiteNumberValue(artifact?.maxZoom)
+    const tileSize = finiteNumberValue(artifact?.tileSize)
     if ((demEncoding !== 'terrarium' && demEncoding !== 'mapbox') || !tileTemplate || !tileJsonUrl) {
       return { status: 'unknown', reason: 'terrain capability is available but artifact metadata is incomplete' }
     }
+    const encoding: 'terrarium' | 'mapbox' = demEncoding
+    const parsedTileSize: 256 | 512 | undefined = tileSize === 256 || tileSize === 512 ? tileSize : undefined
+    const shared = {
+      demEncoding: encoding,
+      tileTemplate,
+      tileJsonUrl,
+      ...(minZoom === null ? {} : { minZoom }),
+      ...(maxZoom === null ? {} : { maxZoom }),
+      ...(parsedTileSize === undefined ? {} : { tileSize: parsedTileSize }),
+    }
     return path
-      ? { status: 'available', demEncoding, tileTemplate, tileJsonUrl, path }
-      : { status: 'available', demEncoding, tileTemplate, tileJsonUrl }
+      ? { status: 'available', ...shared, path }
+      : { status: 'available', ...shared }
   }
 
   if (availabilityStatus === 'unavailable') {

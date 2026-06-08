@@ -5,6 +5,7 @@ import {
   type DroneWorldCenter,
   type DroneWorldTerrainStatus,
 } from './drone-map-world.ts'
+import { loadDroneTerrainModel, type DroneTerrainModel } from './drone-terrain.ts'
 
 export type DroneMapWorldLoadSource = 'worker' | 'main'
 
@@ -12,6 +13,7 @@ export interface DroneMapWorldLoadResult {
   readonly snapshot: DroneMapWorldSnapshot
   readonly source: DroneMapWorldLoadSource
   readonly terrain: DroneWorldTerrainStatus
+  readonly terrainModel: DroneTerrainModel
   readonly fallbackReason?: string
 }
 
@@ -117,6 +119,21 @@ const loadWithWorker = async (config: {
   })
 }
 
+const safeLoadTerrainModel = async (config: {
+  readonly center: DroneWorldCenter
+  readonly radiusM: number
+  readonly terrain: DroneWorldTerrainStatus
+}): Promise<DroneTerrainModel> => {
+  try {
+    return await loadDroneTerrainModel(config)
+  } catch (err) {
+    return {
+      kind: 'flat',
+      reason: err instanceof Error ? `terrain DEM unavailable: ${err.message}` : `terrain DEM unavailable: ${String(err)}`,
+    }
+  }
+}
+
 export const loadDroneMapWorldForScene = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM?: number
@@ -127,11 +144,13 @@ export const loadDroneMapWorldForScene = async (config: {
   try {
     const snapshot = await loadWithWorker({ center: config.center, radiusM, zoom })
     const terrain = await loadDroneWorldTerrainStatus()
-    return { snapshot, source: 'worker', terrain }
+    const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
+    return { snapshot, source: 'worker', terrain, terrainModel }
   } catch (err) {
     const fallbackReason = err instanceof Error ? err.message : String(err)
     const snapshot = await loadCachedDroneMapWorld({ center: config.center, radiusM, zoom })
     const terrain = await loadDroneWorldTerrainStatus()
-    return { snapshot, source: 'main', terrain, fallbackReason }
+    const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
+    return { snapshot, source: 'main', terrain, terrainModel, fallbackReason }
   }
 }

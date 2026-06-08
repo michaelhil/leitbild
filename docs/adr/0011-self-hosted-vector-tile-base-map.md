@@ -12,7 +12,7 @@ The canonical map artifact is a versioned PMTiles archive containing MVT vector 
 
 No raster OpenStreetMap fallback is kept. If the vector artifact or glyphs are missing, the map must fail visibly during startup.
 
-Optional DEM terrain is a separate map-context product, not a base-map fallback. A terrain build may promote a Terrarium-encoded PNG PMTiles archive at `/map/terrain/current.pmtiles`; `/map/capabilities.json` advertises whether that artifact is available so 3D renderers can use real elevation when present and stay explicit when absent.
+Optional DEM terrain is a separate map-context product, not a base-map fallback. A terrain build may promote a Terrarium or Mapbox-encoded PNG PMTiles archive at `/map/terrain/current.pmtiles`; `/map/capabilities.json` advertises whether that artifact is available so 3D renderers can use real elevation when present and stay explicit when absent.
 
 ## Rationale
 

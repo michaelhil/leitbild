@@ -226,13 +226,14 @@ Implemented in the V2 fidelity pass:
 - first-person FPV camera mode attached to the selected drone body frame
 - flight HUD with altitude, speed, battery, heading, pitch/roll, wind, precipitation, and visibility
 - cached Three.js object meshes, rotor animation, shadows, road markings, windows, vegetation, fog/visibility, and rain/snow streaks
+- optional DEM sampling from advertised terrain PMTiles and terrain-aware draping for ground, roads, buildings, vegetation, and POI affordances
 - read-only `drone.sensorContacts` query and pilot-panel contact list with range/FOV/visibility/precipitation confidence filtering
 - tests for environment physics and sensor-contact filtering
 
 Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
-- terrain DEM artifact pipeline and terrain mesh draping from advertised `/map/terrain/*` capabilities
+- first production terrain artifact build from Kartverket DTM or another selected DEM source
 - richer swarm search/patrol/separation/cohesion behavior
 - deeper sensor model for occlusion, classification, shared detections, and update cadence
 - communications/link loss/geofence model
@@ -263,5 +264,5 @@ V2 acceptance criteria:
 V2 scoped deferrals:
 
 - Real PX4/ArduPilot SITL, WebAssembly flight dynamics, and JSBSim-style aircraft modeling are deferred until there is a measured need or a concrete benchmarking target that the TypeScript model cannot meet.
-- Real DEM terrain and heightmap decoding are deferred until a self-hosted terrain PMTiles artifact exists. The modal reads terrain availability from `/map/capabilities.json` and must not synthesize or imply real elevation while the artifact is unavailable.
+- Real DEM terrain remains inactive until a self-hosted terrain PMTiles artifact exists. The modal reads terrain availability from `/map/capabilities.json`, attempts DEM decoding only for advertised real artifacts, and must not synthesize or imply real elevation while the artifact is unavailable.
 - A full mission autopilot runner remains separate from this pass. V2 strengthens flight, FPV, environment, and visual fidelity first.

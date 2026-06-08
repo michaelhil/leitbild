@@ -480,7 +480,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         const loadMs = performance.now() - loadStartedAtMs
         if (destroyed || generation !== worldLoadGeneration) return
         const buildStartedAtMs = performance.now()
-        const nextLayer = createDroneMapWorldGroup(snapshot)
+        const nextLayer = createDroneMapWorldGroup(snapshot, worldResult.terrainModel)
         const buildMs = performance.now() - buildStartedAtMs
         scene.remove(environmentLayer)
         disposeObject(environmentLayer)
@@ -499,10 +499,11 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           lines: snapshot.lines.length,
           points: snapshot.points.length,
           terrain: worldResult.terrain.status,
+          terrainSurface: worldResult.terrainModel.kind,
         })
         const fallbackSuffix = worldResult.fallbackReason ? `; worker fallback: ${worldResult.fallbackReason}` : ''
         const terrainSuffix = worldResult.terrain.status === 'available'
-          ? `; terrain ${worldResult.terrain.demEncoding}`
+          ? `; terrain ${worldResult.terrain.demEncoding}/${worldResult.terrainModel.kind}`
           : `; terrain ${worldResult.terrain.status}`
         config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${terrainSuffix}${fallbackSuffix}`)
       } catch (err) {

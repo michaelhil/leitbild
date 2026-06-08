@@ -77,6 +77,29 @@ LEITBILD_MAP_ROOT=/opt/leitbild/maps LEITBILD_MAP_BUILD_ID=<build-id> bun run ma
 LEITBILD_MAP_ROOT=/opt/leitbild/maps LEITBILD_MAP_BUILD_ID=<build-id> bun run maps:promote
 ```
 
+Terrain is ingested as a real prebuilt DEM PMTiles artifact. The application does not download national DEMs or run GDAL at runtime. Build the Terrarium or Mapbox-encoded PNG DEM artifact with the chosen geodata toolchain, then ingest it into a new Leitbild map release:
+
+```sh
+LEITBILD_MAP_ROOT=/opt/leitbild/maps \
+LEITBILD_MAP_BUILD_ID=<terrain-build-id> \
+LEITBILD_TERRAIN_PMTILES_PATH=/path/to/terrain.pmtiles \
+LEITBILD_TERRAIN_DEM_ENCODING=terrarium \
+bun run maps:terrain:ingest
+
+LEITBILD_MAP_ROOT=/opt/leitbild/maps \
+LEITBILD_MAP_RELEASE_DIR=/opt/leitbild/maps/releases/leitbild-osm-norway/<terrain-build-id> \
+bun run maps:promote
+```
+
+Validate an active or candidate terrain archive with:
+
+```sh
+LEITBILD_MAP_ROOT=/opt/leitbild/maps bun run maps:terrain:validate
+LEITBILD_TERRAIN_PMTILES_PATH=/path/to/terrain.pmtiles bun run maps:terrain:validate
+```
+
+`maps:terrain:ingest` clones the active vector release into a new release directory, validates the DEM PMTiles header, writes `terrain.pmtiles` and `terrain.json`, and leaves promotion explicit. `maps:status` reports whether the active `current/terrain.pmtiles` is valid.
+
 ## Conversion Engine
 
 The pipeline uses Planetiler's OpenMapTiles-compatible profile. The initial layer set is intentionally constrained:
@@ -109,7 +132,7 @@ Glyphs are mirrored into `/opt/leitbild/maps/fonts` from the OpenMapTiles genera
 
 Caddy serves the large PMTiles archive and glyph files directly. The Leitbild server serves style and capability metadata and can also serve PMTiles for local development if `LEITBILD_MAP_ROOT` points at a valid artifact.
 
-Terrain is a separate optional map-context product, not baked into the OSM vector base map. The current contract expects a Terrarium-encoded PNG PMTiles DEM at `/opt/leitbild/maps/current/terrain.pmtiles`. The capability manifest advertises the terrain tileset even when the file is absent, with `availability.status: "unavailable"`, so Three.js views and diagnostics can fail visibly instead of pretending flat procedural scenery has real elevation. Preferred source for Norway is Kartverket DTM; Copernicus DEM GLO-30 is the global fallback candidate for areas outside first-party coverage.
+Terrain is a separate optional map-context product, not baked into the OSM vector base map. The current contract expects a Terrarium or Mapbox-encoded PNG PMTiles DEM at `/opt/leitbild/maps/current/terrain.pmtiles`. The capability manifest advertises the terrain tileset even when the file is absent, with `availability.status: "unavailable"`, so Three.js views and diagnostics can fail visibly instead of pretending flat procedural scenery has real elevation. Preferred source for Norway is Kartverket DTM; Copernicus DEM GLO-30 is the global fallback candidate for areas outside first-party coverage.
 
 ## Schema Evolution
 

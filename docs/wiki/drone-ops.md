@@ -263,7 +263,12 @@ The scene renders:
 - 2D overhead, 3D chase, and first-person FPV camera modes
 - flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
-The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, and POI features inside the Three.js world. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product; until `/map/terrain/current.pmtiles` is promoted, the 3D world reports terrain as unavailable and remains flat rather than fabricating elevation.
+The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, and POI features inside the Three.js world. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a coarse local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
+
+The flight modal performance panel separates:
+
+- `TRN`: advertised terrain capability status from `/map/capabilities.json`
+- `DEM`: rendered terrain surface, either `dem` or `flat`
 
 The renderer owns its WebGL lifecycle:
 
@@ -380,7 +385,7 @@ Important tested behaviors:
 
 Highest-value next work:
 
-- terrain artifact pipeline and terrain mesh draping from a real DEM source such as Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage
+- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage
 - richer map-context artifact builds: trees/landmarks/landcover classes, building semantics, bridge/tunnel context, and non-city scenery variation
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands
