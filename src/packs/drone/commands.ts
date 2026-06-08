@@ -21,7 +21,6 @@ export const pauseDroneMissionCommandKind = 'drone.pause_mission'
 export const clearDroneMissionCommandKind = 'drone.clear_mission'
 export const uploadDroneGeofenceCommandKind = 'drone.upload_geofence'
 export const clearDroneGeofenceCommandKind = 'drone.clear_geofence'
-export const setDroneParameterCommandKind = 'drone.set_parameter'
 export const setDroneGimbalCommandKind = 'drone.set_gimbal'
 export const configureDroneVehicleModelCommandKind = 'drone.configure_vehicle_model'
 export const configureDroneProfileCommandKind = configureDroneVehicleModelCommandKind
@@ -35,10 +34,9 @@ export const createDronePayloadSchema = z.object({
   objectType: creatableDroneObjectTypeSchema,
   label: z.string().min(1).max(80),
   point: geoJsonPointSchema,
-  modelId: z.string().min(1).max(128).default('px4-x500-depth'),
+  modelId: z.string().min(1).max(128).default('native-survey-quad'),
   altitudeM: z.number().finite().min(-1_000).max(100_000).default(35),
   headingDeg: z.number().finite().min(0).max(360).default(0),
-  systemId: z.number().int().min(1).max(255).optional(),
 }).strict()
 export type CreateDronePayload = z.infer<typeof createDronePayloadSchema>
 
@@ -73,18 +71,12 @@ export const singleDronePayloadSchema = z.object({
 }).strict()
 export type SingleDronePayload = z.infer<typeof singleDronePayloadSchema>
 
-export const missionFrameSchema = z.enum(['global', 'global_relative_alt', 'mission'])
-
 export const droneMissionItemSchema = z.object({
   seq: z.number().int().nonnegative().max(65_535),
-  command: z.number().int().nonnegative().max(65_535),
-  frame: missionFrameSchema.default('global_relative_alt'),
-  point: geoJsonPointSchema.optional(),
-  altitudeM: z.number().finite().min(-1_000).max(100_000).optional(),
-  param1: z.number().finite().default(0),
-  param2: z.number().finite().default(0),
-  param3: z.number().finite().default(0),
-  param4: z.number().finite().default(0),
+  point: geoJsonPointSchema,
+  altitudeM: z.number().finite().min(-1_000).max(100_000),
+  speedMps: z.number().finite().positive().max(160).optional(),
+  holdSeconds: z.number().finite().nonnegative().max(3_600).default(0),
   autocontinue: z.boolean().default(true),
 }).strict()
 export type DroneMissionItem = z.infer<typeof droneMissionItemSchema>
@@ -103,14 +95,6 @@ export const droneGeofencePayloadSchema = z.object({
 export type DroneGeofencePayload = z.infer<typeof droneGeofencePayloadSchema>
 
 export const uploadDroneGeofencePayloadSchema = droneGeofencePayloadSchema
-
-export const setDroneParameterPayloadSchema = z.object({
-  droneId: objectIdSchema,
-  name: z.string().min(1).max(16),
-  value: z.number().finite(),
-  valueType: z.enum(['uint8', 'int8', 'uint16', 'int16', 'uint32', 'int32', 'real32']).default('real32'),
-}).strict()
-export type SetDroneParameterPayload = z.infer<typeof setDroneParameterPayloadSchema>
 
 export const setDroneGimbalPayloadSchema = z.object({
   droneId: objectIdSchema,
@@ -191,7 +175,6 @@ export const droneCommandKinds = [
   clearDroneMissionCommandKind,
   uploadDroneGeofenceCommandKind,
   clearDroneGeofenceCommandKind,
-  setDroneParameterCommandKind,
   setDroneGimbalCommandKind,
   configureDroneVehicleModelCommandKind,
   swarmCommandKind,

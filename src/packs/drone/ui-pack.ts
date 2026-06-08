@@ -16,7 +16,7 @@ import {
   dronePackId,
   type DronePackData,
 } from './model.ts'
-import { droneSitlRuntimeId } from './sitl/constants.ts'
+import { droneNativeRuntimeId } from './native/constants.ts'
 
 const parseDroneData = (object: OperationalObject): DronePackData | null => {
   if (object.packId !== dronePackId) return null
@@ -40,7 +40,6 @@ const payloadText = (data: DronePackData): string =>
     : data.vehicle.payloads.map(payload => `${payload.label} x${payload.quantity}`).join(', ')
 
 const droneFields = (data: DronePackData): ReadonlyArray<PackObjectField> => [
-  packField('autopilot', 'Autopilot', data.autopilot),
   packField('model', 'Model', data.vehicle.modelLabel),
   packField('link', 'Link', data.link.state),
   packField('arming', 'Arming', data.arming.state),
@@ -66,7 +65,7 @@ const droneStatus = (data: DronePackData): PackObjectStatusPresentation => {
 }
 
 const droneSummary = (data: DronePackData): string =>
-  `${data.vehicle.modelLabel} · ${data.autopilot} · ${data.link.state} · ${data.navigation.mode} · ${maybePercent(data.battery.remainingPercent)} battery`
+  `${data.vehicle.modelLabel} · ${data.link.state} · ${data.navigation.mode} · ${maybePercent(data.battery.remainingPercent)} battery`
 
 const assertCreatableType = (typeId: string): CreatableDroneObjectType => {
   if (typeId === 'drone') return typeId
@@ -88,9 +87,9 @@ export const droneUiPack: LeitbildPack = {
   id: dronePackId,
   name: 'Drone Operations',
   runtimes: [
-    { id: droneSitlRuntimeId, label: 'Gazebo SITL drone runtime', kind: 'local' },
+    { id: droneNativeRuntimeId, label: 'Native drone runtime', kind: 'local' },
   ],
-  defaultRuntimeId: droneSitlRuntimeId,
+  defaultRuntimeId: droneNativeRuntimeId,
   wikiRefs: [
     { name: 'Drone operations', url: '/docs/wiki/drone-ops.md' },
   ],
@@ -115,7 +114,7 @@ export const droneUiPack: LeitbildPack = {
           key: 'modelId',
           label: 'Model',
           kind: 'select',
-          defaultValue: 'px4-x500-depth',
+          defaultValue: 'native-survey-quad',
           options: defaultDroneVehicleModels.map(model => ({ value: model.id, label: model.label })),
         },
         { key: 'altitudeM', label: 'Altitude m', kind: 'number', defaultValue: 35, min: 0, max: 500, step: 5 },
@@ -185,7 +184,7 @@ export const droneUiPack: LeitbildPack = {
         objectType: 'drone',
         label,
         point: assertPointGeometry(geometry),
-        modelId: typeof record.modelId === 'string' ? record.modelId : 'px4-x500-depth',
+        modelId: typeof record.modelId === 'string' ? record.modelId : 'native-survey-quad',
         altitudeM: typeof record.altitudeM === 'number' ? record.altitudeM : 35,
       },
     }

@@ -287,7 +287,7 @@
       body = await sendControlInstanceCommand(controlInstanceId, command)
     }
     lastCommandRoundTripMs = performance.now() - startedAtMs
-    commandStatus = body.result.ok ? 'Manual velocity sent to autopilot' : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? 'Manual velocity sent' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const sendManualControlSafely = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
@@ -634,7 +634,7 @@
             <span>R {data.attitude.rollDeg.toFixed(1)}°</span>
           </div>
           <div class="hud-row muted">
-            <span>{data.autopilot}</span>
+            <span>{data.vehicle.modelLabel}</span>
             <span>{data.arming.state}</span>
             <span>{data.link.state}</span>
           </div>

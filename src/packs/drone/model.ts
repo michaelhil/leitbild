@@ -15,8 +15,8 @@ import {
 
 export const dronePackId = 'drone' as const
 
-export const droneAutopilotSchema = z.enum(['px4', 'ardupilot'])
-export type DroneAutopilot = z.infer<typeof droneAutopilotSchema>
+export const droneVehicleMetadataSourceSchema = z.enum(['runtime', 'payload', 'operator_declared'])
+export type DroneVehicleMetadataSource = z.infer<typeof droneVehicleMetadataSourceSchema>
 
 export const droneLinkStateSchema = z.enum(['connecting', 'connected', 'degraded', 'lost'])
 export type DroneLinkState = z.infer<typeof droneLinkStateSchema>
@@ -62,7 +62,7 @@ export const droneSensorSchema = z.object({
   rangeM: z.number().finite().positive().max(100_000),
   fovDeg: z.number().finite().positive().max(360).default(90),
   updateIntervalMs: z.number().int().positive().max(60_000).default(1_000),
-  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
+  source: droneVehicleMetadataSourceSchema.default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DroneSensor = z.infer<typeof droneSensorSchema>
@@ -83,7 +83,7 @@ export const dronePayloadSchema = z.object({
   quantity: z.number().int().nonnegative().max(10_000).default(1),
   rangeM: z.number().finite().positive().max(100_000).optional(),
   effect: dronePayloadEffectSchema.optional(),
-  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
+  source: droneVehicleMetadataSourceSchema.default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DronePayload = z.infer<typeof dronePayloadSchema>
@@ -93,7 +93,7 @@ export const droneCapabilitySchema = z.object({
   kind: z.string().min(1).max(64),
   label: z.string().min(1).max(80),
   level: z.number().finite().min(0).max(10).default(1),
-  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
+  source: droneVehicleMetadataSourceSchema.default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DroneCapability = z.infer<typeof droneCapabilitySchema>
@@ -106,13 +106,29 @@ export const droneVisualProfileSchema = z.object({
 }).strict()
 export type DroneVisualProfile = z.infer<typeof droneVisualProfileSchema>
 
+export const droneFlightEnvelopeSchema = z.object({
+  cruiseSpeedMps: z.number().finite().positive().max(160).default(18),
+  maxHorizontalSpeedMps: z.number().finite().positive().max(220).default(36),
+  maxVerticalSpeedMps: z.number().finite().positive().max(80).default(8),
+  maxAccelerationMps2: z.number().finite().positive().max(80).default(12),
+  maxYawRateDegPerSec: z.number().finite().positive().max(720).default(140),
+  arrivalRadiusM: z.number().finite().positive().max(200).default(4),
+}).strict()
+export type DroneFlightEnvelope = z.infer<typeof droneFlightEnvelopeSchema>
+
 export const droneVehicleModelSchema = z.object({
   id: idSchema,
   label: z.string().min(1).max(96),
   description: z.string().min(1).max(500).optional(),
-  autopilotModel: z.string().min(1).max(128),
-  gazeboModel: z.string().min(1).max(128),
   airframe: droneAirframeSchema,
+  flightEnvelope: droneFlightEnvelopeSchema.default({
+    cruiseSpeedMps: 18,
+    maxHorizontalSpeedMps: 36,
+    maxVerticalSpeedMps: 8,
+    maxAccelerationMps2: 12,
+    maxYawRateDegPerSec: 140,
+    arrivalRadiusM: 4,
+  }),
   capabilities: z.array(droneCapabilitySchema).default([]),
   sensors: z.array(droneSensorSchema).default([]),
   payloads: z.array(dronePayloadSchema).default([]),
@@ -259,11 +275,8 @@ export type DronePayloadRuntimeState = z.infer<typeof dronePayloadRuntimeStateSc
 export const droneVehicleIdentitySchema = z.object({
   modelId: idSchema,
   modelLabel: z.string().min(1).max(96),
-  autopilotModel: z.string().min(1).max(128),
-  gazeboModel: z.string().min(1).max(128),
-  systemId: z.number().int().min(1).max(255),
-  componentId: z.number().int().min(1).max(255).default(1),
   airframe: droneAirframeSchema,
+  flightEnvelope: droneFlightEnvelopeSchema,
   capabilities: z.array(droneCapabilitySchema).default([]),
   sensors: z.array(droneSensorSchema).default([]),
   payloads: z.array(dronePayloadSchema).default([]),
@@ -278,11 +291,9 @@ export type DroneVehicleIdentity = z.infer<typeof droneVehicleIdentitySchema>
 export const dronePackDataSchema = z.object({
   type: z.literal('drone'),
   schemaVersion: z.literal(2),
-  autopilot: droneAutopilotSchema,
   vehicle: droneVehicleIdentitySchema,
   link: z.object({
     state: droneLinkStateSchema,
-    endpoint: z.string().min(1).max(240).optional(),
     lastHeartbeatAt: isoTimestampSchema.optional(),
     lastMessageAt: isoTimestampSchema.optional(),
   }).strict(),
@@ -332,63 +343,93 @@ export type DroneProfileCatalog = z.infer<typeof droneProfileCatalogSchema>
 
 export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
   droneVehicleModelSchema.parse({
-    id: 'px4-x500-depth',
-    label: 'PX4 X500 Depth',
-    description: 'PX4 Gazebo X500 quadrotor with depth camera support.',
-    autopilotModel: 'x500_depth',
-    gazeboModel: 'x500_depth',
+    id: 'native-survey-quad',
+    label: 'Survey Quad',
+    description: 'Native Leitbild quadrotor tuned for smooth survey flight.',
     airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.4, diagonalSizeM: 0.46 },
+    flightEnvelope: {
+      cruiseSpeedMps: 18,
+      maxHorizontalSpeedMps: 34,
+      maxVerticalSpeedMps: 7,
+      maxAccelerationMps2: 11,
+      maxYawRateDegPerSec: 140,
+      arrivalRadiusM: 4,
+    },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
-      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
-      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'autopilot' },
-      { id: 'depth-camera', kind: 'depth_camera', label: 'Depth camera', source: 'gazebo' },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'runtime' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
+      { id: 'mission', kind: 'mission', label: 'Mission execution', source: 'runtime' },
+      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'runtime' },
+      { id: 'wide-camera', kind: 'electro_optical', label: 'Wide camera', source: 'payload' },
     ],
     sensors: [
-      { id: 'depth-camera', kind: 'depth_camera', label: 'Depth camera', rangeM: 80, fovDeg: 70, updateIntervalMs: 100, source: 'gazebo' },
-      { id: 'mavlink-global-position', kind: 'global_position', label: 'Autopilot global position', rangeM: 1, fovDeg: 360, source: 'autopilot' },
+      { id: 'wide-camera', kind: 'electro_optical', label: 'Wide camera', rangeM: 650, fovDeg: 95, updateIntervalMs: 200, source: 'payload' },
     ],
     visual: { color: '#2563eb', accentColor: '#f8fafc', scale: 1 },
   }),
   droneVehicleModelSchema.parse({
-    id: 'px4-x500-gimbal',
-    label: 'PX4 X500 Gimbal',
-    description: 'PX4 Gazebo X500 quadrotor with camera gimbal payload.',
-    autopilotModel: 'x500_gimbal',
-    gazeboModel: 'x500_gimbal',
+    id: 'native-gimbal-quad',
+    label: 'Gimbal Quad',
+    description: 'Native Leitbild quadrotor with a camera gimbal payload.',
     airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.7, diagonalSizeM: 0.5 },
+    flightEnvelope: {
+      cruiseSpeedMps: 16,
+      maxHorizontalSpeedMps: 30,
+      maxVerticalSpeedMps: 6,
+      maxAccelerationMps2: 9,
+      maxYawRateDegPerSec: 120,
+      arrivalRadiusM: 4,
+    },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
-      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
-      { id: 'camera-gimbal', kind: 'camera_gimbal', label: 'Camera gimbal', source: 'gazebo' },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'runtime' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
+      { id: 'mission', kind: 'mission', label: 'Mission execution', source: 'runtime' },
+      { id: 'camera-gimbal', kind: 'camera_gimbal', label: 'Camera gimbal', source: 'payload' },
     ],
     sensors: [
-      { id: 'eo-gimbal-camera', kind: 'electro_optical', label: 'EO gimbal camera', rangeM: 1_200, fovDeg: 60, updateIntervalMs: 100, source: 'gazebo' },
+      { id: 'eo-gimbal-camera', kind: 'electro_optical', label: 'EO gimbal camera', rangeM: 1_200, fovDeg: 60, updateIntervalMs: 100, source: 'payload' },
     ],
     payloads: [
-      { id: 'eo-gimbal', kind: 'camera_gimbal', label: 'EO gimbal', quantity: 1, source: 'gazebo' },
+      { id: 'eo-gimbal', kind: 'camera_gimbal', label: 'EO gimbal', quantity: 1, source: 'payload' },
     ],
     visual: { color: '#0f766e', accentColor: '#ecfeff', scale: 1.08 },
   }),
   droneVehicleModelSchema.parse({
-    id: 'ardupilot-iris',
-    label: 'ArduPilot Iris',
-    description: 'ArduPilot Copter Iris model for Gazebo SITL.',
-    autopilotModel: 'iris',
-    gazeboModel: 'iris',
-    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 1.5, diagonalSizeM: 0.55 },
+    id: 'native-interceptor-quad',
+    label: 'Interceptor Quad',
+    description: 'Native Leitbild quadrotor tuned for fast response and training effects.',
+    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 3.2, diagonalSizeM: 0.55 },
+    flightEnvelope: {
+      cruiseSpeedMps: 26,
+      maxHorizontalSpeedMps: 52,
+      maxVerticalSpeedMps: 12,
+      maxAccelerationMps2: 18,
+      maxYawRateDegPerSec: 180,
+      arrivalRadiusM: 5,
+    },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
-      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
-      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'autopilot' },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'runtime' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
+      { id: 'mission', kind: 'mission', label: 'Mission execution', source: 'runtime' },
+      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'runtime' },
+      { id: 'effect-delivery', kind: 'effect_delivery', label: 'Effect delivery', source: 'payload' },
     ],
     sensors: [
-      { id: 'ardupilot-gps', kind: 'global_position', label: 'Autopilot global position', rangeM: 1, fovDeg: 360, source: 'autopilot' },
+      { id: 'tracking-camera', kind: 'tracking_camera', label: 'Tracking camera', rangeM: 900, fovDeg: 50, updateIntervalMs: 150, source: 'payload' },
     ],
-    visual: { color: '#b91c1c', accentColor: '#fee2e2', scale: 1.02 },
+    payloads: [
+      {
+        id: 'training-effect',
+        kind: 'training_effect',
+        label: 'Training effect',
+        massKg: 0.7,
+        quantity: 1,
+        rangeM: 75,
+        effect: { kind: 'training-effect', damage: 0.65, radiusM: 3, cooldownSeconds: 8 },
+        source: 'operator_declared',
+      },
+    ],
+    visual: { color: '#b91c1c', accentColor: '#fee2e2', scale: 1.05 },
   }),
 ]
 
@@ -456,5 +497,5 @@ export interface DroneSensorContact {
   readonly distanceM: number
   readonly bearingDeg: number
   readonly confidence: number
-  readonly source: 'gazebo' | 'autopilot' | 'payload'
+  readonly source: 'runtime' | 'payload'
 }

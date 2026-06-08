@@ -1,47 +1,39 @@
-# Drone Simulation Capability Status
+# Drone Native Runtime Capability Targets
 
-This file records the current drone stack after the Gazebo/PX4/ArduPilot and Babylon.js migration.
+This file records the current drone stack after removing the external drone simulator stack.
 
-Leitbild no longer targets an in-browser TypeScript drone physics simulator. Drone control is externalized to Gazebo SITL with PX4 by default and ArduPilot as the alternate supported stack. The browser renders projected operational truth with Babylon.js.
+Leitbild uses a server-side native drone pack runtime. The browser renders projected operational truth and captures input devices only; it does not own drone truth.
 
-## Current Stack
+Current artifacts:
 
-- Drone runtime: `drone.sitl`
-- Runtime adapter: `src/packs/drone/sitl/adapter.ts`
-- MAVLink client: `src/packs/drone/sitl/mavlink.ts`
-- Object projection: `src/packs/drone/sitl/object-state.ts`
+- Drone runtime: `drone.native`
+- Runtime adapter: `src/packs/drone/native/adapter.ts`
+- Runtime config: `src/packs/drone/native/config.ts`
+- Object projection: `src/packs/drone/native/object-state.ts`
 - Renderer: `src/ui/drone/drone-scene.ts`
-- Rendering engine: Babylon.js
-- Source-backed scenery: GLB scenery tiles generated from the vector map artifact
-- Deployment runner: `scripts/drone/run-sitl.ts`
-- Default deployed SITL: PX4 Gazebo
-- Alternate deployed SITL: ArduPilot Gazebo
+- Scenario: `src/scenarios/oslo-drone-operations.scenario.json`
 
-## Removed Paths
+Removed artifacts:
 
-- `drone.local`
-- `src/packs/drone/sim/*`
-- browser-owned drone flight dynamics
-- Three.js drone renderer
-- profile/kinematics/energy/environment drone pack data
-- fake browser-generated sensor contacts
+- external drone simulator process runners
+- external drone systemd units
+- external controller command translation
+- UDP flight-control protocol client code
+- external simulator vehicle ids and endpoint config
+- browser-owned authoritative drone flight dynamics
 
-## First-Pass Capability Target
+Native runtime responsibilities:
 
-The first pass should be considered complete when these remain true:
+- fixed-step flight integration
+- arm/disarm, takeoff, land, hold, return, goto, manual velocity, mission, geofence, gimbal, swarm, and effect commands
+- flight-envelope validation from declarative vehicle models
+- battery drain, pose, velocity, attitude, health, arming, navigation, mission, geofence, and payload projection
+- shared Control Instance object updates through the Runtime Hub
 
-- all drone commands go through validated MAVLink-oriented schemas
-- all drone motion truth comes from PX4 or ArduPilot telemetry
-- Leitbild projects link, arming, navigation, pose, velocity, attitude, battery, health, mission, geofence, payload, and swarm state into canonical objects
-- Babylon renders 2D, 3D chase, and FPV views from projected state only
-- deployment starts a selected non-HTTP SITL systemd unit alongside the one Leitbild HTTP server
-- tests prove scenario expansion, queries, effects, rendering support structures, and catalog validity without importing a local drone sim
+Target behavior:
 
-## Next Capability Targets
-
-- Gazebo camera/depth/contact ingestion into `drone.sensorContacts`
-- richer PX4 multi-instance acceptance traces for several scenario drones
-- ArduPilot Gazebo world packaging and deployment acceptance runs
-- mission/geofence acceptance traces against real autopilot behavior
-- richer model catalog for PX4 X500 variants, ArduPilot Iris variants, gimbals, depth cameras, and payload plugins
-- Babylon performance regression coverage for large scenery tiles and multiple drone windows
+- direct input commands should be accepted in well under 1 ms on the server hot path
+- internal stepping defaults to 50 Hz
+- projected state defaults to about 30 Hz
+- the default scenario budget is 10 drones or fewer
+- the runtime design should remain simple enough to scale by batching/coalescing object projection before raising fleet size

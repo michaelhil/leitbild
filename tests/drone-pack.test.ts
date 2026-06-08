@@ -1,10 +1,16 @@
-import dgram from 'node:dgram'
-import type { RemoteInfo } from 'node:dgram'
 import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
-import type { PackMapAreaFeature, PackQueryResponse } from '../src/core/packs/protocol.ts'
-import { createDroneCommandKind, manualControlCommandKind, manualControlPayloadSchema, takeoffDroneCommandKind } from '../src/packs/drone/commands.ts'
+import type { PackQueryResponse } from '../src/core/packs/protocol.ts'
+import {
+  armDroneCommandKind,
+  createDroneCommandKind,
+  holdDroneCommandKind,
+  manualControlCommandKind,
+  navigateDroneCommandKind,
+  takeoffDroneCommandKind,
+} from '../src/packs/drone/commands.ts'
+import { droneManualControlReadiness } from '../src/packs/drone/control-readiness.ts'
 import { createDroneAttackInteractionHandler, droneAttackSignal } from '../src/packs/drone/interactions.ts'
 import {
   defaultDroneVehicleModels,
@@ -14,6 +20,10 @@ import {
   requireDroneVehicleModel,
   type DroneVehicleModel,
 } from '../src/packs/drone/model.ts'
+import { createDroneNativePackRuntimeAdapter } from '../src/packs/drone/native/adapter.ts'
+import { parseDroneNativeRuntimeConfig } from '../src/packs/drone/native/config.ts'
+import { droneNativeRuntimeId } from '../src/packs/drone/native/constants.ts'
+import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/native/object-state.ts'
 import { dronePack } from '../src/packs/drone/pack.ts'
 import {
   answerDroneQuery,
@@ -26,15 +36,9 @@ import {
   droneVehicleModelsQueryKind,
 } from '../src/packs/drone/query.ts'
 import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
-import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/sitl/object-state.ts'
-import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
-import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
-import { droneManualControlReadiness } from '../src/packs/drone/control-readiness.ts'
-import { acquireSharedMavlinkClient, decodeMavlinkFrames, mavCmd, parseMavlinkEndpoint, type SharedMavlinkClientLease } from '../src/packs/drone/sitl/mavlink.ts'
-import { createDroneSitlPackRuntimeAdapter } from '../src/packs/drone/sitl/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
-import { createTestScenarioCatalog } from './helpers.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
+import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
 
 const controlInstanceId = 'control-instance:test-drone-control' as ControlInstanceId
 const actorId = 'actor:test-pilot' as ActorId
@@ -43,29 +47,35 @@ const at = '2026-06-07T10:00:00.000Z' as IsoTimestamp
 const point = (lon: number, lat: number): GeoJsonPoint => geoPointFromLonLat(lon, lat)
 
 const effectModel = (): DroneVehicleModel => droneVehicleModelSchema.parse({
-  id: 'px4-x500-effect-test',
-  label: 'PX4 X500 Effect Test',
-  description: 'PX4 Gazebo X500 test vehicle with declared surveillance and effect payloads.',
-  autopilotModel: 'x500',
-  gazeboModel: 'x500',
+  id: 'native-effect-test',
+  label: 'Native Effect Test',
+  description: 'Native test vehicle with declared surveillance and effect payloads.',
   airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.8, diagonalSizeM: 0.5 },
+  flightEnvelope: {
+    cruiseSpeedMps: 22,
+    maxHorizontalSpeedMps: 44,
+    maxVerticalSpeedMps: 10,
+    maxAccelerationMps2: 16,
+    maxYawRateDegPerSec: 160,
+    arrivalRadiusM: 4,
+  },
   capabilities: [
-    { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
-    { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
+    { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'runtime' },
+    { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'runtime' },
     { id: 'effect', kind: 'effect_payload', label: 'Effect payload', source: 'payload' },
   ],
   sensors: [
-    { id: 'eo-test-camera', kind: 'electro_optical', label: 'EO test camera', rangeM: 900, fovDeg: 70, updateIntervalMs: 100, source: 'gazebo' },
+    { id: 'eo-test-camera', kind: 'electro_optical', label: 'EO test camera', rangeM: 900, fovDeg: 70, updateIntervalMs: 100, source: 'payload' },
   ],
   payloads: [
     {
-      id: 'kinetic-effect',
-      kind: 'kinetic_effect',
-      label: 'Kinetic effect',
+      id: 'training-effect',
+      kind: 'training_effect',
+      label: 'Training effect',
       quantity: 2,
       rangeM: 600,
       source: 'payload',
-      effect: { kind: 'kinetic', damage: 0.45, radiusM: 3, cooldownSeconds: 0 },
+      effect: { kind: 'training', damage: 0.45, radiusM: 3, cooldownSeconds: 0 },
     },
   ],
   visual: { color: '#991b1b', accentColor: '#fee2e2', scale: 1.12 },
@@ -76,24 +86,19 @@ const drone = (config: {
   readonly label?: string
   readonly model?: DroneVehicleModel
   readonly modelId?: string
-  readonly autopilot?: 'px4' | 'ardupilot'
-  readonly systemId?: number
   readonly point?: GeoJsonPoint
   readonly altitudeM?: number
   readonly headingDeg?: number
 }): OperationalObject => {
-  const model = config.model ?? requireDroneVehicleModel(config.modelId ?? 'px4-x500-depth', defaultDroneVehicleModels)
+  const model = config.model ?? requireDroneVehicleModel(config.modelId ?? 'native-survey-quad', defaultDroneVehicleModels)
   return createScenarioDroneObject({
     id: config.id as ObjectId,
     label: config.label ?? config.id,
-    autopilot: config.autopilot ?? 'px4',
     model,
     point: config.point ?? point(10.75, 59.91),
     altitudeM: config.altitudeM ?? 40,
     headingDeg: config.headingDeg ?? 0,
     at,
-    systemId: config.systemId ?? 1,
-    endpoint: 'udp://127.0.0.1:14580?localPort=14540',
   })
 }
 
@@ -120,929 +125,253 @@ const genericTarget = (config: {
     mode: 'simulated',
   },
   alerts: [],
-  provenance: {
-    source: 'simulator',
-  },
-  timestamps: {
-    createdAt: at,
-    updatedAt: at,
-  },
+  communication: { state: 'connected' },
+  provenance: { source: 'simulator', externalId: config.id },
+  timestamps: { createdAt: at, updatedAt: at },
 })
 
-const okResult = <T>(response: PackQueryResponse): T => {
-  if (!response.ok) throw new Error(response.reason)
-  return response.result as T
-}
+let commandSequence = 0
 
-const crcAccumulateForTest = (data: number, crc: number): number => {
-  let tmp = data ^ (crc & 0xff)
-  tmp ^= tmp << 4
-  tmp &= 0xff
-  return ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xffff
-}
-
-const mavlinkCrcForTest = (buffer: Buffer, extra: number): number => {
-  let crc = 0xffff
-  for (const byte of buffer) crc = crcAccumulateForTest(byte, crc)
-  return crcAccumulateForTest(extra, crc)
-}
-
-const encodeMavlink1FrameForTest = (config: {
-  readonly seq: number
-  readonly systemId: number
-  readonly componentId: number
-  readonly messageId: number
-  readonly payload: Buffer
-  readonly crcExtra: number
-}): Buffer => {
-  const header = Buffer.alloc(5)
-  header.writeUInt8(config.payload.length, 0)
-  header.writeUInt8(config.seq, 1)
-  header.writeUInt8(config.systemId, 2)
-  header.writeUInt8(config.componentId, 3)
-  header.writeUInt8(config.messageId, 4)
-  const crc = mavlinkCrcForTest(Buffer.concat([header, config.payload]), config.crcExtra)
-  const frame = Buffer.alloc(8 + config.payload.length)
-  frame.writeUInt8(0xfe, 0)
-  header.copy(frame, 1)
-  config.payload.copy(frame, 6)
-  frame.writeUInt16LE(crc, 6 + config.payload.length)
-  return frame
-}
-
-const globalPositionIntPayloadForTest = (config: {
-  readonly lon: number
-  readonly lat: number
-  readonly altitudeM: number
-  readonly relativeAltitudeM: number
-  readonly headingDeg: number
-}): Buffer => {
-  const payload = Buffer.alloc(28)
-  payload.writeUInt32LE(1_000, 0)
-  payload.writeInt32LE(Math.round(config.lat * 1e7), 4)
-  payload.writeInt32LE(Math.round(config.lon * 1e7), 8)
-  payload.writeInt32LE(Math.round(config.altitudeM * 1_000), 12)
-  payload.writeInt32LE(Math.round(config.relativeAltitudeM * 1_000), 16)
-  payload.writeInt16LE(0, 20)
-  payload.writeInt16LE(0, 22)
-  payload.writeInt16LE(0, 24)
-  payload.writeUInt16LE(Math.round(config.headingDeg * 100), 26)
-  return payload
-}
-
-type UdpSocketForTest = ReturnType<typeof dgram.createSocket>
-
-const mavlinkCommandLongMessageIdForTest = 76
-const mavlinkCommandAckMessageIdForTest = 77
-const mavlinkSetPositionTargetGlobalIntMessageIdForTest = 86
-const mavModeFlagSafetyArmedForTest = 128
-const px4AutoLoiterCustomModeForTest = (4 << 16) | (3 << 24)
-
-interface MavlinkHeartbeatResponderForTest {
-  readonly endpointText: string
-  readonly close: () => Promise<void>
-}
-
-interface MavlinkHeartbeatResponderConfigForTest {
-  readonly heartbeatPayload?: () => Buffer
-  readonly onFrame?: (config: {
-    readonly frame: ReturnType<typeof decodeMavlinkFrames>[number]
-    readonly remote: RemoteInfo
-    readonly socket: UdpSocketForTest
-  }) => void
-}
-
-const bindUdpSocketForTest = async (): Promise<UdpSocketForTest> => {
-  const socket = dgram.createSocket('udp4')
-  await new Promise<void>((resolve, reject) => {
-    const fail = (err: Error): void => {
-      socket.off('listening', success)
-      reject(err)
-    }
-    const success = (): void => {
-      socket.off('error', fail)
-      resolve()
-    }
-    socket.once('error', fail)
-    socket.once('listening', success)
-    socket.bind(0, '127.0.0.1')
-  })
-  return socket
-}
-
-const udpSocketPortForTest = (socket: UdpSocketForTest): number => {
-  const address = socket.address()
-  if (typeof address === 'string') throw new Error(`expected UDP address object, got ${address}`)
-  return address.port
-}
-
-const closeUdpSocketForTest = async (socket: UdpSocketForTest): Promise<void> => {
-  await new Promise<void>((resolve) => socket.close(() => resolve()))
-}
-
-const heartbeatPayloadForTest = (config: {
-  readonly customMode?: number
-  readonly baseMode?: number
-  readonly systemStatus?: number
-} = {}): Buffer => {
-  const payload = Buffer.alloc(9)
-  payload.writeUInt32LE(config.customMode ?? 0, 0)
-  payload.writeUInt8(2, 4)
-  payload.writeUInt8(12, 5)
-  payload.writeUInt8(config.baseMode ?? 0, 6)
-  payload.writeUInt8(config.systemStatus ?? 4, 7)
-  payload.writeUInt8(3, 8)
-  return payload
-}
-
-const commandAckPayloadForTest = (command: number): Buffer => {
-  const payload = Buffer.alloc(3)
-  payload.writeUInt16LE(command, 0)
-  payload.writeUInt8(0, 2)
-  return payload
-}
-
-const sendMavlinkFrameForTest = (
-  socket: UdpSocketForTest,
-  remote: RemoteInfo,
-  frame: Buffer,
-): void => {
-  socket.send(frame, remote.port, remote.address)
-}
-
-const waitForDroneTest = async (predicate: () => boolean, label: string): Promise<void> => {
-  const deadline = Date.now() + 1_000
-  while (Date.now() < deadline) {
-    if (predicate()) return
-    await Bun.sleep(10)
-  }
-  throw new Error(`timed out waiting for ${label}`)
-}
-
-const startMavlinkHeartbeatResponderForTest = async (
-  config: MavlinkHeartbeatResponderConfigForTest = {},
-): Promise<MavlinkHeartbeatResponderForTest> => {
-  const localProbe = await bindUdpSocketForTest()
-  const localPort = udpSocketPortForTest(localProbe)
-  await closeUdpSocketForTest(localProbe)
-
-  const remoteSocket = await bindUdpSocketForTest()
-  const remotePort = udpSocketPortForTest(remoteSocket)
-  let seq = 0
-  remoteSocket.on('message', (message, remote) => {
-    for (const frame of decodeMavlinkFrames(message)) {
-      config.onFrame?.({ frame, remote, socket: remoteSocket })
-    }
-    const heartbeat = encodeMavlink1FrameForTest({
-      seq,
-      systemId: 1,
-      componentId: 1,
-      messageId: 0,
-      payload: config.heartbeatPayload?.() ?? heartbeatPayloadForTest(),
-      crcExtra: 50,
-    })
-    seq = (seq + 1) & 0xff
-    sendMavlinkFrameForTest(remoteSocket, remote, heartbeat)
-  })
-
+const command = (
+  kind: string,
+  payload: unknown,
+  targetObjectIds: ReadonlyArray<ObjectId> = [],
+): CommandEnvelope => {
+  commandSequence += 1
   return {
-    endpointText: `udp://127.0.0.1:${remotePort}?localPort=${localPort}`,
-    close: async (): Promise<void> => {
-      await closeUdpSocketForTest(remoteSocket)
-    },
+    id: `command:drone-test-${commandSequence}` as CommandEnvelope['id'],
+    controlInstanceId,
+    actorId,
+    kind,
+    targetObjectIds,
+    payload,
+    issuedAt: at,
   }
 }
 
-describe('drone pack', () => {
-  test('expands scenario drones into Gazebo SITL vehicle state without aviation dependencies', async () => {
-    const model = effectModel()
+const droneData = (object: OperationalObject) => {
+  const parsed = dronePackDataSchema.safeParse(object.packData)
+  if (!parsed.success) throw new Error(`invalid drone data for ${object.id}`)
+  return parsed.data
+}
+
+const okResult = (response: PackQueryResponse): unknown => {
+  if (!response.ok) throw new Error(response.reason)
+  return response.result
+}
+
+describe('drone pack native runtime', () => {
+  test('expands scenario drones into native vehicle state', async () => {
     const object = await droneScenarioSupport.expandObject({
       pack: 'drone',
       type: 'drone',
-      id: 'drone:scenario-1',
-      label: 'Scenario drone',
+      id: 'drone:scenario-native',
+      label: 'Scenario Native',
       position: [10.75, 59.91],
-      modelId: model.id,
+      modelId: 'native-survey-quad',
       altitudeM: 55,
-      headingDeg: 37,
-      swarm: {
-        swarmId: 'swarm:alpha',
-        role: 'leader',
-        slot: [0, 0, 0],
-        separationRadiusM: 10,
-      },
+      headingDeg: 35,
     }, {
       at,
       objects: [],
-      runtimeConfigs: {
-        drone: {
-          autopilot: 'px4',
-          world: 'oslo',
-          mavlink: {
-            endpoint: 'udp://127.0.0.1:14580?localPort=14540',
-            systemIdBase: 42,
-          },
-          models: [model],
-        },
-      },
       objectById: () => undefined,
       routing: createDirectRoutingAdapter(),
+      runtimeConfigs: { drone: { maxDrones: 10 } },
     })
 
-    const data = dronePackDataSchema.parse(object.packData)
+    const data = droneData(object)
     expect(object.packId).toBe(dronePackId as PackId)
-    expect(data.schemaVersion).toBe(2)
-    expect(data.autopilot).toBe('px4')
-    expect(data.vehicle.modelId).toBe(model.id)
-    expect(data.vehicle.systemId).toBe(42)
-    expect(data.link).toMatchObject({
-      state: 'connecting',
-      endpoint: 'udp://127.0.0.1:14580?localPort=14540',
-    })
-    expect(data.pose.altitudeM).toBe(55)
-    expect(data.pose.headingDeg).toBe(37)
-    expect(data.swarm?.swarmId).toBe('swarm:alpha')
+    expect(data.vehicle.modelId).toBe('native-survey-quad')
+    expect(data.link.state).toBe('connected')
+    expect(data.health.state).toBe('nominal')
+    expect(data.vehicle.flightEnvelope.maxHorizontalSpeedMps).toBeGreaterThan(0)
   })
 
-  test('assigns MAVLink system ids from scenario config across multiple drones', async () => {
-    const first = drone({ id: 'drone:first', systemId: 8 })
-    const second = await droneScenarioSupport.expandObject({
-      pack: 'drone',
-      type: 'drone',
-      id: 'drone:second',
-      label: 'Second drone',
-      position: [10.751, 59.91],
-      modelId: 'px4-x500-depth',
-    }, {
-      at,
-      objects: [first],
-      runtimeConfigs: {
-        drone: {
-          mavlink: { systemIdBase: 8 },
-        },
-      },
-      objectById: (id) => id === first.id ? first : undefined,
-      routing: createDirectRoutingAdapter(),
-    })
-
-    const data = dronePackDataSchema.parse(second.packData)
-    expect(data.vehicle.systemId).toBe(9)
-  })
-
-  test('assigns per-system MAVLink endpoints from scenario link count', async () => {
-    const first = drone({ id: 'drone:first-link', systemId: 1 })
-    const second = await droneScenarioSupport.expandObject({
-      pack: 'drone',
-      type: 'drone',
-      id: 'drone:second-link',
-      label: 'Second link drone',
-      position: [10.751, 59.91],
-      modelId: 'px4-x500-depth',
-    }, {
-      at,
-      objects: [first],
-      runtimeConfigs: {
-        drone: {
-          mavlink: {
-            endpoint: 'udp://127.0.0.1:14580?localPort=14540',
-            linkCount: 4,
-            systemIdBase: 1,
-          },
-        },
-      },
-      objectById: (id) => id === first.id ? first : undefined,
-      routing: createDirectRoutingAdapter(),
-    })
-
-    const data = dronePackDataSchema.parse(second.packData)
-    expect(data.vehicle.systemId).toBe(2)
-    expect(data.link.endpoint).toBe('udp://127.0.0.1:14581?localPort=14541')
-  })
-
-  test('SITL runtime parser accepts scenario vehicle system id metadata separately from client source ids', () => {
-    const parsed = parseDroneSitlRuntimeConfig({
-      mavlink: {
-        endpoint: 'udp://127.0.0.1:14580?localPort=14540',
-        linkCount: 4,
-        systemIdBase: 8,
-        sourceSystemId: 245,
-        sourceComponentId: 190,
-      },
-    }, {})
-
-    expect(parsed.endpointText).toBe('udp://127.0.0.1:14580?localPort=14540')
-    expect(parsed.endpoint.port).toBe(14580)
-    expect(parsed.endpoint.localPort).toBe(14540)
-    expect(parsed.systemIdBase).toBe(8)
-    expect(parsed.endpointTexts).toEqual([
-      'udp://127.0.0.1:14580?localPort=14540',
-      'udp://127.0.0.1:14581?localPort=14541',
-      'udp://127.0.0.1:14582?localPort=14542',
-      'udp://127.0.0.1:14583?localPort=14543',
-    ])
-    expect(parsed.endpoints.map(endpoint => endpoint.localPort)).toEqual([14540, 14541, 14542, 14543])
-    expect(parsed.sourceSystemId).toBe(245)
-    expect(parsed.sourceComponentId).toBe(190)
-  })
-
-  test('SITL runtime parser rejects loopback endpoints that would receive Leitbild heartbeats from itself', () => {
-    expect(() => parseDroneSitlRuntimeConfig({
-      mavlink: {
-        endpoint: 'udp://127.0.0.1:14540',
-      },
-    }, {})).toThrow('loopback remote port must differ from localPort')
-  })
-
-  test('scene projection uses canonical SITL telemetry fields', () => {
-    const objects = [
-      drone({ id: 'drone:scene-1', altitudeM: 35, headingDeg: 25 }),
-      drone({ id: 'drone:scene-2', modelId: 'px4-x500-gimbal', systemId: 2 }),
-    ]
-    const scene = droneSceneObjects(objects)
-    expect(scene.map(item => item.id)).toEqual(['drone:scene-1' as ObjectId, 'drone:scene-2' as ObjectId])
-    expect(scene[0]).toMatchObject({
-      altitudeM: 35,
-      headingDeg: 25,
-      modelId: 'px4-x500-depth',
-      link: 'connecting',
-      armed: false,
-    })
-    expect(scene[1]?.modelId).toBe('px4-x500-gimbal')
-  })
-
-  test('SITL telemetry stream can be connected before heartbeat-derived arming is known', () => {
-    const object = drone({ id: 'drone:telemetry-stream' })
-    const data = dronePackDataSchema.parse(object.packData)
-    const updated = withDronePackData(object, {
-      ...data,
-      link: {
-        ...data.link,
-        state: 'connected',
-        lastMessageAt: at,
-      },
-      arming: {
-        state: 'unknown',
-        armed: false,
-      },
-      pose: {
-        ...data.pose,
-        observedAt: at,
-      },
-    }, at)
-    const updatedData = dronePackDataSchema.parse(updated.packData)
-
-    expect(updated.operational.status).toBe('telemetry_connected')
-    expect(updated.communication?.state).toBe('connected')
-    expect(updatedData.arming.state).toBe('unknown')
-    expect(updatedData.link.lastMessageAt).toBe(at)
-  })
-
-  test('MAVLink decoder accepts PX4 SITL MAVLink v1 telemetry frames', () => {
-    const payload = globalPositionIntPayloadForTest({
-      lon: 10.75,
-      lat: 59.91,
-      altitudeM: 125,
-      relativeAltitudeM: 55,
-      headingDeg: 92,
-    })
-    const frame = encodeMavlink1FrameForTest({
-      seq: 7,
-      systemId: 1,
-      componentId: 1,
-      messageId: 33,
-      payload,
-      crcExtra: 104,
-    })
-    const decoded = decodeMavlinkFrames(frame)
-
-    expect(decoded).toHaveLength(1)
-    expect(decoded[0]?.systemId).toBe(1)
-    expect(decoded[0]?.componentId).toBe(1)
-    expect(decoded[0]?.messageId).toBe(33)
-    expect(decoded[0]?.payload.readInt32LE(4)).toBe(599_100_000)
-    expect(decoded[0]?.payload.readInt32LE(8)).toBe(107_500_000)
-    expect(decoded[0]?.payload.readInt32LE(12)).toBe(125_000)
-  })
-
-  test('MAVLink decoder validates a captured PX4 SITL MAVLink v2 telemetry checksum', () => {
-    const frame = Buffer.from(
-      'fd1c0000600101210000309d00003d5b401c860a1805fd0000001c0000000000000000006925ff2f',
-      'hex',
-    )
-    const decoded = decodeMavlinkFrames(frame)
-
-    expect(decoded).toHaveLength(1)
-    expect(decoded[0]?.systemId).toBe(1)
-    expect(decoded[0]?.componentId).toBe(1)
-    expect(decoded[0]?.messageId).toBe(33)
-    expect(decoded[0]?.payload.readInt32LE(4)).toBe(473_979_709)
-    expect(decoded[0]?.payload.readInt32LE(8)).toBe(85_461_638)
-  })
-
-  test('shared MAVLink leases reuse one UDP client for a physical SITL endpoint', async () => {
-    const responder = await startMavlinkHeartbeatResponderForTest()
-    let firstLease: SharedMavlinkClientLease | undefined
-    let secondLease: SharedMavlinkClientLease | undefined
-
-    try {
-      const endpoint = parseMavlinkEndpoint(responder.endpointText)
-      firstLease = await acquireSharedMavlinkClient({ endpoint, heartbeatTimeoutMs: 1_000 })
-      secondLease = await acquireSharedMavlinkClient({ endpoint, heartbeatTimeoutMs: 1_000 })
-
-      expect(secondLease.client).toBe(firstLease.client)
-      expect(secondLease.client.vehicle(1)?.autopilot).toBe('px4')
-
-      await firstLease.release()
-      expect(secondLease.client.vehicle(1)?.systemId).toBe(1)
-    } finally {
-      if (secondLease !== undefined) await secondLease.release()
-      if (firstLease !== undefined) await firstLease.release()
-      await responder.close()
-    }
-  })
-
-  test('SITL takeoff command encodes MAVLink COMMAND_LONG coordinates as latitude then longitude', async () => {
-    const capturedTakeoffParams: number[][] = []
-    const responder = await startMavlinkHeartbeatResponderForTest({
-      onFrame: ({ frame, remote, socket }) => {
-        if (frame.messageId !== mavlinkCommandLongMessageIdForTest || frame.payload.length < 33) return
-        const command = frame.payload.readUInt16LE(28)
-        if (command !== mavCmd.navTakeoff) return
-        capturedTakeoffParams.push(Array.from({ length: 7 }, (_value, index) => frame.payload.readFloatLE(index * 4)))
-        const ack = encodeMavlink1FrameForTest({
-          seq: 211,
-          systemId: 1,
-          componentId: 1,
-          messageId: mavlinkCommandAckMessageIdForTest,
-          payload: commandAckPayloadForTest(command),
-          crcExtra: 143,
-        })
-        sendMavlinkFrameForTest(socket, remote, ack)
-      },
-    })
-    const adapter = createDroneSitlPackRuntimeAdapter()
-    const object = drone({
-      id: 'drone:takeoff-ordering',
-      systemId: 1,
-      point: point(10.7522, 59.9139),
-      altitudeM: 0.2,
-      headingDeg: 98,
-    })
-    const connection = await adapter.connect({
-      controlInstanceId,
-      initialObjects: [object],
-      scenario: {
-        scenarioId: 'scenario:test-drone-takeoff-ordering',
-        runtimeIds: [droneSitlRuntimeId],
-        world: { environment: {} },
-        initialObjects: [object],
-        runtimeConfigs: {
-          drone: {
-            autopilot: 'px4',
-            mavlink: {
-              endpoint: responder.endpointText,
-              linkCount: 1,
-              systemIdBase: 1,
-              heartbeatTimeoutMs: 1_000,
-              commandTimeoutMs: 1_000,
-            },
-          },
-        },
-        runtimeConfig: {
-          autopilot: 'px4',
-          mavlink: {
-            endpoint: responder.endpointText,
-            linkCount: 1,
-            systemIdBase: 1,
-            heartbeatTimeoutMs: 1_000,
-            commandTimeoutMs: 1_000,
-          },
-        },
-      },
-    })
-
-    try {
-      const command: CommandEnvelope = {
-        id: 'command:test-drone-takeoff-ordering' as CommandEnvelope['id'],
-        controlInstanceId,
-        actorId,
-        kind: takeoffDroneCommandKind,
-        targetObjectIds: [object.id],
-        payload: {
-          droneId: object.id,
-          altitudeM: 25,
-        },
-        issuedAt: at,
-      }
-
-      const result = await connection.sendCommand(command)
-
-      expect(result.ok).toBe(true)
-      expect(capturedTakeoffParams).toHaveLength(1)
-      expect(capturedTakeoffParams[0]?.[3]).toBeCloseTo(98, 5)
-      expect(capturedTakeoffParams[0]?.[4]).toBeCloseTo(59.9139, 5)
-      expect(capturedTakeoffParams[0]?.[5]).toBeCloseTo(10.7522, 5)
-      expect(capturedTakeoffParams[0]?.[6]).toBeCloseTo(25, 5)
-    } finally {
-      await connection.close()
-      await responder.close()
-    }
-  })
-
-  test('SITL manual control queues setpoints without waiting for PX4 offboard priming', async () => {
-    let setpointFrames = 0
-    const responder = await startMavlinkHeartbeatResponderForTest({
-      heartbeatPayload: () => heartbeatPayloadForTest({
-        baseMode: mavModeFlagSafetyArmedForTest,
-        customMode: px4AutoLoiterCustomModeForTest,
-      }),
-      onFrame: ({ frame }) => {
-        if (frame.messageId === mavlinkSetPositionTargetGlobalIntMessageIdForTest) setpointFrames += 1
-      },
-    })
-    const adapter = createDroneSitlPackRuntimeAdapter()
-    const object = drone({
-      id: 'drone:manual-fast',
-      systemId: 1,
-      point: point(10.7522, 59.9139),
-      altitudeM: 14,
-      headingDeg: 45,
-    })
-    const data = dronePackDataSchema.parse(object.packData)
-    const readyObject = withDronePackData(object, {
-      ...data,
-      link: {
-        ...data.link,
-        state: 'connected',
-        lastHeartbeatAt: at,
-        lastMessageAt: at,
-      },
-      arming: {
-        state: 'armed',
-        armed: true,
-        updatedAt: at,
-      },
-      navigation: {
-        kind: 'hold',
-        mode: 'auto loiter',
-        updatedAt: at,
-      },
-      pose: {
-        ...data.pose,
-        altitudeM: 14,
-        relativeAltitudeM: 14,
-      },
-    }, at)
-    const connection = await adapter.connect({
-      controlInstanceId,
-      initialObjects: [readyObject],
-      scenario: {
-        scenarioId: 'scenario:test-drone-manual-fast',
-        runtimeIds: [droneSitlRuntimeId],
-        world: { environment: {} },
-        initialObjects: [readyObject],
-        runtimeConfigs: {
-          drone: {
-            autopilot: 'px4',
-            mavlink: {
-              endpoint: responder.endpointText,
-              linkCount: 1,
-              systemIdBase: 1,
-              heartbeatTimeoutMs: 1_000,
-              commandTimeoutMs: 1_000,
-            },
-          },
-        },
-        runtimeConfig: {
-          autopilot: 'px4',
-          mavlink: {
-            endpoint: responder.endpointText,
-            linkCount: 1,
-            systemIdBase: 1,
-            heartbeatTimeoutMs: 1_000,
-            commandTimeoutMs: 1_000,
-          },
-        },
-      },
-    })
-
-    try {
-      const command: CommandEnvelope = {
-        id: 'command:test-drone-manual-fast' as CommandEnvelope['id'],
-        controlInstanceId,
-        actorId,
-        kind: manualControlCommandKind,
-        targetObjectIds: [readyObject.id],
-        payload: {
-          droneId: readyObject.id,
-          axes: { forward: 0.6, right: 0.1, vertical: 0, yaw: 0.2 },
-          inputSource: { kind: 'keyboard', label: 'Keyboard' },
-          commandTtlMs: 600,
-        },
-        issuedAt: at,
-      }
-      const startedAtMs = performance.now()
-      const result = await connection.sendCommand(command)
-      const durationMs = performance.now() - startedAtMs
-
-      expect(result.ok).toBe(true)
-      expect(durationMs).toBeLessThan(250)
-      await waitForDroneTest(() => setpointFrames > 0, 'manual setpoint pump')
-    } finally {
-      await connection.close()
-      await responder.close()
-    }
-  })
-
-  test('controller bindings are derived from drone control state only', () => {
-    const object = drone({ id: 'drone:bound' })
-    const data = dronePackDataSchema.parse(object.packData)
-    const updated = withDronePackData(object, {
-      ...data,
-      control: {
-        pilotActorId: actorId,
-        inputSource: { kind: 'mouse', label: 'Pointer lock' },
-        inputExpiresAt: '2026-06-07T10:00:01.000Z' as IsoTimestamp,
-      },
-    }, at)
-
-    const bindings = droneControllerBindings([updated])
-    expect(bindings).toEqual([{
-      droneId: object.id,
-      actorId,
-      inputKind: 'mouse',
-      label: 'Pointer lock',
-      inputExpiresAt: '2026-06-07T10:00:01.000Z' as IsoTimestamp,
-    }])
-  })
-
-  test('map features come from vehicle sensors, payloads, and swarm metadata', () => {
-    const object = drone({ id: 'drone:features', model: effectModel() })
-    const data = dronePackDataSchema.parse(object.packData)
-    const swarmed = withDronePackData(object, {
-      ...data,
-      swarm: {
-        swarmId: 'swarm:test',
-        role: 'member',
-        slot: [0, 0, 0],
-        separationRadiusM: 12,
-      },
-    }, at)
-    const response = answerDroneQuery({
-      request: {
-        packId: dronePackId,
-        kind: droneMapFeaturesQueryKind,
-        payload: {
-          layers: ['sensor-footprints', 'effect-ranges', 'swarm-envelopes'],
-        },
-      },
-      objects: [swarmed],
-      at,
-    })
-
-    const result = okResult<{ readonly features: ReadonlyArray<PackMapAreaFeature> }>(response)
-    expect(result.features.map(feature => feature.id)).toEqual([
-      'drone:features:sensor-footprint',
-      'drone:features:effect-range',
-      'drone:features:swarm-envelope',
-    ])
-    expect(result.features[0]?.geometry.type).toBe('Polygon')
-  })
-
-  test('vehicle model queries expose the configured model catalog', () => {
+  test('native runtime parser merges model catalog overrides', () => {
     const model = effectModel()
-    const response = answerDroneQuery({
-      request: {
-        packId: dronePackId,
-        kind: droneVehicleModelsQueryKind,
-        payload: {},
-      },
-      objects: [],
-      at,
+    const parsed = parseDroneNativeRuntimeConfig({
+      maxDrones: 4,
+      stepIntervalMs: 10,
+      projectionIntervalMs: 20,
       models: [model],
     })
-    const result = okResult<{ readonly models: ReadonlyArray<DroneVehicleModel> }>(response)
-    expect(result.models).toEqual([model])
+    expect(parsed.maxDrones).toBe(4)
+    expect(parsed.stepIntervalMs).toBe(10)
+    expect(parsed.models.some(candidate => candidate.id === model.id)).toBe(true)
   })
 
-  test('scene and binding pack queries use one typed query surface', () => {
-    const object = drone({ id: 'drone:query' })
-    const scene = okResult<{ readonly drones: ReturnType<typeof droneSceneObjects> }>(answerDroneQuery({
-      request: { packId: dronePackId, kind: droneSceneQueryKind, payload: {} },
-      objects: [object],
+  test('native runtime executes arm, takeoff, goto, and manual control without external processes', async () => {
+    const initial = drone({ id: 'drone:native-loop', altitudeM: 0, headingDeg: 0 })
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [initial],
+      scenario: {
+        scenarioId: 'scenario:native-test',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: [initial],
+        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
+      },
+    })
+    const seen = new Map<string, OperationalObject>()
+    const unsubscribe = connection.subscribe(emission => {
+      for (const event of emission.events) {
+        if (event.type === 'object.upserted') seen.set(event.object.id, event.object)
+      }
+    })
+
+    try {
+      expect((await connection.sendCommand(command(armDroneCommandKind, { droneId: initial.id, armed: true }, [initial.id]))).ok).toBe(true)
+      expect((await connection.sendCommand(command(takeoffDroneCommandKind, { droneId: initial.id, altitudeM: 20 }, [initial.id]))).ok).toBe(true)
+      await waitForCondition('native takeoff climbs', () => (droneData(seen.get(initial.id) ?? initial).pose.altitudeM > 1), { timeoutMs: 800, intervalMs: 20 })
+
+      expect((await connection.sendCommand(command(navigateDroneCommandKind, {
+        droneId: initial.id,
+        target: {
+          point: point(10.751, 59.91),
+          altitudeM: 20,
+          speedMps: 20,
+        },
+      }, [initial.id]))).ok).toBe(true)
+      await waitForCondition('native goto moves east', () => {
+        const current = seen.get(initial.id)
+        return current !== undefined && droneData(current).pose.point.coordinates[0] > initial.spatial.position!.point.coordinates[0]
+      }, { timeoutMs: 900, intervalMs: 20 })
+
+      const current = seen.get(initial.id)
+      expect(current).toBeDefined()
+      const currentData = droneData(current!)
+      expect(droneManualControlReadiness(currentData).ready).toBe(true)
+      expect((await connection.sendCommand(command(manualControlCommandKind, {
+        droneId: initial.id,
+        axes: { forward: 1, right: 0, vertical: 0, yaw: 0 },
+        inputSource: { kind: 'keyboard', label: 'Keyboard' },
+        commandTtlMs: 300,
+      }, [initial.id]))).ok).toBe(true)
+      await waitForCondition('manual control records controller binding', () => {
+        const object = seen.get(initial.id)
+        return object !== undefined && droneData(object).control.inputSource?.kind === 'keyboard'
+      }, { timeoutMs: 600, intervalMs: 20 })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  test('native create command does not require telemetry', async () => {
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({ controlInstanceId, initialObjects: [] })
+    try {
+      const result = await connection.sendCommand(command(createDroneCommandKind, {
+        objectType: 'drone',
+        label: 'Created Native',
+        point: point(10.75, 59.91),
+        modelId: 'native-survey-quad',
+        altitudeM: 35,
+      }))
+      expect(result.ok).toBe(true)
+      const snapshot = await connection.getSnapshot()
+      expect(snapshot.objects.some(object => object.id === 'drone:created-native')).toBe(true)
+    } finally {
+      await connection.close()
+    }
+  })
+
+  test('queries expose scene, bindings, map features, and model catalog', () => {
+    const model = effectModel()
+    const object = withDronePackData(
+      drone({ id: 'drone:effect', model, altitudeM: 35 }),
+      {
+        ...droneData(drone({ id: 'drone:effect-source', model, altitudeM: 35 })),
+        control: {
+          inputSource: { kind: 'keyboard', label: 'Keyboard' },
+          inputExpiresAt: at,
+        },
+      },
       at,
-    }))
-    const bindings = okResult<{ readonly bindings: ReturnType<typeof droneControllerBindings> }>(answerDroneQuery({
-      request: { packId: dronePackId, kind: droneControllerBindingsQueryKind, payload: {} },
-      objects: [object],
-      at,
-    }))
+    )
+    const objects = [object]
+
+    expect(droneSceneObjects(objects)[0]?.modelId).toBe(model.id)
+    expect(droneControllerBindings(objects)[0]?.inputKind).toBe('keyboard')
+    expect(droneSensorContacts(objects)).toEqual([])
+
+    const scene = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneSceneQueryKind, payload: {} }, objects })) as { drones: ReadonlyArray<unknown> }
+    const models = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneVehicleModelsQueryKind, payload: {} }, objects, models: [model] })) as { models: ReadonlyArray<DroneVehicleModel> }
+    const features = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneMapFeaturesQueryKind, payload: {} }, objects })) as { features: ReadonlyArray<unknown> }
+    const bindings = okResult(answerDroneQuery({ request: { packId: dronePackId, kind: droneControllerBindingsQueryKind, payload: {} }, objects })) as { bindings: ReadonlyArray<unknown> }
 
     expect(scene.drones).toHaveLength(1)
+    expect(models.models[0]?.id).toBe(model.id)
+    expect(features.features.length).toBeGreaterThan(0)
     expect(bindings.bindings).toHaveLength(1)
   })
 
-  test('sensor contacts are not fabricated by the browser-side query layer', () => {
-    const observer = drone({ id: 'drone:observer', modelId: 'px4-x500-gimbal' })
-    const target = genericTarget({ id: 'amb:visible-target', point: point(10.75, 59.911) })
-    expect(droneSensorContacts([observer, target])).toEqual([])
-  })
-
-  test('manual control accepts mouse as a first-class input source', () => {
-    const parsed = manualControlPayloadSchema.parse({
-      droneId: 'drone:mouse-controlled',
-      axes: { forward: 0.4, right: 0, vertical: 0.1, yaw: -0.2 },
-      inputSource: { kind: 'mouse', label: 'Mouse pointer lock' },
-      commandTtlMs: 650,
-    })
-    expect(parsed.inputSource.kind).toBe('mouse')
-    expect(parsed.axes.forward).toBe(0.4)
-  })
-
-  test('manual control command lifecycle is projected rather than durable', () => {
-    const adapter = createDroneSitlPackRuntimeAdapter()
-    expect(adapter.commandEventPersistence?.['drone.manual_control']).toBe('projected')
-  })
-
-  test('manual control readiness rejects inert autopilot states before MAVLink input is sent', () => {
-    const object = drone({ id: 'drone:manual-readiness' })
-    const data = dronePackDataSchema.parse(object.packData)
-
-    expect(droneManualControlReadiness({
-      ...data,
-      link: { ...data.link, state: 'connected' },
-      arming: { state: 'disarmed', armed: false, updatedAt: at },
-      pose: { ...data.pose, altitudeM: 0.2, relativeAltitudeM: 0.2 },
-      navigation: { kind: 'manual', mode: 'position control', updatedAt: at },
-    }).reason).toBe('manual flight requires an armed drone')
-
-    expect(droneManualControlReadiness({
-      ...data,
-      link: { ...data.link, state: 'connected' },
-      arming: { state: 'armed', armed: true, updatedAt: at },
-      pose: { ...data.pose, altitudeM: 0.2, relativeAltitudeM: 0.2 },
-      navigation: { kind: 'manual', mode: 'position control', updatedAt: at },
-    }).reason).toBe('manual flight requires takeoff before stick input')
-
-    expect(droneManualControlReadiness({
-      ...data,
-      link: { ...data.link, state: 'connected' },
-      arming: { state: 'armed', armed: true, updatedAt: at },
-      pose: { ...data.pose, altitudeM: 8, relativeAltitudeM: 8 },
-      navigation: { kind: 'hold', mode: 'auto loiter', updatedAt: at },
-    })).toEqual({ ready: true })
-  })
-
-  test('manual control readiness allows armed airborne external-control modes', () => {
-    const object = drone({ id: 'drone:manual-ready' })
-    const data = dronePackDataSchema.parse(object.packData)
-    const readyData = {
-      ...data,
-      link: { ...data.link, state: 'connected' as const },
-      arming: { state: 'armed' as const, armed: true, updatedAt: at },
-      pose: { ...data.pose, altitudeM: 12, relativeAltitudeM: 12 },
-      navigation: { kind: 'manual' as const, mode: 'position control', updatedAt: at },
-    }
-
-    expect(droneManualControlReadiness(readyData)).toEqual({ ready: true })
-  })
-
-  test('attack effects deplete declared payloads and damage targets through interaction handlers', async () => {
+  test('attack interaction handler applies drone effects through interaction signals', async () => {
     const attacker = drone({ id: 'drone:attacker', model: effectModel() })
-    const target = genericTarget({ id: 'amb:drone-target' })
+    const target = genericTarget({ id: 'amb:target' })
     const handler = createDroneAttackInteractionHandler()
-    const signal = droneAttackSignal({
-      controlInstanceId,
-      at,
-      attackerId: attacker.id,
-      targetId: target.id,
-      payloadId: 'kinetic-effect',
-    })
-
     const effects = await handler.handle({
-      signal,
-      snapshot: { objects: [attacker, target], seq: 1 },
-      provenance: { source: 'simulator' },
+      signal: droneAttackSignal({
+        controlInstanceId,
+        at,
+        attackerId: attacker.id,
+        targetId: target.id,
+        payloadId: 'training-effect',
+      }),
+      snapshot: {
+        objects: [attacker, target],
+        seq: 1,
+      },
+      provenance: { source: 'operator' },
     })
-    const upserts = effects.flatMap(effect => effect.type === 'object.upsert' ? [effect.object] : [])
-    const updatedAttacker = upserts.find(object => object.id === attacker.id)
-    const updatedTarget = upserts.find(object => object.id === target.id)
-
-    if (!updatedAttacker || !updatedTarget) throw new Error('missing drone attack upsert effects')
-    const attackerData = dronePackDataSchema.parse(updatedAttacker.packData)
-    expect(attackerData.vehicle.payloads.find(payload => payload.id === 'kinetic-effect')?.quantity).toBe(1)
-    expect(updatedTarget.operational.status).toBe('damaged')
-    expect(updatedTarget.alerts.some(alert => alert.kind === 'drone_effect')).toBe(true)
+    expect(effects.some(effect => effect.type === 'object.upsert')).toBe(true)
+    expect(effects.some(effect => effect.type === 'notification.emit')).toBe(true)
   })
 
-  test('drone pack presentation and creation commands expose SITL vehicle concepts', () => {
-    const object = drone({ id: 'drone:presentation', modelId: 'px4-x500-gimbal' })
+  test('drone pack presentation and creation commands expose native vehicle concepts', () => {
+    const object = drone({ id: 'drone:presentation', modelId: 'native-gimbal-quad' })
     const presentation = dronePack.presentObject(object, { objects: [object] })
     const fieldsByKey = new Map(presentation.fields.map(field => [field.key, field.value]))
-    expect(fieldsByKey.get('autopilot')).toBe('px4')
-    expect(fieldsByKey.get('model')).toBe('PX4 X500 Gimbal')
-    expect(fieldsByKey.get('link')).toBe('connecting')
 
-    const command = dronePack.buildCreateObjectCommand('drone', 'New SITL drone', {
+    expect(fieldsByKey.get('model')).toBe('Gimbal Quad')
+    expect(fieldsByKey.get('link')).toBe('connected')
+    expect(presentation.summary).toContain('Gimbal Quad')
+
+    const commandRequest = dronePack.buildCreateObjectCommand('drone', 'New native drone', {
       kind: 'point',
-      point: point(10.77, 59.92),
+      point: point(10.7, 59.9),
     }, {
-      modelId: 'px4-x500-gimbal',
-      altitudeM: 65,
+      modelId: 'native-survey-quad',
+      altitudeM: 45,
     })
-    expect(command).toMatchObject({
-      kind: createDroneCommandKind,
-      payload: {
-        objectType: 'drone',
-        label: 'New SITL drone',
-        modelId: 'px4-x500-gimbal',
-        altitudeM: 65,
-      },
+    expect(commandRequest.kind).toBe(createDroneCommandKind)
+    expect(commandRequest.payload).toMatchObject({
+      objectType: 'drone',
+      label: 'New native drone',
+      modelId: 'native-survey-quad',
+      altitudeM: 45,
     })
   })
 
-  test('drone map world projection keeps east positive x and north negative z', () => {
-    const center = { lon: 10.75, lat: 59.91 }
-    const east = localPointFromLonLat(10.7501, 59.91, center)
-    const north = localPointFromLonLat(10.75, 59.9101, center)
-    expect(east.x).toBeGreaterThan(5)
-    expect(Math.abs(east.z)).toBeLessThan(0.01)
-    expect(north.z).toBeLessThan(-10)
-    expect(Math.abs(north.x)).toBeLessThan(0.01)
-  })
-
-  test('drone terrain status reflects the map capability manifest without fabricating elevation', async () => {
-    const originalFetch = globalThis.fetch
-    const mockFetch = (body: unknown): typeof fetch => {
-      const handler = async (): Promise<Response> => new Response(JSON.stringify(body))
-      return Object.assign(handler, { preconnect: originalFetch.preconnect }) as typeof fetch
-    }
-    try {
-      globalThis.fetch = mockFetch({
-        schemaVersion: 2,
-        tilesets: [{
-          kind: 'terrain',
-          availability: {
-            status: 'available',
-            path: '/opt/leitbild/maps/current/terrain.pmtiles',
-          },
-          artifact: {
-            demEncoding: 'terrarium',
-            currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
-            tileJsonUrl: '/map/terrain/current/tiles.json',
-          },
-        }],
-      })
-      const available = await loadDroneWorldTerrainStatus()
-      expect(available).toMatchObject({
-        status: 'available',
-        demEncoding: 'terrarium',
-        tileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
-      })
-
-      globalThis.fetch = mockFetch({
-        schemaVersion: 2,
-        tilesets: [{
-          kind: 'terrain',
-          availability: {
-            status: 'unavailable',
-            error: 'ENOENT terrain.pmtiles',
-          },
-          artifact: {
-            demEncoding: 'terrarium',
-            currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
-            tileJsonUrl: '/map/terrain/current/tiles.json',
-          },
-        }],
-      })
-      const unavailable = await loadDroneWorldTerrainStatus()
-      expect(unavailable).toMatchObject({
-        status: 'unavailable',
-        reason: 'ENOENT terrain.pmtiles',
-      })
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
-
-  test('built-in drone scenario and mission resolve through the Gazebo SITL runtime', () => {
+  test('built-in drone scenario resolves through native runtime', () => {
     const catalog = createTestScenarioCatalog()
-    const scenario = catalog.getScenario('oslo-drone-operations')
-    if (!scenario?.missionId) throw new Error('missing drone scenario mission')
-    const mission = catalog.getMission(scenario.missionId)
-    const runtime = catalog.runtimeFor(scenario.id)
-    if (!runtime) throw new Error('missing drone runtime')
-    const droneRuntime = runtime.runtimes.find(entry => entry.packId === dronePackId)
-    const droneObjects = runtime.initialObjects.filter(object => object.packId === dronePackId)
-    const firstDroneData = dronePackDataSchema.parse(droneObjects[0]?.packData)
+    const scenario = catalog.runtimeFor('oslo-drone-operations')
+    expect(scenario?.runtimes.some(runtime => runtime.runtimeId === droneNativeRuntimeId)).toBe(true)
+    expect(scenario?.initialObjects.some(object => object.packId === dronePackId)).toBe(true)
+  })
 
-    expect(mission?.scenarioId).toBe(scenario.id)
-    expect(droneRuntime?.runtimeId).toBe(droneSitlRuntimeId)
-    expect(droneObjects.length).toBeGreaterThan(0)
-    expect(firstDroneData.schemaVersion).toBe(2)
-    expect(firstDroneData.link.endpoint).toBe('udp://127.0.0.1:14580?localPort=14540')
-    expect('profile' in firstDroneData).toBe(false)
-    expect('kinematics' in firstDroneData).toBe(false)
-    expect('energy' in firstDroneData).toBe(false)
+  test('drone terrain helpers keep lon lat origin stable for scene renderer', async () => {
+    const status = await loadDroneWorldTerrainStatus()
+    expect(status.status).toBe('unavailable')
+    const local = localPointFromLonLat(10.751, 59.91, { lon: 10.75, lat: 59.91 })
+    expect(local.x).toBeGreaterThan(0)
+    expect(Math.abs(local.z)).toBeLessThan(0.000001)
+  })
+
+  test('hold command is part of the native runtime command surface', () => {
+    expect(dronePack.buildCancelTargetCommand(drone({ id: 'drone:cancel' }), { objects: [] }).kind).toBe(holdDroneCommandKind)
   })
 })

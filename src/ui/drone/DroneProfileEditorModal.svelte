@@ -27,8 +27,7 @@
 
   let loadedObjectId = $state<string | null>(null)
   let label = $state('')
-  let autopilotModel = $state('')
-  let gazeboModel = $state('')
+  let flightEnvelopeJson = $state('{}')
   let capabilityKinds = $state('')
   let payloadsJson = $state('[]')
   let color = $state('#2563eb')
@@ -46,8 +45,7 @@
     const initial = data
     loadedObjectId = object.id
     label = initial?.vehicle.modelLabel ?? object.label
-    autopilotModel = initial?.vehicle.autopilotModel ?? ''
-    gazeboModel = initial?.vehicle.gazeboModel ?? ''
+    flightEnvelopeJson = JSON.stringify(initial?.vehicle.flightEnvelope ?? {}, null, 2)
     capabilityKinds = initial?.vehicle.capabilities.map(capability => capability.kind).join(', ') ?? ''
     payloadsJson = JSON.stringify(initial?.vehicle.payloads ?? [], null, 2)
     color = initial?.vehicle.visual.color ?? '#2563eb'
@@ -76,6 +74,8 @@
     return value.map(payload => payload as DronePayload)
   }
 
+  const flightEnvelopeFromJson = (): unknown => JSON.parse(flightEnvelopeJson) as unknown
+
   const save = async (): Promise<void> => {
     const current = data
     if (!current) return
@@ -83,9 +83,8 @@
       const model = droneVehicleModelSchema.parse({
         id: current.vehicle.modelId,
         label,
-        autopilotModel,
-        gazeboModel,
         airframe: current.vehicle.airframe,
+        flightEnvelope: flightEnvelopeFromJson(),
         capabilities: capabilitiesFromText(),
         sensors: current.vehicle.sensors,
         payloads: payloadsFromJson(),
@@ -122,12 +121,15 @@
     </label>
 
     <div class="field-grid">
-      <label><span>Autopilot model</span><input bind:value={autopilotModel} /></label>
-      <label><span>Gazebo model</span><input bind:value={gazeboModel} /></label>
       <label><span>Scale</span><input type="number" min="0.1" max="10" step="0.05" bind:value={scale} /></label>
       <label><span>Color</span><input bind:value={color} /></label>
       <label><span>Accent</span><input bind:value={accentColor} /></label>
     </div>
+
+    <label>
+      <span>Flight envelope JSON</span>
+      <textarea bind:value={flightEnvelopeJson}></textarea>
+    </label>
 
     <label>
       <span>Capabilities</span>

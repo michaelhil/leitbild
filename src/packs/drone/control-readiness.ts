@@ -16,7 +16,7 @@ const externalControlNavigationKinds: ReadonlySet<DronePackData['navigation']['k
 
 export const droneManualControlReadiness = (data: DronePackData): DroneManualControlReadiness => {
   if (data.link.state !== 'connected') {
-    return { ready: false, reason: `MAVLink system ${data.vehicle.systemId} is not connected` }
+    return { ready: false, reason: 'drone runtime link is not connected' }
   }
   if (!data.arming.armed) {
     return { ready: false, reason: 'manual flight requires an armed drone' }
@@ -28,7 +28,7 @@ export const droneManualControlReadiness = (data: DronePackData): DroneManualCon
   if (!externalControlNavigationKinds.has(data.navigation.kind)) {
     return {
       ready: false,
-      reason: `manual flight is not available while the autopilot is in ${data.navigation.mode}`,
+      reason: `manual flight is not available while the drone is in ${data.navigation.mode}`,
     }
   }
   return { ready: true }

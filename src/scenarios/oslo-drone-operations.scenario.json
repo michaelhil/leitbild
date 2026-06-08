@@ -2,7 +2,7 @@
   "id": "oslo-drone-operations",
   "schemaVersion": 1,
   "title": "Oslo drone operations",
-  "description": "A shared Gazebo SITL drone-control and swarm scenario with PX4/ArduPilot vehicle models, ambulance targets, and map-visible sensor/effect ranges.",
+  "description": "A shared native Leitbild drone-control and swarm scenario with ambulance targets and map-visible sensor/effect ranges.",
   "packs": ["ambulance", "drone"],
   "missionId": "mission:oslo-drone-search-and-intercept",
   "runtimeOverrides": {},
@@ -54,7 +54,7 @@
       "id": "drone:oslo-survey-1",
       "label": "Survey 1",
       "position": [10.7488, 59.9141],
-      "modelId": "px4-x500-depth",
+      "modelId": "native-survey-quad",
       "altitudeM": 55,
       "headingDeg": 35,
       "swarm": {
@@ -70,7 +70,7 @@
       "id": "drone:oslo-survey-2",
       "label": "Survey 2",
       "position": [10.7479, 59.9137],
-      "modelId": "px4-x500-vision-micro",
+      "modelId": "native-vision-micro",
       "altitudeM": 48,
       "headingDeg": 35,
       "swarm": {
@@ -86,7 +86,7 @@
       "id": "drone:oslo-supply-1",
       "label": "Supply 1",
       "position": [10.7429, 59.9160],
-      "modelId": "px4-x500-gimbal",
+      "modelId": "native-gimbal-quad",
       "altitudeM": 38,
       "headingDeg": 92
     },
@@ -96,7 +96,7 @@
       "id": "drone:oslo-interceptor-1",
       "label": "Interceptor 1",
       "position": [10.7570, 59.9138],
-      "modelId": "px4-x500-effect",
+      "modelId": "native-effect-quad",
       "altitudeM": 42,
       "headingDeg": 260
     }
@@ -105,31 +105,34 @@
   "runtimeConfigs": {
     "ambulance": {},
     "drone": {
-      "autopilot": "px4",
-      "world": "oslo-drone-operations",
-      "mavlink": {
-        "endpoint": "udp://127.0.0.1:14580?localPort=14540",
-        "linkCount": 4,
-        "systemIdBase": 1
-      },
+      "maxDrones": 10,
+      "stepIntervalMs": 20,
+      "projectionIntervalMs": 33,
+      "batteryDrainPercentPerHour": 7,
       "models": [
         {
-          "id": "px4-x500-vision-micro",
-          "label": "PX4 X500 Vision Micro",
-          "description": "Compact PX4 Gazebo X500 vision model for quiet observation tasks.",
-          "autopilotModel": "x500_vision",
-          "gazeboModel": "x500_vision",
+          "id": "native-vision-micro",
+          "label": "Vision Micro",
+          "description": "Compact native Leitbild vision quad for quiet observation tasks.",
           "airframe": {
             "kind": "quadrotor",
             "rotorCount": 4,
             "massKg": 0.78,
             "diagonalSizeM": 0.24
           },
+          "flightEnvelope": {
+            "cruiseSpeedMps": 14,
+            "maxHorizontalSpeedMps": 26,
+            "maxVerticalSpeedMps": 5,
+            "maxAccelerationMps2": 8,
+            "maxYawRateDegPerSec": 130,
+            "arrivalRadiusM": 3
+          },
           "capabilities": [
-            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "autopilot" },
-            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "autopilot" },
-            { "id": "mission", "kind": "mission", "label": "Mission upload", "source": "autopilot" },
-            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance", "source": "gazebo" }
+            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "runtime" },
+            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "runtime" },
+            { "id": "mission", "kind": "mission", "label": "Mission execution", "source": "runtime" },
+            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance", "source": "payload" }
           ],
           "sensors": [
             {
@@ -139,7 +142,7 @@
               "rangeM": 450,
               "fovDeg": 100,
               "updateIntervalMs": 500,
-              "source": "gazebo"
+              "source": "payload"
             }
           ],
           "payloads": [],
@@ -150,21 +153,27 @@
           }
         },
         {
-          "id": "px4-x500-effect",
-          "label": "PX4 X500 Effect",
-          "description": "PX4 Gazebo X500 model with an operator-declared training effect payload.",
-          "autopilotModel": "x500",
-          "gazeboModel": "x500",
+          "id": "native-effect-quad",
+          "label": "Effect Quad",
+          "description": "Native Leitbild quad with an operator-declared training effect payload.",
           "airframe": {
             "kind": "quadrotor",
             "rotorCount": 4,
             "massKg": 3.2,
             "diagonalSizeM": 0.52
           },
+          "flightEnvelope": {
+            "cruiseSpeedMps": 24,
+            "maxHorizontalSpeedMps": 48,
+            "maxVerticalSpeedMps": 11,
+            "maxAccelerationMps2": 16,
+            "maxYawRateDegPerSec": 170,
+            "arrivalRadiusM": 5
+          },
           "capabilities": [
-            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "autopilot" },
-            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "autopilot" },
-            { "id": "mission", "kind": "mission", "label": "Mission upload", "source": "autopilot" },
+            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "runtime" },
+            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "runtime" },
+            { "id": "mission", "kind": "mission", "label": "Mission execution", "source": "runtime" },
             { "id": "effect-delivery", "kind": "effect_delivery", "label": "Effect delivery", "source": "operator_declared" }
           ],
           "sensors": [
@@ -175,7 +184,7 @@
               "rangeM": 900,
               "fovDeg": 50,
               "updateIntervalMs": 300,
-              "source": "gazebo"
+              "source": "payload"
             }
           ],
           "payloads": [
@@ -300,7 +309,7 @@
             "guidance": {
               "id": "drone-ops-briefing",
               "title": "Drone operations",
-              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by the configured Gazebo SITL autopilot runtime and share this control instance across connected browsers.",
+              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by Leitbild's native runtime and share this control instance across connected browsers.",
               "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
               "dismissible": true
             }

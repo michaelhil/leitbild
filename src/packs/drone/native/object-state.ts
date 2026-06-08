@@ -12,12 +12,11 @@ import {
   dronePackDataSchema,
   dronePackId,
   droneVehicleModelSchema,
-  type DroneAutopilot,
   type DronePackData,
   type DroneSwarmMembership,
   type DroneVehicleModel,
 } from '../model.ts'
-import { droneSitlAdapterId } from './constants.ts'
+import { droneNativeAdapterId } from './constants.ts'
 
 export const droneTelemetry = (data: DronePackData, at: IsoTimestamp): TelemetryState => {
   const signal = (
@@ -59,25 +58,11 @@ export const droneTelemetry = (data: DronePackData, at: IsoTimestamp): Telemetry
 }
 
 export const droneOperationalStatus = (data: DronePackData): OperationalObject['operational'] => {
-  if (data.health.state === 'destroyed') {
-    return { status: 'destroyed', priority: 'critical', mode: 'simulated' }
-  }
-  if (data.link.state === 'lost') {
-    return { status: 'link_lost', priority: 'critical', intent: data.navigation.kind, mode: 'simulated' }
-  }
-  if (data.link.state === 'degraded') {
-    return { status: 'link_degraded', priority: 'high', intent: data.navigation.kind, mode: 'simulated' }
-  }
+  if (data.health.state === 'destroyed') return { status: 'destroyed', priority: 'critical', mode: 'simulated' }
+  if (data.link.state === 'lost') return { status: 'link_lost', priority: 'critical', intent: data.navigation.kind, mode: 'simulated' }
+  if (data.link.state === 'degraded') return { status: 'link_degraded', priority: 'high', intent: data.navigation.kind, mode: 'simulated' }
   if (data.health.state === 'critical' || data.health.state === 'failed') {
     return { status: data.health.state, priority: 'critical', intent: data.navigation.kind, mode: 'simulated' }
-  }
-  if (data.arming.state === 'unknown') {
-    return {
-      status: data.link.state === 'connected' ? 'telemetry_connected' : 'awaiting_telemetry',
-      priority: 'normal',
-      intent: data.navigation.mode,
-      mode: 'simulated',
-    }
   }
   if (data.arming.armed) {
     return { status: data.navigation.kind, priority: data.health.state === 'degraded' ? 'high' : 'normal', intent: data.navigation.mode, mode: 'simulated' }
@@ -95,7 +80,7 @@ export const withDronePackData = (
   object: OperationalObject,
   data: DronePackData,
   at: IsoTimestamp,
-  adapterId: AdapterId = droneSitlAdapterId,
+  adapterId: AdapterId = droneNativeAdapterId,
 ): OperationalObject => ({
   ...object,
   revision: object.revision + 1,
@@ -126,7 +111,7 @@ export const withDronePackData = (
   provenance: {
     source: 'simulator',
     adapterId,
-    externalId: `${data.vehicle.systemId}:${data.vehicle.componentId}`,
+    externalId: object.id,
   },
   timestamps: {
     ...object.timestamps,
@@ -136,45 +121,41 @@ export const withDronePackData = (
 })
 
 export const createDronePackData = (config: {
-  readonly autopilot: DroneAutopilot
   readonly model: DroneVehicleModel
   readonly point: GeoJsonPoint
   readonly altitudeM: number
   readonly headingDeg: number
   readonly at: IsoTimestamp
-  readonly systemId: number
-  readonly endpoint?: string
   readonly swarm?: DroneSwarmMembership
 }): DronePackData => {
   const model = droneVehicleModelSchema.parse(config.model)
   return dronePackDataSchema.parse({
     type: 'drone',
     schemaVersion: 2,
-    autopilot: config.autopilot,
     vehicle: {
       modelId: model.id,
       modelLabel: model.label,
-      autopilotModel: model.autopilotModel,
-      gazeboModel: model.gazeboModel,
-      systemId: config.systemId,
-      componentId: 1,
       airframe: model.airframe,
+      flightEnvelope: model.flightEnvelope,
       capabilities: model.capabilities,
       sensors: model.sensors,
       payloads: model.payloads,
       visual: model.visual,
     },
     link: {
-      state: 'connecting',
-      ...(config.endpoint === undefined ? {} : { endpoint: config.endpoint }),
+      state: 'connected',
+      lastHeartbeatAt: config.at,
+      lastMessageAt: config.at,
     },
     arming: {
-      state: 'unknown',
+      state: 'disarmed',
       armed: false,
+      updatedAt: config.at,
     },
     navigation: {
-      kind: 'unknown',
-      mode: 'awaiting heartbeat',
+      kind: 'hold',
+      mode: 'hold',
+      updatedAt: config.at,
     },
     pose: {
       point: config.point,
@@ -183,9 +164,26 @@ export const createDronePackData = (config: {
       headingDeg: config.headingDeg,
       observedAt: config.at,
     },
+    attitude: {
+      rollDeg: 0,
+      pitchDeg: 0,
+      yawDeg: config.headingDeg,
+    },
+    battery: {
+      remainingPercent: 100,
+    },
     health: {
-      state: 'unknown',
+      state: 'nominal',
       damage: [],
+    },
+    mission: {
+      state: 'idle',
+      updatedAt: config.at,
+    },
+    geofence: {
+      loaded: false,
+      breachStatus: 'clear',
+      updatedAt: config.at,
     },
     ...(config.swarm === undefined ? {} : { swarm: config.swarm }),
   })
@@ -194,14 +192,11 @@ export const createDronePackData = (config: {
 export const createScenarioDroneObject = (config: {
   readonly id: ObjectId
   readonly label: string
-  readonly autopilot: DroneAutopilot
   readonly model: DroneVehicleModel
   readonly point: GeoJsonPoint
   readonly altitudeM: number
   readonly headingDeg: number
   readonly at: IsoTimestamp
-  readonly systemId: number
-  readonly endpoint?: string
   readonly swarm?: DroneSwarmMembership
 }): OperationalObject => {
   const data = createDronePackData(config)
@@ -217,20 +212,20 @@ export const createScenarioDroneObject = (config: {
         point: config.point,
         headingDeg: config.headingDeg,
         speedMps: 0,
-        accuracyM: metersSchema.parse(2),
+        accuracyM: metersSchema.parse(1),
         observedAt: config.at,
-        staleAfterMs: 750,
+        staleAfterMs: 2_000,
       },
       frame: { kind: 'wgs84' },
     },
     operational: droneOperationalStatus(data),
     telemetry: droneTelemetry(data, config.at),
     alerts: [],
-    communication: { state: 'unknown' },
+    communication: { state: 'connected', lastContactAt: config.at },
     provenance: {
       source: 'simulator',
-      adapterId: droneSitlAdapterId,
-      externalId: `${config.systemId}:1`,
+      adapterId: droneNativeAdapterId,
+      externalId: config.id,
     },
     timestamps: {
       createdAt: config.at,

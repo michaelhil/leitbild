@@ -8,34 +8,24 @@ import {
 import type { PackScenarioObjectSpec, PackScenarioOperationSpec, PackScenarioSupport } from '../../core/packs/protocol.ts'
 import {
   defaultDroneVehicleModels,
-  droneAutopilotSchema,
   droneSwarmMembershipSchema,
   droneVehicleModelCatalogSchema,
   droneVehicleModelSchema,
   requireDroneVehicleModel,
-  type DroneAutopilot,
   type DroneVehicleModel,
 } from './model.ts'
-import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './sitl/object-state.ts'
-import { parseMavlinkEndpoint } from './sitl/mavlink.ts'
+import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './native/object-state.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
   z.number().finite().min(-90).max(90),
 ])
 
-const mavlinkScenarioConfigSchema = z.object({
-  endpoint: z.string().min(1).max(240).optional(),
-  linkCount: z.number().int().positive().max(10).optional(),
-  systemIdBase: z.number().int().min(1).max(240).default(1),
-}).strict().default({
-  systemIdBase: 1,
-})
-
 const droneRuntimeConfigSchema = z.object({
-  autopilot: droneAutopilotSchema.default('px4'),
-  world: z.string().min(1).max(128).default('default'),
-  mavlink: mavlinkScenarioConfigSchema,
+  maxDrones: z.number().int().positive().max(500).default(10),
+  stepIntervalMs: z.number().int().min(5).max(100).default(20),
+  projectionIntervalMs: z.number().int().min(10).max(250).default(33),
+  batteryDrainPercentPerHour: z.number().finite().nonnegative().max(100).default(8),
   models: z.array(droneVehicleModelSchema).default([]),
 }).strict()
 
@@ -45,10 +35,8 @@ const droneSpecSchema = z.object({
   id: objectIdSchema,
   label: z.string().min(1),
   position: lonLatSchema,
-  modelId: z.string().min(1).max(128).default('px4-x500-depth'),
+  modelId: z.string().min(1).max(128).default('native-survey-quad'),
   model: droneVehicleModelSchema.optional(),
-  autopilot: droneAutopilotSchema.optional(),
-  systemId: z.number().int().min(1).max(255).optional(),
   altitudeM: z.number().finite().min(-1_000).max(100_000).default(35),
   headingDeg: z.number().finite().min(0).max(360).default(0),
   swarm: droneSwarmMembershipSchema.optional(),
@@ -69,18 +57,6 @@ const setDroneSwarmOperationSchema = z.object({
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])
 
-const scenarioEndpointForSystemId = (
-  runtimeConfig: z.infer<typeof droneRuntimeConfigSchema>,
-  systemId: number,
-): string | undefined => {
-  const endpointText = runtimeConfig.mavlink.endpoint
-  if (endpointText === undefined) return undefined
-  const endpoint = parseMavlinkEndpoint(endpointText)
-  const offset = systemId - runtimeConfig.mavlink.systemIdBase
-  if (offset < 0 || offset >= (runtimeConfig.mavlink.linkCount ?? 1)) return endpointText
-  return `udp://${endpoint.host}:${endpoint.port + offset}?localPort=${endpoint.localPort + offset}`
-}
-
 export const droneRuntimeConfigFromRuntimeConfigs = (
   runtimeConfigs: Record<string, unknown>,
 ): z.infer<typeof droneRuntimeConfigSchema> =>
@@ -99,48 +75,22 @@ export const droneVehicleModelsFromRuntimeConfigs = (
 
 export const droneProfilesFromRuntimeConfigs = droneVehicleModelsFromRuntimeConfigs
 
-export const droneAutopilotFromRuntimeConfigs = (
-  runtimeConfigs: Record<string, unknown>,
-): DroneAutopilot =>
-  droneRuntimeConfigFromRuntimeConfigs(runtimeConfigs).autopilot
-
-const nextScenarioSystemId = (
-  objects: ReadonlyArray<OperationalObject>,
-  systemIdBase: number,
-): number => {
-  const used = new Set<number>()
-  for (const object of objects) {
-    const data = parseDroneObject(object)
-    if (data) used.add(data.vehicle.systemId)
-  }
-  let candidate = systemIdBase
-  while (used.has(candidate) && candidate < 255) candidate += 1
-  if (candidate > 255) throw new Error('no MAVLink system ids remain for drone scenario objects')
-  return candidate
-}
-
 export const droneScenarioSupport: PackScenarioSupport = {
   expandObject: (rawSpec: PackScenarioObjectSpec, context): OperationalObject => {
     if (rawSpec.type !== 'drone') throw new Error(`unsupported drone scenario object type: ${rawSpec.type}`)
-    const runtimeConfig = droneRuntimeConfigFromRuntimeConfigs(context.runtimeConfigs)
     const spec = droneSpecSchema.parse(rawSpec)
     const models = spec.model === undefined
       ? droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs)
       : [...droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs), spec.model]
     const model = spec.model ?? requireDroneVehicleModel(spec.modelId, models)
-    const systemId = spec.systemId ?? nextScenarioSystemId(context.objects, runtimeConfig.mavlink.systemIdBase)
-    const endpoint = scenarioEndpointForSystemId(runtimeConfig, systemId)
     return createScenarioDroneObject({
       id: spec.id,
       label: spec.label,
-      autopilot: spec.autopilot ?? runtimeConfig.autopilot,
       model,
       point: pointFromLonLat(spec.position),
       altitudeM: spec.altitudeM,
       headingDeg: spec.headingDeg,
       at: context.at,
-      systemId,
-      ...(endpoint === undefined ? {} : { endpoint }),
       ...(spec.swarm === undefined ? {} : { swarm: spec.swarm }),
     })
   },
@@ -155,9 +105,8 @@ export const droneScenarioSupport: PackScenarioSupport = {
           ...data.vehicle,
           modelId: operation.model.id,
           modelLabel: operation.model.label,
-          autopilotModel: operation.model.autopilotModel,
-          gazeboModel: operation.model.gazeboModel,
           airframe: operation.model.airframe,
+          flightEnvelope: operation.model.flightEnvelope,
           capabilities: operation.model.capabilities,
           sensors: operation.model.sensors,
           payloads: operation.model.payloads,
