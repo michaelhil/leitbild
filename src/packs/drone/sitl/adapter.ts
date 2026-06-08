@@ -48,6 +48,7 @@ import {
 } from '../model.ts'
 import { answerDroneQuery, droneQueryKinds } from '../query.ts'
 import { droneSitlAdapterId, droneSitlRuntimeId } from './constants.ts'
+import { droneManualControlReadiness } from './control-readiness.ts'
 import { parseDroneSitlRuntimeConfig, type DroneSitlRuntimeConfig } from './config.ts'
 import { createMavlinkClient, mavCmd, missionItemForPoint, type MavlinkClient, type MavlinkVehicleState } from './mavlink.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
@@ -388,6 +389,8 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const payload = manualControlPayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
         const { client } = connectedVehicleForData(data)
+        const readiness = droneManualControlReadiness(data)
+        if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
         await client.manualControl({
           targetSystem: data.vehicle.systemId,
           x: Math.round(payload.axes.forward * 1_000),

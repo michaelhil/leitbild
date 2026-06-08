@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
+  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, PlaneTakeoff, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     armDroneCommandKind,
@@ -8,6 +8,7 @@
     landDroneCommandKind,
     manualControlCommandKind,
     returnToLaunchDroneCommandKind,
+    takeoffDroneCommandKind,
   } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
@@ -56,7 +57,9 @@
   let sceneHandle: DroneSceneHandle | null = null
   let viewMode = $state<DroneSceneViewMode>('3d')
   let selectedDroneId = $state<string>('')
-  let status = $state('Opening flight view')
+  let sceneStatus = $state('Opening flight view')
+  let sceneryStatus = $state('Scenery idle')
+  let commandStatus = $state('')
   let gamepads = $state<ReadonlyArray<{ readonly index: number; readonly id: string }>>([])
   let selectedGamepadIndex = $state<number | null>(null)
   let gamepadSelectionLocked = false
@@ -92,6 +95,11 @@
   const groundSpeedMps = $derived(data ? Math.hypot(data.velocity.eastMps, data.velocity.northMps) : 0)
   const batteryPercent = $derived(data?.battery.remainingPercent ?? 0)
   const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === selectedObject.id).slice(0, 4))
+  const takeoffAltitudeM = $derived(Math.max(25, Math.ceil((data?.pose.relativeAltitudeM ?? 0) + 20)))
+  const footerStatus = $derived.by(() =>
+    [commandStatus, sceneryStatus, sceneStatus]
+      .filter(part => part.trim().length > 0)
+      .join(' · '))
 
   const windowStyle = $derived.by(() => {
     const offset = windowOffsetIndex * offsetStepPx
@@ -125,7 +133,7 @@
     keys = new Set()
     mouseAxes = zeroAxes
     liveAxes = zeroAxes
-    status = `Controlling ${next.label}`
+    commandStatus = `Controlling ${next.label}`
   }
 
   const refreshGamepads = (force = false): void => {
@@ -166,7 +174,7 @@
     try {
       writeDroneKeyBindings(localStorage, nextBindings)
     } catch (err) {
-      status = err instanceof Error ? `Key bindings not saved: ${err.message}` : `Key bindings not saved: ${String(err)}`
+      commandStatus = err instanceof Error ? `Key bindings not saved: ${err.message}` : `Key bindings not saved: ${String(err)}`
     }
   }
 
@@ -181,7 +189,7 @@
     persistKeyBindings(defaultDroneKeyBindings())
     bindingCaptureAction = null
     keys = new Set()
-    status = 'Key bindings reset'
+    commandStatus = 'Key bindings reset'
   }
 
   const isActionPressed = (action: DroneKeyBindingAction): boolean => {
@@ -264,14 +272,14 @@
       },
     })
     lastCommandRoundTripMs = performance.now() - startedAtMs
-    status = body.result.ok ? 'Manual control accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? 'Manual input sent to autopilot' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const sendManualControlSafely = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
     try {
       await sendManualControl(axes, sourceKind)
     } catch (err) {
-      status = err instanceof Error ? err.message : String(err)
+      commandStatus = err instanceof Error ? err.message : String(err)
     } finally {
       manualSendInFlight = false
     }
@@ -286,7 +294,19 @@
         armed,
       },
     })
-    status = body.result.ok ? `${armed ? 'Arm' : 'Disarm'} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? `${armed ? 'Arm' : 'Disarm'} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+  }
+
+  const takeoff = async (): Promise<void> => {
+    const body = await sendControlInstanceCommand(controlInstanceId, {
+      kind: takeoffDroneCommandKind,
+      targetObjectIds: [selectedObject.id],
+      payload: {
+        droneId: selectedObject.id,
+        altitudeM: takeoffAltitudeM,
+      },
+    })
+    commandStatus = body.result.ok ? `Takeoff to ${takeoffAltitudeM} m accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
@@ -302,7 +322,7 @@
         droneId: selectedObject.id,
       },
     })
-    status = body.result.ok ? `${mode.replaceAll('_', ' ')} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? `${mode.replaceAll('_', ' ')} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const attackTarget = async (): Promise<void> => {
@@ -315,7 +335,7 @@
         targetId: selectedTargetId,
       },
     })
-    status = body.result.ok ? 'Attack command accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? 'Attack command accepted' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const pollInput = (): void => {
@@ -426,9 +446,9 @@
     try {
       sceneElement.focus()
       sceneElement.requestPointerLock()
-      status = 'Mouse flight requested'
+      commandStatus = 'Mouse flight requested'
     } catch (err) {
-      status = err instanceof Error ? err.message : String(err)
+      commandStatus = err instanceof Error ? err.message : String(err)
     }
   }
 
@@ -436,7 +456,7 @@
     mouseControlEnabled = !mouseControlEnabled
     mouseAxes = zeroAxes
     if (!mouseControlEnabled && mouseCaptured) document.exitPointerLock()
-    status = mouseControlEnabled ? 'Mouse flight armed; click the scene' : 'Mouse flight disabled'
+    commandStatus = mouseControlEnabled ? 'Mouse flight armed; click the scene' : 'Mouse flight disabled'
   }
 
   const centerMouseStick = (): void => {
@@ -477,7 +497,7 @@
     try {
       keyBindings = readDroneKeyBindings(localStorage)
     } catch (err) {
-      status = err instanceof Error ? `Key bindings reset: ${err.message}` : `Key bindings reset: ${String(err)}`
+      commandStatus = err instanceof Error ? `Key bindings reset: ${err.message}` : `Key bindings reset: ${String(err)}`
       keyBindings = defaultDroneKeyBindings()
     }
     sceneHandle = createDroneScene({
@@ -486,13 +506,13 @@
       getObjects: () => objects,
       getViewMode: () => viewMode,
       onReady: () => {
-        if (status === 'Opening flight view') status = 'Flight view ready'
+        if (sceneStatus === 'Opening flight view') sceneStatus = 'Flight view ready'
       },
       onError: message => {
-        status = message
+        sceneStatus = message
       },
       onWorldStatus: message => {
-        status = message
+        sceneryStatus = message
       },
       onPerformance: snapshot => {
         scenePerformance = snapshot
@@ -682,6 +702,7 @@
         <h3><LocateFixed size={15} /> Mode</h3>
         <div class="command-grid">
           <button type="button" onclick={() => void setArmed(!(data?.arming.armed ?? false))}><LocateFixed size={15} /> {data?.arming.armed ? 'Disarm' : 'Arm'}</button>
+          <button type="button" onclick={() => void takeoff()}><PlaneTakeoff size={15} /> Takeoff</button>
           <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
           <button type="button" onclick={() => void setMode('land')}><PlaneLanding size={15} /> Land</button>
           <button type="button" onclick={() => void setMode('return_to_launch')}><RotateCcw size={15} /> Return</button>
@@ -712,7 +733,7 @@
     </aside>
   </div>
 
-  <footer class="drone-window-footer">{status}</footer>
+  <footer class="drone-window-footer">{footerStatus}</footer>
 </section>
 
 <style>

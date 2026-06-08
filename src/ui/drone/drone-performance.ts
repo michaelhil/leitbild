@@ -16,7 +16,7 @@ export interface DroneScenePerformanceSnapshot {
   readonly worldSource: 'asset-tiles'
   readonly activeScenes: number
   readonly worldFeatures: {
-    readonly sceneryStage: 'placeholder' | 'near' | 'full'
+    readonly sceneryStage: 'base' | 'near' | 'full'
     readonly scenerySource: 'asset-tiles'
     readonly tiles: number
     readonly polygons: number
@@ -107,7 +107,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let roadLabels = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
-  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'placeholder'
+  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'base'
   let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = 'asset-tiles'
 
   const pushSample = (samples: number[], value: number): void => {

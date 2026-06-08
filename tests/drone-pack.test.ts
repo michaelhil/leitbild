@@ -27,6 +27,7 @@ import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/sitl/object-state.ts'
 import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
+import { droneManualControlReadiness } from '../src/packs/drone/sitl/control-readiness.ts'
 import { decodeMavlinkFrames } from '../src/packs/drone/sitl/mavlink.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
@@ -515,6 +516,49 @@ describe('drone pack', () => {
     })
     expect(parsed.inputSource.kind).toBe('mouse')
     expect(parsed.axes.forward).toBe(0.4)
+  })
+
+  test('manual control readiness rejects inert autopilot states before MAVLink input is sent', () => {
+    const object = drone({ id: 'drone:manual-readiness' })
+    const data = dronePackDataSchema.parse(object.packData)
+
+    expect(droneManualControlReadiness({
+      ...data,
+      link: { ...data.link, state: 'connected' },
+      arming: { state: 'disarmed', armed: false, updatedAt: at },
+      pose: { ...data.pose, altitudeM: 0.2, relativeAltitudeM: 0.2 },
+      navigation: { kind: 'manual', mode: 'position control', updatedAt: at },
+    }).reason).toBe('manual flight requires an armed drone')
+
+    expect(droneManualControlReadiness({
+      ...data,
+      link: { ...data.link, state: 'connected' },
+      arming: { state: 'armed', armed: true, updatedAt: at },
+      pose: { ...data.pose, altitudeM: 0.2, relativeAltitudeM: 0.2 },
+      navigation: { kind: 'manual', mode: 'position control', updatedAt: at },
+    }).reason).toBe('manual flight requires takeoff before stick input')
+
+    expect(droneManualControlReadiness({
+      ...data,
+      link: { ...data.link, state: 'connected' },
+      arming: { state: 'armed', armed: true, updatedAt: at },
+      pose: { ...data.pose, altitudeM: 8, relativeAltitudeM: 8 },
+      navigation: { kind: 'hold', mode: 'auto loiter', updatedAt: at },
+    }).reason).toBe('manual flight is not available while the autopilot is in auto loiter')
+  })
+
+  test('manual control readiness allows armed airborne external-control modes', () => {
+    const object = drone({ id: 'drone:manual-ready' })
+    const data = dronePackDataSchema.parse(object.packData)
+    const readyData = {
+      ...data,
+      link: { ...data.link, state: 'connected' as const },
+      arming: { state: 'armed' as const, armed: true, updatedAt: at },
+      pose: { ...data.pose, altitudeM: 12, relativeAltitudeM: 12 },
+      navigation: { kind: 'manual' as const, mode: 'position control', updatedAt: at },
+    }
+
+    expect(droneManualControlReadiness(readyData)).toEqual({ ready: true })
   })
 
   test('attack effects deplete declared payloads and damage targets through interaction handlers', async () => {
