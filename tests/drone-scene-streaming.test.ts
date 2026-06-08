@@ -136,4 +136,14 @@ describe('drone scene world streaming', () => {
 
     expect(selected.map(tile => tile.id)).toEqual(['bounded-edge'])
   })
+
+  test('loads dense central city tiles in the full scenery stage', () => {
+    const selected = selectSceneryTilesForBuild([
+      sceneryTile({ id: 'dense-center', byteLength: 10_500_000, distanceM: 10 }),
+      sceneryTile({ id: 'dense-nearby', byteLength: 8_200_000, distanceM: 20 }),
+      sceneryTile({ id: 'bounded-edge', byteLength: 1_200_000, distanceM: 30 }),
+    ], sceneryBuildLimitsFor('full'))
+
+    expect(selected.map(tile => tile.id)).toEqual(['dense-center', 'dense-nearby', 'bounded-edge'])
+  })
 })

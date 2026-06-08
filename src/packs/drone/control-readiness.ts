@@ -1,4 +1,4 @@
-import type { DronePackData } from '../model.ts'
+import type { DronePackData } from './model.ts'
 
 export interface DroneManualControlReadiness {
   readonly ready: boolean
@@ -6,6 +6,13 @@ export interface DroneManualControlReadiness {
 }
 
 const minimumManualRelativeAltitudeM = 0.8
+const externalControlNavigationKinds: ReadonlySet<DronePackData['navigation']['kind']> = new Set([
+  'manual',
+  'guided',
+  'offboard',
+  'hold',
+  'takeoff',
+])
 
 export const droneManualControlReadiness = (data: DronePackData): DroneManualControlReadiness => {
   if (data.link.state !== 'connected') {
@@ -18,7 +25,7 @@ export const droneManualControlReadiness = (data: DronePackData): DroneManualCon
   if (relativeAltitudeM < minimumManualRelativeAltitudeM) {
     return { ready: false, reason: 'manual flight requires takeoff before stick input' }
   }
-  if (data.navigation.kind !== 'manual' && data.navigation.kind !== 'guided' && data.navigation.kind !== 'offboard') {
+  if (!externalControlNavigationKinds.has(data.navigation.kind)) {
     return {
       ready: false,
       reason: `manual flight is not available while the autopilot is in ${data.navigation.mode}`,

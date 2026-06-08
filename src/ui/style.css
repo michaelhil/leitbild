@@ -285,6 +285,7 @@ body.rail-resizing {
 
 .scenario-picker-group > header span {
   display: grid;
+  flex: 1 1 auto;
   gap: 3px;
   min-width: 0;
 }
@@ -304,11 +305,16 @@ body.rail-resizing {
 }
 
 .scenario-new-run {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 7px;
   min-width: 112px;
+  cursor: pointer;
+  pointer-events: auto;
   white-space: nowrap;
 }
 

@@ -6,12 +6,13 @@
     readonly scenarios: ReadonlyArray<ScenarioListItem>
     readonly instances: ReadonlyArray<ControlInstanceSummary>
     readonly status: string
+    readonly creatingScenarioId?: string | null
     readonly createScenarioRun: (scenarioId: string) => Promise<void>
     readonly openScenarioRun: (scenarioId: string, runId: string) => void
     readonly deleteScenarioRun: (instance: ControlInstanceSummary) => Promise<void>
   }
 
-  let { scenarios, instances, status, createScenarioRun, openScenarioRun, deleteScenarioRun }: Props = $props()
+  let { scenarios, instances, status, creatingScenarioId = null, createScenarioRun, openScenarioRun, deleteScenarioRun }: Props = $props()
 
   const runsForScenario = (scenarioId: string): ReadonlyArray<ControlInstanceSummary> =>
     instances.filter(instance => instance.scenarioId === scenarioId && instance.runId !== null)
@@ -45,9 +46,15 @@
                 <strong>{scenario.title}</strong>
                 <span class="object-meta">{scenario.description ?? scenario.id}</span>
               </span>
-              <button class="command-button compact scenario-new-run" onclick={() => createScenarioRun(scenario.id)}>
+              <button
+                class="command-button compact scenario-new-run"
+                type="button"
+                disabled={creatingScenarioId !== null}
+                aria-label="Start new run for {scenario.title}"
+                onclick={() => createScenarioRun(scenario.id)}
+              >
                 <Play size={15} strokeWidth={2.2} aria-hidden="true" />
-                New run
+                {creatingScenarioId === scenario.id ? 'Starting' : 'New run'}
               </button>
             </header>
             {#if scenarioRuns.length === 0}
@@ -56,7 +63,7 @@
               <div class="scenario-run-list">
                 {#each scenarioRuns as instance (instance.id)}
                   <article class="instance-row">
-                    <button class="instance-open-target" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>
+                    <button class="instance-open-target" type="button" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>
                       <strong>{runLabel(instance)}</strong>
                       <span class="object-meta">
                         {instance.loaded ? 'Loaded' : 'Persisted'}
@@ -66,9 +73,10 @@
                       </span>
                     </button>
                     <div class="instance-row-actions">
-                      <button class="instance-action open" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>Open</button>
+                      <button class="instance-action open" type="button" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>Open</button>
                       <button
                         class="instance-action delete"
+                        type="button"
                         disabled={instance.websocketClientCount > 0}
                         title={instance.websocketClientCount > 0 ? 'Cannot delete a run while users are connected' : `Delete ${runLabel(instance)}`}
                         onclick={() => deleteScenarioRun(instance)}

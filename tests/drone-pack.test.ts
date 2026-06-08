@@ -27,7 +27,7 @@ import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/sitl/object-state.ts'
 import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
-import { droneManualControlReadiness } from '../src/packs/drone/sitl/control-readiness.ts'
+import { droneManualControlReadiness } from '../src/packs/drone/control-readiness.ts'
 import { decodeMavlinkFrames } from '../src/packs/drone/sitl/mavlink.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
@@ -544,7 +544,7 @@ describe('drone pack', () => {
       arming: { state: 'armed', armed: true, updatedAt: at },
       pose: { ...data.pose, altitudeM: 8, relativeAltitudeM: 8 },
       navigation: { kind: 'hold', mode: 'auto loiter', updatedAt: at },
-    }).reason).toBe('manual flight is not available while the autopilot is in auto loiter')
+    })).toEqual({ ready: true })
   })
 
   test('manual control readiness allows armed airborne external-control modes', () => {

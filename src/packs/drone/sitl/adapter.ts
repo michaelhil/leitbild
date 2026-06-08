@@ -43,12 +43,13 @@ import {
   dronePackId,
   requireDroneVehicleModel,
   type DroneAutopilot,
+  type DroneManualAxes,
   type DronePackData,
   type DroneVehicleModel,
 } from '../model.ts'
 import { answerDroneQuery, droneQueryKinds } from '../query.ts'
+import { droneManualControlReadiness } from '../control-readiness.ts'
 import { droneSitlAdapterId, droneSitlRuntimeId } from './constants.ts'
-import { droneManualControlReadiness } from './control-readiness.ts'
 import { parseDroneSitlRuntimeConfig, type DroneSitlRuntimeConfig } from './config.ts'
 import { createMavlinkClient, mavCmd, missionItemForPoint, type MavlinkClient, type MavlinkVehicleState } from './mavlink.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
@@ -199,6 +200,91 @@ const paramTypeCode = (valueType: string): number => {
   if (valueType === 'uint32') return 5
   if (valueType === 'int32') return 6
   return 9
+}
+
+const manualHorizontalSpeedMps = 8
+const manualVerticalSpeedMps = 3
+const manualYawStepDeg = 18
+const mavModeFlagCustomModeEnabled = 1
+const px4OffboardMainMode = 6
+const ardupilotGuidedMode = 4
+
+const normalizeHeadingDeg = (value: number): number => {
+  const wrapped = value % 360
+  return wrapped < 0 ? wrapped + 360 : wrapped
+}
+
+const manualVelocityTarget = (
+  data: DronePackData,
+  axes: DroneManualAxes,
+): {
+  readonly velocityNorthMps: number
+  readonly velocityEastMps: number
+  readonly velocityDownMps: number
+  readonly yawDeg: number
+} => {
+  const headingRad = data.pose.headingDeg * Math.PI / 180
+  const forwardMps = axes.forward * manualHorizontalSpeedMps
+  const rightMps = axes.right * manualHorizontalSpeedMps
+  return {
+    velocityNorthMps: forwardMps * Math.cos(headingRad) - rightMps * Math.sin(headingRad),
+    velocityEastMps: forwardMps * Math.sin(headingRad) + rightMps * Math.cos(headingRad),
+    velocityDownMps: -axes.vertical * manualVerticalSpeedMps,
+    yawDeg: normalizeHeadingDeg(data.pose.headingDeg + axes.yaw * manualYawStepDeg),
+  }
+}
+
+const sendManualVelocitySetpoint = async (
+  client: MavlinkClient,
+  data: DronePackData,
+  axes: DroneManualAxes,
+): Promise<void> => {
+  const velocity = manualVelocityTarget(data, axes)
+  await client.setGlobalPositionTarget({
+    targetSystem: data.vehicle.systemId,
+    lat: data.pose.point.coordinates[1],
+    lon: data.pose.point.coordinates[0],
+    altitudeM: Math.max(1, data.pose.relativeAltitudeM ?? data.pose.altitudeM),
+    velocityNorthMps: velocity.velocityNorthMps,
+    velocityEastMps: velocity.velocityEastMps,
+    velocityDownMps: velocity.velocityDownMps,
+    yawDeg: velocity.yawDeg,
+  })
+}
+
+const primePx4Offboard = async (
+  client: MavlinkClient,
+  data: DronePackData,
+  axes: DroneManualAxes,
+): Promise<void> => {
+  for (let index = 0; index < 12; index += 1) {
+    await sendManualVelocitySetpoint(client, data, axes)
+    await Bun.sleep(100)
+  }
+  await client.commandLong({
+    targetSystem: data.vehicle.systemId,
+    targetComponent: data.vehicle.componentId,
+    command: mavCmd.doSetMode,
+    params: [mavModeFlagCustomModeEnabled, px4OffboardMainMode, 0],
+  })
+}
+
+const ensureExternalManualMode = async (
+  client: MavlinkClient,
+  data: DronePackData,
+  axes: DroneManualAxes,
+): Promise<void> => {
+  if (data.navigation.kind === 'manual' || data.navigation.kind === 'guided' || data.navigation.kind === 'offboard') return
+  if (data.autopilot === 'px4') {
+    await primePx4Offboard(client, data, axes)
+    return
+  }
+  await client.commandLong({
+    targetSystem: data.vehicle.systemId,
+    targetComponent: data.vehicle.componentId,
+    command: mavCmd.doSetMode,
+    params: [mavModeFlagCustomModeEnabled, ardupilotGuidedMode, 0],
+  })
 }
 
 const missionFrameCode = (frame: 'global' | 'global_relative_alt' | 'mission'): number => {
@@ -391,13 +477,8 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const { client } = connectedVehicleForData(data)
         const readiness = droneManualControlReadiness(data)
         if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
-        await client.manualControl({
-          targetSystem: data.vehicle.systemId,
-          x: Math.round(payload.axes.forward * 1_000),
-          y: Math.round(payload.axes.right * 1_000),
-          z: Math.round((payload.axes.vertical + 1) * 500),
-          r: Math.round(payload.axes.yaw * 1_000),
-        })
+        await ensureExternalManualMode(client, data, payload.axes)
+        await sendManualVelocitySetpoint(client, data, payload.axes)
         const at = nowIso()
         const next = withDronePackData(object, {
           ...data,

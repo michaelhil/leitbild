@@ -80,6 +80,19 @@ const mavAutopilot = {
 const mavModeFlagSafetyArmed = 128
 const mavlink1Magic = 0xfe
 const mavlink2Magic = 0xfd
+const setPositionTargetTypeMask = {
+  ignorePositionX: 1 << 0,
+  ignorePositionY: 1 << 1,
+  ignorePositionZ: 1 << 2,
+  ignoreVelocityX: 1 << 3,
+  ignoreVelocityY: 1 << 4,
+  ignoreVelocityZ: 1 << 5,
+  ignoreAccelerationX: 1 << 6,
+  ignoreAccelerationY: 1 << 7,
+  ignoreAccelerationZ: 1 << 8,
+  ignoreYaw: 1 << 10,
+  ignoreYawRate: 1 << 11,
+} as const
 
 export interface MavlinkDecodedFrame {
   readonly systemId: number
@@ -500,8 +513,20 @@ const messagePayload = {
     readonly yawDeg?: number
   }): Buffer => {
     const payload = Buffer.alloc(53)
-    const ignoresVelocity = config.velocityNorthMps === undefined || config.velocityEastMps === undefined || config.velocityDownMps === undefined
-    const ignoresYaw = config.yawDeg === undefined
+    const usesVelocity = config.velocityNorthMps !== undefined && config.velocityEastMps !== undefined && config.velocityDownMps !== undefined
+    const mask =
+      setPositionTargetTypeMask.ignoreAccelerationX
+      | setPositionTargetTypeMask.ignoreAccelerationY
+      | setPositionTargetTypeMask.ignoreAccelerationZ
+      | setPositionTargetTypeMask.ignoreYawRate
+      | (usesVelocity
+        ? setPositionTargetTypeMask.ignorePositionX
+          | setPositionTargetTypeMask.ignorePositionY
+          | setPositionTargetTypeMask.ignorePositionZ
+        : setPositionTargetTypeMask.ignoreVelocityX
+          | setPositionTargetTypeMask.ignoreVelocityY
+          | setPositionTargetTypeMask.ignoreVelocityZ)
+      | (config.yawDeg === undefined ? setPositionTargetTypeMask.ignoreYaw : 0)
     payload.writeUInt32LE(0, 0)
     payload.writeInt32LE(config.latInt, 4)
     payload.writeInt32LE(config.lonInt, 8)
@@ -514,7 +539,7 @@ const messagePayload = {
     payload.writeFloatLE(0, 36)
     payload.writeFloatLE(config.yawDeg === undefined ? 0 : config.yawDeg * Math.PI / 180, 40)
     payload.writeFloatLE(0, 44)
-    payload.writeUInt16LE((ignoresVelocity ? 0b000_111_000_000 : 0) | 0b111_000_000 | (ignoresYaw ? 0b10_0000_0000_0000 : 0), 48)
+    payload.writeUInt16LE(mask, 48)
     payload.writeUInt8(config.targetSystem, 50)
     payload.writeUInt8(1, 51)
     payload.writeUInt8(6, 52)

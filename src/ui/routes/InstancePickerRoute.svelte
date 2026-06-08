@@ -17,6 +17,7 @@
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let scenarios = $state<ReadonlyArray<ScenarioListItem>>([])
   let status = $state('Loading')
+  let creatingScenarioId = $state<string | null>(null)
 
   const loadInstances = async (): Promise<void> => {
     const body = await listControlInstances()
@@ -39,6 +40,8 @@
   }
 
   const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
+    if (creatingScenarioId !== null) return
+    creatingScenarioId = scenarioId
     status = 'Creating Control Instance'
     try {
       const runId = createGeneratedRunId()
@@ -53,6 +56,7 @@
       location.href = nextPath
     } catch (err) {
       status = err instanceof Error ? err.message : 'control instance create failed'
+      creatingScenarioId = null
     }
   }
 
@@ -86,6 +90,7 @@
   {scenarios}
   {instances}
   {status}
+  {creatingScenarioId}
   {createScenarioRun}
   {openScenarioRun}
   {deleteScenarioRun}

@@ -1,23 +1,19 @@
-import {
-  Color3,
-  Color4,
-  DirectionalLight,
-  Engine,
-  HemisphericLight,
-  ImageProcessingConfiguration,
-  Mesh,
-  MeshBuilder,
-  PBRMaterial,
-  Quaternion,
-  Scene,
-  StandardMaterial,
-  TransformNode,
-  UniversalCamera,
-  Vector3,
-  VertexData,
-  type AbstractMesh,
-  type AssetContainer,
-} from '@babylonjs/core'
+import type { AssetContainer } from '@babylonjs/core/assetContainer'
+import { UniversalCamera } from '@babylonjs/core/Cameras/universalCamera'
+import { Engine } from '@babylonjs/core/Engines/engine'
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight'
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight'
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration'
+import { PBRMaterial } from '@babylonjs/core/Materials/PBR/pbrMaterial'
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure'
+import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure'
+import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
+import { Scene } from '@babylonjs/core/scene'
 import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader'
 import '@babylonjs/loaders/glTF'
 import type { OperationalObject } from '../../core/model/index.ts'
@@ -85,11 +81,9 @@ const worldStreamPreloadDistanceM = 430
 const nearWorldRadiusM = 1_650
 const fullWorldRadiusM = 4_250
 const droneWorldZoom = 14
-const maxDroneScenePixelRatio = 1.15
+const maxDroneScenePixelRatio = 1.6
 const maxCachedTileContainers = 256
 const tileLoadConcurrency = 1
-const sceneryTileLoadTimeoutMs = 3_500
-const sceneryStageBuildBudgetMs = 4_500
 let activeDroneSceneCount = 0
 
 const cachedTileContainers = new Map<string, Promise<AssetContainer>>()
@@ -318,6 +312,11 @@ interface SceneryBuildLimits {
   readonly maxTiles: number
   readonly maxBytes: number
   readonly maxTileBytes: number
+}
+
+interface SceneryBuildTiming {
+  readonly tileLoadTimeoutMs: number
+  readonly stageBuildBudgetMs: number
 }
 
 export const droneWorldLoadSpecsFor = (
@@ -555,7 +554,14 @@ export const sceneryBuildLimitsFor = (
 ): SceneryBuildLimits =>
   stage === 'near'
     ? { maxTiles: 1, maxBytes: 1_800_000, maxTileBytes: 1_800_000 }
-    : { maxTiles: 3, maxBytes: 4_500_000, maxTileBytes: 1_800_000 }
+    : { maxTiles: 6, maxBytes: 28_000_000, maxTileBytes: 12_500_000 }
+
+const sceneryBuildTimingFor = (
+  stage: DroneWorldLoadStage,
+): SceneryBuildTiming =>
+  stage === 'near'
+    ? { tileLoadTimeoutMs: 3_500, stageBuildBudgetMs: 4_500 }
+    : { tileLoadTimeoutMs: 7_500, stageBuildBudgetMs: 12_000 }
 
 export const selectSceneryTilesForBuild = (
   tiles: ReadonlyArray<DroneSceneryTileAsset>,
@@ -602,7 +608,8 @@ const createWorldNode = async (
   terrain?: DroneTerrainModel,
 ): Promise<BuiltWorldNode> => {
   const root = createBaseWorld(scene, snapshot.radiusM, terrain)
-  const tileLoadDeadlineMs = performance.now() + sceneryStageBuildBudgetMs
+  const timing = sceneryBuildTimingFor(stage)
+  const tileLoadDeadlineMs = performance.now() + timing.stageBuildBudgetMs
   const selectedTiles = selectSceneryTilesForBuild(snapshot.tiles, sceneryBuildLimitsFor(stage))
   const tileResults = await mapWithConcurrency(selectedTiles, tileLoadConcurrency, async tile => {
     if (performance.now() >= tileLoadDeadlineMs) {
@@ -614,7 +621,7 @@ const createWorldNode = async (
       const remainingBudgetMs = Math.max(1, tileLoadDeadlineMs - performance.now())
       const container = await withTimeout(
         tilePromise,
-        Math.min(sceneryTileLoadTimeoutMs, remainingBudgetMs),
+        Math.min(timing.tileLoadTimeoutMs, remainingBudgetMs),
         `Babylon scenery tile ${tile.id} did not load within the interactive stage budget`,
       )
       const entries = container.instantiateModelsToScene(sourceName => `${tile.id}:${sourceName}`, false)
@@ -698,9 +705,9 @@ const updateCamera = (
     camera.maxZ = 6_000
     return
   }
-  camera.position.copyFrom(new Vector3(target.x - 70, target.y + 58, target.z - 96))
-  camera.setTarget(target.add(new Vector3(0, 10, 0)))
-  camera.fov = 0.84
+  camera.position.copyFrom(new Vector3(target.x - 52, target.y + 44, target.z - 72))
+  camera.setTarget(target.add(new Vector3(0, 7, 0)))
+  camera.fov = 0.72
   camera.minZ = 0.2
   camera.maxZ = 6_000
 }
@@ -878,7 +885,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       activeScenes: activeDroneSceneCount,
     })
     if (snapshot.frameP95Ms > 46 && pixelRatio > 0.82) setPixelRatio(pixelRatio - 0.1, 'rescue')
-    else if (snapshot.frameP95Ms < 18 && pixelRatio < maxDroneScenePixelRatio) setPixelRatio(pixelRatio + 0.03, 'balanced')
+    else if (snapshot.frameP95Ms <= 22 && pixelRatio < maxDroneScenePixelRatio) setPixelRatio(pixelRatio + 0.04, 'balanced')
     config.onPerformance?.(snapshot)
   }
 

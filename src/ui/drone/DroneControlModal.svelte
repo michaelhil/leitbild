@@ -10,6 +10,7 @@
     returnToLaunchDroneCommandKind,
     takeoffDroneCommandKind,
   } from '../../packs/drone/commands.ts'
+  import { droneManualControlReadiness } from '../../packs/drone/control-readiness.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
   import { sendControlInstanceCommand } from '../control-instance-client.ts'
@@ -77,6 +78,8 @@
   let commandSendTimes: number[] = []
   let lastSendMs = 0
   let lastAxesSignature = '0.00|0.00|0.00|0.00'
+  let lastManualBlockReason = ''
+  let lastManualBlockAtMs = 0
   let manualSendInFlight = false
   let animationId = 0
   let lastGamepadRefreshMs = 0
@@ -272,7 +275,7 @@
       },
     })
     lastCommandRoundTripMs = performance.now() - startedAtMs
-    commandStatus = body.result.ok ? 'Manual input sent to autopilot' : `Rejected: ${body.result.reason ?? 'unknown'}`
+    commandStatus = body.result.ok ? 'Manual velocity sent to autopilot' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
   const sendManualControlSafely = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
@@ -285,7 +288,7 @@
     }
   }
 
-  const setArmed = async (armed: boolean): Promise<void> => {
+  const setArmed = async (armed: boolean): Promise<boolean> => {
     const body = await sendControlInstanceCommand(controlInstanceId, {
       kind: armDroneCommandKind,
       targetObjectIds: [selectedObject.id],
@@ -295,9 +298,10 @@
       },
     })
     commandStatus = body.result.ok ? `${armed ? 'Arm' : 'Disarm'} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+    return body.result.ok
   }
 
-  const takeoff = async (): Promise<void> => {
+  const takeoff = async (): Promise<boolean> => {
     const body = await sendControlInstanceCommand(controlInstanceId, {
       kind: takeoffDroneCommandKind,
       targetObjectIds: [selectedObject.id],
@@ -307,6 +311,25 @@
       },
     })
     commandStatus = body.result.ok ? `Takeoff to ${takeoffAltitudeM} m accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+    return body.result.ok
+  }
+
+  const startManualFlight = async (): Promise<void> => {
+    try {
+      commandStatus = 'Starting flight'
+      if (!(data?.arming.armed ?? false)) {
+        const armed = await setArmed(true)
+        if (!armed) return
+      }
+      const relativeAltitudeM = data?.pose.relativeAltitudeM ?? data?.pose.altitudeM ?? 0
+      if (relativeAltitudeM < 0.8) {
+        await takeoff()
+        return
+      }
+      commandStatus = 'Manual flight ready'
+    } catch (err) {
+      commandStatus = err instanceof Error ? err.message : String(err)
+    }
   }
 
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
@@ -354,6 +377,19 @@
     const changed = signature !== lastAxesSignature
     const keepaliveDue = active && nowMs - lastSendMs >= activeKeepaliveMs
     if (!manualSendInFlight && (changed || keepaliveDue) && nowMs - lastSendMs >= sendIntervalMs) {
+      const manualReadiness = data === null ? { ready: false, reason: 'selected object is not a drone' } : droneManualControlReadiness(data)
+      if (active && !manualReadiness.ready) {
+        lastSendMs = nowMs
+        lastAxesSignature = signature
+        const reason = manualReadiness.reason ?? 'manual flight is not ready'
+        if (reason !== lastManualBlockReason || nowMs - lastManualBlockAtMs > 1_000) {
+          lastManualBlockReason = reason
+          lastManualBlockAtMs = nowMs
+          commandStatus = `Rejected: ${reason}`
+        }
+        animationId = requestAnimationFrame(pollInput)
+        return
+      }
       lastSendMs = nowMs
       lastAxesSignature = signature
       manualSendInFlight = true
@@ -701,6 +737,7 @@
       <section>
         <h3><LocateFixed size={15} /> Mode</h3>
         <div class="command-grid">
+          <button type="button" onclick={() => void startManualFlight()}><PlaneTakeoff size={15} /> Start flight</button>
           <button type="button" onclick={() => void setArmed(!(data?.arming.armed ?? false))}><LocateFixed size={15} /> {data?.arming.armed ? 'Disarm' : 'Arm'}</button>
           <button type="button" onclick={() => void takeoff()}><PlaneTakeoff size={15} /> Takeoff</button>
           <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
