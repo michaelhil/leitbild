@@ -258,12 +258,12 @@ The scene renders:
 - other drones with their own profile color/scale
 - ambulances as recognizable ambulance meshes
 - generic operational assets as markers
-- ground, roads, water, park space, and building proxies
+- map-derived ground, roads, water, landcover, landuse, buildings, and POI anchors from the self-hosted vector map artifact
 - road markings, roofs, windows, vegetation, shadows, fog, rain/snow streaks, and rotor animation
 - 2D overhead, 3D chase, and first-person FPV camera modes
 - flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
-The first environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. It currently creates credible proxy scenery around the active object set. A future map-fidelity pass should consume vector tile/building/road/water features from the self-hosted map artifact and extrude/symbolize those features instead of using deterministic proxy roads/buildings.
+The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, and POI features inside the Three.js world. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product; until `/map/terrain/current.pmtiles` is promoted, the 3D world reports terrain as unavailable and remains flat rather than fabricating elevation.
 
 The renderer owns its WebGL lifecycle:
 
@@ -380,7 +380,8 @@ Important tested behaviors:
 
 Highest-value next work:
 
-- vector-tile-derived 3D world: roads, water, landuse, buildings, and object anchors from the self-hosted map artifact
+- terrain artifact pipeline and terrain mesh draping from a real DEM source such as Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage
+- richer map-context artifact builds: trees/landmarks/landcover classes, building semantics, bridge/tunnel context, and non-city scenery variation
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands
 - deeper sensor model: occlusion approximations, contact classification, shared sightings, and sensor update cadence

@@ -28,6 +28,7 @@ Leitbild's base map is built from OpenStreetMap data into a self-hosted PMTiles 
     leitbild-osm-norway/
       <build-id>/
         norway.pmtiles
+        terrain.pmtiles  # optional DEM artifact when a terrain build has been promoted
         capabilities.json
         style.json
         build.json
@@ -102,8 +103,13 @@ Glyphs are mirrored into `/opt/leitbild/maps/fonts` from the OpenMapTiles genera
 - Style: `/map/style.json`
 - Capability manifest: `/map/capabilities.json`
 - Glyphs: `/map/fonts/{fontstack}/{range}.pbf`
+- Optional terrain archive: `/map/terrain/current.pmtiles`
+- Optional terrain TileJSON: `/map/terrain/current/tiles.json`
+- Optional terrain DEM tiles: `/map/terrain/current/{z}/{x}/{y}.png`
 
 Caddy serves the large PMTiles archive and glyph files directly. The Leitbild server serves style and capability metadata and can also serve PMTiles for local development if `LEITBILD_MAP_ROOT` points at a valid artifact.
+
+Terrain is a separate optional map-context product, not baked into the OSM vector base map. The current contract expects a Terrarium-encoded PNG PMTiles DEM at `/opt/leitbild/maps/current/terrain.pmtiles`. The capability manifest advertises the terrain tileset even when the file is absent, with `availability.status: "unavailable"`, so Three.js views and diagnostics can fail visibly instead of pretending flat procedural scenery has real elevation. Preferred source for Norway is Kartverket DTM; Copernicus DEM GLO-30 is the global fallback candidate for areas outside first-party coverage.
 
 ## Schema Evolution
 

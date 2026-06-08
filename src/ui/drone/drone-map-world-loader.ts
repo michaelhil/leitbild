@@ -1,10 +1,17 @@
-import { loadCachedDroneMapWorld, type DroneMapWorldSnapshot, type DroneWorldCenter } from './drone-map-world.ts'
+import {
+  loadCachedDroneMapWorld,
+  loadDroneWorldTerrainStatus,
+  type DroneMapWorldSnapshot,
+  type DroneWorldCenter,
+  type DroneWorldTerrainStatus,
+} from './drone-map-world.ts'
 
 export type DroneMapWorldLoadSource = 'worker' | 'main'
 
 export interface DroneMapWorldLoadResult {
   readonly snapshot: DroneMapWorldSnapshot
   readonly source: DroneMapWorldLoadSource
+  readonly terrain: DroneWorldTerrainStatus
   readonly fallbackReason?: string
 }
 
@@ -119,10 +126,12 @@ export const loadDroneMapWorldForScene = async (config: {
   const zoom = config.zoom ?? 14
   try {
     const snapshot = await loadWithWorker({ center: config.center, radiusM, zoom })
-    return { snapshot, source: 'worker' }
+    const terrain = await loadDroneWorldTerrainStatus()
+    return { snapshot, source: 'worker', terrain }
   } catch (err) {
     const fallbackReason = err instanceof Error ? err.message : String(err)
     const snapshot = await loadCachedDroneMapWorld({ center: config.center, radiusM, zoom })
-    return { snapshot, source: 'main', fallbackReason }
+    const terrain = await loadDroneWorldTerrainStatus()
+    return { snapshot, source: 'main', terrain, fallbackReason }
   }
 }

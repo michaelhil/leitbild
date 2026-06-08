@@ -8,6 +8,7 @@ import {
   createMapCapabilityManifest,
   findBaseTileset,
   findReferenceTilesets,
+  findTerrainTilesets,
   loadMapCapabilityManifest,
   mapCapabilityManifestSchema,
 } from '../src/map/capabilities.ts'
@@ -82,23 +83,42 @@ describe('Map Capability Manifest v2', () => {
   test('findBaseTileset / findReferenceTilesets discriminate by kind', () => {
     const manifest = createMapCapabilityManifest()
     expect(findReferenceTilesets(manifest)).toEqual([])
+    expect(findTerrainTilesets(manifest)).toEqual([])
     expect(findBaseTileset(manifest).kind).toBe('base')
   })
 })
 
 describe('loadMapCapabilityManifest (disk reads)', () => {
-  test('returns base only when no reference releases exist', async () => {
+  test('returns base and explicit unavailable terrain when no reference releases exist', async () => {
     const root = await refRoot()
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
-    expect(manifest.tilesets.length).toBe(1)
+    expect(manifest.tilesets.length).toBe(2)
     expect(manifest.tilesets[0]!.kind).toBe('base')
+    const terrain = findTerrainTilesets(manifest)
+    expect(terrain.length).toBe(1)
+    expect(terrain[0]!.availability.status).toBe('unavailable')
+    expect(terrain[0]!.artifact.currentTileTemplate).toBe('/map/terrain/current/{z}/{x}/{y}.png')
+  })
+
+  test('marks terrain available when a promoted terrain PMTiles artifact exists', async () => {
+    const root = await refRoot()
+    const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
+    await mkdir(join(mapRoot, 'current'), { recursive: true })
+    await Bun.write(join(mapRoot, 'current', 'terrain.pmtiles'), 'terrain-bytes')
+
+    const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
+    const terrain = findTerrainTilesets(manifest)
+    expect(terrain.length).toBe(1)
+    expect(terrain[0]!.availability.status).toBe('available')
+    expect(terrain[0]!.availability.path).toBe(join(mapRoot, 'current', 'terrain.pmtiles'))
+    expect(terrain[0]!.availability.sizeBytes).toBeGreaterThan(0)
   })
 
   test('discovers a promoted reference dataset and appends it', async () => {
     const root = await refRoot()
     await writeReferenceManifest(root, 'aero-norway', '20260526-2000')
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
-    expect(manifest.tilesets.length).toBe(2)
+    expect(manifest.tilesets.length).toBe(3)
     const refs = findReferenceTilesets(manifest)
     expect(refs.length).toBe(1)
     expect(refs[0]!.datasetId).toBe('aero-norway')
@@ -124,7 +144,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     await mkdir(join(root, 'releases', 'broken'), { recursive: true })
     await symlink(buildDir, join(root, 'releases', 'broken', 'current'))
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root })
-    expect(manifest.tilesets.length).toBe(1)
+    expect(manifest.tilesets.length).toBe(2)
     expect(findReferenceTilesets(manifest).length).toBe(0)
   })
 

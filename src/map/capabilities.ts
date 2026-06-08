@@ -10,6 +10,7 @@ import { z } from 'zod'
 // See ADR 0019 (reference data pipeline) and docs/map-capability-manifest.md.
 
 export const mapTilesetId = 'leitbild-osm-norway'
+export const terrainTilesetId = 'leitbild-terrain-norway'
 export const mapManifestSchemaVersion = 2 as const
 export const mapManifestSchemaVersionLiteral = z.literal(2)
 
@@ -62,6 +63,43 @@ export const baseTilesetSchema = z.object({
 })
 export type BaseTileset = z.infer<typeof baseTilesetSchema>
 
+// --- Terrain tileset entry -------------------------------------------------
+
+export const terrainAvailabilitySchema = z.object({
+  status: z.enum(['available', 'unavailable']),
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  modifiedAt: z.string().min(1).optional(),
+  error: z.string().min(1).optional(),
+})
+export type TerrainAvailability = z.infer<typeof terrainAvailabilitySchema>
+
+export const terrainTilesetSchema = z.object({
+  kind: z.literal('terrain'),
+  id: z.literal(terrainTilesetId),
+  schemaVersion: z.literal(1),
+  region: z.object({
+    id: z.literal('norway'),
+    preferredSource: z.literal('kartverket-dtm'),
+    fallbackSource: z.literal('copernicus-dem-glo-30'),
+  }),
+  artifact: z.object({
+    format: z.literal('pmtiles'),
+    tileEncoding: z.literal('png'),
+    demEncoding: z.enum(['terrarium', 'mapbox']),
+    currentTileUrl: z.literal('/map/terrain/current.pmtiles'),
+    currentTileTemplate: z.literal('/map/terrain/current/{z}/{x}/{y}.png'),
+    tileJsonUrl: z.literal('/map/terrain/current/tiles.json'),
+    minZoom: z.number().int().min(0).max(24),
+    maxZoom: z.number().int().min(0).max(24),
+    tileSize: z.union([z.literal(256), z.literal(512)]),
+  }),
+  intendedUse: z.string().min(1),
+  verticalDatum: z.literal('orthometric-msl'),
+  availability: terrainAvailabilitySchema,
+})
+export type TerrainTileset = z.infer<typeof terrainTilesetSchema>
+
 // --- Reference tileset entry (per-dataset manifest fragments on disk) ------
 
 const tilesetSourceSchema = z.object({
@@ -111,6 +149,7 @@ export type ReferenceTileset = z.infer<typeof referenceTilesetSchema>
 
 export const tilesetEntrySchema = z.discriminatedUnion('kind', [
   baseTilesetSchema,
+  terrainTilesetSchema,
   referenceTilesetSchema,
 ])
 export type TilesetEntry = z.infer<typeof tilesetEntrySchema>
@@ -252,6 +291,36 @@ export const createBaseTileset = (): BaseTileset => baseTilesetSchema.parse({
   layers: baseLayers,
 })
 
+export const terrainPmtilesPathForRoot = (mapRoot: string): string =>
+  resolve(mapRoot, 'current', 'terrain.pmtiles')
+
+export const createTerrainTileset = (config: {
+  readonly availability: TerrainAvailability
+}): TerrainTileset => terrainTilesetSchema.parse({
+  kind: 'terrain',
+  id: terrainTilesetId,
+  schemaVersion: 1,
+  region: {
+    id: 'norway',
+    preferredSource: 'kartverket-dtm',
+    fallbackSource: 'copernicus-dem-glo-30',
+  },
+  artifact: {
+    format: 'pmtiles',
+    tileEncoding: 'png',
+    demEncoding: 'terrarium',
+    currentTileUrl: '/map/terrain/current.pmtiles',
+    currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+    tileJsonUrl: '/map/terrain/current/tiles.json',
+    minZoom: 0,
+    maxZoom: 13,
+    tileSize: 256,
+  },
+  intendedUse: 'Self-hosted raster DEM tiles for terrain mesh generation, hillshade, altitude-above-ground calculations, and low-altitude simulation context.',
+  verticalDatum: 'orthometric-msl',
+  availability: config.availability,
+})
+
 /**
  * Synchronous manifest with the base OSM tileset only. Used by style.ts (which
  * is synchronous and doesn't need reference tilesets at construction time) and
@@ -268,10 +337,14 @@ export const createMapCapabilityManifest = (): MapCapabilityManifest =>
 
 export interface LoadManifestConfig {
   readonly referenceRoot: string
+  readonly mapRoot?: string
 }
 
 export const referenceRootFromEnv = (): string =>
   resolve(process.env.LEITBILD_REFERENCE_ROOT ?? '/opt/leitbild/reference')
+
+export const mapRootFromEnv = (): string =>
+  resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps')
 
 interface ManifestCacheEntry {
   readonly manifest: MapCapabilityManifest
@@ -339,6 +412,34 @@ const buildStamps = async (referenceRoot: string, datasetIds: ReadonlyArray<stri
   return stamps
 }
 
+const terrainAvailabilityFor = async (mapRoot: string): Promise<TerrainAvailability> => {
+  const path = terrainPmtilesPathForRoot(mapRoot)
+  try {
+    const s = await stat(path)
+    return {
+      status: s.isFile() && s.size > 0 ? 'available' : 'unavailable',
+      path,
+      sizeBytes: s.size,
+      modifiedAt: s.mtime.toISOString(),
+    }
+  } catch (error) {
+    return {
+      status: 'unavailable',
+      path,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+const terrainStamp = async (mapRoot: string): Promise<{ readonly id: string; readonly mtimeMs: number }> => {
+  try {
+    const s = await stat(terrainPmtilesPathForRoot(mapRoot))
+    return { id: 'terrain', mtimeMs: s.mtimeMs }
+  } catch {
+    return { id: 'terrain', mtimeMs: -1 }
+  }
+}
+
 /**
  * Asynchronously load the full manifest including reference tilesets discovered
  * on disk. Uses an in-process cache keyed by per-dataset symlink mtime so the
@@ -348,8 +449,14 @@ const buildStamps = async (referenceRoot: string, datasetIds: ReadonlyArray<stri
 export const loadMapCapabilityManifest = async (
   config: LoadManifestConfig = { referenceRoot: referenceRootFromEnv() },
 ): Promise<MapCapabilityManifest> => {
+  const mapRoot = config.mapRoot ?? mapRootFromEnv()
   const datasetIds = await listReferenceDatasetIds(config.referenceRoot)
-  const freshStamps = await buildStamps(config.referenceRoot, datasetIds)
+  const freshStamps = [
+    { id: `reference-root:${resolve(config.referenceRoot)}`, mtimeMs: 0 },
+    { id: `map-root:${resolve(mapRoot)}`, mtimeMs: 0 },
+    ...await buildStamps(config.referenceRoot, datasetIds),
+    await terrainStamp(mapRoot),
+  ]
   if (cache && stampsMatch(cache.stamps, freshStamps)) return cache.manifest
 
   const referenceTilesets: ReferenceTileset[] = []
@@ -357,9 +464,12 @@ export const loadMapCapabilityManifest = async (
     const { tileset } = await readReferenceManifest(config.referenceRoot, id)
     if (tileset) referenceTilesets.push(tileset)
   }
+  const terrain = createTerrainTileset({
+    availability: await terrainAvailabilityFor(mapRoot),
+  })
   const manifest = mapCapabilityManifestSchema.parse({
     schemaVersion: mapManifestSchemaVersion,
-    tilesets: [createBaseTileset(), ...referenceTilesets],
+    tilesets: [createBaseTileset(), terrain, ...referenceTilesets],
   })
   cache = { manifest, stamps: freshStamps }
   return manifest
@@ -377,3 +487,6 @@ export const findBaseTileset = (manifest: MapCapabilityManifest): BaseTileset =>
 
 export const findReferenceTilesets = (manifest: MapCapabilityManifest): ReadonlyArray<ReferenceTileset> =>
   manifest.tilesets.filter((t): t is ReferenceTileset => t.kind === 'reference')
+
+export const findTerrainTilesets = (manifest: MapCapabilityManifest): ReadonlyArray<TerrainTileset> =>
+  manifest.tilesets.filter((t): t is TerrainTileset => t.kind === 'terrain')

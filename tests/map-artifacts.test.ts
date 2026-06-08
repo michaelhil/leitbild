@@ -10,6 +10,9 @@ import {
 } from '../src/map/capabilities.ts'
 import {
   currentPmtilesResponse,
+  currentTerrainPmtilesResponse,
+  currentTerrainRasterTileResponse,
+  currentTerrainTileJsonResponse,
   currentVectorTileResponse,
   mapGlyphResponse,
   referenceDatasetPmtilesResponse,
@@ -104,6 +107,42 @@ describe('vector map artifacts', () => {
     })
     expect(missingResponse.status).toBe(503)
     expect(await missingResponse.json()).toMatchObject({ ok: false, error: 'vector map artifact unavailable' })
+  })
+
+  test('terrain artifact routes expose byte serving and explicit unavailable states', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
+    const currentDir = join(rootDir, 'current')
+    await mkdir(currentDir)
+    await Bun.write(join(currentDir, 'terrain.pmtiles'), 'terrain-bytes')
+
+    const rangeResponse = await currentTerrainPmtilesResponse(new Request('http://localhost/map/terrain/current.pmtiles', {
+      headers: { range: 'bytes=0-6' },
+    }), { rootDir })
+    expect(rangeResponse.status).toBe(206)
+    expect(rangeResponse.headers.get('content-range')).toBe('bytes 0-6/13')
+    expect(await rangeResponse.text()).toBe('terrain')
+
+    const missingPmtiles = await currentTerrainPmtilesResponse(new Request('http://localhost/map/terrain/current.pmtiles'), {
+      rootDir: join(rootDir, 'missing'),
+    })
+    expect(missingPmtiles.status).toBe(503)
+    expect(await missingPmtiles.json()).toMatchObject({ ok: false, error: 'terrain map artifact unavailable' })
+
+    const missingTileJson = await currentTerrainTileJsonResponse({ rootDir: join(rootDir, 'missing') })
+    expect(missingTileJson.status).toBe(503)
+    expect(await missingTileJson.json()).toMatchObject({ ok: false, error: 'terrain map artifact unavailable' })
+
+    const corruptTileJson = await currentTerrainTileJsonResponse({ rootDir })
+    expect(corruptTileJson.status).toBe(415)
+    expect(await corruptTileJson.json()).toMatchObject({ ok: false, error: 'terrain map artifact is not a readable PMTiles archive' })
+
+    const invalidTile = await currentTerrainRasterTileResponse(new URL('http://localhost/map/terrain/current/27/0/0.png'), { rootDir })
+    expect(invalidTile?.status).toBe(400)
+
+    const missingTile = await currentTerrainRasterTileResponse(new URL('http://localhost/map/terrain/current/0/0/0.png'), {
+      rootDir: join(rootDir, 'missing'),
+    })
+    expect(missingTile?.status).toBe(503)
   })
 
   test('reference dataset PMTiles route serves promoted datasets from the manifest', async () => {

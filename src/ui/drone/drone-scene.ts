@@ -498,9 +498,13 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           polygons: snapshot.polygons.length,
           lines: snapshot.lines.length,
           points: snapshot.points.length,
+          terrain: worldResult.terrain.status,
         })
         const fallbackSuffix = worldResult.fallbackReason ? `; worker fallback: ${worldResult.fallbackReason}` : ''
-        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${fallbackSuffix}`)
+        const terrainSuffix = worldResult.terrain.status === 'available'
+          ? `; terrain ${worldResult.terrain.demEncoding}`
+          : `; terrain ${worldResult.terrain.status}`
+        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${terrainSuffix}${fallbackSuffix}`)
       } catch (err) {
         if (destroyed || generation !== worldLoadGeneration) return
         pendingWorldCenterKey = ''

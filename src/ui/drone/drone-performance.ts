@@ -20,6 +20,7 @@ export interface DroneScenePerformanceSnapshot {
     readonly polygons: number
     readonly lines: number
     readonly points: number
+    readonly terrain: 'available' | 'unavailable' | 'unknown'
   }
 }
 
@@ -37,6 +38,7 @@ export interface DroneFramePerformanceTracker {
     readonly polygons: number
     readonly lines: number
     readonly points: number
+    readonly terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain']
   }) => void
   readonly snapshot: (renderInfo: {
     readonly drawCalls: number
@@ -82,6 +84,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let polygons = 0
   let lines = 0
   let points = 0
+  let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
 
   const pushSample = (samples: number[], value: number): void => {
     samples.push(value)
@@ -110,6 +113,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       polygons = config.polygons
       lines = config.lines
       points = config.points
+      terrain = config.terrain
     },
     snapshot: (renderInfo): DroneScenePerformanceSnapshot => {
       const avgFrameMs = average(frameIntervals)
@@ -131,7 +135,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         worldBuildMs,
         worldSource,
         activeScenes: renderInfo.activeScenes,
-        worldFeatures: { tiles, polygons, lines, points },
+        worldFeatures: { tiles, polygons, lines, points, terrain },
       }
     },
   }

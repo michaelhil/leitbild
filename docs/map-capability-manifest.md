@@ -1,6 +1,6 @@
 # Map Capability Manifest
 
-`/map/capabilities.json` is the machine-readable contract for Leitbild's self-hosted vector map.
+`/map/capabilities.json` is the machine-readable contract for Leitbild's self-hosted map-context data products.
 
 It tells UI surfaces, pack runtimes, AI agents, and developer tooling what contextual map layers exist and which properties may be used.
 
@@ -16,13 +16,16 @@ It tells UI surfaces, pack runtimes, AI agents, and developer tooling what conte
 ## Main Concepts
 
 **Tileset ID**:
-The named map product. Current value: `leitbild-osm-norway`.
+The named map product. Current base value: `leitbild-osm-norway`.
 
 **Schema Version**:
 The version of the map capability contract, not the OpenStreetMap extract date.
 
 **Layer**:
 A discoverable vector tile source layer with geometry, category, intended use, and fields.
+
+**Terrain Tileset**:
+An optional raster DEM PMTiles product advertised as `kind: "terrain"`. The current terrain contract uses Terrarium-encoded PNG tiles at `/map/terrain/current/{z}/{x}/{y}.png`, with TileJSON at `/map/terrain/current/tiles.json`. If `/opt/leitbild/maps/current/terrain.pmtiles` is absent or unreadable, the manifest still advertises the terrain entry with `availability.status: "unavailable"` so renderers and diagnostics do not fabricate elevation.
 
 **Field Availability**:
 `required` means the pipeline expects the field when the layer exists. `optional` means the field is useful when present but callers must handle absence.
@@ -34,6 +37,7 @@ UI:
 - Build styles.
 - Inspect map features.
 - Enable or disable map-context tools.
+- Decide whether drone/3D views can use real DEM terrain or must remain flat.
 
 Pack runtimes:
 

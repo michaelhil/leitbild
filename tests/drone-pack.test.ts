@@ -12,7 +12,7 @@ import { droneSimRuntimeId } from '../src/packs/drone/sim/constants.ts'
 import { createDroneSimEngine } from '../src/packs/drone/sim/engine.ts'
 import { createScenarioDroneObject } from '../src/packs/drone/sim/object-state.ts'
 import { builtinMissions, scenarios } from '../src/scenarios/index.ts'
-import { localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
+import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
 
 const controlInstanceId = 'test-drone-control' as ControlInstanceId
 const actorId = 'actor:test-pilot' as ActorId
@@ -211,6 +211,60 @@ describe('drone pack', () => {
     expect(Math.abs(east.z)).toBeLessThan(0.01)
     expect(north.z).toBeLessThan(-10)
     expect(Math.abs(north.x)).toBeLessThan(0.01)
+  })
+
+  test('drone terrain status reflects the map capability manifest without fabricating elevation', async () => {
+    const originalFetch = globalThis.fetch
+    const mockFetch = (body: unknown): typeof fetch => {
+      const handler = async (): Promise<Response> => new Response(JSON.stringify(body))
+      return Object.assign(handler, { preconnect: originalFetch.preconnect }) as typeof fetch
+    }
+    try {
+      globalThis.fetch = mockFetch({
+        schemaVersion: 2,
+        tilesets: [{
+          kind: 'terrain',
+          availability: {
+            status: 'available',
+            path: '/opt/leitbild/maps/current/terrain.pmtiles',
+          },
+          artifact: {
+            demEncoding: 'terrarium',
+            currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+            tileJsonUrl: '/map/terrain/current/tiles.json',
+          },
+        }],
+      })
+      const available = await loadDroneWorldTerrainStatus()
+      expect(available).toMatchObject({
+        status: 'available',
+        demEncoding: 'terrarium',
+        tileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+      })
+
+      globalThis.fetch = mockFetch({
+        schemaVersion: 2,
+        tilesets: [{
+          kind: 'terrain',
+          availability: {
+            status: 'unavailable',
+            error: 'ENOENT terrain.pmtiles',
+          },
+          artifact: {
+            demEncoding: 'terrarium',
+            currentTileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+            tileJsonUrl: '/map/terrain/current/tiles.json',
+          },
+        }],
+      })
+      const unavailable = await loadDroneWorldTerrainStatus()
+      expect(unavailable).toMatchObject({
+        status: 'unavailable',
+        reason: 'ENOENT terrain.pmtiles',
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   test('swarm commands keep each drone as an individual simulated object', async () => {

@@ -145,7 +145,7 @@ Acceptance target:
 
 - Add Three.js dependency through Bun.
 - Build a reusable drone-world scene module.
-- Generate terrain plane, grid/roads/water/building proxies from map/object context available in the control instance.
+- Generate map-derived ground, roads, water, landcover, landuse, buildings, and POI anchors from the self-hosted vector map artifact and current object context.
 - Render drones, ambulances, targets, formation/sensor/weapon affordances, and camera modes.
 - Support 2D top-down and 3D chase/first-person modes.
 - Add rendering lifecycle cleanup and resize handling.
@@ -232,7 +232,7 @@ Implemented in the V2 fidelity pass:
 Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
-- vector-tile-derived 3D world geometry from the self-hosted map artifact
+- terrain DEM artifact pipeline and terrain mesh draping from advertised `/map/terrain/*` capabilities
 - richer swarm search/patrol/separation/cohesion behavior
 - deeper sensor model for occlusion, classification, shared detections, and update cadence
 - communications/link loss/geofence model
@@ -257,11 +257,11 @@ V2 acceptance criteria:
 - Manual, hold, guided, swarm, land, and return-to-launch modes use a shared physics integration path with acceleration limits, air-relative drag, wind effects, attitude estimates, and energy use that changes with climb, speed, payload, and wind.
 - FPV is a first-class flight mode in the modal. The camera sits on the selected drone, follows its yaw/pitch/roll, and displays flight HUD data useful enough to fly by sight.
 - The Three.js scene updates meshes in place instead of rebuilding all object meshes every frame.
-- The visual world has enough cues for FPV: roads, lane markings, water, vegetation, building massing/windows/roofs, shadows, fog/visibility, weather streaks, drones, ambulances, and other operational assets.
+- The visual world has enough cues for FPV: map-derived roads, lane markings, water, vegetation, building massing/windows/roofs, shadows, fog/visibility, weather streaks, drones, ambulances, and other operational assets.
 - No new HTTP server, JavaScript file, aviation dependency, or browser-authoritative simulation path is introduced.
 
 V2 scoped deferrals:
 
 - Real PX4/ArduPilot SITL, WebAssembly flight dynamics, and JSBSim-style aircraft modeling are deferred until there is a measured need or a concrete benchmarking target that the TypeScript model cannot meet.
-- Decoding PMTiles/vector tiles directly into the Three.js modal is deferred unless it can be done through an existing core map artifact boundary without adding brittle UI-to-map internals. The modal can improve procedural map-context generation now and reserve a clean vector ingestion seam for a later pass.
+- Real DEM terrain and heightmap decoding are deferred until a self-hosted terrain PMTiles artifact exists. The modal reads terrain availability from `/map/capabilities.json` and must not synthesize or imply real elevation while the artifact is unavailable.
 - A full mission autopilot runner remains separate from this pass. V2 strengthens flight, FPV, environment, and visual fidelity first.

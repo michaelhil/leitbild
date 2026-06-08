@@ -6,6 +6,9 @@ import {
   createMapArtifactConfigFromEnv,
   createMapArtifactStatus,
   currentPmtilesResponse,
+  currentTerrainPmtilesResponse,
+  currentTerrainRasterTileResponse,
+  currentTerrainTileJsonResponse,
   currentVectorTileResponse,
   mapGlyphResponse,
   mapCapabilitiesResponse,
@@ -201,13 +204,19 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       }
       const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
       if (discoveryRouteResponse) return secure(discoveryRouteResponse)
-      if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse())
+      if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse(mapArtifacts))
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
       if (url.pathname.startsWith('/map/tiles/current/')) {
         const tileResponse = await currentVectorTileResponse(url, mapArtifacts)
         if (tileResponse) return secure(tileResponse)
       }
       if (url.pathname === '/map/tiles/current.pmtiles') return secure(await currentPmtilesResponse(req, mapArtifacts))
+      if (url.pathname === '/map/terrain/current.pmtiles') return secure(await currentTerrainPmtilesResponse(req, mapArtifacts))
+      if (url.pathname === '/map/terrain/current/tiles.json') return secure(await currentTerrainTileJsonResponse(mapArtifacts))
+      if (url.pathname.startsWith('/map/terrain/current/')) {
+        const terrainResponse = await currentTerrainRasterTileResponse(url, mapArtifacts)
+        if (terrainResponse) return secure(terrainResponse)
+      }
       if (url.pathname.startsWith('/map/datasets/')) {
         const referenceVectorTileResponse = await referenceDatasetVectorTileResponse(url)
         if (referenceVectorTileResponse) return secure(referenceVectorTileResponse)

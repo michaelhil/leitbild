@@ -12,6 +12,8 @@ The canonical map artifact is a versioned PMTiles archive containing MVT vector 
 
 No raster OpenStreetMap fallback is kept. If the vector artifact or glyphs are missing, the map must fail visibly during startup.
 
+Optional DEM terrain is a separate map-context product, not a base-map fallback. A terrain build may promote a Terrarium-encoded PNG PMTiles archive at `/map/terrain/current.pmtiles`; `/map/capabilities.json` advertises whether that artifact is available so 3D renderers can use real elevation when present and stay explicit when absent.
+
 ## Rationale
 
 The raster OSM tile approach was useful for early bootstrapping, but it made the base map a fixed image background. Leitbild needs a controlled operational picture with stable styling, readable control-center colors, queryable map-layer capabilities, and a path toward self-contained deployments.
@@ -22,6 +24,7 @@ Vector tiles let Leitbild control road hierarchy, POI visibility, risk/context l
 
 - MapLibre remains the map renderer.
 - Base-map context is vector-only.
+- DEM terrain tiles are allowed only as explicit elevation/context data, not as raster map imagery.
 - Operational objects, routes, traffic conditions, alerts, and overlays remain Leitbild-controlled MapLibre layers above the base map.
 - Routing remains a separate routing adapter concern. Vector tiles do not replace OSRM, Valhalla, GraphHopper, or future routing engines.
 - The map capability manifest is the machine-readable contract for simulation providers, UI surfaces, AI agents, and developer tooling.

@@ -1,7 +1,13 @@
 import { lstat, readlink, realpath, stat } from 'node:fs/promises'
 import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { PMTiles, TileType, type Source } from 'pmtiles'
-import { createBaseTileset, findReferenceTilesets, loadMapCapabilityManifest, referenceRootFromEnv } from './capabilities.ts'
+import {
+  createBaseTileset,
+  findReferenceTilesets,
+  loadMapCapabilityManifest,
+  referenceRootFromEnv,
+  terrainPmtilesPathForRoot,
+} from './capabilities.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
 export interface MapArtifactConfig {
@@ -36,10 +42,17 @@ export interface MapArtifactStatus {
     readonly fontStack: string
     readonly range: string
   }
+  readonly terrain: MapArtifactFileStatus & {
+    readonly tileUrl: string
+    readonly tileTemplate: string
+    readonly tileJsonUrl: string
+    readonly demEncoding: 'terrarium'
+  }
 }
 
 const pmtilesContentType = 'application/vnd.pmtiles'
 const vectorTileContentType = 'application/vnd.mapbox-vector-tile'
+const rasterDemContentType = 'image/png'
 const glyphContentType = 'application/x-protobuf'
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
@@ -83,6 +96,9 @@ export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
 export const currentPmtilesPath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'current', 'norway.pmtiles')
 
+export const currentTerrainPmtilesPath = (config: MapArtifactConfig): string =>
+  terrainPmtilesPathForRoot(config.rootDir)
+
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
 
@@ -97,10 +113,15 @@ const parseTileCoordinate = (raw: string): number | null => {
   return Number.isSafeInteger(value) ? value : null
 }
 
-const parseTileCoordinates = (zPart: string, xPart: string, yPart: string): TileCoordinates | null => {
+const parseTileCoordinates = (
+  zPart: string,
+  xPart: string,
+  yPart: string,
+  extension: 'mvt' | 'png',
+): TileCoordinates | null => {
   const z = parseTileCoordinate(zPart)
   const x = parseTileCoordinate(xPart)
-  const yMatch = yPart.match(/^(\d+)\.mvt$/)
+  const yMatch = yPart.match(new RegExp(`^(\\d+)\\.${extension}$`))
   const y = yMatch ? parseTileCoordinate(yMatch[1] ?? '') : null
   if (z === null || x === null || y === null) return null
   if (z < 0 || z > 26) return null
@@ -150,6 +171,14 @@ const emptyVectorTileResponse = (): Response =>
     },
   })
 
+const emptyRasterDemTileResponse = (): Response =>
+  new Response(null, {
+    status: 204,
+    headers: {
+      'Cache-Control': 'public, max-age=3600',
+    },
+  })
+
 const vectorTileResponse = async (
   filePath: string,
   coordinates: TileCoordinates,
@@ -181,6 +210,53 @@ const vectorTileResponse = async (
   return new Response(bytes, {
     headers: {
       'Content-Type': vectorTileContentType,
+      'Content-Length': String(bytes.byteLength),
+      'Cache-Control': tile.cacheControl ?? 'public, max-age=3600',
+    },
+  })
+}
+
+const rasterDemTileResponse = async (
+  filePath: string,
+  coordinates: TileCoordinates,
+  missing: { readonly error: string; readonly status: number },
+): Promise<Response> => {
+  const file = Bun.file(filePath)
+  if (!await file.exists()) {
+    return Response.json({
+      ok: false,
+      error: missing.error,
+      expectedPath: filePath,
+    }, { status: missing.status })
+  }
+
+  const archive = await pmtilesArchiveFor(filePath)
+  let header: Awaited<ReturnType<PMTiles['getHeader']>>
+  try {
+    header = await archive.getHeader()
+  } catch (error) {
+    return Response.json({
+      ok: false,
+      error: 'terrain map artifact is not a readable PMTiles archive',
+      expectedPath: filePath,
+      detail: error instanceof Error ? error.message : String(error),
+    }, { status: 415 })
+  }
+  if (header.tileType !== TileType.Png) {
+    return Response.json({
+      ok: false,
+      error: 'terrain map artifact is not a PNG PMTiles archive',
+      expectedPath: filePath,
+    }, { status: 415 })
+  }
+
+  const tile = await archive.getZxy(coordinates.z, coordinates.x, coordinates.y)
+  if (!tile) return emptyRasterDemTileResponse()
+
+  const bytes = tile.data
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': rasterDemContentType,
       'Content-Length': String(bytes.byteLength),
       'Cache-Control': tile.cacheControl ?? 'public, max-age=3600',
     },
@@ -229,8 +305,14 @@ const referenceDatasetArtifactPath = async (
   return { ok: true, filePath }
 }
 
-export const mapCapabilitiesResponse = async (): Promise<Response> => {
-  const manifest = await loadMapCapabilityManifest({ referenceRoot: referenceRootFromEnv() })
+export const mapCapabilitiesResponse = async (
+  config: MapArtifactConfig = createMapArtifactConfigFromEnv(),
+  referenceConfig: ReferenceDatasetArtifactConfig = { referenceRoot: referenceRootFromEnv() },
+): Promise<Response> => {
+  const manifest = await loadMapCapabilityManifest({
+    referenceRoot: referenceConfig.referenceRoot,
+    mapRoot: config.rootDir,
+  })
   return Response.json(manifest)
 }
 
@@ -280,6 +362,7 @@ const activeBuild = async (config: MapArtifactConfig): Promise<{
 export const createMapArtifactStatus = async (config: MapArtifactConfig): Promise<MapArtifactStatus> => {
   const base = createBaseTileset()
   const currentPmtiles = await fileStatus(currentPmtilesPath(config))
+  const terrain = await fileStatus(currentTerrainPmtilesPath(config))
   const glyphProbe = await fileStatus(glyphProbePath(config))
   const active = await activeBuild(config)
   return {
@@ -298,6 +381,13 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
       ...glyphProbe,
       fontStack: glyphProbeFontStack,
       range: glyphProbeRange,
+    },
+    terrain: {
+      ...terrain,
+      tileUrl: '/map/terrain/current.pmtiles',
+      tileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+      tileJsonUrl: '/map/terrain/current/tiles.json',
+      demEncoding: 'terrarium',
     },
   }
 }
@@ -358,6 +448,12 @@ export const currentPmtilesResponse = async (req: Request, config: MapArtifactCo
     status: 503,
   })
 
+export const currentTerrainPmtilesResponse = async (req: Request, config: MapArtifactConfig): Promise<Response> =>
+  pmtilesFileResponse(req, currentTerrainPmtilesPath(config), {
+    error: 'terrain map artifact unavailable',
+    status: 503,
+  })
+
 export const currentVectorTileResponse = async (
   url: URL,
   config: MapArtifactConfig,
@@ -368,12 +464,77 @@ export const currentVectorTileResponse = async (
   if (parts.length !== 3) {
     return Response.json({ ok: false, error: 'invalid map tile path' }, { status: 400 })
   }
-  const coordinates = parseTileCoordinates(parts[0] ?? '', parts[1] ?? '', parts[2] ?? '')
+  const coordinates = parseTileCoordinates(parts[0] ?? '', parts[1] ?? '', parts[2] ?? '', 'mvt')
   if (!coordinates) {
     return Response.json({ ok: false, error: 'invalid map tile coordinates' }, { status: 400 })
   }
   return vectorTileResponse(currentPmtilesPath(config), coordinates, {
     error: 'vector map artifact unavailable',
+    status: 503,
+  })
+}
+
+export const currentTerrainTileJsonResponse = async (config: MapArtifactConfig): Promise<Response> => {
+  const filePath = currentTerrainPmtilesPath(config)
+  const file = Bun.file(filePath)
+  if (!await file.exists()) {
+    return Response.json({
+      ok: false,
+      error: 'terrain map artifact unavailable',
+      expectedPath: filePath,
+    }, { status: 503 })
+  }
+
+  const archive = await pmtilesArchiveFor(filePath)
+  let header: Awaited<ReturnType<PMTiles['getHeader']>>
+  try {
+    header = await archive.getHeader()
+  } catch (error) {
+    return Response.json({
+      ok: false,
+      error: 'terrain map artifact is not a readable PMTiles archive',
+      expectedPath: filePath,
+      detail: error instanceof Error ? error.message : String(error),
+    }, { status: 415 })
+  }
+  if (header.tileType !== TileType.Png) {
+    return Response.json({
+      ok: false,
+      error: 'terrain map artifact is not a PNG PMTiles archive',
+      expectedPath: filePath,
+    }, { status: 415 })
+  }
+
+  return Response.json({
+    tilejson: '3.0.0',
+    name: 'leitbild-terrain-norway',
+    scheme: 'xyz',
+    tiles: ['/map/terrain/current/{z}/{x}/{y}.png'],
+    minzoom: header.minZoom,
+    maxzoom: header.maxZoom,
+    bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
+    center: [header.centerLon, header.centerLat, header.centerZoom],
+    encoding: 'terrarium',
+    attribution: 'Terrain artifact source: Kartverket DTM preferred, Copernicus DEM GLO-30 fallback.',
+  })
+}
+
+export const currentTerrainRasterTileResponse = async (
+  url: URL,
+  config: MapArtifactConfig,
+): Promise<Response | null> => {
+  const prefix = '/map/terrain/current/'
+  if (!url.pathname.startsWith(prefix)) return null
+  const parts = url.pathname.slice(prefix.length).split('/').map(part => decodeURIComponent(part))
+  if (parts.length !== 3) {
+    return Response.json({ ok: false, error: 'invalid terrain tile path' }, { status: 400 })
+  }
+  const coordinates = parseTileCoordinates(parts[0] ?? '', parts[1] ?? '', parts[2] ?? '', 'png')
+  if (!coordinates) {
+    return Response.json({ ok: false, error: 'invalid terrain tile coordinates' }, { status: 400 })
+  }
+  return rasterDemTileResponse(currentTerrainPmtilesPath(config), coordinates, {
+    error: 'terrain map artifact unavailable',
     status: 503,
   })
 }
@@ -415,7 +576,7 @@ export const referenceDatasetVectorTileResponse = async (
   if (!datasetId || !pmtilesBaseName || !pmtilesBaseNamePattern.test(pmtilesBaseName)) {
     return Response.json({ ok: false, error: 'invalid reference dataset tile path' }, { status: 400 })
   }
-  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '')
+  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '', 'mvt')
   if (!coordinates) {
     return Response.json({ ok: false, error: 'invalid reference dataset tile coordinates' }, { status: 400 })
   }

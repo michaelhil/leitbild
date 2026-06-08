@@ -127,6 +127,8 @@ describe('server health', () => {
       expect(details.mapArtifacts.activeBuildId).toBe('health-build')
       expect(details.mapArtifacts.currentPmtiles.sizeBytes).toBeGreaterThan(0)
       expect(details.mapArtifacts.glyphProbe.available).toBe(true)
+      expect(details.mapArtifacts.terrain.available).toBe(false)
+      expect(details.mapArtifacts.terrain.tileTemplate).toBe('/map/terrain/current/{z}/{x}/{y}.png')
     } finally {
       await registry.close(runtime.id)
     }

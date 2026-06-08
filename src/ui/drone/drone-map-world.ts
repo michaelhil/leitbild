@@ -44,6 +44,24 @@ export interface DroneWorldPointFeature {
   readonly point: DroneWorldPoint
 }
 
+export type DroneWorldTerrainStatus =
+  | {
+      readonly status: 'available'
+      readonly demEncoding: 'terrarium' | 'mapbox'
+      readonly tileTemplate: string
+      readonly tileJsonUrl: string
+      readonly path?: string
+    }
+  | {
+      readonly status: 'unavailable'
+      readonly reason: string
+      readonly path?: string
+    }
+  | {
+      readonly status: 'unknown'
+      readonly reason: string
+    }
+
 export interface DroneMapWorldSnapshot {
   readonly key: string
   readonly center: DroneWorldCenter
@@ -585,6 +603,72 @@ let worldCacheHits = 0
 let worldCacheMisses = 0
 
 const cachedWorldSnapshots = new Map<string, Promise<DroneMapWorldSnapshot>>()
+
+const recordValue = (
+  value: unknown,
+): Record<string, unknown> | null =>
+  value !== null && typeof value === 'object' ? value as Record<string, unknown> : null
+
+const stringValue = (
+  value: unknown,
+): string | null =>
+  typeof value === 'string' && value.length > 0 ? value : null
+
+const terrainStatusFromManifest = (
+  value: unknown,
+): DroneWorldTerrainStatus => {
+  const manifest = recordValue(value)
+  const tilesets = Array.isArray(manifest?.tilesets) ? manifest.tilesets : null
+  if (!tilesets) return { status: 'unknown', reason: 'map capability manifest has no tilesets array' }
+  const terrain = tilesets
+    .map(recordValue)
+    .find(tileset => tileset?.kind === 'terrain')
+  if (!terrain) return { status: 'unavailable', reason: 'terrain capability is not advertised' }
+
+  const availability = recordValue(terrain.availability)
+  const artifact = recordValue(terrain.artifact)
+  const availabilityStatus = stringValue(availability?.status)
+  const path = stringValue(availability?.path)
+  if (availabilityStatus === 'available') {
+    const demEncoding = stringValue(artifact?.demEncoding)
+    const tileTemplate = stringValue(artifact?.currentTileTemplate)
+    const tileJsonUrl = stringValue(artifact?.tileJsonUrl)
+    if ((demEncoding !== 'terrarium' && demEncoding !== 'mapbox') || !tileTemplate || !tileJsonUrl) {
+      return { status: 'unknown', reason: 'terrain capability is available but artifact metadata is incomplete' }
+    }
+    return path
+      ? { status: 'available', demEncoding, tileTemplate, tileJsonUrl, path }
+      : { status: 'available', demEncoding, tileTemplate, tileJsonUrl }
+  }
+
+  if (availabilityStatus === 'unavailable') {
+    const reason = stringValue(availability?.error) ?? 'terrain PMTiles artifact is not present'
+    return path
+      ? { status: 'unavailable', reason, path }
+      : { status: 'unavailable', reason }
+  }
+
+  return { status: 'unknown', reason: 'terrain capability has an invalid availability status' }
+}
+
+export const loadDroneWorldTerrainStatus = async (config: {
+  readonly signal?: AbortSignal
+} = {}): Promise<DroneWorldTerrainStatus> => {
+  try {
+    const response = await fetch('/map/capabilities.json', config.signal ? { signal: config.signal } : undefined)
+    if (!response.ok) {
+      return { status: 'unavailable', reason: `map capability query failed with HTTP ${response.status}` }
+    }
+    const body = await response.json() as unknown
+    return terrainStatusFromManifest(body)
+  } catch (error) {
+    if (config.signal?.aborted) throw error
+    return {
+      status: 'unavailable',
+      reason: error instanceof Error ? `map capability query failed: ${error.message}` : `map capability query failed: ${String(error)}`,
+    }
+  }
+}
 
 const cacheKeyFor = (config: {
   readonly center: DroneWorldCenter
