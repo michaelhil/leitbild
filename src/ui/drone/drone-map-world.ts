@@ -20,6 +20,8 @@ export interface DroneWorldPolygonFeature {
   readonly kind: DroneWorldPolygonKind
   readonly className: string
   readonly rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>
+  readonly distanceM: number
+  readonly areaM2: number
   readonly heightM?: number
   readonly minHeightM?: number
 }
@@ -30,6 +32,8 @@ export interface DroneWorldLineFeature {
   readonly className: string
   readonly path: ReadonlyArray<DroneWorldPoint>
   readonly widthM: number
+  readonly distanceM: number
+  readonly lengthM: number
 }
 
 export interface DroneWorldPointFeature {
@@ -69,7 +73,7 @@ interface GeoJsonFeature {
 }
 
 const metersPerDegreeLat = 111_320
-const maxDecodedFeaturesPerLayer = 900
+const maxDecodedFeaturesPerLayer = 2_400
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -177,6 +181,99 @@ const stableHash = (value: string): number => {
   return hash >>> 0
 }
 
+const pointDistanceM = (
+  point: DroneWorldPoint,
+): number =>
+  Math.hypot(point.x, point.z)
+
+const segmentDistanceToOriginM = (
+  start: DroneWorldPoint,
+  end: DroneWorldPoint,
+): number => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const lengthSq = dx * dx + dz * dz
+  if (lengthSq <= Number.EPSILON) return pointDistanceM(start)
+  const t = Math.max(0, Math.min(1, -(start.x * dx + start.z * dz) / lengthSq))
+  return Math.hypot(start.x + dx * t, start.z + dz * t)
+}
+
+const pathDistanceM = (
+  path: ReadonlyArray<DroneWorldPoint>,
+): number => {
+  if (path.length === 0) return Number.POSITIVE_INFINITY
+  if (path.length === 1) return pointDistanceM(path[0]!)
+  let distance = Number.POSITIVE_INFINITY
+  for (let index = 0; index < path.length - 1; index += 1) {
+    distance = Math.min(distance, segmentDistanceToOriginM(path[index]!, path[index + 1]!))
+  }
+  return distance
+}
+
+const pathLengthM = (
+  path: ReadonlyArray<DroneWorldPoint>,
+): number => {
+  let length = 0
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const current = path[index]!
+    const next = path[index + 1]!
+    length += Math.hypot(next.x - current.x, next.z - current.z)
+  }
+  return length
+}
+
+const ringAreaM2 = (
+  ring: ReadonlyArray<DroneWorldPoint>,
+): number => {
+  let area = 0
+  for (let index = 0; index < ring.length; index += 1) {
+    const current = ring[index]!
+    const next = ring[(index + 1) % ring.length]!
+    area += current.x * next.z - next.x * current.z
+  }
+  return area / 2
+}
+
+const pointInRing = (
+  point: DroneWorldPoint,
+  ring: ReadonlyArray<DroneWorldPoint>,
+): boolean => {
+  let inside = false
+  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
+    const current = ring[index]!
+    const previous = ring[previousIndex]!
+    const intersects = ((current.z > point.z) !== (previous.z > point.z))
+      && point.x < (previous.x - current.x) * (point.z - current.z) / (previous.z - current.z + Number.EPSILON) + current.x
+    if (intersects) inside = !inside
+  }
+  return inside
+}
+
+const polygonContainsOrigin = (
+  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
+): boolean => {
+  const outer = rings[0]
+  if (!outer || !pointInRing({ x: 0, z: 0 }, outer)) return false
+  return !rings.slice(1).some(ring => pointInRing({ x: 0, z: 0 }, ring))
+}
+
+const polygonDistanceM = (
+  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
+): number => {
+  if (rings.length === 0) return Number.POSITIVE_INFINITY
+  if (polygonContainsOrigin(rings)) return 0
+  return Math.min(...rings.map(ring => pathDistanceM(ring)))
+}
+
+const polygonAreaM2 = (
+  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
+): number => {
+  const outer = rings[0]
+  if (!outer) return 0
+  const holes = rings.slice(1).reduce((sum, ring) => sum + Math.abs(ringAreaM2(ring)), 0)
+  return Math.max(0, Math.abs(ringAreaM2(outer)) - holes)
+}
+
 const deterministicBuildingHeight = (
   id: string,
   className: string,
@@ -209,6 +306,9 @@ const lineWidthFor = (
   if (className === 'primary') return 18
   if (className === 'secondary') return 13
   if (className === 'tertiary') return 9
+  if (className === 'service') return 5.2
+  if (className === 'track') return 3.8
+  if (className === 'path') return 2.4
   if (className === 'minor') return 6
   return 4.2
 }
@@ -259,34 +359,85 @@ const multiPolygonRingsFromCoordinates = (
     .filter(rings => rings.length > 0)
 }
 
-const featureNearCenter = (
-  points: ReadonlyArray<DroneWorldPoint>,
-  radiusM: number,
-): boolean =>
-  points.some(point => horizontalDistanceFromCenterM(point) <= radiusM)
-
 const polygonSortValue = (
   feature: DroneWorldPolygonFeature,
 ): number => {
-  const firstRing = feature.rings[0] ?? []
-  const nearest = firstRing.reduce((value, point) => Math.min(value, horizontalDistanceFromCenterM(point)), Number.POSITIVE_INFINITY)
   const priority = feature.kind === 'building' ? -2_000 : feature.kind === 'water' ? -1_500 : 0
-  return priority + nearest
+  return priority + feature.distanceM
 }
 
 const lineSortValue = (
   feature: DroneWorldLineFeature,
 ): number => {
-  const nearest = feature.path.reduce((value, point) => Math.min(value, horizontalDistanceFromCenterM(point)), Number.POSITIVE_INFINITY)
   const priority = feature.kind === 'road' ? -1_500 : feature.kind === 'rail' ? -900 : 0
-  return priority + nearest
+  return priority + feature.distanceM
 }
 
-const capFeatures = <T>(
-  features: ReadonlyArray<T>,
-  max: number,
-): ReadonlyArray<T> =>
-  features.slice(0, max)
+const roadClassPriority = (
+  className: string,
+): number => {
+  if (className === 'motorway') return 8
+  if (className === 'trunk') return 7
+  if (className === 'primary') return 6
+  if (className === 'secondary') return 5
+  if (className === 'tertiary') return 4
+  if (className === 'minor') return 3
+  if (className === 'service') return 2
+  if (className === 'track' || className === 'path') return 1
+  return 2
+}
+
+const selectWorldPolygons = (
+  features: ReadonlyArray<DroneWorldPolygonFeature>,
+  radiusM: number,
+): ReadonlyArray<DroneWorldPolygonFeature> => {
+  const water = features
+    .filter(feature => feature.kind === 'water' && feature.distanceM <= radiusM * 1.05)
+    .sort((left, right) => left.distanceM - right.distanceM)
+    .slice(0, 900)
+  const surfaces = features
+    .filter(feature => (feature.kind === 'landcover' || feature.kind === 'landuse') && feature.distanceM <= radiusM * 0.98)
+    .sort((left, right) => left.distanceM - right.distanceM)
+    .slice(0, 1_600)
+  const buildings = features
+    .filter(feature => feature.kind === 'building' && feature.distanceM <= radiusM)
+    .sort((left, right) => {
+      const distanceDelta = left.distanceM - right.distanceM
+      if (Math.abs(distanceDelta) > 150) return distanceDelta
+      return right.areaM2 - left.areaM2
+    })
+    .slice(0, 5_800)
+  return [...water, ...surfaces, ...buildings].sort((a, b) => polygonSortValue(a) - polygonSortValue(b))
+}
+
+const selectWorldLines = (
+  features: ReadonlyArray<DroneWorldLineFeature>,
+  radiusM: number,
+): ReadonlyArray<DroneWorldLineFeature> => {
+  const lines = features.filter(feature => {
+    if (feature.distanceM > radiusM * 1.04) return false
+    if (feature.kind === 'waterway' || feature.kind === 'rail') return true
+    const priority = roadClassPriority(feature.className)
+    if (priority >= 5) return true
+    if (priority >= 3) return feature.distanceM <= radiusM * 0.86
+    return feature.distanceM <= radiusM * 0.58
+  })
+  return lines
+    .sort((left, right) => {
+      const priorityDelta = roadClassPriority(right.className) - roadClassPriority(left.className)
+      if (left.kind === 'road' && right.kind === 'road' && priorityDelta !== 0) return priorityDelta
+      return lineSortValue(left) - lineSortValue(right)
+    })
+    .slice(0, 3_400)
+    .sort((a, b) => lineSortValue(a) - lineSortValue(b))
+}
+
+const selectWorldPoints = (
+  points: ReadonlyArray<DroneWorldPointFeature>,
+): ReadonlyArray<DroneWorldPointFeature> =>
+  [...points]
+    .sort((left, right) => horizontalDistanceFromCenterM(left.point) - horizontalDistanceFromCenterM(right.point))
+    .slice(0, 160)
 
 const decodePolygonFeature = (
   id: string,
@@ -304,7 +455,10 @@ const decodePolygonFeature = (
       : []
   return polygons.flatMap((rings, index) => {
     const firstRing = rings[0] ?? []
-    if (firstRing.length < 3 || !featureNearCenter(firstRing, radiusM)) return []
+    const distanceM = polygonDistanceM(rings)
+    if (firstRing.length < 3 || distanceM > radiusM * 1.08) return []
+    const areaM2 = polygonAreaM2(rings)
+    if (areaM2 < 3) return []
     const heightM = kind === 'building' ? buildingHeightFor(id, className, properties) : undefined
     const minHeightM = kind === 'building'
       ? numberProperty(properties, ['render_min_height', 'min_height']) ?? undefined
@@ -314,6 +468,8 @@ const decodePolygonFeature = (
       kind,
       className,
       rings,
+      distanceM,
+      areaM2,
       ...(heightM === undefined ? {} : { heightM }),
       ...(minHeightM === undefined ? {} : { minHeightM }),
     }]
@@ -333,15 +489,22 @@ const decodeLineFeature = (
     : geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)
       ? geometry.coordinates.map(line => lineFromCoordinates(line, center))
       : []
-  return paths.flatMap((path, index) => path.length >= 2 && featureNearCenter(path, radiusM)
-    ? [{
-        id: `${id}:${index}`,
-        kind,
-        className,
-        path,
-        widthM: lineWidthFor(kind, className),
-      }]
-    : [])
+  return paths.flatMap((path, index) => {
+    if (path.length < 2) return []
+    const distanceM = pathDistanceM(path)
+    if (distanceM > radiusM * 1.06) return []
+    const lengthM = pathLengthM(path)
+    if (lengthM < 0.8) return []
+    return [{
+      id: `${id}:${index}`,
+      kind,
+      className,
+      path,
+      widthM: lineWidthFor(kind, className),
+      distanceM,
+      lengthM,
+    }]
+  })
 }
 
 const decodePointFeature = (
@@ -412,7 +575,7 @@ export const loadDroneMapWorld = async (config: {
   readonly zoom?: number
   readonly signal?: AbortSignal
 }): Promise<DroneMapWorldSnapshot> => {
-  const radiusM = config.radiusM ?? 1_600
+  const radiusM = config.radiusM ?? 4_250
   const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
   const tiles = tileRangeFor(config.center, radiusM, zoom)
   const decoded = await Promise.all(tiles.map(async tile => {
@@ -426,17 +589,17 @@ export const loadDroneMapWorld = async (config: {
       points: layerFeatures.flatMap(layer => layer.points),
     }
   }))
-  const polygons = decoded.flatMap(item => item.polygons).sort((a, b) => polygonSortValue(a) - polygonSortValue(b))
-  const lines = decoded.flatMap(item => item.lines).sort((a, b) => lineSortValue(a) - lineSortValue(b))
-  const points = decoded.flatMap(item => item.points)
+  const polygons = selectWorldPolygons(decoded.flatMap(item => item.polygons), radiusM)
+  const lines = selectWorldLines(decoded.flatMap(item => item.lines), radiusM)
+  const points = selectWorldPoints(decoded.flatMap(item => item.points))
   return {
     key: tileKeyFor(config.center, radiusM, zoom),
     center: config.center,
     radiusM,
     zoom,
     tileCount: tiles.length,
-    polygons: capFeatures(polygons, 1_250),
-    lines: capFeatures(lines, 700),
-    points: capFeatures(points, 80),
+    polygons,
+    lines,
+    points,
   }
 }

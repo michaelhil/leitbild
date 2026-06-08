@@ -3,7 +3,7 @@ import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
 import { loadDroneMapWorld } from './drone-map-world.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
-import { createDroneMapWorldGroup, createFallbackWorldGroup } from './drone-world-renderer.ts'
+import { createDroneMapWorldGroup, createFallbackWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
 export type { DroneScenePerformanceSnapshot }
@@ -370,7 +370,7 @@ const smoothVisualPose = (
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
-  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 5_000)
+  const camera = new THREE.PerspectiveCamera(58, 1, 0.1, 8_000)
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
   let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
   let pixelRatio = Math.min(window.devicePixelRatio || 1, 1.45)
@@ -379,20 +379,20 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.08
   renderer.shadowMap.enabled = true
-  renderer.shadowMap.type = THREE.PCFShadowMap
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap
   config.container.appendChild(renderer.domElement)
   const keyLight = new THREE.DirectionalLight('#ffffff', 2.4)
   keyLight.position.set(-160, 450, 220)
   keyLight.castShadow = true
-  keyLight.shadow.mapSize.width = 1024
-  keyLight.shadow.mapSize.height = 1024
+  keyLight.shadow.mapSize.width = 2048
+  keyLight.shadow.mapSize.height = 2048
   keyLight.shadow.camera.near = 10
-  keyLight.shadow.camera.far = 1_200
-  keyLight.shadow.camera.left = -650
-  keyLight.shadow.camera.right = 650
-  keyLight.shadow.camera.top = 650
-  keyLight.shadow.camera.bottom = -650
-  const ambient = new THREE.HemisphereLight('#dbeafe', '#475569', 1.25)
+  keyLight.shadow.camera.far = 1_800
+  keyLight.shadow.camera.left = -950
+  keyLight.shadow.camera.right = 950
+  keyLight.shadow.camera.top = 950
+  keyLight.shadow.camera.bottom = -950
+  const ambient = new THREE.HemisphereLight('#dbeafe', '#475569', 1.08)
   scene.add(keyLight, ambient)
   let environmentLayer = createFallbackWorldGroup()
   scene.add(environmentLayer)
@@ -438,7 +438,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         const loadStartedAtMs = performance.now()
         const snapshot = await loadDroneMapWorld({
           center,
-          radiusM: 1_850,
+          radiusM: 4_250,
           zoom: 14,
           signal: controller.signal,
         })
@@ -494,7 +494,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       worldCenter = desiredCenter
       worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
       loadWorldFor(worldCenter)
-    } else if (centerDistanceM(worldCenter, desiredCenter) > 520) {
+    } else if (centerDistanceM(worldCenter, desiredCenter) > 1_250) {
       worldCenter = desiredCenter
       worldCenterKey = `${worldCenter.lon.toFixed(6)}:${worldCenter.lat.toFixed(6)}`
       loadWorldFor(worldCenter)
@@ -503,6 +503,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const center = worldCenter ?? desiredCenter
     const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)
+    tickDroneMapWorldGroup(environmentLayer, frameStartedAtMs)
     updateWeather(weatherLayer, environment, frame)
     let focusPoint: LocalPoint | null = null
     let focusData: DronePackData | null = null

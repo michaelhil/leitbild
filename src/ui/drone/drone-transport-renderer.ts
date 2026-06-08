@@ -3,16 +3,7 @@ import type {
   DroneMapWorldSnapshot,
   DroneWorldLineFeature,
   DroneWorldPoint,
-  DroneWorldPolygonFeature,
 } from './drone-map-world.ts'
-
-interface BuildingClip {
-  readonly ring: ReadonlyArray<DroneWorldPoint>
-  readonly minX: number
-  readonly maxX: number
-  readonly minZ: number
-  readonly maxZ: number
-}
 
 interface GeometryBucket {
   readonly material: THREE.Material
@@ -26,12 +17,13 @@ const roadPalette = (
 ): string => {
   if (feature.kind === 'rail') return '#66717f'
   if (feature.kind === 'waterway') return '#2aa8c8'
-  if (feature.className === 'motorway') return '#e58152'
-  if (feature.className === 'trunk') return '#e4a15a'
-  if (feature.className === 'primary') return '#d9b84f'
-  if (feature.className === 'secondary') return '#d8cd83'
-  if (feature.className === 'tertiary') return '#ddd4a4'
-  return '#ece9df'
+  if (feature.className === 'motorway') return '#4b5563'
+  if (feature.className === 'trunk') return '#505a66'
+  if (feature.className === 'primary') return '#59636e'
+  if (feature.className === 'secondary') return '#646c73'
+  if (feature.className === 'tertiary') return '#737a7d'
+  if (feature.className === 'path' || feature.className === 'track') return '#b7aa89'
+  return '#858985'
 }
 
 const stableHash = (value: string): number => {
@@ -102,88 +94,6 @@ const makeRoadMaterial = (
     opacity,
     depthWrite: !transparent,
   })
-
-const pointInRing = (
-  point: DroneWorldPoint,
-  ring: ReadonlyArray<DroneWorldPoint>,
-): boolean => {
-  let inside = false
-  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
-    const current = ring[index]!
-    const previous = ring[previousIndex]!
-    const intersects = ((current.z > point.z) !== (previous.z > point.z))
-      && point.x < (previous.x - current.x) * (point.z - current.z) / (previous.z - current.z + Number.EPSILON) + current.x
-    if (intersects) inside = !inside
-  }
-  return inside
-}
-
-const buildingClipsFrom = (
-  polygons: ReadonlyArray<DroneWorldPolygonFeature>,
-): ReadonlyArray<BuildingClip> =>
-  polygons.flatMap(feature => {
-    if (feature.kind !== 'building') return []
-    const ring = feature.rings[0]
-    if (!ring || ring.length < 3) return []
-    let minX = Number.POSITIVE_INFINITY
-    let maxX = Number.NEGATIVE_INFINITY
-    let minZ = Number.POSITIVE_INFINITY
-    let maxZ = Number.NEGATIVE_INFINITY
-    for (const point of ring) {
-      minX = Math.min(minX, point.x)
-      maxX = Math.max(maxX, point.x)
-      minZ = Math.min(minZ, point.z)
-      maxZ = Math.max(maxZ, point.z)
-    }
-    return [{ ring, minX, maxX, minZ, maxZ }]
-  })
-
-const pointInsideBuilding = (
-  point: DroneWorldPoint,
-  clips: ReadonlyArray<BuildingClip>,
-): boolean => {
-  for (const clip of clips) {
-    if (point.x < clip.minX || point.x > clip.maxX || point.z < clip.minZ || point.z > clip.maxZ) continue
-    if (pointInRing(point, clip.ring)) return true
-  }
-  return false
-}
-
-const segmentVisible = (
-  start: DroneWorldPoint,
-  end: DroneWorldPoint,
-  line: DroneWorldLineFeature,
-  clips: ReadonlyArray<BuildingClip>,
-): boolean => {
-  if (line.kind !== 'road' || clips.length === 0) return true
-  const midpoint = {
-    x: (start.x + end.x) / 2,
-    z: (start.z + end.z) / 2,
-  }
-  return !pointInsideBuilding(midpoint, clips)
-}
-
-const visibleRunsForLine = (
-  line: DroneWorldLineFeature,
-  clips: ReadonlyArray<BuildingClip>,
-): ReadonlyArray<ReadonlyArray<DroneWorldPoint>> => {
-  const runs: DroneWorldPoint[][] = []
-  let current: DroneWorldPoint[] = []
-  for (let index = 0; index < line.path.length - 1; index += 1) {
-    const start = line.path[index]!
-    const end = line.path[index + 1]!
-    const segmentLength = Math.hypot(end.x - start.x, end.z - start.z)
-    if (segmentLength < 0.2 || !segmentVisible(start, end, line, clips)) {
-      if (current.length >= 2) runs.push(current)
-      current = []
-      continue
-    }
-    if (current.length === 0) current.push(start)
-    current.push(end)
-  }
-  if (current.length >= 2) runs.push(current)
-  return runs
-}
 
 const simplifiedPath = (
   path: ReadonlyArray<DroneWorldPoint>,
@@ -265,14 +175,11 @@ const createRibbonGeometry = (
   lines: ReadonlyArray<DroneWorldLineFeature>,
   widthFor: (line: DroneWorldLineFeature) => number,
   y: number,
-  clips: ReadonlyArray<BuildingClip>,
 ): THREE.BufferGeometry | null => {
   const positions: number[] = []
   const indices: number[] = []
   for (const line of lines) {
-    for (const run of visibleRunsForLine(line, clips)) {
-      addRibbonRun(positions, indices, run, widthFor(line), y)
-    }
+    addRibbonRun(positions, indices, line.path, widthFor(line), y)
   }
   if (positions.length === 0 || indices.length === 0) return null
   const geometry = new THREE.BufferGeometry()
@@ -306,9 +213,67 @@ const addDashQuad = (
   indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
 }
 
+const addSegmentLineQuad = (
+  positions: number[],
+  indices: number[],
+  start: DroneWorldPoint,
+  end: DroneWorldPoint,
+  lateralOffsetM: number,
+  halfWidthM: number,
+  y: number,
+): void => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const length = Math.hypot(dx, dz)
+  if (length < 0.2) return
+  const ux = dx / length
+  const uz = dz / length
+  const nx = -uz
+  const nz = ux
+  const sx = start.x + nx * lateralOffsetM
+  const sz = start.z + nz * lateralOffsetM
+  const ex = end.x + nx * lateralOffsetM
+  const ez = end.z + nz * lateralOffsetM
+  const base = positions.length / 3
+  positions.push(
+    sx + nx * halfWidthM, y, sz + nz * halfWidthM,
+    sx - nx * halfWidthM, y, sz - nz * halfWidthM,
+    ex + nx * halfWidthM, y, ez + nz * halfWidthM,
+    ex - nx * halfWidthM, y, ez - nz * halfWidthM,
+  )
+  indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
+}
+
+const createRoadEdgeLineGeometry = (
+  lines: ReadonlyArray<DroneWorldLineFeature>,
+  config: { readonly y: number; readonly halfWidthM: number },
+): THREE.BufferGeometry | null => {
+  const positions: number[] = []
+  const indices: number[] = []
+  let segmentCount = 0
+  for (const line of lines) {
+    if (line.kind !== 'road' || line.widthM < 10) continue
+    const offset = Math.max(2.8, line.widthM * 0.5 - 1.35)
+    for (let index = 0; index < line.path.length - 1 && segmentCount < 4_000; index += 1) {
+      const start = line.path[index]!
+      const end = line.path[index + 1]!
+      if (Math.hypot(end.x - start.x, end.z - start.z) < 7) continue
+      addSegmentLineQuad(positions, indices, start, end, offset, config.halfWidthM, config.y)
+      addSegmentLineQuad(positions, indices, start, end, -offset, config.halfWidthM, config.y)
+      segmentCount += 2
+    }
+  }
+  if (positions.length === 0 || indices.length === 0) return null
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
 const createRoadMarkingGeometry = (
   lines: ReadonlyArray<DroneWorldLineFeature>,
-  clips: ReadonlyArray<BuildingClip>,
   config: { readonly y: number; readonly halfWidthM: number; readonly halfLengthM: number },
 ): THREE.BufferGeometry | null => {
   const positions: number[] = []
@@ -317,30 +282,28 @@ const createRoadMarkingGeometry = (
   for (const line of lines) {
     if (line.kind !== 'road' || line.widthM < 8) continue
     const dashOffset = 6 + (stableHash(line.id) % 13)
-    for (const run of visibleRunsForLine(line, clips)) {
-      for (let index = 0; index < run.length - 1; index += 1) {
-        const start = run[index]!
-        const end = run[index + 1]!
-        const dx = end.x - start.x
-        const dz = end.z - start.z
-        const length = Math.hypot(dx, dz)
-        if (length < 20) continue
-        const ux = dx / length
-        const uz = dz / length
-        for (let distance = dashOffset; distance < length - config.halfLengthM && dashCount < 2_200; distance += 31) {
-          addDashQuad(
-            positions,
-            indices,
-            start.x + ux * distance,
-            start.z + uz * distance,
-            ux,
-            uz,
-            config.halfLengthM,
-            config.halfWidthM,
-            config.y,
-          )
-          dashCount += 1
-        }
+    for (let index = 0; index < line.path.length - 1; index += 1) {
+      const start = line.path[index]!
+      const end = line.path[index + 1]!
+      const dx = end.x - start.x
+      const dz = end.z - start.z
+      const length = Math.hypot(dx, dz)
+      if (length < 20) continue
+      const ux = dx / length
+      const uz = dz / length
+      for (let distance = dashOffset; distance < length - config.halfLengthM && dashCount < 2_800; distance += 31) {
+        addDashQuad(
+          positions,
+          indices,
+          start.x + ux * distance,
+          start.z + uz * distance,
+          ux,
+          uz,
+          config.halfLengthM,
+          config.halfWidthM,
+          config.y,
+        )
+        dashCount += 1
       }
     }
   }
@@ -431,7 +394,6 @@ export const createTransportGeometryGroup = (
   snapshot: DroneMapWorldSnapshot,
 ): THREE.Group => {
   const group = new THREE.Group()
-  const clips = buildingClipsFrom(snapshot.polygons)
   const lines = transportLinesForDrawing(snapshot.lines)
   const buckets = new Map<string, GeometryBucket>()
 
@@ -440,14 +402,14 @@ export const createTransportGeometryGroup = (
     buckets,
     'waterway-casing',
     makeRoadMaterial('#075985', true, 0.5),
-    createRibbonGeometry(waterways, line => line.widthM + 4, 0.075, []),
+    createRibbonGeometry(waterways, line => line.widthM + 4, 0.075),
     { receiveShadow: false, renderOrder: 1 },
   )
   addBucketGeometry(
     buckets,
     'waterway-fill',
-    makeRoadMaterial(roadPalette({ id: 'waterway', kind: 'waterway', className: 'river', path: [], widthM: 5 }), true, 0.82),
-    createRibbonGeometry(waterways, line => line.widthM, 0.095, []),
+    makeRoadMaterial('#1fa8d1', true, 0.82),
+    createRibbonGeometry(waterways, line => line.widthM, 0.095),
     { receiveShadow: false, renderOrder: 2 },
   )
 
@@ -456,23 +418,30 @@ export const createTransportGeometryGroup = (
     buckets,
     'rail-casing',
     makeRoadMaterial('#1f2937'),
-    createRibbonGeometry(rails, line => line.widthM + 3.5, 0.105, []),
+    createRibbonGeometry(rails, line => line.widthM + 3.5, 0.105),
     { receiveShadow: true, renderOrder: 3 },
   )
   addBucketGeometry(
     buckets,
     'rail-fill',
     makeRoadMaterial('#94a3b8'),
-    createRibbonGeometry(rails, line => line.widthM, 0.13, []),
+    createRibbonGeometry(rails, line => line.widthM, 0.13),
     { receiveShadow: true, renderOrder: 4 },
   )
 
   const roads = lines.filter(line => line.kind === 'road')
   addBucketGeometry(
     buckets,
+    'road-shoulder',
+    makeRoadMaterial('#d7d0bf'),
+    createRibbonGeometry(roads, line => line.widthM + Math.max(6.5, line.widthM * 0.28), 0.1),
+    { receiveShadow: true, renderOrder: 5 },
+  )
+  addBucketGeometry(
+    buckets,
     'road-casing',
-    makeRoadMaterial('#475569'),
-    createRibbonGeometry(roads, line => line.widthM + Math.max(3.5, line.widthM * 0.18), 0.11, clips),
+    makeRoadMaterial('#29313a'),
+    createRibbonGeometry(roads, line => line.widthM + Math.max(3.5, line.widthM * 0.16), 0.115),
     { receiveShadow: true, renderOrder: 5 },
   )
   for (const [key, styledRoads] of linesByStyle(roads)) {
@@ -483,7 +452,7 @@ export const createTransportGeometryGroup = (
       buckets,
       `road-fill:${key}`,
       makeRoadMaterial(color),
-      createRibbonGeometry(styledRoads, item => item.widthM, 0.135, clips),
+      createRibbonGeometry(styledRoads, item => item.widthM, 0.14),
       { receiveShadow: true, renderOrder: 6 },
     )
   }
@@ -492,14 +461,21 @@ export const createTransportGeometryGroup = (
     buckets,
     'road-marking-shadow',
     new THREE.MeshBasicMaterial({ color: '#0f172a', transparent: true, opacity: 0.32, depthWrite: false }),
-    createRoadMarkingGeometry(roads, clips, { y: 0.162, halfWidthM: 0.46, halfLengthM: 5.2 }),
+    createRoadMarkingGeometry(roads, { y: 0.168, halfWidthM: 0.46, halfLengthM: 5.2 }),
+    { receiveShadow: false, renderOrder: 8 },
+  )
+  addBucketGeometry(
+    buckets,
+    'road-edge-lines',
+    new THREE.MeshBasicMaterial({ color: '#e7e5d2', transparent: true, opacity: 0.72, depthWrite: false }),
+    createRoadEdgeLineGeometry(roads, { y: 0.176, halfWidthM: 0.16 }),
     { receiveShadow: false, renderOrder: 8 },
   )
   addBucketGeometry(
     buckets,
     'road-marking-fill',
-    new THREE.MeshBasicMaterial({ color: '#fff7ed', transparent: true, opacity: 0.96, depthWrite: false }),
-    createRoadMarkingGeometry(roads, clips, { y: 0.174, halfWidthM: 0.22, halfLengthM: 4.7 }),
+    new THREE.MeshBasicMaterial({ color: '#fefce8', transparent: true, opacity: 0.96, depthWrite: false }),
+    createRoadMarkingGeometry(roads, { y: 0.18, halfWidthM: 0.22, halfLengthM: 4.7 }),
     { receiveShadow: false, renderOrder: 9 },
   )
 

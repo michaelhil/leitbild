@@ -16,6 +16,11 @@ const makeMaterial = (
 ): THREE.MeshStandardMaterial =>
   new THREE.MeshStandardMaterial({ color, roughness, metalness })
 
+const colorFromHex = (
+  color: string,
+): THREE.Color =>
+  new THREE.Color(color)
+
 const surfacePalette = (
   feature: DroneWorldPolygonFeature,
 ): string => {
@@ -78,8 +83,8 @@ const shapeFor = (
 const createGroundTexture = (): THREE.Texture | null => {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 256
+  canvas.width = 512
+  canvas.height = 512
   const context = canvas.getContext('2d')
   if (!context) return null
   const image = context.createImageData(canvas.width, canvas.height)
@@ -87,11 +92,13 @@ const createGroundTexture = (): THREE.Texture | null => {
     const pixel = index / 4
     const x = pixel % canvas.width
     const y = Math.floor(pixel / canvas.width)
-    const noise = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
-    const grain = Math.floor((noise - Math.floor(noise)) * 20)
-    image.data[index] = 92 + grain
-    image.data[index + 1] = 112 + grain
-    image.data[index + 2] = 93 + grain
+    const broad = Math.sin(x * 0.048 + y * 0.021) * 0.5 + Math.sin(x * 0.013 - y * 0.039) * 0.5
+    const fineNoise = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
+    const grain = (fineNoise - Math.floor(fineNoise)) * 24
+    const green = 94 + broad * 18 + grain
+    image.data[index] = Math.round(74 + broad * 10 + grain * 0.45)
+    image.data[index + 1] = Math.round(green)
+    image.data[index + 2] = Math.round(75 + broad * 8 + grain * 0.38)
     image.data[index + 3] = 255
   }
   context.putImageData(image, 0, 0)
@@ -108,7 +115,7 @@ const createBaseGround = (
 ): THREE.Mesh => {
   const texture = createGroundTexture()
   const material = new THREE.MeshStandardMaterial({
-    color: '#6d7f62',
+    color: '#617458',
     roughness: 0.95,
     metalness: 0.01,
     ...(texture === null ? {} : { map: texture }),
@@ -119,6 +126,99 @@ const createBaseGround = (
   ground.receiveShadow = true
   return ground
 }
+
+const createWaterMaterial = (): THREE.ShaderMaterial =>
+  new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {
+      timeSeconds: { value: 0 },
+      deepColor: { value: colorFromHex('#0d5f83') },
+      shallowColor: { value: colorFromHex('#54c4d8') },
+      foamColor: { value: colorFromHex('#d9fbff') },
+      opacity: { value: 0.84 },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float timeSeconds;
+      uniform vec3 deepColor;
+      uniform vec3 shallowColor;
+      uniform vec3 foamColor;
+      uniform float opacity;
+      varying vec3 vWorldPosition;
+
+      float wave(vec2 p, float scale, float speed) {
+        return sin(p.x * scale + p.y * scale * 0.37 + timeSeconds * speed)
+          * sin(p.y * scale * 0.71 - timeSeconds * speed * 0.61);
+      }
+
+      void main() {
+        vec2 p = vWorldPosition.xz;
+        float ripples = wave(p, 0.034, 0.9) * 0.5 + wave(p, 0.095, 1.7) * 0.28 + wave(p, 0.19, 2.3) * 0.12;
+        float sheen = smoothstep(0.55, 0.94, ripples);
+        vec3 color = mix(deepColor, shallowColor, 0.44 + ripples * 0.18);
+        color = mix(color, foamColor, sheen * 0.38);
+        gl_FragColor = vec4(color, opacity);
+      }
+    `,
+  })
+
+const createBuildingWallMaterial = (
+  color: string,
+): THREE.ShaderMaterial =>
+  new THREE.ShaderMaterial({
+    uniforms: {
+      baseColor: { value: colorFromHex(color) },
+      windowColor: { value: colorFromHex('#c7e5ff') },
+      darkWindowColor: { value: colorFromHex('#263241') },
+      sunDirection: { value: new THREE.Vector3(-0.42, 0.75, 0.34).normalize() },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+      varying vec3 vWorldNormal;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 baseColor;
+      uniform vec3 windowColor;
+      uniform vec3 darkWindowColor;
+      uniform vec3 sunDirection;
+      varying vec3 vWorldPosition;
+      varying vec3 vWorldNormal;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+      }
+
+      void main() {
+        vec3 n = normalize(vWorldNormal);
+        float light = 0.46 + max(dot(n, sunDirection), 0.0) * 0.48;
+        float verticalWall = 1.0 - smoothstep(0.42, 0.78, abs(n.y));
+        vec2 facadeCoord = abs(n.x) > abs(n.z) ? vec2(vWorldPosition.z, vWorldPosition.y) : vec2(vWorldPosition.x, vWorldPosition.y);
+        vec2 cell = vec2(fract(facadeCoord.x / 5.4), fract(facadeCoord.y / 3.55));
+        vec2 floorId = floor(facadeCoord / vec2(5.4, 3.55));
+        float windowMask = step(0.22, cell.x) * step(cell.x, 0.74) * step(0.24, cell.y) * step(cell.y, 0.68);
+        float litMask = step(0.73, hash(floorId));
+        float grime = hash(floor(vWorldPosition.xz * 0.055)) * 0.12;
+        vec3 facade = baseColor * (light + grime);
+        vec3 glass = mix(darkWindowColor, windowColor, litMask);
+        vec3 color = mix(facade, glass, windowMask * verticalWall * 0.72);
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `,
+  })
 
 interface GeometryBucket {
   readonly material: THREE.Material
@@ -152,6 +252,7 @@ const mergeGeometries = (
   geometries: ReadonlyArray<THREE.BufferGeometry>,
 ): THREE.BufferGeometry | null => {
   const positions: number[] = []
+  const uvs: number[] = []
   const indices: number[] = []
   let vertexOffset = 0
   for (const geometry of geometries) {
@@ -160,8 +261,14 @@ const mergeGeometries = (
       geometry.dispose()
       continue
     }
+    const uv = geometry.getAttribute('uv')
     for (let index = 0; index < position.count; index += 1) {
       positions.push(position.getX(index), position.getY(index), position.getZ(index))
+      if (uv instanceof THREE.BufferAttribute) {
+        uvs.push(uv.getX(index), uv.getY(index))
+      } else {
+        uvs.push(0, 0)
+      }
     }
     const geometryIndex = geometry.getIndex()
     if (geometryIndex) {
@@ -179,6 +286,7 @@ const mergeGeometries = (
   if (positions.length === 0 || indices.length === 0) return null
   const merged = new THREE.BufferGeometry()
   merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   merged.setIndex(indices)
   merged.computeVertexNormals()
   merged.computeBoundingSphere()
@@ -213,18 +321,22 @@ const createMergedSurfaceMeshes = (
     const geometry = new THREE.ShapeGeometry(shape, 4)
     geometry.rotateX(-Math.PI / 2)
     geometry.translate(0, isWater ? 0.035 : 0.01, 0)
+    const material = isWater
+      ? createWaterMaterial()
+      : new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.9,
+          metalness: 0.01,
+          transparent: false,
+          opacity: 1,
+        })
+    if (isWater) material.userData.droneWaterMaterial = true
     addBucketGeometry(
       buckets,
-      `${feature.kind}:${feature.className}:${color}`,
-      new THREE.MeshStandardMaterial({
-        color,
-        roughness: isWater ? 0.45 : 0.9,
-        metalness: isWater ? 0.08 : 0.01,
-        transparent: isWater,
-        opacity: isWater ? 0.82 : 0.88,
-      }),
+      isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
+      material,
       geometry,
-      { receiveShadow: true, castShadow: false },
+      { receiveShadow: !isWater, castShadow: false },
     )
   }
   return meshesFromBuckets(buckets)
@@ -244,7 +356,9 @@ const createMergedBuildingMeshes = (
       ? '#a8a29e'
       : feature.className === 'commercial'
         ? '#b8b4a7'
-        : '#c9c4ba'
+        : feature.className === 'apartments'
+          ? '#bbb7ad'
+          : '#c7c2b8'
     const wallGeometry = new THREE.ExtrudeGeometry(shape, {
       depth: height,
       bevelEnabled: false,
@@ -254,18 +368,20 @@ const createMergedBuildingMeshes = (
     addBucketGeometry(
       buckets,
       `building-wall:${feature.className}:${wallColor}`,
-      makeMaterial(wallColor, 0.76, 0.03),
+      createBuildingWallMaterial(wallColor),
       wallGeometry,
-      { receiveShadow: true, castShadow: false },
+      { receiveShadow: true, castShadow: true },
     )
 
     const roofGeometry = new THREE.ShapeGeometry(shape, 4)
     roofGeometry.rotateX(-Math.PI / 2)
     roofGeometry.translate(0, minHeight + height + 0.08, 0)
+    const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
+    const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
     addBucketGeometry(
       buckets,
-      'building-roof:#6b7280',
-      makeMaterial('#6b7280', 0.84, 0.02),
+      `building-roof:${Math.round(roofShade * 10)}`,
+      makeMaterial(roofColor, 0.88, 0.02),
       roofGeometry,
       { receiveShadow: true, castShadow: false },
     )
@@ -308,6 +424,106 @@ const polygonBounds = (
   return { minX, maxX, minZ, maxZ }
 }
 
+const polygonCentroid = (
+  ring: ReadonlyArray<DroneWorldPoint>,
+): DroneWorldPoint => {
+  if (ring.length === 0) return { x: 0, z: 0 }
+  let signedArea = 0
+  let cx = 0
+  let cz = 0
+  for (let index = 0; index < ring.length; index += 1) {
+    const current = ring[index]!
+    const next = ring[(index + 1) % ring.length]!
+    const cross = current.x * next.z - next.x * current.z
+    signedArea += cross
+    cx += (current.x + next.x) * cross
+    cz += (current.z + next.z) * cross
+  }
+  const area = signedArea * 0.5
+  if (Math.abs(area) < 0.001) {
+    return {
+      x: ring.reduce((sum, point) => sum + point.x, 0) / ring.length,
+      z: ring.reduce((sum, point) => sum + point.z, 0) / ring.length,
+    }
+  }
+  return { x: cx / (6 * area), z: cz / (6 * area) }
+}
+
+const createRooftopFixtures = (
+  snapshot: DroneMapWorldSnapshot,
+): THREE.Group => {
+  const buildings = snapshot.polygons
+    .filter(feature => feature.kind === 'building' && feature.distanceM < Math.min(2_200, snapshot.radiusM * 0.55) && feature.areaM2 > 80)
+    .slice(0, 900)
+  const fixtures: Array<{
+    readonly x: number
+    readonly y: number
+    readonly z: number
+    readonly sx: number
+    readonly sy: number
+    readonly sz: number
+    readonly rotation: number
+  }> = []
+  for (const building of buildings) {
+    const outer = building.rings[0]
+    if (!outer) continue
+    const random = seededRandom(stableHash(`roof:${building.id}`))
+    const bounds = polygonBounds(outer)
+    const target = building.areaM2 > 1_800 ? 3 : building.areaM2 > 650 ? 2 : 1
+    let added = 0
+    for (let attempt = 0; attempt < target * 10 && added < target; attempt += 1) {
+      const candidate = attempt === 0
+        ? polygonCentroid(outer)
+        : {
+            x: bounds.minX + random() * (bounds.maxX - bounds.minX),
+            z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
+          }
+      if (!pointInRing(candidate, outer)) continue
+      const height = building.minHeightM ?? 0
+      fixtures.push({
+        x: candidate.x,
+        y: height + (building.heightM ?? 8) + 0.52,
+        z: candidate.z,
+        sx: 1.2 + random() * 2.6,
+        sy: 0.45 + random() * 0.9,
+        sz: 1.0 + random() * 2.2,
+        rotation: random() * Math.PI * 2,
+      })
+      added += 1
+    }
+  }
+  const group = new THREE.Group()
+  if (fixtures.length === 0) return group
+  const hvac = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    makeMaterial('#aeb7bf', 0.72, 0.04),
+    fixtures.length,
+  )
+  const vent = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.42, 0.52, 1.4, 10),
+    makeMaterial('#6f7a84', 0.74, 0.04),
+    fixtures.length,
+  )
+  const dummy = new THREE.Object3D()
+  for (const [index, fixture] of fixtures.entries()) {
+    dummy.position.set(fixture.x, fixture.y, fixture.z)
+    dummy.rotation.set(0, fixture.rotation, 0)
+    dummy.scale.set(fixture.sx, fixture.sy, fixture.sz)
+    dummy.updateMatrix()
+    hvac.setMatrixAt(index, dummy.matrix)
+    dummy.position.set(fixture.x + Math.cos(fixture.rotation) * fixture.sx * 0.55, fixture.y + fixture.sy * 0.62, fixture.z + Math.sin(fixture.rotation) * fixture.sz * 0.55)
+    dummy.scale.set(0.65, 0.65, 0.65)
+    dummy.updateMatrix()
+    vent.setMatrixAt(index, dummy.matrix)
+  }
+  hvac.instanceMatrix.needsUpdate = true
+  vent.instanceMatrix.needsUpdate = true
+  hvac.receiveShadow = true
+  vent.receiveShadow = true
+  group.add(hvac, vent)
+  return group
+}
+
 const vegetationFeatures = (
   snapshot: DroneMapWorldSnapshot,
 ): ReadonlyArray<DroneWorldPolygonFeature> =>
@@ -320,14 +536,15 @@ const createVegetation = (
 ): THREE.Group => {
   const features = vegetationFeatures(snapshot)
   const group = new THREE.Group()
-  const maxTrees = 420
+  const maxTrees = 1_450
   const positions: Array<{ readonly x: number; readonly z: number; readonly scale: number }> = []
   for (const feature of features) {
     const outer = feature.rings[0]
     if (!outer || outer.length < 3 || positions.length >= maxTrees) continue
     const bounds = polygonBounds(outer)
     const area = Math.abs(polygonArea(outer))
-    const targetCount = clamp(Math.floor(area / (feature.className === 'residential' ? 18_000 : 7_500)), 2, 42)
+    const distanceFactor = feature.distanceM < 1_500 ? 1 : feature.distanceM < 3_000 ? 0.62 : 0.32
+    const targetCount = clamp(Math.floor(area / (feature.className === 'residential' ? 11_000 : 4_800) * distanceFactor), 2, 80)
     const random = seededRandom(stableHash(feature.id))
     let added = 0
     for (let attempt = 0; attempt < targetCount * 12 && positions.length < maxTrees && added < targetCount; attempt += 1) {
@@ -346,13 +563,18 @@ const createVegetation = (
   }
   if (positions.length === 0) return group
   const trunk = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.55, 0.78, 5.2, 7),
+    new THREE.CylinderGeometry(0.5, 0.74, 5.1, 8),
     makeMaterial('#6f3d1d', 0.9, 0.01),
     positions.length,
   )
   const canopy = new THREE.InstancedMesh(
-    new THREE.ConeGeometry(3.2, 8.5, 9),
-    makeMaterial('#1f7a3a', 0.88, 0.01),
+    new THREE.DodecahedronGeometry(3.6, 0),
+    makeMaterial('#1f7a3a', 0.9, 0.01),
+    positions.length,
+  )
+  const canopyTop = new THREE.InstancedMesh(
+    new THREE.DodecahedronGeometry(2.7, 0),
+    makeMaterial('#2f8f45', 0.9, 0.01),
     positions.length,
   )
   const dummy = new THREE.Object3D()
@@ -365,12 +587,18 @@ const createVegetation = (
     dummy.position.set(position.x, 7.5 * position.scale, position.z)
     dummy.updateMatrix()
     canopy.setMatrixAt(index, dummy.matrix)
+    dummy.position.set(position.x + 0.8 * position.scale, 10.2 * position.scale, position.z - 0.4 * position.scale)
+    dummy.scale.set(position.scale * 0.88, position.scale * 0.82, position.scale * 0.88)
+    dummy.updateMatrix()
+    canopyTop.setMatrixAt(index, dummy.matrix)
   }
   trunk.receiveShadow = true
   trunk.castShadow = false
   canopy.castShadow = false
   canopy.receiveShadow = true
-  group.add(trunk, canopy)
+  canopyTop.castShadow = false
+  canopyTop.receiveShadow = true
+  group.add(trunk, canopy, canopyTop)
   return group
 }
 
@@ -481,6 +709,7 @@ export const createDroneMapWorldGroup = (
     surfaceGroup,
     transportGroup,
     buildingGroup,
+    createRooftopFixtures(snapshot),
     createVegetation(snapshot),
     createPoiBeacons(snapshot),
   )
@@ -499,4 +728,21 @@ export const createDroneMapWorldGroup = (
     pointCount: snapshot.points.length,
   }
   return group
+}
+
+export const tickDroneMapWorldGroup = (
+  group: THREE.Object3D,
+  nowMs: number,
+): void => {
+  const timeSeconds = nowMs / 1000
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh)) return
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    for (const material of materials) {
+      if (material.userData.droneWaterMaterial !== true) continue
+      const uniformed = material as THREE.ShaderMaterial
+      const uniform = uniformed.uniforms.timeSeconds
+      if (uniform) uniform.value = timeSeconds
+    }
+  })
 }
