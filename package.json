@@ -13,6 +13,7 @@
     "maps:download": "bun run scripts/maps/download-osm.ts",
     "maps:fonts": "bun run scripts/maps/install-map-fonts.ts",
     "maps:build": "bun run scripts/maps/build-vector-tiles.ts",
+    "maps:scenery:audit": "bun run scripts/maps/audit-scenery.ts",
     "maps:terrain:ingest": "bun run scripts/maps/ingest-terrain.ts",
     "maps:terrain:validate": "bun run scripts/maps/validate-terrain.ts",
     "maps:rebuild": "bun run scripts/maps/rebuild-vector-map.ts",

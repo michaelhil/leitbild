@@ -232,6 +232,7 @@ const createBuildingWallMaterial = (
     color,
     roughness: 0.84,
     metalness: 0.02,
+    side: THREE.DoubleSide,
   })
 
 interface GeometryBucket {

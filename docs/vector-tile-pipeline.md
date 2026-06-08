@@ -58,6 +58,18 @@ LEITBILD_MAP_ROOT=/opt/leitbild/maps bun run maps:status
 
 The build id defaults to a timestamp. Set `LEITBILD_MAP_BUILD_ID` when you want a predictable release name.
 
+Audit scenery coverage around a flight area with:
+
+```sh
+LEITBILD_MAP_ROOT=/opt/leitbild/maps \
+LEITBILD_SCENERY_AUDIT_LON=10.746 \
+LEITBILD_SCENERY_AUDIT_LAT=59.905 \
+LEITBILD_SCENERY_AUDIT_RADIUS_M=1750 \
+bun run maps:scenery:audit
+```
+
+The audit reads the promoted `current/norway.pmtiles` archive directly and reports feature/class counts for the source-backed layers used by Three.js scenery: buildings, roads, landcover, landuse, water, waterways, aeroway, POIs, and places. Use it before changing renderer heuristics; sparse output should first be explained by source-layer coverage.
+
 Recommended memory settings:
 
 ```sh

@@ -352,15 +352,20 @@ const addBucketGeometry = (
   key: string,
   material: THREE.Material,
   geometry: THREE.BufferGeometry | null,
-  config: { readonly receiveShadow: boolean; readonly renderOrder: number },
+  config: {
+    readonly receiveShadow: boolean
+    readonly renderOrder: number
+    readonly polygonOffsetFactor?: number
+    readonly polygonOffsetUnits?: number
+  },
 ): void => {
   if (!geometry) {
     material.dispose()
     return
   }
   material.polygonOffset = true
-  material.polygonOffsetFactor = -2
-  material.polygonOffsetUnits = -config.renderOrder * 6
+  material.polygonOffsetFactor = config.polygonOffsetFactor ?? -2
+  material.polygonOffsetUnits = config.polygonOffsetUnits ?? -config.renderOrder * 6
   const existing = buckets.get(key)
   if (existing) {
     existing.geometries.push(geometry)
@@ -511,22 +516,22 @@ export const createTransportGeometryGroup = (
     buckets,
     'road-marking-shadow',
     new THREE.MeshBasicMaterial({ color: '#0f172a', transparent: true, opacity: 0.32, depthWrite: false }),
-    createRoadMarkingGeometry(roads, { y: 0.49, halfWidthM: 0.46, halfLengthM: 5.2 }, terrain),
-    { receiveShadow: false, renderOrder: 8 },
+    createRoadMarkingGeometry(roads, { y: 0.6, halfWidthM: 0.46, halfLengthM: 5.2 }, terrain),
+    { receiveShadow: false, renderOrder: 8, polygonOffsetFactor: -8, polygonOffsetUnits: -420 },
   )
   addBucketGeometry(
     buckets,
     'road-edge-lines',
     new THREE.MeshBasicMaterial({ color: '#e7e5d2', transparent: true, opacity: 0.72, depthWrite: false }),
-    createRoadEdgeLineGeometry(roads, { y: 0.53, halfWidthM: 0.16 }, terrain),
-    { receiveShadow: false, renderOrder: 8 },
+    createRoadEdgeLineGeometry(roads, { y: 0.68, halfWidthM: 0.16 }, terrain),
+    { receiveShadow: false, renderOrder: 8, polygonOffsetFactor: -8, polygonOffsetUnits: -460 },
   )
   addBucketGeometry(
     buckets,
     'road-marking-fill',
     new THREE.MeshBasicMaterial({ color: '#fefce8', transparent: true, opacity: 0.96, depthWrite: false }),
-    createRoadMarkingGeometry(roads, { y: 0.57, halfWidthM: 0.22, halfLengthM: 4.7 }, terrain),
-    { receiveShadow: false, renderOrder: 9 },
+    createRoadMarkingGeometry(roads, { y: 0.76, halfWidthM: 0.22, halfLengthM: 4.7 }, terrain),
+    { receiveShadow: false, renderOrder: 9, polygonOffsetFactor: -10, polygonOffsetUnits: -520 },
   )
 
   group.add(meshesFromBuckets(buckets))
