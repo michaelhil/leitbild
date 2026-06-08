@@ -22,7 +22,9 @@ const roadPalette = (
   if (feature.className === 'primary') return '#59636e'
   if (feature.className === 'secondary') return '#646c73'
   if (feature.className === 'tertiary') return '#737a7d'
-  if (feature.className === 'path' || feature.className === 'track') return '#b7aa89'
+  if (feature.className === 'residential' || feature.className === 'unclassified' || feature.className === 'street') return '#7d827d'
+  if (feature.className === 'service' || feature.className === 'living_street') return '#8d9188'
+  if (feature.className === 'path' || feature.className === 'track' || feature.className === 'footway' || feature.className === 'cycleway') return '#b7aa89'
   return '#858985'
 }
 

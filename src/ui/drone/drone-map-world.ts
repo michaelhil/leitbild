@@ -306,9 +306,11 @@ const lineWidthFor = (
   if (className === 'primary') return 18
   if (className === 'secondary') return 13
   if (className === 'tertiary') return 9
+  if (className === 'residential' || className === 'unclassified' || className === 'street') return 6.4
+  if (className === 'living_street' || className === 'pedestrian') return 4.8
   if (className === 'service') return 5.2
   if (className === 'track') return 3.8
-  if (className === 'path') return 2.4
+  if (className === 'path' || className === 'footway' || className === 'cycleway') return 2.4
   if (className === 'minor') return 6
   return 4.2
 }
@@ -381,9 +383,9 @@ const roadClassPriority = (
   if (className === 'primary') return 6
   if (className === 'secondary') return 5
   if (className === 'tertiary') return 4
-  if (className === 'minor') return 3
+  if (className === 'minor' || className === 'residential' || className === 'unclassified' || className === 'street') return 3
   if (className === 'service') return 2
-  if (className === 'track' || className === 'path') return 1
+  if (className === 'track' || className === 'path' || className === 'footway' || className === 'cycleway' || className === 'pedestrian') return 1
   return 2
 }
 
@@ -414,22 +416,25 @@ const selectWorldLines = (
   features: ReadonlyArray<DroneWorldLineFeature>,
   radiusM: number,
 ): ReadonlyArray<DroneWorldLineFeature> => {
-  const lines = features.filter(feature => {
-    if (feature.distanceM > radiusM * 1.04) return false
-    if (feature.kind === 'waterway' || feature.kind === 'rail') return true
-    const priority = roadClassPriority(feature.className)
-    if (priority >= 5) return true
-    if (priority >= 3) return feature.distanceM <= radiusM * 0.86
-    return feature.distanceM <= radiusM * 0.58
-  })
-  return lines
-    .sort((left, right) => {
-      const priorityDelta = roadClassPriority(right.className) - roadClassPriority(left.className)
-      if (left.kind === 'road' && right.kind === 'road' && priorityDelta !== 0) return priorityDelta
-      return lineSortValue(left) - lineSortValue(right)
-    })
-    .slice(0, 3_400)
-    .sort((a, b) => lineSortValue(a) - lineSortValue(b))
+  const waterwayAndRail = features
+    .filter(feature => (feature.kind === 'waterway' || feature.kind === 'rail') && feature.distanceM <= radiusM * 1.04)
+    .sort((left, right) => lineSortValue(left) - lineSortValue(right))
+    .slice(0, 1_200)
+  const roads = features.filter(feature => feature.kind === 'road' && feature.distanceM <= radiusM * 1.02)
+  const majorRoads = roads
+    .filter(feature => roadClassPriority(feature.className) >= 5)
+    .sort((left, right) => lineSortValue(left) - lineSortValue(right))
+    .slice(0, 2_800)
+  const localRoads = roads
+    .filter(feature => roadClassPriority(feature.className) >= 2 && roadClassPriority(feature.className) < 5 && feature.distanceM <= radiusM * 0.98)
+    .sort((left, right) => lineSortValue(left) - lineSortValue(right))
+    .slice(0, 5_800)
+  const pathsAndTracks = roads
+    .filter(feature => roadClassPriority(feature.className) < 2 && feature.distanceM <= radiusM * 0.72)
+    .sort((left, right) => lineSortValue(left) - lineSortValue(right))
+    .slice(0, 1_800)
+  return [...waterwayAndRail, ...majorRoads, ...localRoads, ...pathsAndTracks]
+    .sort((left, right) => lineSortValue(left) - lineSortValue(right))
 }
 
 const selectWorldPoints = (

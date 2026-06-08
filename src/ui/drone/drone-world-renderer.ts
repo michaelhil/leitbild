@@ -122,9 +122,32 @@ const createBaseGround = (
   })
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 1, 1), material)
   ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.05
+  ground.position.y = -0.16
   ground.receiveShadow = true
   return ground
+}
+
+const surfaceYOffset = (
+  feature: DroneWorldPolygonFeature,
+): number => {
+  const jitter = (stableHash(`${feature.kind}:${feature.className}`) % 7) * 0.0015
+  if (feature.kind === 'water') return 0.072
+  if (feature.kind === 'landuse') return 0.032 + jitter
+  if (feature.kind === 'landcover') return 0.014 + jitter
+  return 0.024 + jitter
+}
+
+const configureSurfaceDepth = (
+  material: THREE.Material,
+  feature: DroneWorldPolygonFeature,
+): void => {
+  material.polygonOffset = true
+  material.polygonOffsetFactor = -1
+  material.polygonOffsetUnits = feature.kind === 'water'
+    ? -8
+    : feature.kind === 'landuse'
+      ? -5
+      : -3
 }
 
 const createWaterMaterial = (): THREE.ShaderMaterial =>
@@ -320,7 +343,7 @@ const createMergedSurfaceMeshes = (
     const isWater = feature.kind === 'water'
     const geometry = new THREE.ShapeGeometry(shape, 4)
     geometry.rotateX(-Math.PI / 2)
-    geometry.translate(0, isWater ? 0.035 : 0.01, 0)
+    geometry.translate(0, surfaceYOffset(feature), 0)
     const material = isWater
       ? createWaterMaterial()
       : new THREE.MeshStandardMaterial({
@@ -331,6 +354,7 @@ const createMergedSurfaceMeshes = (
           opacity: 1,
         })
     if (isWater) material.userData.droneWaterMaterial = true
+    configureSurfaceDepth(material, feature)
     addBucketGeometry(
       buckets,
       isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
