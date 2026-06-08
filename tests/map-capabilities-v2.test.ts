@@ -58,6 +58,56 @@ const refRoot = async () => {
   return mkdtemp(join(tmpdir(), 'leitbild-mapcap-'))
 }
 
+const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
+  const sceneryRoot = join(mapRoot, 'current', 'scenery')
+  await mkdir(sceneryRoot, { recursive: true })
+  await Bun.write(join(sceneryRoot, 'manifest.json'), JSON.stringify({
+    schemaVersion: 1,
+    artifactFormat: 'directory-glb',
+    tileEncoding: 'model/gltf-binary',
+    tilesetId: 'leitbild-scenery-norway',
+    sourceTilesetId: 'leitbild-osm-norway',
+    sourcePmtilesPath: join(mapRoot, 'current', 'norway.pmtiles'),
+    builtAt: '2026-06-08T00:00:00Z',
+    bounds: { minLon: 10.7, minLat: 59.9, maxLon: 10.8, maxLat: 60 },
+    zooms: [14],
+    recipes: [{ id: 'drone-urban-flight' }],
+    tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
+    outputRoot: sceneryRoot,
+    counts: {
+      decodedTileCount: 1,
+      emptyTileCount: 0,
+      writtenTileCount: 1,
+      polygons: 1,
+      lines: 1,
+      labels: 0,
+      buildings: 1,
+      roads: 1,
+      water: 0,
+      vegetation: 0,
+      bytes: 8,
+    },
+    tiles: [{
+      recipeId: 'drone-urban-flight',
+      z: 14,
+      x: 8686,
+      y: 4758,
+      byteLength: 8,
+      centerLon: 10.755615,
+      centerLat: 59.913869,
+      featureCounts: {
+        polygons: 1,
+        lines: 1,
+        labels: 0,
+        buildings: 1,
+        roads: 1,
+        water: 0,
+        vegetation: 0,
+      },
+    }],
+  }))
+}
+
 describe('Map Capability Manifest v2', () => {
   test('synchronous factory returns schemaVersion 2 with base tileset only', () => {
     const manifest = createMapCapabilityManifest()
@@ -119,7 +169,9 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     const scenery = findSceneryTilesets(manifest)
     expect(scenery.length).toBe(1)
     expect(scenery[0]!.availability.status).toBe('unavailable')
-    expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.json')
+    expect(scenery[0]!.artifact.format).toBe('directory-glb')
+    expect(scenery[0]!.artifact.tileEncoding).toBe('model/gltf-binary')
+    expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
   })
 
   test('marks corrupt terrain artifacts unavailable instead of advertising fake elevation', async () => {
@@ -136,11 +188,36 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(terrain[0]!.availability.path).toBe(join(mapRoot, 'current', 'terrain.pmtiles'))
     expect(terrain[0]!.availability.error).toContain('PMTiles archive')
     const scenery = findSceneryTilesets(manifest)
+    expect(scenery[0]!.availability.status).toBe('unavailable')
+    expect(scenery[0]!.availability.path).toBe(join(mapRoot, 'current', 'scenery', 'manifest.json'))
+  })
+
+  test('marks precompiled scenery GLB artifacts available when the manifest exists', async () => {
+    const root = await refRoot()
+    const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
+    await mkdir(join(mapRoot, 'current'), { recursive: true })
+    await Bun.write(join(mapRoot, 'current', 'norway.pmtiles'), 'vector-bytes')
+    await writeSceneryManifest(mapRoot)
+
+    const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
+    const scenery = findSceneryTilesets(manifest)
     expect(scenery[0]!.availability).toMatchObject({
       status: 'available',
-      mode: 'compile-through',
-      path: join(mapRoot, 'current', 'norway.pmtiles'),
+      path: join(mapRoot, 'current', 'scenery', 'manifest.json'),
     })
+    expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
+  })
+
+  test('marks corrupt precompiled scenery manifests unavailable', async () => {
+    const root = await refRoot()
+    const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
+    await mkdir(join(mapRoot, 'current', 'scenery'), { recursive: true })
+    await Bun.write(join(mapRoot, 'current', 'scenery', 'manifest.json'), '{ not valid json')
+
+    const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
+    const scenery = findSceneryTilesets(manifest)
+    expect(scenery[0]!.availability.status).toBe('unavailable')
+    expect(scenery[0]!.availability.error).toContain('JSON')
   })
 
   test('discovers a promoted reference dataset and appends it', async () => {

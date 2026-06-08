@@ -55,6 +55,57 @@ const writeReferenceDataset = async (root: string, datasetId: string, buildId: s
   await symlink(buildDir, currentLink)
 }
 
+const writeSceneryManifest = async (rootDir: string): Promise<void> => {
+  const sceneryRoot = join(rootDir, 'current', 'scenery')
+  await mkdir(join(sceneryRoot, 'drone-urban-flight', '14', '8686'), { recursive: true })
+  await Bun.write(join(sceneryRoot, 'drone-urban-flight', '14', '8686', '4758.glb'), 'glb-bytes')
+  await Bun.write(join(sceneryRoot, 'manifest.json'), JSON.stringify({
+    schemaVersion: 1,
+    artifactFormat: 'directory-glb',
+    tileEncoding: 'model/gltf-binary',
+    tilesetId: 'leitbild-scenery-norway',
+    sourceTilesetId: 'leitbild-osm-norway',
+    sourcePmtilesPath: join(rootDir, 'current', 'norway.pmtiles'),
+    builtAt: '2026-06-08T00:00:00Z',
+    bounds: { minLon: 10.7, minLat: 59.9, maxLon: 10.8, maxLat: 60 },
+    zooms: [14],
+    recipes: [{ id: 'drone-urban-flight' }],
+    tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
+    outputRoot: sceneryRoot,
+    counts: {
+      decodedTileCount: 1,
+      emptyTileCount: 0,
+      writtenTileCount: 1,
+      polygons: 1,
+      lines: 1,
+      labels: 0,
+      buildings: 1,
+      roads: 1,
+      water: 0,
+      vegetation: 0,
+      bytes: 9,
+    },
+    tiles: [{
+      recipeId: 'drone-urban-flight',
+      z: 14,
+      x: 8686,
+      y: 4758,
+      byteLength: 9,
+      centerLon: 10.755615,
+      centerLat: 59.913869,
+      featureCounts: {
+        polygons: 1,
+        lines: 1,
+        labels: 0,
+        buildings: 1,
+        roads: 1,
+        water: 0,
+        vegetation: 0,
+      },
+    }],
+  }))
+}
+
 describe('vector map artifacts', () => {
   test('declares the canonical vector tile capabilities', () => {
     const manifest = mapCapabilityManifestSchema.parse(createMapCapabilityManifest())
@@ -147,38 +198,50 @@ describe('vector map artifacts', () => {
     expect(missingTile?.status).toBe(503)
   })
 
-  test('scenery artifact routes expose the single scenery-tile path explicitly', async () => {
+  test('scenery artifact routes expose the single precompiled GLB tile path explicitly', async () => {
     __clearManifestCacheForTests()
     const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
     const currentDir = join(rootDir, 'current')
     await mkdir(currentDir)
     await Bun.write(join(currentDir, 'norway.pmtiles'), 'not-a-real-pmtiles')
+    await writeSceneryManifest(rootDir)
 
-    const manifest = await currentSceneryManifestResponse({ rootDir }, { referenceRoot: await mkdtemp(join(tmpdir(), 'leitbild-reference-test-')) })
+    const manifest = await currentSceneryManifestResponse({ rootDir })
     expect(manifest.status).toBe(200)
     expect(await manifest.json()).toMatchObject({
-      kind: 'scenery',
-      availability: {
-        status: 'available',
-        mode: 'compile-through',
-      },
+      artifactFormat: 'directory-glb',
+      tileEncoding: 'model/gltf-binary',
+      counts: { writtenTileCount: 1 },
     })
 
-    const invalidTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/27/0/0.json'), { rootDir })
+    const missingManifest = await currentSceneryManifestResponse({ rootDir: join(rootDir, 'missing') })
+    expect(missingManifest.status).toBe(503)
+    expect(await missingManifest.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest unavailable' })
+
+    const corruptRoot = await mkdtemp(join(tmpdir(), 'leitbild-map-test-corrupt-scenery-'))
+    await mkdir(join(corruptRoot, 'current', 'scenery'), { recursive: true })
+    await Bun.write(join(corruptRoot, 'current', 'scenery', 'manifest.json'), '{ not valid json')
+    const corruptManifest = await currentSceneryManifestResponse({ rootDir: corruptRoot })
+    expect(corruptManifest.status).toBe(415)
+    expect(await corruptManifest.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest is invalid' })
+
+    const invalidTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/27/0/0.glb'), { rootDir })
     expect(invalidTile?.status).toBe(400)
 
-    const invalidRecipe = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/bad_recipe/14/0/0.json'), { rootDir })
+    const invalidExtension = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/14/8686/4758.json'), { rootDir })
+    expect(invalidExtension?.status).toBe(400)
+
+    const invalidRecipe = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/bad_recipe/14/0/0.glb'), { rootDir })
     expect(invalidRecipe?.status).toBe(400)
 
-    const corruptSource = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/0/0/0.json'), { rootDir })
-    expect(corruptSource?.status).toBe(415)
-    expect(await corruptSource?.json()).toMatchObject({ ok: false, error: 'scenery source map artifact is not a readable PMTiles archive' })
+    const missingTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/14/8686/4759.glb'), { rootDir })
+    expect(missingTile?.status).toBe(404)
+    expect(await missingTile?.json()).toMatchObject({ ok: false, error: 'precompiled scenery tile unavailable' })
 
-    const missingSource = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/0/0/0.json'), {
-      rootDir: join(rootDir, 'missing'),
-    })
-    expect(missingSource?.status).toBe(503)
-    expect(await missingSource?.json()).toMatchObject({ ok: false, error: 'scenery source vector map artifact unavailable' })
+    const tile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/14/8686/4758.glb'), { rootDir })
+    expect(tile?.status).toBe(200)
+    expect(tile?.headers.get('content-type')).toBe('model/gltf-binary')
+    expect(await tile?.text()).toBe('glb-bytes')
   })
 
   test('reference dataset PMTiles route serves promoted datasets from the manifest', async () => {

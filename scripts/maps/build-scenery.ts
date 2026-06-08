@@ -1,11 +1,20 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { VectorTile } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { PMTiles, TileType, type Source } from 'pmtiles'
 import { defaultSceneryRecipes, mapTilesetId } from '../../src/map/capabilities.ts'
 import { compileSceneryTileFromVectorTile } from '../../src/map/scenery-compiler.ts'
-import { sceneryTileHasFeatures, type SceneryTileCoord } from '../../src/map/scenery.ts'
+import { compileSceneryGlbTile } from '../../src/map/scenery-glb.ts'
+import {
+  sceneryAssetFormat,
+  sceneryAssetManifestSchema,
+  sceneryAssetTileEncoding,
+  sceneryTileHasFeatures,
+  type SceneryAssetBounds,
+  type SceneryAssetTileSummary,
+  type SceneryTileCoord,
+} from '../../src/map/scenery.ts'
 import { createMapPipelineConfig } from './config.ts'
 
 interface Bounds {
@@ -57,6 +66,26 @@ const boundsFromCenterRadius = (config: {
   }
 }
 
+const expandedBoundsForPoints = (
+  points: ReadonlyArray<readonly [number, number]>,
+  radiusM: number,
+): Bounds => {
+  if (points.length === 0) throw new Error('cannot derive scenery bounds from an empty point set')
+  const minLon = Math.min(...points.map(point => point[0]))
+  const maxLon = Math.max(...points.map(point => point[0]))
+  const minLat = Math.min(...points.map(point => point[1]))
+  const maxLat = Math.max(...points.map(point => point[1]))
+  const centerLat = (minLat + maxLat) / 2
+  const lonDelta = radiusM / metersPerDegreeLonAt(centerLat)
+  const latDelta = radiusM / metersPerDegreeLat
+  return {
+    minLon: minLon - lonDelta,
+    minLat: minLat - latDelta,
+    maxLon: maxLon + lonDelta,
+    maxLat: maxLat + latDelta,
+  }
+}
+
 const tileRangeForBounds = (
   bounds: Bounds,
   zoom: number,
@@ -91,6 +120,14 @@ const positiveIntegerEnv = (key: string, defaultValue: number): number => {
   return value
 }
 
+const positiveNumberEnv = (key: string, defaultValue: number): number => {
+  const raw = process.env[key]
+  if (raw === undefined || raw.trim() === '') return defaultValue
+  const value = Number(raw)
+  if (!Number.isFinite(value) || value <= 0) throw new Error(`${key} must be a positive finite number`)
+  return value
+}
+
 const parseZooms = (): ReadonlyArray<number> => {
   const raw = process.env.LEITBILD_SCENERY_ZOOMS ?? '14'
   const zooms = raw.split(',').map(part => {
@@ -101,7 +138,66 @@ const parseZooms = (): ReadonlyArray<number> => {
   return [...new Set(zooms)].sort((left, right) => left - right)
 }
 
-const parseBounds = (headerBounds: Bounds): Bounds => {
+const tuplePosition = (value: unknown): readonly [number, number] | null => {
+  if (!Array.isArray(value) || value.length < 2) return null
+  const lon = value[0]
+  const lat = value[1]
+  return typeof lon === 'number' && Number.isFinite(lon) && typeof lat === 'number' && Number.isFinite(lat)
+    ? [lon, lat]
+    : null
+}
+
+const scenarioPositionsFromValue = (value: unknown): ReadonlyArray<readonly [number, number]> => {
+  if (value === null || typeof value !== 'object') return []
+  const record = value as Record<string, unknown>
+  const positions: Array<readonly [number, number]> = []
+  const mapCenter = tuplePosition((record.world as Record<string, unknown> | undefined)?.mapCenter)
+  if (mapCenter) positions.push(mapCenter)
+  const surfaceRegions = Array.isArray((record.surface as Record<string, unknown> | undefined)?.regions)
+    ? (record.surface as { readonly regions: ReadonlyArray<unknown> }).regions
+    : []
+  for (const region of surfaceRegions) {
+    if (region === null || typeof region !== 'object') continue
+    const config = (region as Record<string, unknown>).config
+    if (config === null || typeof config !== 'object') continue
+    const center = tuplePosition((config as Record<string, unknown>).center)
+    if (center) positions.push(center)
+  }
+  const objects = Array.isArray(record.objects) ? record.objects : []
+  for (const object of objects) {
+    if (object === null || typeof object !== 'object') continue
+    const position = tuplePosition((object as Record<string, unknown>).position)
+    if (position) positions.push(position)
+  }
+  return positions
+}
+
+const scenarioPathsFromEnv = async (): Promise<ReadonlyArray<string>> => {
+  const raw = process.env.LEITBILD_SCENERY_SCENARIOS
+  if (raw && raw.trim().length > 0) {
+    return raw.split(',').map(part => resolve(part.trim())).filter(path => path.length > 0)
+  }
+  const scenarioDir = resolve('src', 'scenarios')
+  const entries = await readdir(scenarioDir, { withFileTypes: true })
+  return entries
+    .filter(entry => entry.isFile() && entry.name.endsWith('.scenario.json'))
+    .map(entry => join(scenarioDir, entry.name))
+}
+
+const boundsFromScenarioConfigs = async (): Promise<Bounds> => {
+  const paths = await scenarioPathsFromEnv()
+  const points: Array<readonly [number, number]> = []
+  for (const path of paths) {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as unknown
+    points.push(...scenarioPositionsFromValue(parsed))
+  }
+  if (points.length === 0) {
+    throw new Error('No scenario positions were found; set LEITBILD_SCENERY_BOUNDS, center/radius, or LEITBILD_SCENERY_ALLOW_FULL_BOUNDS=1')
+  }
+  return expandedBoundsForPoints(points, positiveNumberEnv('LEITBILD_SCENERY_SCENARIO_RADIUS_M', 8_000))
+}
+
+const parseBounds = async (headerBounds: Bounds): Promise<Bounds> => {
   const rawBounds = process.env.LEITBILD_SCENERY_BOUNDS
   if (rawBounds) {
     const parts = rawBounds.split(',').map(part => Number(part.trim()))
@@ -124,7 +220,7 @@ const parseBounds = (headerBounds: Bounds): Bounds => {
   }
 
   if (process.env.LEITBILD_SCENERY_ALLOW_FULL_BOUNDS === '1') return headerBounds
-  throw new Error('Set LEITBILD_SCENERY_BOUNDS, set center/radius env vars, or set LEITBILD_SCENERY_ALLOW_FULL_BOUNDS=1 for a full source-bounds build')
+  return await boundsFromScenarioConfigs()
 }
 
 const mapWithConcurrency = async <Input, Output>(
@@ -166,18 +262,26 @@ for (const zoom of zooms) {
   if (zoom < header.minZoom || zoom > header.maxZoom) throw new Error(`zoom ${zoom} is outside source PMTiles zoom range ${header.minZoom}-${header.maxZoom}`)
 }
 
-const bounds = parseBounds({
+const bounds = await parseBounds({
   minLon: header.minLon,
   minLat: header.minLat,
   maxLon: header.maxLon,
   maxLat: header.maxLat,
 })
+await rm(join(outputRoot, recipe.id), { recursive: true, force: true })
+await rm(join(outputRoot, 'manifest.json'), { force: true })
 let decodedTileCount = 0
 let emptyTileCount = 0
 let writtenTileCount = 0
 let polygonCount = 0
 let lineCount = 0
 let labelCount = 0
+let buildingCount = 0
+let roadCount = 0
+let waterCount = 0
+let vegetationCount = 0
+let byteCount = 0
+const tileSummaries: SceneryAssetTileSummary[] = []
 
 for (const zoom of zooms) {
   const tiles = tileRangeForBounds(bounds, zoom)
@@ -198,19 +302,39 @@ for (const zoom of zooms) {
       emptyTileCount += 1
       return
     }
-    const tilePath = join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.json`)
+    const glb = compileSceneryGlbTile(scenery)
+    if (!glb) {
+      emptyTileCount += 1
+      return
+    }
+    const tilePath = join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.glb`)
     await mkdir(dirname(tilePath), { recursive: true })
-    await Bun.write(tilePath, `${JSON.stringify(scenery)}\n`)
+    await Bun.write(tilePath, glb.bytes)
     writtenTileCount += 1
     polygonCount += scenery.features.polygons.length
     lineCount += scenery.features.lines.length
     labelCount += scenery.features.labels.length
+    buildingCount += glb.summary.featureCounts.buildings
+    roadCount += glb.summary.featureCounts.roads
+    waterCount += glb.summary.featureCounts.water
+    vegetationCount += glb.summary.featureCounts.vegetation
+    byteCount += glb.bytes.byteLength
+    tileSummaries.push({
+      ...glb.summary,
+      byteLength: glb.bytes.byteLength,
+    })
   })
+}
+
+if (writtenTileCount === 0) {
+  throw new Error(`scenery build produced no GLB tiles for ${recipe.id}; check selected bounds ${JSON.stringify(bounds)} and source PMTiles coverage`)
 }
 
 await mkdir(outputRoot, { recursive: true })
 const manifest = {
-  schemaVersion: 1,
+  schemaVersion: 1 as const,
+  artifactFormat: sceneryAssetFormat,
+  tileEncoding: sceneryAssetTileEncoding,
   tilesetId: 'leitbild-scenery-norway',
   sourceTilesetId: mapTilesetId,
   sourcePmtilesPath: pmtilesPath,
@@ -218,6 +342,7 @@ const manifest = {
   bounds,
   zooms,
   recipes: [recipe],
+  tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb' as const,
   outputRoot,
   counts: {
     decodedTileCount,
@@ -226,7 +351,41 @@ const manifest = {
     polygons: polygonCount,
     lines: lineCount,
     labels: labelCount,
+    buildings: buildingCount,
+    roads: roadCount,
+    water: waterCount,
+    vegetation: vegetationCount,
+    bytes: byteCount,
   },
+  tiles: tileSummaries.sort((left, right) => left.z - right.z || left.x - right.x || left.y - right.y),
 }
-await Bun.write(join(outputRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
-console.log(JSON.stringify(manifest, null, 2))
+const parsedManifest = sceneryAssetManifestSchema.parse(manifest satisfies {
+  readonly schemaVersion: 1
+  readonly artifactFormat: typeof sceneryAssetFormat
+  readonly tileEncoding: typeof sceneryAssetTileEncoding
+  readonly tilesetId: string
+  readonly sourceTilesetId: string
+  readonly sourcePmtilesPath: string
+  readonly builtAt: string
+  readonly bounds: SceneryAssetBounds
+  readonly zooms: ReadonlyArray<number>
+  readonly recipes: ReadonlyArray<unknown>
+  readonly tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'
+  readonly outputRoot: string
+  readonly counts: {
+    readonly decodedTileCount: number
+    readonly emptyTileCount: number
+    readonly writtenTileCount: number
+    readonly polygons: number
+    readonly lines: number
+    readonly labels: number
+    readonly buildings: number
+    readonly roads: number
+    readonly water: number
+    readonly vegetation: number
+    readonly bytes: number
+  }
+  readonly tiles: ReadonlyArray<SceneryAssetTileSummary>
+})
+await Bun.write(join(outputRoot, 'manifest.json'), `${JSON.stringify(parsedManifest, null, 2)}\n`)
+console.log(JSON.stringify(parsedManifest, null, 2))

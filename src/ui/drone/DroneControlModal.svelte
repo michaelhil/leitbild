@@ -630,7 +630,6 @@
           <span>WTR {scenePerformance ? scenePerformance.worldFeatures.water : '-'}</span>
           <span>VEG {scenePerformance ? scenePerformance.worldFeatures.vegetation : '-'}</span>
           <span>LBL {scenePerformance ? scenePerformance.worldFeatures.roadLabels : '-'}</span>
-          <span>MRG {scenePerformance ? scenePerformance.worldFeatures.lineFragmentsMerged : '-'}</span>
           <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
           <span>MAP {scenePerformance?.worldFeatures.scenerySource ?? '-'}</span>
           <span>TRN {scenePerformance?.worldFeatures.terrain ?? '-'}</span>

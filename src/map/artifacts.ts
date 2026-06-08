@@ -3,20 +3,14 @@ import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { PMTiles, TileType, type Source } from 'pmtiles'
 import {
   createBaseTileset,
-  createSceneryTileset,
   defaultSceneryRecipes,
   findReferenceTilesets,
-  findSceneryTilesets,
   loadMapCapabilityManifest,
   referenceRootFromEnv,
   sceneryManifestPathForRoot,
   terrainPmtilesPathForRoot,
 } from './capabilities.ts'
-import {
-  compileSceneryTileFromMvtBytes,
-  emptySceneryTileForRecipe,
-} from './scenery-compiler.ts'
-import { sceneryTileHasFeatures, type SceneryTileCoord } from './scenery.ts'
+import { sceneryAssetManifestSchema, sceneryAssetTileEncoding } from './scenery.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
 export interface MapArtifactConfig {
@@ -60,7 +54,6 @@ export interface MapArtifactStatus {
   readonly scenery: MapArtifactFileStatus & {
     readonly manifestUrl: string
     readonly tileTemplate: string
-    readonly mode: 'precompiled' | 'compile-through' | 'unavailable'
   }
 }
 
@@ -68,7 +61,8 @@ const pmtilesContentType = 'application/vnd.pmtiles'
 const vectorTileContentType = 'application/vnd.mapbox-vector-tile'
 const rasterDemContentType = 'image/png'
 const glyphContentType = 'application/x-protobuf'
-const sceneryTileContentType = 'application/vnd.leitbild.scenery+json'
+const sceneryManifestContentType = 'application/json; charset=utf-8'
+const sceneryTileContentType = sceneryAssetTileEncoding
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
 const mapFontPathPrefix = '/map/fonts/'
@@ -124,7 +118,7 @@ const currentSceneryTilePath = (
   recipeId: string,
   coordinates: TileCoordinates,
 ): string =>
-  resolve(config.rootDir, 'current', 'scenery', recipeId, String(coordinates.z), String(coordinates.x), `${coordinates.y}.json`)
+  resolve(config.rootDir, 'current', 'scenery', recipeId, String(coordinates.z), String(coordinates.x), `${coordinates.y}.glb`)
 
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
@@ -144,7 +138,7 @@ const parseTileCoordinates = (
   zPart: string,
   xPart: string,
   yPart: string,
-  extension: 'mvt' | 'png' | 'json',
+  extension: 'mvt' | 'png' | 'glb',
 ): TileCoordinates | null => {
   const z = parseTileCoordinate(zPart)
   const x = parseTileCoordinate(xPart)
@@ -300,69 +294,6 @@ const rasterDemTileResponse = async (
   })
 }
 
-const sceneryJsonResponse = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'Content-Type': sceneryTileContentType,
-      'Cache-Control': 'public, max-age=3600',
-    },
-  })
-
-const emptySceneryTileResponse = (tile: SceneryTileCoord, recipeId: string): Response => {
-  const recipe = defaultSceneryRecipes.find(candidate => candidate.id === recipeId)
-  if (!recipe) return Response.json({ ok: false, error: 'unknown scenery recipe' }, { status: 404 })
-  return sceneryJsonResponse(emptySceneryTileForRecipe({ tile, recipe }))
-}
-
-const sceneryTileFromVectorPmtilesResponse = async (
-  filePath: string,
-  coordinates: TileCoordinates,
-  recipeId: string,
-): Promise<Response> => {
-  const recipe = defaultSceneryRecipes.find(candidate => candidate.id === recipeId)
-  if (!recipe) return Response.json({ ok: false, error: 'unknown scenery recipe' }, { status: 404 })
-  const file = Bun.file(filePath)
-  if (!await file.exists()) {
-    return Response.json({
-      ok: false,
-      error: 'scenery source vector map artifact unavailable',
-      expectedPath: filePath,
-    }, { status: 503 })
-  }
-
-  const archive = await pmtilesArchiveFor(filePath)
-  let header: Awaited<ReturnType<PMTiles['getHeader']>>
-  try {
-    header = await archive.getHeader()
-  } catch (error) {
-    return Response.json({
-      ok: false,
-      error: 'scenery source map artifact is not a readable PMTiles archive',
-      expectedPath: filePath,
-      detail: error instanceof Error ? error.message : String(error),
-    }, { status: 415 })
-  }
-  if (header.tileType !== TileType.Mvt) {
-    return Response.json({
-      ok: false,
-      error: 'scenery source map artifact is not an MVT PMTiles archive',
-      expectedPath: filePath,
-    }, { status: 415 })
-  }
-  const tile = await archive.getZxy(coordinates.z, coordinates.x, coordinates.y)
-  if (!tile) return emptySceneryTileResponse(coordinates, recipeId)
-
-  const sceneryTile = compileSceneryTileFromMvtBytes({
-    bytes: tile.data,
-    tile: coordinates,
-    recipe,
-  })
-  return sceneryTileHasFeatures(sceneryTile)
-    ? sceneryJsonResponse(sceneryTile)
-    : emptySceneryTileResponse(coordinates, recipeId)
-}
-
 const referenceDatasetArtifactPath = async (
   datasetId: string,
   fileName: string,
@@ -466,11 +397,6 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
   const sceneryManifest = await fileStatus(currentSceneryManifestPath(config))
   const glyphProbe = await fileStatus(glyphProbePath(config))
   const active = await activeBuild(config)
-  const sceneryMode = sceneryManifest.available
-    ? 'precompiled'
-    : currentPmtiles.available
-      ? 'compile-through'
-      : 'unavailable'
   return {
     status: currentPmtiles.available && glyphProbe.available ? 'ready' : 'unavailable',
     rootDir: config.rootDir,
@@ -496,10 +422,9 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
       demEncoding: 'terrarium',
     },
     scenery: {
-      ...(sceneryManifest.available ? sceneryManifest : currentPmtiles),
+      ...sceneryManifest,
       manifestUrl: '/map/scenery/current/manifest.json',
-      tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.json',
-      mode: sceneryMode,
+      tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     },
   }
 }
@@ -653,18 +578,34 @@ export const currentTerrainRasterTileResponse = async (
 
 export const currentSceneryManifestResponse = async (
   config: MapArtifactConfig,
-  referenceConfig: ReferenceDatasetArtifactConfig = { referenceRoot: referenceRootFromEnv() },
 ): Promise<Response> => {
-  const manifest = await loadMapCapabilityManifest({
-    referenceRoot: referenceConfig.referenceRoot,
-    mapRoot: config.rootDir,
+  const filePath = currentSceneryManifestPath(config)
+  const file = Bun.file(filePath)
+  if (!await file.exists()) {
+    return Response.json({
+      ok: false,
+      error: 'precompiled scenery manifest unavailable',
+      expectedPath: filePath,
+    }, { status: 503 })
+  }
+  let body: string
+  try {
+    body = await file.text()
+    sceneryAssetManifestSchema.parse(JSON.parse(body) as unknown)
+  } catch (error) {
+    return Response.json({
+      ok: false,
+      error: 'precompiled scenery manifest is invalid',
+      expectedPath: filePath,
+      detail: error instanceof Error ? error.message : String(error),
+    }, { status: 415 })
+  }
+  return new Response(body, {
+    headers: {
+      'Content-Type': sceneryManifestContentType,
+      'Cache-Control': 'public, max-age=3600',
+    },
   })
-  const scenery = findSceneryTilesets(manifest)[0]
-  return sceneryJsonResponse(scenery ?? createSceneryTileset({
-    status: 'unavailable',
-    path: currentSceneryManifestPath(config),
-    error: 'scenery capability is not advertised',
-  }))
 }
 
 export const currentSceneryTileResponse = async (
@@ -680,9 +621,12 @@ export const currentSceneryTileResponse = async (
   if (!recipeId || !sceneryRecipeIdPattern.test(recipeId)) {
     return Response.json({ ok: false, error: 'invalid scenery recipe id' }, { status: 400 })
   }
-  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '', 'json')
+  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '', 'glb')
   if (!coordinates) {
     return Response.json({ ok: false, error: 'invalid scenery tile coordinates' }, { status: 400 })
+  }
+  if (!defaultSceneryRecipes.some(recipe => recipe.id === recipeId)) {
+    return Response.json({ ok: false, error: 'unknown scenery recipe' }, { status: 404 })
   }
 
   const precompiledPath = currentSceneryTilePath(config, recipeId, coordinates)
@@ -696,7 +640,11 @@ export const currentSceneryTileResponse = async (
     })
   }
 
-  return sceneryTileFromVectorPmtilesResponse(currentPmtilesPath(config), coordinates, recipeId)
+  return Response.json({
+    ok: false,
+    error: 'precompiled scenery tile unavailable',
+    expectedPath: precompiledPath,
+  }, { status: 404 })
 }
 
 export const referenceDatasetPmtilesResponse = async (

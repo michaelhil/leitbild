@@ -1,245 +1,182 @@
 import { describe, expect, test } from 'bun:test'
-import * as THREE from 'three'
-import type { DroneMapWorldSnapshot, DroneWorldLineFeature, DroneWorldPoint } from '../src/ui/drone/drone-map-world.ts'
-import { mergeDroneWorldLinesForScenery } from '../src/ui/drone/drone-map-world.ts'
-import { createDroneMapWorldGroup } from '../src/ui/drone/drone-world-renderer.ts'
+import { compileSceneryGlbTile } from '../src/map/scenery-glb.ts'
+import type { SceneryTile } from '../src/map/scenery.ts'
 
-const square = (
-  centerX: number,
-  centerZ: number,
-  half: number,
-): ReadonlyArray<DroneWorldPoint> => [
-  { x: centerX - half, z: centerZ - half },
-  { x: centerX + half, z: centerZ - half },
-  { x: centerX + half, z: centerZ + half },
-  { x: centerX - half, z: centerZ + half },
-  { x: centerX - half, z: centerZ - half },
-]
+const readAscii = (
+  bytes: Uint8Array,
+  start: number,
+  length: number,
+): string =>
+  new TextDecoder().decode(bytes.slice(start, start + length))
 
-const snapshot: DroneMapWorldSnapshot = {
-  key: 'test-scenery',
-  center: { lon: 10.75, lat: 59.91 },
-  radiusM: 600,
-  zoom: 14,
-  scenerySource: 'compile-through',
-  tileCount: 1,
-  polygons: [
-    {
-      id: 'building:1',
-      kind: 'building',
-      className: 'commercial',
-      rings: [square(-40, -20, 18)],
-      distanceM: 42,
-      areaM2: 1_296,
-      heightM: 24,
-    },
-    {
-      id: 'water:1',
-      kind: 'water',
-      className: 'river',
-      rings: [square(75, 35, 34)],
-      distanceM: 62,
-      areaM2: 4_624,
-    },
-    {
-      id: 'landcover:1',
-      kind: 'landcover',
-      className: 'wood',
-      rings: [square(20, 110, 72)],
-      distanceM: 96,
-      areaM2: 20_736,
-    },
-  ],
-  lines: [{
-    id: 'road:1',
-    kind: 'road',
-    className: 'primary',
-    name: 'Renderer Test Road',
-    isBridge: true,
-    isTunnel: false,
-    path: [
-      { x: -180, z: -90 },
-      { x: 0, z: -20 },
-      { x: 185, z: 30 },
+const glbJson = (
+  bytes: Uint8Array,
+): Record<string, unknown> => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const jsonLength = view.getUint32(12, true)
+  const jsonType = view.getUint32(16, true)
+  expect(jsonType).toBe(0x4e4f534a)
+  return JSON.parse(readAscii(bytes, 20, jsonLength).trim()) as Record<string, unknown>
+}
+
+const recordArray = (value: unknown): ReadonlyArray<Record<string, unknown>> =>
+  Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => item !== null && typeof item === 'object' && !Array.isArray(item))
+    : []
+
+const usedMaterialNames = (
+  json: Record<string, unknown>,
+): ReadonlySet<unknown> => {
+  const materials = recordArray(json.materials)
+  const meshes = recordArray(json.meshes)
+  const used = new Set<unknown>()
+  for (const mesh of meshes) {
+    for (const primitive of recordArray(mesh.primitives)) {
+      const materialIndex = primitive.material
+      if (typeof materialIndex !== 'number') continue
+      used.add(materials[materialIndex]?.name)
+    }
+  }
+  return used
+}
+
+const tilePoint = (x: number, y: number): [number, number] => [x, y]
+
+const testTile: SceneryTile = {
+  schemaVersion: 1,
+  tileEncoding: 'leitbild-scenery-feature-json-v1',
+  recipeId: 'drone-urban-flight',
+  sourceTilesetId: 'leitbild-osm-norway',
+  tile: { z: 14, x: 8686, y: 4758, extent: 4096 },
+  features: {
+    polygons: [
+      {
+        id: 'building:1',
+        sourceLayer: 'building',
+        kind: 'building',
+        className: 'commercial',
+        rings: [[
+          tilePoint(1600, 1800),
+          tilePoint(1900, 1800),
+          tilePoint(1900, 2100),
+          tilePoint(1600, 2100),
+          tilePoint(1600, 1800),
+        ]],
+        heightM: 26,
+      },
+      {
+        id: 'water:1',
+        sourceLayer: 'water',
+        kind: 'water',
+        className: 'river',
+        rings: [[
+          tilePoint(2150, 1850),
+          tilePoint(2650, 1850),
+          tilePoint(2650, 2180),
+          tilePoint(2150, 2180),
+          tilePoint(2150, 1850),
+        ]],
+      },
+      {
+        id: 'park:1',
+        sourceLayer: 'landuse',
+        kind: 'landuse',
+        className: 'park',
+        rings: [[
+          tilePoint(1200, 2450),
+          tilePoint(1850, 2450),
+          tilePoint(1850, 3180),
+          tilePoint(1200, 3180),
+          tilePoint(1200, 2450),
+        ]],
+      },
     ],
-    widthM: 18,
-    verticalOffsetM: 3.2,
-    distanceM: 20,
-    lengthM: 390,
-  }],
-  points: [
-    {
-      id: 'poi:1',
-      kind: 'poi',
-      className: 'hospital',
-      label: 'Hospital',
-      point: { x: 28, z: -48 },
-    },
-    {
-      id: 'road-label:1',
-      kind: 'road_label',
-      className: 'primary',
-      label: 'Renderer Test Road',
-      point: { x: 0, z: -20 },
-    },
-  ],
-  coverage: {
-    decoded: { polygons: 3, lines: 1, points: 2 },
-    selected: {
-      polygons: 3,
-      lines: 1,
-      points: 2,
-      buildings: 1,
-      roads: 1,
-      waterPolygons: 1,
-      waterways: 0,
-      vegetationPolygons: 1,
-      roadLabels: 1,
-      pois: 1,
-    },
-    lineFragmentsMerged: 0,
-    notes: [],
+    lines: [
+      {
+        id: 'road:1',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:1',
+        kind: 'road',
+        className: 'primary',
+        name: 'Renderer Test Road',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(900, 1650),
+          tilePoint(1800, 1900),
+          tilePoint(3100, 1980),
+        ],
+        widthM: 17,
+        verticalOffsetM: 0,
+      },
+      {
+        id: 'waterway:1',
+        sourceLayer: 'waterway',
+        kind: 'waterway',
+        className: 'stream',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(2500, 1700),
+          tilePoint(2800, 2250),
+        ],
+        widthM: 7,
+        verticalOffsetM: 0,
+      },
+    ],
+    labels: [
+      {
+        id: 'poi:1',
+        sourceLayer: 'poi',
+        kind: 'poi',
+        className: 'hospital',
+        label: 'Hospital',
+        point: tilePoint(1740, 1720),
+      },
+    ],
   },
 }
 
-const blockedVegetationSnapshot: DroneMapWorldSnapshot = {
-  key: 'test-blocked-vegetation',
-  center: { lon: 10.75, lat: 59.91 },
-  radiusM: 250,
-  zoom: 14,
-  scenerySource: 'compile-through',
-  tileCount: 1,
-  polygons: [
-    {
-      id: 'building:blocking',
-      kind: 'building',
-      className: 'commercial',
-      rings: [square(0, 0, 80)],
-      distanceM: 0,
-      areaM2: 25_600,
-      heightM: 20,
-    },
-    {
-      id: 'landcover:blocked',
-      kind: 'landcover',
-      className: 'wood',
-      rings: [square(0, 0, 80)],
-      distanceM: 0,
-      areaM2: 25_600,
-    },
-  ],
-  lines: [],
-  points: [],
-  coverage: {
-    decoded: { polygons: 2, lines: 0, points: 0 },
-    selected: {
-      polygons: 2,
-      lines: 0,
-      points: 0,
-      buildings: 1,
-      roads: 0,
-      waterPolygons: 0,
-      waterways: 0,
-      vegetationPolygons: 1,
-      roadLabels: 0,
-      pois: 0,
-    },
-    lineFragmentsMerged: 0,
-    notes: [],
-  },
-}
+describe('drone scenery GLB compiler', () => {
+  test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const { bytes, summary } = result!
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 
-describe('drone scenery renderer', () => {
-  test('builds rich source-backed scenery from decoded map features', () => {
-    const group = createDroneMapWorldGroup(snapshot)
-    const sceneryKinds = new Set<string>()
-    let hasDoubleSidedBuildingWall = false
-
-    group.traverse(child => {
-      const kind = child.userData.droneSceneryKind
-      if (typeof kind === 'string') sceneryKinds.add(kind)
-      if (child instanceof THREE.Mesh) {
-        const materials = Array.isArray(child.material) ? child.material : [child.material]
-        if (materials.some(material => material.side === THREE.DoubleSide)) hasDoubleSidedBuildingWall = true
-      }
+    expect(view.getUint32(0, true)).toBe(0x46546c67)
+    expect(view.getUint32(4, true)).toBe(2)
+    expect(view.getUint32(8, true)).toBe(bytes.byteLength)
+    expect(summary).toMatchObject({
+      recipeId: 'drone-urban-flight',
+      z: 14,
+      x: 8686,
+      y: 4758,
+      featureCounts: {
+        polygons: 3,
+        lines: 2,
+        labels: 1,
+        buildings: 1,
+        roads: 1,
+        water: 2,
+        vegetation: 1,
+      },
     })
-
-    expect(hasDoubleSidedBuildingWall).toBe(true)
-    expect(sceneryKinds.has('building-roof')).toBe(true)
-    expect(sceneryKinds.has('shoreline')).toBe(true)
-    expect(sceneryKinds.has('road-furniture')).toBe(true)
-    expect(sceneryKinds.has('vegetation')).toBe(true)
-    expect(sceneryKinds.has('poi-beacon')).toBe(true)
-    expect(sceneryKinds.has('road-label-sign')).toBe(true)
   })
 
-  test('does not place derived vegetation inside source-backed solid features', () => {
-    const group = createDroneMapWorldGroup(blockedVegetationSnapshot)
-    const sceneryKinds = new Set<string>()
-    group.traverse(child => {
-      const kind = child.userData.droneSceneryKind
-      if (typeof kind === 'string') sceneryKinds.add(kind)
-    })
+  test('bakes buildings, roads, water, vegetation, markings, lights, and POI primitives into the GLB', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const json = glbJson(result!.bytes)
+    const materialNames = usedMaterialNames(json)
 
-    expect(sceneryKinds.has('building-roof')).toBe(true)
-    expect(sceneryKinds.has('vegetation')).toBe(false)
-  })
-
-  test('merges source-identical road fragments without fusing anonymous local roads', () => {
-    const baseRoad: Omit<DroneWorldLineFeature, 'id' | 'path' | 'distanceM' | 'lengthM'> = {
-      sourceRef: 'transportation:way-1',
-      kind: 'road',
-      className: 'primary',
-      name: 'Continuous Road',
-      isBridge: false,
-      isTunnel: false,
-      widthM: 18,
-      verticalOffsetM: 0,
-    }
-    const anonymousLocal: Omit<DroneWorldLineFeature, 'id' | 'path' | 'distanceM' | 'lengthM'> = {
-      kind: 'road',
-      className: 'residential',
-      isBridge: false,
-      isTunnel: false,
-      widthM: 6.4,
-      verticalOffsetM: 0,
-    }
-    const features: ReadonlyArray<DroneWorldLineFeature> = [
-      {
-        ...baseRoad,
-        id: 'primary:a',
-        path: [{ x: -20, z: 0 }, { x: 0, z: 0 }],
-        distanceM: 0,
-        lengthM: 20,
-      },
-      {
-        ...baseRoad,
-        id: 'primary:b',
-        path: [{ x: 0.6, z: 0.2 }, { x: 22, z: 0 }],
-        distanceM: 0,
-        lengthM: 21.4,
-      },
-      {
-        ...anonymousLocal,
-        id: 'local:a',
-        path: [{ x: -10, z: 12 }, { x: 0, z: 12 }],
-        distanceM: 12,
-        lengthM: 10,
-      },
-      {
-        ...anonymousLocal,
-        id: 'local:b',
-        path: [{ x: 0.5, z: 12 }, { x: 10, z: 12 }],
-        distanceM: 12,
-        lengthM: 9.5,
-      },
-    ]
-    const merged = mergeDroneWorldLinesForScenery(features)
-    const mergedPrimary = merged.filter(feature => feature.name === 'Continuous Road')
-    const anonymous = merged.filter(feature => feature.className === 'residential')
-
-    expect(mergedPrimary).toHaveLength(1)
-    expect(mergedPrimary[0]?.path).toHaveLength(3)
-    expect(anonymous).toHaveLength(2)
+    expect(materialNames.has('cool building wall')).toBe(true)
+    expect(materialNames.has('building roof')).toBe(true)
+    expect(materialNames.has('major road asphalt')).toBe(true)
+    expect(materialNames.has('baked road markings')).toBe(true)
+    expect(materialNames.has('water surface')).toBe(true)
+    expect(materialNames.has('tree canopy')).toBe(true)
+    expect(materialNames.has('street lamp glass')).toBe(true)
+    expect(materialNames.has('poi beacon')).toBe(true)
   })
 })

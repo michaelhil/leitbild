@@ -2,7 +2,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { readTerrainPmtilesMetadata, type TerrainDemEncoding } from './terrain-artifact.ts'
-import { sceneryTileEncoding } from './scenery.ts'
+import { sceneryAssetFormat, sceneryAssetManifestSchema, sceneryAssetTileEncoding } from './scenery.ts'
 
 // Map Capability Manifest v2.
 // Top-level shape:
@@ -107,7 +107,6 @@ export type TerrainTileset = z.infer<typeof terrainTilesetSchema>
 
 export const sceneryAvailabilitySchema = z.object({
   status: z.enum(['available', 'unavailable']),
-  mode: z.enum(['precompiled', 'compile-through']).optional(),
   path: z.string().min(1),
   sizeBytes: z.number().int().nonnegative().optional(),
   modifiedAt: z.string().min(1).optional(),
@@ -150,10 +149,10 @@ export const sceneryTilesetSchema = z.object({
     sourceTilesetId: z.literal(mapTilesetId),
   }),
   artifact: z.object({
-    format: z.literal('directory-json'),
-    tileEncoding: z.literal(sceneryTileEncoding),
+    format: z.literal(sceneryAssetFormat),
+    tileEncoding: z.literal(sceneryAssetTileEncoding),
     manifestUrl: z.literal('/map/scenery/current/manifest.json'),
-    currentTileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.json'),
+    currentTileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
   }),
   recipes: z.array(sceneryRecipeSchema).min(1),
   availability: sceneryAvailabilitySchema,
@@ -437,10 +436,10 @@ export const createSceneryTileset = (availability: SceneryAvailability): Scenery
       sourceTilesetId: mapTilesetId,
     },
     artifact: {
-      format: 'directory-json',
-      tileEncoding: 'leitbild-scenery-json-v1',
+      format: sceneryAssetFormat,
+      tileEncoding: sceneryAssetTileEncoding,
       manifestUrl: '/map/scenery/current/manifest.json',
-      currentTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.json',
+      currentTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     },
     recipes: defaultSceneryRecipes,
     availability,
@@ -600,31 +599,24 @@ const sceneryArtifactFor = async (mapRoot: string): Promise<SceneryAvailability>
   const path = sceneryManifestPathForRoot(mapRoot)
   try {
     const info = await stat(path)
+    if (!info.isFile() || info.size <= 0) {
+      return {
+        status: 'unavailable',
+        path,
+        sizeBytes: info.size,
+        modifiedAt: info.mtime.toISOString(),
+        error: 'scenery manifest is empty or not a file',
+      }
+    }
+    const raw = await readFile(path, 'utf8')
+    sceneryAssetManifestSchema.parse(JSON.parse(raw) as unknown)
     return {
-      status: info.isFile() && info.size > 0 ? 'available' : 'unavailable',
-      ...(info.isFile() && info.size > 0 ? { mode: 'precompiled' as const } : {}),
+      status: 'available',
       path,
       sizeBytes: info.size,
       modifiedAt: info.mtime.toISOString(),
-      ...(info.isFile() && info.size > 0 ? {} : { error: 'scenery manifest is empty or not a file' }),
     }
   } catch (error) {
-    const sourcePath = resolve(mapRoot, 'current', 'norway.pmtiles')
-    try {
-      const sourceInfo = await stat(sourcePath)
-      if (sourceInfo.isFile() && sourceInfo.size > 0) {
-        return {
-          status: 'available',
-          mode: 'compile-through',
-          path: sourcePath,
-          sizeBytes: sourceInfo.size,
-          modifiedAt: sourceInfo.mtime.toISOString(),
-        }
-      }
-    } catch {
-      // Report the missing scenery artifact below; source-vector absence is
-      // visible through the base map artifact status.
-    }
     return {
       status: 'unavailable',
       path,

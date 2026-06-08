@@ -1,26 +1,19 @@
 import * as THREE from 'three'
-import type {
-  DroneMapWorldSnapshot,
-  DroneWorldLineFeature,
-  DroneWorldPoint,
-  DroneWorldPolygonFeature,
-} from './drone-map-world.ts'
-import { createTransportGeometryGroup } from './drone-transport-renderer.ts'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import type { DroneMapWorldSnapshot, DroneSceneryTileAsset } from './drone-map-world.ts'
 import { terrainHeightAt, type DroneTerrainModel } from './drone-terrain.ts'
 
-const clamp = (value: number, min: number, max: number): number =>
-  Math.max(min, Math.min(max, value))
+const maxCachedTileTemplates = 256
+const tileLoadConcurrency = 10
 
-const maxCachedRenderableWorlds = 4
+const cachedTileTemplates = new Map<string, Promise<THREE.Group>>()
 
-const cachedRenderableWorlds = new Map<string, THREE.Group>()
+let gltfLoader: GLTFLoader | null = null
 
-const makeMaterial = (
-  color: string,
-  roughness = 0.72,
-  metalness = 0.04,
-): THREE.MeshStandardMaterial =>
-  new THREE.MeshStandardMaterial({ color, roughness, metalness })
+const loader = (): GLTFLoader => {
+  gltfLoader ??= new GLTFLoader()
+  return gltfLoader
+}
 
 const terrainY = (
   terrain: DroneTerrainModel | undefined,
@@ -30,65 +23,11 @@ const terrainY = (
 ): number =>
   baseY + (terrain ? terrainHeightAt(terrain, x, z) : 0)
 
-const colorFromHex = (
-  color: string,
-): THREE.Color =>
-  new THREE.Color(color)
-
-const surfacePalette = (
-  feature: DroneWorldPolygonFeature,
-): string => {
-  if (feature.kind === 'aeroway') {
-    if (feature.className === 'runway') return '#8f897d'
-    if (feature.className === 'taxiway') return '#999385'
-    return '#817b73'
-  }
-  if (feature.kind === 'water') return '#1d8fb8'
-  if (feature.className === 'wood' || feature.className === 'forest') return '#1f6f3a'
-  if (feature.className === 'grass' || feature.className === 'park') return '#5d9b45'
-  if (feature.className === 'wetland') return '#4f8a7a'
-  if (feature.className === 'sand') return '#d7c88f'
-  if (feature.className === 'farmland' || feature.className === 'farm') return '#9da85d'
-  if (feature.className === 'scrub' || feature.className === 'heath') return '#6f8f57'
-  if (feature.className === 'rock' || feature.className === 'bare_rock') return '#8d9292'
-  if (feature.className === 'cemetery') return '#607f5f'
-  if (feature.className === 'pitch' || feature.className === 'playground') return '#6aa96a'
-  if (feature.className === 'hospital') return '#cbdff8'
-  if (feature.className === 'industrial') return '#b9afa6'
-  if (feature.className === 'commercial') return '#cbc2b1'
-  return '#9aae88'
-}
-
-const polygonArea = (ring: ReadonlyArray<DroneWorldPoint>): number => {
-  let area = 0
-  for (let index = 0; index < ring.length; index += 1) {
-    const current = ring[index]!
-    const next = ring[(index + 1) % ring.length]!
-    area += current.x * next.z - next.x * current.z
-  }
-  return area / 2
-}
-
-const pointInRing = (
-  point: DroneWorldPoint,
-  ring: ReadonlyArray<DroneWorldPoint>,
-): boolean => {
-  let inside = false
-  for (let index = 0, previousIndex = ring.length - 1; index < ring.length; previousIndex = index, index += 1) {
-    const current = ring[index]!
-    const previous = ring[previousIndex]!
-    const intersects = ((current.z > point.z) !== (previous.z > point.z))
-      && point.x < (previous.x - current.x) * (point.z - current.z) / (previous.z - current.z + Number.EPSILON) + current.x
-    if (intersects) inside = !inside
-  }
-  return inside
-}
-
 const createGroundTexture = (): THREE.Texture | null => {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 512
+  canvas.width = 1024
+  canvas.height = 1024
   const context = canvas.getContext('2d')
   if (!context) return null
   const image = context.createImageData(canvas.width, canvas.height)
@@ -96,21 +35,21 @@ const createGroundTexture = (): THREE.Texture | null => {
     const pixel = index / 4
     const x = pixel % canvas.width
     const y = Math.floor(pixel / canvas.width)
-    const broad = Math.sin(x * 0.048 + y * 0.021) * 0.5 + Math.sin(x * 0.013 - y * 0.039) * 0.5
+    const broad = Math.sin(x * 0.021 + y * 0.017) * 0.5 + Math.sin(x * 0.007 - y * 0.014) * 0.5
     const fineNoise = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
-    const grain = (fineNoise - Math.floor(fineNoise)) * 24
-    const green = 94 + broad * 18 + grain
-    image.data[index] = Math.round(74 + broad * 10 + grain * 0.45)
-    image.data[index + 1] = Math.round(green)
-    image.data[index + 2] = Math.round(75 + broad * 8 + grain * 0.38)
+    const grain = (fineNoise - Math.floor(fineNoise)) * 18
+    image.data[index] = Math.round(58 + broad * 8 + grain * 0.32)
+    image.data[index + 1] = Math.round(82 + broad * 14 + grain * 0.55)
+    image.data[index + 2] = Math.round(62 + broad * 7 + grain * 0.28)
     image.data[index + 3] = 255
   }
   context.putImageData(image, 0, 0)
   const texture = new THREE.CanvasTexture(canvas)
   texture.wrapS = THREE.RepeatWrapping
   texture.wrapT = THREE.RepeatWrapping
-  texture.repeat.set(18, 18)
+  texture.repeat.set(20, 20)
   texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 4
   return texture
 }
 
@@ -120,8 +59,8 @@ const createBaseGround = (
 ): THREE.Mesh => {
   const texture = createGroundTexture()
   const material = new THREE.MeshStandardMaterial({
-    color: '#617458',
-    roughness: 0.95,
+    color: '#4f6945',
+    roughness: 0.96,
     metalness: 0.01,
     ...(texture === null ? {} : { map: texture }),
   })
@@ -133,8 +72,8 @@ const createBaseGround = (
       const z = -terrain.radiusM + row * terrain.sampleSpacingM
       for (let column = 0; column < terrain.gridSize; column += 1) {
         const x = -terrain.radiusM + column * terrain.sampleSpacingM
-        positions.push(x, terrainHeightAt(terrain, x, z) - 0.42, z)
-        uvs.push(column / (terrain.gridSize - 1) * 18, row / (terrain.gridSize - 1) * 18)
+        positions.push(x, terrainHeightAt(terrain, x, z) - 0.55, z)
+        uvs.push(column / (terrain.gridSize - 1) * 20, row / (terrain.gridSize - 1) * 20)
       }
     }
     for (let row = 0; row < terrain.gridSize - 1; row += 1) {
@@ -152,842 +91,25 @@ const createBaseGround = (
     ground.receiveShadow = true
     return ground
   }
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.6, radiusM * 2.6, 1, 1), material)
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(radiusM * 2.8, radiusM * 2.8, 1, 1), material)
   ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.35
+  ground.position.y = -0.55
   ground.receiveShadow = true
   return ground
-}
-
-const surfaceYOffset = (
-  feature: DroneWorldPolygonFeature,
-): number => {
-  const jitter = (stableHash(`${feature.kind}:${feature.className}`) % 7) * 0.0015
-  if (feature.kind === 'water') return 0.16
-  if (feature.kind === 'aeroway') return 0.13 + jitter
-  if (feature.kind === 'landuse') return 0.085 + jitter
-  if (feature.kind === 'landcover') return 0.035 + jitter
-  return 0.07 + jitter
-}
-
-const configureSurfaceDepth = (
-  material: THREE.Material,
-  feature: DroneWorldPolygonFeature,
-): void => {
-  material.polygonOffset = true
-  material.polygonOffsetFactor = -2
-  material.polygonOffsetUnits = feature.kind === 'water'
-    ? -18
-    : feature.kind === 'landuse'
-      ? -12
-      : -7
-}
-
-const createWaterMaterial = (): THREE.ShaderMaterial =>
-  new THREE.ShaderMaterial({
-    transparent: false,
-    depthWrite: true,
-    uniforms: {
-      timeSeconds: { value: 0 },
-      deepColor: { value: colorFromHex('#0d5f83') },
-      shallowColor: { value: colorFromHex('#54c4d8') },
-      foamColor: { value: colorFromHex('#d9fbff') },
-      opacity: { value: 1 },
-    },
-    vertexShader: `
-      varying vec3 vWorldPosition;
-      void main() {
-        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float timeSeconds;
-      uniform vec3 deepColor;
-      uniform vec3 shallowColor;
-      uniform vec3 foamColor;
-      uniform float opacity;
-      varying vec3 vWorldPosition;
-
-      float wave(vec2 p, float scale, float speed) {
-        return sin(p.x * scale + p.y * scale * 0.37 + timeSeconds * speed)
-          * sin(p.y * scale * 0.71 - timeSeconds * speed * 0.61);
-      }
-
-      void main() {
-        vec2 p = vWorldPosition.xz;
-        float ripples = wave(p, 0.034, 0.9) * 0.5 + wave(p, 0.095, 1.7) * 0.28 + wave(p, 0.19, 2.3) * 0.12;
-        float sheen = smoothstep(0.55, 0.94, ripples);
-        vec3 color = mix(deepColor, shallowColor, 0.44 + ripples * 0.18);
-        color = mix(color, foamColor, sheen * 0.38);
-        gl_FragColor = vec4(color, opacity);
-      }
-    `,
-  })
-
-const createBuildingFacadeTexture = (
-  baseColor: string,
-  className: string,
-): THREE.Texture | null => {
-  if (typeof document === 'undefined') return null
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 256
-  const context = canvas.getContext('2d')
-  if (!context) return null
-  context.fillStyle = baseColor
-  context.fillRect(0, 0, canvas.width, canvas.height)
-
-  const shade = className === 'commercial' || className === 'industrial' ? '#8f979e' : '#9da4aa'
-  const windowColor = className === 'industrial' ? '#c4d0d8' : '#dbeafe'
-  context.globalAlpha = 0.18
-  for (let y = 0; y < canvas.height; y += 32) {
-    context.fillStyle = y % 64 === 0 ? '#ffffff' : '#111827'
-    context.fillRect(0, y, canvas.width, 4)
-  }
-  context.globalAlpha = 0.58
-  context.fillStyle = windowColor
-  for (let y = 22; y < canvas.height; y += 38) {
-    for (let x = 18; x < canvas.width; x += className === 'industrial' ? 52 : 34) {
-      context.fillRect(x, y, className === 'industrial' ? 28 : 14, 11)
-    }
-  }
-  context.globalAlpha = 0.34
-  context.fillStyle = shade
-  for (let x = 0; x < canvas.width; x += 64) context.fillRect(x, 0, 5, canvas.height)
-  context.globalAlpha = 1
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.wrapS = THREE.RepeatWrapping
-  texture.wrapT = THREE.RepeatWrapping
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.anisotropy = 2
-  return texture
-}
-
-const createBuildingWallMaterial = (
-  color: string,
-  className: string,
-): THREE.MeshStandardMaterial =>
-  {
-    const texture = createBuildingFacadeTexture(color, className)
-    const material = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.84,
-    metalness: 0.02,
-      ...(texture === null ? {} : { map: texture }),
-    side: THREE.DoubleSide,
-    })
-    material.userData.droneSceneryKind = 'building-wall'
-    return material
-  }
-
-interface GeometryBucket {
-  readonly material: THREE.Material
-  readonly positions: number[]
-  readonly uvs: number[]
-  readonly indices: number[]
-  readonly receiveShadow: boolean
-  readonly castShadow: boolean
-  readonly needsNormals: boolean
-}
-
-interface Bounds2 {
-  readonly minX: number
-  readonly maxX: number
-  readonly minZ: number
-  readonly maxZ: number
-}
-
-interface IndexedPolygon {
-  readonly feature: DroneWorldPolygonFeature
-  readonly bounds: Bounds2
-}
-
-interface IndexedLine {
-  readonly feature: DroneWorldLineFeature
-  readonly bounds: Bounds2
-  readonly clearanceM: number
-}
-
-interface SceneryExclusionIndex {
-  readonly solidBlockedAt: (point: DroneWorldPoint) => boolean
-  readonly vegetationBlockedAt: (point: DroneWorldPoint) => boolean
-}
-
-const getBucket = (
-  buckets: Map<string, GeometryBucket>,
-  key: string,
-  materialFactory: () => THREE.Material,
-  config: { readonly receiveShadow: boolean; readonly castShadow: boolean; readonly needsNormals: boolean },
-): GeometryBucket => {
-  const existing = buckets.get(key)
-  if (existing) return existing
-  const bucket = {
-    material: materialFactory(),
-    positions: [],
-    uvs: [],
-    indices: [],
-    receiveShadow: config.receiveShadow,
-    castShadow: config.castShadow,
-    needsNormals: config.needsNormals,
-  }
-  buckets.set(key, bucket)
-  return bucket
-}
-
-const openRing = (
-  ring: ReadonlyArray<DroneWorldPoint>,
-): ReadonlyArray<DroneWorldPoint> => {
-  const first = ring[0]
-  const last = ring[ring.length - 1]
-  if (!first || !last || ring.length < 2) return ring
-  return Math.hypot(first.x - last.x, first.z - last.z) < 0.001 ? ring.slice(0, -1) : ring
-}
-
-const appendHorizontalPolygon = (
-  bucket: GeometryBucket,
-  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
-  y: number,
-  terrain: DroneTerrainModel | undefined,
-): void => {
-  const normalizedRings = rings.map(openRing).filter(ring => ring.length >= 3)
-  const outer = normalizedRings[0]
-  if (!outer) return
-  const holes = normalizedRings.slice(1)
-  const contour = outer.map(point => new THREE.Vector2(point.x, -point.z))
-  const holeContours = holes.map(ring => ring.map(point => new THREE.Vector2(point.x, -point.z)))
-  const triangles = THREE.ShapeUtils.triangulateShape(contour, holeContours)
-  if (triangles.length === 0) return
-  const vertices = [...outer, ...holes.flatMap(ring => ring)]
-  const base = bucket.positions.length / 3
-  for (const point of vertices) {
-    bucket.positions.push(point.x, terrainY(terrain, point.x, point.z, y), point.z)
-    bucket.uvs.push(point.x * 0.018, point.z * 0.018)
-  }
-  for (const triangle of triangles) {
-    const a = triangle[0]
-    const b = triangle[1]
-    const c = triangle[2]
-    if (a === undefined || b === undefined || c === undefined) continue
-    bucket.indices.push(base + a, base + b, base + c)
-  }
-}
-
-const appendBuildingWalls = (
-  bucket: GeometryBucket,
-  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
-  minHeight: number,
-  height: number,
-  terrain: DroneTerrainModel | undefined,
-): void => {
-  for (const sourceRing of rings) {
-    const ring = openRing(sourceRing)
-    if (ring.length < 2) continue
-    for (let index = 0; index < ring.length; index += 1) {
-      const start = ring[index]!
-      const end = ring[(index + 1) % ring.length]!
-      const length = Math.hypot(end.x - start.x, end.z - start.z)
-      if (length < 0.1) continue
-      const base = bucket.positions.length / 3
-      const startBaseY = terrainY(terrain, start.x, start.z, minHeight)
-      const endBaseY = terrainY(terrain, end.x, end.z, minHeight)
-      bucket.positions.push(
-        start.x, startBaseY, start.z,
-        end.x, endBaseY, end.z,
-        end.x, endBaseY + height, end.z,
-        start.x, startBaseY + height, start.z,
-      )
-      bucket.uvs.push(0, 0, length * 0.12, 0, length * 0.12, height * 0.18, 0, height * 0.18)
-      bucket.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
-    }
-  }
-}
-
-const geometryFromBucket = (
-  bucket: GeometryBucket,
-): THREE.BufferGeometry | null => {
-  if (bucket.positions.length === 0 || bucket.indices.length === 0) return null
-  const merged = new THREE.BufferGeometry()
-  merged.setAttribute('position', new THREE.Float32BufferAttribute(bucket.positions, 3))
-  merged.setAttribute('uv', new THREE.Float32BufferAttribute(bucket.uvs, 2))
-  merged.setIndex(bucket.indices)
-  if (bucket.needsNormals) merged.computeVertexNormals()
-  merged.computeBoundingSphere()
-  return merged
-}
-
-const meshesFromBuckets = (
-  buckets: ReadonlyMap<string, GeometryBucket>,
-): THREE.Group => {
-  const group = new THREE.Group()
-  for (const bucket of buckets.values()) {
-    const geometry = geometryFromBucket(bucket)
-    if (!geometry) continue
-    const mesh = new THREE.Mesh(geometry, bucket.material)
-    mesh.receiveShadow = bucket.receiveShadow
-    mesh.castShadow = bucket.castShadow
-    mesh.userData.receiveShadow = bucket.receiveShadow
-    mesh.userData.castShadow = bucket.castShadow
-    if (typeof bucket.material.userData.droneSceneryKind === 'string') {
-      mesh.userData.droneSceneryKind = bucket.material.userData.droneSceneryKind
-    }
-    group.add(mesh)
-  }
-  return group
-}
-
-const createMergedSurfaceMeshes = (
-  polygons: ReadonlyArray<DroneWorldPolygonFeature>,
-  terrain: DroneTerrainModel | undefined,
-): THREE.Group => {
-  const buckets = new Map<string, GeometryBucket>()
-  for (const feature of polygons) {
-    if (feature.kind === 'building') continue
-    const color = surfacePalette(feature)
-    const isWater = feature.kind === 'water'
-    const bucket = getBucket(
-      buckets,
-      isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
-      () => {
-        const material = isWater
-          ? createWaterMaterial()
-          : new THREE.MeshBasicMaterial({
-              color,
-            })
-        if (isWater) material.userData.droneWaterMaterial = true
-        material.userData.droneSceneryKind = isWater ? 'water-surface' : 'ground-surface'
-        configureSurfaceDepth(material, feature)
-        return material
-      },
-      { receiveShadow: false, castShadow: false, needsNormals: false },
-    )
-    appendHorizontalPolygon(bucket, feature.rings, surfaceYOffset(feature), terrain)
-  }
-  return meshesFromBuckets(buckets)
-}
-
-const createMergedBuildingMeshes = (
-  polygons: ReadonlyArray<DroneWorldPolygonFeature>,
-  terrain: DroneTerrainModel | undefined,
-): THREE.Group => {
-  const buckets = new Map<string, GeometryBucket>()
-  for (const feature of polygons) {
-    if (feature.kind !== 'building') continue
-    const height = feature.heightM ?? 8
-    if (height < 1) continue
-    const minHeight = feature.minHeightM ?? 0
-    const wallColor = feature.className === 'industrial'
-      ? '#a8a29e'
-      : feature.className === 'commercial'
-        ? '#b8b4a7'
-        : feature.className === 'apartments'
-        ? '#bbb7ad'
-        : '#c7c2b8'
-    const wallBucket = getBucket(
-      buckets,
-      `building-wall:${feature.className}:${wallColor}`,
-      () => createBuildingWallMaterial(wallColor, feature.className),
-      { receiveShadow: false, castShadow: false, needsNormals: true },
-    )
-    appendBuildingWalls(wallBucket, feature.rings, minHeight, height, terrain)
-
-    const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
-    const roofBucket = getBucket(
-      buckets,
-      `building-roof:${Math.round(roofShade * 10)}`,
-      () => {
-        const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
-        const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
-        roofMaterial.userData.droneSceneryKind = 'building-roof'
-        roofMaterial.polygonOffset = true
-        roofMaterial.polygonOffsetFactor = -2
-        roofMaterial.polygonOffsetUnits = -16
-        return roofMaterial
-      },
-      { receiveShadow: false, castShadow: false, needsNormals: false },
-    )
-    appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32, terrain)
-  }
-  return meshesFromBuckets(buckets)
-}
-
-const createShorelineEdges = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain: DroneTerrainModel | undefined,
-): THREE.Group => {
-  const group = new THREE.Group()
-  const positions: number[] = []
-  for (const feature of snapshot.polygons) {
-    if (feature.kind !== 'water' || feature.distanceM > snapshot.radiusM * 0.98) continue
-    for (const sourceRing of feature.rings) {
-      const ring = openRing(sourceRing)
-      if (ring.length < 2) continue
-      for (let index = 0; index < ring.length; index += 1) {
-        const start = ring[index]!
-        const end = ring[(index + 1) % ring.length]!
-        const length = Math.hypot(end.x - start.x, end.z - start.z)
-        if (length < 0.5) continue
-        positions.push(
-          start.x, terrainY(terrain, start.x, start.z, surfaceYOffset(feature) + 0.18), start.z,
-          end.x, terrainY(terrain, end.x, end.z, surfaceYOffset(feature) + 0.18), end.z,
-        )
-      }
-    }
-  }
-  if (positions.length === 0) return group
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.computeBoundingSphere()
-  const material = new THREE.LineBasicMaterial({ color: '#d7fbff', transparent: true, opacity: 0.74 })
-  const shoreline = new THREE.LineSegments(geometry, material)
-  shoreline.userData.droneSceneryKind = 'shoreline'
-  group.userData.droneSceneryKind = 'shoreline'
-  group.add(shoreline)
-  return group
-}
-
-const seededRandom = (
-  seed: number,
-): (() => number) => {
-  let state = seed >>> 0
-  return () => {
-    state = Math.imul(1664525, state) + 1013904223
-    return (state >>> 0) / 0xffffffff
-  }
-}
-
-const stableHash = (value: string): number => {
-  let hash = 2166136261
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 16777619)
-  }
-  return hash >>> 0
-}
-
-const polygonBounds = (
-  ring: ReadonlyArray<DroneWorldPoint>,
-): Bounds2 => {
-  let minX = Number.POSITIVE_INFINITY
-  let maxX = Number.NEGATIVE_INFINITY
-  let minZ = Number.POSITIVE_INFINITY
-  let maxZ = Number.NEGATIVE_INFINITY
-  for (const point of ring) {
-    minX = Math.min(minX, point.x)
-    maxX = Math.max(maxX, point.x)
-    minZ = Math.min(minZ, point.z)
-    maxZ = Math.max(maxZ, point.z)
-  }
-  return { minX, maxX, minZ, maxZ }
-}
-
-const boundsContainPoint = (
-  bounds: Bounds2,
-  point: DroneWorldPoint,
-): boolean =>
-  point.x >= bounds.minX && point.x <= bounds.maxX && point.z >= bounds.minZ && point.z <= bounds.maxZ
-
-const expandedBounds = (
-  bounds: Bounds2,
-  expansionM: number,
-): Bounds2 => ({
-  minX: bounds.minX - expansionM,
-  maxX: bounds.maxX + expansionM,
-  minZ: bounds.minZ - expansionM,
-  maxZ: bounds.maxZ + expansionM,
-})
-
-const polygonContainsPoint = (
-  feature: DroneWorldPolygonFeature,
-  point: DroneWorldPoint,
-): boolean => {
-  const outer = feature.rings[0]
-  if (!outer || !pointInRing(point, outer)) return false
-  return !feature.rings.slice(1).some(ring => pointInRing(point, ring))
-}
-
-const lineBounds = (
-  line: DroneWorldLineFeature,
-): Bounds2 => {
-  let minX = Number.POSITIVE_INFINITY
-  let maxX = Number.NEGATIVE_INFINITY
-  let minZ = Number.POSITIVE_INFINITY
-  let maxZ = Number.NEGATIVE_INFINITY
-  for (const point of line.path) {
-    minX = Math.min(minX, point.x)
-    maxX = Math.max(maxX, point.x)
-    minZ = Math.min(minZ, point.z)
-    maxZ = Math.max(maxZ, point.z)
-  }
-  return { minX, maxX, minZ, maxZ }
-}
-
-const pointSegmentDistanceM = (
-  point: DroneWorldPoint,
-  start: DroneWorldPoint,
-  end: DroneWorldPoint,
-): number => {
-  const dx = end.x - start.x
-  const dz = end.z - start.z
-  const lengthSq = dx * dx + dz * dz
-  if (lengthSq <= Number.EPSILON) return Math.hypot(point.x - start.x, point.z - start.z)
-  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSq))
-  return Math.hypot(point.x - (start.x + dx * t), point.z - (start.z + dz * t))
-}
-
-const pointNearLine = (
-  point: DroneWorldPoint,
-  line: IndexedLine,
-): boolean => {
-  if (!boundsContainPoint(line.bounds, point)) return false
-  for (let index = 0; index < line.feature.path.length - 1; index += 1) {
-    if (pointSegmentDistanceM(point, line.feature.path[index]!, line.feature.path[index + 1]!) <= line.clearanceM) return true
-  }
-  return false
-}
-
-const sceneryExclusionCellSizeM = 96
-
-const cellKeyForPoint = (
-  point: DroneWorldPoint,
-): string =>
-  `${Math.floor(point.x / sceneryExclusionCellSizeM)}:${Math.floor(point.z / sceneryExclusionCellSizeM)}`
-
-const cellKeysForBounds = (
-  bounds: Bounds2,
-): ReadonlyArray<string> => {
-  const keys: string[] = []
-  const minX = Math.floor(bounds.minX / sceneryExclusionCellSizeM)
-  const maxX = Math.floor(bounds.maxX / sceneryExclusionCellSizeM)
-  const minZ = Math.floor(bounds.minZ / sceneryExclusionCellSizeM)
-  const maxZ = Math.floor(bounds.maxZ / sceneryExclusionCellSizeM)
-  for (let x = minX; x <= maxX; x += 1) {
-    for (let z = minZ; z <= maxZ; z += 1) keys.push(`${x}:${z}`)
-  }
-  return keys
-}
-
-const addIndexedValue = <T>(
-  index: Map<string, T[]>,
-  key: string,
-  value: T,
-): void => {
-  const existing = index.get(key)
-  if (existing) {
-    existing.push(value)
-    return
-  }
-  index.set(key, [value])
-}
-
-const createSceneryExclusionIndex = (
-  snapshot: DroneMapWorldSnapshot,
-): SceneryExclusionIndex => {
-  const solidPolygonsByCell = new Map<string, IndexedPolygon[]>()
-  const transportLinesByCell = new Map<string, IndexedLine[]>()
-
-  for (const feature of snapshot.polygons) {
-    if (feature.kind !== 'building' && feature.kind !== 'water' && feature.kind !== 'aeroway') continue
-    const outer = feature.rings[0]
-    if (!outer) continue
-    const indexed = { feature, bounds: polygonBounds(outer) }
-    for (const key of cellKeysForBounds(indexed.bounds)) addIndexedValue(solidPolygonsByCell, key, indexed)
-  }
-
-  for (const feature of snapshot.lines) {
-    if (feature.kind !== 'road' && feature.kind !== 'rail' && feature.kind !== 'aeroway') continue
-    const clearanceM = Math.max(3, feature.widthM * 0.5 + 2.5)
-    const indexed = { feature, clearanceM, bounds: expandedBounds(lineBounds(feature), clearanceM) }
-    for (const key of cellKeysForBounds(indexed.bounds)) addIndexedValue(transportLinesByCell, key, indexed)
-  }
-
-  const solidBlockedAt = (point: DroneWorldPoint): boolean => {
-    const polygons = solidPolygonsByCell.get(cellKeyForPoint(point)) ?? []
-    return polygons.some(item => boundsContainPoint(item.bounds, point) && polygonContainsPoint(item.feature, point))
-  }
-
-  const vegetationBlockedAt = (point: DroneWorldPoint): boolean => {
-    if (solidBlockedAt(point)) return true
-    const lines = transportLinesByCell.get(cellKeyForPoint(point)) ?? []
-    return lines.some(line => pointNearLine(point, line))
-  }
-
-  return { solidBlockedAt, vegetationBlockedAt }
-}
-
-const polygonCentroid = (
-  ring: ReadonlyArray<DroneWorldPoint>,
-): DroneWorldPoint => {
-  if (ring.length === 0) return { x: 0, z: 0 }
-  let signedArea = 0
-  let cx = 0
-  let cz = 0
-  for (let index = 0; index < ring.length; index += 1) {
-    const current = ring[index]!
-    const next = ring[(index + 1) % ring.length]!
-    const cross = current.x * next.z - next.x * current.z
-    signedArea += cross
-    cx += (current.x + next.x) * cross
-    cz += (current.z + next.z) * cross
-  }
-  const area = signedArea * 0.5
-  if (Math.abs(area) < 0.001) {
-    return {
-      x: ring.reduce((sum, point) => sum + point.x, 0) / ring.length,
-      z: ring.reduce((sum, point) => sum + point.z, 0) / ring.length,
-    }
-  }
-  return { x: cx / (6 * area), z: cz / (6 * area) }
-}
-
-const createRooftopFixtures = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain: DroneTerrainModel | undefined,
-): THREE.Group => {
-  const buildings = snapshot.polygons
-    .filter(feature => feature.kind === 'building' && feature.distanceM < Math.min(2_200, snapshot.radiusM * 0.55) && feature.areaM2 > 80)
-    .slice(0, 900)
-  const fixtures: Array<{
-    readonly x: number
-    readonly y: number
-    readonly z: number
-    readonly sx: number
-    readonly sy: number
-    readonly sz: number
-    readonly rotation: number
-  }> = []
-  for (const building of buildings) {
-    const outer = building.rings[0]
-    if (!outer) continue
-    const random = seededRandom(stableHash(`roof:${building.id}`))
-    const bounds = polygonBounds(outer)
-    const target = building.areaM2 > 1_800 ? 3 : building.areaM2 > 650 ? 2 : 1
-    let added = 0
-    for (let attempt = 0; attempt < target * 10 && added < target; attempt += 1) {
-      const candidate = attempt === 0
-        ? polygonCentroid(outer)
-        : {
-            x: bounds.minX + random() * (bounds.maxX - bounds.minX),
-            z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
-          }
-      if (!pointInRing(candidate, outer)) continue
-      const height = building.minHeightM ?? 0
-      fixtures.push({
-        x: candidate.x,
-        y: terrainY(terrain, candidate.x, candidate.z, height + (building.heightM ?? 8) + 0.52),
-        z: candidate.z,
-        sx: 1.2 + random() * 2.6,
-        sy: 0.45 + random() * 0.9,
-        sz: 1.0 + random() * 2.2,
-        rotation: random() * Math.PI * 2,
-      })
-      added += 1
-    }
-  }
-  const group = new THREE.Group()
-  if (fixtures.length === 0) return group
-  const hvac = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    makeMaterial('#aeb7bf', 0.72, 0.04),
-    fixtures.length,
-  )
-  const vent = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.42, 0.52, 1.4, 10),
-    makeMaterial('#6f7a84', 0.74, 0.04),
-    fixtures.length,
-  )
-  const dummy = new THREE.Object3D()
-  for (const [index, fixture] of fixtures.entries()) {
-    dummy.position.set(fixture.x, fixture.y, fixture.z)
-    dummy.rotation.set(0, fixture.rotation, 0)
-    dummy.scale.set(fixture.sx, fixture.sy, fixture.sz)
-    dummy.updateMatrix()
-    hvac.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(fixture.x + Math.cos(fixture.rotation) * fixture.sx * 0.55, fixture.y + fixture.sy * 0.62, fixture.z + Math.sin(fixture.rotation) * fixture.sz * 0.55)
-    dummy.scale.set(0.65, 0.65, 0.65)
-    dummy.updateMatrix()
-    vent.setMatrixAt(index, dummy.matrix)
-  }
-  hvac.instanceMatrix.needsUpdate = true
-  vent.instanceMatrix.needsUpdate = true
-  hvac.receiveShadow = false
-  vent.receiveShadow = false
-  hvac.castShadow = false
-  vent.castShadow = false
-  hvac.userData.droneSceneryKind = 'rooftop-fixture'
-  vent.userData.droneSceneryKind = 'rooftop-fixture'
-  group.userData.droneSceneryKind = 'rooftop-fixture'
-  group.add(hvac, vent)
-  return group
-}
-
-const vegetationFeatures = (
-  snapshot: DroneMapWorldSnapshot,
-): ReadonlyArray<DroneWorldPolygonFeature> =>
-  snapshot.polygons.filter(feature =>
-    (feature.kind === 'landcover' || feature.kind === 'landuse')
-    && ['wood', 'forest', 'scrub', 'heath', 'grass', 'park', 'residential'].includes(feature.className))
-
-const createVegetation = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain: DroneTerrainModel | undefined,
-  exclusionIndex: SceneryExclusionIndex,
-): THREE.Group => {
-  const features = vegetationFeatures(snapshot)
-  const group = new THREE.Group()
-  const maxTrees = 1_450
-  const positions: Array<{ readonly x: number; readonly z: number; readonly scale: number }> = []
-  for (const feature of features) {
-    const outer = feature.rings[0]
-    if (!outer || outer.length < 3 || positions.length >= maxTrees) continue
-    const bounds = polygonBounds(outer)
-    const area = Math.abs(polygonArea(outer))
-    const distanceFactor = feature.distanceM < 1_500 ? 1 : feature.distanceM < 3_000 ? 0.62 : 0.32
-    const targetCount = clamp(Math.floor(area / (feature.className === 'residential' ? 11_000 : 4_800) * distanceFactor), 2, 80)
-    const random = seededRandom(stableHash(feature.id))
-    let added = 0
-    for (let attempt = 0; attempt < targetCount * 12 && positions.length < maxTrees && added < targetCount; attempt += 1) {
-      const candidate = {
-        x: bounds.minX + random() * (bounds.maxX - bounds.minX),
-        z: bounds.minZ + random() * (bounds.maxZ - bounds.minZ),
-      }
-      if (!pointInRing(candidate, outer)) continue
-      if (exclusionIndex.vegetationBlockedAt(candidate)) continue
-      positions.push({
-        x: candidate.x,
-        z: candidate.z,
-        scale: 0.75 + random() * 0.85,
-      })
-      added += 1
-    }
-  }
-  if (positions.length === 0) return group
-  const trunk = new THREE.InstancedMesh(
-    new THREE.CylinderGeometry(0.5, 0.74, 5.1, 8),
-    makeMaterial('#6f3d1d', 0.9, 0.01),
-    positions.length,
-  )
-  const canopy = new THREE.InstancedMesh(
-    new THREE.DodecahedronGeometry(3.6, 0),
-    makeMaterial('#1f7a3a', 0.9, 0.01),
-    positions.length,
-  )
-  const canopyTop = new THREE.InstancedMesh(
-    new THREE.DodecahedronGeometry(2.7, 0),
-    makeMaterial('#2f8f45', 0.9, 0.01),
-    positions.length,
-  )
-  const dummy = new THREE.Object3D()
-  for (const [index, position] of positions.entries()) {
-    const baseY = terrainY(terrain, position.x, position.z, 0)
-    dummy.position.set(position.x, baseY + 2.6 * position.scale, position.z)
-    dummy.scale.set(position.scale, position.scale, position.scale)
-    dummy.rotation.y = stableHash(`${position.x}:${position.z}`) / 0xffffffff * Math.PI * 2
-    dummy.updateMatrix()
-    trunk.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(position.x, baseY + 7.5 * position.scale, position.z)
-    dummy.updateMatrix()
-    canopy.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(position.x + 0.8 * position.scale, baseY + 10.2 * position.scale, position.z - 0.4 * position.scale)
-    dummy.scale.set(position.scale * 0.88, position.scale * 0.82, position.scale * 0.88)
-    dummy.updateMatrix()
-    canopyTop.setMatrixAt(index, dummy.matrix)
-  }
-  trunk.receiveShadow = false
-  trunk.castShadow = false
-  canopy.castShadow = false
-  canopy.receiveShadow = false
-  canopyTop.castShadow = false
-  canopyTop.receiveShadow = false
-  trunk.userData.droneSceneryKind = 'vegetation'
-  canopy.userData.droneSceneryKind = 'vegetation'
-  canopyTop.userData.droneSceneryKind = 'vegetation'
-  group.userData.droneSceneryKind = 'vegetation'
-  group.add(trunk, canopy, canopyTop)
-  return group
-}
-
-const createPoiBeacons = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain: DroneTerrainModel | undefined,
-): THREE.Group => {
-  const group = new THREE.Group()
-  const beaconMaterial = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0ea5e9', emissiveIntensity: 0.7, roughness: 0.35 })
-  const ringMaterial = new THREE.MeshBasicMaterial({ color: '#bae6fd', transparent: true, opacity: 0.54 })
-  const points = snapshot.points.filter(point => point.kind !== 'road_label').slice(0, 36)
-  const dummy = new THREE.Object3D()
-  if (points.length > 0) {
-    const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 10), beaconMaterial, points.length)
-    const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 6, 28), ringMaterial, points.length)
-    for (const [index, point] of points.entries()) {
-      const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
-      dummy.position.set(point.point.x, baseY + 9, point.point.z)
-      dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(1, 1, 1)
-      dummy.updateMatrix()
-      stems.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(point.point.x, baseY + 18.2, point.point.z)
-      dummy.rotation.set(Math.PI / 2, 0, 0)
-      dummy.updateMatrix()
-      rings.setMatrixAt(index, dummy.matrix)
-    }
-    stems.instanceMatrix.needsUpdate = true
-    rings.instanceMatrix.needsUpdate = true
-    stems.userData.droneSceneryKind = 'poi-beacon'
-    rings.userData.droneSceneryKind = 'poi-beacon'
-    group.add(stems, rings)
-  }
-
-  const roadLabels = snapshot.points.filter(point => point.kind === 'road_label').slice(0, 80)
-  if (roadLabels.length > 0) {
-    const posts = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.08, 0.1, 3.6, 8),
-      makeMaterial('#475569', 0.78, 0.02),
-      roadLabels.length,
-    )
-    const panels = new THREE.InstancedMesh(
-      new THREE.BoxGeometry(4.8, 1.15, 0.16),
-      new THREE.MeshStandardMaterial({ color: '#1e3a8a', emissive: '#0f172a', emissiveIntensity: 0.16, roughness: 0.48 }),
-      roadLabels.length,
-    )
-    for (const [index, point] of roadLabels.entries()) {
-      const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
-      const rotation = stableHash(point.id) / 0xffffffff * Math.PI * 2
-      dummy.position.set(point.point.x, baseY + 1.8, point.point.z)
-      dummy.rotation.set(0, 0, 0)
-      dummy.scale.set(1, 1, 1)
-      dummy.updateMatrix()
-      posts.setMatrixAt(index, dummy.matrix)
-      dummy.position.set(point.point.x, baseY + 3.85, point.point.z)
-      dummy.rotation.set(0, rotation, 0)
-      dummy.scale.set(1, 1, 1)
-      dummy.updateMatrix()
-      panels.setMatrixAt(index, dummy.matrix)
-    }
-    posts.instanceMatrix.needsUpdate = true
-    panels.instanceMatrix.needsUpdate = true
-    posts.userData.droneSceneryKind = 'road-label-sign'
-    panels.userData.droneSceneryKind = 'road-label-sign'
-    group.add(posts, panels)
-  }
-  group.userData.droneSceneryKind = 'poi-beacon'
-  return group
 }
 
 const createDistantHills = (
   radiusM: number,
 ): THREE.Mesh => {
   const inner = radiusM * 1.08
-  const outer = radiusM * 1.75
-  const segments = 64
+  const outer = radiusM * 1.9
+  const segments = 96
   const positions: number[] = []
   const indices: number[] = []
   for (let index = 0; index <= segments; index += 1) {
     const angle = index / segments * Math.PI * 2
-    const height = 90 + Math.sin(index * 0.47) * 26 + Math.sin(index * 0.13 + 2.1) * 42
-    positions.push(Math.cos(angle) * inner, 0, Math.sin(angle) * inner)
+    const height = 80 + Math.sin(index * 0.47) * 24 + Math.sin(index * 0.13 + 2.1) * 38
+    positions.push(Math.cos(angle) * inner, -10, Math.sin(angle) * inner)
     positions.push(Math.cos(angle) * outer, height, Math.sin(angle) * outer)
   }
   for (let index = 0; index < segments; index += 1) {
@@ -998,7 +120,7 @@ const createDistantHills = (
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
-  const mesh = new THREE.Mesh(geometry, makeMaterial('#64748b', 0.96, 0.01))
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: '#687789', roughness: 0.98, metalness: 0.01 }))
   mesh.receiveShadow = false
   return mesh
 }
@@ -1010,7 +132,7 @@ const createAtmosphereDome = (
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      topColor: { value: new THREE.Color('#6bb7f0') },
+      topColor: { value: new THREE.Color('#70b7f2') },
       bottomColor: { value: new THREE.Color('#dbeafe') },
     },
     vertexShader: `
@@ -1027,150 +149,16 @@ const createAtmosphereDome = (
       varying vec3 vWorldPosition;
       void main() {
         float h = normalize(vWorldPosition).y * 0.5 + 0.5;
-        gl_FragColor = vec4(mix(bottomColor, topColor, smoothstep(0.1, 0.95, h)), 1.0);
+        gl_FragColor = vec4(mix(bottomColor, topColor, smoothstep(0.08, 0.96, h)), 1.0);
       }
     `,
   })
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(radiusM * 3.5, 24, 12), material)
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(radiusM * 3.5, 32, 16), material)
   dome.frustumCulled = false
   return dome
 }
 
-const renderableWorldKeyFor = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain: DroneTerrainModel | undefined,
-): string =>
-  `${snapshot.key}:${snapshot.center.lon.toFixed(6)}:${snapshot.center.lat.toFixed(6)}:${terrain?.kind ?? 'flat'}:${terrain?.kind === 'dem' ? `${terrain.source.zoom}:${terrain.minHeightM.toFixed(1)}:${terrain.maxHeightM.toFixed(1)}` : 'none'}`
-
-const disposeMaterial = (material: THREE.Material): void => {
-  const maybeTextured = material as THREE.Material & {
-    readonly map?: THREE.Texture | null
-    readonly normalMap?: THREE.Texture | null
-    readonly roughnessMap?: THREE.Texture | null
-    readonly metalnessMap?: THREE.Texture | null
-    readonly emissiveMap?: THREE.Texture | null
-    readonly alphaMap?: THREE.Texture | null
-  }
-  for (const texture of [
-    maybeTextured.map,
-    maybeTextured.normalMap,
-    maybeTextured.roughnessMap,
-    maybeTextured.metalnessMap,
-    maybeTextured.emissiveMap,
-    maybeTextured.alphaMap,
-  ]) {
-    texture?.dispose()
-  }
-  material.dispose()
-}
-
-const disposeRenderableWorldTemplate = (
-  group: THREE.Object3D,
-): void => {
-  const geometries = new Set<THREE.BufferGeometry>()
-  const materials = new Set<THREE.Material>()
-  group.traverse(child => {
-    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
-    geometries.add(child.geometry)
-    if (Array.isArray(child.material)) {
-      for (const material of child.material) materials.add(material)
-    } else {
-      materials.add(child.material)
-    }
-  })
-  for (const geometry of geometries) geometry.dispose()
-  for (const material of materials) disposeMaterial(material)
-}
-
-const markSharedWorldGeometries = (
-  group: THREE.Object3D,
-): void => {
-  group.traverse(child => {
-    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
-    child.geometry.userData.droneSharedWorldGeometry = true
-  })
-}
-
-const collectWaterMaterials = (
-  group: THREE.Object3D,
-): THREE.ShaderMaterial[] => {
-  const waterMaterials: THREE.ShaderMaterial[] = []
-  group.traverse(child => {
-    if (!(child instanceof THREE.Mesh)) return
-    const materials = Array.isArray(child.material) ? child.material : [child.material]
-    for (const material of materials) {
-      if (material.userData.droneWaterMaterial === true && material instanceof THREE.ShaderMaterial) waterMaterials.push(material)
-    }
-  })
-  return waterMaterials
-}
-
-const cloneMaterialForScene = (
-  material: THREE.Material,
-): THREE.Material => {
-  const cloned = material.clone()
-  cloned.userData = { ...material.userData }
-  const sourceTextured = material as THREE.Material & {
-    readonly map?: THREE.Texture | null
-    readonly normalMap?: THREE.Texture | null
-    readonly roughnessMap?: THREE.Texture | null
-    readonly metalnessMap?: THREE.Texture | null
-    readonly emissiveMap?: THREE.Texture | null
-    readonly alphaMap?: THREE.Texture | null
-  }
-  const clonedTextured = cloned as THREE.Material & {
-    map?: THREE.Texture | null
-    normalMap?: THREE.Texture | null
-    roughnessMap?: THREE.Texture | null
-    metalnessMap?: THREE.Texture | null
-    emissiveMap?: THREE.Texture | null
-    alphaMap?: THREE.Texture | null
-  }
-  const cloneTexture = (texture: THREE.Texture | null | undefined): THREE.Texture | null => {
-    if (!texture) return null
-    const clonedTexture = texture.clone()
-    clonedTexture.needsUpdate = true
-    return clonedTexture
-  }
-  clonedTextured.map = cloneTexture(sourceTextured.map)
-  clonedTextured.normalMap = cloneTexture(sourceTextured.normalMap)
-  clonedTextured.roughnessMap = cloneTexture(sourceTextured.roughnessMap)
-  clonedTextured.metalnessMap = cloneTexture(sourceTextured.metalnessMap)
-  clonedTextured.emissiveMap = cloneTexture(sourceTextured.emissiveMap)
-  clonedTextured.alphaMap = cloneTexture(sourceTextured.alphaMap)
-  return cloned
-}
-
-const cloneRenderableWorld = (
-  template: THREE.Group,
-): THREE.Group => {
-  const clone = template.clone(true)
-  clone.traverse(child => {
-    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments)) return
-    child.material = Array.isArray(child.material)
-      ? child.material.map(material => cloneMaterialForScene(material))
-      : cloneMaterialForScene(child.material)
-    child.matrixAutoUpdate = false
-  })
-  clone.userData.droneWaterMaterials = collectWaterMaterials(clone)
-  return clone
-}
-
-const rememberRenderableWorld = (
-  key: string,
-  template: THREE.Group,
-): void => {
-  cachedRenderableWorlds.set(key, template)
-  while (cachedRenderableWorlds.size > maxCachedRenderableWorlds) {
-    const oldestKey = cachedRenderableWorlds.keys().next().value
-    if (typeof oldestKey !== 'string') break
-    const evicted = cachedRenderableWorlds.get(oldestKey)
-    cachedRenderableWorlds.delete(oldestKey)
-    if (evicted) disposeRenderableWorldTemplate(evicted)
-  }
-}
-
-export const createFallbackWorldGroup = (
+export const createAtmosphericBaseWorldGroup = (
   radiusM = 1_600,
   terrain?: DroneTerrainModel,
 ): THREE.Group => {
@@ -1179,72 +167,152 @@ export const createFallbackWorldGroup = (
   return group
 }
 
-const buildDroneMapWorldTemplate = (
-  snapshot: DroneMapWorldSnapshot,
+const disposeTileTemplate = (
+  group: THREE.Object3D,
+): void => {
+  const geometries = new Set<THREE.BufferGeometry>()
+  const materials = new Set<THREE.Material>()
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh)) return
+    geometries.add(child.geometry)
+    if (Array.isArray(child.material)) {
+      for (const material of child.material) materials.add(material)
+    } else {
+      materials.add(child.material)
+    }
+  })
+  for (const geometry of geometries) geometry.dispose()
+  for (const material of materials) material.dispose()
+}
+
+const rememberTileTemplate = (
+  key: string,
+  promise: Promise<THREE.Group>,
+): void => {
+  cachedTileTemplates.set(key, promise)
+  while (cachedTileTemplates.size > maxCachedTileTemplates) {
+    const oldestKey = cachedTileTemplates.keys().next().value
+    if (typeof oldestKey !== 'string') break
+    const evicted = cachedTileTemplates.get(oldestKey)
+    cachedTileTemplates.delete(oldestKey)
+    void evicted?.then(disposeTileTemplate, () => undefined)
+  }
+}
+
+const markSharedAssetResources = (
+  group: THREE.Object3D,
+): void => {
+  group.traverse(child => {
+    if (!(child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh)) return
+    child.geometry.userData.droneSharedWorldGeometry = true
+    const materials = Array.isArray(child.material) ? child.material : [child.material]
+    for (const material of materials) {
+      material.userData.droneSharedWorldMaterial = true
+      material.userData.droneSceneryKind = material.name
+    }
+    child.userData.droneSceneryKind = materials[0]?.name ?? 'scenery-asset'
+    child.castShadow = false
+    child.receiveShadow = false
+  })
+}
+
+const loadTileTemplate = async (
+  tile: DroneSceneryTileAsset,
+): Promise<THREE.Group> => {
+  const gltf = await loader().loadAsync(tile.url)
+  const group = gltf.scene
+  markSharedAssetResources(group)
+  group.userData.droneSceneryKind = 'scenery-asset-tile'
+  group.userData.droneSceneryTile = tile.id
+  return group
+}
+
+const tileTemplateFor = (
+  tile: DroneSceneryTileAsset,
+): Promise<THREE.Group> => {
+  const key = `${tile.recipeId}:${tile.z}/${tile.x}/${tile.y}:${tile.byteLength}`
+  const cached = cachedTileTemplates.get(key)
+  if (cached) {
+    cachedTileTemplates.delete(key)
+    cachedTileTemplates.set(key, cached)
+    return cached
+  }
+  const promise = loadTileTemplate(tile)
+  rememberTileTemplate(key, promise)
+  return promise
+}
+
+const cloneTileForWorld = (
+  template: THREE.Group,
+  tile: DroneSceneryTileAsset,
   terrain: DroneTerrainModel | undefined,
 ): THREE.Group => {
-  const group = createFallbackWorldGroup(snapshot.radiusM, terrain)
-  const exclusionIndex = createSceneryExclusionIndex(snapshot)
-  const surfaceGroup = createMergedSurfaceMeshes(snapshot.polygons, terrain)
-  const buildingGroup = createMergedBuildingMeshes(snapshot.polygons, terrain)
-  const transportGroup = createTransportGeometryGroup(snapshot, terrain, { solidBlockedAt: exclusionIndex.solidBlockedAt })
-  group.add(
-    surfaceGroup,
-    createShorelineEdges(snapshot, terrain),
-    transportGroup,
-    buildingGroup,
-    createRooftopFixtures(snapshot, terrain),
-    createVegetation(snapshot, terrain, exclusionIndex),
-    createPoiBeacons(snapshot, terrain),
+  const clone = template.clone(true)
+  clone.position.set(
+    tile.localOrigin.x,
+    terrainY(terrain, tile.localOrigin.x, tile.localOrigin.z, 0),
+    tile.localOrigin.z,
   )
-  group.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-      if (typeof child.userData.receiveShadow === 'boolean') child.receiveShadow = child.userData.receiveShadow
-      if (typeof child.userData.castShadow === 'boolean') child.castShadow = child.userData.castShadow
+  clone.userData.droneSceneryKind = 'scenery-asset-tile'
+  clone.userData.droneSceneryTile = tile.id
+  clone.traverse(child => {
+    child.matrixAutoUpdate = false
+    child.updateMatrix()
+  })
+  clone.updateMatrix()
+  return clone
+}
+
+const mapWithConcurrency = async <Input, Output>(
+  items: ReadonlyArray<Input>,
+  concurrency: number,
+  mapper: (item: Input, index: number) => Promise<Output>,
+): Promise<ReadonlyArray<Output>> => {
+  const results: Output[] = new Array(items.length)
+  let nextIndex = 0
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+  const runWorker = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(items[index]!, index)
     }
+  }
+  const workers: Promise<void>[] = []
+  for (let index = 0; index < workerCount; index += 1) workers.push(runWorker())
+  await Promise.all(workers)
+  return results
+}
+
+export const createDroneMapWorldGroup = async (
+  snapshot: DroneMapWorldSnapshot,
+  terrain?: DroneTerrainModel,
+): Promise<THREE.Group> => {
+  const group = createAtmosphericBaseWorldGroup(snapshot.radiusM, terrain)
+  const loadedTiles = await mapWithConcurrency(snapshot.tiles, tileLoadConcurrency, async tile => {
+    const template = await tileTemplateFor(tile)
+    return cloneTileForWorld(template, tile, terrain)
+  })
+  for (const tile of loadedTiles) group.add(tile)
+  group.traverse(child => {
     child.matrixAutoUpdate = false
     child.updateMatrix()
   })
   group.userData.worldSummary = {
     key: snapshot.key,
     tileCount: snapshot.tileCount,
-    polygonCount: snapshot.polygons.length,
-    lineCount: snapshot.lines.length,
-    pointCount: snapshot.points.length,
     coverage: snapshot.coverage,
     terrain: terrain?.kind ?? 'flat',
+    scenerySource: snapshot.scenerySource,
   }
   return group
 }
 
-export const createDroneMapWorldGroup = (
-  snapshot: DroneMapWorldSnapshot,
-  terrain?: DroneTerrainModel,
-): THREE.Group => {
-  const key = renderableWorldKeyFor(snapshot, terrain)
-  const cached = cachedRenderableWorlds.get(key)
-  if (cached) {
-    cachedRenderableWorlds.delete(key)
-    cachedRenderableWorlds.set(key, cached)
-    return cloneRenderableWorld(cached)
-  }
-  const template = buildDroneMapWorldTemplate(snapshot, terrain)
-  markSharedWorldGeometries(template)
-  rememberRenderableWorld(key, template)
-  return cloneRenderableWorld(template)
-}
-
 export const tickDroneMapWorldGroup = (
-  group: THREE.Object3D,
+  _group: THREE.Object3D,
   _nowMs: number,
   _viewMode: '2d' | '3d' | 'fpv',
 ): void => {
-  const timeSeconds = 0
-  const waterMaterials = group.userData.droneWaterMaterials
-  if (!Array.isArray(waterMaterials)) return
-  for (const material of waterMaterials) {
-    if (!(material instanceof THREE.ShaderMaterial)) continue
-    const uniform = material.uniforms.timeSeconds
-    if (uniform) uniform.value = timeSeconds
-  }
+  // The scenery asset path is static per tile. Animation remains owned by
+  // weather and operational objects so tile materials can stay shared/cached.
 }

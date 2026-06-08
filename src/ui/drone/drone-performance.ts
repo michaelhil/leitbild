@@ -13,11 +13,11 @@ export interface DroneScenePerformanceSnapshot {
   readonly quality: 'high' | 'balanced' | 'rescue'
   readonly worldLoadMs: number
   readonly worldBuildMs: number
-  readonly worldSource: 'worker'
+  readonly worldSource: 'asset-tiles'
   readonly activeScenes: number
   readonly worldFeatures: {
     readonly sceneryStage: 'placeholder' | 'near' | 'full'
-    readonly scenerySource: 'precompiled' | 'compile-through'
+    readonly scenerySource: 'asset-tiles'
     readonly tiles: number
     readonly polygons: number
     readonly lines: number
@@ -27,7 +27,6 @@ export interface DroneScenePerformanceSnapshot {
     readonly water: number
     readonly vegetation: number
     readonly roadLabels: number
-    readonly lineFragmentsMerged: number
     readonly terrain: 'available' | 'unavailable' | 'unknown'
     readonly terrainSurface: 'dem' | 'flat'
   }
@@ -54,7 +53,6 @@ export interface DroneFramePerformanceTracker {
     readonly water: number
     readonly vegetation: number
     readonly roadLabels: number
-    readonly lineFragmentsMerged: number
     readonly terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain']
     readonly terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface']
   }) => void
@@ -97,7 +95,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
-  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'worker'
+  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'asset-tiles'
   let tiles = 0
   let polygons = 0
   let lines = 0
@@ -107,11 +105,10 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let water = 0
   let vegetation = 0
   let roadLabels = 0
-  let lineFragmentsMerged = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
   let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'placeholder'
-  let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = 'compile-through'
+  let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = 'asset-tiles'
 
   const pushSample = (samples: number[], value: number): void => {
     samples.push(value)
@@ -147,7 +144,6 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       water = config.water
       vegetation = config.vegetation
       roadLabels = config.roadLabels
-      lineFragmentsMerged = config.lineFragmentsMerged
       terrain = config.terrain
       terrainSurface = config.terrainSurface
     },
@@ -183,7 +179,6 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
           water,
           vegetation,
           roadLabels,
-          lineFragmentsMerged,
           terrain,
           terrainSurface,
         },

@@ -1,6 +1,9 @@
 import { z } from 'zod'
 
-export const sceneryTileEncoding = 'leitbild-scenery-json-v1' as const
+export const sceneryFeatureTileEncoding = 'leitbild-scenery-feature-json-v1' as const
+export const sceneryAssetTileEncoding = 'model/gltf-binary' as const
+export const sceneryAssetFormat = 'directory-glb' as const
+export const sceneryAssetTileExtension = 'glb' as const
 export const defaultSceneryRecipeId = 'drone-urban-flight' as const
 
 export const sceneryTileCoordSchema = z.object({
@@ -69,7 +72,7 @@ export type SceneryLabelFeature = z.infer<typeof sceneryLabelFeatureSchema>
 
 export const sceneryTileSchema = z.object({
   schemaVersion: z.literal(1),
-  tileEncoding: z.literal(sceneryTileEncoding),
+  tileEncoding: z.literal(sceneryFeatureTileEncoding),
   recipeId: z.string().min(1),
   sourceTilesetId: z.string().min(1),
   tile: sceneryTileCoordSchema.extend({
@@ -90,7 +93,7 @@ export const emptySceneryTile = (config: {
   readonly extent?: number
 }): SceneryTile => ({
   schemaVersion: 1,
-  tileEncoding: sceneryTileEncoding,
+  tileEncoding: sceneryFeatureTileEncoding,
   recipeId: config.recipeId,
   sourceTilesetId: config.sourceTilesetId,
   tile: {
@@ -106,3 +109,61 @@ export const emptySceneryTile = (config: {
 
 export const sceneryTileHasFeatures = (tile: SceneryTile): boolean =>
   tile.features.polygons.length > 0 || tile.features.lines.length > 0 || tile.features.labels.length > 0
+
+export const sceneryAssetBoundsSchema = z.object({
+  minLon: z.number().finite(),
+  minLat: z.number().finite(),
+  maxLon: z.number().finite(),
+  maxLat: z.number().finite(),
+})
+export type SceneryAssetBounds = z.infer<typeof sceneryAssetBoundsSchema>
+
+export const sceneryAssetTileSummarySchema = z.object({
+  recipeId: z.string().min(1),
+  z: z.number().int().min(0).max(24),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  byteLength: z.number().int().nonnegative(),
+  centerLon: z.number().finite(),
+  centerLat: z.number().finite(),
+  featureCounts: z.object({
+    polygons: z.number().int().nonnegative(),
+    lines: z.number().int().nonnegative(),
+    labels: z.number().int().nonnegative(),
+    buildings: z.number().int().nonnegative(),
+    roads: z.number().int().nonnegative(),
+    water: z.number().int().nonnegative(),
+    vegetation: z.number().int().nonnegative(),
+  }),
+})
+export type SceneryAssetTileSummary = z.infer<typeof sceneryAssetTileSummarySchema>
+
+export const sceneryAssetManifestSchema = z.object({
+  schemaVersion: z.literal(1),
+  artifactFormat: z.literal(sceneryAssetFormat),
+  tileEncoding: z.literal(sceneryAssetTileEncoding),
+  tilesetId: z.string().min(1),
+  sourceTilesetId: z.string().min(1),
+  sourcePmtilesPath: z.string().min(1),
+  builtAt: z.string().min(1),
+  bounds: sceneryAssetBoundsSchema,
+  zooms: z.array(z.number().int().min(0).max(24)).min(1),
+  recipes: z.array(z.unknown()).min(1),
+  tileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
+  outputRoot: z.string().min(1),
+  counts: z.object({
+    decodedTileCount: z.number().int().nonnegative(),
+    emptyTileCount: z.number().int().nonnegative(),
+    writtenTileCount: z.number().int().nonnegative(),
+    polygons: z.number().int().nonnegative(),
+    lines: z.number().int().nonnegative(),
+    labels: z.number().int().nonnegative(),
+    buildings: z.number().int().nonnegative(),
+    roads: z.number().int().nonnegative(),
+    water: z.number().int().nonnegative(),
+    vegetation: z.number().int().nonnegative(),
+    bytes: z.number().int().nonnegative(),
+  }),
+  tiles: z.array(sceneryAssetTileSummarySchema),
+})
+export type SceneryAssetManifest = z.infer<typeof sceneryAssetManifestSchema>

@@ -44,10 +44,12 @@ await $`rsync -az --delete -e "ssh -p ${port}" ./data/reference/ ${target}:/opt/
 
 await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
 await ssh(`cd /opt/leitbild/app && ${remoteBun} run build:ui`)
+await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps ${remoteBun} run maps:scenery:build`)
 await ssh('cp /opt/leitbild/app/deploy/leitbild.service /etc/systemd/system/leitbild.service')
 await ssh('systemctl daemon-reload && systemctl enable --now leitbild && systemctl restart leitbild')
 await verifyEndpoint('/health')
 await verifyEndpoint('/api/scenarios')
 await verifyEndpoint('/map/capabilities.json')
+await verifyEndpoint('/map/scenery/current/manifest.json')
 
 console.log('Leitbild deploy complete')

@@ -3,7 +3,7 @@ import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
 import { loadDroneMapWorldForScene, type DroneMapWorldLoadResult } from './drone-map-world-loader.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
-import { createDroneMapWorldGroup, createFallbackWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
+import { createAtmosphericBaseWorldGroup, createDroneMapWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
 export type { DroneScenePerformanceSnapshot }
@@ -113,6 +113,7 @@ const enableShadows = (object: THREE.Object3D): void => {
 }
 
 const disposeMaterial = (material: THREE.Material): void => {
+  if (material.userData.droneSharedWorldMaterial === true) return
   const maybeTextured = material as THREE.Material & {
     readonly map?: THREE.Texture | null
     readonly normalMap?: THREE.Texture | null
@@ -138,7 +139,7 @@ const disposeObject = (object: THREE.Object3D): void => {
   const geometries = new Set<THREE.BufferGeometry>()
   const materials = new Set<THREE.Material>()
   object.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+    if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh || child instanceof THREE.LineSegments) {
       geometries.add(child.geometry)
       if (Array.isArray(child.material)) {
         for (const material of child.material) materials.add(material)
@@ -477,7 +478,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   keyLight.shadow.camera.bottom = -520
   const ambient = new THREE.HemisphereLight('#dbeafe', '#475569', 1.08)
   scene.add(keyLight, ambient)
-  let environmentLayer = createFallbackWorldGroup()
+  let environmentLayer = createAtmosphericBaseWorldGroup()
   scene.add(environmentLayer)
   const objectLayer = new THREE.Group()
   scene.add(objectLayer)
@@ -531,18 +532,24 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const noteSuffix = snapshot.coverage.notes.length > 0 ? `; ${snapshot.coverage.notes[0]}` : ''
     const stageLabel = config.stage === 'near' ? 'Nearby map scenery' : 'Full map scenery'
     const enrichmentSuffix = config.stage === 'near' ? '; loading full operating area' : ''
-    return `${stageLabel} loaded via ${config.worldResult.source}/${snapshot.scenerySource}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${noteSuffix}${enrichmentSuffix}`
+    const sizeKiB = Math.round(snapshot.coverage.bytes / 1024)
+    return `${stageLabel} loaded via ${config.worldResult.source}/${snapshot.scenerySource}: ${snapshot.tileCount} GLB tiles, ${sizeKiB} KiB, ${snapshot.coverage.decoded.polygons} polygons, ${snapshot.coverage.decoded.lines} lines${coverageSuffix}${terrainSuffix}${noteSuffix}${enrichmentSuffix}`
   }
-  const applyWorldResult = (result: {
+  const applyWorldResult = async (result: {
+    readonly generation: number
     readonly center: { readonly lon: number; readonly lat: number }
     readonly loadedCenterKey: string
     readonly stage: DroneWorldLoadStage
     readonly worldResult: DroneMapWorldLoadResult
     readonly loadMs: number
-  }): void => {
+  }): Promise<void> => {
     const snapshot = result.worldResult.snapshot
     const buildStartedAtMs = performance.now()
-    const nextLayer = createDroneMapWorldGroup(snapshot, result.worldResult.terrainModel)
+    const nextLayer = await createDroneMapWorldGroup(snapshot, result.worldResult.terrainModel)
+    if (destroyed || result.generation !== worldLoadGeneration) {
+      disposeObject(nextLayer)
+      return
+    }
     const buildMs = performance.now() - buildStartedAtMs
     scene.remove(environmentLayer)
     disposeObject(environmentLayer)
@@ -559,15 +566,14 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       buildMs,
       source: result.worldResult.source,
       tiles: snapshot.tileCount,
-      polygons: snapshot.polygons.length,
-      lines: snapshot.lines.length,
-      points: snapshot.points.length,
+      polygons: snapshot.coverage.decoded.polygons,
+      lines: snapshot.coverage.decoded.lines,
+      points: snapshot.coverage.decoded.points,
       buildings: snapshot.coverage.selected.buildings,
       roads: snapshot.coverage.selected.roads,
       water: snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways,
       vegetation: snapshot.coverage.selected.vegetationPolygons,
       roadLabels: snapshot.coverage.selected.roadLabels,
-      lineFragmentsMerged: snapshot.coverage.lineFragmentsMerged,
       terrain: result.worldResult.terrain.status,
       terrainSurface: result.worldResult.terrainModel.kind,
     })
@@ -589,7 +595,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           })
           const loadMs = performance.now() - loadStartedAtMs
           if (destroyed || generation !== worldLoadGeneration) return
-          applyWorldResult({
+          await applyWorldResult({
+            generation,
             center: decision.center,
             loadedCenterKey,
             stage: spec.stage,
