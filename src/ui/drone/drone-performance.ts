@@ -14,6 +14,10 @@ export interface DroneScenePerformanceSnapshot {
   readonly worldLoadMs: number
   readonly worldBuildMs: number
   readonly activeScenes: number
+  readonly renderBudget: {
+    readonly role: 'primary' | 'background' | 'hidden'
+    readonly targetFps: number
+  }
   readonly worldFeatures: {
     readonly tiles: number
     readonly polygons: number
@@ -44,6 +48,7 @@ export interface DroneFramePerformanceTracker {
     readonly pixelRatio: number
     readonly quality: DroneScenePerformanceSnapshot['quality']
     readonly activeScenes: number
+    readonly renderBudget: DroneScenePerformanceSnapshot['renderBudget']
   }) => DroneScenePerformanceSnapshot
 }
 
@@ -126,6 +131,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         worldLoadMs,
         worldBuildMs,
         activeScenes: renderInfo.activeScenes,
+        renderBudget: renderInfo.renderBudget,
         worldFeatures: { tiles, polygons, lines, points },
       }
     },

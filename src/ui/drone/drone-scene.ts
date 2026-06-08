@@ -59,7 +59,45 @@ interface VisualPose {
 
 const metersPerDegreeLat = 111_320
 const worldCenterBucketM = 900
-let activeDroneSceneCount = 0
+let nextDroneSceneId = 1
+let activeDroneSceneId = 0
+const droneSceneIds = new Set<number>()
+
+const registerDroneScene = (): number => {
+  const sceneId = nextDroneSceneId
+  nextDroneSceneId += 1
+  droneSceneIds.add(sceneId)
+  activeDroneSceneId = sceneId
+  return sceneId
+}
+
+const unregisterDroneScene = (sceneId: number): void => {
+  droneSceneIds.delete(sceneId)
+  if (activeDroneSceneId !== sceneId) return
+  activeDroneSceneId = [...droneSceneIds].at(-1) ?? 0
+}
+
+const markDroneSceneActive = (sceneId: number): void => {
+  if (!droneSceneIds.has(sceneId)) return
+  activeDroneSceneId = sceneId
+}
+
+const droneSceneCount = (): number => droneSceneIds.size
+
+const renderBudgetFor = (
+  sceneId: number,
+  viewMode: DroneSceneViewMode,
+): DroneScenePerformanceSnapshot['renderBudget'] => {
+  if (document.visibilityState !== 'visible') return { role: 'hidden', targetFps: 4 }
+  const activeScenes = droneSceneCount()
+  if (activeScenes <= 1 || activeDroneSceneId === 0 || activeDroneSceneId === sceneId) {
+    return { role: 'primary', targetFps: 60 }
+  }
+  if (viewMode === '2d') {
+    return { role: 'background', targetFps: activeScenes >= 3 ? 8 : 12 }
+  }
+  return { role: 'background', targetFps: activeScenes >= 3 ? 15 : 20 }
+}
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -400,7 +438,7 @@ const applyCameraProjection = (
 }
 
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
-  activeDroneSceneCount += 1
+  const sceneId = registerDroneScene()
   const scene = new THREE.Scene()
   scene.background = new THREE.Color('#94a3b8')
   const camera = new THREE.PerspectiveCamera(58, 1, 0.25, 5_000)
@@ -448,6 +486,11 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     resize()
   }
   const maybeAdaptQuality = (snapshot: DroneScenePerformanceSnapshot): void => {
+    if (snapshot.renderBudget.role !== 'primary') {
+      const backgroundCap = snapshot.renderBudget.role === 'hidden' ? 0.75 : 0.9
+      if (pixelRatio > backgroundCap) applyPixelRatio(backgroundCap, 'balanced')
+      return
+    }
     if (snapshot.frameP95Ms > 46 && pixelRatio > 1) {
       applyPixelRatio(pixelRatio - 0.18, 'rescue')
       return
@@ -506,12 +549,26 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const observer = new ResizeObserver(resize)
   observer.observe(config.container)
   resize()
+  const interactionRoot = config.container.closest('[aria-label="Drone flight window"]') ?? config.container
+  const markActive = (): void => markDroneSceneActive(sceneId)
+  interactionRoot.addEventListener('pointerdown', markActive)
+  interactionRoot.addEventListener('focusin', markActive)
+  interactionRoot.addEventListener('wheel', markActive)
+  markActive()
   let frame = 0
   let readyNotified = false
   let animationId = 0
   let lastFrameMs = performance.now()
+  let nextRenderDueAtMs = 0
   const render = (): void => {
     const frameStartedAtMs = performance.now()
+    const viewMode = config.getViewMode()
+    const renderBudget = renderBudgetFor(sceneId, viewMode)
+    if (renderBudget.targetFps < 55 && frameStartedAtMs < nextRenderDueAtMs) {
+      animationId = requestAnimationFrame(render)
+      return
+    }
+    nextRenderDueAtMs = renderBudget.targetFps >= 55 ? 0 : frameStartedAtMs + 1000 / renderBudget.targetFps
     performanceTracker.beginFrame(frameStartedAtMs)
     const dtSeconds = clamp((frameStartedAtMs - lastFrameMs) / 1000, 0.001, 0.08)
     lastFrameMs = frameStartedAtMs
@@ -535,7 +592,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const center = worldCenter ?? desiredCenter
     const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)
-    const viewMode = config.getViewMode()
     tickDroneMapWorldGroup(environmentLayer, frameStartedAtMs, viewMode)
     updateWeather(weatherLayer, environment, frame)
     let focusPoint: LocalPoint | null = null
@@ -644,7 +700,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
           textures: renderer.info.memory.textures,
           pixelRatio,
           quality: renderQuality,
-          activeScenes: activeDroneSceneCount,
+          activeScenes: droneSceneCount(),
+          renderBudget,
         })
         maybeAdaptQuality(snapshot)
         config.onPerformance?.(snapshot)
@@ -659,9 +716,12 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     destroy: (): void => {
       if (destroyed) return
       destroyed = true
-      activeDroneSceneCount = Math.max(0, activeDroneSceneCount - 1)
+      unregisterDroneScene(sceneId)
       cancelAnimationFrame(animationId)
       observer.disconnect()
+      interactionRoot.removeEventListener('pointerdown', markActive)
+      interactionRoot.removeEventListener('focusin', markActive)
+      interactionRoot.removeEventListener('wheel', markActive)
       disposeObject(environmentLayer)
       disposeObject(objectLayer)
       disposeObject(weatherLayer)

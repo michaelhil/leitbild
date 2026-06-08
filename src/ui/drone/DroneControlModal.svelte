@@ -518,6 +518,8 @@
           <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
           <span>QL {scenePerformance?.quality ?? '-'}</span>
           <span>SCN {scenePerformance ? scenePerformance.activeScenes : '-'}</span>
+          <span>CAP {scenePerformance ? scenePerformance.renderBudget.targetFps : '-'}</span>
+          <span>ROLE {scenePerformance?.renderBudget.role ?? '-'}</span>
           <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
