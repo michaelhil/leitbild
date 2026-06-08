@@ -20,6 +20,10 @@
     "maps:rebuild": "bun run scripts/maps/rebuild-vector-map.ts",
     "maps:promote": "bun run scripts/maps/promote-vector-tiles.ts",
     "maps:status": "bun run scripts/maps/map-status.ts",
+    "drone:sitl:setup": "bun run scripts/drone/setup-sitl.ts",
+    "drone:sitl": "bun run scripts/drone/run-sitl.ts",
+    "drone:sitl:px4": "bun run scripts/drone/run-px4-gazebo.ts",
+    "drone:sitl:ardupilot": "bun run scripts/drone/run-ardupilot-gazebo.ts",
     "reference:build": "bun run scripts/reference/build.ts",
     "reference:promote": "bun run scripts/reference/promote.ts",
     "reference:status": "bun run scripts/reference/status.ts",
@@ -33,10 +37,13 @@
     "health": "bun run check && bun test && bun run build:ui"
   },
   "dependencies": {
+    "@babylonjs/core": "^9.11.0",
+    "@babylonjs/loaders": "^9.11.0",
     "@deck.gl/core": "^9.3.2",
     "@deck.gl/layers": "^9.3.2",
     "@deck.gl/mapbox": "^9.3.2",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "earcut": "^3.0.2",
     "h3-js": "^4.4.0",
     "lucide-svelte": "^1.0.1",
     "maplibre-gl": "6.0.0-11",
@@ -44,13 +51,12 @@
     "pbf": "^5.1.0",
     "pmtiles": "^4.4.1",
     "svelte": "^5.56.0",
-    "three": "^0.184.0",
     "vite": "^8.0.14",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",
-    "@types/three": "^0.184.1",
+    "@types/earcut": "^3.0.0",
     "typescript": "^6.0.3"
   },
   "engines": {

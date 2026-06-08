@@ -1,4 +1,4 @@
-import * as THREE from 'three'
+import earcut from 'earcut'
 import type { SceneryAssetTileSummary, SceneryPoint, SceneryTile } from './scenery.ts'
 
 interface TileLonLat {
@@ -257,17 +257,24 @@ const appendHorizontalPolygon = (
   const outer = normalizedRings[0]
   if (!outer) return
   const holes = normalizedRings.slice(1)
-  const contour = outer.map(point => new THREE.Vector2(point.x, -point.z))
-  const holeContours = holes.map(ring => ring.map(point => new THREE.Vector2(point.x, -point.z)))
-  const triangles = THREE.ShapeUtils.triangulateShape(contour, holeContours)
-  if (triangles.length === 0) return
   const vertices = [...outer, ...holes.flatMap(ring => ring)]
+  const coordinates: number[] = []
+  const holeIndices: number[] = []
+  let vertexOffset = outer.length
+  for (const point of outer) coordinates.push(point.x, -point.z)
+  for (const hole of holes) {
+    holeIndices.push(vertexOffset)
+    vertexOffset += hole.length
+    for (const point of hole) coordinates.push(point.x, -point.z)
+  }
+  const triangles = earcut(coordinates, holeIndices, 2)
+  if (triangles.length === 0) return
   const base = bucket.positions.length / 3
   for (const point of vertices) appendVertex(bucket, { x: point.x, y, z: point.z }, { x: 0, y: 1, z: 0 })
-  for (const triangle of triangles) {
-    const a = triangle[0]
-    const b = triangle[1]
-    const c = triangle[2]
+  for (let index = 0; index < triangles.length; index += 3) {
+    const a = triangles[index]
+    const b = triangles[index + 1]
+    const c = triangles[index + 2]
     if (a === undefined || b === undefined || c === undefined) continue
     bucket.indices.push(base + a, base + b, base + c)
   }

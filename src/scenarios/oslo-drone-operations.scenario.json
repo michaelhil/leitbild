@@ -2,7 +2,7 @@
   "id": "oslo-drone-operations",
   "schemaVersion": 1,
   "title": "Oslo drone operations",
-  "description": "A shared drone-control and swarm scenario with individually simulated drones, ambulance targets, configurable profiles, and map-visible sensor/effect ranges.",
+  "description": "A shared Gazebo SITL drone-control and swarm scenario with PX4/ArduPilot vehicle models, ambulance targets, and map-visible sensor/effect ranges.",
   "packs": ["ambulance", "drone"],
   "missionId": "mission:oslo-drone-search-and-intercept",
   "runtimeOverrides": {},
@@ -54,7 +54,7 @@
       "id": "drone:oslo-survey-1",
       "label": "Survey 1",
       "position": [10.7488, 59.9141],
-      "profileId": "quad-surveillance",
+      "modelId": "px4-x500-depth",
       "altitudeM": 55,
       "headingDeg": 35,
       "swarm": {
@@ -70,7 +70,7 @@
       "id": "drone:oslo-survey-2",
       "label": "Survey 2",
       "position": [10.7479, 59.9137],
-      "profileId": "micro-observer",
+      "modelId": "px4-x500-vision-micro",
       "altitudeM": 48,
       "headingDeg": 35,
       "swarm": {
@@ -86,7 +86,7 @@
       "id": "drone:oslo-supply-1",
       "label": "Supply 1",
       "position": [10.7429, 59.9160],
-      "profileId": "heavy-supply",
+      "modelId": "px4-x500-gimbal",
       "altitudeM": 38,
       "headingDeg": 92
     },
@@ -96,7 +96,7 @@
       "id": "drone:oslo-interceptor-1",
       "label": "Interceptor 1",
       "position": [10.7570, 59.9138],
-      "profileId": "interceptor-effect",
+      "modelId": "px4-x500-effect",
       "altitudeM": 42,
       "headingDeg": 260
     }
@@ -105,49 +105,30 @@
   "runtimeConfigs": {
     "ambulance": {},
     "drone": {
-      "environment": {
-        "windSpeedMps": 5.5,
-        "windDirectionDeg": 215,
-        "gustSpeedMps": 2.8,
-        "turbulenceIntensity": 0.32,
-        "precipitation": "rain",
-        "precipitationIntensity": 0.18,
-        "visibilityM": 6500,
-        "airDensityKgM3": 1.225
+      "autopilot": "px4",
+      "world": "oslo-drone-operations",
+      "mavlink": {
+        "endpoint": "udp://127.0.0.1:14540",
+        "systemIdBase": 1
       },
-      "profiles": [
+      "models": [
         {
-          "id": "micro-observer",
-          "label": "Micro Observer",
-          "description": "Small quiet observation drone with limited endurance and low speed.",
+          "id": "px4-x500-vision-micro",
+          "label": "PX4 X500 Vision Micro",
+          "description": "Compact PX4 Gazebo X500 vision model for quiet observation tasks.",
+          "autopilotModel": "x500_vision",
+          "gazeboModel": "x500_vision",
           "airframe": {
             "kind": "quadrotor",
             "rotorCount": 4,
             "massKg": 0.78,
-            "diagonalSizeM": 0.24,
-            "dragAreaM2": 0.035
-          },
-          "dynamics": {
-            "maxHorizontalSpeedMps": 11,
-            "maxVerticalSpeedMps": 3,
-            "maxAccelerationMps2": 4.5,
-            "maxYawRateDegPerSec": 180,
-            "maxTiltDeg": 32,
-            "serviceCeilingM": 220
-          },
-          "energy": {
-            "capacityWh": 38,
-            "reserveWh": 8,
-            "nominalVoltageV": 14.8,
-            "hoverPowerW": 115,
-            "cruisePowerW": 160,
-            "payloadPowerW": 8
+            "diagonalSizeM": 0.24
           },
           "capabilities": [
-            { "id": "manual-control", "kind": "manual_control", "label": "Manual control" },
-            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation" },
-            { "id": "swarm-member", "kind": "swarm_member", "label": "Swarm member" },
-            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance" }
+            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "autopilot" },
+            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "autopilot" },
+            { "id": "mission", "kind": "mission", "label": "Mission upload", "source": "autopilot" },
+            { "id": "surveillance", "kind": "surveillance", "label": "Surveillance", "source": "gazebo" }
           ],
           "sensors": [
             {
@@ -156,14 +137,62 @@
               "label": "Wide camera",
               "rangeM": 450,
               "fovDeg": 100,
-              "updateIntervalMs": 500
+              "updateIntervalMs": 500,
+              "source": "gazebo"
             }
           ],
           "payloads": [],
           "visual": {
-            "color": "#7c3aed",
+            "color": "#2563eb",
             "accentColor": "#f5f3ff",
             "scale": 0.78
+          }
+        },
+        {
+          "id": "px4-x500-effect",
+          "label": "PX4 X500 Effect",
+          "description": "PX4 Gazebo X500 model with an operator-declared training effect payload.",
+          "autopilotModel": "x500",
+          "gazeboModel": "x500",
+          "airframe": {
+            "kind": "quadrotor",
+            "rotorCount": 4,
+            "massKg": 3.2,
+            "diagonalSizeM": 0.52
+          },
+          "capabilities": [
+            { "id": "manual-control", "kind": "manual_control", "label": "Manual control", "source": "autopilot" },
+            { "id": "guided-navigation", "kind": "guided_navigation", "label": "Guided navigation", "source": "autopilot" },
+            { "id": "mission", "kind": "mission", "label": "Mission upload", "source": "autopilot" },
+            { "id": "effect-delivery", "kind": "effect_delivery", "label": "Effect delivery", "source": "operator_declared" }
+          ],
+          "sensors": [
+            {
+              "id": "tracking-camera",
+              "kind": "tracking_camera",
+              "label": "Tracking camera",
+              "rangeM": 900,
+              "fovDeg": 50,
+              "updateIntervalMs": 300,
+              "source": "gazebo"
+            }
+          ],
+          "payloads": [
+            {
+              "id": "kinetic-effect",
+              "kind": "kinetic",
+              "label": "Training effect",
+              "massKg": 0.7,
+              "quantity": 1,
+              "rangeM": 75,
+              "effect": { "kind": "training-effect", "damage": 0.65, "radiusM": 3, "cooldownSeconds": 8 },
+              "source": "operator_declared"
+            }
+          ],
+          "visual": {
+            "color": "#b91c1c",
+            "accentColor": "#fee2e2",
+            "scale": 1.08
           }
         }
       ]
@@ -194,7 +223,7 @@
               "categoryId": "drones",
               "visible": true,
               "collapsed": false,
-              "visibleFields": ["profile", "mode", "altitude", "battery", "health", "payloads"]
+              "visibleFields": ["model", "link", "mode", "altitude", "battery", "health", "payloads"]
             },
             {
               "categoryId": "ambulances",
@@ -236,7 +265,7 @@
             "guidance": {
               "id": "drone-ops-briefing",
               "title": "Drone operations",
-              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are individually simulated and share this control instance across connected browsers.",
+              "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by the configured Gazebo SITL autopilot runtime and share this control instance across connected browsers.",
               "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
               "dismissible": true
             }

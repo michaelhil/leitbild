@@ -1,0 +1,23 @@
+[Unit]
+Description=Leitbild selected drone Gazebo SITL
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/leitbild/app
+Environment=LEITBILD_DRONE_SITL_STACK=px4
+Environment=PX4_HOME=/opt/leitbild/PX4-Autopilot
+Environment=PX4_SITL_TARGET=px4_sitl
+Environment=PX4_GAZEBO_MODEL_TARGET=gz_x500_depth
+Environment=ARDUPILOT_HOME=/opt/leitbild/ardupilot
+Environment=ARDUPILOT_VEHICLE=ArduCopter
+Environment=ARDUPILOT_FRAME=gazebo-iris
+Environment=ARDUPILOT_MAVLINK_OUT=udp:127.0.0.1:14540
+EnvironmentFile=-/etc/leitbild/drone-sitl.env
+ExecStart=/root/.bun/bin/bun run scripts/drone/run-sitl.ts
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

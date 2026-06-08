@@ -67,10 +67,10 @@ const withUpdatedDronePackData = (
     ...object.operational,
     status: packData.health.state === 'destroyed'
       ? 'destroyed'
-      : packData.health.state === 'disabled'
-        ? 'disabled'
+      : packData.health.state === 'failed'
+        ? 'failed'
         : object.operational.status,
-    ...(packData.health.state === 'destroyed' || packData.health.state === 'disabled'
+    ...(packData.health.state === 'destroyed' || packData.health.state === 'failed' || packData.health.state === 'critical'
       ? { priority: 'critical' as const }
       : packData.health.state === 'degraded'
         ? { priority: 'high' as const }
@@ -134,14 +134,19 @@ const damagedDrone = (
     readonly at: IsoTimestamp
   },
 ): OperationalObject => {
-  const nextIntegrity = Math.max(0, data.health.integrity - config.damage)
+  const previousDamage = data.health.damage.reduce((total, record) => total + record.severity, 0)
+  const nextIntegrity = Math.max(0, 1 - previousDamage - config.damage)
   const state = nextIntegrity <= 0
     ? 'destroyed'
     : nextIntegrity < 0.28
-      ? 'disabled'
+      ? 'failed'
       : nextIntegrity < 0.72
-        ? 'degraded'
-        : 'nominal'
+        ? 'critical'
+        : nextIntegrity < 0.9
+          ? 'degraded'
+          : data.health.state === 'unknown'
+            ? 'degraded'
+            : 'nominal'
   const damageRecord: DroneDamageRecord = {
     id: `damage:${randomId()}`,
     sourceObjectId: config.attackerId,
@@ -152,13 +157,9 @@ const damagedDrone = (
   }
   return withUpdatedDronePackData(object, {
     ...data,
-    control: {
-      ...data.control,
-      mode: state === 'destroyed' ? 'destroyed' : state === 'disabled' ? 'disabled' : data.control.mode,
-    },
     health: {
+      ...data.health,
       state,
-      integrity: nextIntegrity,
       damage: [...data.health.damage, damageRecord],
     },
   }, config.at)
@@ -179,8 +180,8 @@ export const createDroneAttackInteractionHandler = (): InteractionHandler => ({
       return [notification(signal, 'Drone attack rejected', `${attacker.label} is not a valid drone`, 'warning')]
     }
     const effectPayload = payload.payloadId
-      ? attackerData.data.profile.payloads.find(candidate => candidate.id === payload.payloadId)
-      : attackerData.data.profile.payloads.find(candidate => candidate.effect !== undefined)
+      ? attackerData.data.vehicle.payloads.find(candidate => candidate.id === payload.payloadId)
+      : attackerData.data.vehicle.payloads.find(candidate => candidate.effect !== undefined)
     if (!effectPayload?.effect) {
       return [notification(signal, 'Drone attack rejected', `${attacker.label} has no effect payload`, 'warning')]
     }
@@ -206,14 +207,14 @@ export const createDroneAttackInteractionHandler = (): InteractionHandler => ({
           effectKind: effectPayload.effect.kind,
           at: signal.at,
         })
-    const updatedPayloads = attackerData.data.profile.payloads.map(candidate =>
+    const updatedPayloads = attackerData.data.vehicle.payloads.map(candidate =>
       candidate.id === effectPayload.id
         ? { ...candidate, quantity: Math.max(0, candidate.quantity - 1) }
         : candidate)
     const updatedAttacker = withUpdatedDronePackData(attacker, {
       ...attackerData.data,
-      profile: {
-        ...attackerData.data.profile,
+      vehicle: {
+        ...attackerData.data.vehicle,
         payloads: updatedPayloads,
       },
     }, signal.at)

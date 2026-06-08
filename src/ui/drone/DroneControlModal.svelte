@@ -2,9 +2,12 @@
   import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
+    armDroneCommandKind,
     attackCommandKind,
+    holdDroneCommandKind,
+    landDroneCommandKind,
     manualControlCommandKind,
-    setDroneModeCommandKind,
+    returnToLaunchDroneCommandKind,
   } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
@@ -86,8 +89,8 @@
     const parsed = dronePackDataSchema.safeParse(selectedObject.packData)
     return parsed.success ? parsed.data : null
   })
-  const groundSpeedMps = $derived(data ? Math.hypot(data.kinematics.velocityEastMps, data.kinematics.velocityNorthMps) : 0)
-  const batteryPercent = $derived(data ? data.energy.remainingWh / data.profile.energy.capacityWh * 100 : 0)
+  const groundSpeedMps = $derived(data ? Math.hypot(data.velocity.eastMps, data.velocity.northMps) : 0)
+  const batteryPercent = $derived(data?.battery.remainingPercent ?? 0)
   const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === selectedObject.id).slice(0, 4))
 
   const windowStyle = $derived.by(() => {
@@ -274,13 +277,29 @@
     }
   }
 
-  const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
+  const setArmed = async (armed: boolean): Promise<void> => {
     const body = await sendControlInstanceCommand(controlInstanceId, {
-      kind: setDroneModeCommandKind,
+      kind: armDroneCommandKind,
       targetObjectIds: [selectedObject.id],
       payload: {
         droneId: selectedObject.id,
-        mode,
+        armed,
+      },
+    })
+    status = body.result.ok ? `${armed ? 'Arm' : 'Disarm'} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
+  }
+
+  const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
+    const kind = mode === 'hold'
+      ? holdDroneCommandKind
+      : mode === 'land'
+        ? landDroneCommandKind
+        : returnToLaunchDroneCommandKind
+    const body = await sendControlInstanceCommand(controlInstanceId, {
+      kind,
+      targetObjectIds: [selectedObject.id],
+      payload: {
+        droneId: selectedObject.id,
       },
     })
     status = body.result.ok ? `${mode.replaceAll('_', ' ')} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
@@ -510,7 +529,7 @@
   <header class="drone-window-header">
     <div>
       <h2>{selectedObject.label}</h2>
-      <span>{data?.profile.label ?? 'Invalid drone'} · {data?.control.mode ?? selectedObject.operational.status} · {data ? Math.round(data.energy.remainingWh / data.profile.energy.capacityWh * 100) : 0}%</span>
+      <span>{data?.vehicle.modelLabel ?? 'Invalid drone'} · {data?.navigation.mode ?? selectedObject.operational.status} · {data?.link.state ?? 'unknown'} · {Math.round(batteryPercent)}%</span>
     </div>
     <div class="header-actions">
       <button class:active={viewMode === '3d'} type="button" title="3D view" aria-label="3D view" onclick={() => viewMode = '3d'}>3D</button>
@@ -534,7 +553,7 @@
       {#if data}
         <div class="flight-hud" aria-label="Flight telemetry">
           <div class="hud-row">
-            <span>ALT {Math.round(data.kinematics.altitudeM)} m</span>
+            <span>ALT {Math.round(data.pose.altitudeM)} m</span>
             <span>SPD {groundSpeedMps.toFixed(1)} m/s</span>
             <span>BAT {Math.round(batteryPercent)}%</span>
           </div>
@@ -542,14 +561,14 @@
             <span></span>
           </div>
           <div class="hud-row">
-            <span>HDG {Math.round(data.kinematics.yawDeg)}°</span>
-            <span>P {data.kinematics.pitchDeg.toFixed(1)}°</span>
-            <span>R {data.kinematics.rollDeg.toFixed(1)}°</span>
+            <span>HDG {Math.round(data.pose.headingDeg)}°</span>
+            <span>P {data.attitude.pitchDeg.toFixed(1)}°</span>
+            <span>R {data.attitude.rollDeg.toFixed(1)}°</span>
           </div>
           <div class="hud-row muted">
-            <span>WIND {data.environment.windSpeedMps.toFixed(1)} m/s</span>
-            <span>{data.environment.precipitation}</span>
-            <span>VIS {Math.round(data.environment.visibilityM / 100) / 10} km</span>
+            <span>{data.autopilot}</span>
+            <span>{data.arming.state}</span>
+            <span>{data.link.state}</span>
           </div>
         </div>
       {/if}
@@ -662,6 +681,7 @@
       <section>
         <h3><LocateFixed size={15} /> Mode</h3>
         <div class="command-grid">
+          <button type="button" onclick={() => void setArmed(!(data?.arming.armed ?? false))}><LocateFixed size={15} /> {data?.arming.armed ? 'Disarm' : 'Arm'}</button>
           <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
           <button type="button" onclick={() => void setMode('land')}><PlaneLanding size={15} /> Land</button>
           <button type="button" onclick={() => void setMode('return_to_launch')}><RotateCcw size={15} /> Return</button>

@@ -6,210 +6,185 @@ type: pack
 # Drone Operations
 
 !!! note "Status"
-    Leitbild now has a standalone `drone` pack for shared drone, drone-swarm, browser-control, Three.js flight-view, and drone-effect simulation. It is independent of the aviation/airspace pack. The model is a deterministic operational simulation intended for scenario work, demonstrations, command-and-control UX, and reusable pack architecture, not a certified autopilot or safety analysis tool.
+    The `drone` pack now uses Gazebo SITL plus PX4 or ArduPilot through MAVLink. The browser renderer is Babylon.js only. Leitbild no longer contains a browser-local drone physics runtime, Three.js drone renderer, or `drone.local` runtime path.
 
-Drone operations live in `src/packs/drone`. The pack contributes drone object creation, scenario expansion, profile validation, flight dynamics, energy state, swarm commands, interaction effects, read-only pack queries, map presentation, and pack-specific UI modals. The runtime is registered as `drone.local`.
+Drone operations live in `src/packs/drone`. The pack contributes drone object creation, scenario expansion, vehicle model validation, MAVLink command schemas, interaction effects, read-only pack queries, map presentation, and pack-specific UI modals. The default runtime is `drone.sitl`.
 
-The first built-in scenario is `oslo-drone-operations`. It combines ambulances and drones in one Control Instance, attaches the mission `mission:oslo-drone-search-and-intercept`, and demonstrates surveillance, supply, and effect-capable drones without depending on aviation.
+The first built-in scenario is `oslo-drone-operations`. It combines ambulances and drones in one Control Instance, attaches the mission `mission:oslo-drone-search-and-intercept`, and demonstrates surveillance, support, and effect-capable drones without depending on the aviation/airspace pack.
 
-## Operational Scope
+## Runtime Scope
 
 The current implementation supports:
 
-- individually simulated drone objects with per-drone profile, energy, kinematics, control, health, payload, sensor, and optional swarm state
-- keyboard and browser Gamepad API control from drone flight windows
-- multiple open flight windows in one browser, each bound to one drone
-- multiple remote browsers controlling the same Control Instance through the existing command/runtime path
-- map-visible drones, sensor footprints, and effect ranges
-- 2D, 3D chase, and FPV Three.js drone flight windows
-- source-backed deterministic 3D environment generated from the active object/map context, with drones, ambulances, other assets, roads, road markings, road furniture, road-label signs, water, shorelines, buildings, facades, rooftop fixtures, vegetation, weather cues, and HUD telemetry rendered as scene objects
-- configurable drone profiles through scenario runtime config, per-object scenario config, and a profile editor modal
-- swarm commands that preserve every member as an individual object
-- read-only sensor-contact projections with range, field-of-view, visibility, precipitation, bearing, and confidence filtering
-- validated drone effect commands that can damage or destroy drone and non-drone operational assets through the generic interaction-signal/effect path
+- Gazebo-backed SITL drone control through MAVLink v2 over UDP
+- PX4 as the default deployment stack and ArduPilot as the alternate supported SITL stack
+- per-drone vehicle model metadata for autopilot model, Gazebo model, airframe, capabilities, sensors, payloads, and visual profile
+- MAVLink heartbeat, arm/disarm, manual control, guided reposition, takeoff, land, return-to-launch, loiter/hold, mission upload/start/pause/clear, geofence upload/clear, parameter set, and gimbal commands
+- MAVLink telemetry projection for link state, arming, navigation mode, global pose, velocity, attitude, battery, health, status text, and mission current sequence
+- map-visible drones, sensor footprints, effect ranges, and swarm envelopes from pack queries
+- 2D, 3D chase, and FPV Babylon.js flight windows
+- validated drone effect commands through the generic interaction-signal/effect path
 - a formal mission definition for drone search, support, and effect demonstration
 
-The current implementation does not yet include a full mission runner, RF/link modeling, collision physics, promoted production terrain DEM, or a full autopilot stack. Those are deliberate next layers, not hidden production claims.
+The runtime does not simulate flight physics in TypeScript. PX4 or ArduPilot owns vehicle motion, control laws, failsafe behavior, geofence handling, mission execution, and sensor/plugin integration. Leitbild projects accepted telemetry into canonical Control Instance state and sends validated commands back through MAVLink.
 
 ## Architecture
 
-The drone capability is one pack, not several packs.
+The drone capability is one pack with one runtime path:
 
-This is intentional. Flight dynamics, profiles, swarm membership, sensors, payloads, and drone effects are one cohesive domain right now. Splitting immediately into `drone`, `swarm`, `uas-control`, and `mission` packs would add coordination overhead before there is a proven second caller. The extraction boundary remains available later: generic mission intent stays in core, while drone-specific flight and swarm execution stays in the drone pack runtime.
+- runtime id: `drone.sitl`
+- adapter: `src/packs/drone/sitl/adapter.ts`
+- MAVLink client: `src/packs/drone/sitl/mavlink.ts`
+- object projection helpers: `src/packs/drone/sitl/object-state.ts`
 
-Core remains responsible for:
+Core remains responsible for scenario catalog validation, Control Instance creation, command envelopes, Runtime Hub routing, durable event ordering, read-only pack query routing, interaction signal ordering, and generic map/rail/surface rendering.
 
-- scenario catalog validation
-- Control Instance creation and projected state
-- command envelopes and actor identity
-- runtime routing through the Runtime Hub
-- durable event ordering
-- read-only pack query routing
-- interaction signal ordering and constrained effect commits
-- generic map, rail, and surface rendering
+The drone pack owns vehicle model schemas, command schemas, scenario expansion, SITL runtime connection, MAVLink command translation, telemetry projection, map area features, drone scene/read-model queries, attack/effect interaction handlers, pack presentation, and pack-specific UI modals.
 
-The drone pack owns:
-
-- validated drone profile schemas
-- drone command schemas
-- scenario object expansion for `pack: "drone", type: "drone"`
-- fixed-step flight simulation
-- typed environment/wind/weather model
-- local runtime adapter emissions
-- map area features for sensor/effect ranges
-- drone scene/read-model queries
-- attack/effect interaction handlers
-- pack presentation and create-object metadata
-- pack-specific flight/profile UI modals
-
-Generic UI modules do not contain drone flight math. They open pack-specific modals from generic object rows, then the modal sends normal Control Instance commands.
+The browser owns input capture and rendering only. It sends normal Control Instance commands and renders projected object/query state. It does not own authoritative drone motion.
 
 ## Files
 
 Primary implementation:
 
-- `src/packs/drone/model.ts`: schemas and TypeScript types for profiles, capabilities, sensors, payloads, dynamics, energy, kinematics, control, health, swarm, mission, and pack data
-- `src/packs/drone/commands.ts`: validated command kinds and payload schemas
-- `src/packs/drone/scenario.ts`: scenario expansion and runtime profile override parsing
-- `src/packs/drone/sim/engine.ts`: fixed-step flight, control arbitration, energy, swarm, and command handling
-- `src/packs/drone/sim/physics.ts`: pure multicopter physics/environment integration for wind, drag, attitude, and energy
-- `src/packs/drone/sim/adapter.ts`: Runtime Hub adapter and bounded projected emissions
-- `src/packs/drone/sim/object-state.ts`: creation and projection of drone OperationalObjects
-- `src/packs/drone/query.ts`: read-only scene, profile, controller-binding, and map-feature queries
+- `src/packs/drone/model.ts`: schema version 2 drone pack data, vehicle models, pose, velocity, attitude, battery, link, arming, health, mission, geofence, payload runtime state, and swarm metadata
+- `src/packs/drone/commands.ts`: validated MAVLink-oriented command kinds and payload schemas
+- `src/packs/drone/scenario.ts`: scenario expansion and runtime vehicle model parsing
+- `src/packs/drone/sitl/adapter.ts`: Runtime Hub adapter for Gazebo/PX4/ArduPilot SITL
+- `src/packs/drone/sitl/mavlink.ts`: direct TypeScript MAVLink v2 UDP client
+- `src/packs/drone/sitl/object-state.ts`: creation and projection of drone OperationalObjects
+- `src/packs/drone/query.ts`: read-only scene, vehicle model, controller-binding, sensor-contact, and map-feature queries
 - `src/packs/drone/interactions.ts`: validated effect handling through generic interaction signals
 - `src/packs/drone/pack.ts`: pack registration, presentation, map features, actions, and create-object contract
 
 UI implementation:
 
 - `src/ui/drone/DroneControlModal.svelte`: keyboard/gamepad flight window, command buttons, target/effect command UI
-- `src/ui/drone/DroneProfileEditorModal.svelte`: profile editing through validated commands
-- `src/ui/drone/drone-scene.ts`: Three.js renderer and procedural scene generation
+- `src/ui/drone/DroneProfileEditorModal.svelte`: vehicle model editing through validated commands
+- `src/ui/drone/drone-scene.ts`: Babylon.js renderer and source-backed scenery streaming
 - `src/ui/routes/ControlSurfaceRoute.svelte`: modal window management
-- `src/ui/ObjectRow.svelte`: drone flight/profile actions in the generic rail row
+- `src/ui/ObjectRow.svelte`: drone flight/model actions in the generic rail row
+
+Deployment:
+
+- `scripts/drone/setup-sitl.ts`: Linux host setup for PX4, ArduPilot, and Gazebo build dependencies
+- `scripts/drone/run-sitl.ts`: selected SITL runner
+- `scripts/drone/run-px4-gazebo.ts`: PX4 Gazebo runner
+- `scripts/drone/run-ardupilot-gazebo.ts`: ArduPilot Gazebo runner
+- `deploy/leitbild-drone-sitl.service`: selected stack systemd unit
+- `deploy/leitbild-px4-gazebo.service`: PX4-specific systemd unit
+- `deploy/leitbild-ardupilot-gazebo.service`: ArduPilot-specific systemd unit
 
 Scenario and tests:
 
 - `src/scenarios/oslo-drone-operations.scenario.json`: built-in mixed ambulance/drone scenario
 - `src/scenarios/index.ts`: built-in drone mission definition and scenario registration
-- `tests/drone-pack.test.ts`: scenario expansion, manual flight, environment physics, swarm individuality, effect handling, scene query, sensor contacts, command rejection, and catalog validity
+- `tests/drone-pack.test.ts`: SITL scenario expansion, query, interaction, model, map-feature, renderer support, and catalog validity
 
-## Drone Profile Model
+## Vehicle Model
 
-A drone profile is data. It is not a hard-coded enum of surveillance/supply/attack types.
+A vehicle model is declarative data. It is not a hard-coded enum of surveillance/supply/effect types.
 
-The profile contains:
+The model contains:
 
-- `airframe`: kind, rotor count, mass, size, and drag area
-- `dynamics`: horizontal speed, vertical speed, acceleration, yaw rate, tilt, and service ceiling
-- `energy`: battery capacity, reserve, nominal voltage, hover power, cruise power, and payload power
-- `capabilities`: free-form validated capability descriptors such as `manual_control`, `guided_navigation`, `swarm_member`, `surveillance`, `supply`, or `effect_delivery`
-- `sensors`: sensor kind, range, field of view, update cadence, and optional energy use
-- `payloads`: supply/effect payloads with quantity, mass, range, and effect parameters
-- `visual`: color, accent color, and scale for map/3D presentation
+- `autopilotModel`: PX4 or ArduPilot model identity
+- `gazeboModel`: Gazebo model identity
+- `airframe`: kind, rotor count, mass, and size
+- `capabilities`: validated descriptors such as manual control, guided navigation, mission, geofence, gimbal, sensor, or effect payload
+- `sensors`: declared sensor range/FOV/update metadata from Gazebo, autopilot, payload, or operator-declared sources
+- `payloads`: support/effect payloads with quantity, mass, range, and effect parameters
+- `visual`: color, accent color, scale, and optional mesh reference for Babylon presentation
 
 Built-in examples are:
 
-- `quad-surveillance`
-- `heavy-supply`
-- `interceptor-effect`
+- `px4-x500-depth`
+- `px4-x500-gimbal`
+- `ardupilot-iris`
 
-Scenario runtime config can add or override profiles and set environment conditions. The `oslo-drone-operations` scenario adds `micro-observer` entirely through config and sets wind, gust, precipitation, visibility, and air density.
+Scenario runtime config can add or override vehicle models:
 
-## Environment Model
+```json
+{
+  "runtimeConfigs": {
+    "drone": {
+      "autopilot": "px4",
+      "world": "oslo",
+      "mavlink": {
+        "endpoint": "udp://127.0.0.1:14540",
+        "systemIdBase": 1
+      },
+      "models": [
+        {
+          "id": "px4-x500-vision-micro",
+          "label": "PX4 X500 Vision Micro",
+          "autopilotModel": "x500",
+          "gazeboModel": "x500",
+          "airframe": { "kind": "quadrotor", "rotorCount": 4 },
+          "capabilities": [],
+          "sensors": [],
+          "payloads": [],
+          "visual": { "color": "#2563eb", "accentColor": "#f8fafc", "scale": 1 }
+        }
+      ]
+    }
+  }
+}
+```
 
-The drone runtime accepts typed environment config:
+Scenario objects declare `modelId` or an inline `model`; they do not use `profileId`.
 
-- `windSpeedMps`
-- `windDirectionDeg`
-- `gustSpeedMps`
-- `turbulenceIntensity`
-- `precipitation`
-- `precipitationIntensity`
-- `visibilityM`
-- `airDensityKgM3`
+## MAVLink Control
 
-Environment is not cosmetic. The runtime samples the environment into each drone's pack data and uses it in the physics step. Wind changes air-relative speed, drag, attitude, and energy use. Visibility and precipitation feed sensor-contact confidence and the FPV/Three.js weather presentation.
+The drone pack accepts these command kinds:
 
-## Flight Model
+- `drone.create_vehicle`
+- `drone.arm`
+- `drone.manual_control`
+- `drone.goto`
+- `drone.takeoff`
+- `drone.land`
+- `drone.return_to_launch`
+- `drone.hold`
+- `drone.upload_mission`
+- `drone.start_mission`
+- `drone.pause_mission`
+- `drone.clear_mission`
+- `drone.upload_geofence`
+- `drone.clear_geofence`
+- `drone.set_parameter`
+- `drone.set_gimbal`
+- `drone.configure_vehicle_model`
+- `drone.swarm_command`
+- `drone.attack`
 
-The runtime uses a compact fixed-step multicopter approximation:
+All payloads are validated with Zod before the runtime sends MAVLink messages or emits interaction signals. Invalid IDs, unavailable MAVLink systems, missing heartbeats, unsupported commands, depleted payloads, and out-of-range targets fail explicitly.
 
-1. Resolve the current control mode.
-2. Expire stale manual inputs by command TTL.
-3. Convert manual, guided, land, return-to-launch, or swarm intent into desired local velocity, vertical speed, and yaw rate.
-4. Convert ground-velocity intent to an acceleration-limited physics step.
-5. Apply air-relative drag from wind/gust, drag area, air density, and payload mass.
-6. Estimate pitch/roll from acceleration so FPV and external views reflect vehicle effort.
-7. Integrate local meters to WGS84 lon/lat.
-8. Integrate altitude and yaw.
-9. Drain energy based on hover, cruise, payload power, airspeed, climb power, turbulence, precipitation, and timestep.
-10. Apply low-energy behavior: below reserve, return-to-launch is preferred; at zero energy, the drone becomes disabled.
-11. Project changed state back as ordinary object-upsert events at a bounded runtime cadence.
+## Babylon Scene
 
-This follows the broad shape of real multicopter control systems without trying to reproduce PX4 or ArduPilot internals. PX4 documents multicopter position/velocity/attitude control concepts; ArduPilot separates operator modes such as Guided, Auto, RTL, Land, Loiter, and Stabilize; MAVLink separates navigation waypoints from mission/action commands. Leitbild uses those patterns as modeling anchors, while keeping the runtime inspectable and deterministic.
+The drone flight modal uses Babylon.js.
 
-Reference anchors:
+The scene renders:
 
-- PX4 docs: `https://docs.px4.io/`
-- ArduPilot Copter flight modes: `https://ardupilot.org/copter/docs/flight-modes.html`
-- MAVLink mission protocol: `https://mavlink.io/en/services/mission.html`
-- MDN Gamepad API: `https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API`
+- active drone mesh using vehicle visual metadata
+- other drones and generic operational assets
+- source-backed GLB scenery tiles from the self-hosted map/scenery pipeline
+- flat or DEM-derived terrain according to `/map/capabilities.json`
+- 2D overhead, 3D chase, and FPV camera modes
+- HUD data from projected drone pack data
 
-## Control Modes
+Babylon owns only presentation. It interpolates projected object state for smooth rendering and uses adaptive pixel ratio, cached asset containers, bounded scenery streaming, and mesh reuse to keep performance predictable. It does not run physics or decide drone truth.
 
-The drone control mode is pack-owned state:
+## Queries
 
-- `hold`: maintain current position and altitude
-- `manual`: honor keyboard/gamepad axes while the command TTL is alive
-- `guided`: navigate toward one target point and altitude
-- `swarm`: follow swarm command target/formation while remaining an individual drone
-- `mission`: reserved for mission-runner integration
-- `land`: descend and transition to landed hold
-- `return_to_launch`: navigate back toward launch point
-- `disabled`: no controlled flight
-- `destroyed`: inactive destroyed object
+The drone runtime exposes read-only pack queries:
 
-Manual commands are intentionally not sent every animation frame. The flight modal sends only on input changes or active keepalive intervals, which preserves responsiveness without flooding durable command history.
+- `drone.scene`: scene/read-model state for drones
+- `drone.controllerBindings`: controller binding metadata
+- `drone.vehicleModels`: active vehicle model catalog
+- `drone.mapFeatures`: sensor footprints, effect ranges, and swarm envelopes
+- `drone.sensorContacts`: external contact surface; currently empty until contacts are provided by Gazebo/MAVLink-backed sensor integration
 
-## Commands
-
-The drone pack accepts these commands:
-
-- `drone.create_object`: create a drone from a profile and location
-- `drone.manual_control`: set per-drone control axes with TTL and input-source metadata
-- `drone.navigate_to`: command one drone to a target point and altitude
-- `drone.set_mode`: hold, land, return-to-launch, or other allowed mode transitions
-- `drone.configure_profile`: replace one drone profile through validated data
-- `drone.swarm_command`: command a set of individually simulated drones
-- `drone.attack`: request a validated payload effect against a target object
-
-All command payloads are validated with Zod before the runtime changes state. Invalid IDs, missing capabilities, depleted payloads, out-of-range targets, and unsupported commands fail explicitly.
-
-## Swarm Model
-
-A swarm is not a visual clone cloud. Every member remains an ordinary `OperationalObject` with its own:
-
-- profile
-- position
-- altitude
-- energy
-- mode
-- health
-- payloads
-- telemetry
-- projected state
-
-The first swarm implementation supports a command-level group target plus per-member formation offsets. Supported command vocabulary includes navigation, search-area placement, disperse, hold, and land. Manual takeover is a normal per-drone manual-control command. Richer patrol/search coverage patterns are the next implementation layer.
-
-The design keeps swarm behavior simple on purpose:
-
-- group commands are data
-- members remain individual simulated objects
-- local per-drone limits still apply
-- runtime emissions are coalesced
-- manual takeover is per drone, not swarm-global
-
-Future swarm deepening should add separation/cohesion weights, obstacle awareness, coverage metrics, and assignment algorithms only when scenarios need them.
+Queries do not mutate runtime state. UI, AI, and procedure tooling should use queries for rich drone read models rather than copying runtime-private mechanics into core objects.
 
 ## Effects And Damage
 
@@ -218,145 +193,39 @@ Drone effects use the generic interaction system.
 Flow:
 
 1. UI, scenario, AI, or operator issues `drone.attack`.
-2. The drone runtime validates attacker existence, profile validity, payload availability, and command shape.
-3. The runtime emits `drone.attack.requested` as an interaction signal.
-4. The drone interaction handler reads the current Control Instance snapshot.
-5. It validates target existence, effect payload, range, and quantity again at commit time.
-6. It returns constrained effects: object upserts and an operational notification.
-7. Core orders, persists, and broadcasts those effects.
+2. The drone runtime validates attacker/target command shape and emits `drone.attack.requested`.
+3. The interaction handler reads the current Control Instance snapshot.
+4. It validates target existence, effect payload, range, and quantity at commit time.
+5. It returns constrained effects: object upserts and an operational notification.
+6. Core orders, persists, and broadcasts those effects.
 
-Targets can be drones or non-drone assets. Drone targets receive integrity and health-state updates. Non-drone targets receive operational damage/destroyed status plus an alert. The handler does not import ambulance internals and does not directly mutate foreign pack state.
+Targets can be drones or non-drone assets. Drone targets receive damage records and health-state updates. Non-drone targets receive operational damage/destroyed status plus an alert. The handler does not import another pack's internals and does not directly mutate foreign private state.
 
-## Browser Flight UI
+## Deployment
 
-Open a drone flight window from the object rail action on any drone.
+The deployed platform keeps one HTTP server: `src/core/api/server.ts`.
 
-Controls:
+Drone SITL runs as a separate non-HTTP systemd process:
 
-- keyboard:
-  - W/S or up/down: forward/back
-  - A/D: left/right
-  - Space/Shift: climb/descend
-  - Q/E or left/right arrows: yaw
-  - Escape: close flight window
-- gamepad:
-  - left stick: forward/right
-  - right stick X: yaw
-  - right trigger / left trigger: climb/descend
+- selected stack unit: `leitbild-drone-sitl.service`
+- default stack: PX4 Gazebo
+- alternate stack: ArduPilot Gazebo via `LEITBILD_DRONE_SITL_STACK=ardupilot`
+- Leitbild MAVLink endpoint: `LEITBILD_DRONE_MAVLINK_ENDPOINT=udp://127.0.0.1:14540?localPort=14540`
 
-The browser exposes Bluetooth Xbox-style controllers through the standard Gamepad API on supported Windows/macOS/browser combinations. Leitbild does not talk directly to Bluetooth hardware; it consumes `navigator.getGamepads()` and browser gamepad events.
+The deploy script copies the SITL units, runs `bun run drone:sitl:setup` for the selected stack, enables `leitbild-drone-sitl`, then restarts the main Leitbild service. The main service depends on the selected SITL unit but does not contain a second server or a hidden browser simulation path.
 
-Multiple flight windows can be open at once. Each window carries its own selected controller, target selector, view mode, FPV/chase/2D camera state, sensor-contact panel, and command state. Multiple remote browsers work because the runtime receives normal Control Instance commands and projects canonical object state back to every client.
-
-## Three.js Scene
-
-The drone flight modal uses Three.js.
-
-The scene renders:
-
-- active drone as a colored quadrotor mesh
-- other drones with their own profile color/scale
-- ambulances as recognizable ambulance meshes
-- generic operational assets as markers
-- map-derived ground, roads, road labels, water, shorelines, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact
-- road markings, road furniture, bridge barriers, building facades, roofs, rooftop fixtures, vegetation, shadows, fog, rain/snow streaks, and rotor animation
-- 2D overhead, 3D chase, and first-person FPV camera modes
-- flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
-
-The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, merges conservative source-identical and named-major transport fragments across tile cuts, then extrudes and symbolizes building, road, road-label, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. Additional visual detail is generated only as deterministic transforms of those source features: facades and rooftop fixtures from real building footprints, streetlights and barriers from real road geometry, shoreline edges from real water polygons, and trees from real vegetation/landuse polygons. Derived details use a bounded spatial exclusion index: vegetation avoids source-backed buildings, water, aeroways, roads, rails, and runways, while road furniture avoids solid map features. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product only after the promoted PMTiles archive validates as readable PNG DEM data. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
-
-The flight modal performance panel separates:
-
-- `TRN`: advertised terrain capability status from `/map/capabilities.json`
-- `DEM`: rendered terrain surface, either `dem` or `flat`
-- `BLD`, `RD`, `WTR`, `VEG`, `LBL`, and `MRG`: selected source-backed buildings, roads, water features, vegetation areas, road labels, and merged transport fragments for the currently streamed world
-
-The renderer owns its WebGL lifecycle:
-
-- resize observer updates the camera and renderer size
-- object meshes are cached and updated in place; only disappeared or visually changed objects are disposed/rebuilt
-- modal close disposes renderer resources and removes the canvas
-
-## Surveillance Contacts
-
-Sensor contacts are exposed as a read-only pack query and in the flight modal's sensor panel. A contact is produced only when:
-
-- the observing object is an active drone
-- the target has a point position and is active
-- the target is within sensor range and local visibility
-- the target is inside the sensor field of view unless the sensor is omnidirectional
-
-Contacts include the observing drone id, sensor id, target id/label, distance, bearing, and confidence. Confidence is intentionally simple and inspectable: it drops with range and precipitation, with thermal sensors penalized less by precipitation. Contacts do not mutate target objects and do not become a second source of truth.
-
-## Queries
-
-The drone runtime exposes read-only pack queries:
-
-- `drone.scene`: scene/read-model state for drones
-- `drone.controllerBindings`: controller binding metadata shape
-- `drone.profiles`: active profile catalog
-- `drone.mapFeatures`: sensor footprints and effect ranges for map rendering
-- `drone.sensorContacts`: read-only surveillance contacts from active drone sensors
-
-Queries do not mutate runtime state. UI and future AI/procedure tooling should use queries for rich drone read models rather than copying runtime-private mechanics into core objects.
-
-## Scenario And Mission Integration
-
-Scenario config can declare drone objects with:
-
-- `profileId` or inline `profile`
-- lon/lat position
-- initial altitude
-- initial heading
-- initial mode
-- optional swarm membership and slot
-
-Runtime config can declare reusable profile overrides:
-
-```json
-{
-  "runtimeConfigs": {
-    "drone": {
-      "environment": {
-        "windSpeedMps": 5.5,
-        "windDirectionDeg": 215,
-        "gustSpeedMps": 2.8,
-        "turbulenceIntensity": 0.32,
-        "precipitation": "rain",
-        "precipitationIntensity": 0.18,
-        "visibilityM": 6500,
-        "airDensityKgM3": 1.225
-      },
-      "profiles": [
-        {
-          "id": "micro-observer",
-          "label": "Micro Observer"
-        }
-      ]
-    }
-  }
-}
-```
-
-Mission intent is expressed with core `MissionDefinition` data. The first drone mission defines goals, objectives, tasks, stages, triggers, actions, and metrics for the Oslo drone scenario. Mission execution is not yet a hidden script engine. The recommended pattern is:
-
-- core mission definition expresses reusable intent
-- scenario scripts introduce timed briefing/setup events
-- drone commands execute flight/swarm/effect behavior
-- future mission progress should observe committed events and issue validated commands only through core paths
-
-## Safety And Architecture Boundaries
+## Safety Boundaries
 
 The drone pack must keep these boundaries:
 
 - no aviation imports
 - no extra HTTP server
 - no browser-local authoritative flight state
-- no arbitrary profile code or runtime scripting
+- no arbitrary vehicle model code or runtime scripting
 - no direct mutation of foreign pack state
-- no map/UI import of drone simulation internals outside pack-specific UI
-- no high-rate durable event stream for every input sample
-- no fake swarm objects that exist only in the renderer
+- no map/UI import of drone runtime internals outside pack-specific UI
+- no high-rate durable event stream for continuous motion
+- no fake sensor contacts or simulated production telemetry when Gazebo/MAVLink does not provide it
 
 ## Verification
 
@@ -364,7 +233,6 @@ Use these checks before demoing drone behavior:
 
 ```text
 bun test tests/drone-pack.test.ts
-bun test tests/drone-pack.test.ts tests/drone-scene-streaming.test.ts tests/drone-scenery-renderer.test.ts tests/pack-architecture.test.ts tests/scenario-surface.test.ts tests/context-scenario-mission-model.test.ts
 bun run check
 bun run build:ui
 bun run health
@@ -372,29 +240,12 @@ bun run health
 
 Important tested behaviors:
 
-- drone scenario expansion is config-driven and aviation-independent
-- manual control moves one drone without moving another
-- runtime environment config changes energy, attitude, and pack data
-- swarm command keeps every member as an individual object
-- attack effects damage non-drone assets through interaction handlers
-- scene projection returns one entry per drone
-- sensor contacts honor range/FOV filtering
-- invalid attack commands fail explicitly
-- the built-in drone scenario and mission are catalog-valid together
-- decoded scenery snapshots generate rich Three.js scene detail from real map features: building walls/roofs, shorelines, road furniture, vegetation, POI markers, and road-label signs
-- scenery regression tests cover transport-fragment merging and verify that derived vegetation is not placed inside source-backed solid features
+- scenario expansion creates schema version 2 SITL drone objects
+- MAVLink system ids come from scenario runtime config
+- scene projection exposes pose/model/link/arming data from canonical pack data
+- map features come from declared vehicle sensors, payloads, and swarm metadata
+- sensor contacts are not fabricated in the browser query layer
+- attack effects deplete payloads and damage targets through interaction handlers
+- the built-in drone scenario and mission resolve through `drone.sitl`
 
-## Known Next Work
-
-Highest-value next work:
-
-- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage; the runtime path is ready, but production currently advertises terrain as unavailable until a valid PNG DEM PMTiles artifact exists
-- richer map-context artifact builds: tree/vegetation density, landmarks, extra landcover classes, building semantics, bridge/tunnel context, non-city scenery variation, and additional licensed reference datasets; these should enter through the vector/reference-data pipeline, not through hidden renderer guesses
-- richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
-- mission progress runner: observe committed events, update mission progress, and issue only validated commands
-- deeper sensor model: occlusion approximations, contact classification, shared sightings, and sensor update cadence
-- communications model: control-link quality, latency, loss-of-link, geofence and return behavior
-- credibility benchmarks: acceptance envelopes for speed, climb rate, turn/yaw rate, endurance, RTL, landing, and swarm convergence
-- operator UX: map-side swarm tasking, formation editor, target zones, mission progress panel, and controller diagnostics
-
-The current implementation establishes the pack, runtime, scenario, command, query, interaction, and UI foundations for these layers without hard-coding the system to one drone type or one demo scenario.
+Highest-value next work is Gazebo sensor contact ingestion, richer vehicle model catalogs, validated multi-vehicle PX4 instance orchestration, ArduPilot Gazebo world packaging, and acceptance traces against known PX4/ArduPilot behaviors.

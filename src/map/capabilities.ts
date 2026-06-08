@@ -319,7 +319,7 @@ const baseLayers: ReadonlyArray<MapCapabilityLayer> = [
   {
     id: 'place', sourceLayer: 'place', geometry: ['point'],
     category: 'base_context',
-    intendedUse: 'Named settlement and locality context for map labels, operator orientation, and lightweight Three.js scene beacons.',
+    intendedUse: 'Named settlement and locality context for map labels, operator orientation, and lightweight Babylon scene beacons.',
     fields: [
       { name: 'class', type: 'string', availability: 'optional', description: 'Place class where available.' },
       { name: 'name', type: 'string', availability: 'optional', description: 'Displayed place name.' },
@@ -406,7 +406,7 @@ export const defaultSceneryRecipes: ReadonlyArray<SceneryRecipe> = [
   sceneryRecipeSchema.parse({
     id: 'drone-urban-flight',
     label: 'Drone urban flight scenery',
-    intendedUse: 'Low-altitude Three.js flight visualization with roads, buildings, water, vegetation, labels, and operational points of interest derived from the canonical vector map.',
+    intendedUse: 'Low-altitude Babylon.js flight visualization with roads, buildings, water, vegetation, labels, and operational points of interest derived from the canonical vector map.',
     sourceTilesetId: mapTilesetId,
     featureKinds: [
       'aeroway',

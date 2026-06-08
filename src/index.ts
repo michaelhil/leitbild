@@ -8,7 +8,7 @@ import { createOpenSkyPackRuntimeAdapter } from './packs/aviation/sim/opensky/ad
 import { createVatsimPackRuntimeAdapter } from './packs/aviation/sim/vatsim/adapter.ts'
 import { createAviationMultiPackRuntimeAdapter } from './packs/aviation/sim/multi/adapter.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from './packs/electric-grid/sim/adapter.ts'
-import { createLocalDronePackRuntimeAdapter } from './packs/drone/sim/adapter.ts'
+import { createDroneSitlPackRuntimeAdapter } from './packs/drone/sitl/adapter.ts'
 import type { PackRuntimeAdapter } from './simulation/protocol.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from './packs/process-plant/sim/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapter.ts'
@@ -57,7 +57,7 @@ const registry = createControlInstanceRegistry({
     createLocalAmbulancePackRuntimeAdapter({ routing }),
     createLocalTrafficPackRuntimeAdapter({ routing }),
     createLocalWeatherPackRuntimeAdapter(),
-    createLocalDronePackRuntimeAdapter(),
+    createDroneSitlPackRuntimeAdapter(),
     createLocalProcessPlantPackRuntimeAdapter(),
     createLocalElectricGridPackRuntimeAdapter(),
     createAviationNoopPackRuntimeAdapter(),

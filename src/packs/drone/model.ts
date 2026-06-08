@@ -1,92 +1,59 @@
 import { z } from 'zod'
-import { actorIdSchema, clientIdSchema, geoJsonPointSchema, idSchema, isoTimestampSchema, objectIdSchema, type ActorId, type ClientId, type GeoJsonPoint, type IsoTimestamp, type ObjectId } from '../../core/model/index.ts'
+import {
+  actorIdSchema,
+  clientIdSchema,
+  geoJsonPointSchema,
+  idSchema,
+  isoTimestampSchema,
+  objectIdSchema,
+  type ActorId,
+  type ClientId,
+  type GeoJsonPoint,
+  type IsoTimestamp,
+  type ObjectId,
+} from '../../core/model/index.ts'
 
 export const dronePackId = 'drone' as const
 
-export const droneFlightModeSchema = z.enum([
+export const droneAutopilotSchema = z.enum(['px4', 'ardupilot'])
+export type DroneAutopilot = z.infer<typeof droneAutopilotSchema>
+
+export const droneLinkStateSchema = z.enum(['connecting', 'connected', 'degraded', 'lost'])
+export type DroneLinkState = z.infer<typeof droneLinkStateSchema>
+
+export const droneArmingStateSchema = z.enum(['armed', 'disarmed', 'unknown'])
+export type DroneArmingState = z.infer<typeof droneArmingStateSchema>
+
+export const droneNavigationKindSchema = z.enum([
   'manual',
-  'guided',
-  'swarm',
-  'mission',
   'hold',
+  'mission',
+  'guided',
+  'offboard',
   'land',
   'return_to_launch',
-  'disabled',
-  'destroyed',
+  'takeoff',
+  'failsafe',
+  'unknown',
 ])
-export type DroneFlightMode = z.infer<typeof droneFlightModeSchema>
+export type DroneNavigationKind = z.infer<typeof droneNavigationKindSchema>
 
-export const droneHealthStateSchema = z.enum(['nominal', 'degraded', 'disabled', 'destroyed'])
+export const droneHealthStateSchema = z.enum(['nominal', 'degraded', 'critical', 'failed', 'destroyed', 'unknown'])
 export type DroneHealthState = z.infer<typeof droneHealthStateSchema>
+
+export const droneMissionExecutionStateSchema = z.enum(['idle', 'uploading', 'ready', 'running', 'paused', 'complete', 'failed', 'unknown'])
+export type DroneMissionExecutionState = z.infer<typeof droneMissionExecutionStateSchema>
+
+export const droneFlightModeSchema = droneNavigationKindSchema
+export type DroneFlightMode = DroneNavigationKind
 
 export const droneAirframeSchema = z.object({
   kind: z.string().min(1).max(64),
   rotorCount: z.number().int().nonnegative().max(32),
-  massKg: z.number().finite().positive().max(500),
-  diagonalSizeM: z.number().finite().positive().max(10),
-  dragAreaM2: z.number().finite().nonnegative().max(20).default(0.08),
+  massKg: z.number().finite().positive().max(500).optional(),
+  diagonalSizeM: z.number().finite().positive().max(10).optional(),
 }).strict()
 export type DroneAirframe = z.infer<typeof droneAirframeSchema>
-
-export const droneControllerGainsSchema = z.object({
-  velocityP: z.number().finite().positive().max(10).default(1.8),
-  altitudeP: z.number().finite().positive().max(10).default(1.4),
-  yawP: z.number().finite().positive().max(10).default(2.5),
-  damping: z.number().finite().min(0).max(1).default(0.18),
-}).strict()
-export type DroneControllerGains = z.infer<typeof droneControllerGainsSchema>
-
-export const droneDynamicsSchema = z.object({
-  maxHorizontalSpeedMps: z.number().finite().positive().max(160),
-  maxVerticalSpeedMps: z.number().finite().positive().max(60),
-  maxAccelerationMps2: z.number().finite().positive().max(80),
-  maxYawRateDegPerSec: z.number().finite().positive().max(720),
-  maxTiltDeg: z.number().finite().positive().max(89),
-  minAltitudeM: z.number().finite().min(0).max(10_000).default(0),
-  serviceCeilingM: z.number().finite().positive().max(20_000),
-  controller: droneControllerGainsSchema.default({
-    velocityP: 1.8,
-    altitudeP: 1.4,
-    yawP: 2.5,
-    damping: 0.18,
-  }),
-}).strict()
-export type DroneDynamics = z.infer<typeof droneDynamicsSchema>
-
-export const droneEnergyModelSchema = z.object({
-  capacityWh: z.number().finite().positive().max(100_000),
-  reserveWh: z.number().finite().nonnegative().max(100_000),
-  nominalVoltageV: z.number().finite().positive().max(1_000),
-  hoverPowerW: z.number().finite().positive().max(100_000),
-  cruisePowerW: z.number().finite().positive().max(150_000),
-  payloadPowerW: z.number().finite().nonnegative().max(50_000).default(0),
-}).strict().superRefine((energy, ctx) => {
-  if (energy.reserveWh >= energy.capacityWh) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'reserveWh must be lower than capacityWh',
-      path: ['reserveWh'],
-    })
-  }
-})
-export type DroneEnergyModel = z.infer<typeof droneEnergyModelSchema>
-
-export const dronePrecipitationSchema = z.enum(['none', 'rain', 'snow'])
-export type DronePrecipitation = z.infer<typeof dronePrecipitationSchema>
-
-export const droneEnvironmentSchema = z.object({
-  windSpeedMps: z.number().finite().min(0).max(80).default(0),
-  windDirectionDeg: z.number().finite().min(0).max(360).default(0),
-  gustSpeedMps: z.number().finite().min(0).max(60).default(0),
-  turbulenceIntensity: z.number().finite().min(0).max(1).default(0),
-  precipitation: dronePrecipitationSchema.default('none'),
-  precipitationIntensity: z.number().finite().min(0).max(1).default(0),
-  visibilityM: z.number().finite().positive().max(100_000).default(20_000),
-  airDensityKgM3: z.number().finite().positive().max(2).default(1.225),
-}).strict()
-export type DroneEnvironment = z.infer<typeof droneEnvironmentSchema>
-
-export const defaultDroneEnvironment: DroneEnvironment = droneEnvironmentSchema.parse({})
 
 export const droneSensorSchema = z.object({
   id: idSchema,
@@ -95,6 +62,7 @@ export const droneSensorSchema = z.object({
   rangeM: z.number().finite().positive().max(100_000),
   fovDeg: z.number().finite().positive().max(360).default(90),
   updateIntervalMs: z.number().int().positive().max(60_000).default(1_000),
+  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DroneSensor = z.infer<typeof droneSensorSchema>
@@ -115,6 +83,7 @@ export const dronePayloadSchema = z.object({
   quantity: z.number().int().nonnegative().max(10_000).default(1),
   rangeM: z.number().finite().positive().max(100_000).optional(),
   effect: dronePayloadEffectSchema.optional(),
+  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DronePayload = z.infer<typeof dronePayloadSchema>
@@ -124,6 +93,7 @@ export const droneCapabilitySchema = z.object({
   kind: z.string().min(1).max(64),
   label: z.string().min(1).max(80),
   level: z.number().finite().min(0).max(10).default(1),
+  source: z.enum(['gazebo', 'autopilot', 'payload', 'operator_declared']).default('operator_declared'),
   tags: z.array(z.string().min(1).max(48)).default([]),
 }).strict()
 export type DroneCapability = z.infer<typeof droneCapabilitySchema>
@@ -132,16 +102,17 @@ export const droneVisualProfileSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#2563eb'),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#f8fafc'),
   scale: z.number().finite().positive().max(10).default(1),
+  meshRef: z.string().min(1).max(240).optional(),
 }).strict()
 export type DroneVisualProfile = z.infer<typeof droneVisualProfileSchema>
 
-export const droneProfileSchema = z.object({
+export const droneVehicleModelSchema = z.object({
   id: idSchema,
   label: z.string().min(1).max(96),
   description: z.string().min(1).max(500).optional(),
+  autopilotModel: z.string().min(1).max(128),
+  gazeboModel: z.string().min(1).max(128),
   airframe: droneAirframeSchema,
-  dynamics: droneDynamicsSchema,
-  energy: droneEnergyModelSchema,
   capabilities: z.array(droneCapabilitySchema).default([]),
   sensors: z.array(droneSensorSchema).default([]),
   payloads: z.array(dronePayloadSchema).default([]),
@@ -151,25 +122,47 @@ export const droneProfileSchema = z.object({
     scale: 1,
   }),
 }).strict()
-export type DroneProfile = z.infer<typeof droneProfileSchema>
+export type DroneVehicleModel = z.infer<typeof droneVehicleModelSchema>
 
-export const droneKinematicsSchema = z.object({
-  altitudeM: z.number().finite().min(0).max(20_000),
-  verticalSpeedMps: z.number().finite().min(-100).max(100).default(0),
-  velocityEastMps: z.number().finite().min(-300).max(300).default(0),
-  velocityNorthMps: z.number().finite().min(-300).max(300).default(0),
+export const droneProfileSchema = droneVehicleModelSchema
+export type DroneProfile = DroneVehicleModel
+
+export const dronePoseSchema = z.object({
+  point: geoJsonPointSchema,
+  altitudeM: z.number().finite().min(-1_000).max(100_000),
+  relativeAltitudeM: z.number().finite().min(-1_000).max(100_000).optional(),
+  headingDeg: z.number().finite().min(0).max(360).default(0),
+  accuracyM: z.number().finite().nonnegative().max(100_000).optional(),
+  observedAt: isoTimestampSchema,
+}).strict()
+export type DronePose = z.infer<typeof dronePoseSchema>
+
+export const droneVelocitySchema = z.object({
+  eastMps: z.number().finite().min(-500).max(500).default(0),
+  northMps: z.number().finite().min(-500).max(500).default(0),
+  downMps: z.number().finite().min(-500).max(500).default(0),
+  groundSpeedMps: z.number().finite().nonnegative().max(500).default(0),
+  verticalSpeedMps: z.number().finite().min(-500).max(500).default(0),
+}).strict()
+export type DroneVelocity = z.infer<typeof droneVelocitySchema>
+
+export const droneAttitudeSchema = z.object({
+  rollDeg: z.number().finite().min(-180).max(180).default(0),
+  pitchDeg: z.number().finite().min(-180).max(180).default(0),
   yawDeg: z.number().finite().min(0).max(360).default(0),
-  pitchDeg: z.number().finite().min(-89).max(89).default(0),
-  rollDeg: z.number().finite().min(-89).max(89).default(0),
+  rollRateDegPerSec: z.number().finite().min(-1_500).max(1_500).optional(),
+  pitchRateDegPerSec: z.number().finite().min(-1_500).max(1_500).optional(),
+  yawRateDegPerSec: z.number().finite().min(-1_500).max(1_500).optional(),
 }).strict()
-export type DroneKinematics = z.infer<typeof droneKinematicsSchema>
+export type DroneAttitude = z.infer<typeof droneAttitudeSchema>
 
-export const droneEnergyStateSchema = z.object({
-  remainingWh: z.number().finite().nonnegative(),
-  consumedWh: z.number().finite().nonnegative().default(0),
-  voltageV: z.number().finite().positive(),
+export const droneBatteryStateSchema = z.object({
+  remainingPercent: z.number().finite().min(0).max(100).optional(),
+  voltageV: z.number().finite().nonnegative().max(1_000).optional(),
+  currentA: z.number().finite().min(-1_000).max(1_000).optional(),
+  consumedMah: z.number().finite().nonnegative().max(10_000_000).optional(),
 }).strict()
-export type DroneEnergyState = z.infer<typeof droneEnergyStateSchema>
+export type DroneBatteryState = z.infer<typeof droneBatteryStateSchema>
 
 export const droneManualAxesSchema = z.object({
   forward: z.number().finite().min(-1).max(1).default(0),
@@ -189,14 +182,13 @@ export type DroneInputSource = z.infer<typeof droneInputSourceSchema>
 
 export const droneGuidedTargetSchema = z.object({
   point: geoJsonPointSchema,
-  altitudeM: z.number().finite().min(0).max(20_000),
+  altitudeM: z.number().finite().min(-1_000).max(100_000),
   speedMps: z.number().finite().positive().max(160).optional(),
   targetObjectId: objectIdSchema.optional(),
 }).strict()
 export type DroneGuidedTarget = z.infer<typeof droneGuidedTargetSchema>
 
 export const droneControlStateSchema = z.object({
-  mode: droneFlightModeSchema,
   pilotActorId: actorIdSchema.optional(),
   inputSource: droneInputSourceSchema.optional(),
   manualAxes: droneManualAxesSchema.optional(),
@@ -216,12 +208,17 @@ export const droneDamageRecordSchema = z.object({
 }).strict()
 export type DroneDamageRecord = z.infer<typeof droneDamageRecordSchema>
 
-export const droneHealthStateDataSchema = z.object({
+export const droneAutopilotHealthSchema = z.object({
   state: droneHealthStateSchema,
-  integrity: z.number().finite().min(0).max(1),
+  ekfOk: z.boolean().optional(),
+  gpsOk: z.boolean().optional(),
+  batteryOk: z.boolean().optional(),
+  localPositionOk: z.boolean().optional(),
+  globalPositionOk: z.boolean().optional(),
+  lastStatusText: z.string().min(1).max(240).optional(),
   damage: z.array(droneDamageRecordSchema).default([]),
 }).strict()
-export type DroneHealthStateData = z.infer<typeof droneHealthStateDataSchema>
+export type DroneAutopilotHealth = z.infer<typeof droneAutopilotHealthSchema>
 
 export const droneSwarmMembershipSchema = z.object({
   swarmId: idSchema,
@@ -236,165 +233,196 @@ export const droneSwarmMembershipSchema = z.object({
 export type DroneSwarmMembership = z.infer<typeof droneSwarmMembershipSchema>
 
 export const droneMissionStateSchema = z.object({
-  taskId: idSchema.optional(),
-  objective: z.string().min(1).max(120).optional(),
-  phase: z.string().min(1).max(64).optional(),
+  state: droneMissionExecutionStateSchema,
+  currentSeq: z.number().int().nonnegative().optional(),
+  total: z.number().int().nonnegative().optional(),
+  planId: idSchema.optional(),
+  updatedAt: isoTimestampSchema.optional(),
 }).strict()
 export type DroneMissionState = z.infer<typeof droneMissionStateSchema>
 
+export const droneGeofenceStateSchema = z.object({
+  loaded: z.boolean().default(false),
+  breachStatus: z.enum(['clear', 'breached', 'unknown']).default('unknown'),
+  updatedAt: isoTimestampSchema.optional(),
+}).strict()
+export type DroneGeofenceState = z.infer<typeof droneGeofenceStateSchema>
+
+export const dronePayloadRuntimeStateSchema = z.object({
+  gimbalPitchDeg: z.number().finite().min(-180).max(180).optional(),
+  gimbalYawDeg: z.number().finite().min(-180).max(180).optional(),
+  cameraMode: z.string().min(1).max(64).optional(),
+  activeSensorId: idSchema.optional(),
+}).strict()
+export type DronePayloadRuntimeState = z.infer<typeof dronePayloadRuntimeStateSchema>
+
+export const droneVehicleIdentitySchema = z.object({
+  modelId: idSchema,
+  modelLabel: z.string().min(1).max(96),
+  autopilotModel: z.string().min(1).max(128),
+  gazeboModel: z.string().min(1).max(128),
+  systemId: z.number().int().min(1).max(255),
+  componentId: z.number().int().min(1).max(255).default(1),
+  airframe: droneAirframeSchema,
+  capabilities: z.array(droneCapabilitySchema).default([]),
+  sensors: z.array(droneSensorSchema).default([]),
+  payloads: z.array(dronePayloadSchema).default([]),
+  visual: droneVisualProfileSchema.default({
+    color: '#2563eb',
+    accentColor: '#f8fafc',
+    scale: 1,
+  }),
+}).strict()
+export type DroneVehicleIdentity = z.infer<typeof droneVehicleIdentitySchema>
+
 export const dronePackDataSchema = z.object({
   type: z.literal('drone'),
-  schemaVersion: z.literal(1),
-  profile: droneProfileSchema,
-  kinematics: droneKinematicsSchema,
-  energy: droneEnergyStateSchema,
-  environment: droneEnvironmentSchema.default(defaultDroneEnvironment),
-  control: droneControlStateSchema,
-  health: droneHealthStateDataSchema,
+  schemaVersion: z.literal(2),
+  autopilot: droneAutopilotSchema,
+  vehicle: droneVehicleIdentitySchema,
+  link: z.object({
+    state: droneLinkStateSchema,
+    endpoint: z.string().min(1).max(240).optional(),
+    lastHeartbeatAt: isoTimestampSchema.optional(),
+    lastMessageAt: isoTimestampSchema.optional(),
+  }).strict(),
+  arming: z.object({
+    state: droneArmingStateSchema,
+    armed: z.boolean(),
+    updatedAt: isoTimestampSchema.optional(),
+  }).strict(),
+  navigation: z.object({
+    kind: droneNavigationKindSchema,
+    mode: z.string().min(1).max(96),
+    customMode: z.number().int().nonnegative().optional(),
+    updatedAt: isoTimestampSchema.optional(),
+  }).strict(),
+  pose: dronePoseSchema,
+  velocity: droneVelocitySchema.default({
+    eastMps: 0,
+    northMps: 0,
+    downMps: 0,
+    groundSpeedMps: 0,
+    verticalSpeedMps: 0,
+  }),
+  attitude: droneAttitudeSchema.default({
+    rollDeg: 0,
+    pitchDeg: 0,
+    yawDeg: 0,
+  }),
+  battery: droneBatteryStateSchema.default({}),
+  health: droneAutopilotHealthSchema,
+  control: droneControlStateSchema.default({}),
+  mission: droneMissionStateSchema.default({ state: 'unknown' }),
+  geofence: droneGeofenceStateSchema.default({ loaded: false, breachStatus: 'unknown' }),
+  payload: dronePayloadRuntimeStateSchema.default({}),
   swarm: droneSwarmMembershipSchema.optional(),
-  mission: droneMissionStateSchema.optional(),
 }).strict()
 export type DronePackData = z.infer<typeof dronePackDataSchema>
 
+export const droneVehicleModelCatalogSchema = z.object({
+  models: z.array(droneVehicleModelSchema).default([]),
+}).strict()
+export type DroneVehicleModelCatalog = z.infer<typeof droneVehicleModelCatalogSchema>
+
 export const droneProfileCatalogSchema = z.object({
-  profiles: z.array(droneProfileSchema).default([]),
+  profiles: z.array(droneVehicleModelSchema).default([]),
 }).strict()
 export type DroneProfileCatalog = z.infer<typeof droneProfileCatalogSchema>
 
-export const defaultDroneProfiles: ReadonlyArray<DroneProfile> = [
-  droneProfileSchema.parse({
-    id: 'quad-surveillance',
-    label: 'Quad Surveillance',
-    description: 'Stable multirotor with optical and thermal sensing.',
-    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.4, diagonalSizeM: 0.46, dragAreaM2: 0.08 },
-    dynamics: {
-      maxHorizontalSpeedMps: 18,
-      maxVerticalSpeedMps: 5,
-      maxAccelerationMps2: 7,
-      maxYawRateDegPerSec: 160,
-      maxTiltDeg: 35,
-      serviceCeilingM: 500,
-    },
-    energy: {
-      capacityWh: 95,
-      reserveWh: 18,
-      nominalVoltageV: 22.2,
-      hoverPowerW: 390,
-      cruisePowerW: 520,
-      payloadPowerW: 18,
-    },
+export const defaultDroneVehicleModels: ReadonlyArray<DroneVehicleModel> = [
+  droneVehicleModelSchema.parse({
+    id: 'px4-x500-depth',
+    label: 'PX4 X500 Depth',
+    description: 'PX4 Gazebo X500 quadrotor with depth camera support.',
+    autopilotModel: 'x500_depth',
+    gazeboModel: 'x500_depth',
+    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.4, diagonalSizeM: 0.46 },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation' },
-      { id: 'swarm-member', kind: 'swarm_member', label: 'Swarm member' },
-      { id: 'surveillance', kind: 'surveillance', label: 'Surveillance' },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
+      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
+      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'autopilot' },
+      { id: 'depth-camera', kind: 'depth_camera', label: 'Depth camera', source: 'gazebo' },
     ],
     sensors: [
-      { id: 'eo-camera', kind: 'electro_optical', label: 'EO camera', rangeM: 1_200, fovDeg: 70, updateIntervalMs: 500 },
-      { id: 'thermal-camera', kind: 'thermal', label: 'Thermal camera', rangeM: 700, fovDeg: 55, updateIntervalMs: 800 },
+      { id: 'depth-camera', kind: 'depth_camera', label: 'Depth camera', rangeM: 80, fovDeg: 70, updateIntervalMs: 100, source: 'gazebo' },
+      { id: 'mavlink-global-position', kind: 'global_position', label: 'Autopilot global position', rangeM: 1, fovDeg: 360, source: 'autopilot' },
     ],
     visual: { color: '#2563eb', accentColor: '#f8fafc', scale: 1 },
   }),
-  droneProfileSchema.parse({
-    id: 'heavy-supply',
-    label: 'Heavy Supply',
-    description: 'Cargo multirotor with slower handling and higher payload power.',
-    airframe: { kind: 'hexacopter', rotorCount: 6, massKg: 9.5, diagonalSizeM: 1.1, dragAreaM2: 0.24 },
-    dynamics: {
-      maxHorizontalSpeedMps: 13,
-      maxVerticalSpeedMps: 3,
-      maxAccelerationMps2: 4.2,
-      maxYawRateDegPerSec: 90,
-      maxTiltDeg: 28,
-      serviceCeilingM: 300,
-    },
-    energy: {
-      capacityWh: 430,
-      reserveWh: 70,
-      nominalVoltageV: 44.4,
-      hoverPowerW: 1_550,
-      cruisePowerW: 1_900,
-      payloadPowerW: 80,
-    },
+  droneVehicleModelSchema.parse({
+    id: 'px4-x500-gimbal',
+    label: 'PX4 X500 Gimbal',
+    description: 'PX4 Gazebo X500 quadrotor with camera gimbal payload.',
+    autopilotModel: 'x500_gimbal',
+    gazeboModel: 'x500_gimbal',
+    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 2.7, diagonalSizeM: 0.5 },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation' },
-      { id: 'payload-delivery', kind: 'payload_delivery', label: 'Payload delivery' },
-      { id: 'swarm-member', kind: 'swarm_member', label: 'Swarm member' },
-    ],
-    payloads: [
-      { id: 'medical-drop', kind: 'cargo', label: 'Medical supply drop', massKg: 3.5, quantity: 2, tags: ['medical', 'supply'] },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
+      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
+      { id: 'camera-gimbal', kind: 'camera_gimbal', label: 'Camera gimbal', source: 'gazebo' },
     ],
     sensors: [
-      { id: 'navigation-camera', kind: 'navigation_camera', label: 'Navigation camera', rangeM: 500, fovDeg: 90, updateIntervalMs: 1_000 },
+      { id: 'eo-gimbal-camera', kind: 'electro_optical', label: 'EO gimbal camera', rangeM: 1_200, fovDeg: 60, updateIntervalMs: 100, source: 'gazebo' },
     ],
-    visual: { color: '#0f766e', accentColor: '#ecfeff', scale: 1.35 },
+    payloads: [
+      { id: 'eo-gimbal', kind: 'camera_gimbal', label: 'EO gimbal', quantity: 1, source: 'gazebo' },
+    ],
+    visual: { color: '#0f766e', accentColor: '#ecfeff', scale: 1.08 },
   }),
-  droneProfileSchema.parse({
-    id: 'interceptor-effect',
-    label: 'Interceptor Effect',
-    description: 'Fast drone with a configurable kinetic effect payload.',
-    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 3.2, diagonalSizeM: 0.52, dragAreaM2: 0.1 },
-    dynamics: {
-      maxHorizontalSpeedMps: 28,
-      maxVerticalSpeedMps: 7,
-      maxAccelerationMps2: 11,
-      maxYawRateDegPerSec: 220,
-      maxTiltDeg: 48,
-      serviceCeilingM: 700,
-    },
-    energy: {
-      capacityWh: 120,
-      reserveWh: 20,
-      nominalVoltageV: 22.2,
-      hoverPowerW: 520,
-      cruisePowerW: 760,
-      payloadPowerW: 30,
-    },
+  droneVehicleModelSchema.parse({
+    id: 'ardupilot-iris',
+    label: 'ArduPilot Iris',
+    description: 'ArduPilot Copter Iris model for Gazebo SITL.',
+    autopilotModel: 'iris',
+    gazeboModel: 'iris',
+    airframe: { kind: 'quadrotor', rotorCount: 4, massKg: 1.5, diagonalSizeM: 0.55 },
     capabilities: [
-      { id: 'manual-control', kind: 'manual_control', label: 'Manual control' },
-      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation' },
-      { id: 'effect-delivery', kind: 'effect_delivery', label: 'Effect delivery' },
-      { id: 'swarm-member', kind: 'swarm_member', label: 'Swarm member' },
-    ],
-    payloads: [
-      {
-        id: 'kinetic-effect',
-        kind: 'kinetic',
-        label: 'Kinetic effect',
-        massKg: 0.7,
-        quantity: 1,
-        rangeM: 75,
-        effect: { kind: 'kinetic', damage: 0.65, radiusM: 3, cooldownSeconds: 8 },
-      },
+      { id: 'manual-control', kind: 'manual_control', label: 'Manual control', source: 'autopilot' },
+      { id: 'guided-navigation', kind: 'guided_navigation', label: 'Guided navigation', source: 'autopilot' },
+      { id: 'mission', kind: 'mission', label: 'Mission upload', source: 'autopilot' },
+      { id: 'geofence', kind: 'geofence', label: 'Geofence', source: 'autopilot' },
     ],
     sensors: [
-      { id: 'tracking-camera', kind: 'tracking_camera', label: 'Tracking camera', rangeM: 900, fovDeg: 50, updateIntervalMs: 300 },
+      { id: 'ardupilot-gps', kind: 'global_position', label: 'Autopilot global position', rangeM: 1, fovDeg: 360, source: 'autopilot' },
     ],
-    visual: { color: '#b91c1c', accentColor: '#fee2e2', scale: 1.08 },
+    visual: { color: '#b91c1c', accentColor: '#fee2e2', scale: 1.02 },
   }),
 ]
 
-export const droneProfileMap = (profiles: ReadonlyArray<DroneProfile> = defaultDroneProfiles): ReadonlyMap<string, DroneProfile> =>
-  new Map(profiles.map(profile => [profile.id, profile]))
+export const defaultDroneProfiles = defaultDroneVehicleModels
 
-export const requireDroneProfile = (
-  profileId: string,
-  profiles: ReadonlyArray<DroneProfile> = defaultDroneProfiles,
-): DroneProfile => {
-  const profile = droneProfileMap(profiles).get(profileId)
-  if (!profile) throw new Error(`unknown drone profile: ${profileId}`)
-  return profile
+export const droneVehicleModelMap = (
+  models: ReadonlyArray<DroneVehicleModel> = defaultDroneVehicleModels,
+): ReadonlyMap<string, DroneVehicleModel> =>
+  new Map(models.map(model => [model.id, model]))
+
+export const requireDroneVehicleModel = (
+  modelId: string,
+  models: ReadonlyArray<DroneVehicleModel> = defaultDroneVehicleModels,
+): DroneVehicleModel => {
+  const model = droneVehicleModelMap(models).get(modelId)
+  if (!model) throw new Error(`unknown drone vehicle model: ${modelId}`)
+  return model
 }
+
+export const requireDroneProfile = requireDroneVehicleModel
 
 export const isDronePackData = (value: unknown): value is DronePackData =>
   dronePackDataSchema.safeParse(value).success
 
-export const droneHasCapability = (profile: DroneProfile, kind: string): boolean =>
-  profile.capabilities.some(capability => capability.kind === kind)
+export const droneHasCapability = (
+  model: {
+    readonly capabilities: ReadonlyArray<DroneCapability>
+  },
+  kind: string,
+): boolean =>
+  model.capabilities.some(capability => capability.kind === kind)
 
-export const droneHorizontalSpeedMps = (kinematics: DroneKinematics): number =>
-  Math.hypot(kinematics.velocityEastMps, kinematics.velocityNorthMps)
+export const droneHorizontalSpeedMps = (velocity: DroneVelocity): number =>
+  Math.hypot(velocity.eastMps, velocity.northMps)
 
 export interface DroneSceneObject {
   readonly id: ObjectId
@@ -402,10 +430,12 @@ export interface DroneSceneObject {
   readonly point: GeoJsonPoint
   readonly altitudeM: number
   readonly headingDeg: number
-  readonly mode: DroneFlightMode
+  readonly mode: DroneNavigationKind
   readonly health: DroneHealthState
-  readonly profileId: string
+  readonly modelId: string
   readonly color: string
+  readonly link: DroneLinkState
+  readonly armed: boolean
   readonly swarmId?: string
 }
 
@@ -426,4 +456,5 @@ export interface DroneSensorContact {
   readonly distanceM: number
   readonly bearingDeg: number
   readonly confidence: number
+  readonly source: 'gazebo' | 'autopilot' | 'payload'
 }

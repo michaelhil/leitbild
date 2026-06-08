@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Save, X } from 'lucide-svelte'
   import type { ControlInstanceId, OperationalObject } from '../../core/model/index.ts'
-  import { configureDroneProfileCommandKind } from '../../packs/drone/commands.ts'
-  import { dronePackDataSchema, droneProfileSchema, type DroneCapability, type DronePayload } from '../../packs/drone/model.ts'
+  import { configureDroneVehicleModelCommandKind } from '../../packs/drone/commands.ts'
+  import { dronePackDataSchema, droneVehicleModelSchema, type DroneCapability, type DronePayload } from '../../packs/drone/model.ts'
   import { sendControlInstanceCommand } from '../control-instance-client.ts'
   import IconButton from '../components/IconButton.svelte'
 
@@ -20,48 +20,40 @@
     close,
   }: Props = $props()
 
-  const profile = $derived.by(() => {
+  const data = $derived.by(() => {
     const parsed = dronePackDataSchema.safeParse(object.packData)
-    return parsed.success ? parsed.data.profile : null
+    return parsed.success ? parsed.data : null
   })
 
   let loadedObjectId = $state<string | null>(null)
   let label = $state('')
-  let maxHorizontalSpeedMps = $state(18)
-  let maxVerticalSpeedMps = $state(5)
-  let maxAccelerationMps2 = $state(7)
-  let maxYawRateDegPerSec = $state(160)
-  let serviceCeilingM = $state(500)
-  let capacityWh = $state(95)
-  let reserveWh = $state(18)
-  let hoverPowerW = $state(390)
-  let cruisePowerW = $state(520)
+  let autopilotModel = $state('')
+  let gazeboModel = $state('')
   let capabilityKinds = $state('')
   let payloadsJson = $state('[]')
-  let status = $state('Loading profile')
+  let color = $state('#2563eb')
+  let accentColor = $state('#f8fafc')
+  let scale = $state(1)
+  let status = $state('Loading vehicle model')
 
   const windowStyle = $derived.by(() => {
     const offset = windowOffsetIndex * 28
-    return `left:${100 + offset}px;top:${96 + offset}px;width:min(760px,calc(100vw - 24px));max-height:calc(100vh - ${120 + offset}px)`
+    return `left:${100 + offset}px;top:${96 + offset}px;width:min(720px,calc(100vw - 24px));max-height:calc(100vh - ${120 + offset}px)`
   })
 
   $effect(() => {
     if (loadedObjectId === object.id) return
-    const initial = profile
+    const initial = data
     loadedObjectId = object.id
-    label = initial?.label ?? object.label
-    maxHorizontalSpeedMps = initial?.dynamics.maxHorizontalSpeedMps ?? 18
-    maxVerticalSpeedMps = initial?.dynamics.maxVerticalSpeedMps ?? 5
-    maxAccelerationMps2 = initial?.dynamics.maxAccelerationMps2 ?? 7
-    maxYawRateDegPerSec = initial?.dynamics.maxYawRateDegPerSec ?? 160
-    serviceCeilingM = initial?.dynamics.serviceCeilingM ?? 500
-    capacityWh = initial?.energy.capacityWh ?? 95
-    reserveWh = initial?.energy.reserveWh ?? 18
-    hoverPowerW = initial?.energy.hoverPowerW ?? 390
-    cruisePowerW = initial?.energy.cruisePowerW ?? 520
-    capabilityKinds = initial?.capabilities.map(capability => capability.kind).join(', ') ?? ''
-    payloadsJson = JSON.stringify(initial?.payloads ?? [], null, 2)
-    status = initial ? 'Ready' : 'Invalid drone profile'
+    label = initial?.vehicle.modelLabel ?? object.label
+    autopilotModel = initial?.vehicle.autopilotModel ?? ''
+    gazeboModel = initial?.vehicle.gazeboModel ?? ''
+    capabilityKinds = initial?.vehicle.capabilities.map(capability => capability.kind).join(', ') ?? ''
+    payloadsJson = JSON.stringify(initial?.vehicle.payloads ?? [], null, 2)
+    color = initial?.vehicle.visual.color ?? '#2563eb'
+    accentColor = initial?.vehicle.visual.accentColor ?? '#f8fafc'
+    scale = initial?.vehicle.visual.scale ?? 1
+    status = initial ? 'Ready' : 'Invalid drone vehicle data'
   })
 
   const capabilitiesFromText = (): ReadonlyArray<DroneCapability> =>
@@ -74,6 +66,7 @@
         kind,
         label: kind.replaceAll('_', ' '),
         level: 1,
+        source: 'operator_declared',
         tags: [],
       }))
 
@@ -84,52 +77,42 @@
   }
 
   const save = async (): Promise<void> => {
-    const current = profile
+    const current = data
     if (!current) return
     try {
-      const profile = droneProfileSchema.parse({
-        ...current,
+      const model = droneVehicleModelSchema.parse({
+        id: current.vehicle.modelId,
         label,
-        dynamics: {
-          ...current.dynamics,
-          maxHorizontalSpeedMps,
-          maxVerticalSpeedMps,
-          maxAccelerationMps2,
-          maxYawRateDegPerSec,
-          serviceCeilingM,
-        },
-        energy: {
-          ...current.energy,
-          capacityWh,
-          reserveWh,
-          hoverPowerW,
-          cruisePowerW,
-        },
+        autopilotModel,
+        gazeboModel,
+        airframe: current.vehicle.airframe,
         capabilities: capabilitiesFromText(),
+        sensors: current.vehicle.sensors,
         payloads: payloadsFromJson(),
+        visual: { color, accentColor, scale },
       })
       const body = await sendControlInstanceCommand(controlInstanceId, {
-        kind: configureDroneProfileCommandKind,
+        kind: configureDroneVehicleModelCommandKind,
         targetObjectIds: [object.id],
         payload: {
           droneId: object.id,
-          profile,
+          model,
         },
       })
-      status = body.result.ok ? 'Profile saved' : `Rejected: ${body.result.reason ?? 'unknown'}`
+      status = body.result.ok ? 'Vehicle model saved' : `Rejected: ${body.result.reason ?? 'unknown'}`
     } catch (err) {
       status = err instanceof Error ? err.message : String(err)
     }
   }
 </script>
 
-<section class="profile-window" style={windowStyle} aria-label="Drone profile editor">
+<section class="profile-window" style={windowStyle} aria-label="Drone vehicle model editor">
   <header>
     <div>
-      <h2>{object.label} profile</h2>
-      <span>{profile?.id ?? 'invalid'}</span>
+      <h2>{object.label} vehicle model</h2>
+      <span>{data?.vehicle.modelId ?? 'invalid'}</span>
     </div>
-    <IconButton label="Close profile editor" icon={X} onClick={close} />
+    <IconButton label="Close vehicle model editor" icon={X} onClick={close} />
   </header>
 
   <div class="profile-body">
@@ -139,15 +122,11 @@
     </label>
 
     <div class="field-grid">
-      <label><span>Horizontal m/s</span><input type="number" min="1" max="160" step="0.5" bind:value={maxHorizontalSpeedMps} /></label>
-      <label><span>Vertical m/s</span><input type="number" min="1" max="60" step="0.5" bind:value={maxVerticalSpeedMps} /></label>
-      <label><span>Acceleration m/s2</span><input type="number" min="1" max="80" step="0.5" bind:value={maxAccelerationMps2} /></label>
-      <label><span>Yaw deg/s</span><input type="number" min="1" max="720" step="5" bind:value={maxYawRateDegPerSec} /></label>
-      <label><span>Ceiling m</span><input type="number" min="1" max="20000" step="10" bind:value={serviceCeilingM} /></label>
-      <label><span>Capacity Wh</span><input type="number" min="1" max="100000" step="1" bind:value={capacityWh} /></label>
-      <label><span>Reserve Wh</span><input type="number" min="0" max="100000" step="1" bind:value={reserveWh} /></label>
-      <label><span>Hover W</span><input type="number" min="1" max="100000" step="10" bind:value={hoverPowerW} /></label>
-      <label><span>Cruise W</span><input type="number" min="1" max="150000" step="10" bind:value={cruisePowerW} /></label>
+      <label><span>Autopilot model</span><input bind:value={autopilotModel} /></label>
+      <label><span>Gazebo model</span><input bind:value={gazeboModel} /></label>
+      <label><span>Scale</span><input type="number" min="0.1" max="10" step="0.05" bind:value={scale} /></label>
+      <label><span>Color</span><input bind:value={color} /></label>
+      <label><span>Accent</span><input bind:value={accentColor} /></label>
     </div>
 
     <label>
@@ -204,8 +183,8 @@
 
   header span,
   footer span {
-    font-size: 12px;
     color: #475569;
+    font-size: 12px;
   }
 
   .profile-body {
@@ -218,19 +197,19 @@
   label {
     display: grid;
     gap: 5px;
-    font-size: 12px;
     color: #334155;
+    font-size: 12px;
   }
 
   input,
   textarea {
     width: 100%;
     min-height: 32px;
+    padding: 6px 8px;
     border: 1px solid #cbd5e1;
     background: #ffffff;
     color: #0f172a;
     font: inherit;
-    padding: 6px 8px;
   }
 
   textarea {
@@ -250,10 +229,10 @@
     align-items: center;
     gap: 6px;
     min-height: 32px;
+    padding: 0 12px;
     border: 1px solid #2563eb;
     background: #2563eb;
     color: #ffffff;
-    padding: 0 12px;
     font: inherit;
   }
 

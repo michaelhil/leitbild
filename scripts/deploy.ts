@@ -5,11 +5,15 @@ const host = process.env.HETZNER_HOST ?? defaultHetznerHost
 const user = process.env.HETZNER_USER ?? 'root'
 const port = process.env.HETZNER_PORT ?? '22'
 const remoteBun = process.env.HETZNER_BUN ?? '/root/.bun/bin/bun'
+const droneSitlStack = process.env.LEITBILD_DEPLOY_DRONE_SITL_STACK ?? 'px4'
 
 const target = `${user}@${host}`
 const ssh = async (command: string): Promise<void> => {
   await $`ssh -p ${port} ${target} ${command}`
 }
+
+const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", "'\\''")}'`
 
 const verifyEndpoint = async (path: string): Promise<void> => {
   let lastError: unknown
@@ -43,10 +47,14 @@ await ssh('mkdir -p /opt/leitbild/app/data/reference')
 await $`rsync -az --delete -e "ssh -p ${port}" ./data/reference/ ${target}:/opt/leitbild/app/data/reference/`
 
 await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
+await ssh(`cd /opt/leitbild/app && LEITBILD_DRONE_SITL_STACK=${shellQuote(droneSitlStack)} ${remoteBun} run drone:sitl:setup`)
 await ssh(`cd /opt/leitbild/app && ${remoteBun} run build:ui`)
 await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps ${remoteBun} run maps:scenery:build`)
 await ssh('cp /opt/leitbild/app/deploy/leitbild.service /etc/systemd/system/leitbild.service')
-await ssh('systemctl daemon-reload && systemctl enable --now leitbild && systemctl restart leitbild')
+await ssh('cp /opt/leitbild/app/deploy/leitbild-drone-sitl.service /etc/systemd/system/leitbild-drone-sitl.service')
+await ssh('cp /opt/leitbild/app/deploy/leitbild-px4-gazebo.service /etc/systemd/system/leitbild-px4-gazebo.service')
+await ssh('cp /opt/leitbild/app/deploy/leitbild-ardupilot-gazebo.service /etc/systemd/system/leitbild-ardupilot-gazebo.service')
+await ssh('systemctl daemon-reload && systemctl enable --now leitbild-drone-sitl && systemctl restart leitbild-drone-sitl && systemctl enable --now leitbild && systemctl restart leitbild')
 await verifyEndpoint('/health')
 await verifyEndpoint('/api/scenarios')
 await verifyEndpoint('/map/capabilities.json')

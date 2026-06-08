@@ -12,7 +12,10 @@ import { weatherPack } from '../src/packs/weather/pack.ts'
 import { processPlantPack } from '../src/packs/process-plant/pack.ts'
 import { createLocalProcessPlantPackRuntimeAdapter } from '../src/packs/process-plant/sim/adapter.ts'
 import { dronePack } from '../src/packs/drone/pack.ts'
-import { createLocalDronePackRuntimeAdapter } from '../src/packs/drone/sim/adapter.ts'
+import { droneCommandKinds } from '../src/packs/drone/commands.ts'
+import { answerDroneQuery, droneQueryKinds } from '../src/packs/drone/query.ts'
+import { dronePackId } from '../src/packs/drone/model.ts'
+import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
 import { electricGridPack } from '../src/packs/electric-grid/pack.ts'
 import { createLocalElectricGridPackRuntimeAdapter } from '../src/packs/electric-grid/sim/adapter.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
@@ -33,7 +36,33 @@ export const createTestPackRuntimeAdapters = (): ReadonlyArray<PackRuntimeAdapte
   createAviationNoopPackRuntimeAdapter(),
   createLocalTrafficPackRuntimeAdapter(),
   createLocalWeatherPackRuntimeAdapter(),
-  createLocalDronePackRuntimeAdapter(),
+  {
+    id: droneSitlRuntimeId,
+    packId: dronePackId,
+    acceptedCommandKinds: droneCommandKinds,
+    queryKinds: droneQueryKinds,
+    connect: async (config) => {
+      const objects = [...(config.initialObjects ?? config.scenario?.initialObjects ?? [])]
+      return {
+        getSnapshot: async () => ({
+          controlInstanceId: config.controlInstanceId,
+          objects,
+          capturedAt: new Date().toISOString() as never,
+        }),
+        subscribe: () => () => {},
+        sendCommand: async (command) => ({
+          ok: false,
+          commandId: command.id,
+          rejectedAt: new Date().toISOString() as never,
+          reason: 'test drone SITL adapter does not connect to Gazebo',
+        }),
+        query: async (request) => answerDroneQuery({ request, objects }),
+        observeCommittedEvents: async () => {},
+        setClock: async () => {},
+        close: async () => {},
+      }
+    },
+  },
   createLocalProcessPlantPackRuntimeAdapter(),
   createLocalElectricGridPackRuntimeAdapter(),
 ]

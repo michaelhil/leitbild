@@ -1,5 +1,5 @@
-import type { GeoJsonPoint } from '../../../core/model/index.ts'
-import { geoPointFromLonLat } from '../../../core/model/index.ts'
+import type { GeoJsonPoint } from '../../core/model/index.ts'
+import { geoPointFromLonLat } from '../../core/model/index.ts'
 
 const metersPerDegreeLat = 111_320
 
@@ -18,15 +18,6 @@ export const shortestAngleDeltaDeg = (fromDeg: number, toDeg: number): number =>
   if (delta > 180) return delta - 360
   if (delta < -180) return delta + 360
   return delta
-}
-
-export const clamp = (value: number, min: number, max: number): number =>
-  Math.max(min, Math.min(max, value))
-
-export const limitRate = (current: number, target: number, maxDelta: number): number => {
-  const delta = target - current
-  if (Math.abs(delta) <= maxDelta) return target
-  return current + Math.sign(delta) * maxDelta
 }
 
 export const metersPerDegreeLonAt = (latDeg: number): number =>
