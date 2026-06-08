@@ -262,6 +262,7 @@ export const parseMavlinkEndpoint = (value: string): MavlinkEndpoint => {
 const crcAccumulate = (data: number, crc: number): number => {
   let tmp = data ^ (crc & 0xff)
   tmp ^= tmp << 4
+  tmp &= 0xff
   return ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xffff
 }
 

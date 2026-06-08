@@ -133,6 +133,7 @@ const okResult = <T>(response: PackQueryResponse): T => {
 const crcAccumulateForTest = (data: number, crc: number): number => {
   let tmp = data ^ (crc & 0xff)
   tmp ^= tmp << 4
+  tmp &= 0xff
   return ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xffff
 }
 
@@ -355,6 +356,21 @@ describe('drone pack', () => {
     expect(decoded[0]?.payload.readInt32LE(4)).toBe(599_100_000)
     expect(decoded[0]?.payload.readInt32LE(8)).toBe(107_500_000)
     expect(decoded[0]?.payload.readInt32LE(12)).toBe(125_000)
+  })
+
+  test('MAVLink decoder validates a captured PX4 SITL MAVLink v2 telemetry checksum', () => {
+    const frame = Buffer.from(
+      'fd1c0000600101210000309d00003d5b401c860a1805fd0000001c0000000000000000006925ff2f',
+      'hex',
+    )
+    const decoded = decodeMavlinkFrames(frame)
+
+    expect(decoded).toHaveLength(1)
+    expect(decoded[0]?.systemId).toBe(1)
+    expect(decoded[0]?.componentId).toBe(1)
+    expect(decoded[0]?.messageId).toBe(33)
+    expect(decoded[0]?.payload.readInt32LE(4)).toBe(473_979_709)
+    expect(decoded[0]?.payload.readInt32LE(8)).toBe(85_461_638)
   })
 
   test('controller bindings are derived from drone control state only', () => {
