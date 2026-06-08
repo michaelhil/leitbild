@@ -16,6 +16,7 @@ export interface DroneScenePerformanceSnapshot {
   readonly worldSource: 'worker' | 'main'
   readonly activeScenes: number
   readonly worldFeatures: {
+    readonly sceneryStage: 'fallback' | 'near' | 'full'
     readonly tiles: number
     readonly polygons: number
     readonly lines: number
@@ -38,6 +39,7 @@ export interface DroneFramePerformanceTracker {
     readonly renderMs: number
   }
   readonly updateWorld: (config: {
+    readonly sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage']
     readonly loadMs: number
     readonly buildMs: number
     readonly source: DroneScenePerformanceSnapshot['worldSource']
@@ -106,6 +108,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lineFragmentsMerged = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
+  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'fallback'
 
   const pushSample = (samples: number[], value: number): void => {
     samples.push(value)
@@ -127,6 +130,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       return { shouldReport, renderMs }
     },
     updateWorld: (config): void => {
+      sceneryStage = config.sceneryStage
       worldLoadMs = config.loadMs
       worldBuildMs = config.buildMs
       worldSource = config.source
@@ -164,6 +168,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         worldSource,
         activeScenes: renderInfo.activeScenes,
         worldFeatures: {
+          sceneryStage,
           tiles,
           polygons,
           lines,

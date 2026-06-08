@@ -992,11 +992,33 @@ const decodeLayer = (
 
 const maxWorldZoom = 14
 const maxCachedWorldSnapshots = 6
+const tileDecodeConcurrency = 14
 
 let worldCacheHits = 0
 let worldCacheMisses = 0
 
 const cachedWorldSnapshots = new Map<string, Promise<DroneMapWorldSnapshot>>()
+
+const mapWithConcurrency = async <Input, Output>(
+  items: ReadonlyArray<Input>,
+  concurrency: number,
+  mapper: (item: Input, index: number) => Promise<Output>,
+): Promise<ReadonlyArray<Output>> => {
+  const results: Output[] = new Array(items.length)
+  let nextIndex = 0
+  const workerCount = Math.max(1, Math.min(concurrency, items.length))
+  const runWorker = async (): Promise<void> => {
+    while (nextIndex < items.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(items[index]!, index)
+    }
+  }
+  const workers: Promise<void>[] = []
+  for (let index = 0; index < workerCount; index += 1) workers.push(runWorker())
+  await Promise.all(workers)
+  return results
+}
 
 const recordValue = (
   value: unknown,
@@ -1110,7 +1132,7 @@ export const loadDroneMapWorld = async (config: {
   const radiusM = config.radiusM ?? 4_250
   const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
   const tiles = tileRangeFor(config.center, radiusM, zoom)
-  const decoded = await Promise.all(tiles.map(async tile => {
+  const decoded = await mapWithConcurrency(tiles, tileDecodeConcurrency, async tile => {
     const vectorTile = await fetchTile(tile, config.signal)
     if (!vectorTile) return { polygons: [], lines: [], points: [] }
     const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'transportation_name', 'building', 'aeroway', 'place', 'poi']
@@ -1120,7 +1142,7 @@ export const loadDroneMapWorld = async (config: {
       lines: layerFeatures.flatMap(layer => layer.lines),
       points: layerFeatures.flatMap(layer => layer.points),
     }
-  }))
+  })
   const decodedPolygons = decoded.flatMap(item => item.polygons)
   const decodedLines = decoded.flatMap(item => item.lines)
   const decodedPoints = decoded.flatMap(item => item.points)

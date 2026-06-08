@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { nextDroneWorldStreamDecision } from '../src/ui/drone/drone-scene.ts'
+import { droneWorldLoadSpecsFor, nextDroneWorldStreamDecision } from '../src/ui/drone/drone-scene.ts'
 
 const metersPerDegreeLat = 111_320
 
@@ -12,6 +12,13 @@ const moveEast = (
 })
 
 describe('drone scene world streaming', () => {
+  test('uses progressive map-derived scenery loads before the full operating area', () => {
+    const specs = droneWorldLoadSpecsFor('initial')
+    expect(specs.map(spec => spec.stage)).toEqual(['near', 'full'])
+    expect(specs[0]?.radiusM).toBeLessThan(specs[1]?.radiusM ?? 0)
+    expect(specs.every(spec => spec.zoom === specs[0]?.zoom)).toBe(true)
+  })
+
   test('requests a new map-derived world after the drone crosses the streaming grid', () => {
     const initial = nextDroneWorldStreamDecision({
       currentCenter: null,

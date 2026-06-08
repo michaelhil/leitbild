@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
-import { loadDroneMapWorldForScene } from './drone-map-world-loader.ts'
+import { loadDroneMapWorldForScene, type DroneMapWorldLoadResult } from './drone-map-world-loader.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 import { createDroneMapWorldGroup, createFallbackWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
 
@@ -60,6 +60,9 @@ interface VisualPose {
 const metersPerDegreeLat = 111_320
 const worldCenterBucketM = 900
 const worldStreamPreloadDistanceM = 430
+const nearWorldRadiusM = 1_650
+const fullWorldRadiusM = 4_250
+const droneWorldZoom = 14
 let activeDroneSceneCount = 0
 const maxDroneScenePixelRatio = 1.15
 
@@ -318,6 +321,21 @@ export interface DroneWorldStreamDecision {
   readonly reason: 'initial' | 'grid-crossing'
 }
 
+export type DroneWorldLoadStage = 'near' | 'full'
+
+export interface DroneWorldLoadSpec {
+  readonly stage: DroneWorldLoadStage
+  readonly radiusM: number
+  readonly zoom: number
+}
+
+export const droneWorldLoadSpecsFor = (
+  _reason: DroneWorldStreamDecision['reason'],
+): ReadonlyArray<DroneWorldLoadSpec> => [
+  { stage: 'near', radiusM: nearWorldRadiusM, zoom: droneWorldZoom },
+  { stage: 'full', radiusM: fullWorldRadiusM, zoom: droneWorldZoom },
+]
+
 export const nextDroneWorldStreamDecision = (config: {
   readonly currentCenter: { readonly lon: number; readonly lat: number } | null
   readonly currentCenterKey: string
@@ -495,60 +513,100 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       applyPixelRatio(pixelRatio + 0.04, 'balanced')
     }
   }
-  const loadWorldFor = (center: { readonly lon: number; readonly lat: number }): void => {
+  let readyNotified = false
+  const notifyReadyOnce = (): void => {
+    if (readyNotified) return
+    readyNotified = true
+    config.onReady?.()
+  }
+  const worldStatusFor = (config: {
+    readonly stage: DroneWorldLoadStage
+    readonly worldResult: DroneMapWorldLoadResult
+  }): string => {
+    const snapshot = config.worldResult.snapshot
+    const fallbackSuffix = config.worldResult.fallbackReason ? `; worker fallback: ${config.worldResult.fallbackReason}` : ''
+    const terrainSuffix = config.worldResult.terrain.status === 'available'
+      ? `; terrain ${config.worldResult.terrain.demEncoding}/${config.worldResult.terrainModel.kind}`
+      : `; terrain ${config.worldResult.terrain.status}`
+    const coverageSuffix = `; ${snapshot.coverage.selected.buildings} buildings, ${snapshot.coverage.selected.roads} roads, ${snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways} water features, ${snapshot.coverage.selected.vegetationPolygons} vegetation areas`
+    const noteSuffix = snapshot.coverage.notes.length > 0 ? `; ${snapshot.coverage.notes[0]}` : ''
+    const stageLabel = config.stage === 'near' ? 'Nearby map scenery' : 'Full map scenery'
+    const enrichmentSuffix = config.stage === 'near' ? '; loading full operating area' : ''
+    return `${stageLabel} loaded via ${config.worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${fallbackSuffix}${noteSuffix}${enrichmentSuffix}`
+  }
+  const applyWorldResult = (result: {
+    readonly center: { readonly lon: number; readonly lat: number }
+    readonly loadedCenterKey: string
+    readonly stage: DroneWorldLoadStage
+    readonly worldResult: DroneMapWorldLoadResult
+    readonly loadMs: number
+  }): void => {
+    const snapshot = result.worldResult.snapshot
+    const buildStartedAtMs = performance.now()
+    const nextLayer = createDroneMapWorldGroup(snapshot, result.worldResult.terrainModel)
+    const buildMs = performance.now() - buildStartedAtMs
+    scene.remove(environmentLayer)
+    disposeObject(environmentLayer)
+    environmentLayer = nextLayer
+    scene.add(environmentLayer)
+    worldCenter = result.center
+    worldCenterKey = result.loadedCenterKey
+    pendingWorldCenterKey = ''
+    worldRecenterRevision += 1
+    performanceTracker.updateWorld({
+      sceneryStage: result.stage,
+      loadMs: result.loadMs,
+      buildMs,
+      source: result.worldResult.source,
+      tiles: snapshot.tileCount,
+      polygons: snapshot.polygons.length,
+      lines: snapshot.lines.length,
+      points: snapshot.points.length,
+      buildings: snapshot.coverage.selected.buildings,
+      roads: snapshot.coverage.selected.roads,
+      water: snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways,
+      vegetation: snapshot.coverage.selected.vegetationPolygons,
+      roadLabels: snapshot.coverage.selected.roadLabels,
+      lineFragmentsMerged: snapshot.coverage.lineFragmentsMerged,
+      terrain: result.worldResult.terrain.status,
+      terrainSurface: result.worldResult.terrainModel.kind,
+    })
+    notifyReadyOnce()
+    config.onWorldStatus?.(worldStatusFor({ stage: result.stage, worldResult: result.worldResult }))
+  }
+  const loadWorldFor = (decision: DroneWorldStreamDecision): void => {
     const generation = ++worldLoadGeneration
-    const loadedCenterKey = worldCenterKeyFor(center)
-    config.onWorldStatus?.('Loading map-derived scenery')
+    const loadedCenterKey = decision.key
+    config.onWorldStatus?.('Loading nearby map-derived scenery')
     void (async (): Promise<void> => {
-      try {
-        const loadStartedAtMs = performance.now()
-        const worldResult = await loadDroneMapWorldForScene({
-          center,
-          radiusM: 4_250,
-          zoom: 14,
-        })
-        const snapshot = worldResult.snapshot
-        const loadMs = performance.now() - loadStartedAtMs
-        if (destroyed || generation !== worldLoadGeneration) return
-        const buildStartedAtMs = performance.now()
-        const nextLayer = createDroneMapWorldGroup(snapshot, worldResult.terrainModel)
-        const buildMs = performance.now() - buildStartedAtMs
-        scene.remove(environmentLayer)
-        disposeObject(environmentLayer)
-        environmentLayer = nextLayer
-        scene.add(environmentLayer)
-        worldCenter = center
-        worldCenterKey = loadedCenterKey
-        pendingWorldCenterKey = ''
-        worldRecenterRevision += 1
-        performanceTracker.updateWorld({
-          loadMs,
-          buildMs,
-          source: worldResult.source,
-          tiles: snapshot.tileCount,
-          polygons: snapshot.polygons.length,
-          lines: snapshot.lines.length,
-          points: snapshot.points.length,
-          buildings: snapshot.coverage.selected.buildings,
-          roads: snapshot.coverage.selected.roads,
-          water: snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways,
-          vegetation: snapshot.coverage.selected.vegetationPolygons,
-          roadLabels: snapshot.coverage.selected.roadLabels,
-          lineFragmentsMerged: snapshot.coverage.lineFragmentsMerged,
-          terrain: worldResult.terrain.status,
-          terrainSurface: worldResult.terrainModel.kind,
-        })
-        const fallbackSuffix = worldResult.fallbackReason ? `; worker fallback: ${worldResult.fallbackReason}` : ''
-        const terrainSuffix = worldResult.terrain.status === 'available'
-          ? `; terrain ${worldResult.terrain.demEncoding}/${worldResult.terrainModel.kind}`
-          : `; terrain ${worldResult.terrain.status}`
-        const coverageSuffix = `; ${snapshot.coverage.selected.buildings} buildings, ${snapshot.coverage.selected.roads} roads, ${snapshot.coverage.selected.waterPolygons + snapshot.coverage.selected.waterways} water features, ${snapshot.coverage.selected.vegetationPolygons} vegetation areas`
-        const noteSuffix = snapshot.coverage.notes.length > 0 ? `; ${snapshot.coverage.notes[0]}` : ''
-        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${coverageSuffix}${terrainSuffix}${fallbackSuffix}${noteSuffix}`)
-      } catch (err) {
-        if (destroyed || generation !== worldLoadGeneration) return
-        pendingWorldCenterKey = ''
-        config.onWorldStatus?.(`Map scenery unavailable: ${err instanceof Error ? err.message : String(err)}`)
+      for (const spec of droneWorldLoadSpecsFor(decision.reason)) {
+        try {
+          const loadStartedAtMs = performance.now()
+          const worldResult = await loadDroneMapWorldForScene({
+            center: decision.center,
+            radiusM: spec.radiusM,
+            zoom: spec.zoom,
+          })
+          const loadMs = performance.now() - loadStartedAtMs
+          if (destroyed || generation !== worldLoadGeneration) return
+          applyWorldResult({
+            center: decision.center,
+            loadedCenterKey,
+            stage: spec.stage,
+            worldResult,
+            loadMs,
+          })
+        } catch (err) {
+          if (destroyed || generation !== worldLoadGeneration) return
+          pendingWorldCenterKey = ''
+          const message = err instanceof Error ? err.message : String(err)
+          if (spec.stage === 'near') {
+            config.onWorldStatus?.(`Map scenery unavailable: ${message}`)
+            return
+          }
+          config.onWorldStatus?.(`Full map scenery unavailable; keeping nearby scenery: ${message}`)
+          return
+        }
       }
     })()
   }
@@ -564,7 +622,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   observer.observe(config.container)
   resize()
   let frame = 0
-  let readyNotified = false
   let animationId = 0
   let lastFrameMs = performance.now()
   const render = (): void => {
@@ -590,7 +647,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       } else {
         pendingWorldCenterKey = streamDecision.key
       }
-      loadWorldFor(streamDecision.center)
+      loadWorldFor(streamDecision)
     }
     const recentered = renderedWorldRecenterRevision !== worldRecenterRevision
     renderedWorldRecenterRevision = worldRecenterRevision
@@ -691,10 +748,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       const renderStartedAtMs = performance.now()
       renderer.render(scene, camera)
       const renderFinishedAtMs = performance.now()
-      if (!readyNotified && frame > 2) {
-        readyNotified = true
-        config.onReady?.()
-      }
       const frameFinishedAtMs = performance.now()
       const frameResult = performanceTracker.endFrame(frameFinishedAtMs, renderFinishedAtMs - renderStartedAtMs)
       if (frameResult.shouldReport) {

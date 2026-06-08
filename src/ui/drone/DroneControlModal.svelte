@@ -467,7 +467,7 @@
       getObjects: () => objects,
       getViewMode: () => viewMode,
       onReady: () => {
-        status = 'Flight view ready'
+        if (status === 'Opening flight view') status = 'Flight view ready'
       },
       onError: message => {
         status = message
@@ -622,6 +622,7 @@
           <span>SCN {scenePerformance ? scenePerformance.activeScenes : '-'}</span>
           <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
+          <span>LOD {scenePerformance?.worldFeatures.sceneryStage ?? '-'}</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
           <span>BLD {scenePerformance ? scenePerformance.worldFeatures.buildings : '-'}</span>
