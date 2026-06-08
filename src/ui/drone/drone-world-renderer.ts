@@ -225,15 +225,62 @@ const createWaterMaterial = (): THREE.ShaderMaterial =>
     `,
   })
 
+const createBuildingFacadeTexture = (
+  baseColor: string,
+  className: string,
+): THREE.Texture | null => {
+  if (typeof document === 'undefined') return null
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  context.fillStyle = baseColor
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  const shade = className === 'commercial' || className === 'industrial' ? '#8f979e' : '#9da4aa'
+  const windowColor = className === 'industrial' ? '#c4d0d8' : '#dbeafe'
+  context.globalAlpha = 0.18
+  for (let y = 0; y < canvas.height; y += 32) {
+    context.fillStyle = y % 64 === 0 ? '#ffffff' : '#111827'
+    context.fillRect(0, y, canvas.width, 4)
+  }
+  context.globalAlpha = 0.58
+  context.fillStyle = windowColor
+  for (let y = 22; y < canvas.height; y += 38) {
+    for (let x = 18; x < canvas.width; x += className === 'industrial' ? 52 : 34) {
+      context.fillRect(x, y, className === 'industrial' ? 28 : 14, 11)
+    }
+  }
+  context.globalAlpha = 0.34
+  context.fillStyle = shade
+  for (let x = 0; x < canvas.width; x += 64) context.fillRect(x, 0, 5, canvas.height)
+  context.globalAlpha = 1
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.anisotropy = 2
+  return texture
+}
+
 const createBuildingWallMaterial = (
   color: string,
+  className: string,
 ): THREE.MeshStandardMaterial =>
-  new THREE.MeshStandardMaterial({
+  {
+    const texture = createBuildingFacadeTexture(color, className)
+    const material = new THREE.MeshStandardMaterial({
     color,
     roughness: 0.84,
     metalness: 0.02,
+      ...(texture === null ? {} : { map: texture }),
     side: THREE.DoubleSide,
-  })
+    })
+    material.userData.droneSceneryKind = 'building-wall'
+    return material
+  }
 
 interface GeometryBucket {
   readonly material: THREE.Material
@@ -362,6 +409,9 @@ const meshesFromBuckets = (
     mesh.castShadow = bucket.castShadow
     mesh.userData.receiveShadow = bucket.receiveShadow
     mesh.userData.castShadow = bucket.castShadow
+    if (typeof bucket.material.userData.droneSceneryKind === 'string') {
+      mesh.userData.droneSceneryKind = bucket.material.userData.droneSceneryKind
+    }
     group.add(mesh)
   }
   return group
@@ -382,6 +432,7 @@ const createMergedSurfaceMeshes = (
           color,
         })
     if (isWater) material.userData.droneWaterMaterial = true
+    material.userData.droneSceneryKind = isWater ? 'water-surface' : 'ground-surface'
     configureSurfaceDepth(material, feature)
     const bucket = getBucket(
       buckets,
@@ -414,7 +465,7 @@ const createMergedBuildingMeshes = (
     const wallBucket = getBucket(
       buckets,
       `building-wall:${feature.className}:${wallColor}`,
-      createBuildingWallMaterial(wallColor),
+      createBuildingWallMaterial(wallColor, feature.className),
       { receiveShadow: false, castShadow: false, needsNormals: true },
     )
     appendBuildingWalls(wallBucket, feature.rings, minHeight, height, terrain)
@@ -422,6 +473,7 @@ const createMergedBuildingMeshes = (
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
     const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
     const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
+    roofMaterial.userData.droneSceneryKind = 'building-roof'
     roofMaterial.polygonOffset = true
     roofMaterial.polygonOffsetFactor = -2
     roofMaterial.polygonOffsetUnits = -16
@@ -434,6 +486,41 @@ const createMergedBuildingMeshes = (
     appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32, terrain)
   }
   return meshesFromBuckets(buckets)
+}
+
+const createShorelineEdges = (
+  snapshot: DroneMapWorldSnapshot,
+  terrain: DroneTerrainModel | undefined,
+): THREE.Group => {
+  const group = new THREE.Group()
+  const positions: number[] = []
+  for (const feature of snapshot.polygons) {
+    if (feature.kind !== 'water' || feature.distanceM > snapshot.radiusM * 0.98) continue
+    for (const sourceRing of feature.rings) {
+      const ring = openRing(sourceRing)
+      if (ring.length < 2) continue
+      for (let index = 0; index < ring.length; index += 1) {
+        const start = ring[index]!
+        const end = ring[(index + 1) % ring.length]!
+        const length = Math.hypot(end.x - start.x, end.z - start.z)
+        if (length < 0.5) continue
+        positions.push(
+          start.x, terrainY(terrain, start.x, start.z, surfaceYOffset(feature) + 0.18), start.z,
+          end.x, terrainY(terrain, end.x, end.z, surfaceYOffset(feature) + 0.18), end.z,
+        )
+      }
+    }
+  }
+  if (positions.length === 0) return group
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.computeBoundingSphere()
+  const material = new THREE.LineBasicMaterial({ color: '#d7fbff', transparent: true, opacity: 0.74 })
+  const shoreline = new THREE.LineSegments(geometry, material)
+  shoreline.userData.droneSceneryKind = 'shoreline'
+  group.userData.droneSceneryKind = 'shoreline'
+  group.add(shoreline)
+  return group
 }
 
 const seededRandom = (
@@ -570,6 +657,9 @@ const createRooftopFixtures = (
   vent.receiveShadow = false
   hvac.castShadow = false
   vent.castShadow = false
+  hvac.userData.droneSceneryKind = 'rooftop-fixture'
+  vent.userData.droneSceneryKind = 'rooftop-fixture'
+  group.userData.droneSceneryKind = 'rooftop-fixture'
   group.add(hvac, vent)
   return group
 }
@@ -650,6 +740,10 @@ const createVegetation = (
   canopy.receiveShadow = false
   canopyTop.castShadow = false
   canopyTop.receiveShadow = false
+  trunk.userData.droneSceneryKind = 'vegetation'
+  canopy.userData.droneSceneryKind = 'vegetation'
+  canopyTop.userData.droneSceneryKind = 'vegetation'
+  group.userData.droneSceneryKind = 'vegetation'
   group.add(trunk, canopy, canopyTop)
   return group
 }
@@ -661,26 +755,63 @@ const createPoiBeacons = (
   const group = new THREE.Group()
   const beaconMaterial = new THREE.MeshStandardMaterial({ color: '#38bdf8', emissive: '#0ea5e9', emissiveIntensity: 0.7, roughness: 0.35 })
   const ringMaterial = new THREE.MeshBasicMaterial({ color: '#bae6fd', transparent: true, opacity: 0.54 })
-  const points = snapshot.points.slice(0, 36)
-  if (points.length === 0) return group
-  const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 10), beaconMaterial, points.length)
-  const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 6, 28), ringMaterial, points.length)
+  const points = snapshot.points.filter(point => point.kind !== 'road_label').slice(0, 36)
   const dummy = new THREE.Object3D()
-  for (const [index, point] of points.entries()) {
-    const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
-    dummy.position.set(point.point.x, baseY + 9, point.point.z)
-    dummy.rotation.set(0, 0, 0)
-    dummy.scale.set(1, 1, 1)
-    dummy.updateMatrix()
-    stems.setMatrixAt(index, dummy.matrix)
-    dummy.position.set(point.point.x, baseY + 18.2, point.point.z)
-    dummy.rotation.set(Math.PI / 2, 0, 0)
-    dummy.updateMatrix()
-    rings.setMatrixAt(index, dummy.matrix)
+  if (points.length > 0) {
+    const stems = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.5, 0.7, 18, 10), beaconMaterial, points.length)
+    const rings = new THREE.InstancedMesh(new THREE.TorusGeometry(4, 0.08, 6, 28), ringMaterial, points.length)
+    for (const [index, point] of points.entries()) {
+      const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
+      dummy.position.set(point.point.x, baseY + 9, point.point.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      stems.setMatrixAt(index, dummy.matrix)
+      dummy.position.set(point.point.x, baseY + 18.2, point.point.z)
+      dummy.rotation.set(Math.PI / 2, 0, 0)
+      dummy.updateMatrix()
+      rings.setMatrixAt(index, dummy.matrix)
+    }
+    stems.instanceMatrix.needsUpdate = true
+    rings.instanceMatrix.needsUpdate = true
+    stems.userData.droneSceneryKind = 'poi-beacon'
+    rings.userData.droneSceneryKind = 'poi-beacon'
+    group.add(stems, rings)
   }
-  stems.instanceMatrix.needsUpdate = true
-  rings.instanceMatrix.needsUpdate = true
-  group.add(stems, rings)
+
+  const roadLabels = snapshot.points.filter(point => point.kind === 'road_label').slice(0, 80)
+  if (roadLabels.length > 0) {
+    const posts = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.08, 0.1, 3.6, 8),
+      makeMaterial('#475569', 0.78, 0.02),
+      roadLabels.length,
+    )
+    const panels = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(4.8, 1.15, 0.16),
+      new THREE.MeshStandardMaterial({ color: '#1e3a8a', emissive: '#0f172a', emissiveIntensity: 0.16, roughness: 0.48 }),
+      roadLabels.length,
+    )
+    for (const [index, point] of roadLabels.entries()) {
+      const baseY = terrainY(terrain, point.point.x, point.point.z, 0)
+      const rotation = stableHash(point.id) / 0xffffffff * Math.PI * 2
+      dummy.position.set(point.point.x, baseY + 1.8, point.point.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      posts.setMatrixAt(index, dummy.matrix)
+      dummy.position.set(point.point.x, baseY + 3.85, point.point.z)
+      dummy.rotation.set(0, rotation, 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      panels.setMatrixAt(index, dummy.matrix)
+    }
+    posts.instanceMatrix.needsUpdate = true
+    panels.instanceMatrix.needsUpdate = true
+    posts.userData.droneSceneryKind = 'road-label-sign'
+    panels.userData.droneSceneryKind = 'road-label-sign'
+    group.add(posts, panels)
+  }
+  group.userData.droneSceneryKind = 'poi-beacon'
   return group
 }
 
@@ -897,6 +1028,7 @@ const buildDroneMapWorldTemplate = (
   const transportGroup = createTransportGeometryGroup(snapshot, terrain)
   group.add(
     surfaceGroup,
+    createShorelineEdges(snapshot, terrain),
     transportGroup,
     buildingGroup,
     createRooftopFixtures(snapshot, terrain),

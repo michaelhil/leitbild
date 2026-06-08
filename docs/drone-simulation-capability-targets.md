@@ -145,7 +145,7 @@ Acceptance target:
 
 - Add Three.js dependency through Bun.
 - Build a reusable drone-world scene module.
-- Generate map-derived ground, roads, water, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact and current object context.
+- Generate map-derived ground, roads, road labels, water, shorelines, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact and current object context.
 - Render drones, ambulances, targets, formation/sensor/weapon affordances, and camera modes.
 - Support 2D top-down and 3D chase/first-person modes.
 - Add rendering lifecycle cleanup and resize handling.
@@ -232,11 +232,22 @@ Implemented in the V2 fidelity pass:
 - read-only `drone.sensorContacts` query and pilot-panel contact list with range/FOV/visibility/precipitation confidence filtering
 - tests for environment physics and sensor-contact filtering
 
+Implemented in the scenery close-out pass:
+
+- expanded vector-world decoding for `transportation_name` road labels and richer transportation metadata, including subclass, bridge/tunnel, access, service, maxspeed, and one-way hints
+- layer-specific decode budgets so dense road/building tiles are not prematurely truncated by a single low cap before the renderer selection pass
+- static UV-based building facades, double-sided wall rendering, roof surfaces, and rooftop fixtures derived from real building footprints
+- shoreline edge cues derived from real water polygons
+- road furniture, bridge barriers, and road-label signs derived from real road and road-name geometry
+- deterministic vegetation instancing derived from landcover and landuse polygons
+- DEM loader prefetches unique terrain tiles before sampling the local height grid, reducing avoidable terrain load stalls once a terrain artifact is promoted
+- renderer regression test proving that decoded source-backed features produce the rich Three.js scenery graph
+
 Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
 - first production terrain artifact build from Kartverket DTM or another selected DEM source
-- richer vector tile build profile for extra OSM classes and/or selected licensed datasets, especially vegetation density, landmark semantics, building details, rural landcover, and non-city scenery
+- richer vector tile/reference-data builds for extra source-backed detail, especially vegetation density, landmarks, building semantics, rural landcover, bridges/tunnels, and non-city scenery; this is data-pipeline work, not hidden renderer fabrication
 - richer swarm search/patrol/separation/cohesion behavior
 - deeper sensor model for occlusion, classification, shared detections, and update cadence
 - communications/link loss/geofence model
@@ -261,7 +272,7 @@ V2 acceptance criteria:
 - Manual, hold, guided, swarm, land, and return-to-launch modes use a shared physics integration path with acceleration limits, air-relative drag, wind effects, attitude estimates, and energy use that changes with climb, speed, payload, and wind.
 - FPV is a first-class flight mode in the modal. The camera sits on the selected drone, follows its yaw/pitch/roll, and displays flight HUD data useful enough to fly by sight.
 - The Three.js scene updates meshes in place instead of rebuilding all object meshes every frame.
-- The visual world has enough cues for FPV: map-derived roads, lane markings, water, vegetation, building massing/windows/roofs, shadows, fog/visibility, weather streaks, drones, ambulances, and other operational assets.
+- The visual world has enough cues for FPV: map-derived roads, lane markings, road furniture, road-label signs, water, shorelines, vegetation, building massing/facades/roofs, rooftop fixtures, shadows, fog/visibility, weather streaks, drones, ambulances, and other operational assets.
 - No new HTTP server, JavaScript file, aviation dependency, or browser-authoritative simulation path is introduced.
 
 V2 scoped deferrals:

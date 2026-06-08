@@ -34,6 +34,13 @@ interface LoadedTerrainTile {
   readonly image: ImageData
 }
 
+interface TerrainSamplePoint {
+  readonly index: number
+  readonly lon: number
+  readonly lat: number
+  readonly coord: TileCoord
+}
+
 const metersPerDegreeLat = 111_320
 const terrainGridSize = 49
 
@@ -192,7 +199,6 @@ export const loadDroneTerrainModel = async (config: {
 
   const zoom = Math.min(config.terrain.maxZoom ?? 13, Math.max(config.terrain.minZoom ?? 0, 13))
   const tileSize = config.terrain.tileSize ?? 256
-  const tileCache = new Map<string, Promise<LoadedTerrainTile | null>>()
   const rawHeights = new Float32Array(terrainGridSize * terrainGridSize)
   rawHeights.fill(Number.NaN)
   const spacingM = config.radiusM * 2 / (terrainGridSize - 1)
@@ -207,6 +213,8 @@ export const loadDroneTerrainModel = async (config: {
     }
   }
 
+  const samples: TerrainSamplePoint[] = []
+  const tilePromises = new Map<string, Promise<LoadedTerrainTile | null>>()
   for (let row = 0; row < terrainGridSize; row += 1) {
     const z = -config.radiusM + row * spacingM
     for (let column = 0; column < terrainGridSize; column += 1) {
@@ -214,17 +222,31 @@ export const loadDroneTerrainModel = async (config: {
       const lonLat = lonLatFromLocal(x, z, config.center)
       const coord = tileFor(lonLat.lon, lonLat.lat)
       const key = tileKey(coord)
-      const existing = tileCache.get(key)
-      const promise = existing ?? fetchTerrainTile({ ...coord }, {
-        ...config.terrain,
-        tileSize,
-      }, config.signal)
-      if (!existing) tileCache.set(key, promise)
-      const tile = await promise
-      if (!tile) continue
-      const elevation = sampleLoadedTile(tile, lonLat.lon, lonLat.lat, config.terrain.demEncoding)
-      if (elevation !== null) rawHeights[row * terrainGridSize + column] = elevation
+      if (!tilePromises.has(key)) {
+        tilePromises.set(key, fetchTerrainTile({ ...coord }, {
+          ...config.terrain,
+          tileSize,
+        }, config.signal))
+      }
+      samples.push({
+        index: row * terrainGridSize + column,
+        lon: lonLat.lon,
+        lat: lonLat.lat,
+        coord,
+      })
     }
+  }
+
+  const loadedTiles = new Map<string, LoadedTerrainTile | null>()
+  await Promise.all([...tilePromises.entries()].map(async ([key, promise]) => {
+    loadedTiles.set(key, await promise)
+  }))
+
+  for (const sample of samples) {
+    const tile = loadedTiles.get(tileKey(sample.coord))
+    if (!tile) continue
+    const elevation = sampleLoadedTile(tile, sample.lon, sample.lat, config.terrain.demEncoding)
+    rawHeights[sample.index] = elevation ?? Number.NaN
   }
 
   const finiteHeights = [...rawHeights].filter(Number.isFinite)

@@ -23,8 +23,8 @@ const roadPalette = (
   }
   if (feature.kind === 'rail') return '#66717f'
   if (feature.kind === 'waterway') return '#2aa8c8'
-  if (feature.className === 'motorway') return '#4b5563'
-  if (feature.className === 'trunk') return '#505a66'
+  if (feature.className === 'motorway' || feature.className === 'motorway_link') return '#4b5563'
+  if (feature.className === 'trunk' || feature.className === 'trunk_link') return '#505a66'
   if (feature.className === 'primary') return '#59636e'
   if (feature.className === 'secondary') return '#646c73'
   if (feature.className === 'tertiary') return '#737a7d'
@@ -46,8 +46,8 @@ const stableHash = (value: string): number => {
 const roadPriority = (
   className: string,
 ): number => {
-  if (className === 'motorway') return 90
-  if (className === 'trunk') return 80
+  if (className === 'motorway' || className === 'motorway_link') return 90
+  if (className === 'trunk' || className === 'trunk_link') return 80
   if (className === 'primary') return 70
   if (className === 'secondary') return 60
   if (className === 'tertiary') return 50
@@ -109,6 +109,14 @@ const terrainY = (
   baseY: number,
 ): number =>
   baseY + (terrain ? terrainHeightAt(terrain, x, z) : 0)
+
+interface PathSample {
+  readonly x: number
+  readonly z: number
+  readonly ux: number
+  readonly uz: number
+  readonly y: number
+}
 
 const simplifiedPath = (
   path: ReadonlyArray<DroneWorldPoint>,
@@ -347,6 +355,143 @@ const createRoadMarkingGeometry = (
   return geometry
 }
 
+const collectPathSamples = (config: {
+  readonly line: DroneWorldLineFeature
+  readonly spacingM: number
+  readonly startOffsetM: number
+  readonly lateralOffsetM: number
+  readonly y: number
+  readonly maxSamples: number
+}): ReadonlyArray<PathSample> => {
+  const samples: PathSample[] = []
+  let travelled = 0
+  let targetDistance = config.startOffsetM
+  for (let index = 0; index < config.line.path.length - 1 && samples.length < config.maxSamples; index += 1) {
+    const start = config.line.path[index]!
+    const end = config.line.path[index + 1]!
+    const dx = end.x - start.x
+    const dz = end.z - start.z
+    const length = Math.hypot(dx, dz)
+    if (length < 0.2) {
+      travelled += length
+      continue
+    }
+    const ux = dx / length
+    const uz = dz / length
+    const nx = -uz
+    const nz = ux
+    while (targetDistance <= travelled + length && samples.length < config.maxSamples) {
+      const t = (targetDistance - travelled) / length
+      const centerX = start.x + dx * t
+      const centerZ = start.z + dz * t
+      samples.push({
+        x: centerX + nx * config.lateralOffsetM,
+        z: centerZ + nz * config.lateralOffsetM,
+        ux,
+        uz,
+        y: config.y + config.line.verticalOffsetM,
+      })
+      targetDistance += config.spacingM
+    }
+    travelled += length
+  }
+  return samples
+}
+
+const createRoadFurnitureGroup = (
+  roads: ReadonlyArray<DroneWorldLineFeature>,
+  terrain: DroneTerrainModel | undefined,
+): THREE.Group => {
+  const group = new THREE.Group()
+  const streetLights: PathSample[] = []
+  const barrierPanels: PathSample[] = []
+  for (const road of roads) {
+    if (road.isTunnel || road.lengthM < 35 || road.distanceM > 3_400) continue
+    const priority = roadPriority(road.className)
+    const sideOffset = Math.max(4.2, road.widthM * 0.5 + 2.4)
+    const startOffset = 18 + stableHash(`furniture:${road.id}`) % 39
+    if ((priority >= 40 || road.className === 'residential' || road.className === 'unclassified') && streetLights.length < 1_200) {
+      const spacingM = priority >= 70 ? 82 : priority >= 50 ? 96 : 118
+      for (const side of [-1, 1] as const) {
+        streetLights.push(...collectPathSamples({
+          line: road,
+          spacingM,
+          startOffsetM: startOffset + (side > 0 ? 0 : spacingM * 0.48),
+          lateralOffsetM: side * sideOffset,
+          y: 0.2,
+          maxSamples: 1_200 - streetLights.length,
+        }))
+      }
+    }
+    if ((road.isBridge || priority >= 70) && barrierPanels.length < 1_000) {
+      for (const side of [-1, 1] as const) {
+        barrierPanels.push(...collectPathSamples({
+          line: road,
+          spacingM: 10,
+          startOffsetM: 4,
+          lateralOffsetM: side * Math.max(3.4, road.widthM * 0.5 + 0.7),
+          y: 0.74,
+          maxSamples: 1_000 - barrierPanels.length,
+        }))
+      }
+    }
+  }
+
+  const dummy = new THREE.Object3D()
+  if (streetLights.length > 0) {
+    const pole = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.08, 0.12, 6.2, 8),
+      makeRoadMaterial('#475569'),
+      streetLights.length,
+    )
+    const lamp = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.42, 0.18, 1.0),
+      new THREE.MeshBasicMaterial({ color: '#fde68a' }),
+      streetLights.length,
+    )
+    for (const [index, sample] of streetLights.entries()) {
+      const baseY = terrainY(terrain, sample.x, sample.z, sample.y)
+      dummy.position.set(sample.x, baseY + 3.1, sample.z)
+      dummy.rotation.set(0, 0, 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      pole.setMatrixAt(index, dummy.matrix)
+      dummy.position.set(sample.x, baseY + 6.28, sample.z)
+      dummy.rotation.set(0, Math.atan2(sample.ux, sample.uz), 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      lamp.setMatrixAt(index, dummy.matrix)
+    }
+    pole.instanceMatrix.needsUpdate = true
+    lamp.instanceMatrix.needsUpdate = true
+    pole.userData.droneSceneryKind = 'road-furniture'
+    lamp.userData.droneSceneryKind = 'road-furniture'
+    group.add(pole, lamp)
+  }
+
+  if (barrierPanels.length > 0) {
+    const barrier = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(0.18, 0.48, 7.4),
+      makeRoadMaterial('#cbd5e1'),
+      barrierPanels.length,
+    )
+    for (const [index, sample] of barrierPanels.entries()) {
+      const baseY = terrainY(terrain, sample.x, sample.z, sample.y)
+      dummy.position.set(sample.x, baseY, sample.z)
+      dummy.rotation.set(0, Math.atan2(sample.ux, sample.uz), 0)
+      dummy.scale.set(1, 1, 1)
+      dummy.updateMatrix()
+      barrier.setMatrixAt(index, dummy.matrix)
+    }
+    barrier.instanceMatrix.needsUpdate = true
+    barrier.userData.droneSceneryKind = 'road-furniture'
+    group.add(barrier)
+  }
+
+  group.userData.droneSceneryKind = 'road-furniture'
+  return group
+}
+
 const addBucketGeometry = (
   buckets: Map<string, GeometryBucket>,
   key: string,
@@ -535,6 +680,7 @@ export const createTransportGeometryGroup = (
   )
 
   group.add(meshesFromBuckets(buckets))
+  group.add(createRoadFurnitureGroup(roads, terrain))
   group.userData.receiveShadow = false
   return group
 }

@@ -13,7 +13,7 @@ export interface DroneWorldPoint {
 
 export type DroneWorldPolygonKind = 'aeroway' | 'building' | 'water' | 'landcover' | 'landuse'
 export type DroneWorldLineKind = 'aeroway' | 'road' | 'rail' | 'waterway'
-export type DroneWorldPointKind = 'place' | 'poi'
+export type DroneWorldPointKind = 'place' | 'poi' | 'road_label'
 
 export interface DroneWorldPolygonFeature {
   readonly id: string
@@ -32,10 +32,15 @@ export interface DroneWorldLineFeature {
   readonly id: string
   readonly kind: DroneWorldLineKind
   readonly className: string
+  readonly subclass?: string
   readonly name?: string
   readonly surface?: string
   readonly brunnel?: string
   readonly layer?: number
+  readonly service?: string
+  readonly access?: string
+  readonly maxspeedKph?: number
+  readonly oneway?: boolean
   readonly isBridge: boolean
   readonly isTunnel: boolean
   readonly path: ReadonlyArray<DroneWorldPoint>
@@ -109,7 +114,17 @@ interface GeoJsonFeature {
 }
 
 const metersPerDegreeLat = 111_320
-const maxDecodedFeaturesPerLayer = 2_400
+
+const maxDecodedFeaturesForLayer = (
+  layerId: string,
+): number => {
+  if (layerId === 'building') return 14_000
+  if (layerId === 'transportation') return 12_000
+  if (layerId === 'transportation_name') return 8_000
+  if (layerId === 'landcover' || layerId === 'landuse') return 8_000
+  if (layerId === 'poi' || layerId === 'place') return 5_000
+  return 6_000
+}
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -224,6 +239,23 @@ const numberProperty = (
     }
   }
   return null
+}
+
+const booleanPropertyValue = (
+  properties: Record<string, unknown>,
+  keys: ReadonlyArray<string>,
+): boolean | undefined => {
+  for (const key of keys) {
+    const value = properties[key]
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number' && Number.isFinite(value)) return value !== 0
+    if (typeof value === 'string' && value.length > 0) {
+      const normalized = value.toLowerCase()
+      if (['yes', 'true', '1'].includes(normalized)) return true
+      if (['no', 'false', '0'].includes(normalized)) return false
+    }
+  }
+  return undefined
 }
 
 const stableHash = (value: string): number => {
@@ -360,8 +392,8 @@ const lineWidthFor = (
   }
   if (kind === 'rail') return 4.8
   if (kind === 'waterway') return className === 'river' ? 14 : 5
-  if (className === 'motorway') return 26
-  if (className === 'trunk') return 22
+  if (className === 'motorway' || className === 'motorway_link') return 26
+  if (className === 'trunk' || className === 'trunk_link') return 22
   if (className === 'primary') return 18
   if (className === 'secondary') return 13
   if (className === 'tertiary') return 9
@@ -459,8 +491,8 @@ const lineSortValue = (
 const roadClassPriority = (
   className: string,
 ): number => {
-  if (className === 'motorway') return 8
-  if (className === 'trunk') return 7
+  if (className === 'motorway' || className === 'motorway_link') return 8
+  if (className === 'trunk' || className === 'trunk_link') return 7
   if (className === 'primary') return 6
   if (className === 'secondary') return 5
   if (className === 'tertiary') return 4
@@ -522,7 +554,8 @@ const pointKindPriority = (
   feature: DroneWorldPointFeature,
 ): number => {
   if (feature.kind === 'poi') return 0
-  return 1
+  if (feature.kind === 'road_label') return 1
+  return 2
 }
 
 const selectWorldPoints = (
@@ -534,7 +567,7 @@ const selectWorldPoints = (
       if (priorityDelta !== 0) return priorityDelta
       return horizontalDistanceFromCenterM(left.point) - horizontalDistanceFromCenterM(right.point)
     })
-    .slice(0, 160)
+    .slice(0, 240)
 
 const decodePolygonFeature = (
   id: string,
@@ -592,6 +625,11 @@ const decodeLineFeature = (
   const layer = numberProperty(properties, ['layer']) ?? undefined
   const surface = optionalStringProperty(properties, 'surface')
   const name = optionalStringProperty(properties, 'name')
+  const subclass = optionalStringProperty(properties, 'subclass')
+  const service = optionalStringProperty(properties, 'service')
+  const access = optionalStringProperty(properties, 'access')
+  const maxspeedKph = numberProperty(properties, ['maxspeed']) ?? undefined
+  const oneway = booleanPropertyValue(properties, ['oneway'])
   const verticalOffsetM = lineVerticalOffsetM({ isBridge, isTunnel, ...(layer === undefined ? {} : { layer }) })
   const paths = geometry.type === 'LineString'
     ? [lineFromCoordinates(geometry.coordinates, center)]
@@ -608,10 +646,15 @@ const decodeLineFeature = (
       id: `${id}:${index}`,
       kind,
       className,
+      ...(subclass === undefined ? {} : { subclass }),
       ...(name === undefined ? {} : { name }),
       ...(surface === undefined ? {} : { surface }),
       ...(brunnel === undefined ? {} : { brunnel }),
       ...(layer === undefined ? {} : { layer }),
+      ...(service === undefined ? {} : { service }),
+      ...(access === undefined ? {} : { access }),
+      ...(maxspeedKph === undefined ? {} : { maxspeedKph }),
+      ...(oneway === undefined ? {} : { oneway }),
       isBridge,
       isTunnel,
       path,
@@ -620,6 +663,53 @@ const decodeLineFeature = (
       distanceM,
       lengthM,
     }]
+  })
+}
+
+const pathLabelPoint = (
+  path: ReadonlyArray<DroneWorldPoint>,
+): DroneWorldPoint | null => {
+  if (path.length === 0) return null
+  if (path.length === 1) return path[0] ?? null
+  const total = pathLengthM(path)
+  if (total <= Number.EPSILON) return path[Math.floor(path.length / 2)] ?? null
+  const target = total / 2
+  let travelled = 0
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const start = path[index]!
+    const end = path[index + 1]!
+    const length = Math.hypot(end.x - start.x, end.z - start.z)
+    if (travelled + length >= target) {
+      const t = (target - travelled) / Math.max(0.001, length)
+      return {
+        x: start.x + (end.x - start.x) * t,
+        z: start.z + (end.z - start.z) * t,
+      }
+    }
+    travelled += length
+  }
+  return path[path.length - 1] ?? null
+}
+
+const decodeLineLabelFeature = (
+  id: string,
+  kind: DroneWorldPointKind,
+  className: string,
+  label: string,
+  geometry: GeoJsonGeometry,
+  center: DroneWorldCenter,
+  radiusM: number,
+): ReadonlyArray<DroneWorldPointFeature> => {
+  const paths = geometry.type === 'LineString'
+    ? [lineFromCoordinates(geometry.coordinates, center)]
+    : geometry.type === 'MultiLineString' && Array.isArray(geometry.coordinates)
+      ? geometry.coordinates.map(line => lineFromCoordinates(line, center))
+      : []
+  return paths.flatMap((path, index) => {
+    if (path.length < 2 || pathLengthM(path) < 20) return []
+    const point = pathLabelPoint(path)
+    if (!point || horizontalDistanceFromCenterM(point) > radiusM) return []
+    return [{ id: `${id}:${index}`, kind, className, label, point }]
   })
 }
 
@@ -655,7 +745,7 @@ const decodeLayer = (
   const polygons: DroneWorldPolygonFeature[] = []
   const lines: DroneWorldLineFeature[] = []
   const points: DroneWorldPointFeature[] = []
-  const featureCount = Math.min(layer.length, maxDecodedFeaturesPerLayer)
+  const featureCount = Math.min(layer.length, maxDecodedFeaturesForLayer(layerId))
   for (let index = 0; index < featureCount; index += 1) {
     const vectorFeature = layer.feature(index)
     const feature = vectorFeature.toGeoJSON(tileCoord.x, tileCoord.y, tileCoord.z) as GeoJsonFeature
@@ -679,6 +769,9 @@ const decodeLayer = (
     } else if (layerId === 'transportation') {
       const kind = className === 'rail' ? 'rail' : 'road'
       lines.push(...decodeLineFeature(id, kind, className, feature.geometry, properties, center, radiusM))
+    } else if (layerId === 'transportation_name') {
+      const label = optionalStringProperty(properties, 'name')
+      if (label) points.push(...decodeLineLabelFeature(id, 'road_label', className, label, feature.geometry, center, radiusM))
     } else if (layerId === 'poi') {
       const label = stringProperty(properties, 'name', className)
       points.push(...decodePointFeature(id, 'poi', className, label, feature.geometry, center, radiusM))
@@ -813,7 +906,7 @@ export const loadDroneMapWorld = async (config: {
   const decoded = await Promise.all(tiles.map(async tile => {
     const vectorTile = await fetchTile(tile, config.signal)
     if (!vectorTile) return { polygons: [], lines: [], points: [] }
-    const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'building', 'aeroway', 'place', 'poi']
+    const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'transportation_name', 'building', 'aeroway', 'place', 'poi']
     const layerFeatures = layers.map(layer => decodeLayer(vectorTile, tile, layer, config.center, radiusM))
     return {
       polygons: layerFeatures.flatMap(layer => layer.polygons),

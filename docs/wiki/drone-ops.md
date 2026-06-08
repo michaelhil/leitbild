@@ -22,14 +22,14 @@ The current implementation supports:
 - multiple remote browsers controlling the same Control Instance through the existing command/runtime path
 - map-visible drones, sensor footprints, and effect ranges
 - 2D, 3D chase, and FPV Three.js drone flight windows
-- procedural deterministic 3D environment generated from the active object/map context, with drones, ambulances, other assets, roads, water, buildings, vegetation, weather cues, and HUD telemetry rendered as scene objects
+- source-backed deterministic 3D environment generated from the active object/map context, with drones, ambulances, other assets, roads, road markings, road furniture, road-label signs, water, shorelines, buildings, facades, rooftop fixtures, vegetation, weather cues, and HUD telemetry rendered as scene objects
 - configurable drone profiles through scenario runtime config, per-object scenario config, and a profile editor modal
 - swarm commands that preserve every member as an individual object
 - read-only sensor-contact projections with range, field-of-view, visibility, precipitation, bearing, and confidence filtering
 - validated drone effect commands that can damage or destroy drone and non-drone operational assets through the generic interaction-signal/effect path
 - a formal mission definition for drone search, support, and effect demonstration
 
-The current implementation does not yet include a full mission runner, rich vector-tile building extrusion, RF/link modeling, collision physics, or a full autopilot stack. Those are deliberate next layers, not hidden production claims.
+The current implementation does not yet include a full mission runner, RF/link modeling, collision physics, promoted production terrain DEM, or a full autopilot stack. Those are deliberate next layers, not hidden production claims.
 
 ## Architecture
 
@@ -258,12 +258,12 @@ The scene renders:
 - other drones with their own profile color/scale
 - ambulances as recognizable ambulance meshes
 - generic operational assets as markers
-- map-derived ground, roads, water, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact
-- road markings, roofs, windows, vegetation, shadows, fog, rain/snow streaks, and rotor animation
+- map-derived ground, roads, road labels, water, shorelines, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact
+- road markings, road furniture, bridge barriers, building facades, roofs, rooftop fixtures, vegetation, shadows, fog, rain/snow streaks, and rotor animation
 - 2D overhead, 3D chase, and first-person FPV camera modes
 - flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
-The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a coarse local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
+The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, road-label, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. Additional visual detail is generated only as deterministic transforms of those source features: facades and rooftop fixtures from real building footprints, streetlights and barriers from real road geometry, shoreline edges from real water polygons, and trees from real vegetation/landuse polygons. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
 
 The flight modal performance panel separates:
 
@@ -363,7 +363,7 @@ Use these checks before demoing drone behavior:
 
 ```text
 bun test tests/drone-pack.test.ts
-bun test tests/drone-pack.test.ts tests/pack-architecture.test.ts tests/scenario-surface.test.ts tests/context-scenario-mission-model.test.ts
+bun test tests/drone-pack.test.ts tests/drone-scene-streaming.test.ts tests/drone-scenery-renderer.test.ts tests/pack-architecture.test.ts tests/scenario-surface.test.ts tests/context-scenario-mission-model.test.ts
 bun run check
 bun run build:ui
 bun run health
@@ -380,13 +380,14 @@ Important tested behaviors:
 - sensor contacts honor range/FOV filtering
 - invalid attack commands fail explicitly
 - the built-in drone scenario and mission are catalog-valid together
+- decoded scenery snapshots generate rich Three.js scene detail from real map features: building walls/roofs, shorelines, road furniture, vegetation, POI markers, and road-label signs
 
 ## Known Next Work
 
 Highest-value next work:
 
-- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage
-- richer map-context artifact builds: tree/vegetation density, landmarks, extra landcover classes, building semantics, bridge/tunnel context, non-city scenery variation, and additional licensed reference datasets
+- produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage; the runtime path is ready, but production currently advertises terrain as unavailable until this artifact exists
+- richer map-context artifact builds: tree/vegetation density, landmarks, extra landcover classes, building semantics, bridge/tunnel context, non-city scenery variation, and additional licensed reference datasets; these should enter through the vector/reference-data pipeline, not through hidden renderer guesses
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands
 - deeper sensor model: occlusion approximations, contact classification, shared sightings, and sensor update cadence
