@@ -111,6 +111,7 @@ Scenario runtime config can add or override vehicle models:
       "world": "oslo",
       "mavlink": {
         "endpoint": "udp://127.0.0.1:14580?localPort=14540",
+        "linkCount": 4,
         "systemIdBase": 1
       },
       "models": [
@@ -210,7 +211,10 @@ Drone SITL runs as a separate non-HTTP systemd process:
 - selected stack unit: `leitbild-drone-sitl.service`
 - default stack: PX4 Gazebo
 - alternate stack: ArduPilot Gazebo via `LEITBILD_DRONE_SITL_STACK=ardupilot`
-- Leitbild MAVLink endpoint: `LEITBILD_DRONE_MAVLINK_ENDPOINT=udp://127.0.0.1:14580?localPort=14540`
+- Leitbild MAVLink base endpoint: `LEITBILD_DRONE_MAVLINK_ENDPOINT=udp://127.0.0.1:14580?localPort=14540`
+- deployed PX4 fleet size: `LEITBILD_DRONE_SITL_VEHICLES=4`
+- deployed Leitbild MAVLink link count: `LEITBILD_DRONE_MAVLINK_LINK_COUNT=4`, expanding the base endpoint to `14580+n` / `14540+n`
+- deployed PX4 home origin: `PX4_HOME_LAT=59.9139`, `PX4_HOME_LON=10.7522`, `PX4_HOME_ALT=0`
 
 The deploy script copies the SITL units, runs `bun run drone:sitl:setup` for the selected stack, enables `leitbild-drone-sitl`, then restarts the main Leitbild service. The main service depends on the selected SITL unit but does not contain a second server or a hidden browser simulation path.
 
@@ -248,4 +252,4 @@ Important tested behaviors:
 - attack effects deplete payloads and damage targets through interaction handlers
 - the built-in drone scenario and mission resolve through `drone.sitl`
 
-Highest-value next work is Gazebo sensor contact ingestion, richer vehicle model catalogs, validated multi-vehicle PX4 instance orchestration, ArduPilot Gazebo world packaging, and acceptance traces against known PX4/ArduPilot behaviors.
+Highest-value next work is Gazebo sensor contact ingestion, richer vehicle model catalogs, ArduPilot Gazebo world packaging, and broader acceptance traces against known PX4/ArduPilot behaviors.

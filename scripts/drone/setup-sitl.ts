@@ -14,8 +14,18 @@ const root = process.env.LEITBILD_DRONE_SITL_ROOT ?? '/opt/leitbild'
 const px4Home = process.env.PX4_HOME ?? `${root}/PX4-Autopilot`
 const ardupilotHome = process.env.ARDUPILOT_HOME ?? `${root}/ardupilot`
 const ardupilotGazeboHome = process.env.ARDUPILOT_GAZEBO_HOME ?? `${root}/ardupilot_gazebo`
-const px4GazeboModelTarget = process.env.PX4_GAZEBO_MODEL_TARGET ?? 'gz_x500_depth'
 const px4BuildDir = `${px4Home}/build/px4_sitl_default`
+
+const px4GazeboModelTargets = (
+  process.env.LEITBILD_DRONE_SITL_MODELS
+    ?? process.env.PX4_GAZEBO_MODEL_TARGET
+    ?? 'gz_x500_depth'
+).split(',')
+  .map(value => value.trim())
+  .filter(value => value.length > 0)
+  .map(value => value.startsWith('gz_') ? value : `gz_${value}`)
+
+if (px4GazeboModelTargets.length === 0) throw new Error('expected at least one PX4 Gazebo model target')
 
 const run = async (cmd: string, args: ReadonlyArray<string>, cwd?: string): Promise<void> => {
   const child = Bun.spawn({
@@ -97,12 +107,18 @@ const px4BuildHasTarget = async (target: string): Promise<boolean> => {
 const setupPx4 = async (): Promise<void> => {
   await cloneIfMissing('https://github.com/PX4/PX4-Autopilot.git', px4Home, true)
   await run('bash', ['./Tools/setup/ubuntu.sh', '--no-nuttx'], px4Home)
-  if (existsSync(px4BuildDir) && !(await px4BuildHasTarget(px4GazeboModelTarget))) {
-    await run('make', ['distclean'], px4Home)
+  if (existsSync(px4BuildDir)) {
+    const targetAvailability = await Promise.all(px4GazeboModelTargets.map(async target => ({
+      target,
+      available: await px4BuildHasTarget(target),
+    })))
+    if (targetAvailability.some(result => !result.available)) await run('make', ['distclean'], px4Home)
   }
   await run('make', ['px4_sitl_default'], px4Home)
-  if (!(await px4BuildHasTarget(px4GazeboModelTarget))) {
-    throw new Error(`PX4 Gazebo target ${px4GazeboModelTarget} is unavailable after setup; verify Gazebo simulator dependencies on this host`)
+  for (const target of px4GazeboModelTargets) {
+    if (!(await px4BuildHasTarget(target))) {
+      throw new Error(`PX4 Gazebo target ${target} is unavailable after setup; verify Gazebo simulator dependencies on this host`)
+    }
   }
 }
 

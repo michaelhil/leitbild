@@ -109,6 +109,7 @@
       "world": "oslo-drone-operations",
       "mavlink": {
         "endpoint": "udp://127.0.0.1:14580?localPort=14540",
+        "linkCount": 4,
         "systemIdBase": 1
       },
       "models": [

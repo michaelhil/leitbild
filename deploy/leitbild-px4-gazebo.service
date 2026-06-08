@@ -7,8 +7,13 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/opt/leitbild/app
 Environment=PX4_HOME=/opt/leitbild/PX4-Autopilot
-Environment=PX4_SITL_TARGET=px4_sitl
-Environment=PX4_GAZEBO_MODEL_TARGET=gz_x500_depth
+Environment=PX4_BUILD_TARGET=px4_sitl_default
+Environment=LEITBILD_DRONE_SITL_VEHICLES=4
+Environment=LEITBILD_DRONE_SITL_MODELS=gz_x500_depth,gz_x500_vision,gz_x500_gimbal,gz_x500
+Environment=LEITBILD_DRONE_SITL_POSES=0,0,0.2,0,0,0|8,0,0.2,0,0,0|0,8,0.2,0,0,1.5708|8,8,0.2,0,0,3.1416
+Environment=PX4_HOME_LAT=59.9139
+Environment=PX4_HOME_LON=10.7522
+Environment=PX4_HOME_ALT=0
 Environment=HEADLESS=1
 EnvironmentFile=-/etc/leitbild/drone-sitl.env
 ExecStart=/root/.bun/bin/bun run scripts/drone/run-px4-gazebo.ts

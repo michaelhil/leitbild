@@ -100,6 +100,7 @@ const projectData = (
   current: DronePackData,
   vehicle: MavlinkVehicleState,
   runtimeConfig: DroneSitlRuntimeConfig,
+  endpointText: string,
   at: IsoTimestamp,
 ): DronePackData =>
   dronePackDataSchema.parse({
@@ -108,7 +109,7 @@ const projectData = (
     link: {
       ...current.link,
       state: 'connected',
-      endpoint: runtimeConfig.endpointText,
+      endpoint: endpointText,
       lastHeartbeatAt: vehicle.lastHeartbeatAt,
       lastMessageAt: vehicle.lastMessageAt,
     },
@@ -181,6 +182,14 @@ const connectedVehicle = (client: MavlinkClient, data: DronePackData): MavlinkVe
   return vehicle
 }
 
+const endpointTextForSystemId = (
+  runtimeConfig: DroneSitlRuntimeConfig,
+  systemId: number,
+): string => {
+  const index = systemId - runtimeConfig.systemIdBase
+  return runtimeConfig.endpointTexts[index] ?? runtimeConfig.endpointText
+}
+
 const paramTypeCode = (valueType: string): number => {
   if (valueType === 'uint8') return 1
   if (valueType === 'int8') return 2
@@ -232,13 +241,13 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   queryKinds: droneQueryKinds,
   connect: async (config): Promise<PackRuntimeConnection> => {
     const runtimeConfig = parseDroneSitlRuntimeConfig(config.scenario?.runtimeConfig ?? {})
-    const client = createMavlinkClient({
-      endpoint: runtimeConfig.endpoint,
+    const clients = runtimeConfig.endpoints.map(endpoint => createMavlinkClient({
+      endpoint,
       sourceSystemId: runtimeConfig.sourceSystemId,
       sourceComponentId: runtimeConfig.sourceComponentId,
       heartbeatTimeoutMs: runtimeConfig.heartbeatTimeoutMs,
       commandTimeoutMs: runtimeConfig.commandTimeoutMs,
-    })
+    }))
     const objects = new Map<string, OperationalObject>()
     for (const object of config.initialObjects ?? config.scenario?.initialObjects ?? []) {
       const data = parseDroneObject(object)
@@ -280,18 +289,39 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       }])
     }
 
+    const allVehicles = (): ReadonlyArray<MavlinkVehicleState> =>
+      clients.flatMap(client => client.vehicles())
+
+    const vehicleForSystemId = (systemId: number): MavlinkVehicleState | undefined =>
+      allVehicles().find(vehicle => vehicle.systemId === systemId)
+
+    const clientForSystemId = (systemId: number): MavlinkClient => {
+      const observedClient = clients.find(client => client.vehicle(systemId) !== undefined)
+      if (observedClient) return observedClient
+      const index = systemId - runtimeConfig.systemIdBase
+      return clients[index] ?? clients[0]!
+    }
+
+    const connectedVehicleForData = (data: DronePackData): {
+      readonly client: MavlinkClient
+      readonly vehicle: MavlinkVehicleState
+    } => {
+      const client = clientForSystemId(data.vehicle.systemId)
+      return { client, vehicle: connectedVehicle(client, data) }
+    }
+
     const projectVehicles = (): void => {
       const nowMs = Date.now()
       if (nowMs - lastEmissionAt < 100) return
       lastEmissionAt = nowMs
       const at = nowIso()
       const events: PackRuntimeEvent[] = []
-      for (const vehicle of client.vehicles()) {
+      for (const vehicle of allVehicles()) {
         const object = vehicleBySystemId(objects, vehicle.systemId)
         if (!object) continue
         const current = parseDroneObject(object)
         if (!current) continue
-        const next = withDronePackData(object, projectData(current, vehicle, runtimeConfig, at), at)
+        const next = withDronePackData(object, projectData(current, vehicle, runtimeConfig, endpointTextForSystemId(runtimeConfig, vehicle.systemId), at), at)
         objects.set(next.id, next)
         events.push({
           type: 'object.upserted',
@@ -308,8 +338,8 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       emit(events)
     }
 
-    await client.open()
-    const unsubscribeClient = client.subscribe(projectVehicles)
+    await Promise.all(clients.map(client => client.open()))
+    const unsubscribeClients = clients.map(client => client.subscribe(projectVehicles))
     projectVehicles()
 
     const handleCommand = async (command: CommandEnvelope): Promise<void> => {
@@ -317,11 +347,11 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         const payload = createDronePayloadSchema.parse(command.payload)
         const model = requireDroneVehicleModel(payload.modelId, runtimeConfig.models)
         const systemId = payload.systemId ?? (() => {
-          const connected = client.vehicles().find(candidate => !vehicleBySystemId(objects, candidate.systemId))
+          const connected = allVehicles().find(candidate => !vehicleBySystemId(objects, candidate.systemId))
           if (!connected) throw new Error('create_vehicle requires an unclaimed connected MAVLink vehicle or explicit systemId')
           return connected.systemId
         })()
-        const vehicle = client.vehicle(systemId)
+        const vehicle = vehicleForSystemId(systemId)
         if (!vehicle) throw new Error(`cannot create drone for MAVLink system ${systemId}: no MAVLink telemetry`)
         const createdAt = nowIso()
         const object = createScenarioDroneObject({
@@ -334,7 +364,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           headingDeg: payload.headingDeg,
           at: createdAt,
           systemId,
-          endpoint: runtimeConfig.endpointText,
+          endpoint: endpointTextForSystemId(runtimeConfig, systemId),
         })
         objects.set(object.id, object)
         emitObjectUpsert(object, createdAt, 'durable', command)
@@ -344,7 +374,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === armDroneCommandKind) {
         const payload = armDronePayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.commandLong({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -357,7 +387,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === manualControlCommandKind) {
         const payload = manualControlPayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.manualControl({
           targetSystem: data.vehicle.systemId,
           x: Math.round(payload.axes.forward * 1_000),
@@ -384,7 +414,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === navigateDroneCommandKind) {
         const payload = navigateDronePayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.commandInt({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -412,7 +442,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === takeoffDroneCommandKind) {
         const payload = takeoffDronePayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await commandWithCurrentPoint(client, data, mavCmd.navTakeoff, [0, 0, 0, data.pose.headingDeg, data.pose.point.coordinates[0], data.pose.point.coordinates[1], payload.altitudeM])
         return
       }
@@ -420,7 +450,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === landDroneCommandKind || command.kind === returnToLaunchDroneCommandKind || command.kind === holdDroneCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         const mavlinkCommand = command.kind === landDroneCommandKind
           ? mavCmd.navLand
           : command.kind === returnToLaunchDroneCommandKind
@@ -433,7 +463,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === uploadDroneMissionCommandKind) {
         const payload = uploadDroneMissionPayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.uploadMission({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -466,7 +496,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === startDroneMissionCommandKind || command.kind === pauseDroneMissionCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.commandLong({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -490,7 +520,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === clearDroneMissionCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.clearMission({ targetSystem: data.vehicle.systemId, targetComponent: data.vehicle.componentId, missionType: 0 })
         const at = nowIso()
         const next = withDronePackData(object, {
@@ -508,7 +538,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === uploadDroneGeofenceCommandKind) {
         const payload = uploadDroneGeofencePayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         const vertices = payload.polygons.flatMap(polygon => polygon.coordinates[0] ?? [])
         await client.uploadMission({
           targetSystem: data.vehicle.systemId,
@@ -541,7 +571,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === clearDroneGeofenceCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.clearMission({ targetSystem: data.vehicle.systemId, targetComponent: data.vehicle.componentId, missionType: 1 })
         const at = nowIso()
         const next = withDronePackData(object, {
@@ -560,7 +590,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === setDroneParameterCommandKind) {
         const payload = setDroneParameterPayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.setParameter({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -574,7 +604,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === setDroneGimbalCommandKind) {
         const payload = setDroneGimbalPayloadSchema.parse(command.payload)
         const { data } = objectData(objects, payload.droneId)
-        connectedVehicle(client, data)
+        const { client } = connectedVehicleForData(data)
         await client.commandLong({
           targetSystem: data.vehicle.systemId,
           targetComponent: data.vehicle.componentId,
@@ -619,7 +649,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
         for (const object of targetObjects) {
           const data = parseDroneObject(object)
           if (!data) continue
-          connectedVehicle(client, data)
+          const { client } = connectedVehicleForData(data)
           if (payload.command.kind === 'hold') await commandWithCurrentPoint(client, data, mavCmd.navLoiterUnlim)
           if (payload.command.kind === 'land') await commandWithCurrentPoint(client, data, mavCmd.navLand)
           if (payload.command.kind === 'navigate') {
@@ -700,9 +730,9 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       setClock: async (_clock: SimulationClockState): Promise<void> => {},
       close: async (): Promise<void> => {
         closed = true
-        unsubscribeClient()
+        for (const unsubscribeClient of unsubscribeClients) unsubscribeClient()
         handlers.clear()
-        await client.close()
+        await Promise.all(clients.map(client => client.close()))
       },
     }
   },

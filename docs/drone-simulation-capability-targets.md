@@ -40,7 +40,7 @@ The first pass should be considered complete when these remain true:
 ## Next Capability Targets
 
 - Gazebo camera/depth/contact ingestion into `drone.sensorContacts`
-- PX4 multi-instance orchestration for several scenario drones instead of assuming available heartbeats
+- richer PX4 multi-instance acceptance traces for several scenario drones
 - ArduPilot Gazebo world packaging and deployment acceptance runs
 - mission/geofence acceptance traces against real autopilot behavior
 - richer model catalog for PX4 X500 variants, ArduPilot Iris variants, gimbals, depth cameras, and payload plugins

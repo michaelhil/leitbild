@@ -262,10 +262,41 @@ describe('drone pack', () => {
     expect(data.vehicle.systemId).toBe(9)
   })
 
+  test('assigns per-system MAVLink endpoints from scenario link count', async () => {
+    const first = drone({ id: 'drone:first-link', systemId: 1 })
+    const second = await droneScenarioSupport.expandObject({
+      pack: 'drone',
+      type: 'drone',
+      id: 'drone:second-link',
+      label: 'Second link drone',
+      position: [10.751, 59.91],
+      modelId: 'px4-x500-depth',
+    }, {
+      at,
+      objects: [first],
+      runtimeConfigs: {
+        drone: {
+          mavlink: {
+            endpoint: 'udp://127.0.0.1:14580?localPort=14540',
+            linkCount: 4,
+            systemIdBase: 1,
+          },
+        },
+      },
+      objectById: (id) => id === first.id ? first : undefined,
+      routing: createDirectRoutingAdapter(),
+    })
+
+    const data = dronePackDataSchema.parse(second.packData)
+    expect(data.vehicle.systemId).toBe(2)
+    expect(data.link.endpoint).toBe('udp://127.0.0.1:14581?localPort=14541')
+  })
+
   test('SITL runtime parser accepts scenario vehicle system id metadata separately from client source ids', () => {
     const parsed = parseDroneSitlRuntimeConfig({
       mavlink: {
         endpoint: 'udp://127.0.0.1:14580?localPort=14540',
+        linkCount: 4,
         systemIdBase: 8,
         sourceSystemId: 245,
         sourceComponentId: 190,
@@ -275,6 +306,14 @@ describe('drone pack', () => {
     expect(parsed.endpointText).toBe('udp://127.0.0.1:14580?localPort=14540')
     expect(parsed.endpoint.port).toBe(14580)
     expect(parsed.endpoint.localPort).toBe(14540)
+    expect(parsed.systemIdBase).toBe(8)
+    expect(parsed.endpointTexts).toEqual([
+      'udp://127.0.0.1:14580?localPort=14540',
+      'udp://127.0.0.1:14581?localPort=14541',
+      'udp://127.0.0.1:14582?localPort=14542',
+      'udp://127.0.0.1:14583?localPort=14543',
+    ])
+    expect(parsed.endpoints.map(endpoint => endpoint.localPort)).toEqual([14540, 14541, 14542, 14543])
     expect(parsed.sourceSystemId).toBe(245)
     expect(parsed.sourceComponentId).toBe(190)
   })

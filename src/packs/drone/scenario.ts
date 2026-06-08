@@ -17,6 +17,7 @@ import {
   type DroneVehicleModel,
 } from './model.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './sitl/object-state.ts'
+import { parseMavlinkEndpoint } from './sitl/mavlink.ts'
 
 const lonLatSchema = z.tuple([
   z.number().finite().min(-180).max(180),
@@ -25,6 +26,7 @@ const lonLatSchema = z.tuple([
 
 const mavlinkScenarioConfigSchema = z.object({
   endpoint: z.string().min(1).max(240).optional(),
+  linkCount: z.number().int().positive().max(10).optional(),
   systemIdBase: z.number().int().min(1).max(240).default(1),
 }).strict().default({
   systemIdBase: 1,
@@ -66,6 +68,18 @@ const setDroneSwarmOperationSchema = z.object({
 
 const pointFromLonLat = (value: readonly [number, number]): GeoJsonPoint =>
   geoPointFromLonLat(value[0], value[1])
+
+const scenarioEndpointForSystemId = (
+  runtimeConfig: z.infer<typeof droneRuntimeConfigSchema>,
+  systemId: number,
+): string | undefined => {
+  const endpointText = runtimeConfig.mavlink.endpoint
+  if (endpointText === undefined) return undefined
+  const endpoint = parseMavlinkEndpoint(endpointText)
+  const offset = systemId - runtimeConfig.mavlink.systemIdBase
+  if (offset < 0 || offset >= (runtimeConfig.mavlink.linkCount ?? 1)) return endpointText
+  return `udp://${endpoint.host}:${endpoint.port + offset}?localPort=${endpoint.localPort + offset}`
+}
 
 export const droneRuntimeConfigFromRuntimeConfigs = (
   runtimeConfigs: Record<string, unknown>,
@@ -114,6 +128,8 @@ export const droneScenarioSupport: PackScenarioSupport = {
       ? droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs)
       : [...droneVehicleModelsFromRuntimeConfigs(context.runtimeConfigs), spec.model]
     const model = spec.model ?? requireDroneVehicleModel(spec.modelId, models)
+    const systemId = spec.systemId ?? nextScenarioSystemId(context.objects, runtimeConfig.mavlink.systemIdBase)
+    const endpoint = scenarioEndpointForSystemId(runtimeConfig, systemId)
     return createScenarioDroneObject({
       id: spec.id,
       label: spec.label,
@@ -123,8 +139,8 @@ export const droneScenarioSupport: PackScenarioSupport = {
       altitudeM: spec.altitudeM,
       headingDeg: spec.headingDeg,
       at: context.at,
-      systemId: spec.systemId ?? nextScenarioSystemId(context.objects, runtimeConfig.mavlink.systemIdBase),
-      ...(runtimeConfig.mavlink.endpoint === undefined ? {} : { endpoint: runtimeConfig.mavlink.endpoint }),
+      systemId,
+      ...(endpoint === undefined ? {} : { endpoint }),
       ...(spec.swarm === undefined ? {} : { swarm: spec.swarm }),
     })
   },
