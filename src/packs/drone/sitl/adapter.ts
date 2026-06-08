@@ -78,6 +78,24 @@ const autopilotFor = (
 ): DroneAutopilot =>
   vehicle.autopilot ?? configured
 
+const armingStateFor = (
+  current: DronePackData['arming'],
+  vehicle: MavlinkVehicleState,
+  at: IsoTimestamp,
+): DronePackData['arming'] => {
+  if (vehicle.baseMode === undefined) {
+    return {
+      ...current,
+      state: 'unknown',
+    }
+  }
+  return {
+    state: vehicle.armed ? 'armed' : 'disarmed',
+    armed: vehicle.armed,
+    updatedAt: at,
+  }
+}
+
 const projectData = (
   current: DronePackData,
   vehicle: MavlinkVehicleState,
@@ -89,16 +107,12 @@ const projectData = (
     autopilot: autopilotFor(runtimeConfig.autopilot, vehicle),
     link: {
       ...current.link,
-      state: vehicle.lastHeartbeatAt === undefined ? 'connecting' : 'connected',
+      state: 'connected',
       endpoint: runtimeConfig.endpointText,
       lastHeartbeatAt: vehicle.lastHeartbeatAt,
       lastMessageAt: vehicle.lastMessageAt,
     },
-    arming: {
-      state: vehicle.armed ? 'armed' : 'disarmed',
-      armed: vehicle.armed,
-      updatedAt: at,
-    },
+    arming: armingStateFor(current.arming, vehicle, at),
     navigation: {
       kind: vehicle.navigation.kind,
       mode: vehicle.navigation.mode,
@@ -163,7 +177,7 @@ const objectData = (objects: ReadonlyMap<string, OperationalObject>, droneId: st
 
 const connectedVehicle = (client: MavlinkClient, data: DronePackData): MavlinkVehicleState => {
   const vehicle = client.vehicle(data.vehicle.systemId)
-  if (!vehicle?.lastHeartbeatAt) throw new Error(`MAVLink system ${data.vehicle.systemId} is not connected`)
+  if (!vehicle) throw new Error(`MAVLink system ${data.vehicle.systemId} is not connected`)
   return vehicle
 }
 
@@ -308,7 +322,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
           return connected.systemId
         })()
         const vehicle = client.vehicle(systemId)
-        if (!vehicle?.lastHeartbeatAt) throw new Error(`cannot create drone for MAVLink system ${systemId}: no heartbeat`)
+        if (!vehicle) throw new Error(`cannot create drone for MAVLink system ${systemId}: no MAVLink telemetry`)
         const createdAt = nowIso()
         const object = createScenarioDroneObject({
           id: slugObjectId('drone', payload.label),

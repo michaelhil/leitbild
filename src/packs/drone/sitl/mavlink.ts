@@ -865,10 +865,10 @@ export const createMavlinkClient = (config: {
     try {
       const startedAt = Date.now()
       while (Date.now() - startedAt < heartbeatTimeoutMs) {
-        if ([...vehiclesBySystemId.values()].some(vehicle => vehicle.lastHeartbeatAt !== undefined)) return
+        if (vehiclesBySystemId.size > 0) return
         await Bun.sleep(100)
       }
-      throw new Error(`no MAVLink heartbeat received from ${endpoint.host}:${endpoint.port} within ${heartbeatTimeoutMs} ms`)
+      throw new Error(`no MAVLink vehicle messages received from ${endpoint.host}:${endpoint.port} within ${heartbeatTimeoutMs} ms`)
     } catch (err) {
       await close()
       throw err

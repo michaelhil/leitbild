@@ -71,6 +71,14 @@ export const droneOperationalStatus = (data: DronePackData): OperationalObject['
   if (data.health.state === 'critical' || data.health.state === 'failed') {
     return { status: data.health.state, priority: 'critical', intent: data.navigation.kind, mode: 'simulated' }
   }
+  if (data.arming.state === 'unknown') {
+    return {
+      status: data.link.state === 'connected' ? 'telemetry_connected' : 'awaiting_telemetry',
+      priority: 'normal',
+      intent: data.navigation.mode,
+      mode: 'simulated',
+    }
+  }
   if (data.arming.armed) {
     return { status: data.navigation.kind, priority: data.health.state === 'degraded' ? 'high' : 'normal', intent: data.navigation.mode, mode: 'simulated' }
   }

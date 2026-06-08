@@ -247,6 +247,33 @@ describe('drone pack', () => {
     expect(scene[1]?.modelId).toBe('px4-x500-gimbal')
   })
 
+  test('SITL telemetry stream can be connected before heartbeat-derived arming is known', () => {
+    const object = drone({ id: 'drone:telemetry-stream' })
+    const data = dronePackDataSchema.parse(object.packData)
+    const updated = withDronePackData(object, {
+      ...data,
+      link: {
+        ...data.link,
+        state: 'connected',
+        lastMessageAt: at,
+      },
+      arming: {
+        state: 'unknown',
+        armed: false,
+      },
+      pose: {
+        ...data.pose,
+        observedAt: at,
+      },
+    }, at)
+    const updatedData = dronePackDataSchema.parse(updated.packData)
+
+    expect(updated.operational.status).toBe('telemetry_connected')
+    expect(updated.communication?.state).toBe('connected')
+    expect(updatedData.arming.state).toBe('unknown')
+    expect(updatedData.link.lastMessageAt).toBe(at)
+  })
+
   test('controller bindings are derived from drone control state only', () => {
     const object = drone({ id: 'drone:bound' })
     const data = dronePackDataSchema.parse(object.packData)
