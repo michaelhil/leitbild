@@ -1,6 +1,7 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
-import { controlInstanceIdSchema, type ControlInstanceId } from '../model/index.ts'
+import { z } from 'zod'
+import { controlInstanceIdSchema, nowIso, type CommandResult, type ControlInstanceId } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import {
   createMapArtifactConfigFromEnv,
@@ -20,7 +21,16 @@ import {
   referenceDatasetVectorTileResponse,
   type MapArtifactConfig,
 } from '../../map/artifacts.ts'
-import { handleControlInstanceApi } from './control-instance-routes.ts'
+import {
+  buildControlInstanceActor,
+  buildControlInstanceCommand,
+  handleControlInstanceApi,
+} from './control-instance-routes.ts'
+import {
+  commandIdempotencyConfigFromEnv,
+  commandIdempotencyStoreForRuntime,
+  issueCommandWithIdempotency,
+} from './command-idempotency.ts'
 import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type RealtimeStatus } from './realtime.ts'
 import { json } from './responses.ts'
 import { buildManifest } from './discovery.ts'
@@ -38,6 +48,15 @@ interface ServerConfig {
 interface WSData {
   readonly controlInstanceId: ControlInstanceId
 }
+
+const realtimeClientCommandMessageSchema = z.object({
+  type: z.literal('command'),
+  requestId: z.string().min(1).max(128),
+  command: z.unknown(),
+}).strict()
+
+const websocketText = (message: string | Buffer): string =>
+  typeof message === 'string' ? message : message.toString('utf8')
 
 const memoryStatus = (): {
   readonly rssBytes: number
@@ -188,6 +207,76 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     },
   })
 
+  const sendRealtimeCommandError = (
+    socket: ServerWebSocket<WSData>,
+    requestId: string | undefined,
+    message: string,
+  ): void => {
+    socket.send(JSON.stringify({
+      type: 'command.error',
+      controlInstanceId: socket.data.controlInstanceId,
+      ...(requestId === undefined ? {} : { requestId }),
+      message,
+    }))
+  }
+
+  const issueRealtimeCommand = async (
+    controlInstanceId: ControlInstanceId,
+    rawCommand: unknown,
+  ): Promise<CommandResult> => {
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) {
+      return {
+        ok: false,
+        commandId: `command:${crypto.randomUUID()}` as CommandResult['commandId'],
+        rejectedAt: nowIso(),
+        reason: 'control instance not found',
+      }
+    }
+    const command = buildControlInstanceCommand(controlInstanceId, rawCommand)
+    const actor = buildControlInstanceActor(command.actorId)
+    const issued = await issueCommandWithIdempotency({
+      store: commandIdempotencyStoreForRuntime(controlInstanceId),
+      idempotency: commandIdempotencyConfigFromEnv(),
+      actor,
+      command,
+      issue: runtime.issueCommand,
+    })
+    if (!issued.ok) {
+      return {
+        ok: false,
+        commandId: command.id,
+        rejectedAt: nowIso(),
+        reason: issued.message,
+      }
+    }
+    return issued.result
+  }
+
+  const handleRealtimeClientMessage = async (
+    socket: ServerWebSocket<WSData>,
+    message: string | Buffer,
+  ): Promise<void> => {
+    let parsed
+    try {
+      parsed = realtimeClientCommandMessageSchema.parse(JSON.parse(websocketText(message)) as unknown)
+    } catch (err) {
+      sendRealtimeCommandError(socket, undefined, err instanceof Error ? err.message : String(err))
+      return
+    }
+    try {
+      const result = await issueRealtimeCommand(socket.data.controlInstanceId, parsed.command)
+      socket.send(JSON.stringify({
+        type: 'command.result',
+        controlInstanceId: socket.data.controlInstanceId,
+        requestId: parsed.requestId,
+        result,
+      }))
+    } catch (err) {
+      sendRealtimeCommandError(socket, parsed.requestId, err instanceof Error ? err.message : String(err))
+    }
+  }
+
   const server = Bun.serve<WSData>({
     port,
     async fetch(req, serverApi) {
@@ -266,8 +355,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       close(socket) {
         realtime.removeClient(socket.data.controlInstanceId, socket)
       },
-      message() {
-        // Browser-to-server commands use REST for validation, status codes, and auditability.
+      message(socket, message) {
+        void handleRealtimeClientMessage(socket, message)
       },
     },
   })

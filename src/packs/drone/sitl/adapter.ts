@@ -16,6 +16,7 @@ import {
   droneCommandKinds,
   holdDroneCommandKind,
   landDroneCommandKind,
+  type ManualControlPayload,
   manualControlCommandKind,
   manualControlPayloadSchema,
   navigateDroneCommandKind,
@@ -205,9 +206,19 @@ const paramTypeCode = (valueType: string): number => {
 const manualHorizontalSpeedMps = 8
 const manualVerticalSpeedMps = 3
 const manualYawStepDeg = 18
+const manualSetpointIntervalMs = 50
 const mavModeFlagCustomModeEnabled = 1
 const px4OffboardMainMode = 6
 const ardupilotGuidedMode = 4
+
+interface ManualControlSession {
+  readonly droneId: string
+  axes: DroneManualAxes
+  inputSource: ManualControlPayload['inputSource']
+  expiresAtMs: number
+  modeTask?: Promise<void>
+  pumping: boolean
+}
 
 const normalizeHeadingDeg = (value: number): number => {
   const wrapped = value % 360
@@ -325,6 +336,9 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneSitlRuntimeId,
   packId: dronePackId,
   acceptedCommandKinds: droneCommandKinds,
+  commandEventPersistence: {
+    [manualControlCommandKind]: 'projected',
+  },
   queryKinds: droneQueryKinds,
   connect: async (config): Promise<PackRuntimeConnection> => {
     const runtimeConfig = parseDroneSitlRuntimeConfig(config.scenario?.runtimeConfig ?? {})
@@ -354,6 +368,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const handlers = new Set<PackRuntimeEventHandler>()
     let closed = false
     let lastEmissionAt = 0
+    const manualControlSessions = new Map<string, ManualControlSession>()
 
     const emit = (events: ReadonlyArray<PackRuntimeEvent>): void => {
       if (events.length === 0 || closed) return
@@ -406,6 +421,121 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
     } => {
       const client = clientForSystemId(data.vehicle.systemId)
       return { client, vehicle: connectedVehicle(client, data) }
+    }
+
+    const manualControlFailureText = (err: unknown): string => {
+      const message = err instanceof Error ? err.message : String(err)
+      return `Manual control failed: ${message}`.slice(0, 240)
+    }
+
+    const emitManualControlFailure = (session: ManualControlSession, err: unknown): void => {
+      const object = objects.get(session.droneId)
+      if (!object) return
+      const data = parseDroneObject(object)
+      if (!data) return
+      const at = nowIso()
+      const next = withDronePackData(object, {
+        ...data,
+        control: {
+          ...data.control,
+          manualAxes: session.axes,
+          inputSource: session.inputSource,
+          lastCommandAt: at,
+          inputExpiresAt: at,
+        },
+        health: {
+          ...data.health,
+          lastStatusText: manualControlFailureText(err),
+        },
+      }, at)
+      objects.set(next.id, next)
+      emitObjectUpsert(next, at, 'projected')
+    }
+
+    const ensureManualSessionMode = async (
+      session: ManualControlSession,
+      client: MavlinkClient,
+      data: DronePackData,
+    ): Promise<void> => {
+      if (data.navigation.kind === 'manual' || data.navigation.kind === 'guided' || data.navigation.kind === 'offboard') return
+      if (session.modeTask !== undefined) {
+        await session.modeTask
+        return
+      }
+      const modeTask = ensureExternalManualMode(client, data, session.axes)
+      session.modeTask = (async (): Promise<void> => {
+        try {
+          await modeTask
+        } finally {
+          delete session.modeTask
+        }
+      })()
+      await session.modeTask
+    }
+
+    const pumpManualControlSession = (session: ManualControlSession): void => {
+      if (session.pumping) return
+      session.pumping = true
+      const run = async (): Promise<void> => {
+        try {
+          while (!closed && manualControlSessions.get(session.droneId) === session) {
+            if (Date.now() > session.expiresAtMs) {
+              manualControlSessions.delete(session.droneId)
+              return
+            }
+            const object = objects.get(session.droneId)
+            const data = object === undefined ? null : parseDroneObject(object)
+            if (!data) {
+              manualControlSessions.delete(session.droneId)
+              return
+            }
+            try {
+              const client = clientForSystemId(data.vehicle.systemId)
+              await ensureManualSessionMode(session, client, data)
+              if (closed || manualControlSessions.get(session.droneId) !== session) return
+              if (Date.now() > session.expiresAtMs) {
+                manualControlSessions.delete(session.droneId)
+                return
+              }
+              await sendManualVelocitySetpoint(client, data, session.axes)
+            } catch (err) {
+              if (!closed) emitManualControlFailure(session, err)
+              manualControlSessions.delete(session.droneId)
+              return
+            }
+            await Bun.sleep(manualSetpointIntervalMs)
+          }
+        } finally {
+          session.pumping = false
+          if (!closed && manualControlSessions.get(session.droneId) === session && Date.now() <= session.expiresAtMs) {
+            pumpManualControlSession(session)
+          }
+        }
+      }
+      void run()
+    }
+
+    const queueManualControl = (
+      payload: ManualControlPayload,
+      expiresAtMs: number,
+    ): void => {
+      const current = manualControlSessions.get(payload.droneId)
+      if (current) {
+        current.axes = payload.axes
+        current.inputSource = payload.inputSource
+        current.expiresAtMs = expiresAtMs
+        pumpManualControlSession(current)
+        return
+      }
+      const session: ManualControlSession = {
+        droneId: payload.droneId,
+        axes: payload.axes,
+        inputSource: payload.inputSource,
+        expiresAtMs,
+        pumping: false,
+      }
+      manualControlSessions.set(payload.droneId, session)
+      pumpManualControlSession(session)
     }
 
     const projectVehicles = (): void => {
@@ -484,12 +614,12 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (command.kind === manualControlCommandKind) {
         const payload = manualControlPayloadSchema.parse(command.payload)
         const { object, data } = objectData(objects, payload.droneId)
-        const { client } = connectedVehicleForData(data)
+        connectedVehicleForData(data)
         const readiness = droneManualControlReadiness(data)
         if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
-        await ensureExternalManualMode(client, data, payload.axes)
-        await sendManualVelocitySetpoint(client, data, payload.axes)
         const at = nowIso()
+        const expiresAtMs = Date.now() + payload.commandTtlMs
+        queueManualControl(payload, expiresAtMs)
         const next = withDronePackData(object, {
           ...data,
           control: {
@@ -497,7 +627,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
             manualAxes: payload.axes,
             inputSource: payload.inputSource,
             lastCommandAt: at,
-            inputExpiresAt: new Date(Date.now() + payload.commandTtlMs).toISOString() as IsoTimestamp,
+            inputExpiresAt: new Date(expiresAtMs).toISOString() as IsoTimestamp,
           },
         }, at)
         objects.set(next.id, next)
@@ -824,6 +954,7 @@ export const createDroneSitlPackRuntimeAdapter = (): PackRuntimeAdapter => ({
       setClock: async (_clock: SimulationClockState): Promise<void> => {},
       close: async (): Promise<void> => {
         closed = true
+        manualControlSessions.clear()
         for (const unsubscribeClient of unsubscribeClients) unsubscribeClient()
         handlers.clear()
         await Promise.all(clientLeases.map(lease => lease.release()))

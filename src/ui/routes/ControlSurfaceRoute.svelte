@@ -1170,6 +1170,11 @@
     await syncControlInstanceSnapshot()
   }
 
+  const sendRealtimeCommand = async (command: Parameters<typeof realtimeConnection.sendCommand>[1]) => {
+    if (!controlInstanceId) throw new Error('control instance is not ready')
+    return await realtimeConnection.sendCommand(controlInstanceId, command)
+  }
+
   const deleteObject = async (object: OperationalObject): Promise<void> => {
     commandStatus = `Deleting ${object.label}`
     await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
@@ -1670,6 +1675,7 @@
       {controlInstanceId}
       object={windowEntry.object}
       {objects}
+      {sendRealtimeCommand}
       windowOffsetIndex={windowEntry.index}
       close={() => closeDroneControl(windowEntry.id)}
     />

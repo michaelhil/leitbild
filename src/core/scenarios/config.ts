@@ -5,6 +5,7 @@ import {
   interactionEndpointSchema,
   objectIdSchema,
   scenarioDefinitionSchema,
+  scenarioScriptCommandRequestSchema,
   signalIdSchema,
   type GeoJsonPoint,
   type IsoTimestamp,
@@ -88,6 +89,10 @@ const scenarioScriptActionConfigSchema = z.discriminatedUnion('type', [
       causationId: idSchema.optional(),
       ttlMs: z.number().finite().positive().optional(),
     }).strict(),
+  }),
+  z.object({
+    type: z.literal('issue_command'),
+    command: scenarioScriptCommandRequestSchema,
   }),
 ])
 
@@ -261,7 +266,7 @@ const expandScriptAction = async (
   if (action.type === 'show_guidance' || action.type === 'highlight_objects') {
     return action
   }
-  if (action.type === 'emit_signal') {
+  if (action.type === 'emit_signal' || action.type === 'issue_command') {
     return action as ScenarioScriptAction
   }
   if (action.type === 'hide_guidance') {

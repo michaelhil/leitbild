@@ -158,4 +158,35 @@ describe('display motion interpolation', () => {
     expect(displayed).toBe(stopped)
     expect(displayed?.spatial.position?.point).toEqual(stopped.spatial.position?.point)
   })
+
+  test('interpolates moving objects from speed rather than generic operational status', () => {
+    const ambulance = scenarioAmbulance()
+    const previous = {
+      ...movingObject(ambulance, 10.7, 59.9),
+      operational: {
+        ...ambulance.operational,
+        status: 'available',
+      },
+    }
+    const next = {
+      ...movingObject(ambulance, 10.7002, 59.9002),
+      operational: {
+        ...ambulance.operational,
+        status: 'available',
+      },
+    }
+    const state = reconcileDisplayMotionState({
+      previousState: createDisplayMotionState(),
+      previousObjects: [previous],
+      nextObjects: [next],
+      nowMs: 1_000,
+      interpolationMs: 1_000,
+    })
+
+    expect(hasActiveDisplayMotion(state, 1_500)).toBe(true)
+    const displayed = displayObjectsFor([next], state, 1_500)[0]
+
+    expect(displayed?.spatial.position?.point.coordinates[0]).toBeGreaterThan(previous.spatial.position!.point.coordinates[0])
+    expect(displayed?.spatial.position?.point.coordinates[0]).toBeLessThan(next.spatial.position!.point.coordinates[0])
+  })
 })

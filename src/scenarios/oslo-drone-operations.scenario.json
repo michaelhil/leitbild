@@ -258,6 +258,40 @@
   "script": {
     "steps": [
       {
+        "id": "drone-ops-auto-arm-survey",
+        "at": { "kind": "after_scenario_start", "seconds": 0.5 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "drone.arm",
+              "targetObjectIds": ["drone:oslo-survey-1"],
+              "payload": {
+                "droneId": "drone:oslo-survey-1",
+                "armed": true
+              }
+            }
+          }
+        ]
+      },
+      {
+        "id": "drone-ops-auto-takeoff-survey",
+        "at": { "kind": "after_scenario_start", "seconds": 1 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "drone.takeoff",
+              "targetObjectIds": ["drone:oslo-survey-1"],
+              "payload": {
+                "droneId": "drone:oslo-survey-1",
+                "altitudeM": 55
+              }
+            }
+          }
+        ]
+      },
+      {
         "id": "drone-ops-briefing",
         "at": { "kind": "after_scenario_start", "seconds": 2 },
         "actions": [
@@ -269,6 +303,27 @@
               "message": "Select a drone to command it on the map, or open its flight window for direct keyboard/gamepad control. Drones are backed by the configured Gazebo SITL autopilot runtime and share this control instance across connected browsers.",
               "objectIds": ["drone:oslo-survey-1", "drone:oslo-survey-2", "drone:oslo-interceptor-1"],
               "dismissible": true
+            }
+          }
+        ]
+      },
+      {
+        "id": "drone-ops-auto-survey-leg",
+        "at": { "kind": "after_scenario_start", "seconds": 4 },
+        "actions": [
+          {
+            "type": "issue_command",
+            "command": {
+              "kind": "drone.goto",
+              "targetObjectIds": ["drone:oslo-survey-1"],
+              "payload": {
+                "droneId": "drone:oslo-survey-1",
+                "target": {
+                  "point": { "type": "Point", "coordinates": [10.7442, 59.9068] },
+                  "altitudeM": 55,
+                  "speedMps": 18
+                }
+              }
             }
           }
         ]

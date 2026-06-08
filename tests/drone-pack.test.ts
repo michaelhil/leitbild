@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import type { ActorId, CommandEnvelope, ControlInstanceId, GeoJsonPoint, IsoTimestamp, ObjectId, OperationalObject, PackId } from '../src/core/model/index.ts'
 import { geoPointFromLonLat } from '../src/core/model/index.ts'
 import type { PackMapAreaFeature, PackQueryResponse } from '../src/core/packs/protocol.ts'
-import { createDroneCommandKind, manualControlPayloadSchema, takeoffDroneCommandKind } from '../src/packs/drone/commands.ts'
+import { createDroneCommandKind, manualControlCommandKind, manualControlPayloadSchema, takeoffDroneCommandKind } from '../src/packs/drone/commands.ts'
 import { createDroneAttackInteractionHandler, droneAttackSignal } from '../src/packs/drone/interactions.ts'
 import {
   defaultDroneVehicleModels,
@@ -194,6 +194,9 @@ type UdpSocketForTest = ReturnType<typeof dgram.createSocket>
 
 const mavlinkCommandLongMessageIdForTest = 76
 const mavlinkCommandAckMessageIdForTest = 77
+const mavlinkSetPositionTargetGlobalIntMessageIdForTest = 86
+const mavModeFlagSafetyArmedForTest = 128
+const px4AutoLoiterCustomModeForTest = (4 << 16) | (3 << 24)
 
 interface MavlinkHeartbeatResponderForTest {
   readonly endpointText: string
@@ -201,6 +204,7 @@ interface MavlinkHeartbeatResponderForTest {
 }
 
 interface MavlinkHeartbeatResponderConfigForTest {
+  readonly heartbeatPayload?: () => Buffer
   readonly onFrame?: (config: {
     readonly frame: ReturnType<typeof decodeMavlinkFrames>[number]
     readonly remote: RemoteInfo
@@ -236,13 +240,17 @@ const closeUdpSocketForTest = async (socket: UdpSocketForTest): Promise<void> =>
   await new Promise<void>((resolve) => socket.close(() => resolve()))
 }
 
-const heartbeatPayloadForTest = (): Buffer => {
+const heartbeatPayloadForTest = (config: {
+  readonly customMode?: number
+  readonly baseMode?: number
+  readonly systemStatus?: number
+} = {}): Buffer => {
   const payload = Buffer.alloc(9)
-  payload.writeUInt32LE(0, 0)
+  payload.writeUInt32LE(config.customMode ?? 0, 0)
   payload.writeUInt8(2, 4)
   payload.writeUInt8(12, 5)
-  payload.writeUInt8(0, 6)
-  payload.writeUInt8(4, 7)
+  payload.writeUInt8(config.baseMode ?? 0, 6)
+  payload.writeUInt8(config.systemStatus ?? 4, 7)
   payload.writeUInt8(3, 8)
   return payload
 }
@@ -260,6 +268,15 @@ const sendMavlinkFrameForTest = (
   frame: Buffer,
 ): void => {
   socket.send(frame, remote.port, remote.address)
+}
+
+const waitForDroneTest = async (predicate: () => boolean, label: string): Promise<void> => {
+  const deadline = Date.now() + 1_000
+  while (Date.now() < deadline) {
+    if (predicate()) return
+    await Bun.sleep(10)
+  }
+  throw new Error(`timed out waiting for ${label}`)
 }
 
 const startMavlinkHeartbeatResponderForTest = async (
@@ -281,7 +298,7 @@ const startMavlinkHeartbeatResponderForTest = async (
       systemId: 1,
       componentId: 1,
       messageId: 0,
-      payload: heartbeatPayloadForTest(),
+      payload: config.heartbeatPayload?.() ?? heartbeatPayloadForTest(),
       crcExtra: 50,
     })
     seq = (seq + 1) & 0xff
@@ -632,6 +649,111 @@ describe('drone pack', () => {
     }
   })
 
+  test('SITL manual control queues setpoints without waiting for PX4 offboard priming', async () => {
+    let setpointFrames = 0
+    const responder = await startMavlinkHeartbeatResponderForTest({
+      heartbeatPayload: () => heartbeatPayloadForTest({
+        baseMode: mavModeFlagSafetyArmedForTest,
+        customMode: px4AutoLoiterCustomModeForTest,
+      }),
+      onFrame: ({ frame }) => {
+        if (frame.messageId === mavlinkSetPositionTargetGlobalIntMessageIdForTest) setpointFrames += 1
+      },
+    })
+    const adapter = createDroneSitlPackRuntimeAdapter()
+    const object = drone({
+      id: 'drone:manual-fast',
+      systemId: 1,
+      point: point(10.7522, 59.9139),
+      altitudeM: 14,
+      headingDeg: 45,
+    })
+    const data = dronePackDataSchema.parse(object.packData)
+    const readyObject = withDronePackData(object, {
+      ...data,
+      link: {
+        ...data.link,
+        state: 'connected',
+        lastHeartbeatAt: at,
+        lastMessageAt: at,
+      },
+      arming: {
+        state: 'armed',
+        armed: true,
+        updatedAt: at,
+      },
+      navigation: {
+        kind: 'hold',
+        mode: 'auto loiter',
+        updatedAt: at,
+      },
+      pose: {
+        ...data.pose,
+        altitudeM: 14,
+        relativeAltitudeM: 14,
+      },
+    }, at)
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [readyObject],
+      scenario: {
+        scenarioId: 'scenario:test-drone-manual-fast',
+        runtimeIds: [droneSitlRuntimeId],
+        world: { environment: {} },
+        initialObjects: [readyObject],
+        runtimeConfigs: {
+          drone: {
+            autopilot: 'px4',
+            mavlink: {
+              endpoint: responder.endpointText,
+              linkCount: 1,
+              systemIdBase: 1,
+              heartbeatTimeoutMs: 1_000,
+              commandTimeoutMs: 1_000,
+            },
+          },
+        },
+        runtimeConfig: {
+          autopilot: 'px4',
+          mavlink: {
+            endpoint: responder.endpointText,
+            linkCount: 1,
+            systemIdBase: 1,
+            heartbeatTimeoutMs: 1_000,
+            commandTimeoutMs: 1_000,
+          },
+        },
+      },
+    })
+
+    try {
+      const command: CommandEnvelope = {
+        id: 'command:test-drone-manual-fast' as CommandEnvelope['id'],
+        controlInstanceId,
+        actorId,
+        kind: manualControlCommandKind,
+        targetObjectIds: [readyObject.id],
+        payload: {
+          droneId: readyObject.id,
+          axes: { forward: 0.6, right: 0.1, vertical: 0, yaw: 0.2 },
+          inputSource: { kind: 'keyboard', label: 'Keyboard' },
+          commandTtlMs: 600,
+        },
+        issuedAt: at,
+      }
+      const startedAtMs = performance.now()
+      const result = await connection.sendCommand(command)
+      const durationMs = performance.now() - startedAtMs
+
+      expect(result.ok).toBe(true)
+      expect(durationMs).toBeLessThan(250)
+      await waitForDroneTest(() => setpointFrames > 0, 'manual setpoint pump')
+    } finally {
+      await connection.close()
+      await responder.close()
+    }
+  })
+
   test('controller bindings are derived from drone control state only', () => {
     const object = drone({ id: 'drone:bound' })
     const data = dronePackDataSchema.parse(object.packData)
@@ -735,6 +857,11 @@ describe('drone pack', () => {
     })
     expect(parsed.inputSource.kind).toBe('mouse')
     expect(parsed.axes.forward).toBe(0.4)
+  })
+
+  test('manual control command lifecycle is projected rather than durable', () => {
+    const adapter = createDroneSitlPackRuntimeAdapter()
+    expect(adapter.commandEventPersistence?.['drone.manual_control']).toBe('projected')
   })
 
   test('manual control readiness rejects inert autopilot states before MAVLink input is sent', () => {

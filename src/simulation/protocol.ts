@@ -48,6 +48,7 @@ export interface PackRuntimeConnection {
   readonly getSnapshot: () => Promise<PackRuntimeSnapshot>
   readonly subscribe: (handler: PackRuntimeEventHandler) => () => void
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
+  readonly commandEventPersistence?: (command: CommandEnvelope) => PackRuntimeEventPersistence
   readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => Promise<void>
   readonly setClock: (clock: SimulationClockState) => Promise<void>
@@ -63,6 +64,7 @@ export interface PackRuntimeAdapter {
   readonly id: string
   readonly packId: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
+  readonly commandEventPersistence?: Readonly<Record<string, PackRuntimeEventPersistence>>
   readonly queryKinds?: ReadonlyArray<string>
   readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>
 }

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, ControlInstanceEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
-import { deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
+import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
 import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
@@ -18,6 +18,11 @@ import { createProcedureSourceService, type ProcedureSourceLoadStatus, type Proc
 import { procedureCommandEvents } from '../procedures/run-state.ts'
 
 const projectedSnapshotFlushIntervalMs = defaultControlInstanceRuntimePolicy.projectedSnapshotFlushIntervalMs
+const scenarioRunnerActor: Actor = {
+  id: actorIdSchema.parse('actor:scenario-runner'),
+  label: 'Scenario runner',
+  role: 'system',
+}
 
 interface PublishManyOptions {
   readonly persistence?: ControlInstanceEventPersistenceDisposition
@@ -252,17 +257,21 @@ export const createControlInstanceRuntime = async (config: {
 
   const publishGenerated = async (
     generate: () => ReadonlyArray<ControlInstanceEvent> | Promise<ReadonlyArray<ControlInstanceEvent>>,
+    options?: PublishManyOptions,
   ): Promise<ReadonlyArray<ControlInstanceEvent>> => {
     let generatedEvents: ReadonlyArray<ControlInstanceEvent> = []
     await enqueuePublish(async () => {
       generatedEvents = await generate()
-      await publishManyNow(generatedEvents)
+      await publishManyNow(generatedEvents, options)
     })
     return generatedEvents
   }
 
-  const publishOneGenerated = async (generate: () => ControlInstanceEvent | Promise<ControlInstanceEvent>): Promise<ControlInstanceEvent> => {
-    const events = await publishGenerated(async () => [await generate()])
+  const publishOneGenerated = async (
+    generate: () => ControlInstanceEvent | Promise<ControlInstanceEvent>,
+    options?: PublishManyOptions,
+  ): Promise<ControlInstanceEvent> => {
+    const events = await publishGenerated(async () => [await generate()], options)
     const event = events[0]
     if (!event) throw new Error('internal event generation produced no event')
     return event
@@ -303,7 +312,7 @@ export const createControlInstanceRuntime = async (config: {
     if (action.type === 'upsert_object') {
       return { ...nextScenarioBase(at), type: 'object.upserted', object: action.object }
     }
-    if (action.type === 'emit_signal') return null
+    if (action.type === 'emit_signal' || action.type === 'issue_command') return null
     return { ...nextScenarioBase(at), type: 'object.deleted', objectId: action.objectId }
   }
 
@@ -664,6 +673,57 @@ export const createControlInstanceRuntime = async (config: {
 
   let scenarioRunner: ScenarioScriptRunner | null = null
 
+  const issueCommandThroughRuntime = async (
+    actor: Actor,
+    command: CommandEnvelope,
+    commandSource: Provenance['source'],
+  ): Promise<CommandResult> => {
+    if (command.controlInstanceId !== config.id) {
+      return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: 'command control instance does not match active control instance' }
+    }
+    if (!canIssueCommand(actor, command)) {
+      return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: `role ${actor.role} may not issue command ${command.kind}` }
+    }
+    const commandEventPersistence = config.runtimeConnection.commandEventPersistence?.(command) ?? 'durable'
+    await publishOneGenerated(() => ({
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at: command.issuedAt,
+      provenance: { source: commandSource },
+      type: 'command.issued',
+      command,
+    }), { persistence: commandEventPersistence })
+    const result = await handleCoreCommand(command) ?? await config.runtimeConnection.sendCommand(command)
+    await publishQueue
+    await publishOneGenerated(() => ({
+      id: eventId(),
+      controlInstanceId: config.id,
+      seq: ++seq,
+      at: result.ok ? result.acceptedAt : result.rejectedAt,
+      provenance: { source: 'simulator', causedByCommandId: command.id },
+      type: 'command.result',
+      result,
+    }), { persistence: commandEventPersistence })
+    return result
+  }
+
+  const commandEnvelopeForScenarioAction = (
+    action: Extract<ScenarioScriptAction, { readonly type: 'issue_command' }>,
+    at: IsoTimestamp,
+  ): CommandEnvelope =>
+    commandEnvelopeSchema.parse({
+      id: `command:${randomUUID()}`,
+      controlInstanceId: config.id,
+      actorId: scenarioRunnerActor.id,
+      kind: action.command.kind,
+      targetObjectIds: action.command.targetObjectIds,
+      payload: action.command.payload,
+      issuedAt: at,
+      ...(action.command.idempotencyKey === undefined ? {} : { idempotencyKey: action.command.idempotencyKey }),
+      ...(action.command.expectedRevision === undefined ? {} : { expectedRevision: action.command.expectedRevision }),
+    }) as CommandEnvelope
+
   const publishScenarioStep = async (step: ScenarioScriptStep, at: IsoTimestamp): Promise<void> => {
     const stepEvent = await publishOneGenerated(() => scenarioStepStartedEvent(step, at))
     await config.runtimeConnection.observeCommittedEvents([stepEvent])
@@ -673,6 +733,15 @@ export const createControlInstanceRuntime = async (config: {
         await enqueuePublish(async () => {
           await handleInteractionSignalNow(scenarioSignalForAction(action, at), { source: 'system' })
         })
+        continue
+      }
+      if (action.type === 'issue_command') {
+        const result = await issueCommandThroughRuntime(
+          scenarioRunnerActor,
+          commandEnvelopeForScenarioAction(action, at),
+          'system',
+        )
+        if (!result.ok) throw new Error(result.reason)
         continue
       }
       const events = await publishGenerated(() => controlInstanceEventsForScenarioActions([action], at))
@@ -724,33 +793,7 @@ export const createControlInstanceRuntime = async (config: {
   }
 
   const issueCommand = async (actor: Actor, command: CommandEnvelope): Promise<CommandResult> => {
-    if (command.controlInstanceId !== config.id) {
-      return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: 'command control instance does not match active control instance' }
-    }
-    if (!canIssueCommand(actor, command)) {
-      return { ok: false, commandId: command.id, rejectedAt: nowIso(), reason: `role ${actor.role} may not issue command ${command.kind}` }
-    }
-    await publishOneGenerated(() => ({
-      id: eventId(),
-      controlInstanceId: config.id,
-      seq: ++seq,
-      at: command.issuedAt,
-      provenance: { source: 'operator' },
-      type: 'command.issued',
-      command,
-    }))
-    const result = await handleCoreCommand(command) ?? await config.runtimeConnection.sendCommand(command)
-    await publishQueue
-    await publishOneGenerated(() => ({
-      id: eventId(),
-      controlInstanceId: config.id,
-      seq: ++seq,
-      at: result.ok ? result.acceptedAt : result.rejectedAt,
-      provenance: { source: 'simulator', causedByCommandId: command.id },
-      type: 'command.result',
-      result,
-    }))
-    return result
+    return await issueCommandThroughRuntime(actor, command, 'operator')
   }
 
   const setClock = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {

@@ -103,6 +103,11 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         return target.connection.sendCommand(command)
       }
 
+      const commandEventPersistence = (command: CommandEnvelope) => {
+        const target = connections.find(({ adapter }) => adapter.acceptedCommandKinds.includes(command.kind))
+        return target?.adapter.commandEventPersistence?.[command.kind] ?? 'durable'
+      }
+
       const query = async (request: PackQueryRequest): Promise<PackQueryResponse> => {
         const target = connections.find(({ adapter }) => adapter.packId === request.packId)
         if (!target) {
@@ -126,6 +131,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           }
         },
         sendCommand,
+        commandEventPersistence,
         query,
         observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {
           await Promise.all(connections.map(({ connection }) => connection.observeCommittedEvents(events)))

@@ -117,6 +117,8 @@ export const createOperationalRenderController = (
   const updateScheduler = createMapUpdateScheduler({ frameBudgetMs: 6 })
   const deckLayerFactory = createOperationalDeckLayerFactory()
   const pendingFamilies = new Set<RenderFamily>()
+  const renderHasNewInfo = createRenderHasNewInfo(config.hasNewInfo)
+  const renderPresentationFor = createRenderPresentationFor(config.presentationFor)
   let displayMotionState: DisplayMotionState = createDisplayMotionState()
   let previousMotionObjects: ReadonlyArray<OperationalObject> = []
   let displayFrame: number | null = null
@@ -174,8 +176,8 @@ export const createOperationalRenderController = (
           hiddenObjectCategoryIds: state.hiddenObjectCategoryIds,
           placementPoints: state.placementPoints,
           packAreaFeatures: state.packAreaFeatures,
-          hasNewInfo: createRenderHasNewInfo(config.hasNewInfo),
-          presentationFor: createRenderPresentationFor(config.presentationFor),
+          hasNewInfo: renderHasNewInfo,
+          presentationFor: renderPresentationFor,
         }, families),
         {
           objects: displayObjects.length,

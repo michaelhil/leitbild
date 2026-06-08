@@ -71,6 +71,24 @@ describe('control instance event helpers', () => {
     }))).toBeNull()
   })
 
+  test('parses realtime command result messages for WebSocket command transport', () => {
+    const parsed = parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'command.result',
+      controlInstanceId: 'sandbox',
+      requestId: 'rtcmd:test',
+      result: {
+        ok: true,
+        commandId: 'command:test',
+        acceptedAt: '2026-01-01T10:00:00.000Z',
+      },
+    }))
+
+    expect(parsed?.type).toBe('command.result')
+    if (parsed?.type !== 'command.result') throw new Error('expected command result message')
+    expect(parsed.requestId).toBe('rtcmd:test')
+    expect(parsed.result.ok).toBe(true)
+  })
+
   test('fails visibly for malformed WebSocket protocol payloads', () => {
     expect(() => parseControlInstanceEventBatchMessage('{')).toThrow('invalid WebSocket JSON')
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({

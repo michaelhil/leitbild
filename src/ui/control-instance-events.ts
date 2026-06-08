@@ -1,4 +1,4 @@
-import type { ControlInstanceId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+import type { CommandResult, ControlInstanceId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
@@ -33,7 +33,25 @@ export interface RealtimeReadyMessage {
   readonly clock?: SimulationClockState
 }
 
-export type ControlInstanceWebSocketMessage = ControlInstanceEventBatchMessage | RealtimeReadyMessage
+export interface RealtimeCommandResultMessage {
+  readonly type: 'command.result'
+  readonly controlInstanceId: ControlInstanceId
+  readonly requestId: string
+  readonly result: CommandResult
+}
+
+export interface RealtimeCommandErrorMessage {
+  readonly type: 'command.error'
+  readonly controlInstanceId: ControlInstanceId
+  readonly requestId?: string
+  readonly message: string
+}
+
+export type ControlInstanceWebSocketMessage =
+  | ControlInstanceEventBatchMessage
+  | RealtimeReadyMessage
+  | RealtimeCommandResultMessage
+  | RealtimeCommandErrorMessage
 
 interface ObjectApplicationResult {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -75,6 +93,13 @@ const isCommandResult = (
   return value.reason === undefined || typeof value.reason === 'string'
 }
 
+const isRealtimeCommandResult = (value: unknown): value is CommandResult => {
+  if (!isRecord(value) || typeof value.ok !== 'boolean') return false
+  if (typeof value.commandId !== 'string') return false
+  if (value.ok) return typeof value.acceptedAt === 'string'
+  return typeof value.rejectedAt === 'string' && typeof value.reason === 'string'
+}
+
 const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
   if (!isRecord(value)) throw new Error('invalid WebSocket event: expected object')
   if (typeof value.type !== 'string') throw new Error('invalid WebSocket event: missing event type')
@@ -110,6 +135,27 @@ export const parseControlInstanceWebSocketMessage = (raw: string): ControlInstan
       ...(typeof parsed.scenarioId === 'string' ? { scenarioId: parsed.scenarioId } : {}),
       snapshotSeq: parsed.snapshotSeq,
       ...(isRecord(parsed.clock) ? { clock: parsed.clock as unknown as SimulationClockState } : {}),
+    }
+  }
+  if (parsed.type === 'command.result') {
+    if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid command result message: missing control instance id')
+    if (typeof parsed.requestId !== 'string') throw new Error('invalid command result message: missing request id')
+    if (!isRealtimeCommandResult(parsed.result)) throw new Error('invalid command result message: invalid command result')
+    return {
+      type: 'command.result',
+      controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+      requestId: parsed.requestId,
+      result: parsed.result,
+    }
+  }
+  if (parsed.type === 'command.error') {
+    if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid command error message: missing control instance id')
+    if (typeof parsed.message !== 'string') throw new Error('invalid command error message: missing message')
+    return {
+      type: 'command.error',
+      controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+      ...(typeof parsed.requestId === 'string' ? { requestId: parsed.requestId } : {}),
+      message: parsed.message,
     }
   }
   if (parsed.type !== 'events') return null

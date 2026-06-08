@@ -70,7 +70,7 @@ const syncFamily = <T extends { readonly id: string; readonly signature: string 
 const pointOf = (object: OperationalObject): GeoJsonPoint | null =>
   object.spatial.position?.point ?? null
 
-const rounded = (value: number, digits = 5): string =>
+const rounded = (value: number, digits = 7): string =>
   value.toFixed(digits)
 
 const positionSignature = (position: Position3): string =>

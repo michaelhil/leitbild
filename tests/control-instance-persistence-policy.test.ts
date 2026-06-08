@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { AdapterId, ControlInstanceId, ControlInstanceEvent, PackId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
+import type { ActorId, AdapterId, CommandEnvelope, ControlInstanceId, ControlInstanceEvent, PackId, ObjectId, OperationalObject } from '../src/core/model/index.ts'
 import { geoPointFromLonLat, meters, nowIso } from '../src/core/model/index.ts'
-import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler } from '../src/simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeEventPersistence } from '../src/simulation/protocol.ts'
 import { createJsonlEventLog } from '../src/core/control-instances/event-log.ts'
 import { createControlInstanceSnapshotStore, type ControlInstanceSnapshotStore } from '../src/core/control-instances/snapshot-store.ts'
 import { createControlInstanceRuntime } from '../src/core/control-instances/runtime.ts'
@@ -55,7 +55,13 @@ const makeObject = (config?: {
   }
 }
 
-const createControlledRuntimeConnection = (initialObject: OperationalObject): {
+const createControlledRuntimeConnection = (
+  initialObject: OperationalObject,
+  config: {
+    readonly commandEventPersistence?: (command: CommandEnvelope) => PackRuntimeEventPersistence
+    readonly sendCommand?: PackRuntimeConnection['sendCommand']
+  } = {},
+): {
   readonly connection: PackRuntimeConnection
   readonly emit: (events: ReadonlyArray<Parameters<PackRuntimeEventHandler>[0]['events'][number]>) => void
 } => {
@@ -73,12 +79,13 @@ const createControlledRuntimeConnection = (initialObject: OperationalObject): {
           handlers.delete(handler)
         }
       },
-      sendCommand: async command => ({
+      sendCommand: config.sendCommand ?? (async command => ({
         ok: false,
         commandId: command.id,
         rejectedAt: nowIso(),
         reason: 'test connection does not accept commands',
-      }),
+      })),
+      ...(config.commandEventPersistence === undefined ? {} : { commandEventPersistence: config.commandEventPersistence }),
       query: async request => ({
         ok: false,
         packId: request.packId,
@@ -102,6 +109,12 @@ const createControlledRuntimeConnection = (initialObject: OperationalObject): {
       for (const handler of handlers) handler(emission)
     },
   }
+}
+
+const operatorActor = {
+  id: 'actor:persistence-test-operator' as ActorId,
+  label: 'Persistence Test Operator',
+  role: 'operator' as const,
 }
 
 const readEventLog = async (path: string): Promise<ReadonlyArray<ControlInstanceEvent>> => {
@@ -308,6 +321,46 @@ describe('control instance persistence policy', () => {
     expect(runtime.snapshot().objects.find(object => object.id === objectId)?.operational.status).toBe('constrained')
     expect(runtime.events()).toHaveLength(0)
     expect(await readEventLog(eventLogPath)).toHaveLength(0)
+    await runtime.close()
+  })
+
+  test('keeps projected command lifecycle events out of the durable journal', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'leitbild-test-'))
+    const eventLogPath = join(dataDir, 'events.jsonl')
+    const initialObject = makeObject()
+    const runtimeConnection = createControlledRuntimeConnection(initialObject, {
+      commandEventPersistence: command => command.kind === 'test.fast-control' ? 'projected' : 'durable',
+      sendCommand: async command => ({
+        ok: true,
+        commandId: command.id,
+        acceptedAt: nowIso(),
+      }),
+    })
+    const runtime = await createControlInstanceRuntime({
+      id: controlInstanceId,
+      runtimeConnection: runtimeConnection.connection,
+      eventLog: createJsonlEventLog(eventLogPath),
+      snapshotStore: createControlInstanceSnapshotStore({
+        controlInstanceId,
+        path: join(dataDir, 'snapshot.json'),
+      }),
+    })
+
+    const command: CommandEnvelope = {
+      id: 'command:test-fast-control' as CommandEnvelope['id'],
+      controlInstanceId,
+      actorId: operatorActor.id,
+      kind: 'test.fast-control',
+      targetObjectIds: [objectId],
+      payload: {},
+      issuedAt: nowIso(),
+    }
+    const result = await runtime.issueCommand(operatorActor, command)
+
+    expect(result.ok).toBe(true)
+    expect(runtime.events()).toHaveLength(0)
+    expect(await readEventLog(eventLogPath)).toHaveLength(0)
+    expect(runtime.metrics().publishedEvents.projectedEvents).toBe(2)
     await runtime.close()
   })
 

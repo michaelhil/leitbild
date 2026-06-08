@@ -74,8 +74,7 @@ const routeKeyFor = (object: OperationalObject): string => {
 const shouldAnimateObject = (object: OperationalObject): boolean =>
   object.kind === 'mobile_entity'
   && (object.spatial.position?.speedMps ?? 0) > 0
-  && object.operational.status !== 'available'
-  && object.operational.status !== 'on_scene'
+  && object.lifecycle === 'active'
 
 export const reconcileDisplayMotionState = (config: ReconcileDisplayMotionConfig): DisplayMotionState => {
   const interpolationMs = config.interpolationMs ?? 1_000

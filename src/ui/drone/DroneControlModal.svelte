@@ -13,7 +13,8 @@
   import { droneManualControlReadiness } from '../../packs/drone/control-readiness.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
-  import { sendControlInstanceCommand } from '../control-instance-client.ts'
+  import { sendControlInstanceCommand, type ControlInstanceCommandRequest } from '../control-instance-client.ts'
+  import type { CommandResponse } from '../types.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
   import {
@@ -33,6 +34,7 @@
     readonly controlInstanceId: ControlInstanceId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
+    readonly sendRealtimeCommand?: (command: ControlInstanceCommandRequest) => Promise<CommandResponse>
     readonly windowOffsetIndex?: number
     readonly close: () => void
   }
@@ -41,6 +43,7 @@
     controlInstanceId,
     object,
     objects,
+    sendRealtimeCommand,
     windowOffsetIndex = 0,
     close,
   }: Props = $props()
@@ -264,7 +267,7 @@
       : sourceKind === 'mouse'
         ? { kind: 'mouse' as const, label: mouseCaptured ? 'Mouse pointer lock' : 'Mouse' }
         : { kind: 'keyboard' as const, label: 'Keyboard' }
-    const body = await sendControlInstanceCommand(controlInstanceId, {
+    const command: ControlInstanceCommandRequest = {
       kind: manualControlCommandKind,
       targetObjectIds: [selectedObject.id],
       payload: {
@@ -273,7 +276,16 @@
         inputSource: source,
         commandTtlMs: 450,
       },
-    })
+    }
+    let body: CommandResponse
+    try {
+      body = sendRealtimeCommand
+        ? await sendRealtimeCommand(command)
+        : await sendControlInstanceCommand(controlInstanceId, command)
+    } catch (err) {
+      if (!sendRealtimeCommand) throw err
+      body = await sendControlInstanceCommand(controlInstanceId, command)
+    }
     lastCommandRoundTripMs = performance.now() - startedAtMs
     commandStatus = body.result.ok ? 'Manual velocity sent to autopilot' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }

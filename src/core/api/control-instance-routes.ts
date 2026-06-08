@@ -56,13 +56,13 @@ const packQueryRequestSchema = z.object({
   payload: z.unknown(),
 })
 
-const buildActor = (actorId: Actor['id']): Actor => ({
+export const buildControlInstanceActor = (actorId: Actor['id']): Actor => ({
   id: actorId,
   label: actorId,
   role: 'operator',
 })
 
-const buildCommand = (controlInstanceId: ControlInstanceId, raw: unknown): CommandEnvelope => {
+export const buildControlInstanceCommand = (controlInstanceId: ControlInstanceId, raw: unknown): CommandEnvelope => {
   const parsed = commandRequestSchema.parse(raw)
   const candidate = {
     id: `command:${crypto.randomUUID()}`,
@@ -100,7 +100,7 @@ const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
     ...(parsed.causationId === undefined ? {} : { causationId: parsed.causationId }),
     ...(parsed.ttlMs === undefined ? {} : { ttlMs: parsed.ttlMs }),
   }) as InteractionSignal
-  return { signal, actor: buildActor(parsed.actorId) }
+  return { signal, actor: buildControlInstanceActor(parsed.actorId) }
 }
 
 const buildPackQuery = (raw: unknown): PackQueryRequest => {
@@ -355,8 +355,8 @@ const handleControlInstanceApiInner = async (
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
     const raw = await readJson(req)
-    const command = buildCommand(controlInstanceId, raw)
-    const actor = buildActor(command.actorId)
+    const command = buildControlInstanceCommand(controlInstanceId, raw)
+    const actor = buildControlInstanceActor(command.actorId)
     const issued = await issueCommandWithIdempotency({
       store: commandIdempotencyStoreForRuntime(controlInstanceId),
       idempotency: commandIdempotencyConfigFromEnv(),

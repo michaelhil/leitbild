@@ -106,6 +106,14 @@ export interface ScenarioTimeRef {
   readonly seconds: number
 }
 
+export interface ScenarioScriptCommandRequest {
+  readonly kind: string
+  readonly targetObjectIds: ReadonlyArray<ObjectId>
+  readonly payload: unknown
+  readonly idempotencyKey?: string
+  readonly expectedRevision?: number
+}
+
 export type ScenarioScriptAction =
   | {
       readonly type: 'show_guidance'
@@ -145,6 +153,10 @@ export type ScenarioScriptAction =
         readonly ttlMs?: number
       }
     }
+  | {
+      readonly type: 'issue_command'
+      readonly command: ScenarioScriptCommandRequest
+    }
 
 export interface ScenarioScriptStep {
   readonly id: string
@@ -178,6 +190,14 @@ export const scenarioWorldDefinitionSchema = z.object({
   startsAt: isoTimestampSchema.optional(),
   mapCenter: geoJsonPointSchema.optional(),
   environment: z.record(z.string(), z.unknown()).default({}),
+})
+
+export const scenarioScriptCommandRequestSchema = z.object({
+  kind: z.string().min(1),
+  targetObjectIds: z.array(objectIdSchema),
+  payload: z.custom<unknown>(value => value !== undefined, 'payload is required'),
+  idempotencyKey: z.string().min(1).max(256).optional(),
+  expectedRevision: z.number().int().nonnegative().optional(),
 })
 
 export const surfaceMapLayerSchema = z.enum(['objects', 'routes', 'traffic', 'weather', 'grid', 'highlights'])
@@ -353,6 +373,10 @@ export const scenarioScriptActionSchema = z.discriminatedUnion('type', [
       causationId: idSchema.optional(),
       ttlMs: z.number().finite().positive().optional(),
     }).strict(),
+  }),
+  z.object({
+    type: z.literal('issue_command'),
+    command: scenarioScriptCommandRequestSchema,
   }),
 ])
 

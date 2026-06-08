@@ -241,6 +241,50 @@ describe('map feature store', () => {
     expect(second.paths[0]).toBe(first.paths[0])
   })
 
+  test('keeps sub-meter display-motion updates visible to Deck layers', () => {
+    const store = createMapFeatureStore()
+    const base = makeObject('drone:smooth', {
+      kind: 'mobile_entity',
+      packId: 'drone' as PackId,
+      spatial: {
+        frame: { kind: 'wgs84' },
+        position: {
+          point: geoPointFromLonLat(10.7500000, 59.9100000),
+          speedMps: 18,
+          observedAt: '2026-05-30T00:00:00.000Z' as IsoTimestamp,
+        },
+      },
+    })
+    const input = {
+      objects: [base],
+      selectedControllerId: null,
+      highlightedObjectIds: [],
+      hiddenObjectCategoryIds: [],
+      placementPoints: [],
+      packAreaFeatures: [],
+      hasNewInfo: () => false,
+      presentationFor,
+    }
+    const first = store.update(input)
+    const second = store.update({
+      ...input,
+      objects: [{
+        ...base,
+        revision: 2,
+        spatial: {
+          ...base.spatial,
+          position: {
+            ...base.spatial.position!,
+            point: geoPointFromLonLat(10.7500015, 59.9100000),
+          },
+        },
+      }],
+    })
+
+    expect(second.revisions.points).toBe(first.revisions.points + 1)
+    expect(second.points[0]?.position[0]).toBe(10.7500015)
+  })
+
   test('filters hidden rail categories from operational map features only', () => {
     const generator = makeObject('grid:generator', {
       packId: 'electric-grid' as PackId,

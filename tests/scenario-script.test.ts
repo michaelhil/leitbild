@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { IsoTimestamp } from '../src/core/model/index.ts'
 import { scenarioDefinitionSchema } from '../src/core/model/index.ts'
 import { dueScenarioScriptSteps } from '../src/core/control-instances/scenario-runner.ts'
-import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { osloAmbulanceScenario, scenarios } from '../src/scenarios/index.ts'
 
 describe('scenario script model', () => {
   test('validates timed scenario steps and declarative actions', () => {
@@ -17,6 +17,20 @@ describe('scenario script model', () => {
       step.actions.some(action => action.type === 'upsert_object'))).toBe(true)
     expect(parsed.script?.steps.some(step =>
       step.actions.some(action => action.type === 'delete_object' && action.objectId === 'traffic:ring2-slowdown'))).toBe(true)
+  })
+
+  test('drone scenario can issue startup flight commands through the scenario runner', () => {
+    const droneScenario = scenarios.find(scenario => scenario.id === 'oslo-drone-operations')
+    if (!droneScenario) throw new Error('missing drone scenario')
+    const parsed = scenarioDefinitionSchema.parse(droneScenario)
+    const commandActions = parsed.script?.steps.flatMap(step =>
+      step.actions.filter(action => action.type === 'issue_command')) ?? []
+
+    expect(commandActions.map(action => action.command.kind)).toEqual([
+      'drone.arm',
+      'drone.takeoff',
+      'drone.goto',
+    ])
   })
 
   test('rejects duplicate scenario script step ids', () => {
