@@ -134,6 +134,8 @@ Caddy serves the large PMTiles archive and glyph files directly. The Leitbild se
 
 Terrain is a separate optional map-context product, not baked into the OSM vector base map. The current contract expects a Terrarium or Mapbox-encoded PNG PMTiles DEM at `/opt/leitbild/maps/current/terrain.pmtiles`. The capability manifest advertises the terrain tileset even when the file is absent, with `availability.status: "unavailable"`, so Three.js views and diagnostics can fail visibly instead of pretending flat procedural scenery has real elevation. Preferred source for Norway is Kartverket DTM; Copernicus DEM GLO-30 is the global fallback candidate for areas outside first-party coverage.
 
+Drone and 3D scenery consumers use the same source-backed layer set. They should not invent city detail when a tile is sparse. Current Three.js scenery consumes building footprints, landcover/landuse, water, waterways, transportation, aeroway, POIs, and place labels. If a flight area lacks detail, the fix is a richer promoted vector/terrain artifact or an explicit reference dataset, not procedural replacement of missing ground truth.
+
 ## Schema Evolution
 
 The capability manifest is canonical. Documentation explains the manifest, but pack runtimes and developer tools should read the manifest itself.
@@ -172,6 +174,7 @@ Risk/context:
 - water and waterways
 - buildings
 - administrative boundaries
+- named places and localities
 
 Mobility constraints:
 

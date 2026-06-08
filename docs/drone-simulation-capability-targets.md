@@ -145,7 +145,7 @@ Acceptance target:
 
 - Add Three.js dependency through Bun.
 - Build a reusable drone-world scene module.
-- Generate map-derived ground, roads, water, landcover, landuse, buildings, and POI anchors from the self-hosted vector map artifact and current object context.
+- Generate map-derived ground, roads, water, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact and current object context.
 - Render drones, ambulances, targets, formation/sensor/weapon affordances, and camera modes.
 - Support 2D top-down and 3D chase/first-person modes.
 - Add rendering lifecycle cleanup and resize handling.
@@ -227,6 +227,8 @@ Implemented in the V2 fidelity pass:
 - flight HUD with altitude, speed, battery, heading, pitch/roll, wind, precipitation, and visibility
 - cached Three.js object meshes, rotor animation, shadows, road markings, windows, vegetation, fog/visibility, and rain/snow streaks
 - optional DEM sampling from advertised terrain PMTiles and terrain-aware draping for ground, roads, buildings, vegetation, and POI affordances
+- moving-world scenery streaming keyed by rounded source-backed map grid centers, so flight away from the start loads new vector-derived scenery instead of remaining in the original block
+- source-backed aeroway and place-layer consumption in the Three.js world
 - read-only `drone.sensorContacts` query and pilot-panel contact list with range/FOV/visibility/precipitation confidence filtering
 - tests for environment physics and sensor-contact filtering
 
@@ -234,6 +236,7 @@ Explicitly remaining:
 
 - mission progress runner and mission-driven command issuance
 - first production terrain artifact build from Kartverket DTM or another selected DEM source
+- richer vector tile build profile for extra OSM classes and/or selected licensed datasets, especially vegetation density, landmark semantics, building details, rural landcover, and non-city scenery
 - richer swarm search/patrol/separation/cohesion behavior
 - deeper sensor model for occlusion, classification, shared detections, and update cadence
 - communications/link loss/geofence model

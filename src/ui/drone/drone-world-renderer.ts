@@ -37,6 +37,11 @@ const colorFromHex = (
 const surfacePalette = (
   feature: DroneWorldPolygonFeature,
 ): string => {
+  if (feature.kind === 'aeroway') {
+    if (feature.className === 'runway') return '#8f897d'
+    if (feature.className === 'taxiway') return '#999385'
+    return '#817b73'
+  }
   if (feature.kind === 'water') return '#1d8fb8'
   if (feature.className === 'wood' || feature.className === 'forest') return '#1f6f3a'
   if (feature.className === 'grass' || feature.className === 'park') return '#5d9b45'
@@ -158,6 +163,7 @@ const surfaceYOffset = (
 ): number => {
   const jitter = (stableHash(`${feature.kind}:${feature.className}`) % 7) * 0.0015
   if (feature.kind === 'water') return 0.16
+  if (feature.kind === 'aeroway') return 0.13 + jitter
   if (feature.kind === 'landuse') return 0.085 + jitter
   if (feature.kind === 'landcover') return 0.035 + jitter
   return 0.07 + jitter

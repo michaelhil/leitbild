@@ -59,6 +59,7 @@ interface VisualPose {
 
 const metersPerDegreeLat = 111_320
 const worldCenterBucketM = 900
+const worldStreamPreloadDistanceM = 430
 let activeDroneSceneCount = 0
 const maxDroneScenePixelRatio = 1.15
 
@@ -311,6 +312,36 @@ const worldCenterKeyFor = (
 ): string =>
   `${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`
 
+export interface DroneWorldStreamDecision {
+  readonly center: { readonly lon: number; readonly lat: number }
+  readonly key: string
+  readonly reason: 'initial' | 'grid-crossing'
+}
+
+export const nextDroneWorldStreamDecision = (config: {
+  readonly currentCenter: { readonly lon: number; readonly lat: number } | null
+  readonly currentCenterKey: string
+  readonly pendingCenterKey: string
+  readonly desiredCenter: { readonly lon: number; readonly lat: number }
+}): DroneWorldStreamDecision | null => {
+  const nextCenter = bucketWorldCenter(config.desiredCenter)
+  const nextKey = worldCenterKeyFor(nextCenter)
+  if (config.currentCenter === null) {
+    return {
+      center: nextCenter,
+      key: nextKey,
+      reason: 'initial',
+    }
+  }
+  if (nextKey === config.currentCenterKey || nextKey === config.pendingCenterKey) return null
+  if (centerDistanceM(config.currentCenter, config.desiredCenter) < worldStreamPreloadDistanceM) return null
+  return {
+    center: nextCenter,
+    key: nextKey,
+    reason: 'grid-crossing',
+  }
+}
+
 const poseFor = (
   object: OperationalObject,
   center: { readonly lon: number; readonly lat: number },
@@ -538,18 +569,20 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const objects = config.getObjects()
     const focusDroneId = config.getFocusDroneId()
     const desiredCenter = centerFor(objects, focusDroneId)
-    const desiredWorldCenter = bucketWorldCenter(desiredCenter)
-    const desiredWorldCenterKey = worldCenterKeyFor(desiredWorldCenter)
-    if (worldCenter === null) {
-      worldCenter = desiredWorldCenter
-      worldCenterKey = desiredWorldCenterKey
-      loadWorldFor(worldCenter)
-    } else if (
-      centerDistanceM(worldCenter, desiredCenter) > 1_550
-      && pendingWorldCenterKey !== desiredWorldCenterKey
-    ) {
-      pendingWorldCenterKey = desiredWorldCenterKey
-      loadWorldFor(desiredWorldCenter)
+    const streamDecision = nextDroneWorldStreamDecision({
+      currentCenter: worldCenter,
+      currentCenterKey: worldCenterKey,
+      pendingCenterKey: pendingWorldCenterKey,
+      desiredCenter,
+    })
+    if (streamDecision) {
+      if (streamDecision.reason === 'initial') {
+        worldCenter = streamDecision.center
+        worldCenterKey = streamDecision.key
+      } else {
+        pendingWorldCenterKey = streamDecision.key
+      }
+      loadWorldFor(streamDecision.center)
     }
     const recentered = renderedWorldRecenterRevision !== worldRecenterRevision
     renderedWorldRecenterRevision = worldRecenterRevision

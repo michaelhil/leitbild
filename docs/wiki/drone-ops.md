@@ -258,12 +258,12 @@ The scene renders:
 - other drones with their own profile color/scale
 - ambulances as recognizable ambulance meshes
 - generic operational assets as markers
-- map-derived ground, roads, water, landcover, landuse, buildings, and POI anchors from the self-hosted vector map artifact
+- map-derived ground, roads, water, landcover, landuse, buildings, aeroway context, place labels, and POI anchors from the self-hosted vector map artifact
 - road markings, roofs, windows, vegetation, shadows, fog, rain/snow streaks, and rotor animation
 - 2D overhead, 3D chase, and first-person FPV camera modes
 - flight HUD: altitude, speed, battery, heading, pitch, roll, wind, precipitation, and visibility
 
-The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, and POI features inside the Three.js world. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a coarse local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
+The environment generator is deterministic from the current map/object context and viewport center. It does not use pre-rendered images. The current scene loader decodes self-hosted vector tiles from `/map/tiles/current/{z}/{x}/{y}.mvt`, then extrudes and symbolizes building, road, water, landuse, landcover, aeroway, place, and POI features inside the Three.js world. The scene streams by rounded world-grid center as the controlled drone moves, preloading the next source-backed world before the drone leaves the useful inner area of the current one. Terrain is advertised through `/map/capabilities.json` as a separate optional DEM product. When `/map/terrain/current.pmtiles` is available, the modal samples Terrarium or Mapbox PNG DEM tiles into a coarse local height grid and drapes ground, roads, buildings, vegetation, and POI affordances over the same height function. When terrain is unavailable or cannot be decoded, the modal reports the reason and keeps the world flat rather than fabricating elevation.
 
 The flight modal performance panel separates:
 
@@ -386,7 +386,7 @@ Important tested behaviors:
 Highest-value next work:
 
 - produce and promote the first real Norway terrain artifact from Kartverket DTM, with Copernicus DEM GLO-30 as a fallback candidate outside first-party coverage
-- richer map-context artifact builds: trees/landmarks/landcover classes, building semantics, bridge/tunnel context, and non-city scenery variation
+- richer map-context artifact builds: tree/vegetation density, landmarks, extra landcover classes, building semantics, bridge/tunnel context, non-city scenery variation, and additional licensed reference datasets
 - richer swarm steering: separation, cohesion, coverage search, patrol legs, leader/follower fallbacks, and collision avoidance
 - mission progress runner: observe committed events, update mission progress, and issue only validated commands
 - deeper sensor model: occlusion approximations, contact classification, shared sightings, and sensor update cadence

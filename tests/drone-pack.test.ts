@@ -117,6 +117,28 @@ describe('drone pack', () => {
     expect(movedData.energy.remainingWh).toBeLessThan(movedData.profile.energy.capacityWh)
   })
 
+  test('manual yaw control updates heading even when the drone rotates in place', async () => {
+    const controlled = drone({ id: 'drone:yaw-only', point: point(10.75, 59.91) })
+    const engine = createDroneSimEngine({
+      controlInstanceId,
+      objects: [controlled],
+    })
+    const result = await engine.handleCommand(command(manualControlCommandKind, {
+      droneId: controlled.id,
+      axes: { forward: 0, right: 0, vertical: 0, yaw: 1 },
+      inputSource: { kind: 'keyboard', label: 'test keyboard' },
+      commandTtlMs: 2_000,
+    }, [controlled.id]))
+    expect(result.result.ok).toBe(true)
+
+    const events = engine.tick(100, new Date(Date.now() + 100).toISOString() as never)
+    expect(events.some(event => event.type === 'object.upserted' && event.object.id === controlled.id)).toBe(true)
+    const yawed = engine.snapshot().objects.find(object => object.id === controlled.id)!
+    const yawedData = dronePackDataSchema.parse(yawed.packData)
+    expect(yawedData.kinematics.yawDeg).toBeGreaterThan(0)
+    expect(yawed.spatial.position?.point.coordinates).toEqual(controlled.spatial.position?.point.coordinates)
+  })
+
   test('manual control emits motion updates at the low-latency cadence', async () => {
     const controlled = drone({ id: 'drone:cadence', point: point(10.75, 59.91) })
     const engine = createDroneSimEngine({

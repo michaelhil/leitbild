@@ -499,6 +499,10 @@ const integrateDrone = (
   const changed = (
     horizontalDistanceM(point, nextPoint) > 0.05
     || Math.abs(nextData.kinematics.altitudeM - data.kinematics.altitudeM) > 0.02
+    || Math.abs(nextData.kinematics.velocityEastMps - data.kinematics.velocityEastMps) > 0.02
+    || Math.abs(nextData.kinematics.velocityNorthMps - data.kinematics.velocityNorthMps) > 0.02
+    || Math.abs(nextData.kinematics.verticalSpeedMps - data.kinematics.verticalSpeedMps) > 0.02
+    || Math.abs(nextData.kinematics.yawDeg - data.kinematics.yawDeg) > 0.05
     || Math.abs(nextData.energy.remainingWh - data.energy.remainingWh) > 0.005
     || Math.abs(nextData.kinematics.pitchDeg - data.kinematics.pitchDeg) > 0.1
     || Math.abs(nextData.kinematics.rollDeg - data.kinematics.rollDeg) > 0.1

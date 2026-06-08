@@ -257,6 +257,15 @@ const baseLayers: ReadonlyArray<MapCapabilityLayer> = [
     ],
   },
   {
+    id: 'place', sourceLayer: 'place', geometry: ['point'],
+    category: 'base_context',
+    intendedUse: 'Named settlement and locality context for map labels, operator orientation, and lightweight Three.js scene beacons.',
+    fields: [
+      { name: 'class', type: 'string', availability: 'optional', description: 'Place class where available.' },
+      { name: 'name', type: 'string', availability: 'optional', description: 'Displayed place name.' },
+    ],
+  },
+  {
     id: 'boundary', sourceLayer: 'boundary', geometry: ['line'],
     category: 'base_context',
     intendedUse: 'Administrative boundaries for jurisdiction and scenario region context.',

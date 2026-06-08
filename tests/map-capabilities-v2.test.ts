@@ -80,6 +80,22 @@ describe('Map Capability Manifest v2', () => {
     expect(base.artifact.glyphsUrl).toBe('/map/fonts/{fontstack}/{range}.pbf')
   })
 
+  test('base tileset advertises drone-relevant scenery layers', () => {
+    const base = createBaseTileset()
+    const layerIds = base.layers.map(layer => layer.id)
+    expect(layerIds).toEqual(expect.arrayContaining([
+      'aeroway',
+      'building',
+      'landcover',
+      'landuse',
+      'place',
+      'poi',
+      'transportation',
+      'water',
+      'waterway',
+    ]))
+  })
+
   test('findBaseTileset / findReferenceTilesets discriminate by kind', () => {
     const manifest = createMapCapabilityManifest()
     expect(findReferenceTilesets(manifest)).toEqual([])

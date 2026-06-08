@@ -16,6 +16,11 @@ interface GeometryBucket {
 const roadPalette = (
   feature: DroneWorldLineFeature,
 ): string => {
+  if (feature.kind === 'aeroway') {
+    if (feature.className === 'runway') return '#858071'
+    if (feature.className === 'taxiway') return '#9a9383'
+    return '#777268'
+  }
   if (feature.kind === 'rail') return '#66717f'
   if (feature.kind === 'waterway') return '#2aa8c8'
   if (feature.className === 'motorway') return '#4b5563'
@@ -55,6 +60,7 @@ const transportDrawOrder = (
 ): number => {
   if (line.kind === 'waterway') return 10
   if (line.kind === 'rail') return 20
+  if (line.kind === 'aeroway') return 30
   return 100 + roadPriority(line.className)
 }
 
@@ -455,6 +461,22 @@ export const createTransportGeometryGroup = (
     makeRoadMaterial('#94a3b8'),
     createRibbonGeometry(rails, line => line.widthM, 0.34, terrain),
     { receiveShadow: true, renderOrder: 4 },
+  )
+
+  const aeroways = lines.filter(line => line.kind === 'aeroway')
+  addBucketGeometry(
+    buckets,
+    'aeroway-casing',
+    makeRoadMaterial('#3f3a34'),
+    createRibbonGeometry(aeroways, line => line.widthM + 4.5, 0.35, terrain),
+    { receiveShadow: true, renderOrder: 4 },
+  )
+  addBucketGeometry(
+    buckets,
+    'aeroway-fill',
+    makeRoadMaterial('#8e897b'),
+    createRibbonGeometry(aeroways, line => line.widthM, 0.41, terrain),
+    { receiveShadow: true, renderOrder: 5 },
   )
 
   const roads = lines.filter(line => line.kind === 'road')

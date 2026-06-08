@@ -11,9 +11,9 @@ export interface DroneWorldPoint {
   readonly z: number
 }
 
-export type DroneWorldPolygonKind = 'building' | 'water' | 'landcover' | 'landuse'
-export type DroneWorldLineKind = 'road' | 'rail' | 'waterway'
-export type DroneWorldPointKind = 'poi'
+export type DroneWorldPolygonKind = 'aeroway' | 'building' | 'water' | 'landcover' | 'landuse'
+export type DroneWorldLineKind = 'aeroway' | 'road' | 'rail' | 'waterway'
+export type DroneWorldPointKind = 'place' | 'poi'
 
 export interface DroneWorldPolygonFeature {
   readonly id: string
@@ -353,6 +353,11 @@ const lineWidthFor = (
   kind: DroneWorldLineKind,
   className: string,
 ): number => {
+  if (kind === 'aeroway') {
+    if (className === 'runway') return 42
+    if (className === 'taxiway') return 14
+    return 8
+  }
   if (kind === 'rail') return 4.8
   if (kind === 'waterway') return className === 'river' ? 14 : 5
   if (className === 'motorway') return 26
@@ -428,14 +433,26 @@ const multiPolygonRingsFromCoordinates = (
 const polygonSortValue = (
   feature: DroneWorldPolygonFeature,
 ): number => {
-  const priority = feature.kind === 'building' ? -2_000 : feature.kind === 'water' ? -1_500 : 0
+  const priority = feature.kind === 'building'
+    ? -2_000
+    : feature.kind === 'water'
+      ? -1_500
+      : feature.kind === 'aeroway'
+        ? -1_200
+        : 0
   return priority + feature.distanceM
 }
 
 const lineSortValue = (
   feature: DroneWorldLineFeature,
 ): number => {
-  const priority = feature.kind === 'road' ? -1_500 : feature.kind === 'rail' ? -900 : 0
+  const priority = feature.kind === 'road'
+    ? -1_500
+    : feature.kind === 'aeroway'
+      ? -1_100
+      : feature.kind === 'rail'
+        ? -900
+        : 0
   return priority + feature.distanceM
 }
 
@@ -462,7 +479,7 @@ const selectWorldPolygons = (
     .sort((left, right) => left.distanceM - right.distanceM)
     .slice(0, 900)
   const surfaces = features
-    .filter(feature => (feature.kind === 'landcover' || feature.kind === 'landuse') && feature.distanceM <= radiusM * 0.98)
+    .filter(feature => (feature.kind === 'aeroway' || feature.kind === 'landcover' || feature.kind === 'landuse') && feature.distanceM <= radiusM * 0.98)
     .sort((left, right) => left.distanceM - right.distanceM)
     .slice(0, 1_600)
   const buildings = features
@@ -480,8 +497,8 @@ const selectWorldLines = (
   features: ReadonlyArray<DroneWorldLineFeature>,
   radiusM: number,
 ): ReadonlyArray<DroneWorldLineFeature> => {
-  const waterwayAndRail = features
-    .filter(feature => (feature.kind === 'waterway' || feature.kind === 'rail') && feature.distanceM <= radiusM * 1.04)
+  const waterwayRailAndAeroway = features
+    .filter(feature => (feature.kind === 'waterway' || feature.kind === 'rail' || feature.kind === 'aeroway') && feature.distanceM <= radiusM * 1.04)
     .sort((left, right) => lineSortValue(left) - lineSortValue(right))
     .slice(0, 1_200)
   const roads = features.filter(feature => feature.kind === 'road' && feature.distanceM <= radiusM * 1.02)
@@ -497,15 +514,26 @@ const selectWorldLines = (
     .filter(feature => roadClassPriority(feature.className) < 2 && feature.distanceM <= radiusM * 0.72)
     .sort((left, right) => lineSortValue(left) - lineSortValue(right))
     .slice(0, 1_800)
-  return [...waterwayAndRail, ...majorRoads, ...localRoads, ...pathsAndTracks]
+  return [...waterwayRailAndAeroway, ...majorRoads, ...localRoads, ...pathsAndTracks]
     .sort((left, right) => lineSortValue(left) - lineSortValue(right))
+}
+
+const pointKindPriority = (
+  feature: DroneWorldPointFeature,
+): number => {
+  if (feature.kind === 'poi') return 0
+  return 1
 }
 
 const selectWorldPoints = (
   points: ReadonlyArray<DroneWorldPointFeature>,
 ): ReadonlyArray<DroneWorldPointFeature> =>
   [...points]
-    .sort((left, right) => horizontalDistanceFromCenterM(left.point) - horizontalDistanceFromCenterM(right.point))
+    .sort((left, right) => {
+      const priorityDelta = pointKindPriority(left) - pointKindPriority(right)
+      if (priorityDelta !== 0) return priorityDelta
+      return horizontalDistanceFromCenterM(left.point) - horizontalDistanceFromCenterM(right.point)
+    })
     .slice(0, 160)
 
 const decodePolygonFeature = (
@@ -597,6 +625,7 @@ const decodeLineFeature = (
 
 const decodePointFeature = (
   id: string,
+  kind: DroneWorldPointKind,
   className: string,
   label: string,
   geometry: GeoJsonGeometry,
@@ -607,7 +636,7 @@ const decodePointFeature = (
   if (!point) return []
   const local = localPointFromLonLat(point[0], point[1], center)
   if (horizontalDistanceFromCenterM(local) > radiusM) return []
-  return [{ id, kind: 'poi', className, label, point: local }]
+  return [{ id, kind, className, label, point: local }]
 }
 
 const decodeLayer = (
@@ -636,6 +665,9 @@ const decodeLayer = (
     const id = `${tileCoord.z}/${tileCoord.x}/${tileCoord.y}:${layerId}:${vectorFeature.id ?? index}`
     if (layerId === 'building') {
       polygons.push(...decodePolygonFeature(id, 'building', className, feature.geometry, properties, center, radiusM))
+    } else if (layerId === 'aeroway') {
+      polygons.push(...decodePolygonFeature(id, 'aeroway', className, feature.geometry, properties, center, radiusM))
+      lines.push(...decodeLineFeature(id, 'aeroway', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'water') {
       polygons.push(...decodePolygonFeature(id, 'water', className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'landcover') {
@@ -649,7 +681,10 @@ const decodeLayer = (
       lines.push(...decodeLineFeature(id, kind, className, feature.geometry, properties, center, radiusM))
     } else if (layerId === 'poi') {
       const label = stringProperty(properties, 'name', className)
-      points.push(...decodePointFeature(id, className, label, feature.geometry, center, radiusM))
+      points.push(...decodePointFeature(id, 'poi', className, label, feature.geometry, center, radiusM))
+    } else if (layerId === 'place') {
+      const label = stringProperty(properties, 'name', className)
+      points.push(...decodePointFeature(id, 'place', className, label, feature.geometry, center, radiusM))
     }
   }
   return { polygons, lines, points }
@@ -778,7 +813,7 @@ export const loadDroneMapWorld = async (config: {
   const decoded = await Promise.all(tiles.map(async tile => {
     const vectorTile = await fetchTile(tile, config.signal)
     if (!vectorTile) return { polygons: [], lines: [], points: [] }
-    const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'building', 'poi']
+    const layers = ['landcover', 'landuse', 'water', 'waterway', 'transportation', 'building', 'aeroway', 'place', 'poi']
     const layerFeatures = layers.map(layer => decodeLayer(vectorTile, tile, layer, config.center, radiusM))
     return {
       polygons: layerFeatures.flatMap(layer => layer.polygons),
