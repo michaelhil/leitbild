@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { defaultDroneEnvironment, dronePackDataSchema, type DroneEnvironment, type DronePackData } from '../../packs/drone/model.ts'
-import { loadCachedDroneMapWorld } from './drone-map-world.ts'
+import { loadDroneMapWorldForScene } from './drone-map-world-loader.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 import { createDroneMapWorldGroup, createFallbackWorldGroup, tickDroneMapWorldGroup } from './drone-world-renderer.ts'
 
@@ -437,6 +437,9 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const objectMeshes = new Map<string, MeshEntry>()
   let worldCenter: { readonly lon: number; readonly lat: number } | null = null
   let worldCenterKey = ''
+  let pendingWorldCenterKey = ''
+  let worldRecenterRevision = 0
+  let renderedWorldRecenterRevision = 0
   let worldLoadGeneration = 0
   let destroyed = false
   const performanceTracker = createDroneFramePerformanceTracker()
@@ -463,15 +466,17 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   }
   const loadWorldFor = (center: { readonly lon: number; readonly lat: number }): void => {
     const generation = ++worldLoadGeneration
+    const loadedCenterKey = worldCenterKeyFor(center)
     config.onWorldStatus?.('Loading map-derived scenery')
     void (async (): Promise<void> => {
       try {
         const loadStartedAtMs = performance.now()
-        const snapshot = await loadCachedDroneMapWorld({
+        const worldResult = await loadDroneMapWorldForScene({
           center,
           radiusM: 4_250,
           zoom: 14,
         })
+        const snapshot = worldResult.snapshot
         const loadMs = performance.now() - loadStartedAtMs
         if (destroyed || generation !== worldLoadGeneration) return
         const buildStartedAtMs = performance.now()
@@ -481,17 +486,24 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         disposeObject(environmentLayer)
         environmentLayer = nextLayer
         scene.add(environmentLayer)
+        worldCenter = center
+        worldCenterKey = loadedCenterKey
+        pendingWorldCenterKey = ''
+        worldRecenterRevision += 1
         performanceTracker.updateWorld({
           loadMs,
           buildMs,
+          source: worldResult.source,
           tiles: snapshot.tileCount,
           polygons: snapshot.polygons.length,
           lines: snapshot.lines.length,
           points: snapshot.points.length,
         })
-        config.onWorldStatus?.(`Map scenery loaded: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines`)
+        const fallbackSuffix = worldResult.fallbackReason ? `; worker fallback: ${worldResult.fallbackReason}` : ''
+        config.onWorldStatus?.(`Map scenery loaded via ${worldResult.source}: ${snapshot.tileCount} tiles, ${snapshot.polygons.length} polygons, ${snapshot.lines.length} lines${fallbackSuffix}`)
       } catch (err) {
         if (destroyed || generation !== worldLoadGeneration) return
+        pendingWorldCenterKey = ''
         config.onWorldStatus?.(`Map scenery unavailable: ${err instanceof Error ? err.message : String(err)}`)
       }
     })()
@@ -523,17 +535,19 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const desiredCenter = centerFor(objects, focusDroneId)
     const desiredWorldCenter = bucketWorldCenter(desiredCenter)
     const desiredWorldCenterKey = worldCenterKeyFor(desiredWorldCenter)
-    const previousWorldCenterKey = worldCenterKey
     if (worldCenter === null) {
       worldCenter = desiredWorldCenter
       worldCenterKey = desiredWorldCenterKey
       loadWorldFor(worldCenter)
-    } else if (worldCenterKey !== desiredWorldCenterKey || centerDistanceM(worldCenter, desiredCenter) > 1_550) {
-      worldCenter = desiredWorldCenter
-      worldCenterKey = desiredWorldCenterKey
-      loadWorldFor(worldCenter)
+    } else if (
+      centerDistanceM(worldCenter, desiredCenter) > 1_550
+      && pendingWorldCenterKey !== desiredWorldCenterKey
+    ) {
+      pendingWorldCenterKey = desiredWorldCenterKey
+      loadWorldFor(desiredWorldCenter)
     }
-    const recentered = previousWorldCenterKey !== '' && previousWorldCenterKey !== worldCenterKey
+    const recentered = renderedWorldRecenterRevision !== worldRecenterRevision
+    renderedWorldRecenterRevision = worldRecenterRevision
     const center = worldCenter ?? desiredCenter
     const environment = focusEnvironment(objects, focusDroneId)
     setFogFor(scene, environment)

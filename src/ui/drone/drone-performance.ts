@@ -13,6 +13,7 @@ export interface DroneScenePerformanceSnapshot {
   readonly quality: 'high' | 'balanced' | 'rescue'
   readonly worldLoadMs: number
   readonly worldBuildMs: number
+  readonly worldSource: 'worker' | 'main'
   readonly activeScenes: number
   readonly worldFeatures: {
     readonly tiles: number
@@ -31,6 +32,7 @@ export interface DroneFramePerformanceTracker {
   readonly updateWorld: (config: {
     readonly loadMs: number
     readonly buildMs: number
+    readonly source: DroneScenePerformanceSnapshot['worldSource']
     readonly tiles: number
     readonly polygons: number
     readonly lines: number
@@ -75,6 +77,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
+  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'main'
   let tiles = 0
   let polygons = 0
   let lines = 0
@@ -102,6 +105,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
     updateWorld: (config): void => {
       worldLoadMs = config.loadMs
       worldBuildMs = config.buildMs
+      worldSource = config.source
       tiles = config.tiles
       polygons = config.polygons
       lines = config.lines
@@ -125,6 +129,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
         quality: renderInfo.quality,
         worldLoadMs,
         worldBuildMs,
+        worldSource,
         activeScenes: renderInfo.activeScenes,
         worldFeatures: { tiles, polygons, lines, points },
       }

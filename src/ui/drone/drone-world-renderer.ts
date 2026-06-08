@@ -64,26 +64,6 @@ const pointInRing = (
   return inside
 }
 
-const shapeFor = (
-  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
-): THREE.Shape | null => {
-  const outer = rings[0]
-  if (!outer || outer.length < 3 || Math.abs(polygonArea(outer)) < 2) return null
-  const shape = new THREE.Shape()
-  shape.moveTo(outer[0]!.x, -outer[0]!.z)
-  for (const point of outer.slice(1)) shape.lineTo(point.x, -point.z)
-  shape.closePath()
-  for (const holeRing of rings.slice(1)) {
-    if (holeRing.length < 3) continue
-    const hole = new THREE.Path()
-    hole.moveTo(holeRing[0]!.x, -holeRing[0]!.z)
-    for (const point of holeRing.slice(1)) hole.lineTo(point.x, -point.z)
-    hole.closePath()
-    shape.holes.push(hole)
-  }
-  return shape
-}
-
 const createGroundTexture = (): THREE.Texture | null => {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
@@ -208,76 +188,112 @@ const createBuildingWallMaterial = (
 
 interface GeometryBucket {
   readonly material: THREE.Material
-  readonly geometries: THREE.BufferGeometry[]
+  readonly positions: number[]
+  readonly uvs: number[]
+  readonly indices: number[]
   readonly receiveShadow: boolean
   readonly castShadow: boolean
   readonly needsNormals: boolean
 }
 
-const addBucketGeometry = (
+const getBucket = (
   buckets: Map<string, GeometryBucket>,
   key: string,
   material: THREE.Material,
-  geometry: THREE.BufferGeometry,
   config: { readonly receiveShadow: boolean; readonly castShadow: boolean; readonly needsNormals: boolean },
-): void => {
+): GeometryBucket => {
   const existing = buckets.get(key)
   if (existing) {
-    existing.geometries.push(geometry)
     material.dispose()
-    return
+    return existing
   }
-  buckets.set(key, {
+  const bucket = {
     material,
-    geometries: [geometry],
+    positions: [],
+    uvs: [],
+    indices: [],
     receiveShadow: config.receiveShadow,
     castShadow: config.castShadow,
     needsNormals: config.needsNormals,
-  })
+  }
+  buckets.set(key, bucket)
+  return bucket
 }
 
-const mergeGeometries = (
-  geometries: ReadonlyArray<THREE.BufferGeometry>,
-  needsNormals: boolean,
-): THREE.BufferGeometry | null => {
-  const positions: number[] = []
-  const uvs: number[] = []
-  const indices: number[] = []
-  let vertexOffset = 0
-  for (const geometry of geometries) {
-    const position = geometry.getAttribute('position')
-    if (!(position instanceof THREE.BufferAttribute) || position.count === 0) {
-      geometry.dispose()
-      continue
-    }
-    const uv = geometry.getAttribute('uv')
-    for (let index = 0; index < position.count; index += 1) {
-      positions.push(position.getX(index), position.getY(index), position.getZ(index))
-      if (uv instanceof THREE.BufferAttribute) {
-        uvs.push(uv.getX(index), uv.getY(index))
-      } else {
-        uvs.push(0, 0)
-      }
-    }
-    const geometryIndex = geometry.getIndex()
-    if (geometryIndex) {
-      for (let index = 0; index < geometryIndex.count; index += 1) {
-        indices.push(geometryIndex.getX(index) + vertexOffset)
-      }
-    } else {
-      for (let index = 0; index < position.count; index += 1) {
-        indices.push(vertexOffset + index)
-      }
-    }
-    vertexOffset += position.count
-    geometry.dispose()
+const openRing = (
+  ring: ReadonlyArray<DroneWorldPoint>,
+): ReadonlyArray<DroneWorldPoint> => {
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (!first || !last || ring.length < 2) return ring
+  return Math.hypot(first.x - last.x, first.z - last.z) < 0.001 ? ring.slice(0, -1) : ring
+}
+
+const appendHorizontalPolygon = (
+  bucket: GeometryBucket,
+  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
+  y: number,
+): void => {
+  const normalizedRings = rings.map(openRing).filter(ring => ring.length >= 3)
+  const outer = normalizedRings[0]
+  if (!outer) return
+  const holes = normalizedRings.slice(1)
+  const contour = outer.map(point => new THREE.Vector2(point.x, -point.z))
+  const holeContours = holes.map(ring => ring.map(point => new THREE.Vector2(point.x, -point.z)))
+  const triangles = THREE.ShapeUtils.triangulateShape(contour, holeContours)
+  if (triangles.length === 0) return
+  const vertices = [...outer, ...holes.flatMap(ring => ring)]
+  const base = bucket.positions.length / 3
+  for (const point of vertices) {
+    bucket.positions.push(point.x, y, point.z)
+    bucket.uvs.push(point.x * 0.018, point.z * 0.018)
   }
-  if (positions.length === 0 || indices.length === 0) return null
+  for (const triangle of triangles) {
+    const a = triangle[0]
+    const b = triangle[1]
+    const c = triangle[2]
+    if (a === undefined || b === undefined || c === undefined) continue
+    bucket.indices.push(base + a, base + b, base + c)
+  }
+}
+
+const appendBuildingWalls = (
+  bucket: GeometryBucket,
+  rings: ReadonlyArray<ReadonlyArray<DroneWorldPoint>>,
+  minHeight: number,
+  height: number,
+): void => {
+  const top = minHeight + height
+  for (const sourceRing of rings) {
+    const ring = openRing(sourceRing)
+    if (ring.length < 2) continue
+    for (let index = 0; index < ring.length; index += 1) {
+      const start = ring[index]!
+      const end = ring[(index + 1) % ring.length]!
+      const length = Math.hypot(end.x - start.x, end.z - start.z)
+      if (length < 0.1) continue
+      const base = bucket.positions.length / 3
+      bucket.positions.push(
+        start.x, minHeight, start.z,
+        end.x, minHeight, end.z,
+        end.x, top, end.z,
+        start.x, top, start.z,
+      )
+      bucket.uvs.push(0, 0, length * 0.12, 0, length * 0.12, height * 0.18, 0, height * 0.18)
+      bucket.indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
+    }
+  }
+}
+
+const geometryFromBucket = (
+  bucket: GeometryBucket,
+): THREE.BufferGeometry | null => {
+  if (bucket.positions.length === 0 || bucket.indices.length === 0) return null
   const merged = new THREE.BufferGeometry()
-  merged.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  merged.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
-  merged.setIndex(indices)
-  if (needsNormals) merged.computeVertexNormals()
+  merged.setAttribute('position', new THREE.Float32BufferAttribute(bucket.positions, 3))
+  merged.setAttribute('uv', new THREE.Float32BufferAttribute(bucket.uvs, 2))
+  merged.setIndex(bucket.indices)
+  if (bucket.needsNormals) merged.computeVertexNormals()
   merged.computeBoundingSphere()
   return merged
 }
@@ -287,7 +303,7 @@ const meshesFromBuckets = (
 ): THREE.Group => {
   const group = new THREE.Group()
   for (const bucket of buckets.values()) {
-    const geometry = mergeGeometries(bucket.geometries, bucket.needsNormals)
+    const geometry = geometryFromBucket(bucket)
     if (!geometry) continue
     const mesh = new THREE.Mesh(geometry, bucket.material)
     mesh.receiveShadow = bucket.receiveShadow
@@ -305,13 +321,8 @@ const createMergedSurfaceMeshes = (
   const buckets = new Map<string, GeometryBucket>()
   for (const feature of polygons) {
     if (feature.kind === 'building') continue
-    const shape = shapeFor(feature.rings)
-    if (!shape) continue
     const color = surfacePalette(feature)
     const isWater = feature.kind === 'water'
-    const geometry = new THREE.ShapeGeometry(shape, 4)
-    geometry.rotateX(-Math.PI / 2)
-    geometry.translate(0, surfaceYOffset(feature), 0)
     const material = isWater
       ? createWaterMaterial()
       : new THREE.MeshBasicMaterial({
@@ -319,13 +330,13 @@ const createMergedSurfaceMeshes = (
         })
     if (isWater) material.userData.droneWaterMaterial = true
     configureSurfaceDepth(material, feature)
-    addBucketGeometry(
+    const bucket = getBucket(
       buckets,
       isWater ? 'water:shader' : `${feature.kind}:${feature.className}:${color}`,
       material,
-      geometry,
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
+    appendHorizontalPolygon(bucket, feature.rings, surfaceYOffset(feature))
   }
   return meshesFromBuckets(buckets)
 }
@@ -336,47 +347,37 @@ const createMergedBuildingMeshes = (
   const buckets = new Map<string, GeometryBucket>()
   for (const feature of polygons) {
     if (feature.kind !== 'building') continue
-    const shape = shapeFor(feature.rings)
     const height = feature.heightM ?? 8
-    if (!shape || height < 1) continue
+    if (height < 1) continue
     const minHeight = feature.minHeightM ?? 0
     const wallColor = feature.className === 'industrial'
       ? '#a8a29e'
       : feature.className === 'commercial'
         ? '#b8b4a7'
         : feature.className === 'apartments'
-          ? '#bbb7ad'
-          : '#c7c2b8'
-    const wallGeometry = new THREE.ExtrudeGeometry(shape, {
-      depth: height,
-      bevelEnabled: false,
-    })
-    wallGeometry.rotateX(-Math.PI / 2)
-    wallGeometry.translate(0, minHeight, 0)
-    addBucketGeometry(
+        ? '#bbb7ad'
+        : '#c7c2b8'
+    const wallBucket = getBucket(
       buckets,
       `building-wall:${feature.className}:${wallColor}`,
       createBuildingWallMaterial(wallColor),
-      wallGeometry,
       { receiveShadow: false, castShadow: false, needsNormals: true },
     )
+    appendBuildingWalls(wallBucket, feature.rings, minHeight, height)
 
-    const roofGeometry = new THREE.ShapeGeometry(shape, 4)
-    roofGeometry.rotateX(-Math.PI / 2)
-    roofGeometry.translate(0, minHeight + height + 0.32, 0)
     const roofShade = clamp(0.72 + (stableHash(feature.id) % 24) / 100, 0.72, 0.94)
     const roofColor = new THREE.Color('#5d6672').multiplyScalar(roofShade).getStyle()
     const roofMaterial = new THREE.MeshBasicMaterial({ color: roofColor })
     roofMaterial.polygonOffset = true
     roofMaterial.polygonOffsetFactor = -2
     roofMaterial.polygonOffsetUnits = -16
-    addBucketGeometry(
+    const roofBucket = getBucket(
       buckets,
       `building-roof:${Math.round(roofShade * 10)}`,
       roofMaterial,
-      roofGeometry,
       { receiveShadow: false, castShadow: false, needsNormals: false },
     )
+    appendHorizontalPolygon(roofBucket, feature.rings, minHeight + height + 0.32)
   }
   return meshesFromBuckets(buckets)
 }

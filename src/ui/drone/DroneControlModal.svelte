@@ -624,6 +624,8 @@
           <span>CMD {commandRateHz.toFixed(1)} Hz</span>
           <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
+          <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
+          <span>LOAD {scenePerformance ? Math.round(scenePerformance.worldLoadMs) : '-'} ms</span>
           <span>BUILD {scenePerformance ? Math.round(scenePerformance.worldBuildMs) : '-'} ms</span>
         </div>
       </section>
