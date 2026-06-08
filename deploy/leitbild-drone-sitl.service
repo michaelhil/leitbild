@@ -10,6 +10,7 @@ Environment=LEITBILD_DRONE_SITL_STACK=px4
 Environment=PX4_HOME=/opt/leitbild/PX4-Autopilot
 Environment=PX4_SITL_TARGET=px4_sitl
 Environment=PX4_GAZEBO_MODEL_TARGET=gz_x500_depth
+Environment=HEADLESS=1
 Environment=ARDUPILOT_HOME=/opt/leitbild/ardupilot
 Environment=ARDUPILOT_VEHICLE=ArduCopter
 Environment=ARDUPILOT_FRAME=gazebo-iris

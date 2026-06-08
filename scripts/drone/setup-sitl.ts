@@ -14,12 +14,14 @@ const root = process.env.LEITBILD_DRONE_SITL_ROOT ?? '/opt/leitbild'
 const px4Home = process.env.PX4_HOME ?? `${root}/PX4-Autopilot`
 const ardupilotHome = process.env.ARDUPILOT_HOME ?? `${root}/ardupilot`
 const ardupilotGazeboHome = process.env.ARDUPILOT_GAZEBO_HOME ?? `${root}/ardupilot_gazebo`
+const px4GazeboModelTarget = process.env.PX4_GAZEBO_MODEL_TARGET ?? 'gz_x500_depth'
+const px4BuildDir = `${px4Home}/build/px4_sitl_default`
 
 const run = async (cmd: string, args: ReadonlyArray<string>, cwd?: string): Promise<void> => {
   const child = Bun.spawn({
     cmd: [cmd, ...args],
     ...(cwd === undefined ? {} : { cwd }),
-    env: process.env,
+    env: { ...process.env, DEBIAN_FRONTEND: process.env.DEBIAN_FRONTEND ?? 'noninteractive' },
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -77,10 +79,31 @@ const cloneIfMissing = async (repo: string, target: string, recursive: boolean):
   await run('git', recursive ? ['clone', '--recursive', repo, target] : ['clone', repo, target])
 }
 
+const px4BuildHasTarget = async (target: string): Promise<boolean> => {
+  if (!existsSync(`${px4BuildDir}/build.ninja`)) return false
+  const child = Bun.spawn({
+    cmd: ['ninja', '-C', px4BuildDir, '-t', 'targets'],
+    env: { ...process.env, DEBIAN_FRONTEND: process.env.DEBIAN_FRONTEND ?? 'noninteractive' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const stdout = await new Response(child.stdout).text()
+  const stderr = await new Response(child.stderr).text()
+  const exitCode = await child.exited
+  if (exitCode !== 0) throw new Error(`ninja target inspection failed: ${stderr.trim()}`)
+  return stdout.split('\n').some((line) => line.startsWith(`${target}:`))
+}
+
 const setupPx4 = async (): Promise<void> => {
   await cloneIfMissing('https://github.com/PX4/PX4-Autopilot.git', px4Home, true)
-  await run('bash', ['./Tools/setup/ubuntu.sh', '--no-nuttx', '--no-sim-tools'], px4Home)
-  await run('make', ['px4_sitl', 'gz_x500_depth'], px4Home)
+  await run('bash', ['./Tools/setup/ubuntu.sh', '--no-nuttx'], px4Home)
+  if (existsSync(px4BuildDir) && !(await px4BuildHasTarget(px4GazeboModelTarget))) {
+    await run('make', ['distclean'], px4Home)
+  }
+  await run('make', ['px4_sitl_default'], px4Home)
+  if (!(await px4BuildHasTarget(px4GazeboModelTarget))) {
+    throw new Error(`PX4 Gazebo target ${px4GazeboModelTarget} is unavailable after setup; verify Gazebo simulator dependencies on this host`)
+  }
 }
 
 const setupArduPilot = async (): Promise<void> => {

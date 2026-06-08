@@ -4,12 +4,14 @@ const px4Home = process.env.PX4_HOME ?? '/opt/leitbild/PX4-Autopilot'
 const makeTarget = process.env.PX4_SITL_TARGET ?? 'px4_sitl'
 const gazeboModelTarget = process.env.PX4_GAZEBO_MODEL_TARGET ?? 'gz_x500_depth'
 const gazeboWorld = process.env.PX4_GZ_WORLD
+const headless = process.env.HEADLESS ?? '1'
 
 const px4Binary = `${px4Home}/build/px4_sitl_default/bin/px4`
 if (!existsSync(px4Home)) throw new Error(`PX4 home does not exist: ${px4Home}`)
 
 const env = {
   ...process.env,
+  HEADLESS: headless,
   ...(gazeboWorld === undefined ? {} : { PX4_GZ_WORLD: gazeboWorld }),
 }
 

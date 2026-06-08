@@ -9,6 +9,7 @@ WorkingDirectory=/opt/leitbild/app
 Environment=PX4_HOME=/opt/leitbild/PX4-Autopilot
 Environment=PX4_SITL_TARGET=px4_sitl
 Environment=PX4_GAZEBO_MODEL_TARGET=gz_x500_depth
+Environment=HEADLESS=1
 EnvironmentFile=-/etc/leitbild/drone-sitl.env
 ExecStart=/root/.bun/bin/bun run scripts/drone/run-px4-gazebo.ts
 Restart=on-failure
