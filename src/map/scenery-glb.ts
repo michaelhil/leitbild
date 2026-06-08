@@ -49,9 +49,13 @@ interface SceneryGlbBuildResult {
 }
 
 const metersPerDegreeLat = 111_320
+const defaultMaxScreenSpaceError = 16
 
 const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], roughnessFactor: 0.94, doubleSided: true },
+  { key: 'ground-park', name: 'managed park grass', color: [0.28, 0.55, 0.25, 1], roughnessFactor: 0.96, doubleSided: true },
+  { key: 'ground-field', name: 'field and farmland ground', color: [0.48, 0.54, 0.30, 1], roughnessFactor: 0.96, doubleSided: true },
+  { key: 'ground-wetland', name: 'wetland ground', color: [0.26, 0.42, 0.35, 1], roughnessFactor: 0.98, doubleSided: true },
   { key: 'ground-urban', name: 'urban ground', color: [0.58, 0.60, 0.55, 1], roughnessFactor: 0.9, doubleSided: true },
   { key: 'ground-wood', name: 'woodland floor', color: [0.18, 0.42, 0.22, 1], roughnessFactor: 0.96, doubleSided: true },
   { key: 'water', name: 'water surface', color: [0.08, 0.49, 0.72, 1], roughnessFactor: 0.36, metallicFactor: 0.02, doubleSided: true },
@@ -63,7 +67,12 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
   { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], roughnessFactor: 0.72, doubleSided: true },
   { key: 'building-wall-cool', name: 'cool building wall', color: [0.67, 0.71, 0.73, 1], roughnessFactor: 0.68, doubleSided: true },
+  { key: 'building-wall-brick', name: 'brick building wall', color: [0.64, 0.36, 0.28, 1], roughnessFactor: 0.78, doubleSided: true },
+  { key: 'building-wall-stone', name: 'stone building wall', color: [0.61, 0.57, 0.51, 1], roughnessFactor: 0.82, doubleSided: true },
   { key: 'building-roof', name: 'building roof', color: [0.40, 0.44, 0.49, 1], roughnessFactor: 0.78, doubleSided: true },
+  { key: 'building-roof-light', name: 'light building roof', color: [0.64, 0.65, 0.61, 1], roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
+  { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], roughnessFactor: 0.62, metallicFactor: 0.05 },
   { key: 'building-window', name: 'building windows', color: [0.42, 0.67, 0.86, 1], roughnessFactor: 0.24, metallicFactor: 0.02, emissiveFactor: [0.02, 0.04, 0.06], doubleSided: true },
   { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], roughnessFactor: 0.92 },
   { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], roughnessFactor: 0.98 },
@@ -114,6 +123,53 @@ export const sceneryTileCenterLonLat = (
   const n = Math.PI - 2 * Math.PI * (tile.y + 0.5) / size
   const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
   return { lon, lat }
+}
+
+const tileCornerLonLat = (
+  tile: Pick<SceneryTile['tile'], 'z' | 'x' | 'y'>,
+  cornerX: number,
+  cornerY: number,
+): TileLonLat => {
+  const size = 2 ** tile.z
+  const lon = (tile.x + cornerX) / size * 360 - 180
+  const n = Math.PI - 2 * Math.PI * (tile.y + cornerY) / size
+  const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+  return { lon, lat }
+}
+
+const sceneryTileBounds = (
+  tile: Pick<SceneryTile['tile'], 'z' | 'x' | 'y'>,
+): SceneryAssetTileSummary['bounds'] => {
+  const northWest = tileCornerLonLat(tile, 0, 0)
+  const southEast = tileCornerLonLat(tile, 1, 1)
+  return {
+    minLon: northWest.lon,
+    minLat: southEast.lat,
+    maxLon: southEast.lon,
+    maxLat: northWest.lat,
+  }
+}
+
+const tileSizeMeters = (
+  bounds: SceneryAssetTileSummary['bounds'],
+  center: TileLonLat,
+): { readonly widthM: number; readonly heightM: number; readonly diagonalM: number } => {
+  const widthM = Math.abs(bounds.maxLon - bounds.minLon) * metersPerDegreeLonAt(center.lat)
+  const heightM = Math.abs(bounds.maxLat - bounds.minLat) * metersPerDegreeLat
+  return { widthM, heightM, diagonalM: Math.hypot(widthM, heightM) }
+}
+
+const lodForTile = (
+  tile: Pick<SceneryTile['tile'], 'z' | 'x' | 'y'>,
+  bounds: SceneryAssetTileSummary['bounds'],
+  center: TileLonLat,
+): SceneryAssetTileSummary['lod'] => {
+  const size = tileSizeMeters(bounds, center)
+  return {
+    zoom: tile.z,
+    geometricErrorM: Math.max(0.75, Math.max(size.widthM, size.heightM) / 128),
+    maxScreenSpaceError: defaultMaxScreenSpaceError,
+  }
 }
 
 const localPointFromSceneryPoint = (
@@ -469,6 +525,35 @@ const appendRoadMarkings = (
   }
 }
 
+const offsetPath = (
+  path: ReadonlyArray<LocalPoint>,
+  offsetM: number,
+): ReadonlyArray<LocalPoint> =>
+  path.map((point, index) => {
+    const previous = path[index - 1]
+    const next = path[index + 1]
+    const from = previous ?? point
+    const to = next ?? point
+    const dx = to.x - from.x
+    const dz = to.z - from.z
+    const length = Math.max(0.001, Math.hypot(dx, dz))
+    const nx = -dz / length
+    const nz = dx / length
+    return { x: point.x + nx * offsetM, z: point.z + nz * offsetM }
+  })
+
+const appendRoadEdgeMarkings = (
+  bucket: MeshBucket,
+  path: ReadonlyArray<LocalPoint>,
+  widthM: number,
+  y: number,
+): void => {
+  if (widthM < 10) return
+  const offset = Math.max(2.8, widthM * 0.42)
+  appendRibbon(bucket, offsetPath(path, -offset), 0.18, y)
+  appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
+}
+
 const appendCylinder = (
   bucket: MeshBucket,
   center: Vec3,
@@ -540,18 +625,66 @@ const appendBox = (
   appendQuad(bucket, { x: x0, y: y0, z: z0 }, { x: x1, y: y0, z: z0 }, { x: x1, y: y0, z: z1 }, { x: x0, y: y0, z: z1 }, { x: 0, y: -1, z: 0 })
 }
 
+const appendRoofFixtures = (
+  bucket: MeshBucket,
+  rings: ReadonlyArray<ReadonlyArray<LocalPoint>>,
+  roofY: number,
+  seed: number,
+): void => {
+  const outer = rings[0]
+  if (!outer || outer.length < 3) return
+  const area = Math.abs(ringArea(outer))
+  if (area < 65) return
+  const random = seededRandom(seed)
+  const center = polygonCentroid(outer)
+  const fixtureCount = Math.max(1, Math.min(4, Math.floor(area / 2_700)))
+  for (let index = 0; index < fixtureCount; index += 1) {
+    const angle = random() * Math.PI * 2
+    const distance = index === 0 ? 0 : Math.min(7, Math.sqrt(area) * 0.08) * random()
+    const x = center.x + Math.cos(angle) * distance
+    const z = center.z + Math.sin(angle) * distance
+    if (!pointInRing({ x, z }, outer)) continue
+    const width = 1.7 + random() * 3.4
+    const depth = 1.4 + random() * 2.6
+    const height = 0.45 + random() * 1.3
+    appendBox(bucket, { x, y: roofY + height / 2 + 0.08, z }, { x: width, y: height, z: depth })
+  }
+}
+
 const surfaceMaterialFor = (kind: string, className: string): string => {
   if (kind === 'water') return 'water'
   if (className === 'wood' || className === 'forest') return 'ground-wood'
+  if (className === 'park' || className === 'grass') return 'ground-park'
+  if (className === 'farmland' || className === 'farmyard') return 'ground-field'
+  if (className === 'wetland') return 'ground-wetland'
   if (className === 'commercial' || className === 'industrial' || className === 'residential') return 'ground-urban'
   return 'ground-grass'
 }
 
 const surfaceHeightFor = (kind: string): number => {
-  if (kind === 'water') return 0.03
-  if (kind === 'aeroway') return 0.12
-  if (kind === 'landuse') return 0.02
-  return 0.0
+  if (kind === 'water') return 0.12
+  if (kind === 'aeroway') return 0.2
+  if (kind === 'landuse') return 0.07
+  return 0.03
+}
+
+const buildingWallMaterialFor = (
+  feature: SceneryTile['features']['polygons'][number],
+): string => {
+  if (feature.className === 'commercial' || feature.className === 'industrial') return 'building-wall-cool'
+  const bucket = stableHash(`wall:${feature.id}`) % 5
+  if (bucket === 0) return 'building-wall-brick'
+  if (bucket === 1) return 'building-wall-stone'
+  return 'building-wall'
+}
+
+const buildingRoofMaterialFor = (
+  feature: SceneryTile['features']['polygons'][number],
+): string => {
+  const bucket = stableHash(`roof:${feature.id}`) % 8
+  if (bucket === 0) return 'building-roof-green'
+  if (bucket <= 3) return 'building-roof-light'
+  return 'building-roof'
 }
 
 const localRingsFor = (
@@ -581,19 +714,19 @@ const appendBuildings = (
   tile: SceneryTile,
   center: TileLonLat,
 ): void => {
-  const wall = bucketFor(buckets, 'building-wall', 'building wall shells')
-  const wallCool = bucketFor(buckets, 'building-wall-cool', 'cool building wall shells')
-  const roof = bucketFor(buckets, 'building-roof', 'building roof shells')
   const windows = bucketFor(buckets, 'building-window', 'building facade windows')
+  const roofFixtures = bucketFor(buckets, 'roof-fixture', 'roof-mounted source-backed fixtures')
   for (const feature of tile.features.polygons) {
     if (feature.kind !== 'building') continue
     const rings = localRingsFor(feature.rings, tile.tile, center)
     if (rings.length === 0) continue
     const height = Math.max(2.5, feature.heightM ?? 8)
     const minHeight = Math.max(0, feature.minHeightM ?? 0)
-    const wallBucket = feature.className === 'commercial' || feature.className === 'industrial' ? wallCool : wall
+    const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
+    const roofBucket = bucketFor(buckets, buildingRoofMaterialFor(feature), `${buildingRoofMaterialFor(feature)} shells`)
     appendBuildingWalls(wallBucket, windows, rings, minHeight, height, stableHash(feature.id))
-    appendHorizontalPolygon(roof, rings, minHeight + height)
+    appendHorizontalPolygon(roofBucket, rings, minHeight + height)
+    appendRoofFixtures(roofFixtures, rings, minHeight + height, stableHash(`fixture:${feature.id}`))
   }
 }
 
@@ -615,24 +748,25 @@ const appendTransport = (
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
-      appendRibbon(water, path, feature.widthM, 0.06 + feature.verticalOffsetM)
+      appendRibbon(water, path, feature.widthM, 0.18 + feature.verticalOffsetM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, 0.15 + feature.verticalOffsetM)
-      appendRibbon(rail, path, feature.widthM, 0.18 + feature.verticalOffsetM)
+      appendRibbon(casing, path, feature.widthM + 3.2, 0.26 + feature.verticalOffsetM)
+      appendRibbon(rail, path, feature.widthM, 0.3 + feature.verticalOffsetM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(shoulder, path, feature.widthM + 4, 0.16 + feature.verticalOffsetM)
-      appendRibbon(fill, path, feature.widthM, 0.2 + feature.verticalOffsetM)
+      appendRibbon(shoulder, path, feature.widthM + 4, 0.24 + feature.verticalOffsetM)
+      appendRibbon(fill, path, feature.widthM, 0.29 + feature.verticalOffsetM)
       continue
     }
     const priority = roadPriority(feature.className)
-    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.11 + feature.verticalOffsetM)
-    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.14 + feature.verticalOffsetM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.18 + feature.verticalOffsetM)
-    appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.24 + feature.verticalOffsetM)
+    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.23 + feature.verticalOffsetM)
+    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.27 + feature.verticalOffsetM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.32 + feature.verticalOffsetM)
+    appendRoadEdgeMarkings(markings, path, feature.widthM, 0.39 + feature.verticalOffsetM)
+    appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.42 + feature.verticalOffsetM)
     if (priority < 40 || feature.isTunnel) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
     for (let index = 0; index < path.length - 1; index += 1) {
@@ -763,6 +897,25 @@ const minMaxForPositions = (
     max[2] = Math.max(max[2], z)
   }
   return { min, max }
+}
+
+const primitiveBounds = (
+  primitives: ReadonlyArray<PrimitiveSpec>,
+): { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } => {
+  const min: [number, number, number] = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+  const max: [number, number, number] = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+  for (const primitive of primitives) {
+    const bounds = minMaxForPositions(primitive.positions)
+    min[0] = Math.min(min[0], bounds.min[0])
+    min[1] = Math.min(min[1], bounds.min[1])
+    min[2] = Math.min(min[2], bounds.min[2])
+    max[0] = Math.max(max[0], bounds.max[0])
+    max[1] = Math.max(max[1], bounds.max[1])
+    max[2] = Math.max(max[2], bounds.max[2])
+  }
+  return Number.isFinite(min[0])
+    ? { min, max }
+    : { min: [0, 0, 0], max: [0, 0, 0] }
 }
 
 const concatChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
@@ -899,6 +1052,8 @@ export const compileSceneryGlbTile = (
   tile: SceneryTile,
 ): SceneryGlbBuildResult | null => {
   const center = sceneryTileCenterLonLat(tile.tile)
+  const bounds = sceneryTileBounds(tile.tile)
+  const lod = lodForTile(tile.tile, bounds, center)
   const buckets = new Map<string, MeshBucket>()
   appendSurfaces(buckets, tile, center)
   appendTransport(buckets, tile, center)
@@ -907,6 +1062,9 @@ export const compileSceneryGlbTile = (
   appendPoiBeacons(buckets, tile, center)
   const primitives = primitivesFromBuckets(buckets)
   if (primitives.length === 0) return null
+  const localBounds = primitiveBounds(primitives)
+  const tileSize = tileSizeMeters(bounds, center)
+  const verticalRadiusM = Math.max(Math.abs(localBounds.min[1]), Math.abs(localBounds.max[1]))
   const bytes = glbFromPrimitives(primitives)
   return {
     bytes,
@@ -917,6 +1075,16 @@ export const compileSceneryGlbTile = (
       y: tile.tile.y,
       centerLon: center.lon,
       centerLat: center.lat,
+      bounds,
+      boundingSphere: {
+        centerLon: center.lon,
+        centerLat: center.lat,
+        centerHeightM: (localBounds.min[1] + localBounds.max[1]) / 2,
+        radiusM: Math.max(1, Math.hypot(tileSize.diagonalM / 2, verticalRadiusM)),
+      },
+      lod,
+      minHeightM: localBounds.min[1],
+      maxHeightM: localBounds.max[1],
       featureCounts: featureCountsFor(tile),
     },
   }

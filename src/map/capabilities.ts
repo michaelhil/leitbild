@@ -151,6 +151,7 @@ export const sceneryTilesetSchema = z.object({
   artifact: z.object({
     format: z.literal(sceneryAssetFormat),
     tileEncoding: z.literal(sceneryAssetTileEncoding),
+    lodStrategy: z.literal('hierarchical-screen-space-error'),
     manifestUrl: z.literal('/map/scenery/current/manifest.json'),
     tileSummaryUrl: z.literal('/map/scenery/current/tiles.json'),
     currentTileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
@@ -439,6 +440,7 @@ export const createSceneryTileset = (availability: SceneryAvailability): Scenery
     artifact: {
       format: sceneryAssetFormat,
       tileEncoding: sceneryAssetTileEncoding,
+      lodStrategy: 'hierarchical-screen-space-error',
       manifestUrl: '/map/scenery/current/manifest.json',
       tileSummaryUrl: '/map/scenery/current/tiles.json',
       currentTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',

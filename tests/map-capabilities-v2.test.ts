@@ -71,6 +71,13 @@ const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
     builtAt: '2026-06-08T00:00:00Z',
     bounds: { minLon: 10.7, minLat: 59.9, maxLon: 10.8, maxLat: 60 },
     zooms: [14],
+    lodLevels: [{ zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 }],
+    inputArtifacts: [{
+      kind: 'base-vector-pmtiles',
+      id: 'leitbild-osm-norway',
+      path: join(mapRoot, 'current', 'norway.pmtiles'),
+      required: true,
+    }],
     recipes: [{ id: 'drone-urban-flight' }],
     tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     outputRoot: sceneryRoot,
@@ -95,6 +102,11 @@ const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
       byteLength: 8,
       centerLon: 10.755615,
       centerLat: 59.913869,
+      bounds: { minLon: 10.744, minLat: 59.908, maxLon: 10.767, maxLat: 59.92 },
+      boundingSphere: { centerLon: 10.755615, centerLat: 59.913869, centerHeightM: 6, radiusM: 900 },
+      lod: { zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 },
+      minHeightM: 0,
+      maxHeightM: 12,
       featureCounts: {
         polygons: 1,
         lines: 1,
@@ -171,6 +183,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(scenery[0]!.availability.status).toBe('unavailable')
     expect(scenery[0]!.artifact.format).toBe('directory-glb')
     expect(scenery[0]!.artifact.tileEncoding).toBe('model/gltf-binary')
+    expect(scenery[0]!.artifact.lodStrategy).toBe('hierarchical-screen-space-error')
     expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
   })

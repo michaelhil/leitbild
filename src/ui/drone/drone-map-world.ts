@@ -65,6 +65,11 @@ export interface DroneSceneryTileAsset {
   readonly localOrigin: DroneWorldPoint
   readonly distanceM: number
   readonly byteLength: number
+  readonly bounds: SceneryAssetTileSummary['bounds']
+  readonly boundingSphere: SceneryAssetTileSummary['boundingSphere']
+  readonly lod: SceneryAssetTileSummary['lod']
+  readonly minHeightM: number
+  readonly maxHeightM: number
   readonly featureCounts: SceneryAssetTileSummary['featureCounts']
 }
 
@@ -94,6 +99,7 @@ export interface DroneMapWorldSnapshot {
   readonly center: DroneWorldCenter
   readonly radiusM: number
   readonly zoom: number
+  readonly zooms: ReadonlyArray<number>
   readonly scenerySource: 'asset-tiles'
   readonly tileCount: number
   readonly tiles: ReadonlyArray<DroneSceneryTileAsset>
@@ -113,6 +119,7 @@ interface TileCoord {
 }
 
 const metersPerDegreeLat = 111_320
+const minWorldZoom = 12
 const maxWorldZoom = 14
 const maxCachedWorldSnapshots = 8
 
@@ -170,13 +177,30 @@ const tileRangeFor = (
 const tileKeyFor = (
   center: DroneWorldCenter,
   radiusM: number,
-  zoom: number,
+  zooms: ReadonlyArray<number>,
 ): string => {
-  const tiles = tileRangeFor(center, radiusM, zoom)
-  const first = tiles[0]
-  const last = tiles[tiles.length - 1]
-  return `${zoom}:${first?.x ?? 0}:${first?.y ?? 0}:${last?.x ?? 0}:${last?.y ?? 0}`
+  const parts = zooms.map(zoom => {
+    const tiles = tileRangeFor(center, radiusM, zoom)
+    const first = tiles[0]
+    const last = tiles[tiles.length - 1]
+    return `${zoom}:${first?.x ?? 0}:${first?.y ?? 0}:${last?.x ?? 0}:${last?.y ?? 0}`
+  })
+  return parts.join('|')
 }
+
+const normalizedZooms = (config: {
+  readonly zoom?: number
+  readonly zooms?: ReadonlyArray<number>
+}): ReadonlyArray<number> => {
+  const requested = config.zooms && config.zooms.length > 0
+    ? config.zooms
+    : [config.zoom ?? maxWorldZoom]
+  return [...new Set(requested.map(zoom => Math.max(minWorldZoom, Math.min(maxWorldZoom, Math.floor(zoom)))))]
+    .sort((left, right) => left - right)
+}
+
+const cacheKeyZoomPart = (zooms: ReadonlyArray<number>): string =>
+  zooms.join(',')
 
 const tileCenterLonLat = (
   tile: TileCoord,
@@ -194,9 +218,9 @@ const tileId = (tile: Pick<TileCoord, 'z' | 'x' | 'y'>): string =>
 const cacheKeyFor = (config: {
   readonly center: DroneWorldCenter
   readonly radiusM: number
-  readonly zoom: number
+  readonly zooms: ReadonlyArray<number>
 }): string =>
-  `${config.zoom}:${Math.round(config.radiusM)}:${config.center.lon.toFixed(6)}:${config.center.lat.toFixed(6)}`
+  `${cacheKeyZoomPart(config.zooms)}:${Math.round(config.radiusM)}:${config.center.lon.toFixed(6)}:${config.center.lat.toFixed(6)}`
 
 const rememberCachedWorld = (
   key: string,
@@ -448,6 +472,11 @@ const assembleAssetTile = (config: {
     localOrigin,
     distanceM: horizontalDistanceFromCenterM(localOrigin),
     byteLength: config.summary.byteLength,
+    bounds: config.summary.bounds,
+    boundingSphere: config.summary.boundingSphere,
+    lod: config.summary.lod,
+    minHeightM: config.summary.minHeightM,
+    maxHeightM: config.summary.maxHeightM,
     featureCounts: config.summary.featureCounts,
   }
 }
@@ -455,32 +484,36 @@ const assembleAssetTile = (config: {
 const loadAssetDroneMapWorld = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM: number
-  readonly zoom: number
+  readonly zooms: ReadonlyArray<number>
   readonly signal?: AbortSignal
   readonly scenery: Extract<DroneWorldSceneryStatus, { readonly status: 'available' }>
 }): Promise<DroneMapWorldSnapshot> => {
-  const desiredTiles = tileRangeFor(config.center, config.radiusM, config.zoom)
-  const summaries = await loadSceneryTileSummaries({
-    status: config.scenery,
-    tiles: desiredTiles,
-    zoom: config.zoom,
-    ...(config.signal === undefined ? {} : { signal: config.signal }),
-  })
-  const available = new Map(summaries.map(summary => [summaryKey(summary), summary]))
-  const tiles = desiredTiles
-    .flatMap(tile => {
+  const summariesByZoom = await Promise.all(config.zooms.map(async zoom => {
+    const desiredTiles = tileRangeFor(config.center, config.radiusM, zoom)
+    const summaries = await loadSceneryTileSummaries({
+      status: config.scenery,
+      tiles: desiredTiles,
+      zoom,
+      ...(config.signal === undefined ? {} : { signal: config.signal }),
+    })
+    const available = new Map(summaries.map(summary => [summaryKey(summary), summary]))
+    return desiredTiles.flatMap(tile => {
       const summary = available.get(summaryKey({ ...tile, recipeId: config.scenery.recipeId }))
       return summary ? [assembleAssetTile({ summary, status: config.scenery, center: config.center })] : []
     })
+  }))
+  const tiles = summariesByZoom
+    .flatMap(zoomTiles => zoomTiles)
     .sort((left, right) => left.distanceM - right.distanceM || left.id.localeCompare(right.id))
   if (tiles.length === 0) {
-    throw new Error(`precompiled scenery artifact has no tiles for ${config.center.lon.toFixed(5)},${config.center.lat.toFixed(5)} at z${config.zoom}`)
+    throw new Error(`precompiled scenery artifact has no tiles for ${config.center.lon.toFixed(5)},${config.center.lat.toFixed(5)} at zooms ${config.zooms.join(',')}`)
   }
   return {
-    key: tileKeyFor(config.center, config.radiusM, config.zoom),
+    key: tileKeyFor(config.center, config.radiusM, config.zooms),
     center: config.center,
     radiusM: config.radiusM,
-    zoom: config.zoom,
+    zoom: config.zooms.at(-1) ?? maxWorldZoom,
+    zooms: config.zooms,
     scenerySource: 'asset-tiles',
     tileCount: tiles.length,
     tiles,
@@ -492,10 +525,11 @@ export const loadDroneMapWorld = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM?: number
   readonly zoom?: number
+  readonly zooms?: ReadonlyArray<number>
   readonly signal?: AbortSignal
 }): Promise<DroneMapWorldSnapshot> => {
   const radiusM = config.radiusM ?? 4_250
-  const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
+  const zooms = normalizedZooms(config)
   const scenery = await loadDroneWorldSceneryStatus(config.signal === undefined ? {} : { signal: config.signal })
   if (scenery.status !== 'available') {
     throw new Error(`scenery capability unavailable: ${scenery.reason}`)
@@ -503,7 +537,7 @@ export const loadDroneMapWorld = async (config: {
   return await loadAssetDroneMapWorld({
     center: config.center,
     radiusM,
-    zoom,
+    zooms,
     ...(config.signal === undefined ? {} : { signal: config.signal }),
     scenery,
   })
@@ -513,17 +547,18 @@ export const loadCachedDroneMapWorld = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM?: number
   readonly zoom?: number
+  readonly zooms?: ReadonlyArray<number>
 }): Promise<DroneMapWorldSnapshot> => {
   const radiusM = config.radiusM ?? 4_250
-  const zoom = Math.min(maxWorldZoom, config.zoom ?? maxWorldZoom)
-  const key = cacheKeyFor({ center: config.center, radiusM, zoom })
+  const zooms = normalizedZooms(config)
+  const key = cacheKeyFor({ center: config.center, radiusM, zooms })
   const existing = cachedWorldSnapshots.get(key)
   if (existing) {
     worldCacheHits += 1
     return existing
   }
   worldCacheMisses += 1
-  const promise = loadDroneMapWorld({ center: config.center, radiusM, zoom })
+  const promise = loadDroneMapWorld({ center: config.center, radiusM, zooms })
   rememberCachedWorld(key, promise)
   try {
     return await promise

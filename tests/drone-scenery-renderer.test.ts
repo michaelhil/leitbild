@@ -152,6 +152,9 @@ describe('drone scenery GLB compiler', () => {
       z: 14,
       x: 8686,
       y: 4758,
+      lod: {
+        zoom: 14,
+      },
       featureCounts: {
         polygons: 3,
         lines: 2,
@@ -162,6 +165,11 @@ describe('drone scenery GLB compiler', () => {
         vegetation: 1,
       },
     })
+    expect(summary.bounds.minLon).toBeLessThan(summary.bounds.maxLon)
+    expect(summary.bounds.minLat).toBeLessThan(summary.bounds.maxLat)
+    expect(summary.boundingSphere.radiusM).toBeGreaterThan(100)
+    expect(summary.lod.geometricErrorM).toBeGreaterThan(0)
+    expect(summary.maxHeightM).toBeGreaterThan(summary.minHeightM)
   })
 
   test('bakes buildings, roads, water, vegetation, markings, lights, and POI primitives into the GLB', () => {
@@ -171,7 +179,8 @@ describe('drone scenery GLB compiler', () => {
     const materialNames = usedMaterialNames(json)
 
     expect(materialNames.has('cool building wall')).toBe(true)
-    expect(materialNames.has('building roof')).toBe(true)
+    expect(['building roof', 'light building roof', 'green copper roof'].some(name => materialNames.has(name))).toBe(true)
+    expect(materialNames.has('rooftop fixtures')).toBe(true)
     expect(materialNames.has('major road asphalt')).toBe(true)
     expect(materialNames.has('baked road markings')).toBe(true)
     expect(materialNames.has('water surface')).toBe(true)

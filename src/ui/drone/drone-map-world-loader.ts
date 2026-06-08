@@ -35,10 +35,15 @@ export const loadDroneMapWorldForScene = async (config: {
   readonly center: DroneWorldCenter
   readonly radiusM?: number
   readonly zoom?: number
+  readonly zooms?: ReadonlyArray<number>
 }): Promise<DroneMapWorldLoadResult> => {
   const radiusM = config.radiusM ?? 4_250
   const zoom = config.zoom ?? 14
-  const snapshot = await loadCachedDroneMapWorld({ center: config.center, radiusM, zoom })
+  const snapshot = await loadCachedDroneMapWorld({
+    center: config.center,
+    radiusM,
+    ...(config.zooms === undefined ? { zoom } : { zooms: config.zooms }),
+  })
   const terrain = await loadDroneWorldTerrainStatus()
   const terrainModel = await safeLoadTerrainModel({ center: config.center, radiusM, terrain })
   return { snapshot, source: 'asset-tiles', terrain, terrainModel }

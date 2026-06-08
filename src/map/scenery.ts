@@ -118,6 +118,21 @@ export const sceneryAssetBoundsSchema = z.object({
 })
 export type SceneryAssetBounds = z.infer<typeof sceneryAssetBoundsSchema>
 
+export const sceneryAssetBoundingSphereSchema = z.object({
+  centerLon: z.number().finite(),
+  centerLat: z.number().finite(),
+  centerHeightM: z.number().finite(),
+  radiusM: z.number().finite().positive(),
+})
+export type SceneryAssetBoundingSphere = z.infer<typeof sceneryAssetBoundingSphereSchema>
+
+export const sceneryAssetLodLevelSchema = z.object({
+  zoom: z.number().int().min(0).max(24),
+  geometricErrorM: z.number().finite().nonnegative(),
+  maxScreenSpaceError: z.number().finite().positive(),
+})
+export type SceneryAssetLodLevel = z.infer<typeof sceneryAssetLodLevelSchema>
+
 export const sceneryAssetTileSummarySchema = z.object({
   recipeId: z.string().min(1),
   z: z.number().int().min(0).max(24),
@@ -126,6 +141,11 @@ export const sceneryAssetTileSummarySchema = z.object({
   byteLength: z.number().int().nonnegative(),
   centerLon: z.number().finite(),
   centerLat: z.number().finite(),
+  bounds: sceneryAssetBoundsSchema,
+  boundingSphere: sceneryAssetBoundingSphereSchema,
+  lod: sceneryAssetLodLevelSchema,
+  minHeightM: z.number().finite(),
+  maxHeightM: z.number().finite(),
   featureCounts: z.object({
     polygons: z.number().int().nonnegative(),
     lines: z.number().int().nonnegative(),
@@ -163,6 +183,13 @@ export const sceneryAssetManifestSchema = z.object({
   builtAt: z.string().min(1),
   bounds: sceneryAssetBoundsSchema,
   zooms: z.array(z.number().int().min(0).max(24)).min(1),
+  lodLevels: z.array(sceneryAssetLodLevelSchema).min(1),
+  inputArtifacts: z.array(z.object({
+    kind: z.enum(['base-vector-pmtiles', 'terrain-dem-pmtiles', 'reference-pmtiles', 'reference-sidecar-geojson']),
+    id: z.string().min(1),
+    path: z.string().min(1),
+    required: z.boolean(),
+  })).min(1),
   recipes: z.array(z.unknown()).min(1),
   tileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
   outputRoot: z.string().min(1),

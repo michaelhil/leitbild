@@ -12,6 +12,7 @@ import {
   sceneryAssetTileEncoding,
   sceneryTileHasFeatures,
   type SceneryAssetBounds,
+  type SceneryAssetLodLevel,
   type SceneryAssetTileSummary,
   type SceneryTileCoord,
 } from '../../src/map/scenery.ts'
@@ -128,14 +129,28 @@ const positiveNumberEnv = (key: string, defaultValue: number): number => {
   return value
 }
 
-const parseZooms = (): ReadonlyArray<number> => {
-  const raw = process.env.LEITBILD_SCENERY_ZOOMS ?? '14'
+const parseZooms = (config: { readonly minZoom: number; readonly maxZoom: number }): ReadonlyArray<number> => {
+  const defaultZooms = Array.from({ length: config.maxZoom - config.minZoom + 1 }, (_value, index) => config.minZoom + index)
+  const raw = process.env.LEITBILD_SCENERY_ZOOMS ?? defaultZooms.join(',')
   const zooms = raw.split(',').map(part => {
     const value = Number(part.trim())
     if (!Number.isInteger(value) || value < 0 || value > 24) throw new Error('LEITBILD_SCENERY_ZOOMS must contain comma-separated integer zooms from 0 to 24')
     return value
   })
   return [...new Set(zooms)].sort((left, right) => left - right)
+}
+
+const lodLevelsFor = (
+  summaries: ReadonlyArray<SceneryAssetTileSummary>,
+): ReadonlyArray<SceneryAssetLodLevel> => {
+  const byZoom = new Map<number, SceneryAssetLodLevel>()
+  for (const summary of summaries) {
+    const existing = byZoom.get(summary.lod.zoom)
+    if (!existing || summary.lod.geometricErrorM > existing.geometricErrorM) {
+      byZoom.set(summary.lod.zoom, summary.lod)
+    }
+  }
+  return [...byZoom.values()].sort((left, right) => left.zoom - right.zoom)
 }
 
 const tuplePosition = (value: unknown): readonly [number, number] | null => {
@@ -257,7 +272,7 @@ if (!await file.exists()) throw new Error(`source PMTiles artifact does not exis
 const archive = new PMTiles(createBunFileSource(pmtilesPath, pmtilesPath))
 const header = await archive.getHeader()
 if (header.tileType !== TileType.Mvt) throw new Error(`scenery build requires an MVT PMTiles archive; found tileType ${header.tileType}`)
-const zooms = parseZooms()
+const zooms = parseZooms({ minZoom: recipe.minZoom, maxZoom: recipe.maxZoom })
 for (const zoom of zooms) {
   if (zoom < header.minZoom || zoom > header.maxZoom) throw new Error(`zoom ${zoom} is outside source PMTiles zoom range ${header.minZoom}-${header.maxZoom}`)
 }
@@ -341,6 +356,13 @@ const manifest = {
   builtAt: new Date().toISOString(),
   bounds,
   zooms,
+  lodLevels: lodLevelsFor(tileSummaries),
+  inputArtifacts: [{
+    kind: 'base-vector-pmtiles' as const,
+    id: mapTilesetId,
+    path: pmtilesPath,
+    required: true,
+  }],
   recipes: [recipe],
   tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb' as const,
   outputRoot,
@@ -369,6 +391,13 @@ const parsedManifest = sceneryAssetManifestSchema.parse(manifest satisfies {
   readonly builtAt: string
   readonly bounds: SceneryAssetBounds
   readonly zooms: ReadonlyArray<number>
+  readonly lodLevels: ReadonlyArray<SceneryAssetLodLevel>
+  readonly inputArtifacts: ReadonlyArray<{
+    readonly kind: 'base-vector-pmtiles'
+    readonly id: string
+    readonly path: string
+    readonly required: boolean
+  }>
   readonly recipes: ReadonlyArray<unknown>
   readonly tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'
   readonly outputRoot: string
