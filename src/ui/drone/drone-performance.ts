@@ -114,7 +114,9 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
     },
     snapshot: (renderInfo): DroneScenePerformanceSnapshot => {
       const avgFrameMs = average(frameIntervals)
-      const jankFrames = frameIntervals.filter(value => value >= jankThresholdMs).length
+      const targetFrameMs = renderInfo.renderBudget.targetFps <= 0 ? jankThresholdMs : 1000 / renderInfo.renderBudget.targetFps
+      const budgetAwareJankThresholdMs = Math.max(jankThresholdMs, targetFrameMs * 1.35)
+      const jankFrames = frameIntervals.filter(value => value >= budgetAwareJankThresholdMs).length
       return {
         fps: avgFrameMs <= 0 ? 0 : 1000 / avgFrameMs,
         frameMs: avgFrameMs,
