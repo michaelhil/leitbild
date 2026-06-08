@@ -19,7 +19,7 @@ const child = Bun.spawn({
   cmd: ['make', makeTarget, gazeboModelTarget],
   cwd: px4Home,
   env,
-  stdin: 'inherit',
+  stdin: 'pipe',
   stdout: 'inherit',
   stderr: 'inherit',
 })

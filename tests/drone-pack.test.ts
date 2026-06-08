@@ -27,6 +27,7 @@ import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
 import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/sitl/object-state.ts'
 import { parseDroneSitlRuntimeConfig } from '../src/packs/drone/sitl/config.ts'
 import { droneSitlRuntimeId } from '../src/packs/drone/sitl/constants.ts'
+import { decodeMavlinkFrames } from '../src/packs/drone/sitl/mavlink.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { createTestScenarioCatalog } from './helpers.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
@@ -127,6 +128,61 @@ const genericTarget = (config: {
 const okResult = <T>(response: PackQueryResponse): T => {
   if (!response.ok) throw new Error(response.reason)
   return response.result as T
+}
+
+const crcAccumulateForTest = (data: number, crc: number): number => {
+  let tmp = data ^ (crc & 0xff)
+  tmp ^= tmp << 4
+  return ((crc >> 8) ^ (tmp << 8) ^ (tmp << 3) ^ (tmp >> 4)) & 0xffff
+}
+
+const mavlinkCrcForTest = (buffer: Buffer, extra: number): number => {
+  let crc = 0xffff
+  for (const byte of buffer) crc = crcAccumulateForTest(byte, crc)
+  return crcAccumulateForTest(extra, crc)
+}
+
+const encodeMavlink1FrameForTest = (config: {
+  readonly seq: number
+  readonly systemId: number
+  readonly componentId: number
+  readonly messageId: number
+  readonly payload: Buffer
+  readonly crcExtra: number
+}): Buffer => {
+  const header = Buffer.alloc(5)
+  header.writeUInt8(config.payload.length, 0)
+  header.writeUInt8(config.seq, 1)
+  header.writeUInt8(config.systemId, 2)
+  header.writeUInt8(config.componentId, 3)
+  header.writeUInt8(config.messageId, 4)
+  const crc = mavlinkCrcForTest(Buffer.concat([header, config.payload]), config.crcExtra)
+  const frame = Buffer.alloc(8 + config.payload.length)
+  frame.writeUInt8(0xfe, 0)
+  header.copy(frame, 1)
+  config.payload.copy(frame, 6)
+  frame.writeUInt16LE(crc, 6 + config.payload.length)
+  return frame
+}
+
+const globalPositionIntPayloadForTest = (config: {
+  readonly lon: number
+  readonly lat: number
+  readonly altitudeM: number
+  readonly relativeAltitudeM: number
+  readonly headingDeg: number
+}): Buffer => {
+  const payload = Buffer.alloc(28)
+  payload.writeUInt32LE(1_000, 0)
+  payload.writeInt32LE(Math.round(config.lat * 1e7), 4)
+  payload.writeInt32LE(Math.round(config.lon * 1e7), 8)
+  payload.writeInt32LE(Math.round(config.altitudeM * 1_000), 12)
+  payload.writeInt32LE(Math.round(config.relativeAltitudeM * 1_000), 16)
+  payload.writeInt16LE(0, 20)
+  payload.writeInt16LE(0, 22)
+  payload.writeInt16LE(0, 24)
+  payload.writeUInt16LE(Math.round(config.headingDeg * 100), 26)
+  return payload
 }
 
 describe('drone pack', () => {
@@ -272,6 +328,33 @@ describe('drone pack', () => {
     expect(updated.communication?.state).toBe('connected')
     expect(updatedData.arming.state).toBe('unknown')
     expect(updatedData.link.lastMessageAt).toBe(at)
+  })
+
+  test('MAVLink decoder accepts PX4 SITL MAVLink v1 telemetry frames', () => {
+    const payload = globalPositionIntPayloadForTest({
+      lon: 10.75,
+      lat: 59.91,
+      altitudeM: 125,
+      relativeAltitudeM: 55,
+      headingDeg: 92,
+    })
+    const frame = encodeMavlink1FrameForTest({
+      seq: 7,
+      systemId: 1,
+      componentId: 1,
+      messageId: 33,
+      payload,
+      crcExtra: 104,
+    })
+    const decoded = decodeMavlinkFrames(frame)
+
+    expect(decoded).toHaveLength(1)
+    expect(decoded[0]?.systemId).toBe(1)
+    expect(decoded[0]?.componentId).toBe(1)
+    expect(decoded[0]?.messageId).toBe(33)
+    expect(decoded[0]?.payload.readInt32LE(4)).toBe(599_100_000)
+    expect(decoded[0]?.payload.readInt32LE(8)).toBe(107_500_000)
+    expect(decoded[0]?.payload.readInt32LE(12)).toBe(125_000)
   })
 
   test('controller bindings are derived from drone control state only', () => {

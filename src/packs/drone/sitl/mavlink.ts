@@ -78,6 +78,15 @@ const mavAutopilot = {
 } as const
 
 const mavModeFlagSafetyArmed = 128
+const mavlink1Magic = 0xfe
+const mavlink2Magic = 0xfd
+
+export interface MavlinkDecodedFrame {
+  readonly systemId: number
+  readonly componentId: number
+  readonly messageId: number
+  readonly payload: Buffer
+}
 
 export interface MavlinkEndpoint {
   readonly host: string
@@ -348,22 +357,43 @@ const encodeFrame = (config: {
   return frame
 }
 
-const decodeFrames = (buffer: Buffer): ReadonlyArray<{
-  readonly systemId: number
-  readonly componentId: number
-  readonly messageId: number
-  readonly payload: Buffer
-}> => {
-  const frames: Array<{
-    readonly systemId: number
-    readonly componentId: number
-    readonly messageId: number
-    readonly payload: Buffer
-  }> = []
+export const decodeMavlinkFrames = (buffer: Buffer): ReadonlyArray<MavlinkDecodedFrame> => {
+  const frames: MavlinkDecodedFrame[] = []
   let offset = 0
   while (offset < buffer.length) {
-    const magicOffset = buffer.indexOf(0xfd, offset)
+    const mavlink1Offset = buffer.indexOf(mavlink1Magic, offset)
+    const mavlink2Offset = buffer.indexOf(mavlink2Magic, offset)
+    const magicOffset = mavlink1Offset < 0
+      ? mavlink2Offset
+      : mavlink2Offset < 0
+        ? mavlink1Offset
+        : Math.min(mavlink1Offset, mavlink2Offset)
     if (magicOffset < 0) return frames
+    const magic = buffer.readUInt8(magicOffset)
+    if (magic === mavlink1Magic) {
+      if (magicOffset + 8 > buffer.length) return frames
+      const payloadLength = buffer.readUInt8(magicOffset + 1)
+      const frameLength = 8 + payloadLength
+      if (magicOffset + frameLength > buffer.length) return frames
+      const header = buffer.subarray(magicOffset + 1, magicOffset + 6)
+      const payload = buffer.subarray(magicOffset + 6, magicOffset + 6 + payloadLength)
+      const messageId = header.readUInt8(4)
+      const extra = crcExtra[messageId]
+      if (extra !== undefined) {
+        const expected = mavlinkCrc(Buffer.concat([header, payload]), extra)
+        const actual = buffer.readUInt16LE(magicOffset + 6 + payloadLength)
+        if (expected === actual) {
+          frames.push({
+            systemId: header.readUInt8(2),
+            componentId: header.readUInt8(3),
+            messageId,
+            payload: Buffer.from(payload),
+          })
+        }
+      }
+      offset = magicOffset + frameLength
+      continue
+    }
     if (magicOffset + 12 > buffer.length) return frames
     const payloadLength = buffer.readUInt8(magicOffset + 1)
     const incompatFlags = buffer.readUInt8(magicOffset + 2)
@@ -855,7 +885,7 @@ export const createMavlinkClient = (config: {
       socket.bind(endpoint.localPort)
     })
     socket.on('message', (message) => {
-      for (const frame of decodeFrames(message)) parseFrame(frame)
+      for (const frame of decodeMavlinkFrames(message)) parseFrame(frame)
     })
     heartbeatTimer = setInterval(() => {
       void sendPayload(mavMsg.heartbeat, messagePayload.heartbeat())
