@@ -97,6 +97,7 @@ const defaultMaxScreenSpaceError = 16
 const facadeTrimReliefM = 0.055
 const facadeWindowReliefM = 0.085
 const ribbonJoinLiftM = 0.065
+const ribbonSelfLaneStepM = 0.07
 const horizontalDepth = {
   landcoverBaseY: 0.04,
   landuseBaseY: 0.18,
@@ -111,11 +112,11 @@ const horizontalDepth = {
   aerowayShoulderY: 1.26,
   aerowayFillY: 1.34,
   roadBaseY: 1.40,
-  roadFeatureLaneStepM: 0.52,
-  roadCasingLiftM: 0.11,
-  roadFillLiftM: 0.23,
-  roadEdgeMarkingLiftM: 0.36,
-  roadCenterMarkingLiftM: 0.46,
+  roadFeatureLaneStepM: 1.35,
+  roadCasingLiftM: 0.30,
+  roadFillLiftM: 0.62,
+  roadEdgeMarkingLiftM: 0.92,
+  roadCenterMarkingLiftM: 1.08,
   roofMaterialLiftStepM: 0.075,
 } as const
 
@@ -696,6 +697,32 @@ interface RibbonSegmentFrame {
   readonly nz: number
 }
 
+interface RibbonSegmentPlacement extends RibbonSegmentFrame {
+  readonly lane: number
+}
+
+interface RibbonTopology {
+  readonly points: ReadonlyArray<LocalPoint>
+  readonly closed: boolean
+}
+
+const sameLocalPoint = (
+  left: LocalPoint,
+  right: LocalPoint,
+  toleranceM = 0.05,
+): boolean => Math.hypot(left.x - right.x, left.z - right.z) <= toleranceM
+
+const ribbonTopologyFor = (
+  path: ReadonlyArray<LocalPoint>,
+  simplifyDistanceM: number,
+): RibbonTopology => {
+  const points = simplifiedPath(path, simplifyDistanceM)
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last || points.length < 4 || !sameLocalPoint(first, last)) return { points, closed: false }
+  return { points: points.slice(0, -1), closed: true }
+}
+
 const ribbonSegmentFrameFor = (
   start: LocalPoint,
   end: LocalPoint,
@@ -721,6 +748,56 @@ const ribbonJoinTrimM = (
   lengthM: number,
   halfWidthM: number,
 ): number => Math.min(halfWidthM * 2.4, lengthM * 0.46)
+
+const ribbonSegmentIndicesAreTopologicallyAdjacent = (
+  leftIndex: number,
+  rightIndex: number,
+  segmentCount: number,
+  closed: boolean,
+): boolean => {
+  const distance = Math.abs(leftIndex - rightIndex)
+  if (distance <= 1) return true
+  return closed && distance === segmentCount - 1
+}
+
+const ribbonSegmentsShareStableJoin = (
+  left: RibbonSegmentFrame,
+  leftIndex: number,
+  right: RibbonSegmentFrame,
+  rightIndex: number,
+  segmentCount: number,
+  widthM: number,
+  closed: boolean,
+): boolean => {
+  if (!ribbonSegmentIndicesAreTopologicallyAdjacent(leftIndex, rightIndex, segmentCount, closed)) return false
+  const directionDot = left.ux * right.ux + left.uz * right.uz
+  const shortestAdjacentLengthM = Math.min(left.length, right.length)
+  return directionDot > 0.2 || shortestAdjacentLengthM >= widthM * 4
+}
+
+const ribbonSegmentsOverlap = (
+  left: RibbonSegmentFrame,
+  right: RibbonSegmentFrame,
+  widthM: number,
+): boolean => segmentDistanceM(left.start, left.end, right.start, right.end) <= widthM + 0.25
+
+const ribbonSegmentPlacementsFor = (
+  frames: ReadonlyArray<RibbonSegmentFrame>,
+  widthM: number,
+  closed: boolean,
+): ReadonlyArray<RibbonSegmentPlacement> => {
+  const placements: RibbonSegmentPlacement[] = []
+  for (const [index, frame] of frames.entries()) {
+    let lane = 0
+    while (placements.some((existing, existingIndex) =>
+      existing.lane === lane
+        && !ribbonSegmentsShareStableJoin(existing, existingIndex, frame, index, frames.length, widthM, closed)
+        && ribbonSegmentsOverlap(existing, frame, widthM),
+    )) lane += 1
+    placements.push({ ...frame, lane })
+  }
+  return placements
+}
 
 const appendRibbonSegmentQuad = (
   bucket: MeshBucket,
@@ -782,6 +859,16 @@ const appendRibbonRoundJoin = (
   appendHorizontalPolygon(bucket, [ring], y)
 }
 
+const adjacentRibbonPlacementsForJoin = (
+  placements: ReadonlyArray<RibbonSegmentPlacement>,
+  pointIndex: number,
+  closed: boolean,
+): ReadonlyArray<RibbonSegmentPlacement> => {
+  const previous = placements[pointIndex - 1] ?? (closed ? placements[placements.length - 1] : undefined)
+  const next = placements[pointIndex]
+  return [previous, next].filter((placement): placement is RibbonSegmentPlacement => placement !== undefined)
+}
+
 const appendRibbon = (
   bucket: MeshBucket,
   path: ReadonlyArray<LocalPoint>,
@@ -790,37 +877,44 @@ const appendRibbon = (
   simplifyDistanceM = 0.35,
   joinLiftM = 0,
 ): void => {
-  const points = simplifiedPath(path, simplifyDistanceM)
+  const topology = ribbonTopologyFor(path, simplifyDistanceM)
+  const points = topology.points
   if (points.length < 2) return
   const halfWidth = widthM / 2
-  const frames = points
-    .slice(0, -1)
-    .flatMap((point, index) => {
-      const frame = ribbonSegmentFrameFor(point, points[index + 1]!)
-      return frame ? [frame] : []
-    })
+  const segmentCount = topology.closed ? points.length : points.length - 1
+  const frames = Array.from({ length: segmentCount }, (_value, index) => {
+    const start = points[index]
+    const end = points[(index + 1) % points.length]
+    if (!start || !end) return null
+    return ribbonSegmentFrameFor(start, end)
+  }).filter((frame): frame is RibbonSegmentFrame => frame !== null)
   if (frames.length === 0) return
+  const placements = ribbonSegmentPlacementsFor(frames, widthM, topology.closed)
   const startTrims = frames.map((frame, index) => index === 0
-    ? 0
+    ? topology.closed ? Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[frames.length - 1]!.length, halfWidth)) : 0
     : Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[index - 1]!.length, halfWidth)))
   const endTrims = frames.map((frame, index) => index === frames.length - 1
-    ? 0
+    ? topology.closed ? Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[0]!.length, halfWidth)) : 0
     : Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[index + 1]!.length, halfWidth)))
-  for (let index = 0; index < frames.length; index += 1) {
-    const frame = frames[index]!
+  for (let index = 0; index < placements.length; index += 1) {
+    const frame = placements[index]!
     const requestedTrimM = startTrims[index]! + endTrims[index]!
     if (requestedTrimM > frame.length - 0.05) {
       const scale = Math.max(0, frame.length - 0.05) / requestedTrimM
       startTrims[index] = startTrims[index]! * scale
       endTrims[index] = endTrims[index]! * scale
     }
-    appendRibbonSegmentQuad(bucket, frame, halfWidth, startTrims[index]!, endTrims[index]!, y)
+    appendRibbonSegmentQuad(bucket, frame, halfWidth, startTrims[index]!, endTrims[index]!, y + frame.lane * ribbonSelfLaneStepM)
   }
-  for (let index = 1; index < points.length - 1; index += 1) {
-    const previous = frames[index - 1]
-    const next = frames[index]
-    if (!previous || !next) continue
-    appendRibbonRoundJoin(bucket, points[index]!, halfWidth, y + joinLiftM)
+  const firstJoinIndex = topology.closed ? 0 : 1
+  const lastJoinIndex = topology.closed ? points.length : points.length - 1
+  for (let index = firstJoinIndex; index < lastJoinIndex; index += 1) {
+    const point = points[index]
+    if (!point) continue
+    const adjacent = adjacentRibbonPlacementsForJoin(placements, index, topology.closed)
+    if (adjacent.length < 2) continue
+    const maxLane = adjacent.reduce((highest, placement) => Math.max(highest, placement.lane), 0)
+    appendRibbonRoundJoin(bucket, point, halfWidth, y + joinLiftM + maxLane * ribbonSelfLaneStepM)
   }
 }
 
@@ -900,8 +994,8 @@ const appendRoadEdgeMarkings = (
   if (widthM < 10 || budget.roadEdgeRibbonPairsRemaining <= 0) return
   budget.roadEdgeRibbonPairsRemaining -= 1
   const offset = Math.max(2.8, widthM * 0.42)
-  appendRibbon(bucket, offsetPath(path, -offset), 0.18, y)
-  appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
+  appendRibbon(bucket, offsetPath(path, -offset), 0.18, y, 0.35, ribbonJoinLiftM)
+  appendRibbon(bucket, offsetPath(path, offset), 0.18, y, 0.35, ribbonJoinLiftM)
 }
 
 interface RoadLaneShape {
@@ -1059,22 +1153,6 @@ const roadDepthLaneY = (
     + feature.verticalOffsetM
     + priorityLiftForRoad(priority)
     + lane * horizontalDepth.roadFeatureLaneStepM
-}
-
-const appendRibbonSideBands = (
-  bucket: MeshBucket,
-  path: ReadonlyArray<LocalPoint>,
-  innerWidthM: number,
-  outerWidthM: number,
-  y: number,
-  simplifyDistanceM: number,
-  joinLiftM = 0,
-): void => {
-  const bandWidthM = (outerWidthM - innerWidthM) / 2
-  if (bandWidthM < 0.08) return
-  const offsetM = innerWidthM / 2 + bandWidthM / 2
-  appendRibbon(bucket, offsetPath(path, -offsetM), bandWidthM, y, simplifyDistanceM, joinLiftM)
-  appendRibbon(bucket, offsetPath(path, offsetM), bandWidthM, y, simplifyDistanceM, joinLiftM)
 }
 
 const appendCylinder = (
@@ -1340,8 +1418,8 @@ const appendTransport = (
     const roadY = roadDepthLaneY(feature, priority, roadLaneByFeatureId.get(feature.id) ?? 0)
     const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
     const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
-    appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
-    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+    appendRibbon(shoulder, path, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+    appendRibbon(casing, path, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
     appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
     if (profile.includeRoadMarkings) {
       appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + horizontalDepth.roadEdgeMarkingLiftM, budget)

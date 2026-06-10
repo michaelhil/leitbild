@@ -386,6 +386,61 @@ const bentRoadTile = (): SceneryTile => ({
   },
 })
 
+const closedRoadTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'closed-road:ring',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:closed-road',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(1200, 1200),
+          tilePoint(2600, 1200),
+          tilePoint(2600, 2600),
+          tilePoint(1200, 2600),
+          tilePoint(1200, 1200),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
+const hairpinRoadTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'hairpin-road:fold',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:hairpin-road',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(1000, 1000),
+          tilePoint(1700, 1000),
+          tilePoint(1700, 1060),
+          tilePoint(1020, 1060),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
 const outOfBoundsTile = (): SceneryTile => ({
   ...testTile,
   features: {
@@ -571,6 +626,26 @@ describe('drone scenery GLB compiler', () => {
 
     expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.same_material_horizontal_overlap')).toBe(false)
+  })
+
+  test('treats closed road ribbons as closed topology instead of overlapping open ends', () => {
+    const result = compileSceneryGlbTile(closedRoadTile())
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
+  })
+
+  test('keeps short sharp road folds from emitting same-plane self-overlap', () => {
+    const result = compileSceneryGlbTile(hairpinRoadTile())
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
   })
 
   test('arbitrates overlapping base surfaces into stable material strata', () => {
