@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   droneWorldLoadSpecsFor,
   nextDroneWorldStreamDecision,
+  sceneryLayerOffsetForCenter,
   sceneryBuildLimitsFor,
   selectSceneryTilesForBuild,
   shouldPromoteSceneryStage,
@@ -184,6 +185,16 @@ describe('drone scene world streaming', () => {
     expect(screenSpaceErrorForSceneryTile(near)).toBeGreaterThan(screenSpaceErrorForSceneryTile(far))
   })
 
+  test('positions streamed scenery relative to a stable scene origin', () => {
+    const origin = { lon: 10.75, lat: 59.91 }
+    const layerCenter = moveEast(origin, 250)
+    const offset = sceneryLayerOffsetForCenter({ layerCenter, sceneOrigin: origin })
+
+    expect(offset.x).toBeGreaterThan(249)
+    expect(offset.x).toBeLessThan(251)
+    expect(Math.abs(offset.z)).toBeLessThan(0.001)
+  })
+
   test('keeps overlapping parent and child LOD tiles out of the same loaded set', () => {
     const selected = selectSceneryTilesForBuild([
       sceneryTile({ id: 'coarse-parent', z: 13, x: 4, y: 4, byteLength: 1_100_000, distanceM: 120, geometricErrorM: 16 }),
@@ -211,6 +222,15 @@ describe('drone scene world streaming', () => {
       visibleCenterKey: 'old-grid',
       candidateStage: 'full',
       candidateLoadedTileCount: 1,
+      candidateCenterKey: 'next-grid',
+    })).toBe(false)
+
+    expect(shouldPromoteSceneryStage({
+      visibleStage: 'full',
+      visibleLoadedTileCount: 20,
+      visibleCenterKey: 'old-grid',
+      candidateStage: 'full',
+      candidateLoadedTileCount: 10,
       candidateCenterKey: 'next-grid',
     })).toBe(false)
 

@@ -3,6 +3,7 @@ import {
   actionForKeyCode,
   assignDroneKeyBinding,
   defaultDroneKeyBindings,
+  droneManualAxesForPressedKeys,
   formatKeyCode,
   normalizeDroneKeyBindings,
 } from '../src/ui/drone/drone-key-bindings.ts'
@@ -32,5 +33,33 @@ describe('drone key bindings', () => {
     expect(formatKeyCode('KeyZ')).toBe('Z')
     expect(formatKeyCode('ShiftLeft')).toBe('Left Shift')
     expect(formatKeyCode('')).toBe('Unassigned')
+  })
+
+  test('combines forward and vertical keys into one manual flight intent', () => {
+    const bindings = defaultDroneKeyBindings()
+
+    expect(droneManualAxesForPressedKeys(bindings, new Set(['KeyW', 'Space']))).toEqual({
+      forward: 1,
+      right: 0,
+      vertical: 1,
+      yaw: 0,
+    })
+    expect(droneManualAxesForPressedKeys(bindings, new Set(['KeyW', 'KeyZ']))).toEqual({
+      forward: 1,
+      right: 0,
+      vertical: -1,
+      yaw: 0,
+    })
+  })
+
+  test('cancels opposing movement keys without affecting independent axes', () => {
+    const bindings = defaultDroneKeyBindings()
+
+    expect(droneManualAxesForPressedKeys(bindings, new Set(['KeyW', 'KeyS', 'KeyA', 'KeyE']))).toEqual({
+      forward: 0,
+      right: -1,
+      vertical: 0,
+      yaw: 1,
+    })
   })
 })

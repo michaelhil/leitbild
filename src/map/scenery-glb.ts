@@ -78,6 +78,7 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], roughnessFactor: 0.74, doubleSided: true },
   { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], roughnessFactor: 0.62, metallicFactor: 0.05 },
   { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
+  { key: 'building-trim', name: 'building facade trim', color: [0.42, 0.45, 0.46, 1], roughnessFactor: 0.76, doubleSided: true },
   { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], roughnessFactor: 0.92 },
   { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], roughnessFactor: 0.98 },
   { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], roughnessFactor: 0.98 },
@@ -343,6 +344,7 @@ const appendHorizontalPolygon = (
 const appendBuildingWalls = (
   wallBucket: MeshBucket,
   windowBucket: MeshBucket,
+  trimBucket: MeshBucket,
   rings: ReadonlyArray<ReadonlyArray<LocalPoint>>,
   minHeight: number,
   height: number,
@@ -369,21 +371,38 @@ const appendBuildingWalls = (
         normal,
       )
 
-      const floors = Math.max(1, Math.min(16, Math.floor(height / 3.2)))
-      const windowColumns = Math.max(0, Math.min(18, Math.floor(length / 7)))
-      if (windowColumns === 0 || floors === 0) continue
+      const floors = Math.max(1, Math.min(18, Math.floor(height / 3.2)))
+      const windowColumns = Math.max(0, Math.min(28, Math.floor(length / 4.8)))
+      if (floors === 0) continue
       const ux = dx / length
       const uz = dz / length
-      const facadeOffset = 0.035
+      const facadeOffset = 0.052
+      if (length > 5.5 && floors > 2) {
+        const bandHalfHeight = 0.045
+        const bandInsetM = Math.min(0.45, length * 0.025)
+        for (let floor = 1; floor < floors; floor += 2) {
+          const y = minHeight + floor * 3.2
+          if (y + bandHalfHeight >= minHeight + height) continue
+          appendQuad(
+            trimBucket,
+            { x: start.x + ux * bandInsetM + normal.x * facadeOffset, y: y - bandHalfHeight, z: start.z + uz * bandInsetM + normal.z * facadeOffset },
+            { x: end.x - ux * bandInsetM + normal.x * facadeOffset, y: y - bandHalfHeight, z: end.z - uz * bandInsetM + normal.z * facadeOffset },
+            { x: end.x - ux * bandInsetM + normal.x * facadeOffset, y: y + bandHalfHeight, z: end.z - uz * bandInsetM + normal.z * facadeOffset },
+            { x: start.x + ux * bandInsetM + normal.x * facadeOffset, y: y + bandHalfHeight, z: start.z + uz * bandInsetM + normal.z * facadeOffset },
+            normal,
+          )
+        }
+      }
+      if (windowColumns === 0) continue
       for (let floor = 0; floor < floors; floor += 1) {
         const y = minHeight + 2.0 + floor * 3.2
         if (y + 0.9 > minHeight + height) continue
         for (let column = 0; column < windowColumns; column += 1) {
-          if (random() < 0.24) continue
+          if (random() < 0.18) continue
           const centerDistance = (column + 0.55) * length / (windowColumns + 0.15)
           const cx = start.x + ux * centerDistance + normal.x * facadeOffset
           const cz = start.z + uz * centerDistance + normal.z * facadeOffset
-          const halfWidth = Math.min(1.45, length / Math.max(8, windowColumns * 3.8))
+          const halfWidth = Math.min(1.25, length / Math.max(9, windowColumns * 3.2))
           const halfHeight = 0.42
           appendQuad(
             windowBucket,
@@ -724,6 +743,7 @@ const appendBuildings = (
   center: TileLonLat,
 ): void => {
   const windows = bucketFor(buckets, 'building-window', 'building facade windows')
+  const trim = bucketFor(buckets, 'building-trim', 'building facade trim')
   const roofFixtures = bucketFor(buckets, 'roof-fixture', 'roof-mounted source-backed fixtures')
   for (const feature of tile.features.polygons) {
     if (feature.kind !== 'building') continue
@@ -733,9 +753,10 @@ const appendBuildings = (
     const minHeight = Math.max(0, feature.minHeightM ?? 0)
     const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
     const roofBucket = bucketFor(buckets, buildingRoofMaterialFor(feature), `${buildingRoofMaterialFor(feature)} shells`)
-    appendBuildingWalls(wallBucket, windows, rings, minHeight, height, stableHash(feature.id))
-    appendHorizontalPolygon(roofBucket, rings, minHeight + height)
-    appendRoofFixtures(roofFixtures, rings, minHeight + height, stableHash(`fixture:${feature.id}`))
+    const roofY = minHeight + height + 0.08
+    appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id))
+    appendHorizontalPolygon(roofBucket, rings, roofY)
+    appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`))
   }
 }
 
@@ -757,25 +778,25 @@ const appendTransport = (
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
-      appendRibbon(water, path, feature.widthM, 0.18 + feature.verticalOffsetM)
+      appendRibbon(water, path, feature.widthM, 0.22 + feature.verticalOffsetM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, 0.26 + feature.verticalOffsetM)
-      appendRibbon(rail, path, feature.widthM, 0.3 + feature.verticalOffsetM)
+      appendRibbon(casing, path, feature.widthM + 3.2, 0.34 + feature.verticalOffsetM)
+      appendRibbon(rail, path, feature.widthM, 0.44 + feature.verticalOffsetM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(shoulder, path, feature.widthM + 4, 0.24 + feature.verticalOffsetM)
-      appendRibbon(fill, path, feature.widthM, 0.29 + feature.verticalOffsetM)
+      appendRibbon(shoulder, path, feature.widthM + 4, 0.32 + feature.verticalOffsetM)
+      appendRibbon(fill, path, feature.widthM, 0.42 + feature.verticalOffsetM)
       continue
     }
     const priority = roadPriority(feature.className)
-    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.23 + feature.verticalOffsetM)
-    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.27 + feature.verticalOffsetM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.32 + feature.verticalOffsetM)
-    appendRoadEdgeMarkings(markings, path, feature.widthM, 0.39 + feature.verticalOffsetM)
-    appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.42 + feature.verticalOffsetM)
+    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.32 + feature.verticalOffsetM)
+    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.40 + feature.verticalOffsetM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.50 + feature.verticalOffsetM)
+    appendRoadEdgeMarkings(markings, path, feature.widthM, 0.66 + feature.verticalOffsetM)
+    appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.72 + feature.verticalOffsetM)
     if (priority < 40 || feature.isTunnel) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
     for (let index = 0; index < path.length - 1; index += 1) {

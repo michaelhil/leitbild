@@ -19,6 +19,7 @@
     assignDroneKeyBinding,
     defaultDroneKeyBindings,
     droneKeyBindingDefinitions,
+    droneManualAxesForPressedKeys,
     formatKeyCode,
     readDroneKeyBindings,
     writeDroneKeyBindings,
@@ -47,8 +48,8 @@
 
   const viewportMargin = 12
   const offsetStepPx = 28
-  const sendIntervalMs = 70
-  const activeKeepaliveMs = 140
+  const sendIntervalMs = 50
+  const activeKeepaliveMs = 100
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
@@ -206,17 +207,8 @@
     commandStatus = 'Key bindings reset'
   }
 
-  const isActionPressed = (action: DroneKeyBindingAction): boolean => {
-    const code = keyBindings[action]
-    return code !== '' && keys.has(code)
-  }
-
-  const keyboardAxes = (): DroneManualAxes => ({
-    forward: (isActionPressed('flight.forward') ? 1 : 0) + (isActionPressed('flight.backward') ? -1 : 0),
-    right: (isActionPressed('flight.right') ? 1 : 0) + (isActionPressed('flight.left') ? -1 : 0),
-    vertical: (isActionPressed('flight.climb') ? 1 : 0) + (isActionPressed('flight.descend') ? -1 : 0),
-    yaw: (isActionPressed('flight.yawRight') ? 1 : 0) + (isActionPressed('flight.yawLeft') ? -1 : 0),
-  })
+  const keyboardAxes = (): DroneManualAxes =>
+    droneManualAxesForPressedKeys(keyBindings, keys)
 
   const gamepadAxes = (): DroneManualAxes | null => {
     if (selectedGamepadIndex === null || !navigator.getGamepads) return null
@@ -486,7 +478,6 @@
     if (handleCameraOrbitKeydown(event)) return
     const handled = handledKeyboardEvent(event)
     if (handled) event.preventDefault()
-    if (event.repeat) return
     if (event.code === 'Escape') {
       event.preventDefault()
       if (mouseCaptured) {
@@ -499,6 +490,7 @@
     const action = actionForKeyCode(keyBindings, event.code)
     if (handleCameraKeyAction(action)) return
     if (handled) keys.add(event.code)
+    if (event.repeat) return
   }
 
   const onKeyup = (event: KeyboardEvent): void => {

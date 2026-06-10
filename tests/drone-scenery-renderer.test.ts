@@ -179,6 +179,7 @@ describe('drone scenery GLB compiler', () => {
     const materialNames = usedMaterialNames(json)
 
     expect(materialNames.has('cool building wall')).toBe(true)
+    expect(materialNames.has('building facade trim')).toBe(true)
     expect([
       'building roof',
       'light building roof',

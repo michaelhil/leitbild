@@ -1,3 +1,5 @@
+import type { DroneManualAxes } from '../../packs/drone/model.ts'
+
 export type DroneKeyBindingAction =
   | 'flight.forward'
   | 'flight.backward'
@@ -111,6 +113,25 @@ export const actionForKeyCode = (
   }
   return null
 }
+
+const isPressed = (
+  bindings: DroneKeyBindingMap,
+  pressedCodes: ReadonlySet<string>,
+  action: DroneKeyBindingAction,
+): boolean => {
+  const code = bindings[action]
+  return code !== '' && pressedCodes.has(code)
+}
+
+export const droneManualAxesForPressedKeys = (
+  bindings: DroneKeyBindingMap,
+  pressedCodes: ReadonlySet<string>,
+): DroneManualAxes => ({
+  forward: (isPressed(bindings, pressedCodes, 'flight.forward') ? 1 : 0) + (isPressed(bindings, pressedCodes, 'flight.backward') ? -1 : 0),
+  right: (isPressed(bindings, pressedCodes, 'flight.right') ? 1 : 0) + (isPressed(bindings, pressedCodes, 'flight.left') ? -1 : 0),
+  vertical: (isPressed(bindings, pressedCodes, 'flight.climb') ? 1 : 0) + (isPressed(bindings, pressedCodes, 'flight.descend') ? -1 : 0),
+  yaw: (isPressed(bindings, pressedCodes, 'flight.yawRight') ? 1 : 0) + (isPressed(bindings, pressedCodes, 'flight.yawLeft') ? -1 : 0),
+})
 
 export const readDroneKeyBindings = (
   storage: DroneKeyBindingStorage,
