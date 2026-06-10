@@ -50,6 +50,11 @@ interface TileAggregate {
   readonly featureCounts: SceneryTilesetFeatureCounts
 }
 
+interface TileOffset {
+  readonly x: number
+  readonly z: number
+}
+
 const metersPerDegreeLat = 111_320
 
 const zeroFeatureCounts = (): SceneryTilesetFeatureCounts => ({
@@ -211,27 +216,29 @@ const parentCoordFor = (
 const ensureNode = (
   nodes: Map<string, TileNode>,
   coord: TileCoord,
+  rootZoom: number,
 ): TileNode => {
   const key = tileKey(coord)
   const existing = nodes.get(key)
   if (existing) return existing
   const node: TileNode = { coord, summary: null, children: new Map() }
   nodes.set(key, node)
-  const parent = parentCoordFor(coord)
-  if (parent) ensureNode(nodes, parent).children.set(key, node)
+  const parent = coord.z > rootZoom ? parentCoordFor(coord) : null
+  if (parent) ensureNode(nodes, parent, rootZoom).children.set(key, node)
   return node
 }
 
 const buildTree = (
   tiles: ReadonlyArray<SceneryAssetTileSummary>,
+  rootZoom: number,
 ): ReadonlyArray<TileNode> => {
   const nodes = new Map<string, TileNode>()
   for (const summary of tiles) {
-    const node = ensureNode(nodes, summary)
+    const node = ensureNode(nodes, summary, rootZoom)
     node.summary = summary
   }
   return [...nodes.values()]
-    .filter(node => node.coord.z === 0)
+    .filter(node => node.coord.z === rootZoom)
     .sort((left, right) => left.coord.x - right.coord.x || left.coord.y - right.coord.y)
 }
 
@@ -273,11 +280,8 @@ const buildTile = (config: {
   readonly node: TileNode
   readonly originLon: number
   readonly originLat: number
+  readonly parentOffset: TileOffset
 }): { readonly tile: SceneryTilesetTile; readonly aggregate: TileAggregate } => {
-  const children = [...config.node.children.values()]
-    .sort((left, right) => left.coord.x - right.coord.x || left.coord.y - right.coord.y)
-    .map(child => buildTile({ node: child, originLon: config.originLon, originLat: config.originLat }))
-  const aggregate = aggregateFor(config.node.summary, children.map(child => child.aggregate))
   const center = sceneryTileCenterLonLat(config.node.coord)
   const offset = localOffsetFromLonLat({
     lon: center.lon,
@@ -285,6 +289,15 @@ const buildTile = (config: {
     originLon: config.originLon,
     originLat: config.originLat,
   })
+  const children = [...config.node.children.values()]
+    .sort((left, right) => left.coord.x - right.coord.x || left.coord.y - right.coord.y)
+    .map(child => buildTile({
+      node: child,
+      originLon: config.originLon,
+      originLat: config.originLat,
+      parentOffset: offset,
+    }))
+  const aggregate = aggregateFor(config.node.summary, children.map(child => child.aggregate))
   const baseError = config.node.summary?.lod.geometricErrorM ?? geometricErrorForTile(config.node.coord)
   const childError = Math.max(0, ...children.map(child => child.tile.geometricError * 1.9))
   const tile: SceneryTilesetTile = {
@@ -297,7 +310,7 @@ const buildTile = (config: {
     },
     geometricError: Math.max(baseError, childError),
     refine: 'REPLACE',
-    transform: translationTransform(offset.x, 0, offset.z),
+    transform: translationTransform(offset.x - config.parentOffset.x, 0, offset.z - config.parentOffset.z),
     ...(config.node.summary
       ? {
           content: {
@@ -352,8 +365,14 @@ export const buildSceneryTilesetDocument = (
     throw new Error('cannot build scenery 3D Tiles document without content tiles')
   }
   const origin = boundsCenter(config.bounds)
-  const rootChildren = buildTree(config.tiles)
-    .map(node => buildTile({ node, originLon: origin.lon, originLat: origin.lat }))
+  const rootZoom = Math.min(...config.zooms)
+  const rootChildren = buildTree(config.tiles, rootZoom)
+    .map(node => buildTile({
+      node,
+      originLon: origin.lon,
+      originLat: origin.lat,
+      parentOffset: { x: 0, z: 0 },
+    }))
   const rootAggregate = aggregateFor(null, rootChildren.map(child => child.aggregate))
   const geometricError = Math.max(rootGeometricError(config.bounds), ...rootChildren.map(child => child.tile.geometricError * 2))
   const document = {

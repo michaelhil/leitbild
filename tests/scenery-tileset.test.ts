@@ -34,14 +34,17 @@ const tileSummary = (config: {
 
 const createTileset = (
   tiles: ReadonlyArray<SceneryAssetTileSummary>,
+  options: {
+    readonly zooms?: ReadonlyArray<number>
+  } = {},
 ) => buildSceneryTilesetDocument({
   tilesetId: 'leitbild-scenery-norway',
   sourceTilesetId: 'leitbild-osm-norway',
   sourcePmtilesPath: '/tmp/norway.pmtiles',
   builtAt: '2026-06-10T00:00:00Z',
-  bounds: { minLon: 10.6, minLat: 59.8, maxLon: 10.9, maxLat: 60.05 },
-  zooms: [...new Set(tiles.map(tile => tile.z))].sort((left, right) => left - right),
-  lodLevels: [...new Set(tiles.map(tile => tile.z))]
+  bounds: createTilesetBounds,
+  zooms: options.zooms ?? [...new Set(tiles.map(tile => tile.z))].sort((left, right) => left - right),
+  lodLevels: [...new Set(options.zooms ?? tiles.map(tile => tile.z))]
     .sort((left, right) => left - right)
     .map(zoom => ({ zoom, geometricErrorM: zoom === 12 ? 32 : zoom === 13 ? 16 : 8, maxScreenSpaceError: 16 })),
   inputArtifacts: [{
@@ -87,6 +90,45 @@ const findTile = (
   return null
 }
 
+const transformTranslation = (
+  tile: SceneryTilesetTile,
+): { readonly x: number; readonly z: number } => ({
+  x: tile.transform?.[12] ?? 0,
+  z: tile.transform?.[14] ?? 0,
+})
+
+const metersPerDegreeLat = 111_320
+const createTilesetBounds = { minLon: 10.6, minLat: 59.8, maxLon: 10.9, maxLat: 60.05 } as const
+
+const metersPerDegreeLonAt = (latDeg: number): number =>
+  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
+
+const tileCenterLonLat = (tile: { readonly z: number; readonly x: number; readonly y: number }): {
+  readonly lon: number
+  readonly lat: number
+} => {
+  const size = 2 ** tile.z
+  const lon = (tile.x + 0.5) / size * 360 - 180
+  const n = Math.PI - 2 * Math.PI * (tile.y + 0.5) / size
+  const lat = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)))
+  return { lon, lat }
+}
+
+const expectedOffsetFor = (tile: { readonly z: number; readonly x: number; readonly y: number }): {
+  readonly x: number
+  readonly z: number
+} => {
+  const origin = {
+    lon: (createTilesetBounds.minLon + createTilesetBounds.maxLon) / 2,
+    lat: (createTilesetBounds.minLat + createTilesetBounds.maxLat) / 2,
+  }
+  const center = tileCenterLonLat(tile)
+  return {
+    x: (center.lon - origin.lon) * metersPerDegreeLonAt(origin.lat),
+    z: -(center.lat - origin.lat) * metersPerDegreeLat,
+  }
+}
+
 describe('Scenery 3D Tiles artifact', () => {
   test('builds a single hierarchical tileset entrypoint with relative GLB content URIs', () => {
     const tileset = createTileset([
@@ -105,15 +147,52 @@ describe('Scenery 3D Tiles artifact', () => {
     ])
   })
 
-  test('synthesizes parent nodes so child detail never has to replace bare ground directly', () => {
+  test('starts hierarchy at the configured coarse scenery zoom instead of global z0 ancestors', () => {
+    const tileset = createTileset([
+      tileSummary({ z: 12, x: 2170, y: 1191, byteLength: 2_000 }),
+      tileSummary({ z: 13, x: 4340, y: 2382, byteLength: 3_000 }),
+      tileSummary({ z: 14, x: 8680, y: 4764, byteLength: 4_000 }),
+    ], { zooms: [12, 13, 14] })
+
+    expect(tileset.root.children?.map(child => child.extras?.leitbild?.tileKey)).toEqual(['12/2170/1191'])
+    expect(findTile(tileset.root, '0/0/0')).toBeNull()
+    expect(findTile(tileset.root, '11/1085/595')).toBeNull()
+  })
+
+  test('synthesizes configured local parent nodes when detail content is sparse', () => {
     const tileset = createTileset([
       tileSummary({ z: 14, x: 8680, y: 4764, byteLength: 4_000 }),
-    ])
+    ], { zooms: [12, 13, 14] })
 
+    expect(findTile(tileset.root, '12/2170/1191')).not.toBeNull()
     expect(findTile(tileset.root, '13/4340/2382')).not.toBeNull()
     expect(findTile(tileset.root, '14/8680/4764')?.content?.uri).toBe('drone-urban-flight/14/8680/4764.glb')
     expect(findTile(tileset.root, '13/4340/2382')?.content).toBeUndefined()
     expect(findTile(tileset.root, '13/4340/2382')?.children?.length).toBe(1)
+  })
+
+  test('uses relative child transforms so hierarchical placement does not accumulate absolute offsets', () => {
+    const tileset = createTileset([
+      tileSummary({ z: 12, x: 2170, y: 1191, byteLength: 2_000 }),
+      tileSummary({ z: 13, x: 4340, y: 2382, byteLength: 3_000 }),
+      tileSummary({ z: 14, x: 8680, y: 4764, byteLength: 4_000 }),
+    ], { zooms: [12, 13, 14] })
+    const z12 = findTile(tileset.root, '12/2170/1191')
+    const z13 = findTile(tileset.root, '13/4340/2382')
+    const z14 = findTile(tileset.root, '14/8680/4764')
+    expect(z12).not.toBeNull()
+    expect(z13).not.toBeNull()
+    expect(z14).not.toBeNull()
+
+    const t12 = transformTranslation(z12!)
+    const t13 = transformTranslation(z13!)
+    const t14 = transformTranslation(z14!)
+    const expected13 = expectedOffsetFor({ z: 13, x: 4340, y: 2382 })
+    const expected14 = expectedOffsetFor({ z: 14, x: 8680, y: 4764 })
+    expect(t12.x + t13.x).toBeCloseTo(expected13.x, 6)
+    expect(t12.z + t13.z).toBeCloseTo(expected13.z, 6)
+    expect(t12.x + t13.x + t14.x).toBeCloseTo(expected14.x, 6)
+    expect(t12.z + t13.z + t14.z).toBeCloseTo(expected14.z, 6)
   })
 
   test('stores aggregate byte and feature metadata for renderer cache accounting', () => {
