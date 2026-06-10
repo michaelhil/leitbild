@@ -7,6 +7,8 @@ import {
   type SceneryAssetLodLevel,
   type SceneryAssetTileset,
   type SceneryAssetTileSummary,
+  type SceneryTileQualityFinding,
+  type SceneryTilesetQualitySummary,
   type SceneryTilesetFeatureCounts,
   type SceneryTilesetTile,
 } from './scenery.ts'
@@ -276,6 +278,56 @@ const contentUriFor = (
 ): string =>
   `${encodeURIComponent(summary.recipeId)}/${summary.z}/${summary.x}/${summary.y}.glb`
 
+const rankFindings = (
+  findings: ReadonlyArray<SceneryTileQualityFinding>,
+): ReadonlyArray<SceneryTileQualityFinding> => {
+  const severityRank: Readonly<Record<SceneryTileQualityFinding['severity'], number>> = {
+    error: 0,
+    warning: 1,
+    info: 2,
+  }
+  return [...findings].sort((left, right) =>
+    severityRank[left.severity] - severityRank[right.severity]
+      || left.code.localeCompare(right.code)
+      || left.message.localeCompare(right.message),
+  )
+}
+
+const qualitySummaryFor = (
+  tiles: ReadonlyArray<SceneryAssetTileSummary>,
+): SceneryTilesetQualitySummary => {
+  const auditedTiles = tiles.filter(tile => tile.quality !== undefined)
+  const riskyTiles = auditedTiles.filter(tile => (tile.quality?.riskScore ?? 0) > 0)
+  const topRiskTiles = [...riskyTiles]
+    .sort((left, right) =>
+      (right.quality?.riskScore ?? 0) - (left.quality?.riskScore ?? 0)
+        || (right.quality?.errorCount ?? 0) - (left.quality?.errorCount ?? 0)
+        || (right.quality?.warningCount ?? 0) - (left.quality?.warningCount ?? 0)
+        || left.z - right.z
+        || left.x - right.x
+        || left.y - right.y,
+    )
+    .slice(0, 24)
+    .map(tile => ({
+      z: tile.z,
+      x: tile.x,
+      y: tile.y,
+      riskScore: tile.quality?.riskScore ?? 0,
+      findingCount: tile.quality?.findingCount ?? 0,
+      warningCount: tile.quality?.warningCount ?? 0,
+      errorCount: tile.quality?.errorCount ?? 0,
+      findings: rankFindings(tile.quality?.findings ?? []).slice(0, 6),
+    }))
+
+  return {
+    maxRiskScore: Math.max(0, ...auditedTiles.map(tile => tile.quality?.riskScore ?? 0)),
+    riskyTileCount: riskyTiles.length,
+    warningTileCount: auditedTiles.filter(tile => (tile.quality?.warningCount ?? 0) > 0).length,
+    errorTileCount: auditedTiles.filter(tile => (tile.quality?.errorCount ?? 0) > 0).length,
+    topRiskTiles,
+  }
+}
+
 const buildTile = (config: {
   readonly node: TileNode
   readonly originLon: number
@@ -328,6 +380,7 @@ const buildTile = (config: {
                 minHeightM: config.node.summary.minHeightM,
                 maxHeightM: config.node.summary.maxHeightM,
                 featureCounts: config.node.summary.featureCounts,
+                ...(config.node.summary.quality === undefined ? {} : { quality: config.node.summary.quality }),
               },
             },
           },
@@ -424,6 +477,7 @@ export const buildSceneryTilesetDocument = (
         recipes: config.recipes,
         tileTemplate: sceneryAssetTileTemplate,
         outputRoot: config.outputRoot,
+        quality: qualitySummaryFor(config.tiles),
         counts: config.counts,
         tiles: config.tiles,
       },

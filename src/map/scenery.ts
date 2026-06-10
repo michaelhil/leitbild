@@ -135,6 +135,52 @@ export const sceneryAssetLodLevelSchema = z.object({
 })
 export type SceneryAssetLodLevel = z.infer<typeof sceneryAssetLodLevelSchema>
 
+export const sceneryTileQualityFindingSchema = z.object({
+  severity: z.enum(['info', 'warning', 'error']),
+  code: z.string().min(1),
+  message: z.string().min(1),
+  count: z.number().int().nonnegative().optional(),
+  materialKey: z.string().min(1).optional(),
+  minGapM: z.number().finite().nonnegative().optional(),
+})
+export type SceneryTileQualityFinding = z.infer<typeof sceneryTileQualityFindingSchema>
+
+export const sceneryTileQualityAuditSchema = z.object({
+  riskScore: z.number().int().nonnegative(),
+  findingCount: z.number().int().nonnegative(),
+  warningCount: z.number().int().nonnegative(),
+  errorCount: z.number().int().nonnegative(),
+  vertexCount: z.number().int().nonnegative(),
+  triangleCount: z.number().int().nonnegative(),
+  horizontalPlaneCount: z.number().int().nonnegative(),
+  closeHorizontalOverlapCount: z.number().int().nonnegative(),
+  duplicateHorizontalTriangleCount: z.number().int().nonnegative(),
+  duplicateSourceRefCount: z.number().int().nonnegative(),
+  outOfBoundsPointCount: z.number().int().nonnegative(),
+  degenerateTriangleCount: z.number().int().nonnegative(),
+  minHorizontalGapM: z.number().finite().nonnegative().nullable(),
+  findings: z.array(sceneryTileQualityFindingSchema),
+})
+export type SceneryTileQualityAudit = z.infer<typeof sceneryTileQualityAuditSchema>
+
+export const sceneryTilesetQualitySummarySchema = z.object({
+  maxRiskScore: z.number().int().nonnegative(),
+  riskyTileCount: z.number().int().nonnegative(),
+  warningTileCount: z.number().int().nonnegative(),
+  errorTileCount: z.number().int().nonnegative(),
+  topRiskTiles: z.array(z.object({
+    z: z.number().int().min(0).max(24),
+    x: z.number().int().min(0),
+    y: z.number().int().min(0),
+    riskScore: z.number().int().nonnegative(),
+    findingCount: z.number().int().nonnegative(),
+    warningCount: z.number().int().nonnegative(),
+    errorCount: z.number().int().nonnegative(),
+    findings: z.array(sceneryTileQualityFindingSchema),
+  })),
+})
+export type SceneryTilesetQualitySummary = z.infer<typeof sceneryTilesetQualitySummarySchema>
+
 export const sceneryAssetTileSummarySchema = z.object({
   recipeId: z.string().min(1),
   z: z.number().int().min(0).max(24),
@@ -157,6 +203,7 @@ export const sceneryAssetTileSummarySchema = z.object({
     water: z.number().int().nonnegative(),
     vegetation: z.number().int().nonnegative(),
   }),
+  quality: sceneryTileQualityAuditSchema.optional(),
 })
 export type SceneryAssetTileSummary = z.infer<typeof sceneryAssetTileSummarySchema>
 
@@ -189,6 +236,7 @@ export const sceneryTilesetTileMetadataSchema = z.object({
   minHeightM: z.number().finite(),
   maxHeightM: z.number().finite(),
   featureCounts: sceneryTilesetFeatureCountsSchema,
+  quality: sceneryTileQualityAuditSchema.optional(),
 })
 export type SceneryTilesetTileMetadata = z.infer<typeof sceneryTilesetTileMetadataSchema>
 
@@ -276,6 +324,7 @@ export const sceneryAssetTilesetSchema = z.object({
       recipes: z.array(z.unknown()).min(1),
       tileTemplate: z.literal(sceneryAssetTileTemplate),
       outputRoot: z.string().min(1),
+      quality: sceneryTilesetQualitySummarySchema.optional(),
       counts: z.object({
         decodedTileCount: z.number().int().nonnegative(),
         emptyTileCount: z.number().int().nonnegative(),

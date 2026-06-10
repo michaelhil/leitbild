@@ -1,5 +1,11 @@
 import earcut from 'earcut'
-import type { SceneryAssetTileSummary, SceneryPoint, SceneryTile } from './scenery.ts'
+import type {
+  SceneryAssetTileSummary,
+  SceneryPoint,
+  SceneryTile,
+  SceneryTileQualityAudit,
+  SceneryTileQualityFinding,
+} from './scenery.ts'
 
 interface TileLonLat {
   readonly lon: number
@@ -57,12 +63,14 @@ interface SceneryGlbLodProfile {
   readonly minRoadPriority: number
   readonly includeFacadeTrim: boolean
   readonly includeFacadeWindows: boolean
+  readonly includeRoofParapets: boolean
   readonly includeRoofFixtures: boolean
   readonly includeRoadMarkings: boolean
   readonly includeStreetLights: boolean
   readonly includePoiBeacons: boolean
   readonly facadeWindowCellBudget: number
   readonly facadeTrimBandBudget: number
+  readonly roofParapetSegmentBudget: number
   readonly roofFixtureBudget: number
   readonly roadEdgeRibbonPairBudget: number
   readonly roadMarkingDashBudget: number
@@ -76,6 +84,7 @@ interface SceneryGlbLodProfile {
 interface SceneryDetailBudget {
   facadeWindowCellsRemaining: number
   facadeTrimBandsRemaining: number
+  roofParapetSegmentsRemaining: number
   roofFixturesRemaining: number
   roadEdgeRibbonPairsRemaining: number
   roadMarkingDashesRemaining: number
@@ -115,12 +124,14 @@ const lodProfileForZoom = (
       minRoadPriority: 50,
       includeFacadeTrim: false,
       includeFacadeWindows: false,
+      includeRoofParapets: false,
       includeRoofFixtures: false,
       includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
       facadeWindowCellBudget: 0,
       facadeTrimBandBudget: 0,
+      roofParapetSegmentBudget: 0,
       roofFixtureBudget: 0,
       roadEdgeRibbonPairBudget: 0,
       roadMarkingDashBudget: 0,
@@ -138,12 +149,14 @@ const lodProfileForZoom = (
       minRoadPriority: 40,
       includeFacadeTrim: false,
       includeFacadeWindows: false,
+      includeRoofParapets: false,
       includeRoofFixtures: false,
       includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
       facadeWindowCellBudget: 0,
       facadeTrimBandBudget: 0,
+      roofParapetSegmentBudget: 0,
       roofFixtureBudget: 0,
       roadEdgeRibbonPairBudget: 0,
       roadMarkingDashBudget: 0,
@@ -160,12 +173,14 @@ const lodProfileForZoom = (
     minRoadPriority: 30,
     includeFacadeTrim: true,
     includeFacadeWindows: true,
+    includeRoofParapets: true,
     includeRoofFixtures: true,
     includeRoadMarkings: true,
     includeStreetLights: true,
     includePoiBeacons: true,
     facadeWindowCellBudget: 11_000,
     facadeTrimBandBudget: 2_200,
+    roofParapetSegmentBudget: 2_400,
     roofFixtureBudget: 240,
     roadEdgeRibbonPairBudget: 360,
     roadMarkingDashBudget: 1_800,
@@ -182,6 +197,7 @@ const detailBudgetForProfile = (
 ): SceneryDetailBudget => ({
   facadeWindowCellsRemaining: profile.facadeWindowCellBudget,
   facadeTrimBandsRemaining: profile.facadeTrimBandBudget,
+  roofParapetSegmentsRemaining: profile.roofParapetSegmentBudget,
   roofFixturesRemaining: profile.roofFixtureBudget,
   roadEdgeRibbonPairsRemaining: profile.roadEdgeRibbonPairBudget,
   roadMarkingDashesRemaining: profile.roadMarkingDashBudget,
@@ -214,6 +230,7 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], depthPolicy: 'base-surface', roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
   { key: 'building-roof-red', name: 'red tile roof', color: [0.57, 0.25, 0.18, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
   { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
+  { key: 'roof-parapet', name: 'roof parapets', color: [0.58, 0.60, 0.58, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.8, doubleSided: true },
   { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, metallicFactor: 0.05 },
   { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
   { key: 'building-trim', name: 'building facade trim', color: [0.55, 0.58, 0.57, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.76, doubleSided: true },
@@ -614,6 +631,34 @@ const appendBuildingWalls = (
   }
 }
 
+const appendRoofParapets = (
+  bucket: MeshBucket,
+  rings: ReadonlyArray<ReadonlyArray<LocalPoint>>,
+  roofY: number,
+  budget: SceneryDetailBudget,
+): void => {
+  if (budget.roofParapetSegmentsRemaining <= 0) return
+  const outerRing = rings[0]
+  if (!outerRing) return
+  const ring = openRing(outerRing)
+  if (ring.length < 2 || Math.abs(ringArea(ring)) < 85) return
+  const ringSignedAreaM2 = ringArea(ring)
+  for (let index = 0; index < ring.length && budget.roofParapetSegmentsRemaining > 0; index += 1) {
+    const start = ring[index]!
+    const end = ring[(index + 1) % ring.length]!
+    const dx = end.x - start.x
+    const dz = end.z - start.z
+    const length = Math.hypot(dx, dz)
+    if (length < 4.5) continue
+    const ux = dx / length
+    const uz = dz / length
+    const normal = outwardWallNormal(dx, dz, length, ringSignedAreaM2)
+    const insetM = Math.min(0.34, length * 0.06)
+    appendWallSpan(bucket, start, ux, uz, insetM, length - insetM, roofY + 0.03, roofY + 0.52, normal, 0.04)
+    budget.roofParapetSegmentsRemaining -= 1
+  }
+}
+
 const roadPriority = (className: string): number => {
   if (className === 'motorway' || className === 'motorway_link') return 90
   if (className === 'trunk' || className === 'trunk_link') return 80
@@ -992,6 +1037,7 @@ const appendBuildings = (
 ): void => {
   const windows = bucketFor(buckets, 'building-window', 'building facade windows')
   const trim = bucketFor(buckets, 'building-trim', 'building facade trim')
+  const roofParapets = bucketFor(buckets, 'roof-parapet', 'roof edge parapets')
   const roofFixtures = bucketFor(buckets, 'roof-fixture', 'roof-mounted source-backed fixtures')
   for (const feature of tile.features.polygons) {
     if (feature.kind !== 'building') continue
@@ -1006,6 +1052,9 @@ const appendBuildings = (
     const roofY = minHeight + height + 0.08
     appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id), profile, budget)
     appendHorizontalPolygon(roofBucket, rings, roofY)
+    if (profile.includeRoofParapets) {
+      appendRoofParapets(roofParapets, rings, roofY, budget)
+    }
     if (profile.includeRoofFixtures) {
       appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`), budget)
     }
@@ -1225,6 +1274,297 @@ const primitiveBounds = (
     : { min: [0, 0, 0], max: [0, 0, 0] }
 }
 
+interface HorizontalPlaneSample {
+  readonly id: number
+  readonly materialKey: string
+  readonly y: number
+  readonly minX: number
+  readonly maxX: number
+  readonly minZ: number
+  readonly maxZ: number
+}
+
+const horizontalPlaneYToleranceM = 0.003
+const horizontalOverlapGapWarningM = 0.05
+const horizontalOverlapAreaWarningM2 = 0.16
+const horizontalOverlapGridM = 48
+const degenerateTriangleAreaM2 = 0.0005
+const tilePointBoundsEpsilon = 0.001
+
+const allFeaturePoints = (
+  tile: SceneryTile,
+): ReadonlyArray<SceneryPoint> => [
+  ...tile.features.polygons.flatMap(feature => feature.rings.flatMap(ring => ring)),
+  ...tile.features.lines.flatMap(feature => feature.path),
+]
+
+const outOfBoundsPointCountFor = (
+  tile: SceneryTile,
+): number => allFeaturePoints(tile).filter(point =>
+  point[0] < -tilePointBoundsEpsilon
+    || point[0] > tile.tile.extent + tilePointBoundsEpsilon
+    || point[1] < -tilePointBoundsEpsilon
+    || point[1] > tile.tile.extent + tilePointBoundsEpsilon,
+).length
+
+const duplicateSourceRefCountFor = (
+  tile: SceneryTile,
+): number => {
+  const counts = new Map<string, number>()
+  const note = (kind: string, sourceLayer: string, sourceRef: string | undefined): void => {
+    if (!sourceRef) return
+    const key = `${kind}:${sourceLayer}:${sourceRef}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  for (const feature of tile.features.polygons) note(feature.kind, feature.sourceLayer, feature.sourceRef)
+  for (const feature of tile.features.lines) note(feature.kind, feature.sourceLayer, feature.sourceRef)
+  return [...counts.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
+}
+
+const triangleAreaM2 = (
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  c: readonly [number, number, number],
+): number => {
+  const abx = b[0] - a[0]
+  const aby = b[1] - a[1]
+  const abz = b[2] - a[2]
+  const acx = c[0] - a[0]
+  const acy = c[1] - a[1]
+  const acz = c[2] - a[2]
+  const cx = aby * acz - abz * acy
+  const cy = abz * acx - abx * acz
+  const cz = abx * acy - aby * acx
+  return Math.hypot(cx, cy, cz) / 2
+}
+
+const positionAt = (
+  positions: Float32Array,
+  index: number,
+): readonly [number, number, number] => [
+  positions[index * 3] ?? 0,
+  positions[index * 3 + 1] ?? 0,
+  positions[index * 3 + 2] ?? 0,
+]
+
+const horizontalSampleFor = (
+  id: number,
+  primitive: PrimitiveSpec,
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  c: readonly [number, number, number],
+): HorizontalPlaneSample | null => {
+  const minY = Math.min(a[1], b[1], c[1])
+  const maxY = Math.max(a[1], b[1], c[1])
+  if (maxY - minY > horizontalPlaneYToleranceM) return null
+  return {
+    id,
+    materialKey: primitive.materialKey,
+    y: (a[1] + b[1] + c[1]) / 3,
+    minX: Math.min(a[0], b[0], c[0]),
+    maxX: Math.max(a[0], b[0], c[0]),
+    minZ: Math.min(a[2], b[2], c[2]),
+    maxZ: Math.max(a[2], b[2], c[2]),
+  }
+}
+
+const quantizedPositionKey = (
+  position: readonly [number, number, number],
+): string => [
+  Math.round(position[0] * 1000),
+  Math.round(position[1] * 1000),
+  Math.round(position[2] * 1000),
+].join(':')
+
+const horizontalTriangleSignatureFor = (
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  c: readonly [number, number, number],
+): string => [
+  quantizedPositionKey(a),
+  quantizedPositionKey(b),
+  quantizedPositionKey(c),
+].sort().join('|')
+
+const horizontalSamplesFor = (
+  primitives: ReadonlyArray<PrimitiveSpec>,
+): {
+  readonly samples: ReadonlyArray<HorizontalPlaneSample>
+  readonly degenerateTriangleCount: number
+  readonly duplicateHorizontalTriangleCount: number
+  readonly triangleCount: number
+  readonly vertexCount: number
+} => {
+  const samples: HorizontalPlaneSample[] = []
+  const horizontalTriangleSignatures = new Set<string>()
+  let sampleId = 0
+  let triangleCount = 0
+  let vertexCount = 0
+  let degenerateTriangleCount = 0
+  let duplicateHorizontalTriangleCount = 0
+  for (const primitive of primitives) {
+    vertexCount += primitive.positions.length / 3
+    for (let index = 0; index < primitive.indices.length; index += 3) {
+      const aIndex = primitive.indices[index]
+      const bIndex = primitive.indices[index + 1]
+      const cIndex = primitive.indices[index + 2]
+      if (aIndex === undefined || bIndex === undefined || cIndex === undefined) continue
+      triangleCount += 1
+      const a = positionAt(primitive.positions, aIndex)
+      const b = positionAt(primitive.positions, bIndex)
+      const c = positionAt(primitive.positions, cIndex)
+      if (triangleAreaM2(a, b, c) < degenerateTriangleAreaM2) degenerateTriangleCount += 1
+      const sample = horizontalSampleFor(sampleId, primitive, a, b, c)
+      sampleId += 1
+      if (sample) {
+        const signature = horizontalTriangleSignatureFor(a, b, c)
+        if (horizontalTriangleSignatures.has(signature)) duplicateHorizontalTriangleCount += 1
+        horizontalTriangleSignatures.add(signature)
+        samples.push(sample)
+      }
+    }
+  }
+  return { samples, degenerateTriangleCount, duplicateHorizontalTriangleCount, triangleCount, vertexCount }
+}
+
+const horizontalOverlapAreaM2 = (
+  left: HorizontalPlaneSample,
+  right: HorizontalPlaneSample,
+): number => {
+  const widthM = Math.min(left.maxX, right.maxX) - Math.max(left.minX, right.minX)
+  const depthM = Math.min(left.maxZ, right.maxZ) - Math.max(left.minZ, right.minZ)
+  return widthM > 0 && depthM > 0 ? widthM * depthM : 0
+}
+
+const gridKeysFor = (
+  sample: HorizontalPlaneSample,
+): ReadonlyArray<string> => {
+  const minX = Math.floor(sample.minX / horizontalOverlapGridM)
+  const maxX = Math.floor(sample.maxX / horizontalOverlapGridM)
+  const minZ = Math.floor(sample.minZ / horizontalOverlapGridM)
+  const maxZ = Math.floor(sample.maxZ / horizontalOverlapGridM)
+  const keys: string[] = []
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let z = minZ; z <= maxZ; z += 1) keys.push(`${x}:${z}`)
+  }
+  return keys
+}
+
+const horizontalOverlapAuditFor = (
+  samples: ReadonlyArray<HorizontalPlaneSample>,
+): {
+  readonly closeHorizontalOverlapCount: number
+  readonly minHorizontalGapM: number | null
+} => {
+  const cells = new Map<string, HorizontalPlaneSample[]>()
+  const seenPairs = new Set<string>()
+  let closeHorizontalOverlapCount = 0
+  let minHorizontalGapM = Number.POSITIVE_INFINITY
+  for (const sample of samples) {
+    for (const key of gridKeysFor(sample)) {
+      const existingSamples = cells.get(key) ?? []
+      for (const existing of existingSamples) {
+        if (existing.materialKey === sample.materialKey) continue
+        const gapM = Math.abs(existing.y - sample.y)
+        const overlapAreaM2 = horizontalOverlapAreaM2(existing, sample)
+        if (overlapAreaM2 < horizontalOverlapAreaWarningM2) continue
+        minHorizontalGapM = Math.min(minHorizontalGapM, gapM)
+        if (gapM >= horizontalOverlapGapWarningM) continue
+        const pairKey = existing.id < sample.id ? `${existing.id}:${sample.id}` : `${sample.id}:${existing.id}`
+        if (seenPairs.has(pairKey)) continue
+        seenPairs.add(pairKey)
+        closeHorizontalOverlapCount += 1
+      }
+      existingSamples.push(sample)
+      cells.set(key, existingSamples)
+    }
+  }
+  return {
+    closeHorizontalOverlapCount,
+    minHorizontalGapM: Number.isFinite(minHorizontalGapM) ? minHorizontalGapM : null,
+  }
+}
+
+const riskFinding = (
+  config: SceneryTileQualityFinding,
+): SceneryTileQualityFinding => config
+
+const auditSceneryTileQuality = (
+  tile: SceneryTile,
+  primitives: ReadonlyArray<PrimitiveSpec>,
+): SceneryTileQualityAudit => {
+  const horizontal = horizontalSamplesFor(primitives)
+  const overlap = horizontalOverlapAuditFor(horizontal.samples)
+  const duplicateSourceRefCount = duplicateSourceRefCountFor(tile)
+  const outOfBoundsPointCount = outOfBoundsPointCountFor(tile)
+  const findings: SceneryTileQualityFinding[] = []
+  if (outOfBoundsPointCount > 0) {
+    findings.push(riskFinding({
+      severity: 'error',
+      code: 'scenery.geometry.out_of_bounds',
+      message: 'Source geometry still extends outside the tile after clipping.',
+      count: outOfBoundsPointCount,
+    }))
+  }
+  if (overlap.closeHorizontalOverlapCount > 0) {
+    findings.push(riskFinding({
+      severity: 'warning',
+      code: 'scenery.depth.close_horizontal_overlap',
+      message: 'Different horizontal material planes overlap with too little vertical separation.',
+      count: overlap.closeHorizontalOverlapCount,
+      ...(overlap.minHorizontalGapM === null ? {} : { minGapM: overlap.minHorizontalGapM }),
+    }))
+  }
+  if (horizontal.duplicateHorizontalTriangleCount > 0) {
+    findings.push(riskFinding({
+      severity: 'warning',
+      code: 'scenery.depth.duplicate_horizontal_triangles',
+      message: 'Identical horizontal triangles were emitted more than once in the same tile.',
+      count: horizontal.duplicateHorizontalTriangleCount,
+    }))
+  }
+  if (horizontal.degenerateTriangleCount > 0) {
+    findings.push(riskFinding({
+      severity: horizontal.degenerateTriangleCount > 80 ? 'warning' : 'info',
+      code: 'scenery.mesh.degenerate_triangles',
+      message: 'The generated GLB contains tiny triangles that can shimmer under minification.',
+      count: horizontal.degenerateTriangleCount,
+    }))
+  }
+  if (duplicateSourceRefCount > 0) {
+    findings.push(riskFinding({
+      severity: duplicateSourceRefCount > 60 ? 'warning' : 'info',
+      code: 'scenery.source.duplicate_refs',
+      message: 'Multiple compiled features share the same source reference in this tile.',
+      count: duplicateSourceRefCount,
+    }))
+  }
+  const warningCount = findings.filter(finding => finding.severity === 'warning').length
+  const errorCount = findings.filter(finding => finding.severity === 'error').length
+  const riskScore =
+    outOfBoundsPointCount * 12
+    + overlap.closeHorizontalOverlapCount * 10
+    + horizontal.duplicateHorizontalTriangleCount * 16
+    + Math.min(120, horizontal.degenerateTriangleCount)
+    + Math.min(80, duplicateSourceRefCount)
+  return {
+    riskScore,
+    findingCount: findings.length,
+    warningCount,
+    errorCount,
+    vertexCount: horizontal.vertexCount,
+    triangleCount: horizontal.triangleCount,
+    horizontalPlaneCount: horizontal.samples.length,
+    closeHorizontalOverlapCount: overlap.closeHorizontalOverlapCount,
+    duplicateHorizontalTriangleCount: horizontal.duplicateHorizontalTriangleCount,
+    duplicateSourceRefCount,
+    outOfBoundsPointCount,
+    degenerateTriangleCount: horizontal.degenerateTriangleCount,
+    minHorizontalGapM: overlap.minHorizontalGapM,
+    findings,
+  }
+}
+
 const concatChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
   const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
   const output = new Uint8Array(total)
@@ -1378,6 +1718,7 @@ export const compileSceneryGlbTile = (
   const localBounds = primitiveBounds(primitives)
   const tileSize = tileSizeMeters(bounds, center)
   const verticalRadiusM = Math.max(Math.abs(localBounds.min[1]), Math.abs(localBounds.max[1]))
+  const quality = auditSceneryTileQuality(tile, primitives)
   const bytes = glbFromPrimitives(primitives)
   return {
     bytes,
@@ -1399,6 +1740,7 @@ export const compileSceneryGlbTile = (
       minHeightM: localBounds.min[1],
       maxHeightM: localBounds.max[1],
       featureCounts: featureCountsFor(tile),
+      quality,
     },
   }
 }

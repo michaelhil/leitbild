@@ -358,6 +358,32 @@ const crossingRoadTile = (): SceneryTile => ({
   },
 })
 
+const outOfBoundsTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'out-of-bounds-road',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:out-of-bounds',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(-120, 2050),
+          tilePoint(1200, 2050),
+          tilePoint(4300, 2050),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
 describe('drone scenery GLB compiler', () => {
   test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
     const result = compileSceneryGlbTile(testTile)
@@ -409,6 +435,7 @@ describe('drone scenery GLB compiler', () => {
       'red tile roof',
       'dark roof membrane',
     ].some(name => materialNames.has(name))).toBe(true)
+    expect(materialNames.has('roof parapets')).toBe(true)
     expect(materialNames.has('rooftop fixtures')).toBe(true)
     expect(materialNames.has('major road asphalt')).toBe(true)
     expect(materialNames.has('baked road markings')).toBe(true)
@@ -465,6 +492,32 @@ describe('drone scenery GLB compiler', () => {
     expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
   })
 
+  test('emits tile quality metrics for systematic scenery cleanup', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality).toBeDefined()
+    expect(quality?.vertexCount).toBeGreaterThan(0)
+    expect(quality?.triangleCount).toBeGreaterThan(0)
+    expect(quality?.horizontalPlaneCount).toBeGreaterThan(0)
+    expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.duplicateHorizontalTriangleCount).toBe(0)
+    expect(quality?.outOfBoundsPointCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.duplicate_horizontal_triangles')).toBe(false)
+  })
+
+  test('flags out-of-bounds compiler input before it becomes a flicker hunt', () => {
+    const result = compileSceneryGlbTile(outOfBoundsTile())
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality?.outOfBoundsPointCount).toBeGreaterThan(0)
+    expect(quality?.errorCount).toBeGreaterThan(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.geometry.out_of_bounds')).toBe(true)
+  })
+
   test('declares compiler-owned scenery depth policies instead of relying on renderer z-bias guesses', () => {
     const result = compileSceneryGlbTile(testTile)
     expect(result).not.toBeNull()
@@ -505,6 +558,7 @@ describe('drone scenery GLB compiler', () => {
     ].some(name => coarseMaterialNames.has(name))).toBe(true)
     expect(coarseMaterialNames.has('building windows')).toBe(false)
     expect(coarseMaterialNames.has('building facade trim')).toBe(false)
+    expect(coarseMaterialNames.has('roof parapets')).toBe(false)
     expect(coarseMaterialNames.has('rooftop fixtures')).toBe(false)
     expect(coarseMaterialNames.has('baked road markings')).toBe(false)
     expect(coarseMaterialNames.has('street lamp glass')).toBe(false)
@@ -520,6 +574,7 @@ describe('drone scenery GLB compiler', () => {
     expect(result!.bytes.byteLength).toBeLessThan(18_000_000)
     expect(materialNames.has('building windows')).toBe(true)
     expect(materialNames.has('building facade trim')).toBe(true)
+    expect(materialNames.has('roof parapets')).toBe(true)
     expect(materialNames.has('rooftop fixtures')).toBe(true)
     expect(materialNames.has('baked road markings')).toBe(true)
     expect(materialNames.has('street lamp glass')).toBe(true)

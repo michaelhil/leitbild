@@ -2,6 +2,10 @@ import { VectorTile } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { join } from 'node:path'
 import { PMTiles, TileType, type Source } from 'pmtiles'
+import { defaultSceneryRecipeId } from '../../src/map/scenery.ts'
+import { defaultSceneryRecipes } from '../../src/map/capabilities.ts'
+import { compileSceneryTileFromVectorTile } from '../../src/map/scenery-compiler.ts'
+import { compileSceneryGlbTile } from '../../src/map/scenery-glb.ts'
 import { createMapPipelineConfig } from './config.ts'
 
 interface TileCoord {
@@ -15,6 +19,23 @@ interface LayerAudit {
   namedFeatureCount: number
   geometryCounts: Record<string, number>
   classCounts: Record<string, number>
+}
+
+interface CompiledTileAudit {
+  readonly z: number
+  readonly x: number
+  readonly y: number
+  readonly byteLength: number
+  readonly riskScore: number
+  readonly warningCount: number
+  readonly errorCount: number
+  readonly findings: ReadonlyArray<{
+    readonly severity: 'info' | 'warning' | 'error'
+    readonly code: string
+    readonly message: string
+    readonly count?: number | undefined
+    readonly minGapM?: number | undefined
+  }>
 }
 
 const auditedLayers = [
@@ -153,6 +174,9 @@ const center = {
 }
 const radiusM = optionalPositiveNumberEnv('LEITBILD_SCENERY_AUDIT_RADIUS_M', 1_750)
 const zoom = optionalIntegerEnv('LEITBILD_SCENERY_AUDIT_ZOOM', 14)
+const recipeId = process.env.LEITBILD_SCENERY_AUDIT_RECIPE_ID ?? defaultSceneryRecipeId
+const recipe = defaultSceneryRecipes.find(candidate => candidate.id === recipeId)
+if (!recipe) throw new Error(`unknown scenery audit recipe: ${recipeId}`)
 const pmtilesPath = process.env.LEITBILD_SCENERY_AUDIT_PMTILES_PATH ?? join(config.rootDir, 'current', 'norway.pmtiles')
 const file = Bun.file(pmtilesPath)
 if (!await file.exists()) throw new Error(`PMTiles artifact does not exist: ${pmtilesPath}`)
@@ -164,6 +188,7 @@ if (zoom < header.minZoom || zoom > header.maxZoom) throw new Error(`zoom ${zoom
 
 const tiles = tileRangeFor(center, radiusM, zoom)
 const layerAudits = new Map<string, LayerAudit>(auditedLayers.map(layer => [layer, createLayerAudit()]))
+const compiledTiles: CompiledTileAudit[] = []
 let decodedTileCount = 0
 let emptyTileCount = 0
 for (const tileCoord of tiles) {
@@ -174,6 +199,30 @@ for (const tileCoord of tiles) {
   }
   decodedTileCount += 1
   const vectorTile = new VectorTile(new PbfReader(new Uint8Array(tile.data)) as unknown as ConstructorParameters<typeof VectorTile>[0])
+  const scenery = compileSceneryTileFromVectorTile({
+    vectorTile,
+    tile: tileCoord,
+    recipe,
+  })
+  const glb = compileSceneryGlbTile(scenery)
+  if (glb) {
+    compiledTiles.push({
+      z: tileCoord.z,
+      x: tileCoord.x,
+      y: tileCoord.y,
+      byteLength: glb.bytes.byteLength,
+      riskScore: glb.summary.quality?.riskScore ?? 0,
+      warningCount: glb.summary.quality?.warningCount ?? 0,
+      errorCount: glb.summary.quality?.errorCount ?? 0,
+      findings: (glb.summary.quality?.findings ?? []).map(finding => ({
+        severity: finding.severity,
+        code: finding.code,
+        message: finding.message,
+        ...(finding.count === undefined ? {} : { count: finding.count }),
+        ...(finding.minGapM === undefined ? {} : { minGapM: finding.minGapM }),
+      })),
+    })
+  }
   for (const layerId of auditedLayers) {
     const layer = vectorTile.layers[layerId]
     if (!layer) continue
@@ -195,8 +244,19 @@ for (const tileCoord of tiles) {
   }
 }
 
+const topRiskTiles = [...compiledTiles]
+  .filter(tile => tile.riskScore > 0)
+  .sort((left, right) =>
+    right.riskScore - left.riskScore
+      || right.errorCount - left.errorCount
+      || right.warningCount - left.warningCount
+      || right.byteLength - left.byteLength,
+  )
+  .slice(0, 16)
+
 console.log(JSON.stringify({
   pmtilesPath,
+  recipeId,
   center,
   radiusM,
   zoom,
@@ -209,5 +269,14 @@ console.log(JSON.stringify({
     bounds: [header.minLon, header.minLat, header.maxLon, header.maxLat],
   },
   layers: Object.fromEntries([...layerAudits.entries()].map(([layer, audit]) => [layer, summarizeLayerAudit(audit)])),
+  compiledScenery: {
+    compiledTileCount: compiledTiles.length,
+    riskyTileCount: compiledTiles.filter(tile => tile.riskScore > 0).length,
+    warningTileCount: compiledTiles.filter(tile => tile.warningCount > 0).length,
+    errorTileCount: compiledTiles.filter(tile => tile.errorCount > 0).length,
+    maxRiskScore: Math.max(0, ...compiledTiles.map(tile => tile.riskScore)),
+    maxByteLength: Math.max(0, ...compiledTiles.map(tile => tile.byteLength)),
+    topRiskTiles,
+  },
   notes: noteFor(layerAudits),
 }, null, 2))

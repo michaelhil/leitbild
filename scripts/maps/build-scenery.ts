@@ -428,6 +428,7 @@ console.log(JSON.stringify({
   lodLevels: parsedTileset.extras.leitbild.lodLevels,
   inputArtifacts: parsedTileset.extras.leitbild.inputArtifacts,
   outputRoot: parsedTileset.extras.leitbild.outputRoot,
+  quality: parsedTileset.extras.leitbild.quality,
   counts: parsedTileset.extras.leitbild.counts,
   geometricError: parsedTileset.geometricError,
 }, null, 2))

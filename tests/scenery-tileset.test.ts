@@ -8,6 +8,7 @@ const tileSummary = (config: {
   readonly y: number
   readonly byteLength?: number
   readonly buildings?: number
+  readonly riskScore?: number
 }): SceneryAssetTileSummary => ({
   recipeId: 'drone-urban-flight',
   z: config.z,
@@ -30,6 +31,32 @@ const tileSummary = (config: {
     water: 0,
     vegetation: 0,
   },
+  ...(config.riskScore === undefined
+    ? {}
+    : {
+        quality: {
+          riskScore: config.riskScore,
+          findingCount: 1,
+          warningCount: 1,
+          errorCount: 0,
+          vertexCount: 120,
+          triangleCount: 80,
+          horizontalPlaneCount: 24,
+          closeHorizontalOverlapCount: 1,
+          duplicateHorizontalTriangleCount: 0,
+          duplicateSourceRefCount: 0,
+          outOfBoundsPointCount: 0,
+          degenerateTriangleCount: 0,
+          minHorizontalGapM: 0.02,
+          findings: [{
+            severity: 'warning' as const,
+            code: 'scenery.depth.close_horizontal_overlap',
+            message: 'Different horizontal material planes overlap with too little vertical separation.',
+            count: 1,
+            minGapM: 0.02,
+          }],
+        },
+      }),
 })
 
 const createTileset = (
@@ -205,5 +232,22 @@ describe('Scenery 3D Tiles artifact', () => {
     expect(parent?.extras?.leitbild?.aggregateByteLength).toBe(7_000)
     expect(parent?.extras?.leitbild?.aggregateFeatureCounts.buildings).toBe(7)
     expect(parent?.content?.extras?.leitbild?.byteLength).toBe(3_000)
+  })
+
+  test('summarizes tile quality risk for systematic scenery cleanup', () => {
+    const tileset = createTileset([
+      tileSummary({ z: 14, x: 8680, y: 4764, byteLength: 4_000, riskScore: 12 }),
+      tileSummary({ z: 14, x: 8681, y: 4764, byteLength: 5_000, riskScore: 45 }),
+      tileSummary({ z: 14, x: 8682, y: 4764, byteLength: 6_000 }),
+    ], { zooms: [12, 13, 14] })
+
+    expect(tileset.extras.leitbild.quality?.maxRiskScore).toBe(45)
+    expect(tileset.extras.leitbild.quality?.riskyTileCount).toBe(2)
+    expect(tileset.extras.leitbild.quality?.warningTileCount).toBe(2)
+    expect(tileset.extras.leitbild.quality?.topRiskTiles.map(tile => `${tile.z}/${tile.x}/${tile.y}`)).toEqual([
+      '14/8681/4764',
+      '14/8680/4764',
+    ])
+    expect(findTile(tileset.root, '14/8681/4764')?.content?.extras?.leitbild?.quality?.riskScore).toBe(45)
   })
 })
