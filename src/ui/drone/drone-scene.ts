@@ -19,6 +19,7 @@ import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader'
 import '@babylonjs/loaders/glTF'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { dronePackDataSchema, type DronePackData } from '../../packs/drone/model.ts'
+import { babylonYawRadForHeadingDeg, babylonYawRateRadPerSecForHeadingRateDeg } from '../../packs/drone/spatial.ts'
 import { loadDroneMapWorldForScene } from './drone-map-world-loader.ts'
 import { coverageForSceneryTiles, type DroneMapWorldSnapshot, type DroneSceneryTileAsset } from './drone-map-world.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
@@ -93,6 +94,7 @@ const droneWorldLodZooms = [12, 13, 14] as const
 const maxDroneScenePixelRatio = 1.6
 const maxCachedTileContainers = 256
 const tileLoadConcurrency = 2
+const cloneImportedSceneryMaterials = true
 const scenerySelectionReferenceHeightPx = 960
 const scenerySelectionReferenceFovRad = 0.72
 const minCameraDistanceM = 14
@@ -371,16 +373,16 @@ const poseFor = (
   const data = parsed.success ? parsed.data : null
   const yawDeg = data?.attitude.yawDeg ?? data?.pose.headingDeg ?? object.spatial.position?.headingDeg ?? 0
   return {
-    key: `${object.revision}:${object.timestamps.updatedAt}:${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`,
+    key: `${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`,
     local,
-    yawRad: yawDeg * Math.PI / 180,
-    pitchRad: (data?.attitude.pitchDeg ?? 0) * Math.PI / 180,
+    yawRad: babylonYawRadForHeadingDeg(yawDeg),
+    pitchRad: -(data?.attitude.pitchDeg ?? 0) * Math.PI / 180,
     rollRad: -(data?.attitude.rollDeg ?? 0) * Math.PI / 180,
     scale: data?.vehicle.visual.scale ?? 1,
     velocityEastMps: data?.velocity.eastMps ?? 0,
     velocityNorthMps: data?.velocity.northMps ?? 0,
     verticalSpeedMps: data?.velocity.verticalSpeedMps ?? 0,
-    yawRateRadPerSec: (data?.attitude.yawRateDegPerSec ?? 0) * Math.PI / 180,
+    yawRateRadPerSec: babylonYawRateRadPerSecForHeadingRateDeg(data?.attitude.yawRateDegPerSec ?? 0),
     receivedAtMs,
     data,
   }
@@ -736,7 +738,7 @@ const createWorldNode = async (
         Math.min(timing.tileLoadTimeoutMs, remainingBudgetMs),
         `Babylon scenery tile ${tile.id} did not load within the interactive stage budget`,
       )
-      const entries = container.instantiateModelsToScene(sourceName => `${tile.id}:${sourceName}`, false)
+      const entries = container.instantiateModelsToScene(sourceName => `${tile.id}:${sourceName}`, cloneImportedSceneryMaterials)
       const tileRoot = new TransformNode(`tile:${tile.id}`, scene)
       tileRoot.parent = root
       tileRoot.position.set(tile.localOrigin.x, terrainY(terrain, tile.localOrigin.x, tile.localOrigin.z), tile.localOrigin.z)

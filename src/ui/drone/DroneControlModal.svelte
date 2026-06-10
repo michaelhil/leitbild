@@ -52,9 +52,10 @@
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
-  const cameraYawStepRad = Math.PI / 24
-  const cameraPitchStepRad = Math.PI / 36
-  const cameraZoomStepM = 8
+  const cameraOrbitKeyCodes = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const
+  const cameraYawRateRadPerSec = 1.45
+  const cameraPitchRateRadPerSec = 1.05
+  const cameraZoomRateMPerSec = 90
   const flightBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'flight')
   const cameraBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'camera')
 
@@ -80,12 +81,15 @@
   let lastCommandRoundTripMs = $state<number | null>(null)
   let commandRateHz = $state(0)
   let keys = new Set<string>()
+  let cameraKeys = new Set<string>()
   let commandSendTimes: number[] = []
   let lastSendMs = 0
+  let lastCameraOrbitAtMs = 0
   let lastAxesSignature = '0.00|0.00|0.00|0.00'
   let lastManualBlockReason = ''
   let lastManualBlockAtMs = 0
   let manualSendInFlight = false
+  let cameraShiftModifier = false
   let animationId = 0
   let lastGamepadRefreshMs = 0
   let gamepadSignature = ''
@@ -336,6 +340,7 @@
   const pollInput = (): void => {
     refreshGamepads()
     const nowMs = performance.now()
+    advanceCameraOrbit(nowMs)
     const activeCommandTimes = commandSendTimes.filter(value => nowMs - value <= 2_000)
     if (activeCommandTimes.length !== commandSendTimes.length) {
       commandSendTimes = activeCommandTimes
@@ -374,8 +379,64 @@
     mouseAxes = zeroAxes
   }
 
+  const resetCameraInputs = (): void => {
+    cameraKeys = new Set()
+    cameraShiftModifier = false
+    lastCameraOrbitAtMs = 0
+  }
+
   const keyboardEventTargetIsTextInput = (target: EventTarget | null): boolean =>
     target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement
+
+  const isCameraOrbitKeyCode = (code: string): boolean =>
+    cameraOrbitKeyCodes.some(candidate => candidate === code)
+
+  const setCameraOrbitKey = (code: string, pressed: boolean): boolean => {
+    if (!isCameraOrbitKeyCode(code)) return false
+    const next = new Set(cameraKeys)
+    if (pressed) next.add(code)
+    else next.delete(code)
+    cameraKeys = next
+    return true
+  }
+
+  const updateCameraShiftModifier = (event: KeyboardEvent, pressed: boolean): void => {
+    if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+      cameraShiftModifier = pressed || event.shiftKey
+      return
+    }
+    cameraShiftModifier = event.shiftKey
+  }
+
+  const advanceCameraOrbit = (nowMs: number): void => {
+    if (lastCameraOrbitAtMs === 0) {
+      lastCameraOrbitAtMs = nowMs
+      return
+    }
+    const dtSeconds = cameraClamp((nowMs - lastCameraOrbitAtMs) / 1_000, 0, 0.05)
+    lastCameraOrbitAtMs = nowMs
+    if (cameraKeys.size === 0) return
+
+    const horizontalInput = (cameraKeys.has('ArrowLeft') ? 1 : 0) + (cameraKeys.has('ArrowRight') ? -1 : 0)
+    const verticalInput = (cameraKeys.has('ArrowUp') ? 1 : 0) + (cameraKeys.has('ArrowDown') ? -1 : 0)
+    const nextYawOffsetRad = cameraOrbit.yawOffsetRad + horizontalInput * cameraYawRateRadPerSec * dtSeconds
+    const nextPitchOffsetRad = cameraShiftModifier
+      ? cameraOrbit.pitchOffsetRad
+      : cameraClamp(cameraOrbit.pitchOffsetRad + verticalInput * cameraPitchRateRadPerSec * dtSeconds, -0.05, 1.12)
+    const nextDistanceM = cameraShiftModifier
+      ? cameraClamp(cameraOrbit.distanceM - verticalInput * cameraZoomRateMPerSec * dtSeconds, 16, 240)
+      : cameraOrbit.distanceM
+    if (
+      nextYawOffsetRad === cameraOrbit.yawOffsetRad
+      && nextPitchOffsetRad === cameraOrbit.pitchOffsetRad
+      && nextDistanceM === cameraOrbit.distanceM
+    ) return
+    cameraOrbit = {
+      yawOffsetRad: nextYawOffsetRad,
+      pitchOffsetRad: nextPitchOffsetRad,
+      distanceM: nextDistanceM,
+    }
+  }
 
   const handleCameraKeyAction = (action: DroneKeyBindingAction | null): boolean => {
     if (action === 'camera.view3d') {
@@ -393,37 +454,17 @@
     return false
   }
 
-  const handleCameraOrbitKey = (event: KeyboardEvent): boolean => {
-    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) return false
+  const handleCameraOrbitKeydown = (event: KeyboardEvent): boolean => {
+    if (!setCameraOrbitKey(event.code, true)) return false
+    updateCameraShiftModifier(event, true)
     event.preventDefault()
-    if (event.shiftKey && (event.code === 'ArrowUp' || event.code === 'ArrowDown')) {
-      const zoomDirection = event.code === 'ArrowUp' ? -1 : 1
-      cameraOrbit = {
-        ...cameraOrbit,
-        distanceM: cameraClamp(cameraOrbit.distanceM + zoomDirection * cameraZoomStepM, 16, 240),
-      }
-      return true
-    }
-    if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
-      const yawDirection = event.code === 'ArrowLeft' ? -1 : 1
-      cameraOrbit = {
-        ...cameraOrbit,
-        yawOffsetRad: cameraOrbit.yawOffsetRad + yawDirection * cameraYawStepRad,
-      }
-      return true
-    }
-    const pitchDirection = event.code === 'ArrowUp' ? 1 : -1
-    cameraOrbit = {
-      ...cameraOrbit,
-      pitchOffsetRad: cameraClamp(cameraOrbit.pitchOffsetRad + pitchDirection * cameraPitchStepRad, -0.05, 1.12),
-    }
     return true
   }
 
   const handledKeyboardEvent = (event: KeyboardEvent): boolean =>
     bindingCaptureAction !== null
     || actionForKeyCode(keyBindings, event.code) !== null
-    || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)
+    || isCameraOrbitKeyCode(event.code)
 
   const onKeydown = (event: KeyboardEvent): void => {
     if (bindingCaptureAction !== null) {
@@ -441,7 +482,8 @@
       return
     }
     if (keyboardEventTargetIsTextInput(event.target)) return
-    if (handleCameraOrbitKey(event)) return
+    updateCameraShiftModifier(event, true)
+    if (handleCameraOrbitKeydown(event)) return
     const handled = handledKeyboardEvent(event)
     if (handled) event.preventDefault()
     if (event.repeat) return
@@ -461,16 +503,25 @@
 
   const onKeyup = (event: KeyboardEvent): void => {
     if (keyboardEventTargetIsTextInput(event.target)) return
+    updateCameraShiftModifier(event, false)
+    if (setCameraOrbitKey(event.code, false)) {
+      event.preventDefault()
+      return
+    }
     if (handledKeyboardEvent(event)) event.preventDefault()
     keys.delete(event.code)
   }
 
   const onWindowBlur = (): void => {
     resetManualInputs()
+    resetCameraInputs()
   }
 
   const onVisibilityChange = (): void => {
-    if (document.visibilityState !== 'visible') resetManualInputs()
+    if (document.visibilityState !== 'visible') {
+      resetManualInputs()
+      resetCameraInputs()
+    }
   }
 
   const onPointerLockChange = (): void => {

@@ -8,6 +8,16 @@ export interface LocalOffsetM {
   readonly northM: number
 }
 
+export interface BabylonHorizontalVector {
+  readonly xEast: number
+  readonly zSouth: number
+}
+
+export interface HorizontalVelocityMps {
+  readonly eastMps: number
+  readonly northMps: number
+}
+
 export const normalizeAngleDeg = (value: number): number => {
   const wrapped = value % 360
   return wrapped < 0 ? wrapped + 360 : wrapped
@@ -48,4 +58,66 @@ export const horizontalDistanceM = (from: GeoJsonPoint, to: GeoJsonPoint): numbe
 export const bearingDeg = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
   const offset = offsetMeters(from, to)
   return normalizeAngleDeg(Math.atan2(offset.eastM, offset.northM) * 180 / Math.PI)
+}
+
+export const babylonYawRadForHeadingDeg = (
+  headingDeg: number,
+): number =>
+  Math.PI - normalizeAngleDeg(headingDeg) * Math.PI / 180
+
+export const babylonYawRateRadPerSecForHeadingRateDeg = (
+  headingRateDegPerSec: number,
+): number =>
+  -headingRateDegPerSec * Math.PI / 180
+
+export const babylonForwardVectorForHeadingDeg = (
+  headingDeg: number,
+): BabylonHorizontalVector => {
+  const yawRad = babylonYawRadForHeadingDeg(headingDeg)
+  return {
+    xEast: Math.sin(yawRad),
+    zSouth: Math.cos(yawRad),
+  }
+}
+
+export const babylonRightVectorForHeadingDeg = (
+  headingDeg: number,
+): BabylonHorizontalVector => {
+  const yawRad = babylonYawRadForHeadingDeg(headingDeg)
+  return {
+    xEast: -Math.cos(yawRad),
+    zSouth: Math.sin(yawRad),
+  }
+}
+
+export const horizontalVelocityFromBabylonBodyFrame = (config: {
+  readonly headingDeg: number
+  readonly forwardMps: number
+  readonly rightMps: number
+}): HorizontalVelocityMps => {
+  const forward = babylonForwardVectorForHeadingDeg(config.headingDeg)
+  const right = babylonRightVectorForHeadingDeg(config.headingDeg)
+  const xEast = forward.xEast * config.forwardMps + right.xEast * config.rightMps
+  const zSouth = forward.zSouth * config.forwardMps + right.zSouth * config.rightMps
+  return {
+    eastMps: xEast,
+    northMps: -zSouth,
+  }
+}
+
+export const bodyVelocityInBabylonFrame = (config: {
+  readonly headingDeg: number
+  readonly eastMps: number
+  readonly northMps: number
+}): {
+  readonly forwardMps: number
+  readonly rightMps: number
+} => {
+  const forward = babylonForwardVectorForHeadingDeg(config.headingDeg)
+  const right = babylonRightVectorForHeadingDeg(config.headingDeg)
+  const zSouthMps = -config.northMps
+  return {
+    forwardMps: config.eastMps * forward.xEast + zSouthMps * forward.zSouth,
+    rightMps: config.eastMps * right.xEast + zSouthMps * right.zSouth,
+  }
 }

@@ -36,6 +36,7 @@ import {
   droneVehicleModelsQueryKind,
 } from '../src/packs/drone/query.ts'
 import { droneScenarioSupport } from '../src/packs/drone/scenario.ts'
+import { babylonYawRadForHeadingDeg, bodyVelocityInBabylonFrame, horizontalVelocityFromBabylonBodyFrame } from '../src/packs/drone/spatial.ts'
 import { createDirectRoutingAdapter } from '../src/routing/direct-adapter.ts'
 import { loadDroneWorldTerrainStatus, localPointFromLonLat } from '../src/ui/drone/drone-map-world.ts'
 import { createTestScenarioCatalog, waitForCondition } from './helpers.ts'
@@ -198,6 +199,27 @@ describe('drone pack native runtime', () => {
     expect(parsed.maxDrones).toBe(4)
     expect(parsed.stepIntervalMs).toBe(10)
     expect(parsed.models.some(candidate => candidate.id === model.id)).toBe(true)
+  })
+
+  test('native manual flight uses the same body frame as the Babylon drone mesh', () => {
+    expect(babylonYawRadForHeadingDeg(0)).toBeCloseTo(Math.PI)
+    expect(babylonYawRadForHeadingDeg(90)).toBeCloseTo(Math.PI / 2)
+
+    const northForward = horizontalVelocityFromBabylonBodyFrame({ headingDeg: 0, forwardMps: 12, rightMps: 0 })
+    expect(northForward.eastMps).toBeCloseTo(0)
+    expect(northForward.northMps).toBeCloseTo(12)
+
+    const eastForward = horizontalVelocityFromBabylonBodyFrame({ headingDeg: 90, forwardMps: 12, rightMps: 0 })
+    expect(eastForward.eastMps).toBeCloseTo(12)
+    expect(eastForward.northMps).toBeCloseTo(0)
+
+    const eastRight = horizontalVelocityFromBabylonBodyFrame({ headingDeg: 90, forwardMps: 0, rightMps: 12 })
+    expect(eastRight.eastMps).toBeCloseTo(0)
+    expect(eastRight.northMps).toBeCloseTo(-12)
+
+    const body = bodyVelocityInBabylonFrame({ headingDeg: 90, eastMps: 12, northMps: 0 })
+    expect(body.forwardMps).toBeCloseTo(12)
+    expect(body.rightMps).toBeCloseTo(0)
   })
 
   test('native runtime accepts manual flight without explicit arm or takeoff', async () => {

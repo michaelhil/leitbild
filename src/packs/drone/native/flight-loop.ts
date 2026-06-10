@@ -7,7 +7,16 @@ import {
   type DroneManualAxes,
   type DronePackData,
 } from '../model.ts'
-import { bearingDeg, horizontalDistanceM, movePointByMeters, normalizeAngleDeg, offsetMeters, shortestAngleDeltaDeg } from '../spatial.ts'
+import {
+  bearingDeg,
+  bodyVelocityInBabylonFrame,
+  horizontalDistanceM,
+  horizontalVelocityFromBabylonBodyFrame,
+  movePointByMeters,
+  normalizeAngleDeg,
+  offsetMeters,
+  shortestAngleDeltaDeg,
+} from '../spatial.ts'
 import type { DroneNativeRuntimeConfig } from './config.ts'
 import { withDronePackData } from './object-state.ts'
 
@@ -53,12 +62,16 @@ const desiredManualVelocity = (
   readonly northMps: number
   readonly downMps: number
 } => {
-  const headingRad = data.pose.headingDeg * Math.PI / 180
   const forwardMps = axes.forward * data.vehicle.flightEnvelope.maxHorizontalSpeedMps
   const rightMps = axes.right * data.vehicle.flightEnvelope.maxHorizontalSpeedMps
+  const horizontal = horizontalVelocityFromBabylonBodyFrame({
+    headingDeg: data.pose.headingDeg,
+    forwardMps,
+    rightMps,
+  })
   return {
-    northMps: forwardMps * Math.cos(headingRad) - rightMps * Math.sin(headingRad),
-    eastMps: forwardMps * Math.sin(headingRad) + rightMps * Math.cos(headingRad),
+    eastMps: horizontal.eastMps,
+    northMps: horizontal.northMps,
     downMps: -axes.vertical * data.vehicle.flightEnvelope.maxVerticalSpeedMps,
   }
 }
@@ -147,13 +160,11 @@ const bodyVelocityFor = (
   readonly forwardMps: number
   readonly rightMps: number
 } => {
-  const headingRad = headingDeg * Math.PI / 180
-  const cos = Math.cos(headingRad)
-  const sin = Math.sin(headingRad)
-  return {
-    forwardMps: velocity.northMps * cos + velocity.eastMps * sin,
-    rightMps: -velocity.northMps * sin + velocity.eastMps * cos,
-  }
+  return bodyVelocityInBabylonFrame({
+    headingDeg,
+    eastMps: velocity.eastMps,
+    northMps: velocity.northMps,
+  })
 }
 
 const attitudeForVelocity = (
