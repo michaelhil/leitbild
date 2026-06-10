@@ -13,11 +13,11 @@ export interface DroneScenePerformanceSnapshot {
   readonly quality: 'high' | 'balanced' | 'rescue'
   readonly worldLoadMs: number
   readonly worldBuildMs: number
-  readonly worldSource: 'asset-tiles'
+  readonly worldSource: '3d-tiles'
   readonly activeScenes: number
   readonly worldFeatures: {
-    readonly sceneryStage: 'base' | 'near' | 'full'
-    readonly scenerySource: 'asset-tiles'
+    readonly sceneryStage: 'tileset'
+    readonly scenerySource: '3d-tiles'
     readonly tiles: number
     readonly polygons: number
     readonly lines: number
@@ -95,7 +95,7 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let lastReportAtMs = 0
   let worldLoadMs = 0
   let worldBuildMs = 0
-  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = 'asset-tiles'
+  let worldSource: DroneScenePerformanceSnapshot['worldSource'] = '3d-tiles'
   let tiles = 0
   let polygons = 0
   let lines = 0
@@ -107,8 +107,8 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let roadLabels = 0
   let terrain: DroneScenePerformanceSnapshot['worldFeatures']['terrain'] = 'unknown'
   let terrainSurface: DroneScenePerformanceSnapshot['worldFeatures']['terrainSurface'] = 'flat'
-  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'base'
-  let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = 'asset-tiles'
+  let sceneryStage: DroneScenePerformanceSnapshot['worldFeatures']['sceneryStage'] = 'tileset'
+  let scenerySource: DroneScenePerformanceSnapshot['worldFeatures']['scenerySource'] = '3d-tiles'
 
   const pushSample = (samples: number[], value: number): void => {
     samples.push(value)

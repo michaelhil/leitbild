@@ -52,6 +52,6 @@ await ssh('systemctl daemon-reload && systemctl enable --now leitbild && systemc
 await verifyEndpoint('/health')
 await verifyEndpoint('/api/scenarios')
 await verifyEndpoint('/map/capabilities.json')
-await verifyEndpoint('/map/scenery/current/manifest.json')
+await verifyEndpoint('/map/scenery/current/tileset.json')
 
 console.log('Leitbild deploy complete')

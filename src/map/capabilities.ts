@@ -2,7 +2,13 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { readTerrainPmtilesMetadata, type TerrainDemEncoding } from './terrain-artifact.ts'
-import { sceneryAssetFormat, sceneryAssetManifestSchema, sceneryAssetTileEncoding } from './scenery.ts'
+import {
+  sceneryAssetFormat,
+  sceneryAssetTilesetSchema,
+  sceneryAssetTileEncoding,
+  sceneryAssetTilesetUrl,
+  sceneryAssetTileTemplate,
+} from './scenery.ts'
 
 // Map Capability Manifest v2.
 // Top-level shape:
@@ -153,9 +159,8 @@ export const sceneryTilesetSchema = z.object({
     format: z.literal(sceneryAssetFormat),
     tileEncoding: z.literal(sceneryAssetTileEncoding),
     lodStrategy: z.literal('hierarchical-screen-space-error'),
-    manifestUrl: z.literal('/map/scenery/current/manifest.json'),
-    tileSummaryUrl: z.literal('/map/scenery/current/tiles.json'),
-    currentTileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
+    tilesetUrl: z.literal(sceneryAssetTilesetUrl),
+    currentTileTemplate: z.literal(sceneryAssetTileTemplate),
   }),
   recipes: z.array(sceneryRecipeSchema).min(1),
   availability: sceneryAvailabilitySchema,
@@ -369,8 +374,8 @@ export const terrainPmtilesPathForRoot = (mapRoot: string): string =>
 const terrainMetadataPathForRoot = (mapRoot: string): string =>
   resolve(mapRoot, 'current', 'terrain.json')
 
-export const sceneryManifestPathForRoot = (mapRoot: string): string =>
-  resolve(mapRoot, 'current', 'scenery', 'manifest.json')
+export const sceneryTilesetPathForRoot = (mapRoot: string): string =>
+  resolve(mapRoot, 'current', 'scenery', 'tileset.json')
 
 export const createTerrainTileset = (config: {
   readonly availability: TerrainAvailability
@@ -443,9 +448,8 @@ export const createSceneryTileset = (availability: SceneryAvailability): Scenery
       format: sceneryAssetFormat,
       tileEncoding: sceneryAssetTileEncoding,
       lodStrategy: 'hierarchical-screen-space-error',
-      manifestUrl: '/map/scenery/current/manifest.json',
-      tileSummaryUrl: '/map/scenery/current/tiles.json',
-      currentTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
+      tilesetUrl: sceneryAssetTilesetUrl,
+      currentTileTemplate: sceneryAssetTileTemplate,
     },
     recipes: defaultSceneryRecipes,
     availability,
@@ -602,7 +606,7 @@ const terrainArtifactFor = async (mapRoot: string): Promise<{
 }
 
 const sceneryArtifactFor = async (mapRoot: string): Promise<SceneryAvailability> => {
-  const path = sceneryManifestPathForRoot(mapRoot)
+  const path = sceneryTilesetPathForRoot(mapRoot)
   try {
     const info = await stat(path)
     if (!info.isFile() || info.size <= 0) {
@@ -611,11 +615,11 @@ const sceneryArtifactFor = async (mapRoot: string): Promise<SceneryAvailability>
         path,
         sizeBytes: info.size,
         modifiedAt: info.mtime.toISOString(),
-        error: 'scenery manifest is empty or not a file',
+        error: 'scenery tileset is empty or not a file',
       }
     }
     const raw = await readFile(path, 'utf8')
-    sceneryAssetManifestSchema.parse(JSON.parse(raw) as unknown)
+    sceneryAssetTilesetSchema.parse(JSON.parse(raw) as unknown)
     return {
       status: 'available',
       path,
@@ -651,7 +655,7 @@ const terrainMetadataStamp = async (mapRoot: string): Promise<{ readonly id: str
 
 const sceneryStamp = async (mapRoot: string): Promise<{ readonly id: string; readonly mtimeMs: number }> => {
   try {
-    const s = await stat(sceneryManifestPathForRoot(mapRoot))
+    const s = await stat(sceneryTilesetPathForRoot(mapRoot))
     return { id: 'scenery', mtimeMs: s.mtimeMs }
   } catch {
     return { id: 'scenery', mtimeMs: -1 }

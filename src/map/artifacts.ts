@@ -7,14 +7,12 @@ import {
   findReferenceTilesets,
   loadMapCapabilityManifest,
   referenceRootFromEnv,
-  sceneryManifestPathForRoot,
+  sceneryTilesetPathForRoot,
   terrainPmtilesPathForRoot,
 } from './capabilities.ts'
 import {
-  sceneryAssetManifestSchema,
+  sceneryAssetTilesetSchema,
   sceneryAssetTileEncoding,
-  sceneryAssetTileSummaryResponseSchema,
-  type SceneryAssetManifest,
 } from './scenery.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
@@ -57,7 +55,7 @@ export interface MapArtifactStatus {
     readonly demEncoding: 'terrarium'
   }
   readonly scenery: MapArtifactFileStatus & {
-    readonly manifestUrl: string
+    readonly tilesetUrl: string
     readonly tileTemplate: string
   }
 }
@@ -66,14 +64,13 @@ const pmtilesContentType = 'application/vnd.pmtiles'
 const vectorTileContentType = 'application/vnd.mapbox-vector-tile'
 const rasterDemContentType = 'image/png'
 const glyphContentType = 'application/x-protobuf'
-const sceneryManifestContentType = 'application/json; charset=utf-8'
+const sceneryTilesetContentType = 'application/json; charset=utf-8'
 const sceneryTileContentType = sceneryAssetTileEncoding
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
 const mapFontPathPrefix = '/map/fonts/'
 const mapDatasetPathPrefix = '/map/datasets/'
 const mapSceneryPathPrefix = '/map/scenery/current/'
-const maxSceneryTileSummaryQueryCount = 512
 const datasetIdPattern = /^[a-z0-9][a-z0-9-]*$/
 const pmtilesFilePattern = /^[a-z0-9][a-z0-9-]*\.pmtiles$/
 const pmtilesBaseNamePattern = /^[a-z0-9][a-z0-9-]*$/
@@ -92,13 +89,6 @@ interface CachedPmtilesArchive {
   readonly archive: PMTiles
 }
 
-interface CachedSceneryManifest {
-  readonly filePath: string
-  readonly mtimeMs: number
-  readonly sizeBytes: number
-  readonly manifest: SceneryAssetManifest
-}
-
 interface ReferenceDatasetArtifactResolution {
   readonly ok: true
   readonly filePath: string
@@ -112,7 +102,6 @@ interface ReferenceDatasetArtifactFailure {
 type ReferenceDatasetArtifactResult = ReferenceDatasetArtifactResolution | ReferenceDatasetArtifactFailure
 
 const pmtilesArchiveCache = new Map<string, CachedPmtilesArchive>()
-let sceneryManifestCache: CachedSceneryManifest | null = null
 
 export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
   rootDir: resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps'),
@@ -124,8 +113,8 @@ export const currentPmtilesPath = (config: MapArtifactConfig): string =>
 export const currentTerrainPmtilesPath = (config: MapArtifactConfig): string =>
   terrainPmtilesPathForRoot(config.rootDir)
 
-export const currentSceneryManifestPath = (config: MapArtifactConfig): string =>
-  sceneryManifestPathForRoot(config.rootDir)
+export const currentSceneryTilesetPath = (config: MapArtifactConfig): string =>
+  sceneryTilesetPathForRoot(config.rootDir)
 
 const currentSceneryTilePath = (
   config: MapArtifactConfig,
@@ -195,25 +184,6 @@ const pmtilesArchiveFor = async (filePath: string): Promise<PMTiles> => {
     archive,
   })
   return archive
-}
-
-const sceneryManifestFor = async (config: MapArtifactConfig): Promise<SceneryAssetManifest> => {
-  const filePath = currentSceneryManifestPath(config)
-  const info = await stat(filePath)
-  const cached = sceneryManifestCache
-  if (cached && cached.filePath === filePath && cached.mtimeMs === info.mtimeMs && cached.sizeBytes === info.size) {
-    return cached.manifest
-  }
-
-  const body = await readFile(filePath, 'utf8')
-  const manifest = sceneryAssetManifestSchema.parse(JSON.parse(body) as unknown)
-  sceneryManifestCache = {
-    filePath,
-    mtimeMs: info.mtimeMs,
-    sizeBytes: info.size,
-    manifest,
-  }
-  return manifest
 }
 
 const emptyVectorTileResponse = (): Response =>
@@ -427,7 +397,7 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
   const base = createBaseTileset()
   const currentPmtiles = await fileStatus(currentPmtilesPath(config))
   const terrain = await fileStatus(currentTerrainPmtilesPath(config))
-  const sceneryManifest = await fileStatus(currentSceneryManifestPath(config))
+  const sceneryTileset = await fileStatus(currentSceneryTilesetPath(config))
   const glyphProbe = await fileStatus(glyphProbePath(config))
   const active = await activeBuild(config)
   return {
@@ -455,8 +425,8 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
       demEncoding: 'terrarium',
     },
     scenery: {
-      ...sceneryManifest,
-      manifestUrl: '/map/scenery/current/manifest.json',
+      ...sceneryTileset,
+      tilesetUrl: '/map/scenery/current/tileset.json',
       tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     },
   }
@@ -609,125 +579,34 @@ export const currentTerrainRasterTileResponse = async (
   })
 }
 
-const parseRequiredQueryTileCoordinate = (
-  url: URL,
-  name: string,
-): number | null => {
-  const raw = url.searchParams.get(name)
-  if (raw === null || !/^\d+$/.test(raw)) return null
-  const value = Number(raw)
-  return Number.isSafeInteger(value) ? value : null
-}
-
-export const currentSceneryTileSummaryResponse = async (
-  url: URL,
+export const currentSceneryTilesetResponse = async (
   config: MapArtifactConfig,
 ): Promise<Response> => {
-  const recipeId = url.searchParams.get('recipeId')
-  if (!recipeId || !sceneryRecipeIdPattern.test(recipeId)) {
-    return Response.json({ ok: false, error: 'invalid scenery recipe id' }, { status: 400 })
-  }
-  if (!defaultSceneryRecipes.some(recipe => recipe.id === recipeId)) {
-    return Response.json({ ok: false, error: 'unknown scenery recipe' }, { status: 404 })
-  }
-
-  const z = parseRequiredQueryTileCoordinate(url, 'z')
-  const minX = parseRequiredQueryTileCoordinate(url, 'minX')
-  const maxX = parseRequiredQueryTileCoordinate(url, 'maxX')
-  const minY = parseRequiredQueryTileCoordinate(url, 'minY')
-  const maxY = parseRequiredQueryTileCoordinate(url, 'maxY')
-  if (z === null || minX === null || maxX === null || minY === null || maxY === null) {
-    return Response.json({ ok: false, error: 'invalid scenery tile summary query coordinates' }, { status: 400 })
-  }
-  if (z < 0 || z > 24 || minX > maxX || minY > maxY) {
-    return Response.json({ ok: false, error: 'invalid scenery tile summary query range' }, { status: 400 })
-  }
-  const maxTile = 2 ** z - 1
-  if (maxX > maxTile || maxY > maxTile) {
-    return Response.json({ ok: false, error: 'scenery tile summary query range is outside the requested zoom' }, { status: 400 })
-  }
-  const requestedTileCount = (maxX - minX + 1) * (maxY - minY + 1)
-  if (requestedTileCount > maxSceneryTileSummaryQueryCount) {
-    return Response.json({
-      ok: false,
-      error: 'scenery tile summary query is too large',
-      maxTileCount: maxSceneryTileSummaryQueryCount,
-      requestedTileCount,
-    }, { status: 400 })
-  }
-
-  try {
-    const manifest = await sceneryManifestFor(config)
-    const tiles = manifest.tiles
-      .filter(tile =>
-        tile.recipeId === recipeId
-        && tile.z === z
-        && tile.x >= minX
-        && tile.x <= maxX
-        && tile.y >= minY
-        && tile.y <= maxY)
-      .sort((left, right) => left.x - right.x || left.y - right.y || left.recipeId.localeCompare(right.recipeId))
-    const body = sceneryAssetTileSummaryResponseSchema.parse({
-      schemaVersion: 1,
-      recipeId,
-      z,
-      range: { minX, maxX, minY, maxY },
-      tileTemplate: manifest.tileTemplate,
-      tiles,
-    })
-    return Response.json(body, {
-      headers: {
-        'Cache-Control': 'public, max-age=3600',
-      },
-    })
-  } catch (error) {
-    const code = error !== null && typeof error === 'object' && 'code' in error
-      ? String((error as { readonly code?: unknown }).code)
-      : ''
-    if (code === 'ENOENT') {
-      return Response.json({
-        ok: false,
-        error: 'precompiled scenery manifest unavailable',
-        expectedPath: currentSceneryManifestPath(config),
-      }, { status: 503 })
-    }
-    return Response.json({
-      ok: false,
-      error: 'precompiled scenery manifest is invalid',
-      expectedPath: currentSceneryManifestPath(config),
-      detail: error instanceof Error ? error.message : String(error),
-    }, { status: 415 })
-  }
-}
-
-export const currentSceneryManifestResponse = async (
-  config: MapArtifactConfig,
-): Promise<Response> => {
-  const filePath = currentSceneryManifestPath(config)
+  const filePath = currentSceneryTilesetPath(config)
   const file = Bun.file(filePath)
   if (!await file.exists()) {
     return Response.json({
       ok: false,
-      error: 'precompiled scenery manifest unavailable',
+      error: 'precompiled scenery tileset unavailable',
       expectedPath: filePath,
     }, { status: 503 })
   }
   let body: string
   try {
     body = await file.text()
-    sceneryAssetManifestSchema.parse(JSON.parse(body) as unknown)
+    sceneryAssetTilesetSchema.parse(JSON.parse(body) as unknown)
   } catch (error) {
     return Response.json({
       ok: false,
-      error: 'precompiled scenery manifest is invalid',
+      error: 'precompiled scenery tileset is invalid',
       expectedPath: filePath,
       detail: error instanceof Error ? error.message : String(error),
     }, { status: 415 })
   }
   return new Response(body, {
     headers: {
-      'Content-Type': sceneryManifestContentType,
-      'Cache-Control': 'public, max-age=3600',
+      'Content-Type': sceneryTilesetContentType,
+      'Cache-Control': 'no-cache',
     },
   })
 }

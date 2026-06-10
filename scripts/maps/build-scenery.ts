@@ -6,12 +6,10 @@ import { PMTiles, TileType, type Source } from 'pmtiles'
 import { defaultSceneryRecipes, mapTilesetId } from '../../src/map/capabilities.ts'
 import { compileSceneryTileFromVectorTile } from '../../src/map/scenery-compiler.ts'
 import { compileSceneryGlbTile } from '../../src/map/scenery-glb.ts'
+import { buildSceneryTilesetDocument } from '../../src/map/scenery-tileset.ts'
 import {
-  sceneryAssetFormat,
-  sceneryAssetManifestSchema,
-  sceneryAssetTileEncoding,
+  sceneryAssetTilesetSchema,
   sceneryTileHasFeatures,
-  type SceneryAssetBounds,
   type SceneryAssetLodLevel,
   type SceneryAssetTileSummary,
   type SceneryTileCoord,
@@ -317,7 +315,7 @@ const bounds = await parseBounds({
   maxLat: header.maxLat,
 }, recipe)
 await rm(join(outputRoot, recipe.id), { recursive: true, force: true })
-await rm(join(outputRoot, 'manifest.json'), { force: true })
+await rm(join(outputRoot, 'tileset.json'), { force: true })
 let decodedTileCount = 0
 let emptyTileCount = 0
 let writtenTileCount = 0
@@ -379,17 +377,29 @@ if (writtenTileCount === 0) {
 }
 
 await mkdir(outputRoot, { recursive: true })
-const manifest = {
-  schemaVersion: 1 as const,
-  artifactFormat: sceneryAssetFormat,
-  tileEncoding: sceneryAssetTileEncoding,
+const builtAt = new Date().toISOString()
+const counts = {
+  decodedTileCount,
+  emptyTileCount,
+  writtenTileCount,
+  polygons: polygonCount,
+  lines: lineCount,
+  labels: labelCount,
+  buildings: buildingCount,
+  roads: roadCount,
+  water: waterCount,
+  vegetation: vegetationCount,
+  bytes: byteCount,
+}
+const tiles = tileSummaries.sort((left, right) => left.z - right.z || left.x - right.x || left.y - right.y)
+const tileset = buildSceneryTilesetDocument({
   tilesetId: 'leitbild-scenery-norway',
   sourceTilesetId: mapTilesetId,
   sourcePmtilesPath: pmtilesPath,
-  builtAt: new Date().toISOString(),
+  builtAt,
   bounds,
   zooms,
-  lodLevels: lodLevelsFor(tileSummaries),
+  lodLevels: lodLevelsFor(tiles),
   inputArtifacts: [{
     kind: 'base-vector-pmtiles' as const,
     id: mapTilesetId,
@@ -397,71 +407,26 @@ const manifest = {
     required: true,
   }],
   recipes: [recipe],
-  tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb' as const,
   outputRoot,
-  counts: {
-    decodedTileCount,
-    emptyTileCount,
-    writtenTileCount,
-    polygons: polygonCount,
-    lines: lineCount,
-    labels: labelCount,
-    buildings: buildingCount,
-    roads: roadCount,
-    water: waterCount,
-    vegetation: vegetationCount,
-    bytes: byteCount,
-  },
-  tiles: tileSummaries.sort((left, right) => left.z - right.z || left.x - right.x || left.y - right.y),
-}
-const parsedManifest = sceneryAssetManifestSchema.parse(manifest satisfies {
-  readonly schemaVersion: 1
-  readonly artifactFormat: typeof sceneryAssetFormat
-  readonly tileEncoding: typeof sceneryAssetTileEncoding
-  readonly tilesetId: string
-  readonly sourceTilesetId: string
-  readonly sourcePmtilesPath: string
-  readonly builtAt: string
-  readonly bounds: SceneryAssetBounds
-  readonly zooms: ReadonlyArray<number>
-  readonly lodLevels: ReadonlyArray<SceneryAssetLodLevel>
-  readonly inputArtifacts: ReadonlyArray<{
-    readonly kind: 'base-vector-pmtiles'
-    readonly id: string
-    readonly path: string
-    readonly required: boolean
-  }>
-  readonly recipes: ReadonlyArray<unknown>
-  readonly tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'
-  readonly outputRoot: string
-  readonly counts: {
-    readonly decodedTileCount: number
-    readonly emptyTileCount: number
-    readonly writtenTileCount: number
-    readonly polygons: number
-    readonly lines: number
-    readonly labels: number
-    readonly buildings: number
-    readonly roads: number
-    readonly water: number
-    readonly vegetation: number
-    readonly bytes: number
-  }
-  readonly tiles: ReadonlyArray<SceneryAssetTileSummary>
+  counts,
+  tiles,
 })
-await Bun.write(join(outputRoot, 'manifest.json'), `${JSON.stringify(parsedManifest, null, 2)}\n`)
+const parsedTileset = sceneryAssetTilesetSchema.parse(tileset)
+await Bun.write(join(outputRoot, 'tileset.json'), `${JSON.stringify(parsedTileset, null, 2)}\n`)
 console.log(JSON.stringify({
-  schemaVersion: parsedManifest.schemaVersion,
-  artifactFormat: parsedManifest.artifactFormat,
-  tileEncoding: parsedManifest.tileEncoding,
-  tilesetId: parsedManifest.tilesetId,
-  sourceTilesetId: parsedManifest.sourceTilesetId,
-  sourcePmtilesPath: parsedManifest.sourcePmtilesPath,
-  builtAt: parsedManifest.builtAt,
-  bounds: parsedManifest.bounds,
-  zooms: parsedManifest.zooms,
-  lodLevels: parsedManifest.lodLevels,
-  inputArtifacts: parsedManifest.inputArtifacts,
-  outputRoot: parsedManifest.outputRoot,
-  counts: parsedManifest.counts,
+  schemaVersion: parsedTileset.extras.leitbild.schemaVersion,
+  artifactFormat: parsedTileset.extras.leitbild.artifactFormat,
+  tileEncoding: parsedTileset.extras.leitbild.tileEncoding,
+  tilesetId: parsedTileset.extras.leitbild.tilesetId,
+  sourceTilesetId: parsedTileset.extras.leitbild.sourceTilesetId,
+  sourcePmtilesPath: parsedTileset.extras.leitbild.sourcePmtilesPath,
+  builtAt: parsedTileset.extras.leitbild.builtAt,
+  bounds: parsedTileset.extras.leitbild.bounds,
+  origin: parsedTileset.extras.leitbild.origin,
+  zooms: parsedTileset.extras.leitbild.zooms,
+  lodLevels: parsedTileset.extras.leitbild.lodLevels,
+  inputArtifacts: parsedTileset.extras.leitbild.inputArtifacts,
+  outputRoot: parsedTileset.extras.leitbild.outputRoot,
+  counts: parsedTileset.extras.leitbild.counts,
+  geometricError: parsedTileset.geometricError,
 }, null, 2))

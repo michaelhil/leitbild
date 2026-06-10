@@ -4,6 +4,7 @@
     "": {
       "name": "leitbild",
       "dependencies": {
+        "3d-tiles-renderer": "^0.4.28",
         "@babylonjs/core": "^9.11.0",
         "@babylonjs/loaders": "^9.11.0",
         "@deck.gl/core": "^9.3.2",
@@ -29,6 +30,8 @@
     },
   },
   "packages": {
+    "3d-tiles-renderer": ["3d-tiles-renderer@0.4.28", "", { "dependencies": { "@mapbox/vector-tile": "^2.0.3", "pbf": "^4.0.1", "pmtiles": "^4.3.2" }, "peerDependencies": { "@babylonjs/core": ">=8.0.0", "@babylonjs/loaders": ">=8.0.0", "@react-three/fiber": "^8.17.9 || ^9.0.0", "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0", "three": ">=0.167.0" }, "optionalPeers": ["@babylonjs/core", "@babylonjs/loaders", "@react-three/fiber", "react", "react-dom", "three"] }, "sha512-eDFg3fTgnFeoa6kU9oyAQIci/N/CJq6JUi/ZUrmDyqLzEDH9mWd9FBs+NqS+0eO8b7y4HjIWfUVnf8o03AFtSA=="],
+
     "@antfu/install-pkg": ["@antfu/install-pkg@1.1.0", "", { "dependencies": { "package-manager-detector": "^1.3.0", "tinyexec": "^1.0.1" } }, "sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ=="],
 
     "@babylonjs/core": ["@babylonjs/core@9.11.0", "", {}, "sha512-MQH6Lop6Dn06n3gW8/CADb3FrO3jVudYHYZVu2TPNH0hXyJGAVPtVRpudF12UHn5ZV0ByQ1gu71vfKj88rFDCg=="],
@@ -540,6 +543,8 @@
     "zimmerframe": ["zimmerframe@1.1.4", "", {}, "sha512-B58NGBEoc8Y9MWWCQGl/gq9xBCe4IiKM0a2x7GZdQKOW5Exr8S1W24J6OgM1njK8xCRGvAJIL/MxXHf6SkmQKQ=="],
 
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "3d-tiles-renderer/pbf": ["pbf@4.0.1", "", { "dependencies": { "resolve-protobuf-schema": "^2.1.0" }, "bin": { "pbf": "bin/pbf" } }, "sha512-SuLdBvS42z33m8ejRbInMapQe8n0D3vN/Xd5fmWM3tufNgRQFBpaW2YVJxQZV4iPNqb0vEFvssMEo5w9c6BTIA=="],
 
     "@deck.gl/layers/earcut": ["earcut@2.2.4", "", {}, "sha512-/pjZsA1b4RPHbeWZQn66SWS8nZZWLQQ23oE3Eam7aroEFGEvwKAsJfZ9ytiEMycfzXWpca4FA9QIOehf7PocBQ=="],
 

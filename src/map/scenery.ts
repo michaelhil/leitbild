@@ -2,8 +2,10 @@ import { z } from 'zod'
 
 export const sceneryFeatureTileEncoding = 'leitbild-scenery-feature-json-v1' as const
 export const sceneryAssetTileEncoding = 'model/gltf-binary' as const
-export const sceneryAssetFormat = 'directory-glb' as const
+export const sceneryAssetFormat = '3d-tiles' as const
 export const sceneryAssetTileExtension = 'glb' as const
+export const sceneryAssetTilesetUrl = '/map/scenery/current/tileset.json' as const
+export const sceneryAssetTileTemplate = '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb' as const
 export const defaultSceneryRecipeId = 'drone-urban-flight' as const
 
 export const sceneryTileCoordSchema = z.object({
@@ -158,54 +160,137 @@ export const sceneryAssetTileSummarySchema = z.object({
 })
 export type SceneryAssetTileSummary = z.infer<typeof sceneryAssetTileSummarySchema>
 
-export const sceneryAssetTileSummaryResponseSchema = z.object({
-  schemaVersion: z.literal(1),
+export const sceneryTilesetOriginSchema = z.object({
+  lon: z.number().finite(),
+  lat: z.number().finite(),
+  heightM: z.number().finite(),
+})
+export type SceneryTilesetOrigin = z.infer<typeof sceneryTilesetOriginSchema>
+
+export const sceneryTilesetFeatureCountsSchema = z.object({
+  polygons: z.number().int().nonnegative(),
+  lines: z.number().int().nonnegative(),
+  labels: z.number().int().nonnegative(),
+  buildings: z.number().int().nonnegative(),
+  roads: z.number().int().nonnegative(),
+  water: z.number().int().nonnegative(),
+  vegetation: z.number().int().nonnegative(),
+})
+export type SceneryTilesetFeatureCounts = z.infer<typeof sceneryTilesetFeatureCountsSchema>
+
+export const sceneryTilesetTileMetadataSchema = z.object({
   recipeId: z.string().min(1),
   z: z.number().int().min(0).max(24),
-  range: z.object({
-    minX: z.number().int().min(0),
-    maxX: z.number().int().min(0),
-    minY: z.number().int().min(0),
-    maxY: z.number().int().min(0),
-  }),
-  tileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
-  tiles: z.array(sceneryAssetTileSummarySchema),
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  byteLength: z.number().int().nonnegative(),
+  centerLon: z.number().finite(),
+  centerLat: z.number().finite(),
+  minHeightM: z.number().finite(),
+  maxHeightM: z.number().finite(),
+  featureCounts: sceneryTilesetFeatureCountsSchema,
 })
-export type SceneryAssetTileSummaryResponse = z.infer<typeof sceneryAssetTileSummaryResponseSchema>
+export type SceneryTilesetTileMetadata = z.infer<typeof sceneryTilesetTileMetadataSchema>
 
-export const sceneryAssetManifestSchema = z.object({
-  schemaVersion: z.literal(1),
-  artifactFormat: z.literal(sceneryAssetFormat),
-  tileEncoding: z.literal(sceneryAssetTileEncoding),
-  tilesetId: z.string().min(1),
-  sourceTilesetId: z.string().min(1),
-  sourcePmtilesPath: z.string().min(1),
-  builtAt: z.string().min(1),
-  bounds: sceneryAssetBoundsSchema,
-  zooms: z.array(z.number().int().min(0).max(24)).min(1),
-  lodLevels: z.array(sceneryAssetLodLevelSchema).min(1),
-  inputArtifacts: z.array(z.object({
-    kind: z.enum(['base-vector-pmtiles', 'terrain-dem-pmtiles', 'reference-pmtiles', 'reference-sidecar-geojson']),
-    id: z.string().min(1),
-    path: z.string().min(1),
-    required: z.boolean(),
-  })).min(1),
-  recipes: z.array(z.unknown()).min(1),
-  tileTemplate: z.literal('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb'),
-  outputRoot: z.string().min(1),
-  counts: z.object({
-    decodedTileCount: z.number().int().nonnegative(),
-    emptyTileCount: z.number().int().nonnegative(),
-    writtenTileCount: z.number().int().nonnegative(),
-    polygons: z.number().int().nonnegative(),
-    lines: z.number().int().nonnegative(),
-    labels: z.number().int().nonnegative(),
-    buildings: z.number().int().nonnegative(),
-    roads: z.number().int().nonnegative(),
-    water: z.number().int().nonnegative(),
-    vegetation: z.number().int().nonnegative(),
-    bytes: z.number().int().nonnegative(),
-  }),
-  tiles: z.array(sceneryAssetTileSummarySchema),
+export const sceneryTilesetNodeMetadataSchema = z.object({
+  tileKey: z.string().min(1),
+  recipeId: z.string().min(1).optional(),
+  z: z.number().int().min(0).max(24).optional(),
+  x: z.number().int().min(0).optional(),
+  y: z.number().int().min(0).optional(),
+  hasContent: z.boolean(),
+  aggregateByteLength: z.number().int().nonnegative(),
+  aggregateFeatureCounts: sceneryTilesetFeatureCountsSchema,
 })
-export type SceneryAssetManifest = z.infer<typeof sceneryAssetManifestSchema>
+export type SceneryTilesetNodeMetadata = z.infer<typeof sceneryTilesetNodeMetadataSchema>
+
+export interface SceneryTilesetTile {
+  readonly boundingVolume: {
+    readonly box: ReadonlyArray<number>
+  }
+  readonly geometricError: number
+  readonly refine?: 'REPLACE' | 'ADD' | undefined
+  readonly transform?: ReadonlyArray<number> | undefined
+  readonly content?: {
+    readonly uri: string
+    readonly mimeType?: typeof sceneryAssetTileEncoding | undefined
+    readonly extras?: {
+      readonly leitbild?: SceneryTilesetTileMetadata | undefined
+    } | undefined
+  } | undefined
+  readonly children?: ReadonlyArray<SceneryTilesetTile> | undefined
+  readonly extras?: {
+    readonly leitbild?: SceneryTilesetNodeMetadata | undefined
+  } | undefined
+}
+
+const sceneryTilesetTileSchema: z.ZodType<SceneryTilesetTile> = z.lazy(() => z.object({
+  boundingVolume: z.object({
+    box: z.array(z.number().finite()).length(12),
+  }),
+  geometricError: z.number().finite().nonnegative(),
+  refine: z.enum(['REPLACE', 'ADD']).optional(),
+  transform: z.array(z.number().finite()).length(16).optional(),
+  content: z.object({
+    uri: z.string().min(1),
+    mimeType: z.literal(sceneryAssetTileEncoding).optional(),
+    extras: z.object({
+      leitbild: sceneryTilesetTileMetadataSchema.optional(),
+    }).optional(),
+  }).optional(),
+  children: z.array(sceneryTilesetTileSchema).optional(),
+  extras: z.object({
+    leitbild: sceneryTilesetNodeMetadataSchema.optional(),
+  }).optional(),
+}))
+export { sceneryTilesetTileSchema }
+
+export const sceneryAssetTilesetSchema = z.object({
+  asset: z.object({
+    version: z.literal('1.1'),
+    tilesetVersion: z.string().min(1),
+    gltfUpAxis: z.literal('z'),
+    generator: z.string().min(1),
+  }),
+  geometricError: z.number().finite().nonnegative(),
+  root: sceneryTilesetTileSchema,
+  extras: z.object({
+    leitbild: z.object({
+      schemaVersion: z.literal(2),
+      artifactFormat: z.literal(sceneryAssetFormat),
+      tileEncoding: z.literal(sceneryAssetTileEncoding),
+      tilesetId: z.string().min(1),
+      sourceTilesetId: z.string().min(1),
+      sourcePmtilesPath: z.string().min(1),
+      builtAt: z.string().min(1),
+      bounds: sceneryAssetBoundsSchema,
+      origin: sceneryTilesetOriginSchema,
+      zooms: z.array(z.number().int().min(0).max(24)).min(1),
+      lodLevels: z.array(sceneryAssetLodLevelSchema).min(1),
+      inputArtifacts: z.array(z.object({
+        kind: z.enum(['base-vector-pmtiles', 'terrain-dem-pmtiles', 'reference-pmtiles', 'reference-sidecar-geojson']),
+        id: z.string().min(1),
+        path: z.string().min(1),
+        required: z.boolean(),
+      })).min(1),
+      recipes: z.array(z.unknown()).min(1),
+      tileTemplate: z.literal(sceneryAssetTileTemplate),
+      outputRoot: z.string().min(1),
+      counts: z.object({
+        decodedTileCount: z.number().int().nonnegative(),
+        emptyTileCount: z.number().int().nonnegative(),
+        writtenTileCount: z.number().int().nonnegative(),
+        polygons: z.number().int().nonnegative(),
+        lines: z.number().int().nonnegative(),
+        labels: z.number().int().nonnegative(),
+        buildings: z.number().int().nonnegative(),
+        roads: z.number().int().nonnegative(),
+        water: z.number().int().nonnegative(),
+        vegetation: z.number().int().nonnegative(),
+        bytes: z.number().int().nonnegative(),
+      }),
+      tiles: z.array(sceneryAssetTileSummarySchema),
+    }),
+  }),
+})
+export type SceneryAssetTileset = z.infer<typeof sceneryAssetTilesetSchema>

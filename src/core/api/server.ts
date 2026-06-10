@@ -11,8 +11,7 @@ import {
   currentTerrainRasterTileResponse,
   currentTerrainTileJsonResponse,
   currentVectorTileResponse,
-  currentSceneryManifestResponse,
-  currentSceneryTileSummaryResponse,
+  currentSceneryTilesetResponse,
   currentSceneryTileResponse,
   mapGlyphResponse,
   mapCapabilitiesResponse,
@@ -309,8 +308,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         const terrainResponse = await currentTerrainRasterTileResponse(url, mapArtifacts)
         if (terrainResponse) return secure(terrainResponse)
       }
-      if (url.pathname === '/map/scenery/current/tiles.json') return secure(await currentSceneryTileSummaryResponse(url, mapArtifacts))
-      if (url.pathname === '/map/scenery/current/manifest.json') return secure(await currentSceneryManifestResponse(mapArtifacts))
+      if (url.pathname === '/map/scenery/current/tileset.json') return secure(await currentSceneryTilesetResponse(mapArtifacts))
       if (url.pathname.startsWith('/map/scenery/current/')) {
         const sceneryResponse = await currentSceneryTileResponse(url, mapArtifacts)
         if (sceneryResponse) return secure(sceneryResponse)

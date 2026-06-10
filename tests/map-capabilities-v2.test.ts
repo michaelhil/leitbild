@@ -13,6 +13,8 @@ import {
   loadMapCapabilityManifest,
   mapCapabilityManifestSchema,
 } from '../src/map/capabilities.ts'
+import { buildSceneryTilesetDocument } from '../src/map/scenery-tileset.ts'
+import type { SceneryAssetTileSummary } from '../src/map/scenery.ts'
 
 const writeReferenceManifest = async (
   root: string,
@@ -58,13 +60,35 @@ const refRoot = async () => {
   return mkdtemp(join(tmpdir(), 'leitbild-mapcap-'))
 }
 
-const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
+const scenerySummary = (mapRoot: string): SceneryAssetTileSummary => ({
+  recipeId: 'drone-urban-flight',
+  z: 14,
+  x: 8686,
+  y: 4758,
+  byteLength: 8,
+  centerLon: 10.755615,
+  centerLat: 59.913869,
+  bounds: { minLon: 10.744, minLat: 59.908, maxLon: 10.767, maxLat: 59.92 },
+  boundingSphere: { centerLon: 10.755615, centerLat: 59.913869, centerHeightM: 6, radiusM: 900 },
+  lod: { zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 },
+  minHeightM: 0,
+  maxHeightM: 12,
+  featureCounts: {
+    polygons: 1,
+    lines: 1,
+    labels: 0,
+    buildings: 1,
+    roads: 1,
+    water: 0,
+    vegetation: 0,
+  },
+})
+
+const writeSceneryTileset = async (mapRoot: string): Promise<void> => {
   const sceneryRoot = join(mapRoot, 'current', 'scenery')
   await mkdir(sceneryRoot, { recursive: true })
-  await Bun.write(join(sceneryRoot, 'manifest.json'), JSON.stringify({
-    schemaVersion: 1,
-    artifactFormat: 'directory-glb',
-    tileEncoding: 'model/gltf-binary',
+  const tile = scenerySummary(mapRoot)
+  await Bun.write(join(sceneryRoot, 'tileset.json'), JSON.stringify(buildSceneryTilesetDocument({
     tilesetId: 'leitbild-scenery-norway',
     sourceTilesetId: 'leitbild-osm-norway',
     sourcePmtilesPath: join(mapRoot, 'current', 'norway.pmtiles'),
@@ -79,7 +103,6 @@ const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
       required: true,
     }],
     recipes: [{ id: 'drone-urban-flight' }],
-    tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     outputRoot: sceneryRoot,
     counts: {
       decodedTileCount: 1,
@@ -94,30 +117,8 @@ const writeSceneryManifest = async (mapRoot: string): Promise<void> => {
       vegetation: 0,
       bytes: 8,
     },
-    tiles: [{
-      recipeId: 'drone-urban-flight',
-      z: 14,
-      x: 8686,
-      y: 4758,
-      byteLength: 8,
-      centerLon: 10.755615,
-      centerLat: 59.913869,
-      bounds: { minLon: 10.744, minLat: 59.908, maxLon: 10.767, maxLat: 59.92 },
-      boundingSphere: { centerLon: 10.755615, centerLat: 59.913869, centerHeightM: 6, radiusM: 900 },
-      lod: { zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 },
-      minHeightM: 0,
-      maxHeightM: 12,
-      featureCounts: {
-        polygons: 1,
-        lines: 1,
-        labels: 0,
-        buildings: 1,
-        roads: 1,
-        water: 0,
-        vegetation: 0,
-      },
-    }],
-  }))
+    tiles: [tile],
+  })))
 }
 
 describe('Map Capability Manifest v2', () => {
@@ -181,10 +182,10 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     const scenery = findSceneryTilesets(manifest)
     expect(scenery.length).toBe(1)
     expect(scenery[0]!.availability.status).toBe('unavailable')
-    expect(scenery[0]!.artifact.format).toBe('directory-glb')
+    expect(scenery[0]!.artifact.format).toBe('3d-tiles')
     expect(scenery[0]!.artifact.tileEncoding).toBe('model/gltf-binary')
     expect(scenery[0]!.artifact.lodStrategy).toBe('hierarchical-screen-space-error')
-    expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
+    expect(scenery[0]!.artifact.tilesetUrl).toBe('/map/scenery/current/tileset.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
     expect(scenery[0]!.recipes.find(recipe => recipe.id === 'drone-urban-flight')?.scenarioPackIds).toEqual(['drone'])
   })
@@ -204,31 +205,31 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(terrain[0]!.availability.error).toContain('PMTiles archive')
     const scenery = findSceneryTilesets(manifest)
     expect(scenery[0]!.availability.status).toBe('unavailable')
-    expect(scenery[0]!.availability.path).toBe(join(mapRoot, 'current', 'scenery', 'manifest.json'))
+    expect(scenery[0]!.availability.path).toBe(join(mapRoot, 'current', 'scenery', 'tileset.json'))
   })
 
-  test('marks precompiled scenery GLB artifacts available when the manifest exists', async () => {
+  test('marks precompiled 3D Tiles scenery artifacts available when the tileset exists', async () => {
     const root = await refRoot()
     const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
     await mkdir(join(mapRoot, 'current'), { recursive: true })
     await Bun.write(join(mapRoot, 'current', 'norway.pmtiles'), 'vector-bytes')
-    await writeSceneryManifest(mapRoot)
+    await writeSceneryTileset(mapRoot)
 
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
     const scenery = findSceneryTilesets(manifest)
     expect(scenery[0]!.availability).toMatchObject({
       status: 'available',
-      path: join(mapRoot, 'current', 'scenery', 'manifest.json'),
+      path: join(mapRoot, 'current', 'scenery', 'tileset.json'),
     })
-    expect(scenery[0]!.artifact.tileSummaryUrl).toBe('/map/scenery/current/tiles.json')
+    expect(scenery[0]!.artifact.tilesetUrl).toBe('/map/scenery/current/tileset.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
   })
 
-  test('marks corrupt precompiled scenery manifests unavailable', async () => {
+  test('marks corrupt precompiled scenery tilesets unavailable', async () => {
     const root = await refRoot()
     const mapRoot = await mkdtemp(join(tmpdir(), 'leitbild-mapcap-map-'))
     await mkdir(join(mapRoot, 'current', 'scenery'), { recursive: true })
-    await Bun.write(join(mapRoot, 'current', 'scenery', 'manifest.json'), '{ not valid json')
+    await Bun.write(join(mapRoot, 'current', 'scenery', 'tileset.json'), '{ not valid json')
 
     const manifest = await loadMapCapabilityManifest({ referenceRoot: root, mapRoot })
     const scenery = findSceneryTilesets(manifest)

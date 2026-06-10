@@ -10,8 +10,7 @@ import {
 } from '../src/map/capabilities.ts'
 import {
   currentPmtilesResponse,
-  currentSceneryManifestResponse,
-  currentSceneryTileSummaryResponse,
+  currentSceneryTilesetResponse,
   currentSceneryTileResponse,
   currentTerrainPmtilesResponse,
   currentTerrainRasterTileResponse,
@@ -21,6 +20,8 @@ import {
   referenceDatasetPmtilesResponse,
   referenceDatasetVectorTileResponse,
 } from '../src/map/artifacts.ts'
+import { buildSceneryTilesetDocument } from '../src/map/scenery-tileset.ts'
+import type { SceneryAssetTileSummary } from '../src/map/scenery.ts'
 import { createLeitbildMapStyle } from '../src/map/style.ts'
 
 const writeReferenceDataset = async (root: string, datasetId: string, buildId: string, bytes: string): Promise<void> => {
@@ -56,14 +57,36 @@ const writeReferenceDataset = async (root: string, datasetId: string, buildId: s
   await symlink(buildDir, currentLink)
 }
 
-const writeSceneryManifest = async (rootDir: string): Promise<void> => {
+const scenerySummary = (): SceneryAssetTileSummary => ({
+  recipeId: 'drone-urban-flight',
+  z: 14,
+  x: 8686,
+  y: 4758,
+  byteLength: 9,
+  centerLon: 10.755615,
+  centerLat: 59.913869,
+  bounds: { minLon: 10.744, minLat: 59.908, maxLon: 10.767, maxLat: 59.92 },
+  boundingSphere: { centerLon: 10.755615, centerLat: 59.913869, centerHeightM: 6, radiusM: 900 },
+  lod: { zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 },
+  minHeightM: 0,
+  maxHeightM: 12,
+  featureCounts: {
+    polygons: 1,
+    lines: 1,
+    labels: 0,
+    buildings: 1,
+    roads: 1,
+    water: 0,
+    vegetation: 0,
+  },
+})
+
+const writeSceneryTileset = async (rootDir: string): Promise<void> => {
   const sceneryRoot = join(rootDir, 'current', 'scenery')
   await mkdir(join(sceneryRoot, 'drone-urban-flight', '14', '8686'), { recursive: true })
   await Bun.write(join(sceneryRoot, 'drone-urban-flight', '14', '8686', '4758.glb'), 'glb-bytes')
-  await Bun.write(join(sceneryRoot, 'manifest.json'), JSON.stringify({
-    schemaVersion: 1,
-    artifactFormat: 'directory-glb',
-    tileEncoding: 'model/gltf-binary',
+  const tile = scenerySummary()
+  await Bun.write(join(sceneryRoot, 'tileset.json'), JSON.stringify(buildSceneryTilesetDocument({
     tilesetId: 'leitbild-scenery-norway',
     sourceTilesetId: 'leitbild-osm-norway',
     sourcePmtilesPath: join(rootDir, 'current', 'norway.pmtiles'),
@@ -78,7 +101,6 @@ const writeSceneryManifest = async (rootDir: string): Promise<void> => {
       required: true,
     }],
     recipes: [{ id: 'drone-urban-flight' }],
-    tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
     outputRoot: sceneryRoot,
     counts: {
       decodedTileCount: 1,
@@ -93,31 +115,19 @@ const writeSceneryManifest = async (rootDir: string): Promise<void> => {
       vegetation: 0,
       bytes: 9,
     },
-    tiles: [{
-      recipeId: 'drone-urban-flight',
-      z: 14,
-      x: 8686,
-      y: 4758,
-      byteLength: 9,
-      centerLon: 10.755615,
-      centerLat: 59.913869,
-      bounds: { minLon: 10.744, minLat: 59.908, maxLon: 10.767, maxLat: 59.92 },
-      boundingSphere: { centerLon: 10.755615, centerLat: 59.913869, centerHeightM: 6, radiusM: 900 },
-      lod: { zoom: 14, geometricErrorM: 8, maxScreenSpaceError: 16 },
-      minHeightM: 0,
-      maxHeightM: 12,
-      featureCounts: {
-        polygons: 1,
-        lines: 1,
-        labels: 0,
-        buildings: 1,
-        roads: 1,
-        water: 0,
-        vegetation: 0,
-      },
-    }],
-  }))
+    tiles: [tile],
+  })))
 }
+
+const collectContentUris = (tile: {
+  readonly content?: { readonly uri?: unknown }
+  readonly children?: ReadonlyArray<unknown>
+}): ReadonlyArray<string> => [
+  ...(typeof tile.content?.uri === 'string' ? [tile.content.uri] : []),
+  ...(Array.isArray(tile.children)
+    ? tile.children.flatMap(child => typeof child === 'object' && child !== null ? collectContentUris(child as Parameters<typeof collectContentUris>[0]) : [])
+    : []),
+]
 
 describe('vector map artifacts', () => {
   test('declares the canonical vector tile capabilities', () => {
@@ -211,73 +221,39 @@ describe('vector map artifacts', () => {
     expect(missingTile?.status).toBe(503)
   })
 
-  test('scenery artifact routes expose the single precompiled GLB tile path explicitly', async () => {
+  test('scenery artifact routes expose one 3D Tiles tileset and explicit GLB content paths', async () => {
     __clearManifestCacheForTests()
     const rootDir = await mkdtemp(join(tmpdir(), 'leitbild-map-test-'))
     const currentDir = join(rootDir, 'current')
     await mkdir(currentDir)
     await Bun.write(join(currentDir, 'norway.pmtiles'), 'not-a-real-pmtiles')
-    await writeSceneryManifest(rootDir)
+    await writeSceneryTileset(rootDir)
 
-    const manifest = await currentSceneryManifestResponse({ rootDir })
-    expect(manifest.status).toBe(200)
-    expect(await manifest.json()).toMatchObject({
-      artifactFormat: 'directory-glb',
-      tileEncoding: 'model/gltf-binary',
-      counts: { writtenTileCount: 1 },
+    const tileset = await currentSceneryTilesetResponse({ rootDir })
+    expect(tileset.status).toBe(200)
+    const body = await tileset.json()
+    expect(body).toMatchObject({
+      asset: { version: '1.1', gltfUpAxis: 'z' },
+      extras: {
+        leitbild: {
+          artifactFormat: '3d-tiles',
+          tileEncoding: 'model/gltf-binary',
+          counts: { writtenTileCount: 1 },
+        },
+      },
     })
+    expect(collectContentUris(body.root)).toEqual(['drone-urban-flight/14/8686/4758.glb'])
 
-    const summary = await currentSceneryTileSummaryResponse(
-      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4758&maxY=4758'),
-      { rootDir },
-    )
-    expect(summary.status).toBe(200)
-    const summaryBody = await summary.json()
-    expect(summaryBody).toMatchObject({
-      schemaVersion: 1,
-      recipeId: 'drone-urban-flight',
-      z: 14,
-      range: { minX: 8686, maxX: 8686, minY: 4758, maxY: 4758 },
-      tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
-      tiles: [{ recipeId: 'drone-urban-flight', x: 8686, y: 4758 }],
-    })
-    expect(summaryBody.counts).toBeUndefined()
-
-    const emptySummary = await currentSceneryTileSummaryResponse(
-      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4759&maxY=4759'),
-      { rootDir },
-    )
-    expect(emptySummary.status).toBe(200)
-    expect(await emptySummary.json()).toMatchObject({ tiles: [] })
-
-    const tooLargeSummary = await currentSceneryTileSummaryResponse(
-      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=0&maxX=32&minY=0&maxY=32'),
-      { rootDir },
-    )
-    expect(tooLargeSummary.status).toBe(400)
-    expect(await tooLargeSummary.json()).toMatchObject({
-      ok: false,
-      error: 'scenery tile summary query is too large',
-      maxTileCount: 512,
-    })
-
-    const missingManifest = await currentSceneryManifestResponse({ rootDir: join(rootDir, 'missing') })
-    expect(missingManifest.status).toBe(503)
-    expect(await missingManifest.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest unavailable' })
-
-    const missingSummary = await currentSceneryTileSummaryResponse(
-      new URL('http://localhost/map/scenery/current/tiles.json?recipeId=drone-urban-flight&z=14&minX=8686&maxX=8686&minY=4758&maxY=4758'),
-      { rootDir: join(rootDir, 'missing') },
-    )
-    expect(missingSummary.status).toBe(503)
-    expect(await missingSummary.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest unavailable' })
+    const missingTileset = await currentSceneryTilesetResponse({ rootDir: join(rootDir, 'missing') })
+    expect(missingTileset.status).toBe(503)
+    expect(await missingTileset.json()).toMatchObject({ ok: false, error: 'precompiled scenery tileset unavailable' })
 
     const corruptRoot = await mkdtemp(join(tmpdir(), 'leitbild-map-test-corrupt-scenery-'))
     await mkdir(join(corruptRoot, 'current', 'scenery'), { recursive: true })
-    await Bun.write(join(corruptRoot, 'current', 'scenery', 'manifest.json'), '{ not valid json')
-    const corruptManifest = await currentSceneryManifestResponse({ rootDir: corruptRoot })
-    expect(corruptManifest.status).toBe(415)
-    expect(await corruptManifest.json()).toMatchObject({ ok: false, error: 'precompiled scenery manifest is invalid' })
+    await Bun.write(join(corruptRoot, 'current', 'scenery', 'tileset.json'), '{ not valid json')
+    const corruptTileset = await currentSceneryTilesetResponse({ rootDir: corruptRoot })
+    expect(corruptTileset.status).toBe(415)
+    expect(await corruptTileset.json()).toMatchObject({ ok: false, error: 'precompiled scenery tileset is invalid' })
 
     const invalidTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/27/0/0.glb'), { rootDir })
     expect(invalidTile?.status).toBe(400)

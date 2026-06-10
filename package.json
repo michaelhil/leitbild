@@ -33,6 +33,7 @@
     "health": "bun run check && bun test && bun run build:ui"
   },
   "dependencies": {
+    "3d-tiles-renderer": "^0.4.28",
     "@babylonjs/core": "^9.11.0",
     "@babylonjs/loaders": "^9.11.0",
     "@deck.gl/core": "^9.3.2",
