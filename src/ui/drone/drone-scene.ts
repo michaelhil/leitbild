@@ -401,8 +401,8 @@ const desiredCameraPoseFor = (
       position: new Vector3(target.x, Math.max(450, target.y + 520), target.z - 0.01),
       target,
       fov: 0.52,
-      minZ: 0.5,
-      maxZ: 12_000,
+      minZ: 1.5,
+      maxZ: 6_500,
       mode: viewMode,
     }
   }
@@ -413,8 +413,8 @@ const desiredCameraPoseFor = (
       position: focus.visual.position.add(offset),
       target: focus.visual.position.add(new Vector3(Math.sin(yaw) * 80, -2, Math.cos(yaw) * 80)),
       fov: 1.1,
-      minZ: 0.08,
-      maxZ: 12_000,
+      minZ: 0.45,
+      maxZ: 4_500,
       mode: viewMode,
     }
   }
@@ -437,8 +437,8 @@ const desiredCameraPoseFor = (
       target.z + forward.z * 18,
     ),
     fov: 0.72,
-    minZ: 0.2,
-    maxZ: 12_000,
+    minZ: 0.75,
+    maxZ: 5_500,
     mode: viewMode,
   }
 }

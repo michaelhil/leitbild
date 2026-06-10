@@ -85,6 +85,25 @@ interface SceneryDetailBudget {
 
 const metersPerDegreeLat = 111_320
 const defaultMaxScreenSpaceError = 16
+const facadeTrimReliefM = 0.055
+const facadeWindowReliefM = 0.085
+const horizontalDepth = {
+  landcoverBaseY: 0.04,
+  landuseBaseY: 0.18,
+  waterSurfaceY: 0.38,
+  aerowaySurfaceY: 0.62,
+  waterwayY: 0.56,
+  railCasingY: 0.76,
+  railSteelY: 0.92,
+  aerowayShoulderY: 0.84,
+  aerowayFillY: 1.0,
+  roadBaseY: 1.12,
+  roadFeatureLaneStepM: 0.055,
+  roadCasingLiftM: 0.11,
+  roadFillLiftM: 0.23,
+  roadEdgeMarkingLiftM: 0.36,
+  roadCenterMarkingLiftM: 0.46,
+} as const
 
 const lodProfileForZoom = (
   zoom: number,
@@ -197,7 +216,7 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
   { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, metallicFactor: 0.05 },
   { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
-  { key: 'building-trim', name: 'building facade trim', color: [0.42, 0.45, 0.46, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.76, doubleSided: true },
+  { key: 'building-trim', name: 'building facade trim', color: [0.55, 0.58, 0.57, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.76, doubleSided: true },
   { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.92 },
   { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
   { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
@@ -214,6 +233,12 @@ const stableHash = (value: string): number => {
   }
   return hash >>> 0
 }
+
+const depthLayerOffset = (
+  key: string,
+  layerCount: number,
+  stepM: number,
+): number => (stableHash(key) % layerCount) * stepM
 
 const seededRandom = (seed: number): (() => number) => {
   let state = seed >>> 0
@@ -470,15 +495,58 @@ const appendWallSpan = (
   y0: number,
   y1: number,
   normal: Vec3,
+  normalOffsetM = 0,
 ): void => {
   if (u1 - u0 < 0.035 || y1 - y0 < 0.035) return
+  const offsetX = normal.x * normalOffsetM
+  const offsetZ = normal.z * normalOffsetM
   appendQuad(
     bucket,
-    { x: start.x + ux * u0, y: y0, z: start.z + uz * u0 },
-    { x: start.x + ux * u1, y: y0, z: start.z + uz * u1 },
-    { x: start.x + ux * u1, y: y1, z: start.z + uz * u1 },
-    { x: start.x + ux * u0, y: y1, z: start.z + uz * u0 },
+    { x: start.x + ux * u0 + offsetX, y: y0, z: start.z + uz * u0 + offsetZ },
+    { x: start.x + ux * u1 + offsetX, y: y0, z: start.z + uz * u1 + offsetZ },
+    { x: start.x + ux * u1 + offsetX, y: y1, z: start.z + uz * u1 + offsetZ },
+    { x: start.x + ux * u0 + offsetX, y: y1, z: start.z + uz * u0 + offsetZ },
     normal,
+  )
+}
+
+const outwardWallNormal = (
+  dx: number,
+  dz: number,
+  length: number,
+  ringSignedAreaM2: number,
+): Vec3 => {
+  const leftNormal = { x: -dz / length, y: 0, z: dx / length }
+  const sign = ringSignedAreaM2 >= 0 ? -1 : 1
+  return { x: leftNormal.x * sign, y: 0, z: leftNormal.z * sign }
+}
+
+const appendFacadeWindowCell = (
+  bucket: MeshBucket,
+  start: LocalPoint,
+  ux: number,
+  uz: number,
+  cellU0: number,
+  cellU1: number,
+  y0: number,
+  y1: number,
+  normal: Vec3,
+): void => {
+  const cellWidth = cellU1 - cellU0
+  const cellHeight = y1 - y0
+  const horizontalInset = Math.min(0.42, cellWidth * 0.22)
+  const verticalInset = Math.min(0.46, cellHeight * 0.24)
+  appendWallSpan(
+    bucket,
+    start,
+    ux,
+    uz,
+    cellU0 + horizontalInset,
+    cellU1 - horizontalInset,
+    y0 + verticalInset,
+    y0 + Math.max(verticalInset + 0.2, cellHeight * 0.68),
+    normal,
+    facadeWindowReliefM,
   )
 }
 
@@ -497,6 +565,7 @@ const appendBuildingWalls = (
   for (const sourceRing of rings) {
     const ring = openRing(sourceRing)
     if (ring.length < 2) continue
+    const ringSignedAreaM2 = ringArea(ring)
     for (let index = 0; index < ring.length; index += 1) {
       const start = ring[index]!
       const end = ring[(index + 1) % ring.length]!
@@ -504,63 +573,42 @@ const appendBuildingWalls = (
       const dz = end.z - start.z
       const length = Math.hypot(dx, dz)
       if (length < 0.15) continue
-      const normal = { x: -dz / length, y: 0, z: dx / length }
+      const normal = outwardWallNormal(dx, dz, length, ringSignedAreaM2)
       const ux = dx / length
       const uz = dz / length
+      appendWallSpan(wallBucket, start, ux, uz, 0, length, minHeight, minHeight + height, normal)
       if (!profile.includeFacadeTrim && !profile.includeFacadeWindows) {
-        appendWallSpan(wallBucket, start, ux, uz, 0, length, minHeight, minHeight + height, normal)
         continue
       }
       const floors = Math.max(1, Math.min(18, Math.floor(height / 3.2)))
       const windowColumns = Math.max(0, Math.min(28, Math.floor(length / 4.8)))
       const floorHeight = height / floors
-      const trimHalfHeight = profile.includeFacadeTrim && length > 5.5 && floors > 2 ? 0.055 : 0
       if (profile.includeFacadeTrim && length > 5.5 && floors > 2) {
         const bandInsetM = Math.min(0.45, length * 0.025)
         for (let floor = 1; floor < floors; floor += 1) {
           if (budget.facadeTrimBandsRemaining <= 0) break
           const y = minHeight + floor * floorHeight
-          appendWallSpan(trimBucket, start, ux, uz, bandInsetM, length - bandInsetM, y - trimHalfHeight, y + trimHalfHeight, normal)
+          appendWallSpan(trimBucket, start, ux, uz, bandInsetM, length - bandInsetM, y - 0.028, y + 0.028, normal, facadeTrimReliefM)
           budget.facadeTrimBandsRemaining -= 1
         }
       }
       for (let floor = 0; floor < floors; floor += 1) {
         const floorBaseY = minHeight + floor * floorHeight
         const floorTopY = floor === floors - 1 ? minHeight + height : minHeight + (floor + 1) * floorHeight
-        const y0 = floorBaseY + (floor > 0 ? trimHalfHeight : 0)
-        const y1 = floorTopY - (floor < floors - 1 ? trimHalfHeight : 0)
+        const y0 = floorBaseY
+        const y1 = floorTopY
         if (windowColumns === 0 || !profile.includeFacadeWindows || budget.facadeWindowCellsRemaining <= 0) {
-          appendWallSpan(wallBucket, start, ux, uz, 0, length, y0, y1, normal)
           continue
         }
         const facadeMarginM = Math.min(0.72, length * 0.045)
         const usableWidthM = Math.max(0, length - facadeMarginM * 2)
-        appendWallSpan(wallBucket, start, ux, uz, 0, facadeMarginM, y0, y1, normal)
-        appendWallSpan(wallBucket, start, ux, uz, length - facadeMarginM, length, y0, y1, normal)
-        let runBucket: MeshBucket | null = null
-        let runU0 = facadeMarginM
-        let runU1 = facadeMarginM
-        const flushRun = (): void => {
-          if (!runBucket) return
-          appendWallSpan(runBucket, start, ux, uz, runU0, runU1, y0, y1, normal)
-          runBucket = null
-        }
         for (let column = 0; column < windowColumns; column += 1) {
           const cellU0 = facadeMarginM + usableWidthM * column / windowColumns
           const cellU1 = facadeMarginM + usableWidthM * (column + 1) / windowColumns
-          const useWindow = budget.facadeWindowCellsRemaining > 0 && random() >= 0.18
-          const bucket = useWindow ? windowBucket : wallBucket
-          if (useWindow) budget.facadeWindowCellsRemaining -= 1
-          if (runBucket === bucket) {
-            runU1 = cellU1
-            continue
-          }
-          flushRun()
-          runBucket = bucket
-          runU0 = cellU0
-          runU1 = cellU1
+          if (budget.facadeWindowCellsRemaining <= 0 || random() < 0.18) continue
+          appendFacadeWindowCell(windowBucket, start, ux, uz, cellU0, cellU1, y0, y1, normal)
+          budget.facadeWindowCellsRemaining -= 1
         }
-        flushRun()
       }
     }
   }
@@ -630,7 +678,7 @@ const appendRibbon = (
     const referenceNz = next ? nextNz : prevNz
     const denom = Math.max(0.24, Math.abs(unitNx * referenceNx + unitNz * referenceNz))
     const miter = previous && next ? Math.min(halfWidth * 2.4, halfWidth / denom) : halfWidth
-    const capExtension = halfWidth * 0.55
+    const capExtension = 0
     const centerX = !previous && next
       ? point.x - nextDx / nextLength * capExtension
       : previous && !next
@@ -728,6 +776,17 @@ const appendRoadEdgeMarkings = (
   const offset = Math.max(2.8, widthM * 0.42)
   appendRibbon(bucket, offsetPath(path, -offset), 0.18, y)
   appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
+}
+
+const roadDepthLaneY = (
+  feature: SceneryTile['features']['lines'][number],
+  priority: number,
+): number => {
+  const priorityLift = priority >= 70 ? 0.08 : priority >= 60 ? 0.04 : 0
+  return horizontalDepth.roadBaseY
+    + feature.verticalOffsetM
+    + priorityLift
+    + depthLayerOffset(`road-depth:${feature.sourceRef ?? feature.id}`, 9, horizontalDepth.roadFeatureLaneStepM)
 }
 
 const appendRibbonSideBands = (
@@ -856,18 +915,24 @@ const surfaceMaterialFor = (kind: string, className: string): string => {
 }
 
 const surfaceHeightFor = (kind: string): number => {
-  if (kind === 'water') return 0.12
-  if (kind === 'aeroway') return 0.2
-  if (kind === 'landuse') return 0.07
-  return 0.03
+  if (kind === 'water') return horizontalDepth.waterSurfaceY
+  if (kind === 'aeroway') return horizontalDepth.aerowaySurfaceY
+  if (kind === 'landuse') return horizontalDepth.landuseBaseY
+  return horizontalDepth.landcoverBaseY
 }
 
 const surfaceHeightForFeature = (
   feature: SceneryTile['features']['polygons'][number],
 ): number => {
   const baseHeight = surfaceHeightFor(feature.kind)
+  if (feature.kind === 'water') {
+    return baseHeight + depthLayerOffset(`water-surface:${feature.sourceRef ?? feature.id}`, 3, 0.035)
+  }
+  if (feature.kind === 'aeroway') {
+    return baseHeight + depthLayerOffset(`aeroway-surface:${feature.sourceRef ?? feature.id}`, 3, 0.035)
+  }
   if (feature.kind === 'landuse' || feature.kind === 'landcover') {
-    return baseHeight + (stableHash(`surface-layer:${feature.id}`) % 9) * 0.006
+    return baseHeight + depthLayerOffset(`surface-layer:${feature.sourceRef ?? feature.id}`, 5, 0.032)
   }
   return baseHeight
 }
@@ -967,30 +1032,33 @@ const appendTransport = (
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
-      appendRibbon(water, path, feature.widthM, 0.22 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      const waterwayY = horizontalDepth.waterwayY
+        + feature.verticalOffsetM
+        + depthLayerOffset(`waterway-depth:${feature.sourceRef ?? feature.id}`, 5, 0.035)
+      appendRibbon(water, path, feature.widthM, waterwayY, profile.lineSimplifyDistanceM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, 0.34 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-      appendRibbon(rail, path, feature.widthM, 0.44 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(casing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(rail, path, feature.widthM, horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(shoulder, path, feature.widthM + 4, 0.32 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-      appendRibbon(fill, path, feature.widthM, 0.42 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(shoulder, path, feature.widthM + 4, horizontalDepth.aerowayShoulderY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(fill, path, feature.widthM, horizontalDepth.aerowayFillY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     const priority = roadPriority(feature.className)
     if (priority < profile.minRoadPriority) continue
-    const roadY = 0.52 + feature.verticalOffsetM
+    const roadY = roadDepthLaneY(feature, priority)
     const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
     const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
     appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM)
-    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY, profile.lineSimplifyDistanceM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY, profile.lineSimplifyDistanceM)
+    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM)
     if (profile.includeRoadMarkings) {
-      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + 0.16, budget)
-      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + 0.22, budget)
+      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + horizontalDepth.roadEdgeMarkingLiftM, budget)
+      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + horizontalDepth.roadCenterMarkingLiftM, budget)
     }
     if (!profile.includeStreetLights || priority < 40 || feature.isTunnel || budget.streetLightsRemaining <= 0) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38

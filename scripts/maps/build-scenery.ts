@@ -304,6 +304,7 @@ const archive = new PMTiles(createBunFileSource(pmtilesPath, pmtilesPath))
 const header = await archive.getHeader()
 if (header.tileType !== TileType.Mvt) throw new Error(`scenery build requires an MVT PMTiles archive; found tileType ${header.tileType}`)
 const zooms = parseZooms({ minZoom: recipe.minZoom, maxZoom: recipe.maxZoom })
+const contentZooms = [Math.max(...zooms)]
 for (const zoom of zooms) {
   if (zoom < header.minZoom || zoom > header.maxZoom) throw new Error(`zoom ${zoom} is outside source PMTiles zoom range ${header.minZoom}-${header.maxZoom}`)
 }
@@ -329,7 +330,7 @@ let vegetationCount = 0
 let byteCount = 0
 const tileSummaries: SceneryAssetTileSummary[] = []
 
-for (const zoom of zooms) {
+for (const zoom of contentZooms) {
   const tiles = tileRangeForBounds(bounds, zoom)
   await mapWithConcurrency(tiles, concurrency, async tile => {
     const source = await archive.getZxy(tile.z, tile.x, tile.y)

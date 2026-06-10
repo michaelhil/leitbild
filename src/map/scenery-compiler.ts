@@ -16,6 +16,8 @@ interface VectorTilePoint {
   readonly y: number
 }
 
+const clippingEpsilon = 0.001
+
 const defaultLayers = [
   'landcover',
   'landuse',
@@ -150,6 +152,171 @@ const lineVerticalOffsetM = (config: {
 
 const pointFromVectorTile = (point: VectorTilePoint): SceneryPoint => [point.x, point.y]
 
+const pointsClose = (
+  left: VectorTilePoint,
+  right: VectorTilePoint,
+): boolean => Math.abs(left.x - right.x) <= clippingEpsilon && Math.abs(left.y - right.y) <= clippingEpsilon
+
+const openVectorTileRing = (
+  ring: ReadonlyArray<VectorTilePoint>,
+): ReadonlyArray<VectorTilePoint> => {
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (!first || !last || ring.length < 2) return ring
+  return pointsClose(first, last) ? ring.slice(0, -1) : ring
+}
+
+const closeVectorTileRing = (
+  ring: ReadonlyArray<VectorTilePoint>,
+): ReadonlyArray<VectorTilePoint> => {
+  const first = ring[0]
+  const last = ring[ring.length - 1]
+  if (!first || !last || ring.length < 3) return []
+  return pointsClose(first, last) ? ring : [...ring, first]
+}
+
+const lineOutCode = (
+  point: VectorTilePoint,
+  extent: number,
+): number => {
+  let code = 0
+  if (point.x < 0) code |= 1
+  if (point.x > extent) code |= 2
+  if (point.y < 0) code |= 4
+  if (point.y > extent) code |= 8
+  return code
+}
+
+const clipLineSegmentToExtent = (
+  start: VectorTilePoint,
+  end: VectorTilePoint,
+  extent: number,
+): readonly [VectorTilePoint, VectorTilePoint] | null => {
+  let x0 = start.x
+  let y0 = start.y
+  let x1 = end.x
+  let y1 = end.y
+  let code0 = lineOutCode({ x: x0, y: y0 }, extent)
+  let code1 = lineOutCode({ x: x1, y: y1 }, extent)
+  while (true) {
+    if ((code0 | code1) === 0) return [{ x: x0, y: y0 }, { x: x1, y: y1 }]
+    if ((code0 & code1) !== 0) return null
+    const outsideCode = code0 !== 0 ? code0 : code1
+    const dx = x1 - x0
+    const dy = y1 - y0
+    let x = 0
+    let y = 0
+    if ((outsideCode & 8) !== 0) {
+      y = extent
+      x = Math.abs(dy) <= clippingEpsilon ? x0 : x0 + dx * (extent - y0) / dy
+    } else if ((outsideCode & 4) !== 0) {
+      y = 0
+      x = Math.abs(dy) <= clippingEpsilon ? x0 : x0 + dx * (0 - y0) / dy
+    } else if ((outsideCode & 2) !== 0) {
+      x = extent
+      y = Math.abs(dx) <= clippingEpsilon ? y0 : y0 + dy * (extent - x0) / dx
+    } else {
+      x = 0
+      y = Math.abs(dx) <= clippingEpsilon ? y0 : y0 + dy * (0 - x0) / dx
+    }
+    if (outsideCode === code0) {
+      x0 = x
+      y0 = y
+      code0 = lineOutCode({ x: x0, y: y0 }, extent)
+    } else {
+      x1 = x
+      y1 = y
+      code1 = lineOutCode({ x: x1, y: y1 }, extent)
+    }
+  }
+}
+
+const appendClippedPoint = (
+  points: VectorTilePoint[],
+  point: VectorTilePoint,
+): void => {
+  const previous = points[points.length - 1]
+  if (!previous || !pointsClose(previous, point)) points.push(point)
+}
+
+const clippedLinePartsToExtent = (
+  line: ReadonlyArray<VectorTilePoint>,
+  extent: number,
+): ReadonlyArray<ReadonlyArray<VectorTilePoint>> => {
+  const parts: VectorTilePoint[][] = []
+  let current: VectorTilePoint[] = []
+  for (let index = 0; index < line.length - 1; index += 1) {
+    const clipped = clipLineSegmentToExtent(line[index]!, line[index + 1]!, extent)
+    if (!clipped) {
+      if (current.length >= 2) parts.push(current)
+      current = []
+      continue
+    }
+    const [segmentStart, segmentEnd] = clipped
+    const previous = current[current.length - 1]
+    if (previous && !pointsClose(previous, segmentStart)) {
+      if (current.length >= 2) parts.push(current)
+      current = []
+    }
+    appendClippedPoint(current, segmentStart)
+    appendClippedPoint(current, segmentEnd)
+  }
+  if (current.length >= 2) parts.push(current)
+  return parts
+}
+
+const clipRingAgainstEdge = (
+  ring: ReadonlyArray<VectorTilePoint>,
+  inside: (point: VectorTilePoint) => boolean,
+  intersect: (start: VectorTilePoint, end: VectorTilePoint) => VectorTilePoint,
+): ReadonlyArray<VectorTilePoint> => {
+  if (ring.length === 0) return []
+  const output: VectorTilePoint[] = []
+  let previous = ring[ring.length - 1]!
+  let previousInside = inside(previous)
+  for (const current of ring) {
+    const currentInside = inside(current)
+    if (currentInside) {
+      if (!previousInside) appendClippedPoint(output, intersect(previous, current))
+      appendClippedPoint(output, current)
+    } else if (previousInside) {
+      appendClippedPoint(output, intersect(previous, current))
+    }
+    previous = current
+    previousInside = currentInside
+  }
+  return output
+}
+
+const clipRingToExtent = (
+  sourceRing: ReadonlyArray<VectorTilePoint>,
+  extent: number,
+): ReadonlyArray<VectorTilePoint> => {
+  const ring = openVectorTileRing(sourceRing)
+  if (ring.length < 3) return []
+  const clippedLeft = clipRingAgainstEdge(
+    ring,
+    point => point.x >= 0,
+    (start, end) => ({ x: 0, y: start.y + (end.y - start.y) * (0 - start.x) / (end.x - start.x) }),
+  )
+  const clippedRight = clipRingAgainstEdge(
+    clippedLeft,
+    point => point.x <= extent,
+    (start, end) => ({ x: extent, y: start.y + (end.y - start.y) * (extent - start.x) / (end.x - start.x) }),
+  )
+  const clippedTop = clipRingAgainstEdge(
+    clippedRight,
+    point => point.y >= 0,
+    (start, end) => ({ x: start.x + (end.x - start.x) * (0 - start.y) / (end.y - start.y), y: 0 }),
+  )
+  const clippedBottom = clipRingAgainstEdge(
+    clippedTop,
+    point => point.y <= extent,
+    (start, end) => ({ x: start.x + (end.x - start.x) * (extent - start.y) / (end.y - start.y), y: extent }),
+  )
+  return closeVectorTileRing(clippedBottom)
+}
+
 const lineFromGeometry = (
   line: ReadonlyArray<VectorTilePoint>,
 ): SceneryPoint[] =>
@@ -157,8 +324,10 @@ const lineFromGeometry = (
 
 const polygonRingsFromGeometry = (
   polygon: ReadonlyArray<ReadonlyArray<VectorTilePoint>>,
+  extent: number,
 ): SceneryPoint[][] =>
   polygon
+    .map(ring => clipRingToExtent(ring, extent))
     .map(lineFromGeometry)
     .filter(ring => ring.length >= 3)
 
@@ -180,7 +349,7 @@ const polygonFeaturesFor = (
 ): ReadonlyArray<SceneryPolygonFeature> => {
   if (vectorFeature.type !== 3) return []
   return classifyRings(vectorFeature.loadGeometry()).flatMap((polygon, index) => {
-    const rings = polygonRingsFromGeometry(polygon)
+    const rings = polygonRingsFromGeometry(polygon, vectorFeature.extent)
     if (rings.length === 0) return []
     const name = optionalStringProperty(properties, 'name')
     const subclass = optionalStringProperty(properties, 'subclass')
@@ -224,30 +393,34 @@ const lineFeaturesFor = (
   const maxspeedKph = numberProperty(properties, ['maxspeed']) ?? undefined
   const oneway = booleanPropertyValue(properties, ['oneway'])
   const verticalOffsetM = lineVerticalOffsetM({ isBridge, isTunnel, ...(layer === undefined ? {} : { layer }) })
-  return vectorFeature.loadGeometry().flatMap((line, index) => {
-    const path = lineFromGeometry(line)
-    if (path.length < 2) return []
-    return [{
-      id: `${id}:${index}`,
-      sourceLayer,
-      ...(vectorFeature.id === undefined ? {} : { sourceRef: `${sourceLayer}:${vectorFeature.id}` }),
-      kind,
-      className,
-      ...(subclass === undefined ? {} : { subclass }),
-      ...(name === undefined ? {} : { name }),
-      ...(surface === undefined ? {} : { surface }),
-      ...(brunnel === undefined ? {} : { brunnel }),
-      ...(layer === undefined ? {} : { layer }),
-      ...(service === undefined ? {} : { service }),
-      ...(access === undefined ? {} : { access }),
-      ...(maxspeedKph === undefined ? {} : { maxspeedKph }),
-      ...(oneway === undefined ? {} : { oneway }),
-      isBridge,
-      isTunnel,
-      path,
-      widthM: lineWidthFor(kind, className),
-      verticalOffsetM,
-    }]
+  return vectorFeature.loadGeometry().flatMap((line, lineIndex) => {
+    const clippedParts = clippedLinePartsToExtent(line, vectorFeature.extent)
+    return clippedParts.flatMap((part, partIndex) => {
+      const path = lineFromGeometry(part)
+      if (path.length < 2) return []
+      const segmentId = clippedParts.length === 1 ? `${id}:${lineIndex}` : `${id}:${lineIndex}:${partIndex}`
+      return [{
+        id: segmentId,
+        sourceLayer,
+        ...(vectorFeature.id === undefined ? {} : { sourceRef: `${sourceLayer}:${vectorFeature.id}` }),
+        kind,
+        className,
+        ...(subclass === undefined ? {} : { subclass }),
+        ...(name === undefined ? {} : { name }),
+        ...(surface === undefined ? {} : { surface }),
+        ...(brunnel === undefined ? {} : { brunnel }),
+        ...(layer === undefined ? {} : { layer }),
+        ...(service === undefined ? {} : { service }),
+        ...(access === undefined ? {} : { access }),
+        ...(maxspeedKph === undefined ? {} : { maxspeedKph }),
+        ...(oneway === undefined ? {} : { oneway }),
+        isBridge,
+        isTunnel,
+        path,
+        widthM: lineWidthFor(kind, className),
+        verticalOffsetM,
+      }]
+    })
   })
 }
 

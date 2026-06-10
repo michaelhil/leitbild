@@ -115,15 +115,32 @@ const coordinatePlanesFor = (
   }
 }
 
-const onAnyFacadePlane = (
+const facadeReliefOffset = (
   position: readonly [number, number, number],
   planes: ReturnType<typeof coordinatePlanesFor>,
-): boolean => {
-  const epsilonM = 0.012
-  return Math.abs(position[0] - planes.minX) <= epsilonM
-    || Math.abs(position[0] - planes.maxX) <= epsilonM
-    || Math.abs(position[2] - planes.minZ) <= epsilonM
-    || Math.abs(position[2] - planes.maxZ) <= epsilonM
+): number | null => {
+  const offsets = [
+    position[0] < planes.minX ? planes.minX - position[0] : null,
+    position[0] > planes.maxX ? position[0] - planes.maxX : null,
+    position[2] < planes.minZ ? planes.minZ - position[2] : null,
+    position[2] > planes.maxZ ? position[2] - planes.maxZ : null,
+  ].filter((value): value is number => value !== null)
+  return offsets.length === 0 ? null : Math.min(...offsets)
+}
+
+const roundedYValues = (
+  positions: ReadonlyArray<ReadonlyArray<readonly [number, number, number]>>,
+): ReadonlyArray<number> => [
+  ...new Set(positions.flat().map(position => Number(position[1].toFixed(3)))),
+].sort((left, right) => left - right)
+
+const firstYValue = (
+  bytes: Uint8Array,
+  materialNamePattern: RegExp,
+): number => {
+  const values = roundedYValues(primitivePositionsByMaterialName(bytes, materialNamePattern))
+  expect(values.length).toBeGreaterThan(0)
+  return values[0]!
 }
 
 const tilePoint = (x: number, y: number): [number, number] => [x, y]
@@ -301,6 +318,46 @@ const denseBudgetTile = (): SceneryTile => {
   }
 }
 
+const crossingRoadTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'crossing-road:a',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:crossing-a',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(900, 2050),
+          tilePoint(3200, 2050),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+      {
+        id: 'crossing-road:b',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:crossing-b',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(2050, 900),
+          tilePoint(2050, 3200),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
 describe('drone scenery GLB compiler', () => {
   test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
     const result = compileSceneryGlbTile(testTile)
@@ -361,7 +418,7 @@ describe('drone scenery GLB compiler', () => {
     expect(materialNames.has('poi beacon')).toBe(true)
   })
 
-  test('integrates facade detail into wall planes instead of floating overlay sheets', () => {
+  test('keeps facades closed while placing detail on outward relief planes', () => {
     const result = compileSceneryGlbTile(testTile)
     expect(result).not.toBeNull()
     const wallPositions = primitivePositionsByMaterialName(result!.bytes, /building wall|warm building wall|cool building wall|brick building wall|stone building wall|dark glass building wall/)
@@ -370,9 +427,42 @@ describe('drone scenery GLB compiler', () => {
     expect(wallPositions.length).toBeGreaterThan(0)
     expect(detailPositions.length).toBeGreaterThan(0)
     const facadePlanes = coordinatePlanesFor(wallPositions)
+    const reliefOffsets: number[] = []
     for (const position of detailPositions.flat()) {
-      expect(onAnyFacadePlane(position, facadePlanes)).toBe(true)
+      const offset = facadeReliefOffset(position, facadePlanes)
+      expect(offset).not.toBeNull()
+      reliefOffsets.push(offset!)
     }
+    expect(Math.min(...reliefOffsets)).toBeGreaterThanOrEqual(0.045)
+    expect(Math.max(...reliefOffsets)).toBeLessThanOrEqual(0.09)
+  })
+
+  test('separates road, water, and ground planes in compiler-owned depth strata', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const bytes = result!.bytes
+    const parkY = firstYValue(bytes, /managed park grass/)
+    const waterY = firstYValue(bytes, /water surface/)
+    const shoulderY = firstYValue(bytes, /road shoulder/)
+    const casingY = firstYValue(bytes, /road dark casing/)
+    const asphaltY = firstYValue(bytes, /major road asphalt/)
+    const markingY = firstYValue(bytes, /baked road markings/)
+
+    expect(waterY - parkY).toBeGreaterThanOrEqual(0.12)
+    expect(shoulderY - waterY).toBeGreaterThanOrEqual(0.45)
+    expect(casingY - shoulderY).toBeGreaterThanOrEqual(0.1)
+    expect(asphaltY - casingY).toBeGreaterThanOrEqual(0.1)
+    expect(markingY - asphaltY).toBeGreaterThanOrEqual(0.1)
+  })
+
+  test('assigns crossing roads to deterministic separate depth lanes', () => {
+    const result = compileSceneryGlbTile(crossingRoadTile())
+    expect(result).not.toBeNull()
+    const asphaltYValues = roundedYValues(primitivePositionsByMaterialName(result!.bytes, /major road asphalt/))
+
+    expect(asphaltYValues.length).toBeGreaterThanOrEqual(2)
+    const deltas = asphaltYValues.slice(1).map((value, index) => value - asphaltYValues[index]!)
+    expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
   })
 
   test('declares compiler-owned scenery depth policies instead of relying on renderer z-bias guesses', () => {
@@ -394,6 +484,7 @@ describe('drone scenery GLB compiler', () => {
 
     expect(source).not.toContain('sceneryMaterialDepthBias')
     expect(source).not.toContain('.zOffset')
+    expect(source).not.toContain('maxZ: 12_000')
   })
 
   test('keeps coarse scenery tiles as lightweight fallback silhouettes', () => {
