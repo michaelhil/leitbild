@@ -1282,6 +1282,12 @@ interface HorizontalPlaneSample {
   readonly maxX: number
   readonly minZ: number
   readonly maxZ: number
+  readonly points: readonly [HorizontalTrianglePoint, HorizontalTrianglePoint, HorizontalTrianglePoint]
+}
+
+interface HorizontalTrianglePoint {
+  readonly x: number
+  readonly z: number
 }
 
 const horizontalPlaneYToleranceM = 0.003
@@ -1365,6 +1371,11 @@ const horizontalSampleFor = (
     maxX: Math.max(a[0], b[0], c[0]),
     minZ: Math.min(a[2], b[2], c[2]),
     maxZ: Math.max(a[2], b[2], c[2]),
+    points: [
+      { x: a[0], z: a[2] },
+      { x: b[0], z: b[2] },
+      { x: c[0], z: c[2] },
+    ],
   }
 }
 
@@ -1433,7 +1444,92 @@ const horizontalOverlapAreaM2 = (
 ): number => {
   const widthM = Math.min(left.maxX, right.maxX) - Math.max(left.minX, right.minX)
   const depthM = Math.min(left.maxZ, right.maxZ) - Math.max(left.minZ, right.minZ)
-  return widthM > 0 && depthM > 0 ? widthM * depthM : 0
+  if (widthM <= 0 || depthM <= 0) return 0
+  return convexPolygonOverlapAreaM2(left.points, right.points)
+}
+
+const signedPolygonAreaM2 = (
+  points: ReadonlyArray<HorizontalTrianglePoint>,
+): number => {
+  let area = 0
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index]!
+    const next = points[(index + 1) % points.length]!
+    area += current.x * next.z - next.x * current.z
+  }
+  return area / 2
+}
+
+const pointInsideClipEdge = (
+  point: HorizontalTrianglePoint,
+  edgeStart: HorizontalTrianglePoint,
+  edgeEnd: HorizontalTrianglePoint,
+  clipAreaSign: number,
+): boolean => {
+  const cross = (edgeEnd.x - edgeStart.x) * (point.z - edgeStart.z)
+    - (edgeEnd.z - edgeStart.z) * (point.x - edgeStart.x)
+  return clipAreaSign >= 0 ? cross >= -0.000001 : cross <= 0.000001
+}
+
+const lineIntersection = (
+  from: HorizontalTrianglePoint,
+  to: HorizontalTrianglePoint,
+  clipStart: HorizontalTrianglePoint,
+  clipEnd: HorizontalTrianglePoint,
+): HorizontalTrianglePoint => {
+  const x1 = from.x
+  const z1 = from.z
+  const x2 = to.x
+  const z2 = to.z
+  const x3 = clipStart.x
+  const z3 = clipStart.z
+  const x4 = clipEnd.x
+  const z4 = clipEnd.z
+  const denominator = (x1 - x2) * (z3 - z4) - (z1 - z2) * (x3 - x4)
+  if (Math.abs(denominator) < 0.000001) return to
+  const determinantA = x1 * z2 - z1 * x2
+  const determinantB = x3 * z4 - z3 * x4
+  return {
+    x: (determinantA * (x3 - x4) - (x1 - x2) * determinantB) / denominator,
+    z: (determinantA * (z3 - z4) - (z1 - z2) * determinantB) / denominator,
+  }
+}
+
+const clipPolygonByEdge = (
+  subject: ReadonlyArray<HorizontalTrianglePoint>,
+  clipStart: HorizontalTrianglePoint,
+  clipEnd: HorizontalTrianglePoint,
+  clipAreaSign: number,
+): ReadonlyArray<HorizontalTrianglePoint> => {
+  const output: HorizontalTrianglePoint[] = []
+  let previous = subject[subject.length - 1]
+  if (!previous) return output
+  let previousInside = pointInsideClipEdge(previous, clipStart, clipEnd, clipAreaSign)
+  for (const current of subject) {
+    const currentInside = pointInsideClipEdge(current, clipStart, clipEnd, clipAreaSign)
+    if (currentInside) {
+      if (!previousInside) output.push(lineIntersection(previous, current, clipStart, clipEnd))
+      output.push(current)
+    } else if (previousInside) {
+      output.push(lineIntersection(previous, current, clipStart, clipEnd))
+    }
+    previous = current
+    previousInside = currentInside
+  }
+  return output
+}
+
+const convexPolygonOverlapAreaM2 = (
+  left: ReadonlyArray<HorizontalTrianglePoint>,
+  right: ReadonlyArray<HorizontalTrianglePoint>,
+): number => {
+  let clipped: ReadonlyArray<HorizontalTrianglePoint> = left
+  const clipAreaSign = Math.sign(signedPolygonAreaM2(right)) || 1
+  for (let index = 0; index < right.length; index += 1) {
+    clipped = clipPolygonByEdge(clipped, right[index]!, right[(index + 1) % right.length]!, clipAreaSign)
+    if (clipped.length < 3) return 0
+  }
+  return Math.abs(signedPolygonAreaM2(clipped))
 }
 
 const gridKeysFor = (
