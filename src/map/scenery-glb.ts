@@ -96,6 +96,7 @@ const metersPerDegreeLat = 111_320
 const defaultMaxScreenSpaceError = 16
 const facadeTrimReliefM = 0.055
 const facadeWindowReliefM = 0.085
+const ribbonJoinLiftM = 0.065
 const horizontalDepth = {
   landcoverBaseY: 0.04,
   landuseBaseY: 0.18,
@@ -685,59 +686,141 @@ const simplifiedPath = (
   return simplified
 }
 
+interface RibbonSegmentFrame {
+  readonly start: LocalPoint
+  readonly end: LocalPoint
+  readonly length: number
+  readonly ux: number
+  readonly uz: number
+  readonly nx: number
+  readonly nz: number
+}
+
+const ribbonSegmentFrameFor = (
+  start: LocalPoint,
+  end: LocalPoint,
+): RibbonSegmentFrame | null => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const length = Math.hypot(dx, dz)
+  if (length < 0.05) return null
+  const ux = dx / length
+  const uz = dz / length
+  return {
+    start,
+    end,
+    length,
+    ux,
+    uz,
+    nx: -uz,
+    nz: ux,
+  }
+}
+
+const ribbonJoinTrimM = (
+  lengthM: number,
+  halfWidthM: number,
+): number => Math.min(halfWidthM * 2.4, lengthM * 0.46)
+
+const appendRibbonSegmentQuad = (
+  bucket: MeshBucket,
+  frame: RibbonSegmentFrame,
+  halfWidthM: number,
+  startTrimM: number,
+  endTrimM: number,
+  y: number,
+): void => {
+  const start = {
+    x: frame.start.x + frame.ux * startTrimM,
+    z: frame.start.z + frame.uz * startTrimM,
+  }
+  const end = {
+    x: frame.end.x - frame.ux * endTrimM,
+    z: frame.end.z - frame.uz * endTrimM,
+  }
+  if (Math.hypot(end.x - start.x, end.z - start.z) < 0.05) return
+  appendQuad(
+    bucket,
+    { x: start.x + frame.nx * halfWidthM, y, z: start.z + frame.nz * halfWidthM },
+    { x: end.x + frame.nx * halfWidthM, y, z: end.z + frame.nz * halfWidthM },
+    { x: end.x - frame.nx * halfWidthM, y, z: end.z - frame.nz * halfWidthM },
+    { x: start.x - frame.nx * halfWidthM, y, z: start.z - frame.nz * halfWidthM },
+    { x: 0, y: 1, z: 0 },
+  )
+}
+
+const compactRibbonRing = (
+  ring: ReadonlyArray<LocalPoint>,
+): ReadonlyArray<LocalPoint> => {
+  const compact: LocalPoint[] = []
+  for (const point of ring) {
+    const previous = compact[compact.length - 1]
+    if (previous && Math.hypot(previous.x - point.x, previous.z - point.z) < 0.01) continue
+    compact.push(point)
+  }
+  const first = compact[0]
+  const last = compact[compact.length - 1]
+  if (first && last && compact.length > 1 && Math.hypot(first.x - last.x, first.z - last.z) < 0.01) compact.pop()
+  return compact
+}
+
+const appendRibbonRoundJoin = (
+  bucket: MeshBucket,
+  center: LocalPoint,
+  halfWidthM: number,
+  y: number,
+): void => {
+  const segmentCount = Math.max(10, Math.min(24, Math.ceil(halfWidthM * 1.2)))
+  const ring = compactRibbonRing(Array.from({ length: segmentCount }, (_value, index) => {
+    const angle = index / segmentCount * Math.PI * 2
+    return {
+      x: center.x + Math.cos(angle) * halfWidthM,
+      z: center.z + Math.sin(angle) * halfWidthM,
+    }
+  }))
+  if (ring.length < 3 || Math.abs(ringArea(ring)) < 0.005) return
+  appendHorizontalPolygon(bucket, [ring], y)
+}
+
 const appendRibbon = (
   bucket: MeshBucket,
   path: ReadonlyArray<LocalPoint>,
   widthM: number,
   y: number,
   simplifyDistanceM = 0.35,
+  joinLiftM = 0,
 ): void => {
   const points = simplifiedPath(path, simplifyDistanceM)
   if (points.length < 2) return
   const halfWidth = widthM / 2
-  const vertexBase = bucket.positions.length / 3
-  for (let index = 0; index < points.length; index += 1) {
-    const point = points[index]!
-    const previous = points[index - 1]
-    const next = points[index + 1]
-    const from = previous ?? point
-    const to = next ?? point
-    const prevDx = point.x - from.x
-    const prevDz = point.z - from.z
-    const nextDx = to.x - point.x
-    const nextDz = to.z - point.z
-    const prevLength = Math.max(0.001, Math.hypot(prevDx, prevDz))
-    const nextLength = Math.max(0.001, Math.hypot(nextDx, nextDz))
-    const prevNx = -prevDz / prevLength
-    const prevNz = prevDx / prevLength
-    const nextNx = -nextDz / nextLength
-    const nextNz = nextDx / nextLength
-    const joinedNx = previous && next ? prevNx + nextNx : previous ? prevNx : nextNx
-    const joinedNz = previous && next ? prevNz + nextNz : previous ? prevNz : nextNz
-    const joinedLength = Math.max(0.001, Math.hypot(joinedNx, joinedNz))
-    const unitNx = joinedNx / joinedLength
-    const unitNz = joinedNz / joinedLength
-    const referenceNx = next ? nextNx : prevNx
-    const referenceNz = next ? nextNz : prevNz
-    const denom = Math.max(0.24, Math.abs(unitNx * referenceNx + unitNz * referenceNz))
-    const miter = previous && next ? Math.min(halfWidth * 2.4, halfWidth / denom) : halfWidth
-    const capExtension = 0
-    const centerX = !previous && next
-      ? point.x - nextDx / nextLength * capExtension
-      : previous && !next
-        ? point.x + prevDx / prevLength * capExtension
-        : point.x
-    const centerZ = !previous && next
-      ? point.z - nextDz / nextLength * capExtension
-      : previous && !next
-        ? point.z + prevDz / prevLength * capExtension
-        : point.z
-    appendVertex(bucket, { x: centerX + unitNx * miter, y, z: centerZ + unitNz * miter }, { x: 0, y: 1, z: 0 })
-    appendVertex(bucket, { x: centerX - unitNx * miter, y, z: centerZ - unitNz * miter }, { x: 0, y: 1, z: 0 })
+  const frames = points
+    .slice(0, -1)
+    .flatMap((point, index) => {
+      const frame = ribbonSegmentFrameFor(point, points[index + 1]!)
+      return frame ? [frame] : []
+    })
+  if (frames.length === 0) return
+  const startTrims = frames.map((frame, index) => index === 0
+    ? 0
+    : Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[index - 1]!.length, halfWidth)))
+  const endTrims = frames.map((frame, index) => index === frames.length - 1
+    ? 0
+    : Math.min(ribbonJoinTrimM(frame.length, halfWidth), ribbonJoinTrimM(frames[index + 1]!.length, halfWidth)))
+  for (let index = 0; index < frames.length; index += 1) {
+    const frame = frames[index]!
+    const requestedTrimM = startTrims[index]! + endTrims[index]!
+    if (requestedTrimM > frame.length - 0.05) {
+      const scale = Math.max(0, frame.length - 0.05) / requestedTrimM
+      startTrims[index] = startTrims[index]! * scale
+      endTrims[index] = endTrims[index]! * scale
+    }
+    appendRibbonSegmentQuad(bucket, frame, halfWidth, startTrims[index]!, endTrims[index]!, y)
   }
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const base = vertexBase + index * 2
-    bucket.indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3)
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = frames[index - 1]
+    const next = frames[index]
+    if (!previous || !next) continue
+    appendRibbonRoundJoin(bucket, points[index]!, halfWidth, y + joinLiftM)
   }
 }
 
@@ -985,12 +1068,13 @@ const appendRibbonSideBands = (
   outerWidthM: number,
   y: number,
   simplifyDistanceM: number,
+  joinLiftM = 0,
 ): void => {
   const bandWidthM = (outerWidthM - innerWidthM) / 2
   if (bandWidthM < 0.08) return
   const offsetM = innerWidthM / 2 + bandWidthM / 2
-  appendRibbon(bucket, offsetPath(path, -offsetM), bandWidthM, y, simplifyDistanceM)
-  appendRibbon(bucket, offsetPath(path, offsetM), bandWidthM, y, simplifyDistanceM)
+  appendRibbon(bucket, offsetPath(path, -offsetM), bandWidthM, y, simplifyDistanceM, joinLiftM)
+  appendRibbon(bucket, offsetPath(path, offsetM), bandWidthM, y, simplifyDistanceM, joinLiftM)
 }
 
 const appendCylinder = (
@@ -1238,12 +1322,12 @@ const appendTransport = (
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
       const waterwayY = horizontalDepth.waterwayY + feature.verticalOffsetM
-      appendRibbon(water, path, feature.widthM, waterwayY, profile.lineSimplifyDistanceM)
+      appendRibbon(water, path, feature.widthM, waterwayY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-      appendRibbon(rail, path, feature.widthM, horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(casing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+      appendRibbon(rail, path, feature.widthM, horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       continue
     }
     if (feature.kind === 'aeroway') {
@@ -1256,9 +1340,9 @@ const appendTransport = (
     const roadY = roadDepthLaneY(feature, priority, roadLaneByFeatureId.get(feature.id) ?? 0)
     const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
     const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
-    appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM)
-    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM)
+    appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
     if (profile.includeRoadMarkings) {
       appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + horizontalDepth.roadEdgeMarkingLiftM, budget)
       appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + horizontalDepth.roadCenterMarkingLiftM, budget)

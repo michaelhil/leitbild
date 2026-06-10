@@ -358,6 +358,34 @@ const crossingRoadTile = (): SceneryTile => ({
   },
 })
 
+const bentRoadTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'bent-road:wide',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:bent-road',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(760, 2200),
+          tilePoint(1550, 1820),
+          tilePoint(1850, 2760),
+          tilePoint(2580, 2040),
+          tilePoint(3380, 2300),
+        ],
+        widthM: 22,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
 const outOfBoundsTile = (): SceneryTile => ({
   ...testTile,
   features: {
@@ -534,6 +562,15 @@ describe('drone scenery GLB compiler', () => {
     expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
     const stackDeltas = roadStackYValues.slice(1).map((value, index) => value - roadStackYValues[index]!)
     expect(Math.min(...stackDeltas)).toBeGreaterThanOrEqual(0.05)
+  })
+
+  test('caps bent road ribbons without same-material surface overlap', () => {
+    const result = compileSceneryGlbTile(bentRoadTile())
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.same_material_horizontal_overlap')).toBe(false)
   })
 
   test('arbitrates overlapping base surfaces into stable material strata', () => {
