@@ -186,6 +186,34 @@ const minimumHorizontalDistanceFromOrigin = (
     ),
   )
 
+interface MeshAxisSpan {
+  readonly start: number
+  readonly end: number
+  readonly length: number
+}
+
+const xSpansByGeneratedQuad = (
+  mesh: ReturnType<typeof buildRoadSurfaceMeshes>[number],
+): ReadonlyArray<MeshAxisSpan> => {
+  const spans: MeshAxisSpan[] = []
+  const vertexCount = mesh.positions.length / 3
+  for (let vertexIndex = 0; vertexIndex + 3 < vertexCount; vertexIndex += 4) {
+    const xs = [0, 1, 2, 3].map(offset => mesh.positions[(vertexIndex + offset) * 3] ?? 0)
+    const start = Math.min(...xs)
+    const end = Math.max(...xs)
+    spans.push({ start, end, length: end - start })
+  }
+  return spans.sort((left, right) => left.start - right.start)
+}
+
+const gapsBetweenSpans = (
+  spans: ReadonlyArray<MeshAxisSpan>,
+): ReadonlyArray<number> =>
+  spans.flatMap((span, index) => {
+    const next = spans[index + 1]
+    return next ? [next.start - span.end] : []
+  })
+
 const testTile: SceneryTile = {
   schemaVersion: 1,
   tileEncoding: 'leitbild-scenery-feature-json-v1',
@@ -900,8 +928,8 @@ describe('drone scenery runtime cache policy', () => {
     expect(source).not.toContain('useAlphaFromDiffuseTexture')
     expect(asphaltMeshes).toHaveLength(1)
     expect(asphaltMeshes[0]!.colorHex).toBe('#3f474b')
-    expect(markingMeshes.map(mesh => mesh.materialKey).sort()).toEqual(['road-marking-center', 'road-marking-edge'])
-    expect(markingMeshes.map(mesh => mesh.colorHex).sort()).toEqual(['#f8fafc', '#facc15'])
+    expect(markingMeshes.map(mesh => mesh.materialKey).sort()).toEqual(['road-marking-center', 'road-marking-edge', 'road-marking-lane'])
+    expect(markingMeshes.map(mesh => mesh.colorHex).sort()).toEqual(['#f8fafc', '#f8fafc', '#facc15'])
     for (const mesh of meshes) {
       expect(mesh.triangleCount).toBeGreaterThan(0)
       expect(mesh.positions.length % 3).toBe(0)
@@ -927,7 +955,7 @@ describe('drone scenery runtime cache policy', () => {
     expect(minimumHorizontalDistanceFromOrigin(markings)).toBeGreaterThan(10)
   })
 
-  test('draws visible center markings for ordinary residential-width roads', () => {
+  test('draws continuous side markings and calibrated dashed center markings for ordinary roads', () => {
     const residentialTile = sceneryRoadTileFromSceneryTile({
       ...crossingRoadTile(),
       features: {
@@ -959,7 +987,20 @@ describe('drone scenery runtime cache policy', () => {
     expect(centerMarking).toBeDefined()
     expect(centerMarking?.colorHex).toBe('#facc15')
     expect(centerMarking?.triangleCount).toBeGreaterThan(0)
-    expect(edgeMarking).toBeUndefined()
+    expect(edgeMarking).toBeDefined()
+    expect(edgeMarking?.colorHex).toBe('#f8fafc')
+
+    const centerSpans = xSpansByGeneratedQuad(centerMarking!)
+    const fullCenterDashes = centerSpans.filter(span => span.length >= 3.4 && span.length <= 4.6)
+    const centerGaps = gapsBetweenSpans(centerSpans).filter(gap => gap > 0)
+    const calibratedCenterGaps = centerGaps.filter(gap => gap >= 11 && gap <= 13.6)
+    expect(centerSpans.length).toBeGreaterThan(10)
+    expect(fullCenterDashes.length).toBeGreaterThan(centerSpans.length * 0.7)
+    expect(calibratedCenterGaps.length).toBeGreaterThan(centerGaps.length * 0.7)
+
+    const edgeSpans = xSpansByGeneratedQuad(edgeMarking!)
+    expect(edgeSpans).toHaveLength(2)
+    expect(Math.min(...edgeSpans.map(span => span.length))).toBeGreaterThan(600)
   })
 
   test('keeps dense road markings grouped into a small stable mesh set', () => {
@@ -972,7 +1013,7 @@ describe('drone scenery runtime cache policy', () => {
       'road-marking-edge',
     ]))
     expect(meshes.length).toBeLessThanOrEqual(3)
-    expect(totalTriangles).toBeLessThan(30_000)
+    expect(totalTriangles).toBeLessThan(42_000)
   })
 
   test('separates real bridge roads by vertical layer without adding stacked road material bands', () => {

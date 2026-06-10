@@ -29,6 +29,8 @@ interface RoadTileBounds {
 interface RoadPoint {
   readonly x: number
   readonly z: number
+  readonly stationX?: number
+  readonly stationZ?: number
 }
 
 interface RoadDirection {
@@ -44,7 +46,7 @@ interface RoadGeometryBuilder {
   readonly normals: number[]
 }
 
-type RoadMaterialKey = 'road-asphalt' | 'road-marking-edge' | 'road-marking-center'
+type RoadMaterialKey = 'road-asphalt' | 'road-marking-edge' | 'road-marking-center' | 'road-marking-lane'
 
 interface RoadMeshBuilderEntry {
   readonly key: string
@@ -114,25 +116,35 @@ const roadSurfaceY = 1.56
 const roadAsphaltColor = '#3f474b'
 const roadEdgeLineColor = '#f8fafc'
 const roadCenterLineColor = '#facc15'
+const roadLaneLineColor = '#f8fafc'
 const roadPaintLiftM = 0.12
 const roadPaintWidthM = 0.56
 const roadEdgeInsetM = 0.85
 const roadEndpointPaintTrimM = 6
 const roadIntersectionPaintClearanceM = 13
 const roadMinPaintIntervalM = 2.8
+const roadLaneDashLengthM = 4
+const roadLaneDashGapM = 12
+const roadMinLaneDashM = 1.8
+const roadTargetLaneWidthM = 3.4
+const roadMinMarkedLaneWidthM = 2.75
+const roadMaxEstimatedLaneCount = 6
 const roadSegmentBucketM = 42
 const metersPerDegreeLat = 111_320
+const earthRadiusM = 6_378_137
 
 const roadMaterialColors: Record<RoadMaterialKey, string> = {
   'road-asphalt': roadAsphaltColor,
   'road-marking-edge': roadEdgeLineColor,
   'road-marking-center': roadCenterLineColor,
+  'road-marking-lane': roadLaneLineColor,
 }
 
 const roadMaterialOrder: Record<RoadMaterialKey, number> = {
   'road-asphalt': 0,
   'road-marking-center': 1,
-  'road-marking-edge': 2,
+  'road-marking-lane': 2,
+  'road-marking-edge': 3,
 }
 
 const paintableRoadClasses = new Set([
@@ -151,19 +163,6 @@ const paintableRoadClasses = new Set([
   'unclassified',
 ])
 
-const edgeMarkedRoadClasses = new Set([
-  'motorway',
-  'motorway_link',
-  'trunk',
-  'trunk_link',
-  'primary',
-  'primary_link',
-  'secondary',
-  'secondary_link',
-  'tertiary',
-  'tertiary_link',
-])
-
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
@@ -173,6 +172,17 @@ const tileXToLon = (x: number, z: number): number =>
 const tileYToLat = (y: number, z: number): number => {
   const n = Math.PI - 2 * Math.PI * y / 2 ** z
   return Math.atan(Math.sinh(n)) * 180 / Math.PI
+}
+
+const mercatorStation = (
+  lon: number,
+  lat: number,
+): { readonly x: number; readonly z: number } => {
+  const latRad = Math.max(-85.05112878, Math.min(85.05112878, lat)) * Math.PI / 180
+  return {
+    x: earthRadiusM * lon * Math.PI / 180,
+    z: -earthRadiusM * Math.log(Math.tan(Math.PI / 4 + latRad / 2)),
+  }
 }
 
 const tileBounds = (
@@ -399,9 +409,16 @@ const pointAtDistance = (
     if (!start || !end) return null
     const segmentLength = Math.max(0.0001, endDistance - startDistance)
     const t = (clamped - startDistance) / segmentLength
+    const stationX = typeof start.stationX === 'number' && typeof end.stationX === 'number'
+      ? start.stationX + (end.stationX - start.stationX) * t
+      : undefined
+    const stationZ = typeof start.stationZ === 'number' && typeof end.stationZ === 'number'
+      ? start.stationZ + (end.stationZ - start.stationZ) * t
+      : undefined
     return {
       x: start.x + (end.x - start.x) * t,
       z: start.z + (end.z - start.z) * t,
+      ...(stationX === undefined || stationZ === undefined ? {} : { stationX, stationZ }),
     }
   }
   return last
@@ -518,7 +535,8 @@ const localRoadPoint = (config: {
   const lon = config.bounds.west + config.point[0] / config.extent * (config.bounds.east - config.bounds.west)
   const lat = config.bounds.north + config.point[1] / config.extent * (config.bounds.south - config.bounds.north)
   const local = localPointFromLonLat(lon, lat, config.center)
-  return { x: local.x, z: local.z }
+  const station = mercatorStation(lon, lat)
+  return { x: local.x, z: local.z, stationX: station.x, stationZ: station.z }
 }
 
 const orderedRoads = (
@@ -620,18 +638,95 @@ const drawsRoadCenterLine = (
   feature: SceneryRoadFeature,
 ): boolean =>
   !feature.oneway
-  && feature.widthM >= 7.5
+  && feature.widthM >= 8.8
   && paintableRoadClasses.has(feature.className)
 
 const drawsRoadEdgeLines = (
   feature: SceneryRoadFeature,
 ): boolean =>
-  feature.widthM >= 11.5
-  && (edgeMarkedRoadClasses.has(feature.className) || feature.widthM >= 13)
+  feature.widthM >= 8.8
+  && (paintableRoadClasses.has(feature.className) || feature.widthM >= 11.5)
+
+const estimatedLaneCount = (
+  feature: SceneryRoadFeature,
+): number => {
+  const usableWidthM = feature.widthM - roadEdgeInsetM * 2
+  const minimumLaneCount = feature.oneway ? 1 : 2
+  if (usableWidthM < minimumLaneCount * roadMinMarkedLaneWidthM) return minimumLaneCount
+  const rawLaneCount = Math.max(minimumLaneCount, Math.round(usableWidthM / roadTargetLaneWidthM))
+  const directionAwareLaneCount = feature.oneway || rawLaneCount % 2 === 0
+    ? rawLaneCount
+    : rawLaneCount - 1
+  return Math.max(
+    minimumLaneCount,
+    Math.min(roadMaxEstimatedLaneCount, directionAwareLaneCount),
+  )
+}
+
+const roadLaneDividerOffsets = (
+  feature: SceneryRoadFeature,
+): ReadonlyArray<number> => {
+  if (!paintableRoadClasses.has(feature.className)) return []
+  if (feature.widthM < (feature.oneway ? 10.5 : 15.5)) return []
+  const laneCount = estimatedLaneCount(feature)
+  if (laneCount < 2) return []
+  const usableWidthM = Math.max(0, feature.widthM - roadEdgeInsetM * 2)
+  const laneWidthM = usableWidthM / laneCount
+  const offsets: number[] = []
+  for (let laneBoundary = 1; laneBoundary < laneCount; laneBoundary += 1) {
+    const offsetM = -usableWidthM / 2 + laneWidthM * laneBoundary
+    const isBidirectionalCenter = !feature.oneway && Math.abs(offsetM) < laneWidthM * 0.4
+    if (isBidirectionalCenter) continue
+    offsets.push(offsetM)
+  }
+  return offsets
+}
 
 const drawsAnyRoadMarking = (
   feature: SceneryRoadFeature,
-): boolean => drawsRoadCenterLine(feature) || drawsRoadEdgeLines(feature)
+): boolean => drawsRoadCenterLine(feature) || drawsRoadEdgeLines(feature) || roadLaneDividerOffsets(feature).length > 0
+
+const positiveModulo = (
+  value: number,
+  divisor: number,
+): number => ((value % divisor) + divisor) % divisor
+
+const dashPhaseForRoad = (
+  road: RoadLocalFeature,
+): number => {
+  const first = road.path[0]
+  const next = road.path.find((point, index) => index > 0 && first && Math.hypot(point.x - first.x, point.z - first.z) > 1)
+  if (!first || !next) return 0
+  const firstStationX = first.stationX ?? first.x
+  const firstStationZ = first.stationZ ?? first.z
+  const nextStationX = next.stationX ?? next.x
+  const nextStationZ = next.stationZ ?? next.z
+  const dx = nextStationX - firstStationX
+  const dz = nextStationZ - firstStationZ
+  const lengthM = Math.hypot(dx, dz)
+  if (lengthM < 0.001) return 0
+  return positiveModulo(
+    firstStationX * dx / lengthM + firstStationZ * dz / lengthM,
+    roadLaneDashLengthM + roadLaneDashGapM,
+  )
+}
+
+const dashedIntervals = (
+  interval: RoadInterval,
+  phaseM: number,
+): ReadonlyArray<RoadInterval> => {
+  const periodM = roadLaneDashLengthM + roadLaneDashGapM
+  const normalizedPhaseM = positiveModulo(phaseM, periodM)
+  const intervals: RoadInterval[] = []
+  let cursorM = -normalizedPhaseM
+  while (cursorM < interval.endM) {
+    const startM = Math.max(interval.startM, cursorM)
+    const endM = Math.min(interval.endM, cursorM + roadLaneDashLengthM)
+    if (endM - startM >= roadMinLaneDashM) intervals.push({ startM, endM })
+    cursorM += periodM
+  }
+  return intervals
+}
 
 const roadMarkingSuppressionDistances = (
   roads: ReadonlyArray<RoadLocalFeature>,
@@ -786,17 +881,38 @@ export const buildRoadSurfaceMeshes = (config: {
     const intervals = markingIntervalsForRoad(road, intersections.get(road.key) ?? [])
     if (intervals.length === 0) continue
     const paintY = roadPaintY(road.y)
+    const dashPhaseM = dashPhaseForRoad(road)
     if (drawsRoadCenterLine(road.feature)) {
       const builder = builderFor('road-marking-center', paintY).geometry
       for (const interval of intervals) {
-        appendPaintRibbon({
-          builder,
-          path: road.path,
-          distances: road.distances,
-          interval,
-          lateralOffsetM: 0,
-          y: paintY,
-        })
+        for (const dashInterval of dashedIntervals(interval, dashPhaseM)) {
+          appendPaintRibbon({
+            builder,
+            path: road.path,
+            distances: road.distances,
+            interval: dashInterval,
+            lateralOffsetM: 0,
+            y: paintY,
+          })
+        }
+      }
+    }
+    const laneDividerOffsets = roadLaneDividerOffsets(road.feature)
+    if (laneDividerOffsets.length > 0) {
+      const builder = builderFor('road-marking-lane', paintY).geometry
+      for (const interval of intervals) {
+        for (const dashInterval of dashedIntervals(interval, dashPhaseM)) {
+          for (const lateralOffsetM of laneDividerOffsets) {
+            appendPaintRibbon({
+              builder,
+              path: road.path,
+              distances: road.distances,
+              interval: dashInterval,
+              lateralOffsetM,
+              y: paintY,
+            })
+          }
+        }
       }
     }
     if (drawsRoadEdgeLines(road.feature)) {
