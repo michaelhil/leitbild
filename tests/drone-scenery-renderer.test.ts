@@ -270,6 +270,7 @@ describe('drone scenery GLB compiler', () => {
     expect(summary.boundingSphere.radiusM).toBeGreaterThan(100)
     expect(summary.lod.geometricErrorM).toBeGreaterThan(0)
     expect(summary.maxHeightM).toBeGreaterThan(summary.minHeightM)
+    expect(bytes.byteLength).toBeLessThan(1_000_000)
   })
 
   test('bakes buildings, roads, water, vegetation, markings, lights, and POI primitives into the GLB', () => {

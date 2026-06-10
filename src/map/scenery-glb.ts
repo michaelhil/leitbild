@@ -445,28 +445,7 @@ const appendFacadeModule = (
   normal: Vec3,
   hasWindow: boolean,
 ): void => {
-  if (!hasWindow) {
-    appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
-    return
-  }
-  const width = u1 - u0
-  const height = y1 - y0
-  const windowWidth = Math.min(1.45, width * 0.54)
-  const windowHeight = Math.min(0.92, height * 0.48)
-  if (windowWidth < 0.35 || windowHeight < 0.28) {
-    appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
-    return
-  }
-  const windowU0 = (u0 + u1 - windowWidth) / 2
-  const windowU1 = windowU0 + windowWidth
-  const windowY0 = y0 + Math.max(0.22, (height - windowHeight) * 0.45)
-  const windowY1 = windowY0 + windowHeight
-
-  appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, windowY0, normal)
-  appendWallSpan(wallBucket, start, ux, uz, u0, u1, windowY1, y1, normal)
-  appendWallSpan(wallBucket, start, ux, uz, u0, windowU0, windowY0, windowY1, normal)
-  appendWallSpan(wallBucket, start, ux, uz, windowU1, u1, windowY0, windowY1, normal)
-  appendWallSpan(windowBucket, start, ux, uz, windowU0, windowU1, windowY0, windowY1, normal)
+  appendWallSpan(hasWindow ? windowBucket : wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
 }
 
 const appendBuildingWalls = (
