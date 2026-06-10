@@ -237,6 +237,70 @@ const testTileAtZoom = (
   },
 })
 
+const denseBudgetTile = (): SceneryTile => {
+  const buildings: SceneryTile['features']['polygons'] = []
+  const roads: SceneryTile['features']['lines'] = []
+  const labels: SceneryTile['features']['labels'] = []
+  for (let index = 0; index < 960; index += 1) {
+    const column = index % 32
+    const row = Math.floor(index / 32)
+    const x = 140 + column * 118
+    const y = 180 + row * 118
+    buildings.push({
+      id: `dense-building:${index}`,
+      sourceLayer: 'building',
+      kind: 'building',
+      className: index % 5 === 0 ? 'commercial' : 'residential',
+      rings: [[
+        tilePoint(x, y),
+        tilePoint(x + 52, y),
+        tilePoint(x + 52, y + 52),
+        tilePoint(x, y + 52),
+        tilePoint(x, y),
+      ]],
+      heightM: 12 + index % 7 * 3,
+    })
+  }
+  for (let index = 0; index < 960; index += 1) {
+    const offset = 110 + index % 120 * 32
+    roads.push({
+      id: `dense-road:${index}`,
+      sourceLayer: 'transportation',
+      sourceRef: `osm:way:${index}`,
+      kind: 'road',
+      className: index % 4 === 0 ? 'primary' : 'residential',
+      name: `Dense Road ${index}`,
+      isBridge: false,
+      isTunnel: false,
+      path: [
+        tilePoint(80, offset),
+        tilePoint(2000, offset + index % 9 * 9),
+        tilePoint(4010, offset + index % 5 * 11),
+      ],
+      widthM: index % 4 === 0 ? 15 : 8,
+      verticalOffsetM: 0,
+    })
+  }
+  for (let index = 0; index < 90; index += 1) {
+    labels.push({
+      id: `dense-poi:${index}`,
+      sourceLayer: 'poi',
+      kind: 'poi',
+      className: 'hospital',
+      label: `Dense POI ${index}`,
+      point: tilePoint(180 + index % 18 * 190, 240 + Math.floor(index / 18) * 220),
+    })
+  }
+  return {
+    ...testTile,
+    features: {
+      polygons: buildings,
+      lines: roads,
+      labels,
+    },
+  }
+}
+
 describe('drone scenery GLB compiler', () => {
   test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
     const result = compileSceneryGlbTile(testTile)
@@ -355,6 +419,20 @@ describe('drone scenery GLB compiler', () => {
     expect(coarseMaterialNames.has('street lamp glass')).toBe(false)
     expect(coarseMaterialNames.has('tree canopy')).toBe(false)
     expect(coarseMaterialNames.has('poi beacon')).toBe(false)
+  })
+
+  test('keeps dense z14 decoration bounded without removing all visual detail', () => {
+    const result = compileSceneryGlbTile(denseBudgetTile())
+    expect(result).not.toBeNull()
+    const materialNames = usedMaterialNames(glbJson(result!.bytes))
+
+    expect(result!.bytes.byteLength).toBeLessThan(18_000_000)
+    expect(materialNames.has('building windows')).toBe(true)
+    expect(materialNames.has('building facade trim')).toBe(true)
+    expect(materialNames.has('rooftop fixtures')).toBe(true)
+    expect(materialNames.has('baked road markings')).toBe(true)
+    expect(materialNames.has('street lamp glass')).toBe(true)
+    expect(materialNames.has('poi beacon')).toBe(true)
   })
 })
 

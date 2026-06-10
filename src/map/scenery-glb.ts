@@ -61,9 +61,26 @@ interface SceneryGlbLodProfile {
   readonly includeRoadMarkings: boolean
   readonly includeStreetLights: boolean
   readonly includePoiBeacons: boolean
+  readonly facadeWindowCellBudget: number
+  readonly facadeTrimBandBudget: number
+  readonly roofFixtureBudget: number
+  readonly roadEdgeRibbonPairBudget: number
+  readonly roadMarkingDashBudget: number
+  readonly streetLightBudget: number
+  readonly poiBeaconBudget: number
   readonly vegetationMaxPerTile: number
   readonly vegetationNaturalAreaM2: number
   readonly vegetationResidentialAreaM2: number
+}
+
+interface SceneryDetailBudget {
+  facadeWindowCellsRemaining: number
+  facadeTrimBandsRemaining: number
+  roofFixturesRemaining: number
+  roadEdgeRibbonPairsRemaining: number
+  roadMarkingDashesRemaining: number
+  streetLightsRemaining: number
+  poiBeaconsRemaining: number
 }
 
 const metersPerDegreeLat = 111_320
@@ -83,6 +100,13 @@ const lodProfileForZoom = (
       includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
+      facadeWindowCellBudget: 0,
+      facadeTrimBandBudget: 0,
+      roofFixtureBudget: 0,
+      roadEdgeRibbonPairBudget: 0,
+      roadMarkingDashBudget: 0,
+      streetLightBudget: 0,
+      poiBeaconBudget: 0,
       vegetationMaxPerTile: 0,
       vegetationNaturalAreaM2: 20_000,
       vegetationResidentialAreaM2: 40_000,
@@ -99,6 +123,13 @@ const lodProfileForZoom = (
       includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
+      facadeWindowCellBudget: 0,
+      facadeTrimBandBudget: 0,
+      roofFixtureBudget: 0,
+      roadEdgeRibbonPairBudget: 0,
+      roadMarkingDashBudget: 0,
+      streetLightBudget: 0,
+      poiBeaconBudget: 0,
       vegetationMaxPerTile: 48,
       vegetationNaturalAreaM2: 14_000,
       vegetationResidentialAreaM2: 32_000,
@@ -114,11 +145,30 @@ const lodProfileForZoom = (
     includeRoadMarkings: true,
     includeStreetLights: true,
     includePoiBeacons: true,
+    facadeWindowCellBudget: 11_000,
+    facadeTrimBandBudget: 2_200,
+    roofFixtureBudget: 240,
+    roadEdgeRibbonPairBudget: 360,
+    roadMarkingDashBudget: 1_800,
+    streetLightBudget: 520,
+    poiBeaconBudget: 48,
     vegetationMaxPerTile: 160,
     vegetationNaturalAreaM2: 5_400,
     vegetationResidentialAreaM2: 16_000,
   }
 }
+
+const detailBudgetForProfile = (
+  profile: SceneryGlbLodProfile,
+): SceneryDetailBudget => ({
+  facadeWindowCellsRemaining: profile.facadeWindowCellBudget,
+  facadeTrimBandsRemaining: profile.facadeTrimBandBudget,
+  roofFixturesRemaining: profile.roofFixtureBudget,
+  roadEdgeRibbonPairsRemaining: profile.roadEdgeRibbonPairBudget,
+  roadMarkingDashesRemaining: profile.roadMarkingDashBudget,
+  streetLightsRemaining: profile.streetLightBudget,
+  poiBeaconsRemaining: profile.poiBeaconBudget,
+})
 
 const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.94, doubleSided: true },
@@ -432,22 +482,6 @@ const appendWallSpan = (
   )
 }
 
-const appendFacadeModule = (
-  wallBucket: MeshBucket,
-  windowBucket: MeshBucket,
-  start: LocalPoint,
-  ux: number,
-  uz: number,
-  u0: number,
-  u1: number,
-  y0: number,
-  y1: number,
-  normal: Vec3,
-  hasWindow: boolean,
-): void => {
-  appendWallSpan(hasWindow ? windowBucket : wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
-}
-
 const appendBuildingWalls = (
   wallBucket: MeshBucket,
   windowBucket: MeshBucket,
@@ -457,6 +491,7 @@ const appendBuildingWalls = (
   height: number,
   seed: number,
   profile: SceneryGlbLodProfile,
+  budget: SceneryDetailBudget,
 ): void => {
   const random = seededRandom(seed)
   for (const sourceRing of rings) {
@@ -483,8 +518,10 @@ const appendBuildingWalls = (
       if (profile.includeFacadeTrim && length > 5.5 && floors > 2) {
         const bandInsetM = Math.min(0.45, length * 0.025)
         for (let floor = 1; floor < floors; floor += 1) {
+          if (budget.facadeTrimBandsRemaining <= 0) break
           const y = minHeight + floor * floorHeight
           appendWallSpan(trimBucket, start, ux, uz, bandInsetM, length - bandInsetM, y - trimHalfHeight, y + trimHalfHeight, normal)
+          budget.facadeTrimBandsRemaining -= 1
         }
       }
       for (let floor = 0; floor < floors; floor += 1) {
@@ -492,7 +529,7 @@ const appendBuildingWalls = (
         const floorTopY = floor === floors - 1 ? minHeight + height : minHeight + (floor + 1) * floorHeight
         const y0 = floorBaseY + (floor > 0 ? trimHalfHeight : 0)
         const y1 = floorTopY - (floor < floors - 1 ? trimHalfHeight : 0)
-        if (windowColumns === 0 || !profile.includeFacadeWindows) {
+        if (windowColumns === 0 || !profile.includeFacadeWindows || budget.facadeWindowCellsRemaining <= 0) {
           appendWallSpan(wallBucket, start, ux, uz, 0, length, y0, y1, normal)
           continue
         }
@@ -500,23 +537,30 @@ const appendBuildingWalls = (
         const usableWidthM = Math.max(0, length - facadeMarginM * 2)
         appendWallSpan(wallBucket, start, ux, uz, 0, facadeMarginM, y0, y1, normal)
         appendWallSpan(wallBucket, start, ux, uz, length - facadeMarginM, length, y0, y1, normal)
+        let runBucket: MeshBucket | null = null
+        let runU0 = facadeMarginM
+        let runU1 = facadeMarginM
+        const flushRun = (): void => {
+          if (!runBucket) return
+          appendWallSpan(runBucket, start, ux, uz, runU0, runU1, y0, y1, normal)
+          runBucket = null
+        }
         for (let column = 0; column < windowColumns; column += 1) {
           const cellU0 = facadeMarginM + usableWidthM * column / windowColumns
           const cellU1 = facadeMarginM + usableWidthM * (column + 1) / windowColumns
-          appendFacadeModule(
-            wallBucket,
-            windowBucket,
-            start,
-            ux,
-            uz,
-            cellU0,
-            cellU1,
-            y0,
-            y1,
-            normal,
-            random() >= 0.18,
-          )
+          const useWindow = budget.facadeWindowCellsRemaining > 0 && random() >= 0.18
+          const bucket = useWindow ? windowBucket : wallBucket
+          if (useWindow) budget.facadeWindowCellsRemaining -= 1
+          if (runBucket === bucket) {
+            runU1 = cellU1
+            continue
+          }
+          flushRun()
+          runBucket = bucket
+          runU0 = cellU0
+          runU1 = cellU1
         }
+        flushRun()
       }
     }
   }
@@ -633,11 +677,12 @@ const appendRoadMarkings = (
   lineId: string,
   widthM: number,
   y: number,
+  budget: SceneryDetailBudget,
 ): void => {
-  if (widthM < 8) return
+  if (widthM < 8 || budget.roadMarkingDashesRemaining <= 0) return
   const dashOffset = 6 + stableHash(lineId) % 13
   let dashCount = 0
-  for (let index = 0; index < path.length - 1 && dashCount < 96; index += 1) {
+  for (let index = 0; index < path.length - 1 && dashCount < 96 && budget.roadMarkingDashesRemaining > 0; index += 1) {
     const start = path[index]!
     const end = path[index + 1]!
     const dx = end.x - start.x
@@ -646,9 +691,10 @@ const appendRoadMarkings = (
     if (length < 20) continue
     const ux = dx / length
     const uz = dz / length
-    for (let distance = dashOffset; distance < length - 5 && dashCount < 96; distance += 31) {
+    for (let distance = dashOffset; distance < length - 5 && dashCount < 96 && budget.roadMarkingDashesRemaining > 0; distance += 31) {
       appendDash(bucket, { x: start.x + ux * distance, z: start.z + uz * distance }, ux, uz, 4.4, 0.22, y)
       dashCount += 1
+      budget.roadMarkingDashesRemaining -= 1
     }
   }
 }
@@ -675,8 +721,10 @@ const appendRoadEdgeMarkings = (
   path: ReadonlyArray<LocalPoint>,
   widthM: number,
   y: number,
+  budget: SceneryDetailBudget,
 ): void => {
-  if (widthM < 10) return
+  if (widthM < 10 || budget.roadEdgeRibbonPairsRemaining <= 0) return
+  budget.roadEdgeRibbonPairsRemaining -= 1
   const offset = Math.max(2.8, widthM * 0.42)
   appendRibbon(bucket, offsetPath(path, -offset), 0.18, y)
   appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
@@ -773,15 +821,17 @@ const appendRoofFixtures = (
   rings: ReadonlyArray<ReadonlyArray<LocalPoint>>,
   roofY: number,
   seed: number,
+  budget: SceneryDetailBudget,
 ): void => {
+  if (budget.roofFixturesRemaining <= 0) return
   const outer = rings[0]
   if (!outer || outer.length < 3) return
   const area = Math.abs(ringArea(outer))
   if (area < 65) return
   const random = seededRandom(seed)
   const center = polygonCentroid(outer)
-  const fixtureCount = Math.max(1, Math.min(4, Math.floor(area / 2_700)))
-  for (let index = 0; index < fixtureCount; index += 1) {
+  const fixtureCount = Math.max(1, Math.min(4, budget.roofFixturesRemaining, Math.floor(area / 2_700)))
+  for (let index = 0; index < fixtureCount && budget.roofFixturesRemaining > 0; index += 1) {
     const angle = random() * Math.PI * 2
     const distance = index === 0 ? 0 : Math.min(7, Math.sqrt(area) * 0.08) * random()
     const x = center.x + Math.cos(angle) * distance
@@ -791,6 +841,7 @@ const appendRoofFixtures = (
     const depth = 1.4 + random() * 2.6
     const height = 0.45 + random() * 1.3
     appendBox(bucket, { x, y: roofY + height / 2 + 0.08, z }, { x: width, y: height, z: depth })
+    budget.roofFixturesRemaining -= 1
   }
 }
 
@@ -872,6 +923,7 @@ const appendBuildings = (
   tile: SceneryTile,
   center: TileLonLat,
   profile: SceneryGlbLodProfile,
+  budget: SceneryDetailBudget,
 ): void => {
   const windows = bucketFor(buckets, 'building-window', 'building facade windows')
   const trim = bucketFor(buckets, 'building-trim', 'building facade trim')
@@ -887,10 +939,10 @@ const appendBuildings = (
     const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
     const roofBucket = bucketFor(buckets, buildingRoofMaterialFor(feature), `${buildingRoofMaterialFor(feature)} shells`)
     const roofY = minHeight + height + 0.08
-    appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id), profile)
+    appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id), profile, budget)
     appendHorizontalPolygon(roofBucket, rings, roofY)
     if (profile.includeRoofFixtures) {
-      appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`))
+      appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`), budget)
     }
   }
 }
@@ -900,6 +952,7 @@ const appendTransport = (
   tile: SceneryTile,
   center: TileLonLat,
   profile: SceneryGlbLodProfile,
+  budget: SceneryDetailBudget,
 ): void => {
   const shoulder = bucketFor(buckets, 'road-shoulder', 'road shoulders')
   const casing = bucketFor(buckets, 'road-casing', 'road casings')
@@ -936,10 +989,10 @@ const appendTransport = (
     appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY, profile.lineSimplifyDistanceM)
     appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY, profile.lineSimplifyDistanceM)
     if (profile.includeRoadMarkings) {
-      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + 0.16)
-      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + 0.22)
+      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + 0.16, budget)
+      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + 0.22, budget)
     }
-    if (!profile.includeStreetLights || priority < 40 || feature.isTunnel) continue
+    if (!profile.includeStreetLights || priority < 40 || feature.isTunnel || budget.streetLightsRemaining <= 0) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
     for (let index = 0; index < path.length - 1; index += 1) {
       const start = path[index]!
@@ -952,13 +1005,15 @@ const appendTransport = (
       const uz = dz / length
       const nx = -uz
       const nz = ux
-      while (distance < length) {
+      while (distance < length && budget.streetLightsRemaining > 0) {
         for (const side of [-1, 1] as const) {
+          if (budget.streetLightsRemaining <= 0) break
           const offset = side * Math.max(4.5, feature.widthM * 0.5 + 2.4)
           const x = start.x + ux * distance + nx * offset
           const z = start.z + uz * distance + nz * offset
           appendCylinder(poles, { x, y: 3.1 + feature.verticalOffsetM, z }, 0.09, 6.2, 7)
           appendBox(lamps, { x: x + nx * -side * 0.3, y: 6.34 + feature.verticalOffsetM, z: z + nz * -side * 0.3 }, { x: 0.45, y: 0.16, z: 0.9 })
+          budget.streetLightsRemaining -= 1
         }
         distance += priority >= 70 ? 84 : 112
       }
@@ -1017,14 +1072,17 @@ const appendPoiBeacons = (
   tile: SceneryTile,
   center: TileLonLat,
   profile: SceneryGlbLodProfile,
+  budget: SceneryDetailBudget,
 ): void => {
-  if (!profile.includePoiBeacons) return
+  if (!profile.includePoiBeacons || budget.poiBeaconsRemaining <= 0) return
   const poi = bucketFor(buckets, 'poi', 'poi beacons')
-  for (const feature of tile.features.labels.slice(0, 48)) {
+  for (const feature of tile.features.labels) {
+    if (budget.poiBeaconsRemaining <= 0) break
     if (feature.kind === 'road_label') continue
     const point = localPointFromSceneryPoint(feature.point, tile.tile, center)
     appendCylinder(poi, { x: point.x, y: 4.5, z: point.z }, 0.22, 9, 8)
     appendCone(poi, { x: point.x, y: 10.5, z: point.z }, 1.2, 2.2, 12)
+    budget.poiBeaconsRemaining -= 1
   }
 }
 
@@ -1240,12 +1298,13 @@ export const compileSceneryGlbTile = (
   const bounds = sceneryTileBounds(tile.tile)
   const lod = lodForTile(tile.tile, bounds, center)
   const profile = lodProfileForZoom(tile.tile.z)
+  const budget = detailBudgetForProfile(profile)
   const buckets = new Map<string, MeshBucket>()
   appendSurfaces(buckets, tile, center)
-  appendTransport(buckets, tile, center, profile)
-  appendBuildings(buckets, tile, center, profile)
+  appendTransport(buckets, tile, center, profile, budget)
+  appendBuildings(buckets, tile, center, profile, budget)
   appendVegetation(buckets, tile, center, profile)
-  appendPoiBeacons(buckets, tile, center, profile)
+  appendPoiBeacons(buckets, tile, center, profile, budget)
   const primitives = primitivesFromBuckets(buckets)
   if (primitives.length === 0) return null
   const localBounds = primitiveBounds(primitives)
