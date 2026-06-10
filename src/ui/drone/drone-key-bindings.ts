@@ -133,6 +133,15 @@ export const droneManualAxesForPressedKeys = (
   yaw: (isPressed(bindings, pressedCodes, 'flight.yawRight') ? 1 : 0) + (isPressed(bindings, pressedCodes, 'flight.yawLeft') ? -1 : 0),
 })
 
+export const droneRuntimeAxesForPilotIntent = (
+  axes: DroneManualAxes,
+): DroneManualAxes => ({
+  forward: axes.forward,
+  right: -axes.right,
+  vertical: axes.vertical,
+  yaw: axes.yaw,
+})
+
 export const readDroneKeyBindings = (
   storage: DroneKeyBindingStorage,
 ): DroneKeyBindingMap => {

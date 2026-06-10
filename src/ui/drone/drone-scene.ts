@@ -117,10 +117,15 @@ const droneWorldZoom = 14
 const droneWorldLodZooms = [12, 13, 14] as const
 const maxDroneScenePixelRatio = 1.6
 const maxCachedTileContainers = 256
-const tileLoadConcurrency = 3
+const tileLoadConcurrency = 1
 const cloneImportedSceneryMaterials = true
 const scenerySelectionReferenceHeightPx = 960
 const scenerySelectionReferenceFovRad = 0.72
+const qualityDownshiftCooldownMs = 5_000
+const qualityUpshiftCooldownMs = 14_000
+const qualityDownshiftP95Ms = 54
+const qualityUpshiftP95Ms = 18
+const deferredWorldDisposeDelayMs = 3_000
 const minCameraDistanceM = 14
 const maxCameraDistanceM = 260
 const minCameraPitchRad = -0.06
@@ -652,9 +657,9 @@ export const sceneryBuildLimitsFor = (
         fovRad: scenerySelectionReferenceFovRad,
       }
     : {
-        maxTiles: 42,
-        maxBytes: 180_000_000,
-        maxTileBytes: 36_000_000,
+        maxTiles: 32,
+        maxBytes: 145_000_000,
+        maxTileBytes: 32_000_000,
         targetScreenSpaceError: 10,
         viewportHeightPx: scenerySelectionReferenceHeightPx,
         fovRad: scenerySelectionReferenceFovRad,
@@ -871,7 +876,7 @@ export const shouldPromoteSceneryStage = (config: {
   const visibleRank = sceneryStageRank[config.visibleStage]
   if (config.visibleStage === 'base') return true
   if (config.candidateCenterKey !== config.visibleCenterKey) {
-    const minimumUsefulTileCount = Math.max(12, Math.ceil(config.visibleLoadedTileCount * 0.75))
+    const minimumUsefulTileCount = Math.max(16, Math.ceil(config.visibleLoadedTileCount * 0.95))
     return config.candidateStage === 'full' && config.candidateLoadedTileCount >= minimumUsefulTileCount
   }
   if (candidateRank > visibleRank) return true
@@ -997,8 +1002,11 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   let destroyed = false
   let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
   let pixelRatio = Math.min(window.devicePixelRatio || 1, maxDroneScenePixelRatio)
+  let appliedPixelRatio = 0
+  let lastQualityAdjustmentAtMs = 0
   let lastFrameAt = performance.now()
   let readyNotified = false
+  let deferredWorldDisposeTimers: number[] = []
   const cameraRig: CameraRigState = {
     position: camera.position.clone(),
     target: Vector3.Zero(),
@@ -1028,12 +1036,26 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
 
   const setPixelRatio = (ratio: number, quality: DroneScenePerformanceSnapshot['quality']): void => {
     const next = clamp(ratio, 0.75, Math.min(window.devicePixelRatio || 1, maxDroneScenePixelRatio))
+    if (Math.abs(next - appliedPixelRatio) < 0.005 && renderQuality === quality) return
     pixelRatio = next
+    appliedPixelRatio = next
     renderQuality = quality
     engine.setHardwareScalingLevel(1 / next)
     engine.resize()
   }
   setPixelRatio(pixelRatio, renderQuality)
+
+  const scheduleDynamicWorldNodeDispose = (
+    node: TransformNode | null,
+  ): void => {
+    if (!node) return
+    node.setEnabled(false)
+    const timer = window.setTimeout(() => {
+      deferredWorldDisposeTimers = deferredWorldDisposeTimers.filter(candidate => candidate !== timer)
+      disposeDynamicWorldNode(node)
+    }, deferredWorldDisposeDelayMs)
+    deferredWorldDisposeTimers = [...deferredWorldDisposeTimers, timer]
+  }
 
   const notifyReadyOnce = (): void => {
     if (readyNotified) return
@@ -1056,8 +1078,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     visibleWorldStage = config.layer.stage
     visibleWorldLoadedTileCount = config.layer.loadedTileCount
     visibleWorldCoverage = config.layer.coverage
-    disposeDynamicWorldNode(previousLayer)
-    disposeDynamicWorldNode(previousBase)
+    scheduleDynamicWorldNodeDispose(previousLayer)
+    scheduleDynamicWorldNodeDispose(previousBase)
   }
 
   const shouldPromoteWorld = (
@@ -1191,8 +1213,19 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       quality: renderQuality,
       activeScenes: activeDroneSceneCount,
     })
-    if (snapshot.frameP95Ms > 46 && pixelRatio > 0.82) setPixelRatio(pixelRatio - 0.1, 'rescue')
-    else if (snapshot.frameP95Ms <= 22 && pixelRatio < maxDroneScenePixelRatio) setPixelRatio(pixelRatio + 0.04, 'balanced')
+    const timeSinceQualityAdjustmentMs = nowMs - lastQualityAdjustmentAtMs
+    if (snapshot.frameP95Ms > qualityDownshiftP95Ms && pixelRatio > 0.82 && timeSinceQualityAdjustmentMs >= qualityDownshiftCooldownMs) {
+      lastQualityAdjustmentAtMs = nowMs
+      setPixelRatio(pixelRatio - 0.12, 'rescue')
+    } else if (
+      snapshot.frameP95Ms <= qualityUpshiftP95Ms
+      && snapshot.jankPercent < 0.5
+      && pixelRatio < maxDroneScenePixelRatio
+      && timeSinceQualityAdjustmentMs >= qualityUpshiftCooldownMs
+    ) {
+      lastQualityAdjustmentAtMs = nowMs
+      setPixelRatio(pixelRatio + 0.03, 'balanced')
+    }
     config.onPerformance?.(snapshot)
   }
 
@@ -1243,6 +1276,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       activeDroneSceneCount = Math.max(0, activeDroneSceneCount - 1)
       resizeObserver.disconnect()
       engine.stopRenderLoop()
+      for (const timer of deferredWorldDisposeTimers) window.clearTimeout(timer)
+      deferredWorldDisposeTimers = []
       for (const entry of objectMeshes.values()) entry.root.dispose(false, true)
       objectMeshes.clear()
       disposeDynamicWorldNode(sceneryLayerNode)

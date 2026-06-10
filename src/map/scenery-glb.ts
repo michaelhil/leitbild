@@ -691,6 +691,16 @@ const surfaceHeightFor = (kind: string): number => {
   return 0.03
 }
 
+const surfaceHeightForFeature = (
+  feature: SceneryTile['features']['polygons'][number],
+): number => {
+  const baseHeight = surfaceHeightFor(feature.kind)
+  if (feature.kind === 'landuse' || feature.kind === 'landcover') {
+    return baseHeight + (stableHash(`surface-layer:${feature.id}`) % 9) * 0.006
+  }
+  return baseHeight
+}
+
 const buildingWallMaterialFor = (
   feature: SceneryTile['features']['polygons'][number],
 ): string => {
@@ -733,7 +743,7 @@ const appendSurfaces = (
     if (feature.kind === 'building') continue
     const material = surfaceMaterialFor(feature.kind, feature.className)
     const bucket = bucketFor(buckets, material, `${material} surfaces`)
-    appendHorizontalPolygon(bucket, localRingsFor(feature.rings, tile.tile, center), surfaceHeightFor(feature.kind))
+    appendHorizontalPolygon(bucket, localRingsFor(feature.rings, tile.tile, center), surfaceHeightForFeature(feature))
   }
 }
 

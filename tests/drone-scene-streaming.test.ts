@@ -241,6 +241,15 @@ describe('drone scene world streaming', () => {
       candidateStage: 'full',
       candidateLoadedTileCount: 18,
       candidateCenterKey: 'next-grid',
+    })).toBe(false)
+
+    expect(shouldPromoteSceneryStage({
+      visibleStage: 'full',
+      visibleLoadedTileCount: 20,
+      visibleCenterKey: 'old-grid',
+      candidateStage: 'full',
+      candidateLoadedTileCount: 19,
+      candidateCenterKey: 'next-grid',
     })).toBe(true)
   })
 })

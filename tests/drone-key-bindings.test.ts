@@ -4,6 +4,7 @@ import {
   assignDroneKeyBinding,
   defaultDroneKeyBindings,
   droneManualAxesForPressedKeys,
+  droneRuntimeAxesForPilotIntent,
   formatKeyCode,
   normalizeDroneKeyBindings,
 } from '../src/ui/drone/drone-key-bindings.ts'
@@ -50,6 +51,17 @@ describe('drone key bindings', () => {
       vertical: -1,
       yaw: 0,
     })
+  })
+
+  test('keeps lateral pilot intent natural and adapts it for the runtime body frame', () => {
+    const bindings = defaultDroneKeyBindings()
+    const rightIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyD']))
+    const leftIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyA']))
+
+    expect(rightIntent.right).toBe(1)
+    expect(leftIntent.right).toBe(-1)
+    expect(droneRuntimeAxesForPilotIntent(rightIntent).right).toBe(-1)
+    expect(droneRuntimeAxesForPilotIntent(leftIntent).right).toBe(1)
   })
 
   test('cancels opposing movement keys without affecting independent axes', () => {

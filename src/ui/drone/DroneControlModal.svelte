@@ -20,6 +20,7 @@
     defaultDroneKeyBindings,
     droneKeyBindingDefinitions,
     droneManualAxesForPressedKeys,
+    droneRuntimeAxesForPilotIntent,
     formatKeyCode,
     readDroneKeyBindings,
     writeDroneKeyBindings,
@@ -272,7 +273,7 @@
       targetObjectIds: [selectedObject.id],
       payload: {
         droneId: selectedObject.id,
-        axes,
+        axes: droneRuntimeAxesForPilotIntent(axes),
         inputSource: source,
         commandTtlMs: 450,
       },
