@@ -44,9 +44,50 @@ interface RoadGeometryBuilder {
   readonly normals: number[]
 }
 
+type RoadMaterialKey = 'road-asphalt' | 'road-marking-edge' | 'road-marking-center'
+
+interface RoadMeshBuilderEntry {
+  readonly key: string
+  readonly materialKey: RoadMaterialKey
+  readonly colorHex: string
+  readonly y: number
+  readonly geometry: RoadGeometryBuilder
+}
+
+interface RoadLocalFeature {
+  readonly key: string
+  readonly feature: SceneryRoadFeature
+  readonly y: number
+  readonly layerKey: string
+  readonly path: ReadonlyArray<RoadPoint>
+  readonly distances: ReadonlyArray<number>
+  readonly lengthM: number
+}
+
+interface RoadSegmentRef {
+  readonly id: number
+  readonly roadIndex: number
+  readonly segmentIndex: number
+  readonly layerKey: string
+  readonly marked: boolean
+  readonly start: RoadPoint
+  readonly end: RoadPoint
+  readonly startDistanceM: number
+  readonly lengthM: number
+  readonly minX: number
+  readonly maxX: number
+  readonly minZ: number
+  readonly maxZ: number
+}
+
+interface RoadInterval {
+  readonly startM: number
+  readonly endM: number
+}
+
 export interface DroneRoadSurfaceMeshData {
   readonly key: string
-  readonly materialKey: 'road-asphalt'
+  readonly materialKey: RoadMaterialKey
   readonly colorHex: string
   readonly y: number
   readonly positions: ReadonlyArray<number>
@@ -71,7 +112,46 @@ export interface DroneRoadOverlayRenderer {
 
 const roadSurfaceY = 1.56
 const roadAsphaltColor = '#3f474b'
+const roadEdgeLineColor = '#eef1e7'
+const roadCenterLineColor = '#ead46a'
+const roadPaintLiftM = 0.055
+const roadPaintWidthM = 0.22
+const roadEdgeInsetM = 0.62
+const roadEndpointPaintTrimM = 8
+const roadIntersectionPaintClearanceM = 13
+const roadMinPaintIntervalM = 2.8
+const roadDashLengthM = 7
+const roadDashGapM = 18
+const roadSegmentBucketM = 42
 const metersPerDegreeLat = 111_320
+
+const roadMaterialColors: Record<RoadMaterialKey, string> = {
+  'road-asphalt': roadAsphaltColor,
+  'road-marking-edge': roadEdgeLineColor,
+  'road-marking-center': roadCenterLineColor,
+}
+
+const roadMaterialOrder: Record<RoadMaterialKey, number> = {
+  'road-asphalt': 0,
+  'road-marking-center': 1,
+  'road-marking-edge': 2,
+}
+
+const paintableRoadClasses = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+])
+
+const edgeMarkedRoadClasses = new Set([
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+])
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -128,6 +208,15 @@ const roadSurfaceLayerY = (
 const roadLayerKey = (
   y: number,
 ): string => `road:${Math.round(y * 100)}`
+
+const roadMeshBuilderKey = (
+  materialKey: RoadMaterialKey,
+  y: number,
+): string => `${materialKey}:${Math.round(y * 1000)}`
+
+const roadPaintY = (
+  y: number,
+): number => y + roadPaintLiftM
 
 const samePoint = (
   left: RoadPoint,
@@ -207,6 +296,7 @@ const appendRoadRibbon = (
   path: ReadonlyArray<RoadPoint>,
   widthM: number,
   y: number,
+  minHalfWidthM = 1.4,
 ): void => {
   const points = compactPath(path)
   const first = points[0]
@@ -223,7 +313,7 @@ const appendRoadRibbon = (
   })
   if (directions.some(direction => direction === null)) return
   const validDirections = directions as ReadonlyArray<RoadDirection>
-  const halfWidthM = Math.max(1.4, widthM / 2)
+  const halfWidthM = Math.max(minHalfWidthM, widthM / 2)
   const leftIndexes: number[] = []
   const rightIndexes: number[] = []
 
@@ -266,6 +356,163 @@ const appendRoadRibbon = (
   }
 }
 
+const pathDistances = (
+  path: ReadonlyArray<RoadPoint>,
+): ReadonlyArray<number> => {
+  const distances = [0]
+  for (let index = 1; index < path.length; index += 1) {
+    const previous = path[index - 1]
+    const point = path[index]
+    if (!previous || !point) return distances
+    distances.push(distances[distances.length - 1]! + Math.hypot(point.x - previous.x, point.z - previous.z))
+  }
+  return distances
+}
+
+const pointAtDistance = (
+  path: ReadonlyArray<RoadPoint>,
+  distances: ReadonlyArray<number>,
+  distanceM: number,
+): RoadPoint | null => {
+  const first = path[0]
+  const last = path[path.length - 1]
+  const total = distances[distances.length - 1]
+  if (!first || !last || total === undefined) return null
+  const clamped = Math.max(0, Math.min(total, distanceM))
+  for (let index = 1; index < path.length; index += 1) {
+    const endDistance = distances[index]
+    if (endDistance === undefined || clamped > endDistance) continue
+    const startDistance = distances[index - 1] ?? 0
+    const start = path[index - 1]
+    const end = path[index]
+    if (!start || !end) return null
+    const segmentLength = Math.max(0.0001, endDistance - startDistance)
+    const t = (clamped - startDistance) / segmentLength
+    return {
+      x: start.x + (end.x - start.x) * t,
+      z: start.z + (end.z - start.z) * t,
+    }
+  }
+  return last
+}
+
+const slicePathByDistance = (
+  path: ReadonlyArray<RoadPoint>,
+  distances: ReadonlyArray<number>,
+  interval: RoadInterval,
+): ReadonlyArray<RoadPoint> => {
+  if (interval.endM - interval.startM < roadMinPaintIntervalM) return []
+  const start = pointAtDistance(path, distances, interval.startM)
+  const end = pointAtDistance(path, distances, interval.endM)
+  if (!start || !end) return []
+  const points: RoadPoint[] = [start]
+  for (let index = 1; index < path.length - 1; index += 1) {
+    const distance = distances[index]
+    const point = path[index]
+    if (distance === undefined || !point) continue
+    if (distance > interval.startM + 0.05 && distance < interval.endM - 0.05) points.push(point)
+  }
+  points.push(end)
+  return compactPath(points)
+}
+
+const offsetPath = (
+  path: ReadonlyArray<RoadPoint>,
+  offsetM: number,
+): ReadonlyArray<RoadPoint> => {
+  if (Math.abs(offsetM) < 0.001) return path
+  const points = compactPath(path)
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last || points.length < 2) return []
+  const closed = points.length >= 4 && samePoint(first, last)
+  const roadPoints = closed ? points.slice(0, -1) : points
+  const segmentCount = closed ? roadPoints.length : roadPoints.length - 1
+  const directions = Array.from({ length: segmentCount }, (_value, index) => {
+    const start = roadPoints[index]
+    const end = roadPoints[(index + 1) % roadPoints.length]
+    return start && end ? normalizedDirection(start, end) : null
+  })
+  if (directions.some(direction => direction === null)) return []
+  const validDirections = directions as ReadonlyArray<RoadDirection>
+  const side: 1 | -1 = offsetM >= 0 ? 1 : -1
+  const halfWidthM = Math.abs(offsetM)
+  const shifted = roadPoints.flatMap((point, index): RoadPoint[] => {
+    if (!point) return []
+    const previous = closed
+      ? validDirections[(index - 1 + validDirections.length) % validDirections.length]!
+      : index === 0 ? validDirections[0]! : validDirections[index - 1]!
+    const next = closed
+      ? validDirections[index % validDirections.length]!
+      : index >= validDirections.length ? validDirections[validDirections.length - 1]! : validDirections[index]!
+    return [
+      !closed && index === 0
+        ? { x: point.x + next.nx * halfWidthM * side, z: point.z + next.nz * halfWidthM * side }
+        : !closed && index === roadPoints.length - 1
+          ? { x: point.x + previous.nx * halfWidthM * side, z: point.z + previous.nz * halfWidthM * side }
+          : miterPoint({ point, previous, next, halfWidthM, side }),
+    ]
+  })
+  return closed && shifted[0] ? [...shifted, shifted[0]] : shifted
+}
+
+const subtractBlockedIntervals = (
+  interval: RoadInterval,
+  blocks: ReadonlyArray<RoadInterval>,
+): ReadonlyArray<RoadInterval> => {
+  let allowed: RoadInterval[] = [interval]
+  const sortedBlocks = [...blocks]
+    .filter(block => block.endM > interval.startM && block.startM < interval.endM)
+    .sort((left, right) => left.startM - right.startM)
+  for (const block of sortedBlocks) {
+    const nextAllowed: RoadInterval[] = []
+    for (const candidate of allowed) {
+      if (block.endM <= candidate.startM || block.startM >= candidate.endM) {
+        nextAllowed.push(candidate)
+        continue
+      }
+      if (block.startM > candidate.startM) {
+        nextAllowed.push({ startM: candidate.startM, endM: Math.min(block.startM, candidate.endM) })
+      }
+      if (block.endM < candidate.endM) {
+        nextAllowed.push({ startM: Math.max(block.endM, candidate.startM), endM: candidate.endM })
+      }
+    }
+    allowed = nextAllowed
+  }
+  return allowed.filter(candidate => candidate.endM - candidate.startM >= roadMinPaintIntervalM)
+}
+
+const dashedIntervals = (
+  interval: RoadInterval,
+): ReadonlyArray<RoadInterval> => {
+  const periodM = roadDashLengthM + roadDashGapM
+  const intervals: RoadInterval[] = []
+  let cursorM = Math.floor(interval.startM / periodM) * periodM
+  while (cursorM < interval.endM) {
+    const startM = Math.max(interval.startM, cursorM)
+    const endM = Math.min(interval.endM, cursorM + roadDashLengthM)
+    if (endM - startM >= roadMinPaintIntervalM) intervals.push({ startM, endM })
+    cursorM += periodM
+  }
+  return intervals
+}
+
+const appendPaintRibbon = (config: {
+  readonly builder: RoadGeometryBuilder
+  readonly path: ReadonlyArray<RoadPoint>
+  readonly distances: ReadonlyArray<number>
+  readonly interval: RoadInterval
+  readonly lateralOffsetM: number
+  readonly y: number
+}): void => {
+  const sliced = slicePathByDistance(config.path, config.distances, config.interval)
+  if (sliced.length < 2) return
+  const shifted = offsetPath(sliced, config.lateralOffsetM)
+  if (shifted.length < 2) return
+  appendRoadRibbon(config.builder, shifted, roadPaintWidthM, config.y, roadPaintWidthM / 2)
+}
+
 const localRoadPoint = (config: {
   readonly point: readonly [number, number]
   readonly extent: number
@@ -287,18 +534,237 @@ const orderedRoads = (
         : left.widthM - right.widthM || left.id.localeCompare(right.id),
   )
 
+const buildLocalRoadFeatures = (config: {
+  readonly roads: ReadonlyArray<SceneryRoadFeature>
+  readonly bounds: RoadTileBounds
+  readonly center: DroneWorldCenter
+  readonly extent: number
+}): ReadonlyArray<RoadLocalFeature> =>
+  orderedRoads(config.roads).flatMap((feature, index): RoadLocalFeature[] => {
+    const y = roadSurfaceLayerY(feature)
+    if (y === null) return []
+    const path = compactPath(feature.path.map(point => localRoadPoint({
+      point,
+      extent: config.extent,
+      bounds: config.bounds,
+      center: config.center,
+    })))
+    const distances = pathDistances(path)
+    const lengthM = distances[distances.length - 1] ?? 0
+    if (path.length < 2 || lengthM < 0.05) return []
+    return [{
+      key: `${feature.id}:${index}`,
+      feature,
+      y,
+      layerKey: roadLayerKey(y),
+      path,
+      distances,
+      lengthM,
+    }]
+  })
+
+const segmentCellRange = (
+  min: number,
+  max: number,
+): readonly [number, number] => [
+  Math.floor((min - roadIntersectionPaintClearanceM) / roadSegmentBucketM),
+  Math.floor((max + roadIntersectionPaintClearanceM) / roadSegmentBucketM),
+]
+
+const segmentBucketKey = (
+  layerKey: string,
+  x: number,
+  z: number,
+): string => `${layerKey}:${x}:${z}`
+
+const segmentPairsIntersect = (
+  left: RoadSegmentRef,
+  right: RoadSegmentRef,
+): boolean =>
+  left.minX <= right.maxX + 0.05
+  && left.maxX >= right.minX - 0.05
+  && left.minZ <= right.maxZ + 0.05
+  && left.maxZ >= right.minZ - 0.05
+
+const cross2 = (
+  ax: number,
+  az: number,
+  bx: number,
+  bz: number,
+): number => ax * bz - az * bx
+
+const segmentIntersectionParameters = (
+  left: RoadSegmentRef,
+  right: RoadSegmentRef,
+): { readonly leftT: number; readonly rightT: number } | null => {
+  const rx = left.end.x - left.start.x
+  const rz = left.end.z - left.start.z
+  const sx = right.end.x - right.start.x
+  const sz = right.end.z - right.start.z
+  const denominator = cross2(rx, rz, sx, sz)
+  if (Math.abs(denominator) < 0.0001) return null
+  const qpx = right.start.x - left.start.x
+  const qpz = right.start.z - left.start.z
+  const leftT = cross2(qpx, qpz, sx, sz) / denominator
+  const rightT = cross2(qpx, qpz, rx, rz) / denominator
+  const tolerance = 0.015
+  if (
+    leftT < -tolerance
+    || leftT > 1 + tolerance
+    || rightT < -tolerance
+    || rightT > 1 + tolerance
+  ) return null
+  return {
+    leftT: Math.max(0, Math.min(1, leftT)),
+    rightT: Math.max(0, Math.min(1, rightT)),
+  }
+}
+
+const drawsRoadCenterLine = (
+  feature: SceneryRoadFeature,
+): boolean =>
+  !feature.oneway
+  && feature.widthM >= 6.2
+  && paintableRoadClasses.has(feature.className)
+
+const drawsRoadEdgeLines = (
+  feature: SceneryRoadFeature,
+): boolean =>
+  feature.widthM >= 10
+  && (edgeMarkedRoadClasses.has(feature.className) || feature.widthM >= 13)
+
+const drawsAnyRoadMarking = (
+  feature: SceneryRoadFeature,
+): boolean => drawsRoadCenterLine(feature) || drawsRoadEdgeLines(feature)
+
+const roadMarkingSuppressionDistances = (
+  roads: ReadonlyArray<RoadLocalFeature>,
+): ReadonlyMap<string, ReadonlyArray<number>> => {
+  const markedRoadKeys = new Set(roads.filter(road => drawsAnyRoadMarking(road.feature)).map(road => road.key))
+  const distancesByRoad = new Map(roads.map(road => [road.key, [] as number[]]))
+  const segments: RoadSegmentRef[] = []
+  for (const [roadIndex, road] of roads.entries()) {
+    for (let segmentIndex = 0; segmentIndex < road.path.length - 1; segmentIndex += 1) {
+      const start = road.path[segmentIndex]
+      const end = road.path[segmentIndex + 1]
+      const startDistanceM = road.distances[segmentIndex]
+      const endDistanceM = road.distances[segmentIndex + 1]
+      if (!start || !end || startDistanceM === undefined || endDistanceM === undefined) continue
+      const lengthM = endDistanceM - startDistanceM
+      if (lengthM < 0.05) continue
+      segments.push({
+        id: segments.length,
+        roadIndex,
+        segmentIndex,
+        layerKey: road.layerKey,
+        marked: markedRoadKeys.has(road.key),
+        start,
+        end,
+        startDistanceM,
+        lengthM,
+        minX: Math.min(start.x, end.x),
+        maxX: Math.max(start.x, end.x),
+        minZ: Math.min(start.z, end.z),
+        maxZ: Math.max(start.z, end.z),
+      })
+    }
+  }
+
+  const buckets = new Map<string, number[]>()
+  const markedBuckets = new Map<string, number[]>()
+  for (const segment of segments) {
+    const [minCellX, maxCellX] = segmentCellRange(segment.minX, segment.maxX)
+    const [minCellZ, maxCellZ] = segmentCellRange(segment.minZ, segment.maxZ)
+    for (let cellX = minCellX; cellX <= maxCellX; cellX += 1) {
+      for (let cellZ = minCellZ; cellZ <= maxCellZ; cellZ += 1) {
+        const key = segmentBucketKey(segment.layerKey, cellX, cellZ)
+        const bucket = buckets.get(key) ?? []
+        if (!buckets.has(key)) buckets.set(key, bucket)
+        bucket.push(segment.id)
+        if (segment.marked) {
+          const markedBucket = markedBuckets.get(key) ?? []
+          if (!markedBuckets.has(key)) markedBuckets.set(key, markedBucket)
+          markedBucket.push(segment.id)
+        }
+      }
+    }
+  }
+
+  const seenPairs = new Set<string>()
+  for (const [key, markedBucket] of markedBuckets.entries()) {
+    const bucket = buckets.get(key) ?? []
+    for (const markedSegmentId of markedBucket) {
+      for (const blockerSegmentId of bucket) {
+        if (markedSegmentId === blockerSegmentId) continue
+        const left = segments[markedSegmentId]
+        const right = segments[blockerSegmentId]
+        if (!left || !right || left.layerKey !== right.layerKey) continue
+        const leftRoad = roads[left.roadIndex]
+        const rightRoad = roads[right.roadIndex]
+        if (!leftRoad || !rightRoad) continue
+        const leftMarked = left.marked
+        const rightMarked = right.marked
+        if (!leftMarked && !rightMarked) continue
+        const sameRoad = left.roadIndex === right.roadIndex
+        if (sameRoad && Math.abs(left.segmentIndex - right.segmentIndex) <= 1) continue
+        const pairKey = left.id < right.id ? `${left.id}:${right.id}` : `${right.id}:${left.id}`
+        if (seenPairs.has(pairKey)) continue
+        seenPairs.add(pairKey)
+        if (!segmentPairsIntersect(left, right)) continue
+        const intersection = segmentIntersectionParameters(left, right)
+        if (!intersection) continue
+        if (leftMarked) {
+          distancesByRoad.get(leftRoad.key)?.push(left.startDistanceM + intersection.leftT * left.lengthM)
+        }
+        if (rightMarked) {
+          distancesByRoad.get(rightRoad.key)?.push(right.startDistanceM + intersection.rightT * right.lengthM)
+        }
+      }
+    }
+  }
+
+  return distancesByRoad
+}
+
+const markingIntervalsForRoad = (
+  road: RoadLocalFeature,
+  suppressionDistances: ReadonlyArray<number>,
+): ReadonlyArray<RoadInterval> => {
+  if (road.lengthM <= roadEndpointPaintTrimM * 2 + roadMinPaintIntervalM) return []
+  return subtractBlockedIntervals(
+    {
+      startM: roadEndpointPaintTrimM,
+      endM: road.lengthM - roadEndpointPaintTrimM,
+    },
+    suppressionDistances.map(distanceM => ({
+      startM: Math.max(0, distanceM - roadIntersectionPaintClearanceM),
+      endM: Math.min(road.lengthM, distanceM + roadIntersectionPaintClearanceM),
+    })),
+  )
+}
+
 export const buildRoadSurfaceMeshes = (config: {
   readonly tile: SceneryRoadTile
   readonly center?: DroneWorldCenter
 }): ReadonlyArray<DroneRoadSurfaceMeshData> => {
   const bounds = tileBounds(config.tile.tile)
   const center = config.center ?? tileCenter(bounds)
-  const builders = new Map<string, { readonly y: number; readonly geometry: RoadGeometryBuilder }>()
-  for (const feature of orderedRoads(config.tile.roads)) {
-    const y = roadSurfaceLayerY(feature)
-    if (y === null) continue
-    const key = roadLayerKey(y)
+  const roads = buildLocalRoadFeatures({
+    roads: config.tile.roads,
+    bounds,
+    center,
+    extent: config.tile.tile.extent,
+  })
+  const builders = new Map<string, RoadMeshBuilderEntry>()
+  const builderFor = (
+    materialKey: RoadMaterialKey,
+    y: number,
+  ): RoadMeshBuilderEntry => {
+    const key = roadMeshBuilderKey(materialKey, y)
     const entry = builders.get(key) ?? {
+      key,
+      materialKey,
+      colorHex: roadMaterialColors[materialKey],
       y,
       geometry: {
         positions: [],
@@ -307,24 +773,74 @@ export const buildRoadSurfaceMeshes = (config: {
       },
     }
     if (!builders.has(key)) builders.set(key, entry)
+    return entry
+  }
+
+  for (const road of roads) {
     appendRoadRibbon(
-      entry.geometry,
-      feature.path.map(point => localRoadPoint({
-        point,
-        extent: config.tile.tile.extent,
-        bounds,
-        center,
-      })),
-      feature.widthM,
-      y,
+      builderFor('road-asphalt', road.y).geometry,
+      road.path,
+      road.feature.widthM,
+      road.y,
     )
   }
+
+  const intersections = roadMarkingSuppressionDistances(roads)
+  for (const road of roads) {
+    const intervals = markingIntervalsForRoad(road, intersections.get(road.key) ?? [])
+    if (intervals.length === 0) continue
+    const paintY = roadPaintY(road.y)
+    if (drawsRoadCenterLine(road.feature)) {
+      const builder = builderFor('road-marking-center', paintY).geometry
+      for (const interval of intervals.flatMap(dashedIntervals)) {
+        appendPaintRibbon({
+          builder,
+          path: road.path,
+          distances: road.distances,
+          interval,
+          lateralOffsetM: 0,
+          y: paintY,
+        })
+      }
+    }
+    if (drawsRoadEdgeLines(road.feature)) {
+      const halfWidthM = Math.max(1.4, road.feature.widthM / 2)
+      const offsetM = Math.max(0, halfWidthM - roadEdgeInsetM)
+      if (offsetM > roadPaintWidthM * 2) {
+        const builder = builderFor('road-marking-edge', paintY).geometry
+        for (const interval of intervals) {
+          appendPaintRibbon({
+            builder,
+            path: road.path,
+            distances: road.distances,
+            interval,
+            lateralOffsetM: offsetM,
+            y: paintY,
+          })
+          appendPaintRibbon({
+            builder,
+            path: road.path,
+            distances: road.distances,
+            interval,
+            lateralOffsetM: -offsetM,
+            y: paintY,
+          })
+        }
+      }
+    }
+  }
+
   return [...builders.entries()]
     .filter(([, entry]) => entry.geometry.indices.length > 0)
+    .sort(([, left], [, right]) =>
+      left.y - right.y
+      || roadMaterialOrder[left.materialKey] - roadMaterialOrder[right.materialKey]
+      || left.key.localeCompare(right.key),
+    )
     .map(([key, entry]) => ({
       key,
-      materialKey: 'road-asphalt',
-      colorHex: roadAsphaltColor,
+      materialKey: entry.materialKey,
+      colorHex: entry.colorHex,
       y: entry.y,
       positions: entry.geometry.positions,
       normals: entry.geometry.normals,

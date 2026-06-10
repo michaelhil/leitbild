@@ -146,6 +146,46 @@ const firstYValue = (
 
 const tilePoint = (x: number, y: number): [number, number] => [x, y]
 
+const tileXToLon = (x: number, z: number): number =>
+  x / 2 ** z * 360 - 180
+
+const tileYToLat = (y: number, z: number): number => {
+  const n = Math.PI - 2 * Math.PI * y / 2 ** z
+  return Math.atan(Math.sinh(n)) * 180 / Math.PI
+}
+
+const centerForTilePoint = (
+  tile: SceneryTile['tile'],
+  point: readonly [number, number],
+): { readonly lon: number; readonly lat: number } => {
+  const west = tileXToLon(tile.x, tile.z)
+  const east = tileXToLon(tile.x + 1, tile.z)
+  const north = tileYToLat(tile.y, tile.z)
+  const south = tileYToLat(tile.y + 1, tile.z)
+  return {
+    lon: west + point[0] / tile.extent * (east - west),
+    lat: north + point[1] / tile.extent * (south - north),
+  }
+}
+
+const yValuesForMesh = (
+  mesh: ReturnType<typeof buildRoadSurfaceMeshes>[number],
+): ReadonlySet<number> =>
+  new Set(Array.from({ length: mesh.positions.length / 3 }, (_value, index) => mesh.positions[index * 3 + 1] ?? Number.NaN))
+
+const minimumHorizontalDistanceFromOrigin = (
+  meshes: ReadonlyArray<ReturnType<typeof buildRoadSurfaceMeshes>[number]>,
+): number =>
+  Math.min(
+    ...meshes.flatMap(mesh =>
+      Array.from({ length: mesh.positions.length / 3 }, (_value, index) => {
+        const x = mesh.positions[index * 3] ?? 0
+        const z = mesh.positions[index * 3 + 2] ?? 0
+        return Math.hypot(x, z)
+      }),
+    ),
+  )
+
 const testTile: SceneryTile = {
   schemaVersion: 1,
   tileEncoding: 'leitbild-scenery-feature-json-v1',
@@ -852,16 +892,52 @@ describe('drone scenery runtime cache policy', () => {
   test('builds opaque road mesh layers instead of texture-backed alpha planes', async () => {
     const source = await Bun.file(new URL('../src/ui/drone/drone-road-overlay.ts', import.meta.url)).text()
     const meshes = buildRoadSurfaceMeshes({ tile: sceneryRoadTileFromSceneryTile(crossingRoadTile()) })
+    const asphaltMeshes = meshes.filter(mesh => mesh.materialKey === 'road-asphalt')
+    const markingMeshes = meshes.filter(mesh => mesh.materialKey !== 'road-asphalt')
 
     expect(source).not.toContain('DynamicTexture')
     expect(source).not.toContain('MATERIAL_ALPHATEST')
     expect(source).not.toContain('useAlphaFromDiffuseTexture')
-    expect(meshes).toHaveLength(1)
-    expect(meshes[0]!.materialKey).toBe('road-asphalt')
-    expect(meshes[0]!.colorHex).toBe('#3f474b')
-    expect(meshes[0]!.triangleCount).toBeGreaterThan(0)
-    expect(meshes[0]!.positions.length % 3).toBe(0)
-    expect(new Set(Array.from({ length: meshes[0]!.positions.length / 3 }, (_value, index) => meshes[0]!.positions[index * 3 + 1]))).toEqual(new Set([meshes[0]!.y]))
+    expect(asphaltMeshes).toHaveLength(1)
+    expect(asphaltMeshes[0]!.colorHex).toBe('#3f474b')
+    expect(markingMeshes.map(mesh => mesh.materialKey).sort()).toEqual(['road-marking-center', 'road-marking-edge'])
+    expect(markingMeshes.map(mesh => mesh.colorHex).sort()).toEqual(['#ead46a', '#eef1e7'])
+    for (const mesh of meshes) {
+      expect(mesh.triangleCount).toBeGreaterThan(0)
+      expect(mesh.positions.length % 3).toBe(0)
+      expect(yValuesForMesh(mesh)).toEqual(new Set([mesh.y]))
+    }
+  })
+
+  test('raises road markings above asphalt and clips them away from crossing conflict zones', () => {
+    const tile = crossingRoadTile()
+    const meshes = buildRoadSurfaceMeshes({
+      tile: sceneryRoadTileFromSceneryTile(tile),
+      center: centerForTilePoint(tile.tile, tilePoint(2050, 2050)),
+    })
+    const asphaltY = meshes.find(mesh => mesh.materialKey === 'road-asphalt')?.y
+    const markings = meshes.filter(mesh => mesh.materialKey !== 'road-asphalt')
+
+    expect(typeof asphaltY).toBe('number')
+    expect(markings.length).toBeGreaterThan(0)
+    for (const marking of markings) {
+      expect(marking.y - asphaltY!).toBeGreaterThanOrEqual(0.05)
+      expect(marking.indices.length % 3).toBe(0)
+    }
+    expect(minimumHorizontalDistanceFromOrigin(markings)).toBeGreaterThan(10)
+  })
+
+  test('keeps dense road markings grouped into a small stable mesh set', () => {
+    const meshes = buildRoadSurfaceMeshes({ tile: sceneryRoadTileFromSceneryTile(denseBudgetTile()) })
+    const totalTriangles = meshes.reduce((sum, mesh) => sum + mesh.triangleCount, 0)
+
+    expect(new Set(meshes.map(mesh => mesh.materialKey))).toEqual(new Set([
+      'road-asphalt',
+      'road-marking-center',
+      'road-marking-edge',
+    ]))
+    expect(meshes.length).toBeLessThanOrEqual(3)
+    expect(totalTriangles).toBeLessThan(30_000)
   })
 
   test('separates real bridge roads by vertical layer without adding stacked road material bands', () => {
@@ -892,9 +968,14 @@ describe('drone scenery runtime cache policy', () => {
       },
     })
     const meshes = buildRoadSurfaceMeshes({ tile: bridgeTile })
+    const asphaltMeshes = meshes.filter(mesh => mesh.materialKey === 'road-asphalt')
+    const markingMeshes = meshes.filter(mesh => mesh.materialKey !== 'road-asphalt')
 
-    expect(meshes).toHaveLength(2)
-    expect(new Set(meshes.map(mesh => mesh.materialKey))).toEqual(new Set(['road-asphalt']))
-    expect(Math.max(...meshes.map(mesh => mesh.y)) - Math.min(...meshes.map(mesh => mesh.y))).toBeGreaterThanOrEqual(2.2)
+    expect(asphaltMeshes).toHaveLength(2)
+    expect(Math.max(...asphaltMeshes.map(mesh => mesh.y)) - Math.min(...asphaltMeshes.map(mesh => mesh.y))).toBeGreaterThanOrEqual(2.2)
+    expect(markingMeshes.length).toBeGreaterThan(0)
+    for (const marking of markingMeshes) {
+      expect(Math.min(...asphaltMeshes.map(mesh => Math.abs(marking.y - mesh.y)))).toBeGreaterThanOrEqual(0.05)
+    }
   })
 })
