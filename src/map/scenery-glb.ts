@@ -197,9 +197,9 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'ground-urban', name: 'urban ground', color: [0.58, 0.60, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.9, doubleSided: true },
   { key: 'ground-wood', name: 'woodland floor', color: [0.18, 0.42, 0.22, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
   { key: 'water', name: 'water surface', color: [0.08, 0.49, 0.72, 1], depthPolicy: 'base-surface', roughnessFactor: 0.36, metallicFactor: 0.02, doubleSided: true },
-  { key: 'road-shoulder', name: 'road shoulder', color: [0.70, 0.67, 0.58, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
-  { key: 'road-casing', name: 'road dark casing', color: [0.12, 0.14, 0.17, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
-  { key: 'road-fill', name: 'road asphalt', color: [0.38, 0.41, 0.42, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
+  { key: 'aeroway-shoulder', name: 'aeroway shoulder', color: [0.70, 0.67, 0.58, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
+  { key: 'aeroway-fill', name: 'aeroway pavement', color: [0.38, 0.41, 0.42, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
+  { key: 'rail-casing', name: 'rail dark casing', color: [0.12, 0.14, 0.17, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
   { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
   { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
   { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
@@ -1065,7 +1065,7 @@ const baseSurfaceHeightByMaterialKey: Readonly<Record<string, number>> = {
   'ground-urban': horizontalDepth.urbanBaseY,
   'ground-wood': horizontalDepth.woodlandBaseY,
   water: horizontalDepth.waterSurfaceY,
-  'road-shoulder': horizontalDepth.aerowaySurfaceY,
+  'aeroway-shoulder': horizontalDepth.aerowaySurfaceY,
 }
 
 const surfaceHeightForFeature = (
@@ -1177,9 +1177,9 @@ const appendTransport = (
   profile: SceneryGlbLodProfile,
   budget: SceneryDetailBudget,
 ): void => {
-  const shoulder = bucketFor(buckets, 'road-shoulder', 'road shoulders')
-  const casing = bucketFor(buckets, 'road-casing', 'road casings')
-  const fill = bucketFor(buckets, 'road-fill', 'road fills')
+  const aerowayShoulder = bucketFor(buckets, 'aeroway-shoulder', 'aeroway shoulders')
+  const aerowayFill = bucketFor(buckets, 'aeroway-fill', 'aeroway pavement')
+  const railCasing = bucketFor(buckets, 'rail-casing', 'rail casings')
   const rail = bucketFor(buckets, 'rail', 'rails')
   const water = bucketFor(buckets, 'water', 'waterways')
   const poles = bucketFor(buckets, 'street-light', 'street light poles')
@@ -1193,13 +1193,13 @@ const appendTransport = (
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+      appendRibbon(railCasing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       appendRibbon(rail, path, feature.widthM, horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(shoulder, path, feature.widthM + 4, horizontalDepth.aerowayShoulderY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-      appendRibbon(fill, path, feature.widthM, horizontalDepth.aerowayFillY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(aerowayShoulder, path, feature.widthM + 4, horizontalDepth.aerowayShoulderY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(aerowayFill, path, feature.widthM, horizontalDepth.aerowayFillY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     const priority = roadPriority(feature.className)
