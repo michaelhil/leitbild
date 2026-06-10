@@ -48,8 +48,74 @@ interface SceneryGlbBuildResult {
   readonly summary: Omit<SceneryAssetTileSummary, 'byteLength'>
 }
 
+interface SceneryGlbLodProfile {
+  readonly lineSimplifyDistanceM: number
+  readonly minBuildingAreaM2: number
+  readonly minRoadPriority: number
+  readonly includeFacadeTrim: boolean
+  readonly includeFacadeWindows: boolean
+  readonly includeRoofFixtures: boolean
+  readonly includeRoadMarkings: boolean
+  readonly includeStreetLights: boolean
+  readonly includePoiBeacons: boolean
+  readonly vegetationMaxPerTile: number
+  readonly vegetationNaturalAreaM2: number
+  readonly vegetationResidentialAreaM2: number
+}
+
 const metersPerDegreeLat = 111_320
 const defaultMaxScreenSpaceError = 16
+
+const lodProfileForZoom = (
+  zoom: number,
+): SceneryGlbLodProfile => {
+  if (zoom <= 12) {
+    return {
+      lineSimplifyDistanceM: 2.2,
+      minBuildingAreaM2: 120,
+      minRoadPriority: 50,
+      includeFacadeTrim: false,
+      includeFacadeWindows: false,
+      includeRoofFixtures: false,
+      includeRoadMarkings: false,
+      includeStreetLights: false,
+      includePoiBeacons: false,
+      vegetationMaxPerTile: 0,
+      vegetationNaturalAreaM2: 20_000,
+      vegetationResidentialAreaM2: 40_000,
+    }
+  }
+  if (zoom === 13) {
+    return {
+      lineSimplifyDistanceM: 0.9,
+      minBuildingAreaM2: 32,
+      minRoadPriority: 40,
+      includeFacadeTrim: false,
+      includeFacadeWindows: false,
+      includeRoofFixtures: false,
+      includeRoadMarkings: false,
+      includeStreetLights: false,
+      includePoiBeacons: false,
+      vegetationMaxPerTile: 48,
+      vegetationNaturalAreaM2: 14_000,
+      vegetationResidentialAreaM2: 32_000,
+    }
+  }
+  return {
+    lineSimplifyDistanceM: 0.35,
+    minBuildingAreaM2: 0,
+    minRoadPriority: 30,
+    includeFacadeTrim: true,
+    includeFacadeWindows: true,
+    includeRoofFixtures: true,
+    includeRoadMarkings: true,
+    includeStreetLights: true,
+    includePoiBeacons: true,
+    vegetationMaxPerTile: 160,
+    vegetationNaturalAreaM2: 5_400,
+    vegetationResidentialAreaM2: 16_000,
+  }
+}
 
 const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], roughnessFactor: 0.94, doubleSided: true },
@@ -349,6 +415,7 @@ const appendBuildingWalls = (
   minHeight: number,
   height: number,
   seed: number,
+  profile: SceneryGlbLodProfile,
 ): void => {
   const random = seededRandom(seed)
   for (const sourceRing of rings) {
@@ -377,7 +444,7 @@ const appendBuildingWalls = (
       const ux = dx / length
       const uz = dz / length
       const facadeOffset = 0.052
-      if (length > 5.5 && floors > 2) {
+      if (profile.includeFacadeTrim && length > 5.5 && floors > 2) {
         const bandHalfHeight = 0.045
         const bandInsetM = Math.min(0.45, length * 0.025)
         for (let floor = 1; floor < floors; floor += 2) {
@@ -393,7 +460,7 @@ const appendBuildingWalls = (
           )
         }
       }
-      if (windowColumns === 0) continue
+      if (!profile.includeFacadeWindows || windowColumns === 0) continue
       for (let floor = 0; floor < floors; floor += 1) {
         const y = minHeight + 2.0 + floor * 3.2
         if (y + 0.9 > minHeight + height) continue
@@ -451,8 +518,9 @@ const appendRibbon = (
   path: ReadonlyArray<LocalPoint>,
   widthM: number,
   y: number,
+  simplifyDistanceM = 0.35,
 ): void => {
-  const points = simplifiedPath(path, 0.35)
+  const points = simplifiedPath(path, simplifyDistanceM)
   if (points.length < 2) return
   const halfWidth = widthM / 2
   const vertexBase = bucket.positions.length / 3
@@ -751,6 +819,7 @@ const appendBuildings = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  profile: SceneryGlbLodProfile,
 ): void => {
   const windows = bucketFor(buckets, 'building-window', 'building facade windows')
   const trim = bucketFor(buckets, 'building-trim', 'building facade trim')
@@ -759,14 +828,18 @@ const appendBuildings = (
     if (feature.kind !== 'building') continue
     const rings = localRingsFor(feature.rings, tile.tile, center)
     if (rings.length === 0) continue
+    const outerRing = rings[0]
+    if (outerRing && Math.abs(ringArea(outerRing)) < profile.minBuildingAreaM2) continue
     const height = Math.max(2.5, feature.heightM ?? 8)
     const minHeight = Math.max(0, feature.minHeightM ?? 0)
     const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
     const roofBucket = bucketFor(buckets, buildingRoofMaterialFor(feature), `${buildingRoofMaterialFor(feature)} shells`)
     const roofY = minHeight + height + 0.08
-    appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id))
+    appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id), profile)
     appendHorizontalPolygon(roofBucket, rings, roofY)
-    appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`))
+    if (profile.includeRoofFixtures) {
+      appendRoofFixtures(roofFixtures, rings, roofY + 0.08, stableHash(`fixture:${feature.id}`))
+    }
   }
 }
 
@@ -774,6 +847,7 @@ const appendTransport = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  profile: SceneryGlbLodProfile,
 ): void => {
   const shoulder = bucketFor(buckets, 'road-shoulder', 'road shoulders')
   const casing = bucketFor(buckets, 'road-casing', 'road casings')
@@ -788,26 +862,29 @@ const appendTransport = (
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
-      appendRibbon(water, path, feature.widthM, 0.22 + feature.verticalOffsetM)
+      appendRibbon(water, path, feature.widthM, 0.22 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(casing, path, feature.widthM + 3.2, 0.34 + feature.verticalOffsetM)
-      appendRibbon(rail, path, feature.widthM, 0.44 + feature.verticalOffsetM)
+      appendRibbon(casing, path, feature.widthM + 3.2, 0.34 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(rail, path, feature.widthM, 0.44 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(shoulder, path, feature.widthM + 4, 0.32 + feature.verticalOffsetM)
-      appendRibbon(fill, path, feature.widthM, 0.42 + feature.verticalOffsetM)
+      appendRibbon(shoulder, path, feature.widthM + 4, 0.32 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(fill, path, feature.widthM, 0.42 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     const priority = roadPriority(feature.className)
-    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.32 + feature.verticalOffsetM)
-    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.40 + feature.verticalOffsetM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.50 + feature.verticalOffsetM)
-    appendRoadEdgeMarkings(markings, path, feature.widthM, 0.66 + feature.verticalOffsetM)
-    appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.72 + feature.verticalOffsetM)
-    if (priority < 40 || feature.isTunnel) continue
+    if (priority < profile.minRoadPriority) continue
+    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.32 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.40 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.50 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+    if (profile.includeRoadMarkings) {
+      appendRoadEdgeMarkings(markings, path, feature.widthM, 0.66 + feature.verticalOffsetM)
+      appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.72 + feature.verticalOffsetM)
+    }
+    if (!profile.includeStreetLights || priority < 40 || feature.isTunnel) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
     for (let index = 0; index < path.length - 1; index += 1) {
       const start = path[index]!
@@ -839,7 +916,9 @@ const appendVegetation = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  profile: SceneryGlbLodProfile,
 ): void => {
+  if (profile.vegetationMaxPerTile <= 0) return
   const trunk = bucketFor(buckets, 'tree-trunk', 'tree trunks')
   const canopy = bucketFor(buckets, 'tree-canopy', 'tree canopies')
   const canopyLight = bucketFor(buckets, 'tree-canopy-light', 'tree canopy highlights')
@@ -851,11 +930,16 @@ const appendVegetation = (
     const outer = rings[0]
     if (!outer || outer.length < 3) continue
     const area = Math.abs(ringArea(outer))
-    const targetCount = Math.max(1, Math.min(24, Math.floor(area / (feature.className === 'residential' ? 16_000 : 5_400))))
+    const areaPerTree = feature.className === 'residential'
+      ? profile.vegetationResidentialAreaM2
+      : profile.vegetationNaturalAreaM2
+    const remainingTreeBudget = profile.vegetationMaxPerTile - treeCount
+    if (remainingTreeBudget <= 0) return
+    const targetCount = Math.max(1, Math.min(24, remainingTreeBudget, Math.floor(area / areaPerTree)))
     const bounds = boundsForRing(outer)
     const random = seededRandom(stableHash(`veg:${feature.id}`))
     let added = 0
-    for (let attempt = 0; attempt < targetCount * 10 && added < targetCount && treeCount < 160; attempt += 1) {
+    for (let attempt = 0; attempt < targetCount * 10 && added < targetCount && treeCount < profile.vegetationMaxPerTile; attempt += 1) {
       const candidate = attempt === 0
         ? polygonCentroid(outer)
         : {
@@ -877,7 +961,9 @@ const appendPoiBeacons = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  profile: SceneryGlbLodProfile,
 ): void => {
+  if (!profile.includePoiBeacons) return
   const poi = bucketFor(buckets, 'poi', 'poi beacons')
   for (const feature of tile.features.labels.slice(0, 48)) {
     if (feature.kind === 'road_label') continue
@@ -1094,12 +1180,13 @@ export const compileSceneryGlbTile = (
   const center = sceneryTileCenterLonLat(tile.tile)
   const bounds = sceneryTileBounds(tile.tile)
   const lod = lodForTile(tile.tile, bounds, center)
+  const profile = lodProfileForZoom(tile.tile.z)
   const buckets = new Map<string, MeshBucket>()
   appendSurfaces(buckets, tile, center)
-  appendTransport(buckets, tile, center)
-  appendBuildings(buckets, tile, center)
-  appendVegetation(buckets, tile, center)
-  appendPoiBeacons(buckets, tile, center)
+  appendTransport(buckets, tile, center, profile)
+  appendBuildings(buckets, tile, center, profile)
+  appendVegetation(buckets, tile, center, profile)
+  appendPoiBeacons(buckets, tile, center, profile)
   const primitives = primitivesFromBuckets(buckets)
   if (primitives.length === 0) return null
   const localBounds = primitiveBounds(primitives)

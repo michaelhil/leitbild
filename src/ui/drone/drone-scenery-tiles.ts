@@ -81,6 +81,16 @@ interface PatchedTilesRenderer extends TilesRenderer {
 
 const megabyte = 1024 * 1024
 
+export const droneSceneryTileCacheBudget = Object.freeze({
+  contentByteMultiplier: 1.25,
+  aggregateByteMultiplier: 0.04,
+  minTileCount: 260,
+  maxTileCount: 420,
+  minBytes: 512 * megabyte,
+  maxBytes: 768 * megabyte,
+  unloadPercent: 0.1,
+})
+
 const recordValue = (
   value: unknown,
 ): Record<string, unknown> | null =>
@@ -111,16 +121,16 @@ const nodeMetadataFor = (
   return recordValue(extras?.leitbild) as TileNodeMetadata | null
 }
 
-const estimateTileBytes = (
+export const estimateDroneSceneryTileBytesForCache = (
   tile: Tile,
 ): number => {
   const contentBytes = contentMetadataFor(tile)?.byteLength
   if (typeof contentBytes === 'number' && Number.isFinite(contentBytes) && contentBytes > 0) {
-    return Math.max(1, Math.ceil(contentBytes * 3.4))
+    return Math.max(1, Math.ceil(contentBytes * droneSceneryTileCacheBudget.contentByteMultiplier))
   }
   const aggregateBytes = nodeMetadataFor(tile)?.aggregateByteLength
   if (typeof aggregateBytes === 'number' && Number.isFinite(aggregateBytes) && aggregateBytes > 0) {
-    return Math.max(1, Math.ceil(aggregateBytes * 0.12))
+    return Math.max(1, Math.ceil(aggregateBytes * droneSceneryTileCacheBudget.aggregateByteMultiplier))
   }
   return 1
 }
@@ -216,17 +226,17 @@ const configureRendererBudgets = (
   tiles: PatchedTilesRenderer,
 ): void => {
   tiles.errorTarget = 11
-  tiles.loadAncestors = true
-  tiles.loadSiblings = true
+  tiles.loadAncestors = false
+  tiles.loadSiblings = false
   tiles.maxTilesProcessed = 420
   tiles.downloadQueue.maxJobs = 8
   tiles.parseQueue.maxJobs = 2
-  tiles.lruCache.minSize = 260
-  tiles.lruCache.maxSize = 420
-  tiles.lruCache.minBytesSize = 210 * megabyte
-  tiles.lruCache.maxBytesSize = 310 * megabyte
-  tiles.lruCache.unloadPercent = 0.18
-  tiles.calculateBytesUsed = estimateTileBytes
+  tiles.lruCache.minSize = droneSceneryTileCacheBudget.minTileCount
+  tiles.lruCache.maxSize = droneSceneryTileCacheBudget.maxTileCount
+  tiles.lruCache.minBytesSize = droneSceneryTileCacheBudget.minBytes
+  tiles.lruCache.maxBytesSize = droneSceneryTileCacheBudget.maxBytes
+  tiles.lruCache.unloadPercent = droneSceneryTileCacheBudget.unloadPercent
+  tiles.calculateBytesUsed = estimateDroneSceneryTileBytesForCache
 }
 
 export const createDroneSceneryTilesRenderer = (config: {

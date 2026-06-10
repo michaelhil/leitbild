@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { compileSceneryGlbTile } from '../src/map/scenery-glb.ts'
 import type { SceneryTile } from '../src/map/scenery.ts'
+import {
+  droneSceneryTileCacheBudget,
+  estimateDroneSceneryTileBytesForCache,
+} from '../src/ui/drone/drone-scenery-tiles.ts'
 
 const readAscii = (
   bytes: Uint8Array,
@@ -137,6 +141,20 @@ const testTile: SceneryTile = {
   },
 }
 
+const testTileAtZoom = (
+  z: number,
+  x: number,
+  y: number,
+): SceneryTile => ({
+  ...testTile,
+  tile: {
+    ...testTile.tile,
+    z,
+    x,
+    y,
+  },
+})
+
 describe('drone scenery GLB compiler', () => {
   test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
     const result = compileSceneryGlbTile(testTile)
@@ -194,5 +212,49 @@ describe('drone scenery GLB compiler', () => {
     expect(materialNames.has('tree canopy')).toBe(true)
     expect(materialNames.has('street lamp glass')).toBe(true)
     expect(materialNames.has('poi beacon')).toBe(true)
+  })
+
+  test('keeps coarse scenery tiles as lightweight fallback silhouettes', () => {
+    const coarseResult = compileSceneryGlbTile(testTileAtZoom(12, 2170, 1191))
+    const fullResult = compileSceneryGlbTile(testTile)
+    expect(coarseResult).not.toBeNull()
+    expect(fullResult).not.toBeNull()
+
+    const coarseMaterialNames = usedMaterialNames(glbJson(coarseResult!.bytes))
+    expect(coarseResult!.bytes.byteLength).toBeLessThan(fullResult!.bytes.byteLength)
+    expect(coarseMaterialNames.has('cool building wall')).toBe(true)
+    expect([
+      'building roof',
+      'light building roof',
+      'green copper roof',
+      'red tile roof',
+      'dark roof membrane',
+    ].some(name => coarseMaterialNames.has(name))).toBe(true)
+    expect(coarseMaterialNames.has('building windows')).toBe(false)
+    expect(coarseMaterialNames.has('building facade trim')).toBe(false)
+    expect(coarseMaterialNames.has('rooftop fixtures')).toBe(false)
+    expect(coarseMaterialNames.has('baked road markings')).toBe(false)
+    expect(coarseMaterialNames.has('street lamp glass')).toBe(false)
+    expect(coarseMaterialNames.has('tree canopy')).toBe(false)
+    expect(coarseMaterialNames.has('poi beacon')).toBe(false)
+  })
+})
+
+describe('drone scenery runtime cache policy', () => {
+  test('sizes visible tile residency from source content bytes without exhausting the working set', () => {
+    const representativeLargeTile = {
+      content: {
+        extras: {
+          leitbild: {
+            byteLength: 12 * 1024 * 1024,
+          },
+        },
+      },
+    } as unknown as Parameters<typeof estimateDroneSceneryTileBytesForCache>[0]
+
+    const estimatedBytes = estimateDroneSceneryTileBytesForCache(representativeLargeTile)
+    expect(estimatedBytes).toBe(15 * 1024 * 1024)
+    expect(estimatedBytes * 20).toBeLessThan(droneSceneryTileCacheBudget.maxBytes)
+    expect(droneSceneryTileCacheBudget.unloadPercent).toBeLessThan(0.18)
   })
 })
