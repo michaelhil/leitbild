@@ -43,6 +43,7 @@ const tileSummary = (config: {
           triangleCount: 80,
           horizontalPlaneCount: 24,
           closeHorizontalOverlapCount: 1,
+          sameMaterialHorizontalOverlapCount: 0,
           duplicateHorizontalTriangleCount: 0,
           duplicateSourceRefCount: 0,
           outOfBoundsPointCount: 0,

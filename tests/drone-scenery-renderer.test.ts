@@ -545,6 +545,7 @@ describe('drone scenery GLB compiler', () => {
 
     expect(Math.abs(woodY - parkY)).toBeGreaterThanOrEqual(0.05)
     expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
   })
 
@@ -558,6 +559,7 @@ describe('drone scenery GLB compiler', () => {
     expect(quality?.triangleCount).toBeGreaterThan(0)
     expect(quality?.horizontalPlaneCount).toBeGreaterThan(0)
     expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.duplicateHorizontalTriangleCount).toBe(0)
     expect(quality?.outOfBoundsPointCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)

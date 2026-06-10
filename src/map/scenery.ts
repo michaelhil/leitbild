@@ -154,6 +154,7 @@ export const sceneryTileQualityAuditSchema = z.object({
   triangleCount: z.number().int().nonnegative(),
   horizontalPlaneCount: z.number().int().nonnegative(),
   closeHorizontalOverlapCount: z.number().int().nonnegative(),
+  sameMaterialHorizontalOverlapCount: z.number().int().nonnegative(),
   duplicateHorizontalTriangleCount: z.number().int().nonnegative(),
   duplicateSourceRefCount: z.number().int().nonnegative(),
   outOfBoundsPointCount: z.number().int().nonnegative(),

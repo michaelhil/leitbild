@@ -34,6 +34,7 @@ interface CompiledTileAudit {
     readonly code: string
     readonly message: string
     readonly count?: number | undefined
+    readonly materialKey?: string | undefined
     readonly minGapM?: number | undefined
   }>
 }
@@ -219,6 +220,7 @@ for (const tileCoord of tiles) {
         code: finding.code,
         message: finding.message,
         ...(finding.count === undefined ? {} : { count: finding.count }),
+        ...(finding.materialKey === undefined ? {} : { materialKey: finding.materialKey }),
         ...(finding.minGapM === undefined ? {} : { minGapM: finding.minGapM }),
       })),
     })

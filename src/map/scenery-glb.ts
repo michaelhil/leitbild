@@ -100,14 +100,17 @@ const horizontalDepth = {
   landcoverBaseY: 0.04,
   landuseBaseY: 0.18,
   waterSurfaceY: 0.38,
-  aerowaySurfaceY: 0.62,
-  waterwayY: 0.56,
-  railCasingY: 0.76,
-  railSteelY: 0.92,
-  aerowayShoulderY: 0.84,
-  aerowayFillY: 1.0,
-  roadBaseY: 1.12,
-  roadFeatureLaneStepM: 0.62,
+  wetlandBaseY: 0.48,
+  urbanBaseY: 0.60,
+  woodlandBaseY: 0.72,
+  aerowaySurfaceY: 0.78,
+  waterwayY: 0.84,
+  railCasingY: 0.98,
+  railSteelY: 1.12,
+  aerowayShoulderY: 1.26,
+  aerowayFillY: 1.34,
+  roadBaseY: 1.40,
+  roadFeatureLaneStepM: 0.52,
   roadCasingLiftM: 0.11,
   roadFillLiftM: 0.23,
   roadEdgeMarkingLiftM: 0.36,
@@ -251,12 +254,6 @@ const stableHash = (value: string): number => {
   }
   return hash >>> 0
 }
-
-const depthLayerOffset = (
-  key: string,
-  layerCount: number,
-  stepM: number,
-): number => (stableHash(key) % layerCount) * stepM
 
 const seededRandom = (seed: number): (() => number) => {
   let state = seed >>> 0
@@ -1110,9 +1107,9 @@ const baseSurfaceHeightByMaterialKey: Readonly<Record<string, number>> = {
   'ground-grass': horizontalDepth.landcoverBaseY,
   'ground-park': horizontalDepth.landuseBaseY,
   'ground-field': 0.30,
-  'ground-wetland': 0.42,
-  'ground-urban': 0.54,
-  'ground-wood': 0.66,
+  'ground-wetland': horizontalDepth.wetlandBaseY,
+  'ground-urban': horizontalDepth.urbanBaseY,
+  'ground-wood': horizontalDepth.woodlandBaseY,
   water: horizontalDepth.waterSurfaceY,
   'road-shoulder': horizontalDepth.aerowaySurfaceY,
 }
@@ -1240,9 +1237,7 @@ const appendTransport = (
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
     if (feature.kind === 'waterway') {
-      const waterwayY = horizontalDepth.waterwayY
-        + feature.verticalOffsetM
-        + depthLayerOffset(`waterway-depth:${feature.sourceRef ?? feature.id}`, 5, 0.035)
+      const waterwayY = horizontalDepth.waterwayY + feature.verticalOffsetM
       appendRibbon(water, path, feature.widthM, waterwayY, profile.lineSimplifyDistanceM)
       continue
     }
@@ -1447,6 +1442,12 @@ interface HorizontalPlaneSample {
 interface HorizontalTrianglePoint {
   readonly x: number
   readonly z: number
+}
+
+interface HorizontalOverlapMaterialPairSummary {
+  readonly materialKey: string
+  readonly count: number
+  readonly minGapM: number
 }
 
 const horizontalPlaneYToleranceM = 0.003
@@ -1709,17 +1710,34 @@ const horizontalOverlapAuditFor = (
   samples: ReadonlyArray<HorizontalPlaneSample>,
 ): {
   readonly closeHorizontalOverlapCount: number
+  readonly sameMaterialHorizontalOverlapCount: number
   readonly minHorizontalGapM: number | null
+  readonly materialPairs: ReadonlyArray<HorizontalOverlapMaterialPairSummary>
 } => {
   const cells = new Map<string, HorizontalPlaneSample[]>()
   const seenPairs = new Set<string>()
   let closeHorizontalOverlapCount = 0
+  let sameMaterialHorizontalOverlapCount = 0
   let minHorizontalGapM = Number.POSITIVE_INFINITY
+  const materialPairs = new Map<string, { count: number; minGapM: number }>()
+  const materialPairKeyFor = (left: string, right: string): string =>
+    left <= right ? `${left}|${right}` : `${right}|${left}`
+  const noteMaterialPair = (
+    left: HorizontalPlaneSample,
+    right: HorizontalPlaneSample,
+    gapM: number,
+  ): void => {
+    const key = materialPairKeyFor(left.materialKey, right.materialKey)
+    const existing = materialPairs.get(key)
+    materialPairs.set(key, {
+      count: (existing?.count ?? 0) + 1,
+      minGapM: Math.min(existing?.minGapM ?? Number.POSITIVE_INFINITY, gapM),
+    })
+  }
   for (const sample of samples) {
     for (const key of gridKeysFor(sample)) {
       const existingSamples = cells.get(key) ?? []
       for (const existing of existingSamples) {
-        if (existing.materialKey === sample.materialKey) continue
         const gapM = Math.abs(existing.y - sample.y)
         const overlapAreaM2 = horizontalOverlapAreaM2(existing, sample)
         if (overlapAreaM2 < horizontalOverlapAreaWarningM2) continue
@@ -1728,7 +1746,9 @@ const horizontalOverlapAuditFor = (
         const pairKey = existing.id < sample.id ? `${existing.id}:${sample.id}` : `${sample.id}:${existing.id}`
         if (seenPairs.has(pairKey)) continue
         seenPairs.add(pairKey)
+        if (existing.materialKey === sample.materialKey) sameMaterialHorizontalOverlapCount += 1
         closeHorizontalOverlapCount += 1
+        noteMaterialPair(existing, sample, gapM)
       }
       existingSamples.push(sample)
       cells.set(key, existingSamples)
@@ -1736,7 +1756,11 @@ const horizontalOverlapAuditFor = (
   }
   return {
     closeHorizontalOverlapCount,
+    sameMaterialHorizontalOverlapCount,
     minHorizontalGapM: Number.isFinite(minHorizontalGapM) ? minHorizontalGapM : null,
+    materialPairs: [...materialPairs.entries()]
+      .map(([materialKey, value]) => ({ materialKey, count: value.count, minGapM: value.minGapM }))
+      .sort((left, right) => right.count - left.count || left.materialKey.localeCompare(right.materialKey)),
   }
 }
 
@@ -1765,9 +1789,28 @@ const auditSceneryTileQuality = (
     findings.push(riskFinding({
       severity: 'warning',
       code: 'scenery.depth.close_horizontal_overlap',
-      message: 'Different horizontal material planes overlap with too little vertical separation.',
+      message: 'Horizontal material planes overlap with too little vertical separation.',
       count: overlap.closeHorizontalOverlapCount,
       ...(overlap.minHorizontalGapM === null ? {} : { minGapM: overlap.minHorizontalGapM }),
+    }))
+  }
+  if (overlap.sameMaterialHorizontalOverlapCount > 0) {
+    findings.push(riskFinding({
+      severity: 'info',
+      code: 'scenery.depth.same_material_horizontal_overlap',
+      message: 'Same-material horizontal planes overlap; this can still shimmer under depth precision pressure.',
+      count: overlap.sameMaterialHorizontalOverlapCount,
+      ...(overlap.minHorizontalGapM === null ? {} : { minGapM: overlap.minHorizontalGapM }),
+    }))
+  }
+  for (const pair of overlap.materialPairs.slice(0, 5)) {
+    findings.push(riskFinding({
+      severity: 'info',
+      code: 'scenery.depth.close_horizontal_overlap_material_pair',
+      message: 'Dominant close horizontal overlap material pair.',
+      materialKey: pair.materialKey,
+      count: pair.count,
+      minGapM: pair.minGapM,
     }))
   }
   if (horizontal.duplicateHorizontalTriangleCount > 0) {
@@ -1811,6 +1854,7 @@ const auditSceneryTileQuality = (
     triangleCount: horizontal.triangleCount,
     horizontalPlaneCount: horizontal.samples.length,
     closeHorizontalOverlapCount: overlap.closeHorizontalOverlapCount,
+    sameMaterialHorizontalOverlapCount: overlap.sameMaterialHorizontalOverlapCount,
     duplicateHorizontalTriangleCount: horizontal.duplicateHorizontalTriangleCount,
     duplicateSourceRefCount,
     outOfBoundsPointCount,
