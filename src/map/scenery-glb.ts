@@ -107,11 +107,12 @@ const horizontalDepth = {
   aerowayShoulderY: 0.84,
   aerowayFillY: 1.0,
   roadBaseY: 1.12,
-  roadFeatureLaneStepM: 0.055,
+  roadFeatureLaneStepM: 0.075,
   roadCasingLiftM: 0.11,
   roadFillLiftM: 0.23,
   roadEdgeMarkingLiftM: 0.36,
   roadCenterMarkingLiftM: 0.46,
+  roofMaterialLiftStepM: 0.075,
 } as const
 
 const lodProfileForZoom = (
@@ -823,15 +824,161 @@ const appendRoadEdgeMarkings = (
   appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
 }
 
+interface RoadLaneShape {
+  readonly id: string
+  readonly path: ReadonlyArray<LocalPoint>
+  readonly widthM: number
+  readonly deckY: number
+  readonly priority: number
+}
+
+interface AssignedRoadLaneShape extends RoadLaneShape {
+  readonly lane: number
+}
+
+const priorityLiftForRoad = (priority: number): number =>
+  priority >= 70 ? 0.08 : priority >= 60 ? 0.04 : 0
+
+const boundsForPath = (
+  path: ReadonlyArray<LocalPoint>,
+  paddingM: number,
+): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } => {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minZ = Number.POSITIVE_INFINITY
+  let maxZ = Number.NEGATIVE_INFINITY
+  for (const point of path) {
+    minX = Math.min(minX, point.x)
+    maxX = Math.max(maxX, point.x)
+    minZ = Math.min(minZ, point.z)
+    maxZ = Math.max(maxZ, point.z)
+  }
+  return {
+    minX: minX - paddingM,
+    maxX: maxX + paddingM,
+    minZ: minZ - paddingM,
+    maxZ: maxZ + paddingM,
+  }
+}
+
+const boundsOverlap = (
+  left: ReturnType<typeof boundsForPath>,
+  right: ReturnType<typeof boundsForPath>,
+): boolean =>
+  left.minX <= right.maxX
+    && left.maxX >= right.minX
+    && left.minZ <= right.maxZ
+    && left.maxZ >= right.minZ
+
+const pointSegmentDistanceM = (
+  point: LocalPoint,
+  start: LocalPoint,
+  end: LocalPoint,
+): number => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const lengthSquared = dx * dx + dz * dz
+  if (lengthSquared <= 0.000001) return Math.hypot(point.x - start.x, point.z - start.z)
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.z - start.z) * dz) / lengthSquared))
+  return Math.hypot(point.x - (start.x + dx * t), point.z - (start.z + dz * t))
+}
+
+const segmentsIntersect = (
+  a0: LocalPoint,
+  a1: LocalPoint,
+  b0: LocalPoint,
+  b1: LocalPoint,
+): boolean => {
+  const epsilon = 0.000001
+  const cross = (p0: LocalPoint, p1: LocalPoint, p2: LocalPoint): number =>
+    (p1.x - p0.x) * (p2.z - p0.z) - (p1.z - p0.z) * (p2.x - p0.x)
+  const onSegment = (point: LocalPoint, start: LocalPoint, end: LocalPoint): boolean =>
+    point.x >= Math.min(start.x, end.x) - epsilon
+      && point.x <= Math.max(start.x, end.x) + epsilon
+      && point.z >= Math.min(start.z, end.z) - epsilon
+      && point.z <= Math.max(start.z, end.z) + epsilon
+  const d1 = cross(a0, a1, b0)
+  const d2 = cross(a0, a1, b1)
+  const d3 = cross(b0, b1, a0)
+  const d4 = cross(b0, b1, a1)
+  if (Math.abs(d1) <= epsilon && onSegment(b0, a0, a1)) return true
+  if (Math.abs(d2) <= epsilon && onSegment(b1, a0, a1)) return true
+  if (Math.abs(d3) <= epsilon && onSegment(a0, b0, b1)) return true
+  if (Math.abs(d4) <= epsilon && onSegment(a1, b0, b1)) return true
+  return d1 * d2 < 0 && d3 * d4 < 0
+}
+
+const segmentDistanceM = (
+  a0: LocalPoint,
+  a1: LocalPoint,
+  b0: LocalPoint,
+  b1: LocalPoint,
+): number =>
+  segmentsIntersect(a0, a1, b0, b1)
+    ? 0
+    : Math.min(
+        pointSegmentDistanceM(a0, b0, b1),
+        pointSegmentDistanceM(a1, b0, b1),
+        pointSegmentDistanceM(b0, a0, a1),
+        pointSegmentDistanceM(b1, a0, a1),
+      )
+
+const roadsOverlapOnDeck = (
+  left: RoadLaneShape,
+  right: RoadLaneShape,
+): boolean => {
+  if (Math.abs(left.deckY - right.deckY) >= horizontalDepth.roadFeatureLaneStepM) return false
+  const overlapDistanceM = (left.widthM + right.widthM) / 2 + 1.5
+  if (!boundsOverlap(boundsForPath(left.path, overlapDistanceM), boundsForPath(right.path, overlapDistanceM))) return false
+  for (let leftIndex = 0; leftIndex < left.path.length - 1; leftIndex += 1) {
+    for (let rightIndex = 0; rightIndex < right.path.length - 1; rightIndex += 1) {
+      if (segmentDistanceM(left.path[leftIndex]!, left.path[leftIndex + 1]!, right.path[rightIndex]!, right.path[rightIndex + 1]!) <= overlapDistanceM) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+const roadLaneAssignmentsFor = (
+  tile: SceneryTile,
+  center: TileLonLat,
+  profile: SceneryGlbLodProfile,
+): ReadonlyMap<string, number> => {
+  const candidates = tile.features.lines.flatMap(feature => {
+    if (feature.kind !== 'road') return []
+    const priority = roadPriority(feature.className)
+    if (priority < profile.minRoadPriority) return []
+    const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
+    if (path.length < 2) return []
+    return [{
+      id: feature.id,
+      path,
+      widthM: feature.widthM,
+      deckY: feature.verticalOffsetM + priorityLiftForRoad(priority),
+      priority,
+    }]
+  }).sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))
+  const assigned: AssignedRoadLaneShape[] = []
+  const lanes = new Map<string, number>()
+  for (const candidate of candidates) {
+    let lane = 0
+    while (assigned.some(existing => existing.lane === lane && roadsOverlapOnDeck(candidate, existing))) lane += 1
+    lanes.set(candidate.id, lane)
+    assigned.push({ ...candidate, lane })
+  }
+  return lanes
+}
+
 const roadDepthLaneY = (
   feature: SceneryTile['features']['lines'][number],
   priority: number,
+  lane: number,
 ): number => {
-  const priorityLift = priority >= 70 ? 0.08 : priority >= 60 ? 0.04 : 0
   return horizontalDepth.roadBaseY
     + feature.verticalOffsetM
-    + priorityLift
-    + depthLayerOffset(`road-depth:${feature.sourceRef ?? feature.id}`, 9, horizontalDepth.roadFeatureLaneStepM)
+    + priorityLiftForRoad(priority)
+    + lane * horizontalDepth.roadFeatureLaneStepM
 }
 
 const appendRibbonSideBands = (
@@ -959,27 +1106,24 @@ const surfaceMaterialFor = (kind: string, className: string): string => {
   return 'ground-grass'
 }
 
-const surfaceHeightFor = (kind: string): number => {
-  if (kind === 'water') return horizontalDepth.waterSurfaceY
-  if (kind === 'aeroway') return horizontalDepth.aerowaySurfaceY
-  if (kind === 'landuse') return horizontalDepth.landuseBaseY
-  return horizontalDepth.landcoverBaseY
+const baseSurfaceHeightByMaterialKey: Readonly<Record<string, number>> = {
+  'ground-grass': horizontalDepth.landcoverBaseY,
+  'ground-park': horizontalDepth.landuseBaseY,
+  'ground-field': 0.30,
+  'ground-wetland': 0.42,
+  'ground-urban': 0.54,
+  'ground-wood': 0.66,
+  water: horizontalDepth.waterSurfaceY,
+  'road-shoulder': horizontalDepth.aerowaySurfaceY,
 }
 
 const surfaceHeightForFeature = (
   feature: SceneryTile['features']['polygons'][number],
+  materialKey: string,
 ): number => {
-  const baseHeight = surfaceHeightFor(feature.kind)
-  if (feature.kind === 'water') {
-    return baseHeight + depthLayerOffset(`water-surface:${feature.sourceRef ?? feature.id}`, 3, 0.035)
-  }
-  if (feature.kind === 'aeroway') {
-    return baseHeight + depthLayerOffset(`aeroway-surface:${feature.sourceRef ?? feature.id}`, 3, 0.035)
-  }
-  if (feature.kind === 'landuse' || feature.kind === 'landcover') {
-    return baseHeight + depthLayerOffset(`surface-layer:${feature.sourceRef ?? feature.id}`, 5, 0.032)
-  }
-  return baseHeight
+  if (feature.kind === 'water') return horizontalDepth.waterSurfaceY
+  if (feature.kind === 'aeroway') return horizontalDepth.aerowaySurfaceY
+  return baseSurfaceHeightByMaterialKey[materialKey] ?? horizontalDepth.landcoverBaseY
 }
 
 const buildingWallMaterialFor = (
@@ -1006,6 +1150,19 @@ const buildingRoofMaterialFor = (
   return 'building-roof'
 }
 
+const buildingRoofMaterialLiftM = (
+  materialKey: string,
+): number => {
+  const order = [
+    'building-roof',
+    'building-roof-light',
+    'building-roof-green',
+    'building-roof-red',
+    'building-roof-dark',
+  ]
+  return Math.max(0, order.indexOf(materialKey)) * horizontalDepth.roofMaterialLiftStepM
+}
+
 const localRingsFor = (
   rings: ReadonlyArray<ReadonlyArray<SceneryPoint>>,
   tile: SceneryTile['tile'],
@@ -1024,7 +1181,7 @@ const appendSurfaces = (
     if (feature.kind === 'building') continue
     const material = surfaceMaterialFor(feature.kind, feature.className)
     const bucket = bucketFor(buckets, material, `${material} surfaces`)
-    appendHorizontalPolygon(bucket, localRingsFor(feature.rings, tile.tile, center), surfaceHeightForFeature(feature))
+    appendHorizontalPolygon(bucket, localRingsFor(feature.rings, tile.tile, center), surfaceHeightForFeature(feature, material))
   }
 }
 
@@ -1048,8 +1205,9 @@ const appendBuildings = (
     const height = Math.max(2.5, feature.heightM ?? 8)
     const minHeight = Math.max(0, feature.minHeightM ?? 0)
     const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
-    const roofBucket = bucketFor(buckets, buildingRoofMaterialFor(feature), `${buildingRoofMaterialFor(feature)} shells`)
-    const roofY = minHeight + height + 0.08
+    const roofMaterial = buildingRoofMaterialFor(feature)
+    const roofBucket = bucketFor(buckets, roofMaterial, `${roofMaterial} shells`)
+    const roofY = minHeight + height + 0.08 + buildingRoofMaterialLiftM(roofMaterial)
     appendBuildingWalls(wallBucket, windows, trim, rings, minHeight, height, stableHash(feature.id), profile, budget)
     appendHorizontalPolygon(roofBucket, rings, roofY)
     if (profile.includeRoofParapets) {
@@ -1077,6 +1235,7 @@ const appendTransport = (
   const water = bucketFor(buckets, 'water', 'waterways')
   const poles = bucketFor(buckets, 'street-light', 'street light poles')
   const lamps = bucketFor(buckets, 'street-lamp', 'street lamps')
+  const roadLaneByFeatureId = roadLaneAssignmentsFor(tile, center, profile)
   for (const feature of tile.features.lines) {
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
@@ -1099,7 +1258,7 @@ const appendTransport = (
     }
     const priority = roadPriority(feature.className)
     if (priority < profile.minRoadPriority) continue
-    const roadY = roadDepthLaneY(feature, priority)
+    const roadY = roadDepthLaneY(feature, priority, roadLaneByFeatureId.get(feature.id) ?? 0)
     const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
     const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
     appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM)

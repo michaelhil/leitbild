@@ -384,6 +384,44 @@ const outOfBoundsTile = (): SceneryTile => ({
   },
 })
 
+const overlappingSurfaceTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    labels: [],
+    lines: [],
+    polygons: [
+      {
+        id: 'surface:park',
+        sourceLayer: 'landuse',
+        sourceRef: 'landuse:park',
+        kind: 'landuse',
+        className: 'park',
+        rings: [[
+          tilePoint(1100, 1500),
+          tilePoint(2900, 1500),
+          tilePoint(2900, 3100),
+          tilePoint(1100, 3100),
+          tilePoint(1100, 1500),
+        ]],
+      },
+      {
+        id: 'surface:wood',
+        sourceLayer: 'landcover',
+        sourceRef: 'landcover:wood',
+        kind: 'landcover',
+        className: 'wood',
+        rings: [[
+          tilePoint(1700, 1850),
+          tilePoint(3400, 1850),
+          tilePoint(3400, 3400),
+          tilePoint(1700, 3400),
+          tilePoint(1700, 1850),
+        ]],
+      },
+    ],
+  },
+})
+
 describe('drone scenery GLB compiler', () => {
   test('precompiles source-backed scenery into one valid GPU-ready GLB tile', () => {
     const result = compileSceneryGlbTile(testTile)
@@ -490,6 +528,18 @@ describe('drone scenery GLB compiler', () => {
     expect(asphaltYValues.length).toBeGreaterThanOrEqual(2)
     const deltas = asphaltYValues.slice(1).map((value, index) => value - asphaltYValues[index]!)
     expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
+  })
+
+  test('arbitrates overlapping base surfaces into stable material strata', () => {
+    const result = compileSceneryGlbTile(overlappingSurfaceTile())
+    expect(result).not.toBeNull()
+    const parkY = firstYValue(result!.bytes, /managed park grass/)
+    const woodY = firstYValue(result!.bytes, /woodland floor/)
+    const quality = result!.summary.quality
+
+    expect(Math.abs(woodY - parkY)).toBeGreaterThanOrEqual(0.05)
+    expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
   })
 
   test('emits tile quality metrics for systematic scenery cleanup', () => {
