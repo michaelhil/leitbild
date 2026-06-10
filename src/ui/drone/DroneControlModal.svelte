@@ -53,9 +53,9 @@
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
   const cameraOrbitKeyCodes = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const
-  const cameraYawRateRadPerSec = 1.45
-  const cameraPitchRateRadPerSec = 1.05
-  const cameraZoomRateMPerSec = 90
+  const cameraYawRateRadPerSec = 1.08
+  const cameraPitchRateRadPerSec = 0.82
+  const cameraZoomRateMPerSec = 68
   const flightBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'flight')
   const cameraBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'camera')
 

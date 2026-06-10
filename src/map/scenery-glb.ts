@@ -66,14 +66,18 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'road-marking', name: 'baked road markings', color: [0.96, 0.94, 0.78, 1], roughnessFactor: 0.62, doubleSided: true },
   { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
   { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], roughnessFactor: 0.72, doubleSided: true },
+  { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], roughnessFactor: 0.74, doubleSided: true },
   { key: 'building-wall-cool', name: 'cool building wall', color: [0.67, 0.71, 0.73, 1], roughnessFactor: 0.68, doubleSided: true },
   { key: 'building-wall-brick', name: 'brick building wall', color: [0.64, 0.36, 0.28, 1], roughnessFactor: 0.78, doubleSided: true },
   { key: 'building-wall-stone', name: 'stone building wall', color: [0.61, 0.57, 0.51, 1], roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-wall-dark', name: 'dark glass building wall', color: [0.36, 0.41, 0.45, 1], roughnessFactor: 0.52, metallicFactor: 0.02, doubleSided: true },
   { key: 'building-roof', name: 'building roof', color: [0.40, 0.44, 0.49, 1], roughnessFactor: 0.78, doubleSided: true },
   { key: 'building-roof-light', name: 'light building roof', color: [0.64, 0.65, 0.61, 1], roughnessFactor: 0.82, doubleSided: true },
   { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
+  { key: 'building-roof-red', name: 'red tile roof', color: [0.57, 0.25, 0.18, 1], roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], roughnessFactor: 0.74, doubleSided: true },
   { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], roughnessFactor: 0.62, metallicFactor: 0.05 },
-  { key: 'building-window', name: 'building windows', color: [0.42, 0.67, 0.86, 1], roughnessFactor: 0.24, metallicFactor: 0.02, emissiveFactor: [0.02, 0.04, 0.06], doubleSided: true },
+  { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
   { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], roughnessFactor: 0.92 },
   { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], roughnessFactor: 0.98 },
   { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], roughnessFactor: 0.98 },
@@ -671,19 +675,24 @@ const surfaceHeightFor = (kind: string): number => {
 const buildingWallMaterialFor = (
   feature: SceneryTile['features']['polygons'][number],
 ): string => {
-  if (feature.className === 'commercial' || feature.className === 'industrial') return 'building-wall-cool'
-  const bucket = stableHash(`wall:${feature.id}`) % 5
+  if (feature.className === 'commercial') return stableHash(`wall-commercial:${feature.id}`) % 4 === 0 ? 'building-wall-dark' : 'building-wall-cool'
+  if (feature.className === 'industrial') return stableHash(`wall-industrial:${feature.id}`) % 3 === 0 ? 'building-wall-dark' : 'building-wall-cool'
+  const bucket = stableHash(`wall:${feature.id}`) % 8
   if (bucket === 0) return 'building-wall-brick'
   if (bucket === 1) return 'building-wall-stone'
+  if (bucket === 2) return 'building-wall-warm'
+  if (bucket === 3) return 'building-wall-cool'
   return 'building-wall'
 }
 
 const buildingRoofMaterialFor = (
   feature: SceneryTile['features']['polygons'][number],
 ): string => {
-  const bucket = stableHash(`roof:${feature.id}`) % 8
+  const bucket = stableHash(`roof:${feature.id}`) % 12
   if (bucket === 0) return 'building-roof-green'
-  if (bucket <= 3) return 'building-roof-light'
+  if (bucket === 1 || bucket === 2) return 'building-roof-red'
+  if (bucket === 3 || bucket === 4) return 'building-roof-dark'
+  if (bucket <= 7) return 'building-roof-light'
   return 'building-roof'
 }
 

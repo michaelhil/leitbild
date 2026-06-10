@@ -179,7 +179,13 @@ describe('drone scenery GLB compiler', () => {
     const materialNames = usedMaterialNames(json)
 
     expect(materialNames.has('cool building wall')).toBe(true)
-    expect(['building roof', 'light building roof', 'green copper roof'].some(name => materialNames.has(name))).toBe(true)
+    expect([
+      'building roof',
+      'light building roof',
+      'green copper roof',
+      'red tile roof',
+      'dark roof membrane',
+    ].some(name => materialNames.has(name))).toBe(true)
     expect(materialNames.has('rooftop fixtures')).toBe(true)
     expect(materialNames.has('major road asphalt')).toBe(true)
     expect(materialNames.has('baked road markings')).toBe(true)

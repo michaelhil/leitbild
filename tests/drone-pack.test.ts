@@ -269,6 +269,47 @@ describe('drone pack native runtime', () => {
     }
   })
 
+  test('native manual yaw follows the Babylon-positive control sign', async () => {
+    const initial = drone({ id: 'drone:native-manual-yaw', altitudeM: 12, headingDeg: 0 })
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [initial],
+      scenario: {
+        scenarioId: 'scenario:native-manual-yaw',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: [initial],
+        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
+      },
+    })
+    const seen = new Map<string, OperationalObject>()
+    const unsubscribe = connection.subscribe(emission => {
+      for (const event of emission.events) {
+        if (event.type === 'object.upserted') seen.set(event.object.id, event.object)
+      }
+    })
+
+    try {
+      expect((await connection.sendCommand(command(manualControlCommandKind, {
+        droneId: initial.id,
+        axes: { forward: 0, right: 0, vertical: 0, yaw: 1 },
+        inputSource: { kind: 'keyboard', label: 'Keyboard E' },
+        commandTtlMs: 500,
+      }, [initial.id]))).ok).toBe(true)
+      await waitForCondition('positive manual yaw decreases geospatial heading', () => {
+        const current = seen.get(initial.id)
+        if (!current) return false
+        const data = droneData(current)
+        return data.pose.headingDeg > 340 && (data.attitude.yawRateDegPerSec ?? 0) < -1
+      }, { timeoutMs: 800, intervalMs: 20 })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
   test('native runtime executes arm, takeoff, goto, and manual control without external processes', async () => {
     const initial = drone({ id: 'drone:native-loop', altitudeM: 0, headingDeg: 0 })
     const adapter = createDroneNativePackRuntimeAdapter()

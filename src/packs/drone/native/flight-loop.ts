@@ -131,6 +131,18 @@ const updateHeading = (
   return normalizeAngleDeg(currentHeadingDeg + clamp(delta, -maxYawRateDegPerSec * dtSeconds, maxYawRateDegPerSec * dtSeconds))
 }
 
+const manualYawRateDegPerSecFor = (
+  data: DronePackData,
+  axes: DroneManualAxes,
+  dtSeconds: number,
+): number => {
+  const maxYawRate = data.vehicle.flightEnvelope.maxYawRateDegPerSec
+  const currentYawRate = data.attitude.yawRateDegPerSec ?? 0
+  const targetYawRate = -axes.yaw * maxYawRate
+  const maxDelta = maxYawRate * 3.4 * dtSeconds
+  return deadband(limitVelocityChange(currentYawRate, targetYawRate, maxDelta), 0.05)
+}
+
 const updateVelocity = (
   data: DronePackData,
   desired: {
@@ -225,6 +237,7 @@ export const stepDroneObject = (input: {
   let nextData = data
   let desired = { eastMps: 0, northMps: 0, downMps: 0 }
   let headingTargetDeg = data.pose.headingDeg
+  let manualYawRateDegPerSec: number | null = null
   let arrived = false
 
   const inputExpiresAtMs = data.control.inputExpiresAt === undefined ? 0 : Date.parse(data.control.inputExpiresAt)
@@ -233,7 +246,8 @@ export const stepDroneObject = (input: {
 
   if (manualActive) {
     desired = desiredManualVelocity(data, data.control.manualAxes!)
-    headingTargetDeg = normalizeAngleDeg(data.pose.headingDeg + data.control.manualAxes!.yaw * data.vehicle.flightEnvelope.maxYawRateDegPerSec * dtSeconds)
+    manualYawRateDegPerSec = manualYawRateDegPerSecFor(data, data.control.manualAxes!, dtSeconds)
+    headingTargetDeg = normalizeAngleDeg(data.pose.headingDeg + manualYawRateDegPerSec * dtSeconds)
   } else if (!data.arming.armed) {
     desired = { eastMps: 0, northMps: 0, downMps: 0 }
   } else if (mission?.holdUntilMs !== undefined && nowMs < mission.holdUntilMs) {
@@ -320,7 +334,9 @@ export const stepDroneObject = (input: {
   const headingDeg = manualActive
     ? headingTargetDeg
     : updateHeading(nextData.pose.headingDeg, headingTargetDeg, nextData.vehicle.flightEnvelope.maxYawRateDegPerSec, dtSeconds)
-  const yawRateDegPerSec = dtSeconds > 0
+  const yawRateDegPerSec = manualActive && manualYawRateDegPerSec !== null
+    ? manualYawRateDegPerSec
+    : dtSeconds > 0
     ? shortestAngleDeltaDeg(nextData.pose.headingDeg, headingDeg) / dtSeconds
     : 0
   const polygons = geofences.get(object.id)

@@ -4,6 +4,7 @@ import {
   nextDroneWorldStreamDecision,
   sceneryBuildLimitsFor,
   selectSceneryTilesForBuild,
+  shouldPromoteSceneryStage,
   screenSpaceErrorForSceneryTile,
 } from '../src/ui/drone/drone-scene.ts'
 import type { DroneSceneryTileAsset } from '../src/ui/drone/drone-map-world.ts'
@@ -192,5 +193,34 @@ describe('drone scene world streaming', () => {
 
     expect(selected.map(tile => tile.id)).toContain('detail-child')
     expect(selected.map(tile => tile.id)).not.toContain('coarse-parent')
+  })
+
+  test('does not replace a loaded full scene with a sparse near scene while streaming', () => {
+    expect(shouldPromoteSceneryStage({
+      visibleStage: 'full',
+      visibleLoadedTileCount: 20,
+      visibleCenterKey: 'old-grid',
+      candidateStage: 'near',
+      candidateLoadedTileCount: 2,
+      candidateCenterKey: 'next-grid',
+    })).toBe(false)
+
+    expect(shouldPromoteSceneryStage({
+      visibleStage: 'full',
+      visibleLoadedTileCount: 20,
+      visibleCenterKey: 'old-grid',
+      candidateStage: 'full',
+      candidateLoadedTileCount: 1,
+      candidateCenterKey: 'next-grid',
+    })).toBe(false)
+
+    expect(shouldPromoteSceneryStage({
+      visibleStage: 'full',
+      visibleLoadedTileCount: 20,
+      visibleCenterKey: 'old-grid',
+      candidateStage: 'full',
+      candidateLoadedTileCount: 18,
+      candidateCenterKey: 'next-grid',
+    })).toBe(true)
   })
 })

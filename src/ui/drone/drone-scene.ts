@@ -78,6 +78,23 @@ interface VisualPose {
   scale: number
 }
 
+interface CameraPose {
+  readonly position: Vector3
+  readonly target: Vector3
+  readonly fov: number
+  readonly minZ: number
+  readonly maxZ: number
+  readonly mode: DroneSceneViewMode
+}
+
+interface CameraRigState {
+  readonly position: Vector3
+  readonly target: Vector3
+  fov: number
+  mode: DroneSceneViewMode | null
+  initialized: boolean
+}
+
 interface MeshEntry {
   readonly signature: string
   readonly root: TransformNode
@@ -101,9 +118,12 @@ const minCameraDistanceM = 14
 const maxCameraDistanceM = 260
 const minCameraPitchRad = -0.06
 const maxCameraPitchRad = 1.18
+const sceneryStageRank: Readonly<Record<DroneWorldLoadStage | 'base', number>> = {
+  base: 0,
+  near: 1,
+  full: 2,
+}
 let activeDroneSceneCount = 0
-
-const cachedTileContainers = new Map<string, Promise<AssetContainer>>()
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
@@ -146,38 +166,39 @@ const localPointFor = (
 const material = (scene: Scene, name: string, color: string, alpha = 1): StandardMaterial => {
   const value = new StandardMaterial(name, scene)
   value.diffuseColor = Color3.FromHexString(color)
-  value.ambientColor = Color3.FromHexString(color).scale(0.42)
-  value.emissiveColor = Color3.FromHexString(color).scale(0.06)
-  value.specularColor = new Color3(0.08, 0.08, 0.08)
+  value.ambientColor = Color3.FromHexString(color).scale(0.2)
+  value.emissiveColor = Color3.FromHexString(color).scale(0.015)
+  value.specularColor = new Color3(0.12, 0.12, 0.12)
   value.alpha = alpha
   return value
 }
 
 const configureSceneColorPipeline = (scene: Scene): void => {
-  scene.clearColor = Color4.FromHexString('#cbd5e1ff')
-  scene.ambientColor = Color3.FromHexString('#e2e8f0')
-  scene.environmentIntensity = 0.72
+  scene.clearColor = Color4.FromHexString('#abc7dcff')
+  scene.ambientColor = Color3.FromHexString('#b8c8d6')
+  scene.environmentIntensity = 0.9
   scene.imageProcessingConfiguration.toneMappingEnabled = true
   scene.imageProcessingConfiguration.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL
-  scene.imageProcessingConfiguration.exposure = 0.82
-  scene.imageProcessingConfiguration.contrast = 1.06
+  scene.imageProcessingConfiguration.exposure = 0.92
+  scene.imageProcessingConfiguration.contrast = 1.16
   scene.fogMode = Scene.FOGMODE_LINEAR
-  scene.fogColor = Color3.FromHexString('#cbd5e1')
-  scene.fogStart = 2_200
-  scene.fogEnd = 6_500
+  scene.fogColor = Color3.FromHexString('#b5c9d9')
+  scene.fogStart = 2_800
+  scene.fogEnd = 7_400
 }
 
 const tuneImportedSceneryMaterial = (mesh: AbstractMesh): void => {
   const imported = mesh.material
   if (imported instanceof PBRMaterial) {
     imported.metallic = 0
-    imported.roughness = Math.max(imported.roughness ?? 0.86, 0.86)
-    imported.environmentIntensity = Math.min(imported.environmentIntensity ?? 0.55, 0.55)
+    imported.roughness = Math.max(imported.roughness ?? 0.8, 0.78)
+    imported.environmentIntensity = Math.min(imported.environmentIntensity ?? 0.72, 0.82)
     return
   }
   if (imported instanceof StandardMaterial) {
-    imported.specularColor = new Color3(0.03, 0.03, 0.03)
-    imported.emissiveColor = imported.diffuseColor.scale(0.03)
+    imported.ambientColor = imported.diffuseColor.scale(0.18)
+    imported.specularColor = new Color3(0.1, 0.1, 0.1)
+    imported.emissiveColor = imported.diffuseColor.scale(0.01)
   }
 }
 
@@ -314,6 +335,7 @@ export interface DroneWorldLoadSpec {
 
 interface BuiltWorldNode {
   readonly root: TransformNode
+  readonly stage: DroneWorldLoadStage
   readonly requestedTileCount: number
   readonly selectedTileCount: number
   readonly loadedTileCount: number
@@ -338,6 +360,11 @@ interface SceneryBuildLimits {
 interface SceneryBuildTiming {
   readonly tileLoadTimeoutMs: number
   readonly stageBuildBudgetMs: number
+}
+
+interface SceneTileContainerCache {
+  readonly load: (tile: DroneSceneryTileAsset) => Promise<AssetContainer>
+  readonly dispose: () => void
 }
 
 export const droneWorldLoadSpecsFor = (
@@ -470,11 +497,11 @@ const createTerrainGround = (
     data.uvs = uvs
     VertexData.ComputeNormals(positions, indices, data.normals = [])
     data.applyToMesh(mesh)
-    mesh.material = material(scene, 'terrain-ground-material', '#647d56')
+    mesh.material = material(scene, 'terrain-ground-material', '#5d7d52')
     return mesh
   }
   const mesh = MeshBuilder.CreateGround('flat-ground', { width: radiusM * 2.8, height: radiusM * 2.8, subdivisions: 1 }, scene)
-  mesh.material = material(scene, 'flat-ground-material', '#647d56')
+  mesh.material = material(scene, 'flat-ground-material', '#5d7d52')
   mesh.position.y = -0.12
   return mesh
 }
@@ -486,7 +513,7 @@ const createBaseWorld = (
 ): TransformNode => {
   const root = new TransformNode('babylon-drone-world', scene)
   const sky = MeshBuilder.CreateSphere('sky-dome', { diameter: radiusM * 7, segments: 32 }, scene)
-  const skyMaterial = material(scene, 'sky-dome-material', '#b9d8f0')
+  const skyMaterial = material(scene, 'sky-dome-material', '#a9cce6')
   skyMaterial.disableLighting = true
   skyMaterial.backFaceCulling = false
   sky.material = skyMaterial
@@ -495,7 +522,7 @@ const createBaseWorld = (
   const ground = createTerrainGround(scene, radiusM, terrain)
   ground.parent = root
   const hills = MeshBuilder.CreateTorus('distant-hills', { diameter: radiusM * 3, thickness: 80, tessellation: 96 }, scene)
-  hills.material = material(scene, 'distant-hills-material', '#7f8b99')
+  hills.material = material(scene, 'distant-hills-material', '#6f8292')
   hills.position.y = -20
   hills.parent = root
   for (const mesh of root.getChildMeshes(false)) freezeStaticMesh(mesh)
@@ -507,46 +534,49 @@ const tileContainerCacheKey = (
 ): string =>
   `${tile.recipeId}:${tile.z}/${tile.x}/${tile.y}:${tile.byteLength}`
 
-const loadTileContainer = async (
+const createSceneTileContainerCache = (
   scene: Scene,
-  tile: DroneSceneryTileAsset,
-): Promise<AssetContainer> => {
-  const key = tileContainerCacheKey(tile)
-  const cached = cachedTileContainers.get(key)
-  if (cached) {
-    cachedTileContainers.delete(key)
-    cachedTileContainers.set(key, cached)
-    return await cached
-  }
-  const promise = LoadAssetContainerAsync(tile.url, scene)
-  cachedTileContainers.set(key, promise)
-  while (cachedTileContainers.size > maxCachedTileContainers) {
-    const oldestKey = cachedTileContainers.keys().next().value
-    if (typeof oldestKey !== 'string') break
-    const evicted = cachedTileContainers.get(oldestKey)
-    cachedTileContainers.delete(oldestKey)
-    const disposeEvicted = async (): Promise<void> => {
-      try {
-        const container = await evicted
-        container?.dispose()
-      } catch (err) {
-        console.warn('Failed to dispose evicted Babylon scenery tile container', err)
-      }
+): SceneTileContainerCache => {
+  const cachedTileContainers = new Map<string, Promise<AssetContainer>>()
+  const load = async (tile: DroneSceneryTileAsset): Promise<AssetContainer> => {
+    const key = tileContainerCacheKey(tile)
+    const cached = cachedTileContainers.get(key)
+    if (cached) {
+      cachedTileContainers.delete(key)
+      cachedTileContainers.set(key, cached)
+      return await cached
     }
-    void disposeEvicted()
+    const promise = (async (): Promise<AssetContainer> => {
+      try {
+        return await LoadAssetContainerAsync(tile.url, scene)
+      } catch (err) {
+        cachedTileContainers.delete(key)
+        throw err
+      }
+    })()
+    cachedTileContainers.set(key, promise)
+    while (cachedTileContainers.size > maxCachedTileContainers) {
+      const oldestKey = cachedTileContainers.keys().next().value
+      if (typeof oldestKey !== 'string') break
+      cachedTileContainers.delete(oldestKey)
+    }
+    return await promise
   }
-  return await promise
-}
-
-const disposeContainerWhenReady = async (
-  promise: Promise<AssetContainer>,
-): Promise<void> => {
-  try {
-    const container = await promise
-    container.dispose()
-  } catch (err) {
-    console.warn('Skipped Babylon scenery tile did not finish loading', err)
+  const dispose = (): void => {
+    for (const promise of cachedTileContainers.values()) {
+      const disposeWhenReady = async (): Promise<void> => {
+        try {
+          const container = await promise
+          container.dispose()
+        } catch (err) {
+          console.warn('Failed to dispose Babylon scenery tile container', err)
+        }
+      }
+      void disposeWhenReady()
+    }
+    cachedTileContainers.clear()
   }
+  return { load, dispose }
 }
 
 const withTimeout = async <T>(
@@ -719,9 +749,10 @@ const createWorldNode = async (
   scene: Scene,
   stage: DroneWorldLoadStage,
   snapshot: DroneMapWorldSnapshot,
+  tileCache: SceneTileContainerCache,
   terrain?: DroneTerrainModel,
 ): Promise<BuiltWorldNode> => {
-  const root = createBaseWorld(scene, snapshot.radiusM, terrain)
+  const root = new TransformNode(`babylon-drone-scenery:${stage}`, scene)
   const timing = sceneryBuildTimingFor(stage)
   const tileLoadDeadlineMs = performance.now() + timing.stageBuildBudgetMs
   const selectedTiles = selectSceneryTilesForBuild(snapshot.tiles, sceneryBuildLimitsFor(stage))
@@ -730,7 +761,7 @@ const createWorldNode = async (
       console.warn(`Skipping Babylon scenery tile ${tile.id}; stage tile budget exhausted`)
       return null
     }
-    const tilePromise = loadTileContainer(scene, tile)
+    const tilePromise = tileCache.load(tile)
     try {
       const remainingBudgetMs = Math.max(1, tileLoadDeadlineMs - performance.now())
       const container = await withTimeout(
@@ -753,8 +784,6 @@ const createWorldNode = async (
       tileRoot.freezeWorldMatrix()
       return { root: tileRoot, tile }
     } catch (err) {
-      cachedTileContainers.delete(tileContainerCacheKey(tile))
-      void disposeContainerWhenReady(tilePromise)
       console.warn(`Skipping Babylon scenery tile ${tile.id}`, err)
       return null
     }
@@ -783,6 +812,7 @@ const createWorldNode = async (
   }
   return {
     root,
+    stage,
     requestedTileCount: snapshot.tileCount,
     selectedTileCount: selectedTiles.length,
     loadedTileCount: loadedResults.length,
@@ -791,35 +821,65 @@ const createWorldNode = async (
   }
 }
 
+const disposeDynamicWorldNode = (
+  node: TransformNode | null,
+): void => {
+  node?.dispose(false, false)
+}
+
+export const shouldPromoteSceneryStage = (config: {
+  readonly visibleStage: DroneWorldLoadStage | 'base'
+  readonly visibleLoadedTileCount: number
+  readonly visibleCenterKey: string
+  readonly candidateStage: DroneWorldLoadStage
+  readonly candidateLoadedTileCount: number
+  readonly candidateCenterKey: string
+}): boolean => {
+  if (config.candidateLoadedTileCount <= 0) return false
+  const candidateRank = sceneryStageRank[config.candidateStage]
+  const visibleRank = sceneryStageRank[config.visibleStage]
+  if (config.visibleStage === 'base') return true
+  if (config.candidateCenterKey !== config.visibleCenterKey) {
+    const minimumUsefulTileCount = Math.max(4, Math.ceil(config.visibleLoadedTileCount * 0.25))
+    return config.candidateStage === 'full' && config.candidateLoadedTileCount >= minimumUsefulTileCount
+  }
+  if (candidateRank > visibleRank) return true
+  if (candidateRank < visibleRank) return false
+  return config.candidateLoadedTileCount >= config.visibleLoadedTileCount
+}
+
 const cameraTargetFor = (
   meshes: ReadonlyMap<string, MeshEntry>,
   focusDroneId: string,
 ): Vector3 => meshes.get(focusDroneId)?.visual.position ?? new Vector3(0, 28, -42)
 
-const updateCamera = (
-  camera: UniversalCamera,
+const desiredCameraPoseFor = (
   target: Vector3,
   viewMode: DroneSceneViewMode,
   focus: MeshEntry | undefined,
   orbit: DroneSceneCameraOrbit,
-): void => {
+): CameraPose => {
   if (viewMode === '2d') {
-    camera.position.copyFrom(new Vector3(target.x, Math.max(450, target.y + 520), target.z - 0.01))
-    camera.setTarget(target)
-    camera.fov = 0.52
-    camera.minZ = 0.5
-    camera.maxZ = 8_000
-    return
+    return {
+      position: new Vector3(target.x, Math.max(450, target.y + 520), target.z - 0.01),
+      target,
+      fov: 0.52,
+      minZ: 0.5,
+      maxZ: 8_000,
+      mode: viewMode,
+    }
   }
   if (viewMode === 'fpv' && focus) {
     const yaw = focus.visual.rotation.y
     const offset = new Vector3(Math.sin(yaw) * -1.2, 0.45, Math.cos(yaw) * -1.2)
-    camera.position.copyFrom(focus.visual.position.add(offset))
-    camera.setTarget(focus.visual.position.add(new Vector3(Math.sin(yaw) * 80, -2, Math.cos(yaw) * 80)))
-    camera.fov = 1.1
-    camera.minZ = 0.08
-    camera.maxZ = 6_000
-    return
+    return {
+      position: focus.visual.position.add(offset),
+      target: focus.visual.position.add(new Vector3(Math.sin(yaw) * 80, -2, Math.cos(yaw) * 80)),
+      fov: 1.1,
+      minZ: 0.08,
+      maxZ: 6_000,
+      mode: viewMode,
+    }
   }
   const baseYaw = focus?.visual.rotation.y ?? 0
   const yaw = baseYaw + orbit.yawOffsetRad
@@ -838,11 +898,36 @@ const updateCamera = (
     target.y + 5.5,
     target.z + forward.z * 18,
   )
-  camera.position.copyFrom(cameraPosition)
-  camera.setTarget(lookTarget)
-  camera.fov = 0.72
-  camera.minZ = 0.2
-  camera.maxZ = 6_000
+  return {
+    position: cameraPosition,
+    target: lookTarget,
+    fov: 0.72,
+    minZ: 0.2,
+    maxZ: 6_000,
+    mode: viewMode,
+  }
+}
+
+const applyCameraPose = (
+  camera: UniversalCamera,
+  rig: CameraRigState,
+  desired: CameraPose,
+  dtSeconds: number,
+): void => {
+  const modeChanged = rig.mode !== desired.mode
+  const distance = Vector3.Distance(rig.position, desired.position)
+  const shouldSnap = !rig.initialized || modeChanged || distance > 900 || desired.mode === '2d'
+  const alpha = shouldSnap ? 1 : 1 - Math.exp(-dtSeconds * (desired.mode === 'fpv' ? 11 : 7.5))
+  rig.position.copyFrom(Vector3.Lerp(rig.position, desired.position, alpha))
+  rig.target.copyFrom(Vector3.Lerp(rig.target, desired.target, alpha))
+  rig.fov += (desired.fov - rig.fov) * alpha
+  rig.mode = desired.mode
+  rig.initialized = true
+  camera.position.copyFrom(rig.position)
+  camera.setTarget(rig.target)
+  camera.fov = rig.fov
+  camera.minZ = desired.minZ
+  camera.maxZ = desired.maxZ
 }
 
 export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => {
@@ -862,21 +947,33 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   scene.autoClearDepthAndStencil = true
   const camera = new UniversalCamera('drone-camera', new Vector3(0, 90, -120), scene)
   camera.fov = 0.84
-  new HemisphericLight('ambient', new Vector3(0, 1, 0), scene).intensity = 0.74
+  new HemisphericLight('ambient', new Vector3(0, 1, 0), scene).intensity = 0.48
   const sun = new DirectionalLight('sun', new Vector3(-0.45, -1, -0.35), scene)
-  sun.intensity = 0.86
+  sun.intensity = 1.34
+  const tileCache = createSceneTileContainerCache(scene)
   const performanceTracker = createDroneFramePerformanceTracker()
   const objectMeshes = new Map<string, MeshEntry>()
-  let worldNode: TransformNode | null = createBaseWorld(scene, nearWorldRadiusM)
+  let baseWorldNode: TransformNode | null = createBaseWorld(scene, nearWorldRadiusM)
+  let sceneryLayerNode: TransformNode | null = null
   let worldCenter: { readonly lon: number; readonly lat: number } | null = null
   let worldCenterKey = ''
   let pendingWorldCenterKey = ''
   let worldLoadGeneration = 0
+  let visibleWorldStage: DroneWorldLoadStage | 'base' = 'base'
+  let visibleWorldLoadedTileCount = 0
+  let visibleWorldCoverage: DroneMapWorldSnapshot['coverage'] = coverageForSceneryTiles([])
   let destroyed = false
   let renderQuality: DroneScenePerformanceSnapshot['quality'] = 'balanced'
   let pixelRatio = Math.min(window.devicePixelRatio || 1, maxDroneScenePixelRatio)
   let lastFrameAt = performance.now()
   let readyNotified = false
+  const cameraRig: CameraRigState = {
+    position: camera.position.clone(),
+    target: Vector3.Zero(),
+    fov: camera.fov,
+    mode: null,
+    initialized: false,
+  }
 
   performanceTracker.updateWorld({
     sceneryStage: 'base',
@@ -912,54 +1009,95 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     config.onReady?.()
   }
 
-  const replaceWorld = (next: TransformNode): void => {
-    const previous = worldNode
-    worldNode = next
-    previous?.dispose(false, true)
+  const promoteWorld = (config: {
+    readonly base: TransformNode
+    readonly layer: BuiltWorldNode
+    readonly center: { readonly lon: number; readonly lat: number }
+    readonly centerKey: string
+  }): void => {
+    const previousBase = baseWorldNode
+    const previousLayer = sceneryLayerNode
+    baseWorldNode = config.base
+    sceneryLayerNode = config.layer.root
+    worldCenter = config.center
+    worldCenterKey = config.centerKey
+    visibleWorldStage = config.layer.stage
+    visibleWorldLoadedTileCount = config.layer.loadedTileCount
+    visibleWorldCoverage = config.layer.coverage
+    disposeDynamicWorldNode(previousLayer)
+    disposeDynamicWorldNode(previousBase)
   }
+
+  const shouldPromoteWorld = (
+    candidate: BuiltWorldNode,
+    centerKey: string,
+  ): boolean =>
+    shouldPromoteSceneryStage({
+      visibleStage: visibleWorldStage,
+      visibleLoadedTileCount: visibleWorldLoadedTileCount,
+      visibleCenterKey: worldCenterKey,
+      candidateStage: candidate.stage,
+      candidateLoadedTileCount: candidate.loadedTileCount,
+      candidateCenterKey: centerKey,
+    })
 
   const loadWorld = async (decision: DroneWorldStreamDecision): Promise<void> => {
     const generation = ++worldLoadGeneration
     pendingWorldCenterKey = decision.key
+    let promotedAny = false
     try {
       for (const spec of droneWorldLoadSpecsFor(decision.reason)) {
         const loadStarted = performance.now()
         config.onWorldStatus?.(`Loading ${spec.stage} Babylon scenery`)
         const result = await loadDroneMapWorldForScene({ center: decision.center, radiusM: spec.radiusM, zoom: spec.zoom, zooms: spec.zooms })
         const loadedAt = performance.now()
-        const next = await createWorldNode(scene, spec.stage, result.snapshot, result.terrainModel)
+        const next = await createWorldNode(scene, spec.stage, result.snapshot, tileCache, result.terrainModel)
+        const nextBase = createBaseWorld(scene, result.snapshot.radiusM, result.terrainModel)
         const builtAt = performance.now()
         if (destroyed || generation !== worldLoadGeneration) {
-          next.root.dispose(false, true)
+          disposeDynamicWorldNode(next.root)
+          disposeDynamicWorldNode(nextBase)
           return
         }
-        replaceWorld(next.root)
-        worldCenter = decision.center
-        worldCenterKey = decision.key
-        pendingWorldCenterKey = ''
+        const promoted = shouldPromoteWorld(next, decision.key)
+        if (promoted) {
+          promoteWorld({
+            base: nextBase,
+            layer: next,
+            center: decision.center,
+            centerKey: decision.key,
+          })
+          pendingWorldCenterKey = ''
+          promotedAny = true
+        } else {
+          disposeDynamicWorldNode(next.root)
+          disposeDynamicWorldNode(nextBase)
+        }
         performanceTracker.updateWorld({
-          sceneryStage: spec.stage,
+          sceneryStage: promoted ? spec.stage : visibleWorldStage,
           scenerySource: result.snapshot.scenerySource,
           loadMs: loadedAt - loadStarted,
           buildMs: builtAt - loadedAt,
           source: result.source,
-          tiles: next.loadedTileCount,
-          polygons: next.coverage.selected.polygons,
-          lines: next.coverage.selected.lines,
-          points: next.coverage.selected.points,
-          buildings: next.coverage.selected.buildings,
-          roads: next.coverage.selected.roads,
-          water: next.coverage.selected.waterPolygons + next.coverage.selected.waterways,
-          vegetation: next.coverage.selected.vegetationPolygons,
-          roadLabels: next.coverage.selected.roadLabels,
+          tiles: promoted ? next.loadedTileCount : visibleWorldLoadedTileCount,
+          polygons: visibleWorldCoverage.selected.polygons,
+          lines: visibleWorldCoverage.selected.lines,
+          points: visibleWorldCoverage.selected.points,
+          buildings: visibleWorldCoverage.selected.buildings,
+          roads: visibleWorldCoverage.selected.roads,
+          water: visibleWorldCoverage.selected.waterPolygons + visibleWorldCoverage.selected.waterways,
+          vegetation: visibleWorldCoverage.selected.vegetationPolygons,
+          roadLabels: visibleWorldCoverage.selected.roadLabels,
           terrain: result.terrain.status,
           terrainSurface: result.terrainModel.kind === 'dem' ? 'dem' : 'flat',
         })
         const attemptText = next.selectedTileCount > 0 && next.selectedTileCount < next.requestedTileCount ? ` · ${next.selectedTileCount} attempted` : ''
         const skippedText = next.skippedTileCount > 0 ? ` · ${next.skippedTileCount} deferred` : ''
-        config.onWorldStatus?.(`${spec.stage} Babylon scenery ready · ${next.loadedTileCount}/${next.requestedTileCount} tiles${attemptText}${skippedText}`)
+        const promotionText = promoted ? 'ready' : `kept ${visibleWorldStage} scene`
+        config.onWorldStatus?.(`${spec.stage} Babylon scenery ${promotionText} · ${next.loadedTileCount}/${next.requestedTileCount} tiles${attemptText}${skippedText}`)
         notifyReadyOnce()
       }
+      if (!promotedAny && generation === worldLoadGeneration) pendingWorldCenterKey = ''
     } catch (err) {
       pendingWorldCenterKey = ''
       config.onError?.(err instanceof Error ? err.message : String(err))
@@ -1040,17 +1178,18 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     })
     if (decision) {
       pendingWorldCenterKey = decision.key
-      if (decision.reason === 'initial' && worldCenter === null) {
-        worldCenter = decision.center
-        worldCenterKey = decision.key
-      }
       void loadWorld(decision)
     }
     const activeCenter = worldCenter ?? desiredCenter
     updateObjects(objects, activeCenter, nowMs, dtSeconds)
     const focusId = config.getFocusDroneId()
     const focus = objectMeshes.get(focusId)
-    updateCamera(camera, cameraTargetFor(objectMeshes, focusId), config.getViewMode(), focus, config.getCameraOrbit())
+    applyCameraPose(camera, cameraRig, desiredCameraPoseFor(
+      cameraTargetFor(objectMeshes, focusId),
+      config.getViewMode(),
+      focus,
+      config.getCameraOrbit(),
+    ), dtSeconds)
     const renderStarted = performance.now()
     scene.render()
     notifyReadyOnce()
@@ -1066,7 +1205,9 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       engine.stopRenderLoop()
       for (const entry of objectMeshes.values()) entry.root.dispose(false, true)
       objectMeshes.clear()
-      worldNode?.dispose(false, true)
+      disposeDynamicWorldNode(sceneryLayerNode)
+      disposeDynamicWorldNode(baseWorldNode)
+      tileCache.dispose()
       scene.dispose()
       engine.dispose()
       canvas.remove()
