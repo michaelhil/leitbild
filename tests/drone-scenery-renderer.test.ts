@@ -441,6 +441,46 @@ const hairpinRoadTile = (): SceneryTile => ({
   },
 })
 
+const parallelRoadShoulderTile = (): SceneryTile => ({
+  ...testTile,
+  features: {
+    polygons: [],
+    labels: [],
+    lines: [
+      {
+        id: 'parallel-road:a',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:parallel-road-a',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(1000, 1000),
+          tilePoint(2500, 1000),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+      {
+        id: 'parallel-road:b',
+        sourceLayer: 'transportation',
+        sourceRef: 'osm:way:parallel-road-b',
+        kind: 'road',
+        className: 'primary',
+        isBridge: false,
+        isTunnel: false,
+        path: [
+          tilePoint(1000, 1070),
+          tilePoint(2500, 1070),
+        ],
+        widthM: 16,
+        verticalOffsetM: 0,
+      },
+    ],
+  },
+})
+
 const outOfBoundsTile = (): SceneryTile => ({
   ...testTile,
   features: {
@@ -640,6 +680,16 @@ describe('drone scenery GLB compiler', () => {
 
   test('keeps short sharp road folds from emitting same-plane self-overlap', () => {
     const result = compileSceneryGlbTile(hairpinRoadTile())
+    expect(result).not.toBeNull()
+    const quality = result!.summary.quality
+
+    expect(quality?.closeHorizontalOverlapCount).toBe(0)
+    expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
+    expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
+  })
+
+  test('allocates road lanes by full shoulder footprint, not only asphalt fill width', () => {
+    const result = compileSceneryGlbTile(parallelRoadShoulderTile())
     expect(result).not.toBeNull()
     const quality = result!.summary.quality
 

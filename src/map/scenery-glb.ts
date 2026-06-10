@@ -1013,6 +1013,14 @@ interface AssignedRoadLaneShape extends RoadLaneShape {
 const priorityLiftForRoad = (priority: number): number =>
   priority >= 70 ? 0.08 : priority >= 60 ? 0.04 : 0
 
+const roadCasingOuterWidthM = (
+  widthM: number,
+): number => widthM + Math.max(3.5, widthM * 0.16)
+
+const roadShoulderOuterWidthM = (
+  widthM: number,
+): number => widthM + Math.max(6.5, widthM * 0.28)
+
 const boundsForPath = (
   path: ReadonlyArray<LocalPoint>,
   paddingM: number,
@@ -1128,7 +1136,7 @@ const roadLaneAssignmentsFor = (
     return [{
       id: feature.id,
       path,
-      widthM: feature.widthM,
+      widthM: roadShoulderOuterWidthM(feature.widthM),
       deckY: feature.verticalOffsetM + priorityLiftForRoad(priority),
       priority,
     }]
@@ -1416,8 +1424,8 @@ const appendTransport = (
     const priority = roadPriority(feature.className)
     if (priority < profile.minRoadPriority) continue
     const roadY = roadDepthLaneY(feature, priority, roadLaneByFeatureId.get(feature.id) ?? 0)
-    const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
-    const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
+    const casingOuterWidthM = roadCasingOuterWidthM(feature.widthM)
+    const shoulderOuterWidthM = roadShoulderOuterWidthM(feature.widthM)
     appendRibbon(shoulder, path, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
     appendRibbon(casing, path, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
     appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
