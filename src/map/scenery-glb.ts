@@ -17,10 +17,13 @@ interface Vec3 {
   readonly z: number
 }
 
+type SceneryDepthPolicy = 'base-surface' | 'integrated-facade' | 'raised-geometry'
+
 interface MaterialSpec {
   readonly key: string
   readonly name: string
   readonly color: readonly [number, number, number, number]
+  readonly depthPolicy: SceneryDepthPolicy
   readonly metallicFactor?: number
   readonly roughnessFactor?: number
   readonly doubleSided?: boolean
@@ -118,39 +121,39 @@ const lodProfileForZoom = (
 }
 
 const materials: ReadonlyArray<MaterialSpec> = [
-  { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], roughnessFactor: 0.94, doubleSided: true },
-  { key: 'ground-park', name: 'managed park grass', color: [0.28, 0.55, 0.25, 1], roughnessFactor: 0.96, doubleSided: true },
-  { key: 'ground-field', name: 'field and farmland ground', color: [0.48, 0.54, 0.30, 1], roughnessFactor: 0.96, doubleSided: true },
-  { key: 'ground-wetland', name: 'wetland ground', color: [0.26, 0.42, 0.35, 1], roughnessFactor: 0.98, doubleSided: true },
-  { key: 'ground-urban', name: 'urban ground', color: [0.58, 0.60, 0.55, 1], roughnessFactor: 0.9, doubleSided: true },
-  { key: 'ground-wood', name: 'woodland floor', color: [0.18, 0.42, 0.22, 1], roughnessFactor: 0.96, doubleSided: true },
-  { key: 'water', name: 'water surface', color: [0.08, 0.49, 0.72, 1], roughnessFactor: 0.36, metallicFactor: 0.02, doubleSided: true },
-  { key: 'road-shoulder', name: 'road shoulder', color: [0.70, 0.67, 0.58, 1], roughnessFactor: 0.82, doubleSided: true },
-  { key: 'road-casing', name: 'road dark casing', color: [0.12, 0.14, 0.17, 1], roughnessFactor: 0.78, doubleSided: true },
-  { key: 'road-fill', name: 'road asphalt', color: [0.38, 0.41, 0.42, 1], roughnessFactor: 0.72, doubleSided: true },
-  { key: 'road-major-fill', name: 'major road asphalt', color: [0.30, 0.34, 0.38, 1], roughnessFactor: 0.7, doubleSided: true },
-  { key: 'road-marking', name: 'baked road markings', color: [0.96, 0.94, 0.78, 1], roughnessFactor: 0.62, doubleSided: true },
-  { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
-  { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], roughnessFactor: 0.72, doubleSided: true },
-  { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], roughnessFactor: 0.74, doubleSided: true },
-  { key: 'building-wall-cool', name: 'cool building wall', color: [0.67, 0.71, 0.73, 1], roughnessFactor: 0.68, doubleSided: true },
-  { key: 'building-wall-brick', name: 'brick building wall', color: [0.64, 0.36, 0.28, 1], roughnessFactor: 0.78, doubleSided: true },
-  { key: 'building-wall-stone', name: 'stone building wall', color: [0.61, 0.57, 0.51, 1], roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-wall-dark', name: 'dark glass building wall', color: [0.36, 0.41, 0.45, 1], roughnessFactor: 0.52, metallicFactor: 0.02, doubleSided: true },
-  { key: 'building-roof', name: 'building roof', color: [0.40, 0.44, 0.49, 1], roughnessFactor: 0.78, doubleSided: true },
-  { key: 'building-roof-light', name: 'light building roof', color: [0.64, 0.65, 0.61, 1], roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
-  { key: 'building-roof-red', name: 'red tile roof', color: [0.57, 0.25, 0.18, 1], roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], roughnessFactor: 0.74, doubleSided: true },
-  { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], roughnessFactor: 0.62, metallicFactor: 0.05 },
-  { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
-  { key: 'building-trim', name: 'building facade trim', color: [0.42, 0.45, 0.46, 1], roughnessFactor: 0.76, doubleSided: true },
-  { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], roughnessFactor: 0.92 },
-  { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], roughnessFactor: 0.98 },
-  { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], roughnessFactor: 0.98 },
-  { key: 'street-light', name: 'street light poles', color: [0.36, 0.40, 0.45, 1], roughnessFactor: 0.64, metallicFactor: 0.2 },
-  { key: 'street-lamp', name: 'street lamp glass', color: [1.0, 0.82, 0.36, 1], roughnessFactor: 0.3, emissiveFactor: [0.45, 0.32, 0.08] },
-  { key: 'poi', name: 'poi beacon', color: [0.16, 0.69, 0.95, 1], roughnessFactor: 0.36, emissiveFactor: [0.02, 0.18, 0.32] },
+  { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.94, doubleSided: true },
+  { key: 'ground-park', name: 'managed park grass', color: [0.28, 0.55, 0.25, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
+  { key: 'ground-field', name: 'field and farmland ground', color: [0.48, 0.54, 0.30, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
+  { key: 'ground-wetland', name: 'wetland ground', color: [0.26, 0.42, 0.35, 1], depthPolicy: 'base-surface', roughnessFactor: 0.98, doubleSided: true },
+  { key: 'ground-urban', name: 'urban ground', color: [0.58, 0.60, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.9, doubleSided: true },
+  { key: 'ground-wood', name: 'woodland floor', color: [0.18, 0.42, 0.22, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
+  { key: 'water', name: 'water surface', color: [0.08, 0.49, 0.72, 1], depthPolicy: 'base-surface', roughnessFactor: 0.36, metallicFactor: 0.02, doubleSided: true },
+  { key: 'road-shoulder', name: 'road shoulder', color: [0.70, 0.67, 0.58, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
+  { key: 'road-casing', name: 'road dark casing', color: [0.12, 0.14, 0.17, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
+  { key: 'road-fill', name: 'road asphalt', color: [0.38, 0.41, 0.42, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
+  { key: 'road-major-fill', name: 'major road asphalt', color: [0.30, 0.34, 0.38, 1], depthPolicy: 'base-surface', roughnessFactor: 0.7, doubleSided: true },
+  { key: 'road-marking', name: 'baked road markings', color: [0.96, 0.94, 0.78, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, doubleSided: true },
+  { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
+  { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
+  { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
+  { key: 'building-wall-cool', name: 'cool building wall', color: [0.67, 0.71, 0.73, 1], depthPolicy: 'base-surface', roughnessFactor: 0.68, doubleSided: true },
+  { key: 'building-wall-brick', name: 'brick building wall', color: [0.64, 0.36, 0.28, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
+  { key: 'building-wall-stone', name: 'stone building wall', color: [0.61, 0.57, 0.51, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-wall-dark', name: 'dark glass building wall', color: [0.36, 0.41, 0.45, 1], depthPolicy: 'base-surface', roughnessFactor: 0.52, metallicFactor: 0.02, doubleSided: true },
+  { key: 'building-roof', name: 'building roof', color: [0.40, 0.44, 0.49, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
+  { key: 'building-roof-light', name: 'light building roof', color: [0.64, 0.65, 0.61, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], depthPolicy: 'base-surface', roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
+  { key: 'building-roof-red', name: 'red tile roof', color: [0.57, 0.25, 0.18, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
+  { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
+  { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, metallicFactor: 0.05 },
+  { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
+  { key: 'building-trim', name: 'building facade trim', color: [0.42, 0.45, 0.46, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.76, doubleSided: true },
+  { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.92 },
+  { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
+  { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
+  { key: 'street-light', name: 'street light poles', color: [0.36, 0.40, 0.45, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.64, metallicFactor: 0.2 },
+  { key: 'street-lamp', name: 'street lamp glass', color: [1.0, 0.82, 0.36, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.3, emissiveFactor: [0.45, 0.32, 0.08] },
+  { key: 'poi', name: 'poi beacon', color: [0.16, 0.69, 0.95, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.36, emissiveFactor: [0.02, 0.18, 0.32] },
 ]
 
 const stableHash = (value: string): number => {
@@ -407,6 +410,65 @@ const appendHorizontalPolygon = (
   }
 }
 
+const appendWallSpan = (
+  bucket: MeshBucket,
+  start: LocalPoint,
+  ux: number,
+  uz: number,
+  u0: number,
+  u1: number,
+  y0: number,
+  y1: number,
+  normal: Vec3,
+): void => {
+  if (u1 - u0 < 0.035 || y1 - y0 < 0.035) return
+  appendQuad(
+    bucket,
+    { x: start.x + ux * u0, y: y0, z: start.z + uz * u0 },
+    { x: start.x + ux * u1, y: y0, z: start.z + uz * u1 },
+    { x: start.x + ux * u1, y: y1, z: start.z + uz * u1 },
+    { x: start.x + ux * u0, y: y1, z: start.z + uz * u0 },
+    normal,
+  )
+}
+
+const appendFacadeModule = (
+  wallBucket: MeshBucket,
+  windowBucket: MeshBucket,
+  start: LocalPoint,
+  ux: number,
+  uz: number,
+  u0: number,
+  u1: number,
+  y0: number,
+  y1: number,
+  normal: Vec3,
+  hasWindow: boolean,
+): void => {
+  if (!hasWindow) {
+    appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
+    return
+  }
+  const width = u1 - u0
+  const height = y1 - y0
+  const windowWidth = Math.min(1.45, width * 0.54)
+  const windowHeight = Math.min(0.92, height * 0.48)
+  if (windowWidth < 0.35 || windowHeight < 0.28) {
+    appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, y1, normal)
+    return
+  }
+  const windowU0 = (u0 + u1 - windowWidth) / 2
+  const windowU1 = windowU0 + windowWidth
+  const windowY0 = y0 + Math.max(0.22, (height - windowHeight) * 0.45)
+  const windowY1 = windowY0 + windowHeight
+
+  appendWallSpan(wallBucket, start, ux, uz, u0, u1, y0, windowY0, normal)
+  appendWallSpan(wallBucket, start, ux, uz, u0, u1, windowY1, y1, normal)
+  appendWallSpan(wallBucket, start, ux, uz, u0, windowU0, windowY0, windowY1, normal)
+  appendWallSpan(wallBucket, start, ux, uz, windowU1, u1, windowY0, windowY1, normal)
+  appendWallSpan(windowBucket, start, ux, uz, windowU0, windowU1, windowY0, windowY1, normal)
+}
+
 const appendBuildingWalls = (
   wallBucket: MeshBucket,
   windowBucket: MeshBucket,
@@ -429,55 +491,51 @@ const appendBuildingWalls = (
       const length = Math.hypot(dx, dz)
       if (length < 0.15) continue
       const normal = { x: -dz / length, y: 0, z: dx / length }
-      appendQuad(
-        wallBucket,
-        { x: start.x, y: minHeight, z: start.z },
-        { x: end.x, y: minHeight, z: end.z },
-        { x: end.x, y: minHeight + height, z: end.z },
-        { x: start.x, y: minHeight + height, z: start.z },
-        normal,
-      )
-
-      const floors = Math.max(1, Math.min(18, Math.floor(height / 3.2)))
-      const windowColumns = Math.max(0, Math.min(28, Math.floor(length / 4.8)))
-      if (floors === 0) continue
       const ux = dx / length
       const uz = dz / length
-      const facadeOffset = 0.052
+      if (!profile.includeFacadeTrim && !profile.includeFacadeWindows) {
+        appendWallSpan(wallBucket, start, ux, uz, 0, length, minHeight, minHeight + height, normal)
+        continue
+      }
+      const floors = Math.max(1, Math.min(18, Math.floor(height / 3.2)))
+      const windowColumns = Math.max(0, Math.min(28, Math.floor(length / 4.8)))
+      const floorHeight = height / floors
+      const trimHalfHeight = profile.includeFacadeTrim && length > 5.5 && floors > 2 ? 0.055 : 0
       if (profile.includeFacadeTrim && length > 5.5 && floors > 2) {
-        const bandHalfHeight = 0.045
         const bandInsetM = Math.min(0.45, length * 0.025)
-        for (let floor = 1; floor < floors; floor += 2) {
-          const y = minHeight + floor * 3.2
-          if (y + bandHalfHeight >= minHeight + height) continue
-          appendQuad(
-            trimBucket,
-            { x: start.x + ux * bandInsetM + normal.x * facadeOffset, y: y - bandHalfHeight, z: start.z + uz * bandInsetM + normal.z * facadeOffset },
-            { x: end.x - ux * bandInsetM + normal.x * facadeOffset, y: y - bandHalfHeight, z: end.z - uz * bandInsetM + normal.z * facadeOffset },
-            { x: end.x - ux * bandInsetM + normal.x * facadeOffset, y: y + bandHalfHeight, z: end.z - uz * bandInsetM + normal.z * facadeOffset },
-            { x: start.x + ux * bandInsetM + normal.x * facadeOffset, y: y + bandHalfHeight, z: start.z + uz * bandInsetM + normal.z * facadeOffset },
-            normal,
-          )
+        for (let floor = 1; floor < floors; floor += 1) {
+          const y = minHeight + floor * floorHeight
+          appendWallSpan(trimBucket, start, ux, uz, bandInsetM, length - bandInsetM, y - trimHalfHeight, y + trimHalfHeight, normal)
         }
       }
-      if (!profile.includeFacadeWindows || windowColumns === 0) continue
       for (let floor = 0; floor < floors; floor += 1) {
-        const y = minHeight + 2.0 + floor * 3.2
-        if (y + 0.9 > minHeight + height) continue
+        const floorBaseY = minHeight + floor * floorHeight
+        const floorTopY = floor === floors - 1 ? minHeight + height : minHeight + (floor + 1) * floorHeight
+        const y0 = floorBaseY + (floor > 0 ? trimHalfHeight : 0)
+        const y1 = floorTopY - (floor < floors - 1 ? trimHalfHeight : 0)
+        if (windowColumns === 0 || !profile.includeFacadeWindows) {
+          appendWallSpan(wallBucket, start, ux, uz, 0, length, y0, y1, normal)
+          continue
+        }
+        const facadeMarginM = Math.min(0.72, length * 0.045)
+        const usableWidthM = Math.max(0, length - facadeMarginM * 2)
+        appendWallSpan(wallBucket, start, ux, uz, 0, facadeMarginM, y0, y1, normal)
+        appendWallSpan(wallBucket, start, ux, uz, length - facadeMarginM, length, y0, y1, normal)
         for (let column = 0; column < windowColumns; column += 1) {
-          if (random() < 0.18) continue
-          const centerDistance = (column + 0.55) * length / (windowColumns + 0.15)
-          const cx = start.x + ux * centerDistance + normal.x * facadeOffset
-          const cz = start.z + uz * centerDistance + normal.z * facadeOffset
-          const halfWidth = Math.min(1.25, length / Math.max(9, windowColumns * 3.2))
-          const halfHeight = 0.42
-          appendQuad(
+          const cellU0 = facadeMarginM + usableWidthM * column / windowColumns
+          const cellU1 = facadeMarginM + usableWidthM * (column + 1) / windowColumns
+          appendFacadeModule(
+            wallBucket,
             windowBucket,
-            { x: cx - ux * halfWidth, y: y - halfHeight, z: cz - uz * halfWidth },
-            { x: cx + ux * halfWidth, y: y - halfHeight, z: cz + uz * halfWidth },
-            { x: cx + ux * halfWidth, y: y + halfHeight, z: cz + uz * halfWidth },
-            { x: cx - ux * halfWidth, y: y + halfHeight, z: cz - uz * halfWidth },
+            start,
+            ux,
+            uz,
+            cellU0,
+            cellU1,
+            y0,
+            y1,
             normal,
+            random() >= 0.18,
           )
         }
       }
@@ -643,6 +701,21 @@ const appendRoadEdgeMarkings = (
   const offset = Math.max(2.8, widthM * 0.42)
   appendRibbon(bucket, offsetPath(path, -offset), 0.18, y)
   appendRibbon(bucket, offsetPath(path, offset), 0.18, y)
+}
+
+const appendRibbonSideBands = (
+  bucket: MeshBucket,
+  path: ReadonlyArray<LocalPoint>,
+  innerWidthM: number,
+  outerWidthM: number,
+  y: number,
+  simplifyDistanceM: number,
+): void => {
+  const bandWidthM = (outerWidthM - innerWidthM) / 2
+  if (bandWidthM < 0.08) return
+  const offsetM = innerWidthM / 2 + bandWidthM / 2
+  appendRibbon(bucket, offsetPath(path, -offsetM), bandWidthM, y, simplifyDistanceM)
+  appendRibbon(bucket, offsetPath(path, offsetM), bandWidthM, y, simplifyDistanceM)
 }
 
 const appendCylinder = (
@@ -877,12 +950,15 @@ const appendTransport = (
     }
     const priority = roadPriority(feature.className)
     if (priority < profile.minRoadPriority) continue
-    appendRibbon(shoulder, path, feature.widthM + Math.max(6.5, feature.widthM * 0.28), 0.32 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-    appendRibbon(casing, path, feature.widthM + Math.max(3.5, feature.widthM * 0.16), 0.40 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, 0.50 + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+    const roadY = 0.52 + feature.verticalOffsetM
+    const casingOuterWidthM = feature.widthM + Math.max(3.5, feature.widthM * 0.16)
+    const shoulderOuterWidthM = feature.widthM + Math.max(6.5, feature.widthM * 0.28)
+    appendRibbonSideBands(shoulder, path, casingOuterWidthM, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM)
+    appendRibbonSideBands(casing, path, feature.widthM, casingOuterWidthM, roadY, profile.lineSimplifyDistanceM)
+    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY, profile.lineSimplifyDistanceM)
     if (profile.includeRoadMarkings) {
-      appendRoadEdgeMarkings(markings, path, feature.widthM, 0.66 + feature.verticalOffsetM)
-      appendRoadMarkings(markings, path, feature.id, feature.widthM, 0.72 + feature.verticalOffsetM)
+      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + 0.16)
+      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + 0.22)
     }
     if (!profile.includeStreetLights || priority < 40 || feature.isTunnel) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
@@ -1135,6 +1211,10 @@ const glbFromPrimitives = (
         baseColorFactor: material.color,
         metallicFactor: material.metallicFactor ?? 0,
         roughnessFactor: material.roughnessFactor ?? 0.8,
+      },
+      extras: {
+        droneSceneryMaterialKey: material.key,
+        droneSceneryDepthPolicy: material.depthPolicy,
       },
       ...(material.doubleSided ? { doubleSided: true } : {}),
       ...(material.emissiveFactor ? { emissiveFactor: material.emissiveFactor } : {}),

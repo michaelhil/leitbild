@@ -8,6 +8,7 @@ import {
   formatKeyCode,
   normalizeDroneKeyBindings,
 } from '../src/ui/drone/drone-key-bindings.ts'
+import { advanceDroneCameraOrbit } from '../src/ui/drone/drone-camera-controls.ts'
 
 describe('drone key bindings', () => {
   test('normalizes missing and unknown stored values to the default action map', () => {
@@ -53,15 +54,26 @@ describe('drone key bindings', () => {
     })
   })
 
-  test('keeps lateral pilot intent natural and adapts it for the runtime body frame', () => {
+  test('keeps lateral pilot intent natural through the runtime body frame', () => {
     const bindings = defaultDroneKeyBindings()
     const rightIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyD']))
     const leftIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyA']))
 
     expect(rightIntent.right).toBe(1)
     expect(leftIntent.right).toBe(-1)
-    expect(droneRuntimeAxesForPilotIntent(rightIntent).right).toBe(-1)
-    expect(droneRuntimeAxesForPilotIntent(leftIntent).right).toBe(1)
+    expect(droneRuntimeAxesForPilotIntent(rightIntent).right).toBe(1)
+    expect(droneRuntimeAxesForPilotIntent(leftIntent).right).toBe(-1)
+  })
+
+  test('keeps yaw pilot intent natural through the runtime body frame', () => {
+    const bindings = defaultDroneKeyBindings()
+    const yawRightIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyE']))
+    const yawLeftIntent = droneManualAxesForPressedKeys(bindings, new Set(['KeyQ']))
+
+    expect(yawRightIntent.yaw).toBe(1)
+    expect(yawLeftIntent.yaw).toBe(-1)
+    expect(droneRuntimeAxesForPilotIntent(yawRightIntent).yaw).toBe(1)
+    expect(droneRuntimeAxesForPilotIntent(yawLeftIntent).yaw).toBe(-1)
   })
 
   test('cancels opposing movement keys without affecting independent axes', () => {
@@ -73,5 +85,24 @@ describe('drone key bindings', () => {
       vertical: 0,
       yaw: 1,
     })
+  })
+
+  test('orbits the camera in the same direction as the arrow key label', () => {
+    const orbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
+
+    expect(advanceDroneCameraOrbit(orbit, {
+      orbitLeft: true,
+      orbitRight: false,
+      orbitUp: false,
+      orbitDown: false,
+      zoomModifier: false,
+    }, 0.5).yawOffsetRad).toBeLessThan(0)
+    expect(advanceDroneCameraOrbit(orbit, {
+      orbitLeft: false,
+      orbitRight: true,
+      orbitUp: false,
+      orbitDown: false,
+      zoomModifier: false,
+    }, 0.5).yawOffsetRad).toBeGreaterThan(0)
   })
 })

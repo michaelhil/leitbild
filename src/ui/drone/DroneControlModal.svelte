@@ -27,6 +27,7 @@
     type DroneKeyBindingAction,
     type DroneKeyBindingMap,
   } from './drone-key-bindings.ts'
+  import { advanceDroneCameraOrbit } from './drone-camera-controls.ts'
   import { createDroneScene, type DroneSceneCameraOrbit, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
 
   interface Props {
@@ -55,9 +56,6 @@
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
   const cameraOrbitKeyCodes = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'] as const
-  const cameraYawRateRadPerSec = 1.08
-  const cameraPitchRateRadPerSec = 0.82
-  const cameraZoomRateMPerSec = 68
   const flightBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'flight')
   const cameraBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'camera')
 
@@ -181,9 +179,6 @@
 
   const axis = (value: number): number =>
     Math.abs(value) < deadband ? 0 : Math.max(-1, Math.min(1, value))
-
-  const cameraClamp = (value: number, min: number, max: number): number =>
-    Math.max(min, Math.min(max, value))
 
   const persistKeyBindings = (nextBindings: DroneKeyBindingMap): void => {
     keyBindings = nextBindings
@@ -406,29 +401,23 @@
       lastCameraOrbitAtMs = nowMs
       return
     }
-    const dtSeconds = cameraClamp((nowMs - lastCameraOrbitAtMs) / 1_000, 0, 0.05)
+    const dtSeconds = (nowMs - lastCameraOrbitAtMs) / 1_000
     lastCameraOrbitAtMs = nowMs
     if (cameraKeys.size === 0) return
 
-    const horizontalInput = (cameraKeys.has('ArrowLeft') ? 1 : 0) + (cameraKeys.has('ArrowRight') ? -1 : 0)
-    const verticalInput = (cameraKeys.has('ArrowUp') ? 1 : 0) + (cameraKeys.has('ArrowDown') ? -1 : 0)
-    const nextYawOffsetRad = cameraOrbit.yawOffsetRad + horizontalInput * cameraYawRateRadPerSec * dtSeconds
-    const nextPitchOffsetRad = cameraShiftModifier
-      ? cameraOrbit.pitchOffsetRad
-      : cameraClamp(cameraOrbit.pitchOffsetRad + verticalInput * cameraPitchRateRadPerSec * dtSeconds, -0.05, 1.12)
-    const nextDistanceM = cameraShiftModifier
-      ? cameraClamp(cameraOrbit.distanceM - verticalInput * cameraZoomRateMPerSec * dtSeconds, 16, 240)
-      : cameraOrbit.distanceM
+    const nextOrbit = advanceDroneCameraOrbit(cameraOrbit, {
+      orbitLeft: cameraKeys.has('ArrowLeft'),
+      orbitRight: cameraKeys.has('ArrowRight'),
+      orbitUp: cameraKeys.has('ArrowUp'),
+      orbitDown: cameraKeys.has('ArrowDown'),
+      zoomModifier: cameraShiftModifier,
+    }, dtSeconds)
     if (
-      nextYawOffsetRad === cameraOrbit.yawOffsetRad
-      && nextPitchOffsetRad === cameraOrbit.pitchOffsetRad
-      && nextDistanceM === cameraOrbit.distanceM
+      nextOrbit.yawOffsetRad === cameraOrbit.yawOffsetRad
+      && nextOrbit.pitchOffsetRad === cameraOrbit.pitchOffsetRad
+      && nextOrbit.distanceM === cameraOrbit.distanceM
     ) return
-    cameraOrbit = {
-      yawOffsetRad: nextYawOffsetRad,
-      pitchOffsetRad: nextPitchOffsetRad,
-      distanceM: nextDistanceM,
-    }
+    cameraOrbit = nextOrbit
   }
 
   const handleCameraKeyAction = (action: DroneKeyBindingAction | null): boolean => {

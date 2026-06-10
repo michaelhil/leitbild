@@ -44,6 +44,88 @@ const usedMaterialNames = (
   return used
 }
 
+const glbBinaryChunk = (
+  bytes: Uint8Array,
+): Uint8Array => {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const jsonLength = view.getUint32(12, true)
+  const binHeaderOffset = 20 + ((jsonLength + 3) & ~3)
+  const binLength = view.getUint32(binHeaderOffset, true)
+  const binType = view.getUint32(binHeaderOffset + 4, true)
+  expect(binType).toBe(0x004e4942)
+  return bytes.slice(binHeaderOffset + 8, binHeaderOffset + 8 + binLength)
+}
+
+const numberRecord = (value: unknown): Record<string, number> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
+    : {}
+
+const primitivePositionsByMaterialName = (
+  bytes: Uint8Array,
+  materialNamePattern: RegExp,
+): ReadonlyArray<ReadonlyArray<readonly [number, number, number]>> => {
+  const json = glbJson(bytes)
+  const bin = glbBinaryChunk(bytes)
+  const materials = recordArray(json.materials)
+  const meshes = recordArray(json.meshes)
+  const accessors = recordArray(json.accessors)
+  const bufferViews = recordArray(json.bufferViews)
+  const matchingMaterialIndexes = new Set(
+    materials.flatMap((material, index) => materialNamePattern.test(String(material.name ?? '')) ? [index] : []),
+  )
+  const primitives = meshes.flatMap(mesh => recordArray(mesh.primitives))
+  return primitives.flatMap(primitive => {
+    if (!matchingMaterialIndexes.has(Number(primitive.material))) return []
+    const attributes = numberRecord(primitive.attributes)
+    const accessor = accessors[attributes.POSITION ?? -1]
+    if (!accessor) return []
+    const bufferView = bufferViews[Number(accessor.bufferView)]
+    if (!bufferView) return []
+    const count = Number(accessor.count)
+    const byteOffset = Number(bufferView.byteOffset ?? 0) + Number(accessor.byteOffset ?? 0)
+    const view = new DataView(bin.buffer, bin.byteOffset + byteOffset, count * 12)
+    const positions: Array<readonly [number, number, number]> = []
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * 12
+      positions.push([
+        view.getFloat32(offset, true),
+        view.getFloat32(offset + 4, true),
+        view.getFloat32(offset + 8, true),
+      ])
+    }
+    return [positions]
+  })
+}
+
+const coordinatePlanesFor = (
+  positions: ReadonlyArray<ReadonlyArray<readonly [number, number, number]>>,
+): {
+  readonly minX: number
+  readonly maxX: number
+  readonly minZ: number
+  readonly maxZ: number
+} => {
+  const flat = positions.flat()
+  return {
+    minX: Math.min(...flat.map(position => position[0])),
+    maxX: Math.max(...flat.map(position => position[0])),
+    minZ: Math.min(...flat.map(position => position[2])),
+    maxZ: Math.max(...flat.map(position => position[2])),
+  }
+}
+
+const onAnyFacadePlane = (
+  position: readonly [number, number, number],
+  planes: ReturnType<typeof coordinatePlanesFor>,
+): boolean => {
+  const epsilonM = 0.012
+  return Math.abs(position[0] - planes.minX) <= epsilonM
+    || Math.abs(position[0] - planes.maxX) <= epsilonM
+    || Math.abs(position[2] - planes.minZ) <= epsilonM
+    || Math.abs(position[2] - planes.maxZ) <= epsilonM
+}
+
 const tilePoint = (x: number, y: number): [number, number] => [x, y]
 
 const testTile: SceneryTile = {
@@ -212,6 +294,41 @@ describe('drone scenery GLB compiler', () => {
     expect(materialNames.has('tree canopy')).toBe(true)
     expect(materialNames.has('street lamp glass')).toBe(true)
     expect(materialNames.has('poi beacon')).toBe(true)
+  })
+
+  test('integrates facade detail into wall planes instead of floating overlay sheets', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const wallPositions = primitivePositionsByMaterialName(result!.bytes, /building wall|warm building wall|cool building wall|brick building wall|stone building wall|dark glass building wall/)
+    const detailPositions = primitivePositionsByMaterialName(result!.bytes, /building windows|building facade trim/)
+
+    expect(wallPositions.length).toBeGreaterThan(0)
+    expect(detailPositions.length).toBeGreaterThan(0)
+    const facadePlanes = coordinatePlanesFor(wallPositions)
+    for (const position of detailPositions.flat()) {
+      expect(onAnyFacadePlane(position, facadePlanes)).toBe(true)
+    }
+  })
+
+  test('declares compiler-owned scenery depth policies instead of relying on renderer z-bias guesses', () => {
+    const result = compileSceneryGlbTile(testTile)
+    expect(result).not.toBeNull()
+    const json = glbJson(result!.bytes)
+    const materials = recordArray(json.materials)
+    const usedNames = usedMaterialNames(json)
+
+    for (const material of materials.filter(material => usedNames.has(material.name))) {
+      const extras = material.extras
+      expect(extras && typeof extras === 'object' && !Array.isArray(extras)).toBe(true)
+      expect(String((extras as Record<string, unknown>).droneSceneryDepthPolicy ?? '')).toMatch(/^(base-surface|integrated-facade|raised-geometry)$/)
+    }
+  })
+
+  test('keeps scenery depth ownership out of Babylon material tuning', async () => {
+    const source = await Bun.file(new URL('../src/ui/drone/drone-scene.ts', import.meta.url)).text()
+
+    expect(source).not.toContain('sceneryMaterialDepthBias')
+    expect(source).not.toContain('.zOffset')
   })
 
   test('keeps coarse scenery tiles as lightweight fallback silhouettes', () => {

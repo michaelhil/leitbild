@@ -138,7 +138,7 @@ const manualYawRateDegPerSecFor = (
 ): number => {
   const maxYawRate = data.vehicle.flightEnvelope.maxYawRateDegPerSec
   const currentYawRate = data.attitude.yawRateDegPerSec ?? 0
-  const targetYawRate = -axes.yaw * maxYawRate
+  const targetYawRate = axes.yaw * maxYawRate
   const maxDelta = maxYawRate * 2.6 * dtSeconds
   return deadband(limitVelocityChange(currentYawRate, targetYawRate, maxDelta), 0.05)
 }

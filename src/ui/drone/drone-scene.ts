@@ -180,27 +180,16 @@ const configureSceneColorPipeline = (scene: Scene): void => {
   scene.fogEnd = 9_600
 }
 
-const sceneryMaterialDepthBias = (materialName: string): number => {
-  const name = materialName.toLowerCase()
-  if (name.includes('road markings') || name.includes('facade trim') || name.includes('windows')) return -0.7
-  if (name.includes('roof') || name.includes('water surface')) return -0.18
-  return 0
-}
-
 const tuneImportedSceneryMaterial = (mesh: AbstractMesh): void => {
   mesh.isPickable = false
   const imported = mesh.material
   if (imported instanceof PBRMaterial) {
-    imported.zOffset = sceneryMaterialDepthBias(imported.name)
-    imported.zOffsetUnits = imported.zOffset === 0 ? 0 : -1
     imported.metallic = 0
     imported.roughness = Math.max(imported.roughness ?? 0.8, 0.74)
     imported.environmentIntensity = Math.min(imported.environmentIntensity ?? 0.75, 0.9)
     return
   }
   if (imported instanceof StandardMaterial) {
-    imported.zOffset = sceneryMaterialDepthBias(imported.name)
-    imported.zOffsetUnits = imported.zOffset === 0 ? 0 : -1
     imported.ambientColor = imported.diffuseColor.scale(0.24)
     imported.specularColor = new Color3(0.12, 0.12, 0.12)
     imported.emissiveColor = imported.diffuseColor.scale(0.012)

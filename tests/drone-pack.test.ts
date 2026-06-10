@@ -269,7 +269,7 @@ describe('drone pack native runtime', () => {
     }
   })
 
-  test('native manual yaw follows the Babylon-positive control sign', async () => {
+  test('native manual yaw follows user-facing right turn intent', async () => {
     const initial = drone({ id: 'drone:native-manual-yaw', altitudeM: 12, headingDeg: 0 })
     const adapter = createDroneNativePackRuntimeAdapter()
     const connection = await adapter.connect({
@@ -298,11 +298,11 @@ describe('drone pack native runtime', () => {
         inputSource: { kind: 'keyboard', label: 'Keyboard E' },
         commandTtlMs: 500,
       }, [initial.id]))).ok).toBe(true)
-      await waitForCondition('positive manual yaw decreases geospatial heading', () => {
+      await waitForCondition('positive manual yaw increases geospatial heading', () => {
         const current = seen.get(initial.id)
         if (!current) return false
         const data = droneData(current)
-        return data.pose.headingDeg > 340 && (data.attitude.yawRateDegPerSec ?? 0) < -1
+        return data.pose.headingDeg > 1 && data.pose.headingDeg < 40 && (data.attitude.yawRateDegPerSec ?? 0) > 1
       }, { timeoutMs: 800, intervalMs: 20 })
     } finally {
       unsubscribe()

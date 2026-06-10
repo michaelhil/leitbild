@@ -137,7 +137,7 @@ export const droneRuntimeAxesForPilotIntent = (
   axes: DroneManualAxes,
 ): DroneManualAxes => ({
   forward: axes.forward,
-  right: -axes.right,
+  right: axes.right,
   vertical: axes.vertical,
   yaw: axes.yaw,
 })
