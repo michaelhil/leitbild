@@ -1,16 +1,13 @@
 <script lang="ts">
-  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, PlaneTakeoff, RotateCcw, X } from 'lucide-svelte'
+  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
-    armDroneCommandKind,
     attackCommandKind,
     holdDroneCommandKind,
     landDroneCommandKind,
     manualControlCommandKind,
     returnToLaunchDroneCommandKind,
-    takeoffDroneCommandKind,
   } from '../../packs/drone/commands.ts'
-  import { droneManualControlReadiness } from '../../packs/drone/control-readiness.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
   import { sendControlInstanceCommand, type ControlInstanceCommandRequest } from '../control-instance-client.ts'
@@ -28,7 +25,7 @@
     type DroneKeyBindingAction,
     type DroneKeyBindingMap,
   } from './drone-key-bindings.ts'
-  import { createDroneScene, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
+  import { createDroneScene, type DroneSceneCameraOrbit, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -54,6 +51,10 @@
   const activeKeepaliveMs = 140
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
+  const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
+  const cameraYawStepRad = Math.PI / 24
+  const cameraPitchStepRad = Math.PI / 36
+  const cameraZoomStepM = 8
   const flightBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'flight')
   const cameraBindingDefinitions = droneKeyBindingDefinitions.filter(definition => definition.group === 'camera')
 
@@ -70,6 +71,7 @@
   let selectedTargetId = $state<string>('')
   let liveAxes = $state<DroneManualAxes>(zeroAxes)
   let mouseAxes = $state<DroneManualAxes>(zeroAxes)
+  let cameraOrbit = $state<DroneSceneCameraOrbit>(defaultCameraOrbit)
   let mouseControlEnabled = $state(false)
   let mouseCaptured = $state(false)
   let scenePerformance = $state<DroneScenePerformanceSnapshot | null>(null)
@@ -101,7 +103,6 @@
   const groundSpeedMps = $derived(data ? Math.hypot(data.velocity.eastMps, data.velocity.northMps) : 0)
   const batteryPercent = $derived(data?.battery.remainingPercent ?? 0)
   const sensorContacts = $derived(droneSensorContacts(objects).filter(contact => contact.droneId === selectedObject.id).slice(0, 4))
-  const takeoffAltitudeM = $derived(Math.max(25, Math.ceil((data?.pose.relativeAltitudeM ?? 0) + 20)))
   const footerStatus = $derived.by(() =>
     [commandStatus, sceneryStatus, sceneStatus]
       .filter(part => part.trim().length > 0)
@@ -174,6 +175,9 @@
 
   const axis = (value: number): number =>
     Math.abs(value) < deadband ? 0 : Math.max(-1, Math.min(1, value))
+
+  const cameraClamp = (value: number, min: number, max: number): number =>
+    Math.max(min, Math.min(max, value))
 
   const persistKeyBindings = (nextBindings: DroneKeyBindingMap): void => {
     keyBindings = nextBindings
@@ -300,50 +304,6 @@
     }
   }
 
-  const setArmed = async (armed: boolean): Promise<boolean> => {
-    const body = await sendControlInstanceCommand(controlInstanceId, {
-      kind: armDroneCommandKind,
-      targetObjectIds: [selectedObject.id],
-      payload: {
-        droneId: selectedObject.id,
-        armed,
-      },
-    })
-    commandStatus = body.result.ok ? `${armed ? 'Arm' : 'Disarm'} accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
-    return body.result.ok
-  }
-
-  const takeoff = async (): Promise<boolean> => {
-    const body = await sendControlInstanceCommand(controlInstanceId, {
-      kind: takeoffDroneCommandKind,
-      targetObjectIds: [selectedObject.id],
-      payload: {
-        droneId: selectedObject.id,
-        altitudeM: takeoffAltitudeM,
-      },
-    })
-    commandStatus = body.result.ok ? `Takeoff to ${takeoffAltitudeM} m accepted` : `Rejected: ${body.result.reason ?? 'unknown'}`
-    return body.result.ok
-  }
-
-  const startManualFlight = async (): Promise<void> => {
-    try {
-      commandStatus = 'Starting flight'
-      if (!(data?.arming.armed ?? false)) {
-        const armed = await setArmed(true)
-        if (!armed) return
-      }
-      const relativeAltitudeM = data?.pose.relativeAltitudeM ?? data?.pose.altitudeM ?? 0
-      if (relativeAltitudeM < 0.8) {
-        await takeoff()
-        return
-      }
-      commandStatus = 'Manual flight ready'
-    } catch (err) {
-      commandStatus = err instanceof Error ? err.message : String(err)
-    }
-  }
-
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
     const kind = mode === 'hold'
       ? holdDroneCommandKind
@@ -389,11 +349,10 @@
     const changed = signature !== lastAxesSignature
     const keepaliveDue = active && nowMs - lastSendMs >= activeKeepaliveMs
     if (!manualSendInFlight && (changed || keepaliveDue) && nowMs - lastSendMs >= sendIntervalMs) {
-      const manualReadiness = data === null ? { ready: false, reason: 'selected object is not a drone' } : droneManualControlReadiness(data)
-      if (active && !manualReadiness.ready) {
+      if (active && data === null) {
         lastSendMs = nowMs
         lastAxesSignature = signature
-        const reason = manualReadiness.reason ?? 'manual flight is not ready'
+        const reason = 'selected object is not a drone'
         if (reason !== lastManualBlockReason || nowMs - lastManualBlockAtMs > 1_000) {
           lastManualBlockReason = reason
           lastManualBlockAtMs = nowMs
@@ -434,8 +393,37 @@
     return false
   }
 
+  const handleCameraOrbitKey = (event: KeyboardEvent): boolean => {
+    if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) return false
+    event.preventDefault()
+    if (event.shiftKey && (event.code === 'ArrowUp' || event.code === 'ArrowDown')) {
+      const zoomDirection = event.code === 'ArrowUp' ? -1 : 1
+      cameraOrbit = {
+        ...cameraOrbit,
+        distanceM: cameraClamp(cameraOrbit.distanceM + zoomDirection * cameraZoomStepM, 16, 240),
+      }
+      return true
+    }
+    if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+      const yawDirection = event.code === 'ArrowLeft' ? -1 : 1
+      cameraOrbit = {
+        ...cameraOrbit,
+        yawOffsetRad: cameraOrbit.yawOffsetRad + yawDirection * cameraYawStepRad,
+      }
+      return true
+    }
+    const pitchDirection = event.code === 'ArrowUp' ? 1 : -1
+    cameraOrbit = {
+      ...cameraOrbit,
+      pitchOffsetRad: cameraClamp(cameraOrbit.pitchOffsetRad + pitchDirection * cameraPitchStepRad, -0.05, 1.12),
+    }
+    return true
+  }
+
   const handledKeyboardEvent = (event: KeyboardEvent): boolean =>
-    bindingCaptureAction !== null || actionForKeyCode(keyBindings, event.code) !== null
+    bindingCaptureAction !== null
+    || actionForKeyCode(keyBindings, event.code) !== null
+    || ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)
 
   const onKeydown = (event: KeyboardEvent): void => {
     if (bindingCaptureAction !== null) {
@@ -453,6 +441,7 @@
       return
     }
     if (keyboardEventTargetIsTextInput(event.target)) return
+    if (handleCameraOrbitKey(event)) return
     const handled = handledKeyboardEvent(event)
     if (handled) event.preventDefault()
     if (event.repeat) return
@@ -504,7 +493,7 @@
     mouseControlEnabled = !mouseControlEnabled
     mouseAxes = zeroAxes
     if (!mouseControlEnabled && mouseCaptured) document.exitPointerLock()
-    commandStatus = mouseControlEnabled ? 'Mouse flight armed; click the scene' : 'Mouse flight disabled'
+    commandStatus = mouseControlEnabled ? 'Mouse flight enabled; click the scene' : 'Mouse flight disabled'
   }
 
   const centerMouseStick = (): void => {
@@ -553,6 +542,7 @@
       getFocusDroneId: () => selectedObject.id,
       getObjects: () => objects,
       getViewMode: () => viewMode,
+      getCameraOrbit: () => cameraOrbit,
       onReady: () => {
         if (sceneStatus === 'Opening flight view') sceneStatus = 'Flight view ready'
       },
@@ -635,7 +625,7 @@
           </div>
           <div class="hud-row muted">
             <span>{data.vehicle.modelLabel}</span>
-            <span>{data.arming.state}</span>
+            <span>{data.navigation.mode}</span>
             <span>{data.link.state}</span>
           </div>
         </div>
@@ -729,7 +719,7 @@
       <section>
         <h3><MousePointer2 size={15} /> Mouse</h3>
         <div class="command-grid">
-          <button class:active={mouseControlEnabled} type="button" onclick={toggleMouseControl}><MousePointer2 size={15} /> {mouseControlEnabled ? 'Armed' : 'Arm'}</button>
+          <button class:active={mouseControlEnabled} type="button" onclick={toggleMouseControl}><MousePointer2 size={15} /> {mouseControlEnabled ? 'On' : 'Enable'}</button>
           <button type="button" disabled={!mouseControlEnabled} onclick={requestMouseCapture}><LocateFixed size={15} /> Capture</button>
           <button type="button" onclick={centerMouseStick}><RotateCcw size={15} /> Center</button>
         </div>
@@ -749,9 +739,6 @@
       <section>
         <h3><LocateFixed size={15} /> Mode</h3>
         <div class="command-grid">
-          <button type="button" onclick={() => void startManualFlight()}><PlaneTakeoff size={15} /> Start flight</button>
-          <button type="button" onclick={() => void setArmed(!(data?.arming.armed ?? false))}><LocateFixed size={15} /> {data?.arming.armed ? 'Disarm' : 'Arm'}</button>
-          <button type="button" onclick={() => void takeoff()}><PlaneTakeoff size={15} /> Takeoff</button>
           <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
           <button type="button" onclick={() => void setMode('land')}><PlaneLanding size={15} /> Land</button>
           <button type="button" onclick={() => void setMode('return_to_launch')}><RotateCcw size={15} /> Return</button>

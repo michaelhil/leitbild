@@ -169,6 +169,13 @@ describe('drone scene world streaming', () => {
     expect(selected.map(tile => tile.id)).toEqual(['dense-center', 'dense-nearby', 'bounded-edge'])
   })
 
+  test('admits large detailed tiles only after the full scenery stage starts', () => {
+    const detailedTile = sceneryTile({ id: 'large-detail', byteLength: 22_000_000, distanceM: 12 })
+
+    expect(selectSceneryTilesForBuild([detailedTile], sceneryBuildLimitsFor('near')).map(tile => tile.id)).toEqual([])
+    expect(selectSceneryTilesForBuild([detailedTile], sceneryBuildLimitsFor('full')).map(tile => tile.id)).toEqual(['large-detail'])
+  })
+
   test('computes screen-space error from tile geometric error and distance', () => {
     const near = sceneryTile({ id: 'near-detail', byteLength: 500_000, distanceM: 80, geometricErrorM: 8, radiusM: 20 })
     const far = sceneryTile({ id: 'far-detail', byteLength: 500_000, distanceM: 1_600, geometricErrorM: 8, radiusM: 20 })

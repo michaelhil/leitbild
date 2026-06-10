@@ -200,6 +200,53 @@ describe('drone pack native runtime', () => {
     expect(parsed.models.some(candidate => candidate.id === model.id)).toBe(true)
   })
 
+  test('native runtime accepts manual flight without explicit arm or takeoff', async () => {
+    const initial = drone({ id: 'drone:native-manual-simple', altitudeM: 0, headingDeg: 90 })
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [initial],
+      scenario: {
+        scenarioId: 'scenario:native-manual-simple',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: [initial],
+        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 20 } },
+        runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 20 },
+      },
+    })
+    const seen = new Map<string, OperationalObject>()
+    const unsubscribe = connection.subscribe(emission => {
+      for (const event of emission.events) {
+        if (event.type === 'object.upserted') seen.set(event.object.id, event.object)
+      }
+    })
+
+    try {
+      expect(droneManualControlReadiness(droneData(initial)).ready).toBe(true)
+      expect((await connection.sendCommand(command(manualControlCommandKind, {
+        droneId: initial.id,
+        axes: { forward: 1, right: 0, vertical: 1, yaw: 0 },
+        inputSource: { kind: 'keyboard', label: 'Keyboard' },
+        commandTtlMs: 500,
+      }, [initial.id]))).ok).toBe(true)
+      await waitForCondition('manual flight moves and climbs from rest', () => {
+        const current = seen.get(initial.id)
+        if (!current) return false
+        const data = droneData(current)
+        return data.pose.altitudeM > 0.2
+          && data.pose.point.coordinates[0] > initial.spatial.position!.point.coordinates[0]
+          && data.control.inputSource?.kind === 'keyboard'
+      }, { timeoutMs: 900, intervalMs: 20 })
+      const data = droneData(seen.get(initial.id)!)
+      expect(data.attitude.pitchDeg).toBeLessThan(-0.1)
+      expect(Math.abs(data.attitude.rollDeg)).toBeLessThan(4)
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
   test('native runtime executes arm, takeoff, goto, and manual control without external processes', async () => {
     const initial = drone({ id: 'drone:native-loop', altitudeM: 0, headingDeg: 0 })
     const adapter = createDroneNativePackRuntimeAdapter()

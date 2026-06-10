@@ -31,11 +31,18 @@ export interface DroneSceneHandle {
   readonly destroy: () => void
 }
 
+export interface DroneSceneCameraOrbit {
+  readonly yawOffsetRad: number
+  readonly pitchOffsetRad: number
+  readonly distanceM: number
+}
+
 interface DroneSceneConfig {
   readonly container: HTMLElement
   readonly getFocusDroneId: () => string
   readonly getObjects: () => ReadonlyArray<OperationalObject>
   readonly getViewMode: () => DroneSceneViewMode
+  readonly getCameraOrbit: () => DroneSceneCameraOrbit
   readonly onReady?: () => void
   readonly onError?: (message: string) => void
   readonly onWorldStatus?: (message: string) => void
@@ -88,6 +95,10 @@ const maxCachedTileContainers = 256
 const tileLoadConcurrency = 2
 const scenerySelectionReferenceHeightPx = 960
 const scenerySelectionReferenceFovRad = 0.72
+const minCameraDistanceM = 14
+const maxCameraDistanceM = 260
+const minCameraPitchRad = -0.06
+const maxCameraPitchRad = 1.18
 let activeDroneSceneCount = 0
 
 const cachedTileContainers = new Map<string, Promise<AssetContainer>>()
@@ -589,10 +600,10 @@ export const sceneryBuildLimitsFor = (
         fovRad: scenerySelectionReferenceFovRad,
       }
     : {
-        maxTiles: 18,
-        maxBytes: 52_000_000,
-        maxTileBytes: 12_500_000,
-        targetScreenSpaceError: 16,
+        maxTiles: 28,
+        maxBytes: 120_000_000,
+        maxTileBytes: 28_000_000,
+        targetScreenSpaceError: 10,
         viewportHeightPx: scenerySelectionReferenceHeightPx,
         fovRad: scenerySelectionReferenceFovRad,
       }
@@ -602,7 +613,7 @@ const sceneryBuildTimingFor = (
 ): SceneryBuildTiming =>
   stage === 'near'
     ? { tileLoadTimeoutMs: 3_500, stageBuildBudgetMs: 4_500 }
-    : { tileLoadTimeoutMs: 7_500, stageBuildBudgetMs: 12_000 }
+    : { tileLoadTimeoutMs: 10_000, stageBuildBudgetMs: 18_000 }
 
 export const screenSpaceErrorForSceneryTile = (
   tile: DroneSceneryTileAsset,
@@ -651,7 +662,7 @@ const tileSelectionScore = (
   const detailNeed = Math.min(4, Math.max(0.2, targetRatio))
   const lodBoost = tile.z * 18
   const distancePenalty = tile.distanceM / 95
-  const payloadPenalty = tile.byteLength / 1_800_000
+  const payloadPenalty = tile.byteLength / Math.max(1_800_000, limits.maxTileBytes * 0.45)
   return detailNeed * 1_000 + lodBoost - distancePenalty - payloadPenalty
 }
 
@@ -788,6 +799,7 @@ const updateCamera = (
   target: Vector3,
   viewMode: DroneSceneViewMode,
   focus: MeshEntry | undefined,
+  orbit: DroneSceneCameraOrbit,
 ): void => {
   if (viewMode === '2d') {
     camera.position.copyFrom(new Vector3(target.x, Math.max(450, target.y + 520), target.z - 0.01))
@@ -807,8 +819,25 @@ const updateCamera = (
     camera.maxZ = 6_000
     return
   }
-  camera.position.copyFrom(new Vector3(target.x - 52, target.y + 44, target.z - 72))
-  camera.setTarget(target.add(new Vector3(0, 7, 0)))
+  const baseYaw = focus?.visual.rotation.y ?? 0
+  const yaw = baseYaw + orbit.yawOffsetRad
+  const pitch = clamp(orbit.pitchOffsetRad, minCameraPitchRad, maxCameraPitchRad)
+  const distanceM = clamp(orbit.distanceM, minCameraDistanceM, maxCameraDistanceM)
+  const horizontalDistanceM = Math.max(4, distanceM * Math.cos(pitch))
+  const heightM = 5 + distanceM * Math.sin(pitch)
+  const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw))
+  const cameraPosition = new Vector3(
+    target.x - forward.x * horizontalDistanceM,
+    target.y + heightM,
+    target.z - forward.z * horizontalDistanceM,
+  )
+  const lookTarget = new Vector3(
+    target.x + forward.x * 18,
+    target.y + 5.5,
+    target.z + forward.z * 18,
+  )
+  camera.position.copyFrom(cameraPosition)
+  camera.setTarget(lookTarget)
   camera.fov = 0.72
   camera.minZ = 0.2
   camera.maxZ = 6_000
@@ -831,7 +860,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   scene.autoClearDepthAndStencil = true
   const camera = new UniversalCamera('drone-camera', new Vector3(0, 90, -120), scene)
   camera.fov = 0.84
-  camera.attachControl(canvas, false)
   new HemisphericLight('ambient', new Vector3(0, 1, 0), scene).intensity = 0.74
   const sun = new DirectionalLight('sun', new Vector3(-0.45, -1, -0.35), scene)
   sun.intensity = 0.86
@@ -1020,7 +1048,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     updateObjects(objects, activeCenter, nowMs, dtSeconds)
     const focusId = config.getFocusDroneId()
     const focus = objectMeshes.get(focusId)
-    updateCamera(camera, cameraTargetFor(objectMeshes, focusId), config.getViewMode(), focus)
+    updateCamera(camera, cameraTargetFor(objectMeshes, focusId), config.getViewMode(), focus, config.getCameraOrbit())
     const renderStarted = performance.now()
     scene.render()
     notifyReadyOnce()

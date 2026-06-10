@@ -140,6 +140,38 @@ const updateVelocity = (
   }
 }
 
+const bodyVelocityFor = (
+  velocity: DronePackData['velocity'],
+  headingDeg: number,
+): {
+  readonly forwardMps: number
+  readonly rightMps: number
+} => {
+  const headingRad = headingDeg * Math.PI / 180
+  const cos = Math.cos(headingRad)
+  const sin = Math.sin(headingRad)
+  return {
+    forwardMps: velocity.northMps * cos + velocity.eastMps * sin,
+    rightMps: -velocity.northMps * sin + velocity.eastMps * cos,
+  }
+}
+
+const attitudeForVelocity = (
+  data: DronePackData,
+  velocity: DronePackData['velocity'],
+  headingDeg: number,
+  yawRateDegPerSec: number,
+): DronePackData['attitude'] => {
+  const body = bodyVelocityFor(velocity, headingDeg)
+  const maxHorizontalSpeed = Math.max(1, data.vehicle.flightEnvelope.maxHorizontalSpeedMps)
+  return {
+    rollDeg: clamp(body.rightMps / maxHorizontalSpeed * 24, -35, 35),
+    pitchDeg: clamp(-body.forwardMps / maxHorizontalSpeed * 20, -30, 30),
+    yawDeg: headingDeg,
+    yawRateDegPerSec,
+  }
+}
+
 export const missionTarget = (item: DroneMissionItem): DroneGuidedTarget => ({
   point: item.point,
   altitudeM: item.altitudeM,
@@ -188,11 +220,11 @@ export const stepDroneObject = (input: {
   const manualActive = data.navigation.kind === 'manual' && data.control.manualAxes !== undefined && inputExpiresAtMs >= nowMs
   const mission = missionPlans.get(object.id)
 
-  if (!data.arming.armed) {
-    desired = { eastMps: 0, northMps: 0, downMps: 0 }
-  } else if (manualActive) {
+  if (manualActive) {
     desired = desiredManualVelocity(data, data.control.manualAxes!)
     headingTargetDeg = normalizeAngleDeg(data.pose.headingDeg + data.control.manualAxes!.yaw * data.vehicle.flightEnvelope.maxYawRateDegPerSec * dtSeconds)
+  } else if (!data.arming.armed) {
+    desired = { eastMps: 0, northMps: 0, downMps: 0 }
   } else if (mission?.holdUntilMs !== undefined && nowMs < mission.holdUntilMs) {
     desired = { eastMps: 0, northMps: 0, downMps: 0 }
   } else if (mission !== undefined && data.mission.state === 'running') {
@@ -277,11 +309,14 @@ export const stepDroneObject = (input: {
   const headingDeg = manualActive
     ? headingTargetDeg
     : updateHeading(nextData.pose.headingDeg, headingTargetDeg, nextData.vehicle.flightEnvelope.maxYawRateDegPerSec, dtSeconds)
+  const yawRateDegPerSec = dtSeconds > 0
+    ? shortestAngleDeltaDeg(nextData.pose.headingDeg, headingDeg) / dtSeconds
+    : 0
   const polygons = geofences.get(object.id)
   const breachStatus = polygons === undefined || polygons.length === 0
     ? nextData.geofence.breachStatus
     : targetInsideGeofence(nextPoint, polygons) ? 'clear' : 'breached'
-  const drain = data.arming.armed
+  const drain = (data.arming.armed || manualActive)
     ? runtimeConfig.batteryDrainPercentPerHour * dtSeconds / 3_600 * (1 + Math.min(2, velocity.groundSpeedMps / Math.max(1, data.vehicle.flightEnvelope.cruiseSpeedMps)))
     : 0
   const battery = data.battery.remainingPercent === undefined
@@ -299,11 +334,7 @@ export const stepDroneObject = (input: {
       headingDeg,
       observedAt: at,
     },
-    attitude: {
-      rollDeg: clamp(velocity.eastMps / Math.max(1, nextData.vehicle.flightEnvelope.maxHorizontalSpeedMps) * 24, -35, 35),
-      pitchDeg: clamp(-velocity.northMps / Math.max(1, nextData.vehicle.flightEnvelope.maxHorizontalSpeedMps) * 18, -30, 30),
-      yawDeg: headingDeg,
-    },
+    attitude: attitudeForVelocity(nextData, velocity, headingDeg, yawRateDegPerSec),
     battery,
     link: {
       ...nextData.link,

@@ -25,7 +25,7 @@ export interface DroneKeyBindingStorage {
   readonly setItem: (key: string, value: string) => void
 }
 
-export const droneKeyBindingStorageKey = 'leitbild.drone.keyBindings.v1'
+export const droneKeyBindingStorageKey = 'leitbild.drone.keyBindings.v2'
 
 export const droneKeyBindingDefinitions: ReadonlyArray<DroneKeyBindingDefinition> = [
   { action: 'flight.forward', label: 'Forward', defaultCode: 'KeyW', group: 'flight' },
@@ -33,7 +33,7 @@ export const droneKeyBindingDefinitions: ReadonlyArray<DroneKeyBindingDefinition
   { action: 'flight.left', label: 'Left', defaultCode: 'KeyA', group: 'flight' },
   { action: 'flight.right', label: 'Right', defaultCode: 'KeyD', group: 'flight' },
   { action: 'flight.climb', label: 'Climb', defaultCode: 'Space', group: 'flight' },
-  { action: 'flight.descend', label: 'Descend', defaultCode: 'ShiftLeft', group: 'flight' },
+  { action: 'flight.descend', label: 'Descend', defaultCode: 'KeyZ', group: 'flight' },
   { action: 'flight.yawLeft', label: 'Yaw left', defaultCode: 'KeyQ', group: 'flight' },
   { action: 'flight.yawRight', label: 'Yaw right', defaultCode: 'KeyE', group: 'flight' },
   { action: 'camera.view3d', label: '3D view', defaultCode: 'Digit1', group: 'camera' },

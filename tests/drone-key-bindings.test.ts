@@ -13,6 +13,7 @@ describe('drone key bindings', () => {
 
     expect(bindings['flight.forward']).toBe('KeyI')
     expect(bindings['flight.backward']).toBe('KeyS')
+    expect(bindings['flight.descend']).toBe('KeyZ')
     expect(bindings['camera.viewFpv']).toBe('Digit2')
   })
 
@@ -28,6 +29,7 @@ describe('drone key bindings', () => {
   test('formats physical key codes for the binding editor', () => {
     expect(formatKeyCode('KeyQ')).toBe('Q')
     expect(formatKeyCode('Digit3')).toBe('3')
+    expect(formatKeyCode('KeyZ')).toBe('Z')
     expect(formatKeyCode('ShiftLeft')).toBe('Left Shift')
     expect(formatKeyCode('')).toBe('Unassigned')
   })
