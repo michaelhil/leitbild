@@ -112,16 +112,14 @@ export interface DroneRoadOverlayRenderer {
 
 const roadSurfaceY = 1.56
 const roadAsphaltColor = '#3f474b'
-const roadEdgeLineColor = '#eef1e7'
-const roadCenterLineColor = '#ead46a'
-const roadPaintLiftM = 0.055
-const roadPaintWidthM = 0.22
-const roadEdgeInsetM = 0.62
-const roadEndpointPaintTrimM = 8
+const roadEdgeLineColor = '#f8fafc'
+const roadCenterLineColor = '#facc15'
+const roadPaintLiftM = 0.12
+const roadPaintWidthM = 0.56
+const roadEdgeInsetM = 0.85
+const roadEndpointPaintTrimM = 6
 const roadIntersectionPaintClearanceM = 13
 const roadMinPaintIntervalM = 2.8
-const roadDashLengthM = 7
-const roadDashGapM = 18
 const roadSegmentBucketM = 42
 const metersPerDegreeLat = 111_320
 
@@ -139,18 +137,31 @@ const roadMaterialOrder: Record<RoadMaterialKey, number> = {
 
 const paintableRoadClasses = new Set([
   'motorway',
+  'motorway_link',
   'trunk',
+  'trunk_link',
   'primary',
+  'primary_link',
   'secondary',
+  'secondary_link',
   'tertiary',
+  'tertiary_link',
+  'minor',
+  'residential',
+  'unclassified',
 ])
 
 const edgeMarkedRoadClasses = new Set([
   'motorway',
+  'motorway_link',
   'trunk',
+  'trunk_link',
   'primary',
+  'primary_link',
   'secondary',
+  'secondary_link',
   'tertiary',
+  'tertiary_link',
 ])
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
@@ -483,21 +494,6 @@ const subtractBlockedIntervals = (
   return allowed.filter(candidate => candidate.endM - candidate.startM >= roadMinPaintIntervalM)
 }
 
-const dashedIntervals = (
-  interval: RoadInterval,
-): ReadonlyArray<RoadInterval> => {
-  const periodM = roadDashLengthM + roadDashGapM
-  const intervals: RoadInterval[] = []
-  let cursorM = Math.floor(interval.startM / periodM) * periodM
-  while (cursorM < interval.endM) {
-    const startM = Math.max(interval.startM, cursorM)
-    const endM = Math.min(interval.endM, cursorM + roadDashLengthM)
-    if (endM - startM >= roadMinPaintIntervalM) intervals.push({ startM, endM })
-    cursorM += periodM
-  }
-  return intervals
-}
-
 const appendPaintRibbon = (config: {
   readonly builder: RoadGeometryBuilder
   readonly path: ReadonlyArray<RoadPoint>
@@ -624,13 +620,13 @@ const drawsRoadCenterLine = (
   feature: SceneryRoadFeature,
 ): boolean =>
   !feature.oneway
-  && feature.widthM >= 6.2
+  && feature.widthM >= 7.5
   && paintableRoadClasses.has(feature.className)
 
 const drawsRoadEdgeLines = (
   feature: SceneryRoadFeature,
 ): boolean =>
-  feature.widthM >= 10
+  feature.widthM >= 11.5
   && (edgeMarkedRoadClasses.has(feature.className) || feature.widthM >= 13)
 
 const drawsAnyRoadMarking = (
@@ -792,7 +788,7 @@ export const buildRoadSurfaceMeshes = (config: {
     const paintY = roadPaintY(road.y)
     if (drawsRoadCenterLine(road.feature)) {
       const builder = builderFor('road-marking-center', paintY).geometry
-      for (const interval of intervals.flatMap(dashedIntervals)) {
+      for (const interval of intervals) {
         appendPaintRibbon({
           builder,
           path: road.path,

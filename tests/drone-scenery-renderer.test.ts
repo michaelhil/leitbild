@@ -901,7 +901,7 @@ describe('drone scenery runtime cache policy', () => {
     expect(asphaltMeshes).toHaveLength(1)
     expect(asphaltMeshes[0]!.colorHex).toBe('#3f474b')
     expect(markingMeshes.map(mesh => mesh.materialKey).sort()).toEqual(['road-marking-center', 'road-marking-edge'])
-    expect(markingMeshes.map(mesh => mesh.colorHex).sort()).toEqual(['#ead46a', '#eef1e7'])
+    expect(markingMeshes.map(mesh => mesh.colorHex).sort()).toEqual(['#f8fafc', '#facc15'])
     for (const mesh of meshes) {
       expect(mesh.triangleCount).toBeGreaterThan(0)
       expect(mesh.positions.length % 3).toBe(0)
@@ -925,6 +925,41 @@ describe('drone scenery runtime cache policy', () => {
       expect(marking.indices.length % 3).toBe(0)
     }
     expect(minimumHorizontalDistanceFromOrigin(markings)).toBeGreaterThan(10)
+  })
+
+  test('draws visible center markings for ordinary residential-width roads', () => {
+    const residentialTile = sceneryRoadTileFromSceneryTile({
+      ...crossingRoadTile(),
+      features: {
+        polygons: [],
+        labels: [],
+        lines: [
+          {
+            id: 'local-road:residential',
+            sourceLayer: 'transportation',
+            sourceRef: 'osm:way:local-road',
+            kind: 'road',
+            className: 'residential',
+            isBridge: false,
+            isTunnel: false,
+            path: [
+              tilePoint(900, 2100),
+              tilePoint(3200, 2100),
+            ],
+            widthM: 9,
+            verticalOffsetM: 0,
+          },
+        ],
+      },
+    })
+    const meshes = buildRoadSurfaceMeshes({ tile: residentialTile })
+    const centerMarking = meshes.find(mesh => mesh.materialKey === 'road-marking-center')
+    const edgeMarking = meshes.find(mesh => mesh.materialKey === 'road-marking-edge')
+
+    expect(centerMarking).toBeDefined()
+    expect(centerMarking?.colorHex).toBe('#facc15')
+    expect(centerMarking?.triangleCount).toBeGreaterThan(0)
+    expect(edgeMarking).toBeUndefined()
   })
 
   test('keeps dense road markings grouped into a small stable mesh set', () => {

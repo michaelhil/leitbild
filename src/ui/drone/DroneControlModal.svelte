@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, Crosshair, Gamepad2, Keyboard, LocateFixed, MousePointer2, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
+  import { Activity, Crosshair, Gamepad2, GripVertical, Keyboard, LocateFixed, Maximize2, MousePointer2, PanelRightClose, PanelRightOpen, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
@@ -39,6 +39,26 @@
     readonly close: () => void
   }
 
+  interface WindowBounds {
+    readonly left: number
+    readonly top: number
+    readonly width: number
+    readonly height: number
+  }
+
+  interface WindowPointerDrag {
+    readonly pointerId: number
+    readonly startX: number
+    readonly startY: number
+    readonly startBounds: WindowBounds
+  }
+
+  interface ControlPanelResizeDrag {
+    readonly pointerId: number
+    readonly startX: number
+    readonly startWidth: number
+  }
+
   let {
     controlInstanceId,
     object,
@@ -50,6 +70,13 @@
 
   const viewportMargin = 12
   const offsetStepPx = 28
+  const minWindowWidth = 680
+  const minWindowHeight = 460
+  const defaultWindowWidth = 1180
+  const defaultWindowHeight = 760
+  const minControlPanelWidth = 230
+  const maxControlPanelWidth = 520
+  const collapsedControlPanelWidth = 42
   const sendIntervalMs = 50
   const activeKeepaliveMs = 100
   const deadband = 0.08
@@ -61,6 +88,12 @@
 
   let sceneElement = $state<HTMLDivElement | null>(null)
   let sceneHandle: DroneSceneHandle | null = null
+  let windowBounds = $state<WindowBounds | null>(null)
+  let windowDrag = $state<WindowPointerDrag | null>(null)
+  let windowResize = $state<WindowPointerDrag | null>(null)
+  let controlPanelResize = $state<ControlPanelResizeDrag | null>(null)
+  let controlPanelWidth = $state(320)
+  let controlPanelCollapsed = $state(false)
   let viewMode = $state<DroneSceneViewMode>('3d')
   let selectedDroneId = $state<string>('')
   let sceneStatus = $state('Opening flight view')
@@ -112,19 +145,55 @@
       .filter(part => part.trim().length > 0)
       .join(' · '))
 
-  const windowStyle = $derived.by(() => {
+  const clamp = (value: number, min: number, max: number): number =>
+    Math.max(min, Math.min(max, value))
+
+  const defaultWindowBoundsForViewport = (): WindowBounds => {
     const offset = windowOffsetIndex * offsetStepPx
     if (typeof window === 'undefined') {
-      return `left:${72 + offset}px;top:${72 + offset}px;width:1120px;height:720px`
+      return { left: 72 + offset, top: 72 + offset, width: 1120, height: 720 }
     }
     const availableWidth = window.innerWidth - 2 * viewportMargin - offset
     const availableHeight = window.innerHeight - 2 * viewportMargin - offset
-    const width = Math.min(1180, Math.max(280, availableWidth))
-    const height = Math.min(760, Math.max(420, availableHeight))
+    const width = Math.min(defaultWindowWidth, Math.max(minWindowWidth, availableWidth))
+    const height = Math.min(defaultWindowHeight, Math.max(minWindowHeight, availableHeight))
     const left = Math.max(viewportMargin, Math.round((window.innerWidth - width) / 2) + offset)
     const top = Math.max(viewportMargin, Math.round((window.innerHeight - height) / 2) + offset)
-    return `left:${left}px;top:${top}px;width:${width}px;height:${height}px`
+    return { left, top, width, height }
+  }
+
+  const clampWindowBounds = (bounds: WindowBounds): WindowBounds => {
+    if (typeof window === 'undefined') return bounds
+    const maxWidth = Math.max(minWindowWidth, window.innerWidth - 2 * viewportMargin)
+    const maxHeight = Math.max(minWindowHeight, window.innerHeight - 2 * viewportMargin)
+    const width = clamp(bounds.width, minWindowWidth, maxWidth)
+    const height = clamp(bounds.height, minWindowHeight, maxHeight)
+    return {
+      width,
+      height,
+      left: clamp(bounds.left, viewportMargin, Math.max(viewportMargin, window.innerWidth - viewportMargin - width)),
+      top: clamp(bounds.top, viewportMargin, Math.max(viewportMargin, window.innerHeight - viewportMargin - height)),
+    }
+  }
+
+  const currentWindowBounds = (): WindowBounds =>
+    windowBounds ?? defaultWindowBoundsForViewport()
+
+  const setWindowBounds = (bounds: WindowBounds): void => {
+    windowBounds = clampWindowBounds(bounds)
+  }
+
+  const setControlPanelWidth = (width: number): void => {
+    controlPanelWidth = clamp(width, minControlPanelWidth, maxControlPanelWidth)
+  }
+
+  const windowStyle = $derived.by(() => {
+    const bounds = currentWindowBounds()
+    return `left:${bounds.left}px;top:${bounds.top}px;width:${bounds.width}px;height:${bounds.height}px;--drone-control-panel-width:${controlPanelCollapsed ? collapsedControlPanelWidth : controlPanelWidth}px`
   })
+
+  const bodyStyle = $derived.by(() =>
+    `grid-template-columns:minmax(0,1fr) ${controlPanelCollapsed ? collapsedControlPanelWidth : controlPanelWidth}px`)
 
   const targetOptions = $derived(objects.filter(candidate => candidate.id !== selectedObject.id && (
     candidate.spatial.position?.point !== undefined || candidate.spatial.geometry?.type === 'Point'
@@ -145,6 +214,80 @@
     mouseAxes = zeroAxes
     liveAxes = zeroAxes
     commandStatus = `Controlling ${next.label}`
+  }
+
+  const eventTargetIsWindowControl = (target: EventTarget | null): boolean =>
+    target instanceof Element
+    && target.closest('button,select,input,textarea,a,[data-window-control]') !== null
+
+  const startWindowDrag = (event: PointerEvent): void => {
+    if (event.button !== 0 || eventTargetIsWindowControl(event.target)) return
+    event.preventDefault()
+    windowDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startBounds: currentWindowBounds(),
+    }
+  }
+
+  const startWindowResize = (event: PointerEvent): void => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    windowResize = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startBounds: currentWindowBounds(),
+    }
+  }
+
+  const startControlPanelResize = (event: PointerEvent): void => {
+    if (event.button !== 0 || controlPanelCollapsed) return
+    event.preventDefault()
+    event.stopPropagation()
+    controlPanelResize = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: controlPanelWidth,
+    }
+  }
+
+  const toggleControlPanel = (): void => {
+    controlPanelCollapsed = !controlPanelCollapsed
+  }
+
+  const onWindowPointerMove = (event: PointerEvent): void => {
+    if (windowDrag && event.pointerId === windowDrag.pointerId) {
+      setWindowBounds({
+        ...windowDrag.startBounds,
+        left: windowDrag.startBounds.left + event.clientX - windowDrag.startX,
+        top: windowDrag.startBounds.top + event.clientY - windowDrag.startY,
+      })
+      return
+    }
+    if (windowResize && event.pointerId === windowResize.pointerId) {
+      setWindowBounds({
+        ...windowResize.startBounds,
+        width: windowResize.startBounds.width + event.clientX - windowResize.startX,
+        height: windowResize.startBounds.height + event.clientY - windowResize.startY,
+      })
+      return
+    }
+    if (controlPanelResize && event.pointerId === controlPanelResize.pointerId) {
+      setControlPanelWidth(controlPanelResize.startWidth - (event.clientX - controlPanelResize.startX))
+    }
+  }
+
+  const onWindowPointerUp = (event: PointerEvent): void => {
+    if (windowDrag?.pointerId === event.pointerId) windowDrag = null
+    if (windowResize?.pointerId === event.pointerId) windowResize = null
+    if (controlPanelResize?.pointerId === event.pointerId) controlPanelResize = null
+  }
+
+  const clampWindowToViewport = (): void => {
+    setWindowBounds(currentWindowBounds())
   }
 
   const refreshGamepads = (force = false): void => {
@@ -564,6 +707,7 @@
 
   runOnMount(() => {
     if (!sceneElement) throw new Error('drone scene element was not mounted')
+    windowBounds = clampWindowBounds(defaultWindowBoundsForViewport())
     try {
       keyBindings = readDroneKeyBindings(localStorage)
     } catch (err) {
@@ -593,6 +737,10 @@
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
     window.addEventListener('blur', onWindowBlur)
+    window.addEventListener('resize', clampWindowToViewport)
+    window.addEventListener('pointermove', onWindowPointerMove)
+    window.addEventListener('pointerup', onWindowPointerUp)
+    window.addEventListener('pointercancel', onWindowPointerUp)
     window.addEventListener('mousemove', onMouseMove)
     document.addEventListener('visibilitychange', onVisibilityChange)
     document.addEventListener('pointerlockchange', onPointerLockChange)
@@ -604,6 +752,10 @@
       window.removeEventListener('keydown', onKeydown)
       window.removeEventListener('keyup', onKeyup)
       window.removeEventListener('blur', onWindowBlur)
+      window.removeEventListener('resize', clampWindowToViewport)
+      window.removeEventListener('pointermove', onWindowPointerMove)
+      window.removeEventListener('pointerup', onWindowPointerUp)
+      window.removeEventListener('pointercancel', onWindowPointerUp)
       window.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('visibilitychange', onVisibilityChange)
       document.removeEventListener('pointerlockchange', onPointerLockChange)
@@ -616,8 +768,14 @@
   })
 </script>
 
-<section class="drone-window" style={windowStyle} aria-label="Drone flight window">
-  <header class="drone-window-header">
+<section
+  class="drone-window"
+  class:dragging={windowDrag !== null}
+  class:resizing={windowResize !== null || controlPanelResize !== null}
+  style={windowStyle}
+  aria-label="Drone flight window"
+>
+  <header class="drone-window-header" role="toolbar" aria-label="Drone flight window title bar" tabindex="0" onpointerdown={startWindowDrag}>
     <div>
       <h2>{selectedObject.label}</h2>
       <span>{data?.vehicle.modelLabel ?? 'Invalid drone'} · {data?.navigation.mode ?? selectedObject.operational.status} · {data?.link.state ?? 'unknown'} · {Math.round(batteryPercent)}%</span>
@@ -630,7 +788,7 @@
     </div>
   </header>
 
-  <div class="drone-window-body">
+  <div class="drone-window-body" class:control-panel-collapsed={controlPanelCollapsed} style={bodyStyle}>
     <div class="scene-shell">
       <div
         bind:this={sceneElement}
@@ -664,7 +822,32 @@
         </div>
       {/if}
     </div>
-    <aside class="drone-control-panel">
+    <div class="drone-control-shell" class:collapsed={controlPanelCollapsed}>
+      {#if controlPanelCollapsed}
+        <button
+          class="control-panel-reopen"
+          type="button"
+          aria-label="Open drone settings rail"
+          title="Open drone settings rail"
+          onclick={toggleControlPanel}
+        >
+          <PanelRightOpen size={18} />
+        </button>
+      {:else}
+        <button
+          class="control-panel-resize"
+          type="button"
+          aria-label="Resize drone settings rail"
+          title="Resize drone settings rail"
+          data-window-control
+          onpointerdown={startControlPanelResize}
+        >
+          <GripVertical size={16} />
+        </button>
+        <aside class="drone-control-panel">
+          <div class="control-panel-toolbar">
+            <IconButton label="Collapse drone settings rail" icon={PanelRightClose} variant="ghost" onClick={toggleControlPanel} />
+          </div>
       <section>
         <h3><LocateFixed size={15} /> Drone</h3>
         <select value={selectedDroneId} aria-label="Controlled drone" onchange={selectDrone}>
@@ -799,10 +982,22 @@
         </select>
         <button type="button" disabled={!selectedTargetId} onclick={() => void attackTarget()}><Crosshair size={15} /> Apply</button>
       </section>
-    </aside>
+        </aside>
+      {/if}
+    </div>
   </div>
 
   <footer class="drone-window-footer">{footerStatus}</footer>
+  <button
+    class="window-resize-grip"
+    type="button"
+    aria-label="Resize drone flight window"
+    title="Resize drone flight window"
+    data-window-control
+    onpointerdown={startWindowResize}
+  >
+    <Maximize2 size={14} />
+  </button>
 </section>
 
 <style>
@@ -819,6 +1014,11 @@
     box-shadow: 0 24px 60px rgb(15 23 42 / 0.38);
   }
 
+  .drone-window.dragging,
+  .drone-window.resizing {
+    user-select: none;
+  }
+
   .drone-window-header,
   .drone-window-footer {
     display: flex;
@@ -829,6 +1029,11 @@
     padding: 10px 12px;
     background: #111827;
     border-bottom: 1px solid rgb(148 163 184 / 0.22);
+  }
+
+  .drone-window-header {
+    cursor: move;
+    touch-action: none;
   }
 
   .drone-window-footer {
@@ -898,7 +1103,6 @@
 
   .drone-window-body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
     min-height: 0;
   }
 
@@ -925,14 +1129,89 @@
     height: 100%;
   }
 
+  .drone-control-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    background: #0b1120;
+    border-left: 1px solid rgb(148 163 184 / 0.2);
+  }
+
+  .drone-control-shell.collapsed {
+    display: grid;
+    place-items: start center;
+    padding-top: 10px;
+  }
+
+  .control-panel-reopen,
+  .control-panel-resize,
+  .window-resize-grip {
+    border: 1px solid rgb(148 163 184 / 0.28);
+    background: #1e293b;
+    color: #e2e8f0;
+  }
+
+  .control-panel-reopen {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 34px;
+  }
+
+  .control-panel-resize {
+    position: absolute;
+    left: -7px;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 13px;
+    height: 100%;
+    padding: 0;
+    border-top: 0;
+    border-bottom: 0;
+    cursor: col-resize;
+    opacity: 0.68;
+    touch-action: none;
+  }
+
+  .control-panel-resize:hover,
+  .control-panel-resize:focus-visible {
+    opacity: 1;
+    border-color: #60a5fa;
+  }
+
+  .control-panel-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+
+  .window-resize-grip {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-right: 0;
+    border-bottom: 0;
+    cursor: nwse-resize;
+    touch-action: none;
+  }
+
   .drone-control-panel {
     display: grid;
     align-content: start;
     gap: 12px;
+    height: 100%;
+    box-sizing: border-box;
     padding: 12px;
     overflow: auto;
     background: #0b1120;
-    border-left: 1px solid rgb(148 163 184 / 0.2);
   }
 
   .drone-control-panel section {
@@ -1130,7 +1409,7 @@
     }
 
     .drone-window-body {
-      grid-template-columns: 1fr;
+      grid-template-columns: 1fr !important;
       grid-template-rows: minmax(260px, 1fr) auto;
       overflow: hidden;
     }
@@ -1140,11 +1419,18 @@
       font-size: 10px;
     }
 
+    .drone-control-shell {
+      border-top: 1px solid rgb(148 163 184 / 0.2);
+      border-left: 0;
+    }
+
     .drone-control-panel {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       max-height: 270px;
-      border-top: 1px solid rgb(148 163 184 / 0.2);
-      border-left: 0;
+    }
+
+    .control-panel-resize {
+      display: none;
     }
 
     .command-grid {
