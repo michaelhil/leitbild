@@ -524,10 +524,16 @@ describe('drone scenery GLB compiler', () => {
     const result = compileSceneryGlbTile(crossingRoadTile())
     expect(result).not.toBeNull()
     const asphaltYValues = roundedYValues(primitivePositionsByMaterialName(result!.bytes, /major road asphalt/))
+    const roadStackYValues = roundedYValues(primitivePositionsByMaterialName(
+      result!.bytes,
+      /road shoulders|road dark casing|major road asphalt|baked road markings/,
+    ))
 
     expect(asphaltYValues.length).toBeGreaterThanOrEqual(2)
     const deltas = asphaltYValues.slice(1).map((value, index) => value - asphaltYValues[index]!)
     expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
+    const stackDeltas = roadStackYValues.slice(1).map((value, index) => value - roadStackYValues[index]!)
+    expect(Math.min(...stackDeltas)).toBeGreaterThanOrEqual(0.05)
   })
 
   test('arbitrates overlapping base surfaces into stable material strata', () => {

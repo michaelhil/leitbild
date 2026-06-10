@@ -107,7 +107,7 @@ const horizontalDepth = {
   aerowayShoulderY: 0.84,
   aerowayFillY: 1.0,
   roadBaseY: 1.12,
-  roadFeatureLaneStepM: 0.075,
+  roadFeatureLaneStepM: 0.62,
   roadCasingLiftM: 0.11,
   roadFillLiftM: 0.23,
   roadEdgeMarkingLiftM: 0.36,
