@@ -4,8 +4,11 @@ export const sceneryFeatureTileEncoding = 'leitbild-scenery-feature-json-v1' as 
 export const sceneryAssetTileEncoding = 'model/gltf-binary' as const
 export const sceneryAssetFormat = '3d-tiles' as const
 export const sceneryAssetTileExtension = 'glb' as const
+export const sceneryRoadTileEncoding = 'leitbild-scenery-road-json-v1' as const
+export const sceneryRoadTileExtension = 'roads.json' as const
 export const sceneryAssetTilesetUrl = '/map/scenery/current/tileset.json' as const
 export const sceneryAssetTileTemplate = '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb' as const
+export const sceneryRoadTileTemplate = '/map/scenery/current/{recipeId}/{z}/{x}/{y}.roads.json' as const
 export const defaultSceneryRecipeId = 'drone-urban-flight' as const
 
 export const sceneryTileCoordSchema = z.object({
@@ -87,6 +90,68 @@ export const sceneryTileSchema = z.object({
   }),
 })
 export type SceneryTile = z.infer<typeof sceneryTileSchema>
+
+export const sceneryRoadFeatureSchema = z.object({
+  id: z.string().min(1),
+  className: z.string().min(1),
+  name: z.string().min(1).optional(),
+  subclass: z.string().min(1).optional(),
+  surface: z.string().min(1).optional(),
+  brunnel: z.string().min(1).optional(),
+  layer: z.number().finite().optional(),
+  service: z.string().min(1).optional(),
+  access: z.string().min(1).optional(),
+  maxspeedKph: z.number().finite().optional(),
+  oneway: z.boolean().optional(),
+  isBridge: z.boolean(),
+  isTunnel: z.boolean(),
+  path: z.array(sceneryPointSchema).min(2),
+  widthM: z.number().finite().positive(),
+  verticalOffsetM: z.number().finite(),
+})
+export type SceneryRoadFeature = z.infer<typeof sceneryRoadFeatureSchema>
+
+export const sceneryRoadTileSchema = z.object({
+  schemaVersion: z.literal(1),
+  tileEncoding: z.literal(sceneryRoadTileEncoding),
+  recipeId: z.string().min(1),
+  sourceTilesetId: z.string().min(1),
+  tile: sceneryTileCoordSchema.extend({
+    extent: z.number().int().positive(),
+  }),
+  roads: z.array(sceneryRoadFeatureSchema),
+})
+export type SceneryRoadTile = z.infer<typeof sceneryRoadTileSchema>
+
+export const sceneryRoadTileFromSceneryTile = (
+  tile: SceneryTile,
+): SceneryRoadTile => sceneryRoadTileSchema.parse({
+  schemaVersion: 1,
+  tileEncoding: sceneryRoadTileEncoding,
+  recipeId: tile.recipeId,
+  sourceTilesetId: tile.sourceTilesetId,
+  tile: tile.tile,
+  roads: tile.features.lines
+    .filter(feature => feature.kind === 'road')
+    .map(feature => ({
+      id: feature.id,
+      className: feature.className,
+      ...(feature.name === undefined ? {} : { name: feature.name }),
+      ...(feature.subclass === undefined ? {} : { subclass: feature.subclass }),
+      ...(feature.surface === undefined ? {} : { surface: feature.surface }),
+      ...(feature.brunnel === undefined ? {} : { brunnel: feature.brunnel }),
+      ...(feature.layer === undefined ? {} : { layer: feature.layer }),
+      ...(feature.service === undefined ? {} : { service: feature.service }),
+      ...(feature.access === undefined ? {} : { access: feature.access }),
+      ...(feature.maxspeedKph === undefined ? {} : { maxspeedKph: feature.maxspeedKph }),
+      ...(feature.oneway === undefined ? {} : { oneway: feature.oneway }),
+      isBridge: feature.isBridge,
+      isTunnel: feature.isTunnel,
+      path: feature.path,
+      widthM: feature.widthM,
+      verticalOffsetM: feature.verticalOffsetM,
+    })),
+})
 
 export const emptySceneryTile = (config: {
   readonly recipeId: string
@@ -324,6 +389,7 @@ export const sceneryAssetTilesetSchema = z.object({
       })).min(1),
       recipes: z.array(z.unknown()).min(1),
       tileTemplate: z.literal(sceneryAssetTileTemplate),
+      roadTileTemplate: z.literal(sceneryRoadTileTemplate),
       outputRoot: z.string().min(1),
       quality: sceneryTilesetQualitySummarySchema.optional(),
       counts: z.object({

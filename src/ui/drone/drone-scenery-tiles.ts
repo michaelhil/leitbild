@@ -15,6 +15,7 @@ export type DroneWorldSceneryTilesetStatus =
       readonly status: 'available'
       readonly tilesetUrl: string
       readonly tileTemplate: string
+      readonly roadTileTemplate: string
       readonly path?: string
     }
   | {
@@ -29,6 +30,7 @@ export type DroneWorldSceneryTilesetStatus =
 
 export interface DroneSceneryTilesetInfo {
   readonly tilesetUrl: string
+  readonly roadTileTemplate: string
   readonly origin: SceneryTilesetOrigin
   readonly bounds: {
     readonly minLon: number
@@ -155,12 +157,13 @@ const sceneryStatusFromManifest = (
     const format = stringValue(artifact?.format)
     const tilesetUrl = stringValue(artifact?.tilesetUrl)
     const tileTemplate = stringValue(artifact?.currentTileTemplate)
-    if (format !== sceneryAssetFormat || tileEncoding !== sceneryAssetTileEncoding || !tilesetUrl || !tileTemplate) {
+    const roadTileTemplate = stringValue(artifact?.roadTileTemplate)
+    if (format !== sceneryAssetFormat || tileEncoding !== sceneryAssetTileEncoding || !tilesetUrl || !tileTemplate || !roadTileTemplate) {
       return { status: 'unknown', reason: 'scenery capability is available but 3D Tiles metadata is incomplete' }
     }
     return path
-      ? { status: 'available', tilesetUrl, tileTemplate, path }
-      : { status: 'available', tilesetUrl, tileTemplate }
+      ? { status: 'available', tilesetUrl, tileTemplate, roadTileTemplate, path }
+      : { status: 'available', tilesetUrl, tileTemplate, roadTileTemplate }
   }
 
   if (availabilityStatus === 'unavailable') {
@@ -206,6 +209,7 @@ export const loadDroneSceneryTilesetInfo = async (config: {
   const metadata = parsed.data.extras.leitbild
   return {
     tilesetUrl: config.status.tilesetUrl,
+    roadTileTemplate: config.status.roadTileTemplate,
     origin: metadata.origin,
     bounds: metadata.bounds,
     counts: {
@@ -244,15 +248,24 @@ export const createDroneSceneryTilesRenderer = (config: {
   readonly info: DroneSceneryTilesetInfo
   readonly onStatus?: (message: string) => void
   readonly onError?: (message: string) => void
-  readonly onModelLoaded?: (node: TransformNode) => void
+  readonly onModelLoaded?: (node: TransformNode, modelUrl: string) => void
+  readonly onModelDisposed?: (modelUrl: string) => void
 }): DroneSceneryTilesRenderer => {
   const tiles = new TilesRenderer(config.info.tilesetUrl, config.scene) as PatchedTilesRenderer
   tiles.group.name = 'leitbild-scenery-3d-tiles'
   tiles.checkCollisions = false
   configureRendererBudgets(tiles)
+  const loadedModelUrls = new WeakMap<Tile, string>()
 
   tiles.addEventListener('load-model', event => {
-    config.onModelLoaded?.(event.scene)
+    loadedModelUrls.set(event.tile, event.url)
+    config.onModelLoaded?.(event.scene, event.url)
+  })
+  tiles.addEventListener('dispose-model', event => {
+    const modelUrl = loadedModelUrls.get(event.tile)
+    if (!modelUrl) return
+    loadedModelUrls.delete(event.tile)
+    config.onModelDisposed?.(modelUrl)
   })
   tiles.addEventListener('tiles-load-start', () => {
     config.onStatus?.('3D Tiles scenery loading')

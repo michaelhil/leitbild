@@ -27,6 +27,7 @@ import {
   loadDroneWorldSceneryTilesetStatus,
   type DroneSceneryTilesRenderer,
 } from './drone-scenery-tiles.ts'
+import { createDroneRoadOverlayRenderer, type DroneRoadOverlayRenderer } from './drone-road-overlay.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
@@ -503,6 +504,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   let sceneOriginCenter: DroneWorldCenter | null = null
   let terrainStatus: DroneWorldTerrainStatus = { status: 'unknown', reason: 'terrain status not loaded yet' }
   let sceneryRenderer: DroneSceneryTilesRenderer | null = null
+  let roadOverlayRenderer: DroneRoadOverlayRenderer | null = null
   let sceneryLoadMs = 0
   let readyNotified = false
   let lastFrameAt = performance.now()
@@ -541,14 +543,22 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       const info = await loadDroneSceneryTilesetInfo({ status: sceneryStatus })
       if (destroyed) return
       sceneOriginCenter = { lon: info.origin.lon, lat: info.origin.lat }
+      roadOverlayRenderer = createDroneRoadOverlayRenderer({
+        scene,
+        center: sceneOriginCenter,
+        roadTileTemplate: info.roadTileTemplate,
+        ...(config.onError === undefined ? {} : { onError: config.onError }),
+      })
       sceneryRenderer = createDroneSceneryTilesRenderer({
         scene,
         info,
         ...(config.onWorldStatus === undefined ? {} : { onStatus: config.onWorldStatus }),
         ...(config.onError === undefined ? {} : { onError: config.onError }),
-        onModelLoaded: node => {
+        onModelLoaded: (node, modelUrl) => {
           for (const mesh of node.getChildMeshes(false)) tuneImportedSceneryMaterial(mesh)
+          roadOverlayRenderer?.attachTileForModelUrl(modelUrl)
         },
+        onModelDisposed: modelUrl => roadOverlayRenderer?.disposeTileForModelUrl(modelUrl),
       })
       sceneryLoadMs = performance.now() - startedAt
       config.onWorldStatus?.(`3D Tiles scenery attached · ${info.counts.writtenTileCount} tiles · ${(info.counts.bytes / 1_000_000).toFixed(1)} MB source`)
@@ -682,6 +692,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       for (const entry of objectMeshes.values()) entry.root.dispose(false, true)
       objectMeshes.clear()
       sceneryRenderer?.dispose()
+      roadOverlayRenderer?.dispose()
       scene.dispose()
       engine.dispose()
       canvas.remove()

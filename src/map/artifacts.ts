@@ -13,6 +13,8 @@ import {
 import {
   sceneryAssetTilesetSchema,
   sceneryAssetTileEncoding,
+  sceneryRoadTileSchema,
+  sceneryRoadTileTemplate,
 } from './scenery.ts'
 import { createLeitbildMapStyle, type MapTheme } from './style.ts'
 
@@ -57,6 +59,7 @@ export interface MapArtifactStatus {
   readonly scenery: MapArtifactFileStatus & {
     readonly tilesetUrl: string
     readonly tileTemplate: string
+    readonly roadTileTemplate: string
   }
 }
 
@@ -66,6 +69,7 @@ const rasterDemContentType = 'image/png'
 const glyphContentType = 'application/x-protobuf'
 const sceneryTilesetContentType = 'application/json; charset=utf-8'
 const sceneryTileContentType = sceneryAssetTileEncoding
+const sceneryRoadTileContentType = 'application/json; charset=utf-8'
 const glyphProbeFontStack = 'Noto Sans Regular'
 const glyphProbeRange = '0-255'
 const mapFontPathPrefix = '/map/fonts/'
@@ -120,8 +124,9 @@ const currentSceneryTilePath = (
   config: MapArtifactConfig,
   recipeId: string,
   coordinates: TileCoordinates,
+  extension: 'glb' | 'roads.json',
 ): string =>
-  resolve(config.rootDir, 'current', 'scenery', recipeId, String(coordinates.z), String(coordinates.x), `${coordinates.y}.glb`)
+  resolve(config.rootDir, 'current', 'scenery', recipeId, String(coordinates.z), String(coordinates.x), `${coordinates.y}.${extension}`)
 
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
@@ -141,11 +146,12 @@ const parseTileCoordinates = (
   zPart: string,
   xPart: string,
   yPart: string,
-  extension: 'mvt' | 'png' | 'glb',
+  extension: 'mvt' | 'png' | 'glb' | 'roads.json',
 ): TileCoordinates | null => {
   const z = parseTileCoordinate(zPart)
   const x = parseTileCoordinate(xPart)
-  const yMatch = yPart.match(new RegExp(`^(\\d+)\\.${extension}$`))
+  const escapedExtension = extension.replaceAll('.', '\\.')
+  const yMatch = yPart.match(new RegExp(`^(\\d+)\\.${escapedExtension}$`))
   const y = yMatch ? parseTileCoordinate(yMatch[1] ?? '') : null
   if (z === null || x === null || y === null) return null
   if (z < 0 || z > 26) return null
@@ -428,6 +434,7 @@ export const createMapArtifactStatus = async (config: MapArtifactConfig): Promis
       ...sceneryTileset,
       tilesetUrl: '/map/scenery/current/tileset.json',
       tileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb',
+      roadTileTemplate: sceneryRoadTileTemplate,
     },
   }
 }
@@ -624,7 +631,11 @@ export const currentSceneryTileResponse = async (
   if (!recipeId || !sceneryRecipeIdPattern.test(recipeId)) {
     return Response.json({ ok: false, error: 'invalid scenery recipe id' }, { status: 400 })
   }
-  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '', 'glb')
+  const extension = yPart?.endsWith('.roads.json') ? 'roads.json' : yPart?.endsWith('.glb') ? 'glb' : null
+  if (!extension) {
+    return Response.json({ ok: false, error: 'invalid scenery tile extension' }, { status: 400 })
+  }
+  const coordinates = parseTileCoordinates(zPart ?? '', xPart ?? '', yPart ?? '', extension)
   if (!coordinates) {
     return Response.json({ ok: false, error: 'invalid scenery tile coordinates' }, { status: 400 })
   }
@@ -632,9 +643,29 @@ export const currentSceneryTileResponse = async (
     return Response.json({ ok: false, error: 'unknown scenery recipe' }, { status: 404 })
   }
 
-  const precompiledPath = currentSceneryTilePath(config, recipeId, coordinates)
+  const precompiledPath = currentSceneryTilePath(config, recipeId, coordinates, extension)
   const precompiledFile = Bun.file(precompiledPath)
   if (await precompiledFile.exists()) {
+    if (extension === 'roads.json') {
+      let body: string
+      try {
+        body = await precompiledFile.text()
+        sceneryRoadTileSchema.parse(JSON.parse(body) as unknown)
+      } catch (error) {
+        return Response.json({
+          ok: false,
+          error: 'precompiled scenery road tile is invalid',
+          expectedPath: precompiledPath,
+          detail: error instanceof Error ? error.message : String(error),
+        }, { status: 415 })
+      }
+      return new Response(body, {
+        headers: {
+          'Content-Type': sceneryRoadTileContentType,
+          'Cache-Control': 'public, max-age=3600',
+        },
+      })
+    }
     return new Response(precompiledFile, {
       headers: {
         'Content-Type': sceneryTileContentType,

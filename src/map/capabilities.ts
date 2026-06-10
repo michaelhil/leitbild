@@ -8,6 +8,7 @@ import {
   sceneryAssetTileEncoding,
   sceneryAssetTilesetUrl,
   sceneryAssetTileTemplate,
+  sceneryRoadTileTemplate,
 } from './scenery.ts'
 
 // Map Capability Manifest v2.
@@ -161,6 +162,7 @@ export const sceneryTilesetSchema = z.object({
     lodStrategy: z.literal('hierarchical-screen-space-error'),
     tilesetUrl: z.literal(sceneryAssetTilesetUrl),
     currentTileTemplate: z.literal(sceneryAssetTileTemplate),
+    roadTileTemplate: z.literal(sceneryRoadTileTemplate),
   }),
   recipes: z.array(sceneryRecipeSchema).min(1),
   availability: sceneryAvailabilitySchema,
@@ -450,6 +452,7 @@ export const createSceneryTileset = (availability: SceneryAvailability): Scenery
       lodStrategy: 'hierarchical-screen-space-error',
       tilesetUrl: sceneryAssetTilesetUrl,
       currentTileTemplate: sceneryAssetTileTemplate,
+      roadTileTemplate: sceneryRoadTileTemplate,
     },
     recipes: defaultSceneryRecipes,
     availability,

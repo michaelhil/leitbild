@@ -65,15 +65,12 @@ interface SceneryGlbLodProfile {
   readonly includeFacadeWindows: boolean
   readonly includeRoofParapets: boolean
   readonly includeRoofFixtures: boolean
-  readonly includeRoadMarkings: boolean
   readonly includeStreetLights: boolean
   readonly includePoiBeacons: boolean
   readonly facadeWindowCellBudget: number
   readonly facadeTrimBandBudget: number
   readonly roofParapetSegmentBudget: number
   readonly roofFixtureBudget: number
-  readonly roadEdgeRibbonPairBudget: number
-  readonly roadMarkingDashBudget: number
   readonly streetLightBudget: number
   readonly poiBeaconBudget: number
   readonly vegetationMaxPerTile: number
@@ -86,8 +83,6 @@ interface SceneryDetailBudget {
   facadeTrimBandsRemaining: number
   roofParapetSegmentsRemaining: number
   roofFixturesRemaining: number
-  roadEdgeRibbonPairsRemaining: number
-  roadMarkingDashesRemaining: number
   streetLightsRemaining: number
   poiBeaconsRemaining: number
 }
@@ -111,12 +106,6 @@ const horizontalDepth = {
   railSteelY: 1.12,
   aerowayShoulderY: 1.26,
   aerowayFillY: 1.34,
-  roadBaseY: 1.40,
-  roadFeatureLaneStepM: 1.35,
-  roadCasingLiftM: 0.30,
-  roadFillLiftM: 0.62,
-  roadEdgeMarkingLiftM: 0.92,
-  roadCenterMarkingLiftM: 1.08,
   roofMaterialLiftStepM: 0.075,
 } as const
 
@@ -132,15 +121,12 @@ const lodProfileForZoom = (
       includeFacadeWindows: false,
       includeRoofParapets: false,
       includeRoofFixtures: false,
-      includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
       facadeWindowCellBudget: 0,
       facadeTrimBandBudget: 0,
       roofParapetSegmentBudget: 0,
       roofFixtureBudget: 0,
-      roadEdgeRibbonPairBudget: 0,
-      roadMarkingDashBudget: 0,
       streetLightBudget: 0,
       poiBeaconBudget: 0,
       vegetationMaxPerTile: 0,
@@ -157,15 +143,12 @@ const lodProfileForZoom = (
       includeFacadeWindows: false,
       includeRoofParapets: false,
       includeRoofFixtures: false,
-      includeRoadMarkings: false,
       includeStreetLights: false,
       includePoiBeacons: false,
       facadeWindowCellBudget: 0,
       facadeTrimBandBudget: 0,
       roofParapetSegmentBudget: 0,
       roofFixtureBudget: 0,
-      roadEdgeRibbonPairBudget: 0,
-      roadMarkingDashBudget: 0,
       streetLightBudget: 0,
       poiBeaconBudget: 0,
       vegetationMaxPerTile: 48,
@@ -181,15 +164,12 @@ const lodProfileForZoom = (
     includeFacadeWindows: true,
     includeRoofParapets: true,
     includeRoofFixtures: true,
-    includeRoadMarkings: true,
     includeStreetLights: true,
     includePoiBeacons: true,
     facadeWindowCellBudget: 11_000,
     facadeTrimBandBudget: 2_200,
     roofParapetSegmentBudget: 2_400,
     roofFixtureBudget: 240,
-    roadEdgeRibbonPairBudget: 360,
-    roadMarkingDashBudget: 1_800,
     streetLightBudget: 520,
     poiBeaconBudget: 48,
     vegetationMaxPerTile: 160,
@@ -205,8 +185,6 @@ const detailBudgetForProfile = (
   facadeTrimBandsRemaining: profile.facadeTrimBandBudget,
   roofParapetSegmentsRemaining: profile.roofParapetSegmentBudget,
   roofFixturesRemaining: profile.roofFixtureBudget,
-  roadEdgeRibbonPairsRemaining: profile.roadEdgeRibbonPairBudget,
-  roadMarkingDashesRemaining: profile.roadMarkingDashBudget,
   streetLightsRemaining: profile.streetLightBudget,
   poiBeaconsRemaining: profile.poiBeaconBudget,
 })
@@ -222,8 +200,6 @@ const materials: ReadonlyArray<MaterialSpec> = [
   { key: 'road-shoulder', name: 'road shoulder', color: [0.70, 0.67, 0.58, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
   { key: 'road-casing', name: 'road dark casing', color: [0.12, 0.14, 0.17, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
   { key: 'road-fill', name: 'road asphalt', color: [0.38, 0.41, 0.42, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
-  { key: 'road-major-fill', name: 'major road asphalt', color: [0.30, 0.34, 0.38, 1], depthPolicy: 'base-surface', roughnessFactor: 0.7, doubleSided: true },
-  { key: 'road-marking', name: 'baked road markings', color: [0.96, 0.94, 0.78, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, doubleSided: true },
   { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
   { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
   { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
@@ -918,140 +894,6 @@ const appendRibbon = (
   }
 }
 
-const appendDash = (
-  bucket: MeshBucket,
-  center: LocalPoint,
-  ux: number,
-  uz: number,
-  halfLength: number,
-  halfWidth: number,
-  y: number,
-): void => {
-  const nx = -uz
-  const nz = ux
-  appendQuad(
-    bucket,
-    { x: center.x + ux * halfLength + nx * halfWidth, y, z: center.z + uz * halfLength + nz * halfWidth },
-    { x: center.x + ux * halfLength - nx * halfWidth, y, z: center.z + uz * halfLength - nz * halfWidth },
-    { x: center.x - ux * halfLength - nx * halfWidth, y, z: center.z - uz * halfLength - nz * halfWidth },
-    { x: center.x - ux * halfLength + nx * halfWidth, y, z: center.z - uz * halfLength + nz * halfWidth },
-    { x: 0, y: 1, z: 0 },
-  )
-}
-
-const appendRoadMarkings = (
-  bucket: MeshBucket,
-  path: ReadonlyArray<LocalPoint>,
-  lineId: string,
-  widthM: number,
-  y: number,
-  budget: SceneryDetailBudget,
-): void => {
-  if (widthM < 8 || budget.roadMarkingDashesRemaining <= 0) return
-  const dashOffset = 6 + stableHash(lineId) % 13
-  let dashCount = 0
-  for (let index = 0; index < path.length - 1 && dashCount < 96 && budget.roadMarkingDashesRemaining > 0; index += 1) {
-    const start = path[index]!
-    const end = path[index + 1]!
-    const dx = end.x - start.x
-    const dz = end.z - start.z
-    const length = Math.hypot(dx, dz)
-    if (length < 20) continue
-    const ux = dx / length
-    const uz = dz / length
-    for (let distance = dashOffset; distance < length - 5 && dashCount < 96 && budget.roadMarkingDashesRemaining > 0; distance += 31) {
-      appendDash(bucket, { x: start.x + ux * distance, z: start.z + uz * distance }, ux, uz, 4.4, 0.22, y)
-      dashCount += 1
-      budget.roadMarkingDashesRemaining -= 1
-    }
-  }
-}
-
-const offsetPath = (
-  path: ReadonlyArray<LocalPoint>,
-  offsetM: number,
-): ReadonlyArray<LocalPoint> =>
-  path.map((point, index) => {
-    const previous = path[index - 1]
-    const next = path[index + 1]
-    const from = previous ?? point
-    const to = next ?? point
-    const dx = to.x - from.x
-    const dz = to.z - from.z
-    const length = Math.max(0.001, Math.hypot(dx, dz))
-    const nx = -dz / length
-    const nz = dx / length
-    return { x: point.x + nx * offsetM, z: point.z + nz * offsetM }
-  })
-
-const appendRoadEdgeMarkings = (
-  bucket: MeshBucket,
-  path: ReadonlyArray<LocalPoint>,
-  widthM: number,
-  y: number,
-  budget: SceneryDetailBudget,
-): void => {
-  if (widthM < 10 || budget.roadEdgeRibbonPairsRemaining <= 0) return
-  budget.roadEdgeRibbonPairsRemaining -= 1
-  const offset = Math.max(2.8, widthM * 0.42)
-  appendRibbon(bucket, offsetPath(path, -offset), 0.18, y, 0.35, ribbonJoinLiftM)
-  appendRibbon(bucket, offsetPath(path, offset), 0.18, y, 0.35, ribbonJoinLiftM)
-}
-
-interface RoadLaneShape {
-  readonly id: string
-  readonly path: ReadonlyArray<LocalPoint>
-  readonly widthM: number
-  readonly deckY: number
-  readonly priority: number
-}
-
-interface AssignedRoadLaneShape extends RoadLaneShape {
-  readonly lane: number
-}
-
-const priorityLiftForRoad = (priority: number): number =>
-  priority >= 70 ? 0.08 : priority >= 60 ? 0.04 : 0
-
-const roadCasingOuterWidthM = (
-  widthM: number,
-): number => widthM + Math.max(3.5, widthM * 0.16)
-
-const roadShoulderOuterWidthM = (
-  widthM: number,
-): number => widthM + Math.max(6.5, widthM * 0.28)
-
-const boundsForPath = (
-  path: ReadonlyArray<LocalPoint>,
-  paddingM: number,
-): { readonly minX: number; readonly maxX: number; readonly minZ: number; readonly maxZ: number } => {
-  let minX = Number.POSITIVE_INFINITY
-  let maxX = Number.NEGATIVE_INFINITY
-  let minZ = Number.POSITIVE_INFINITY
-  let maxZ = Number.NEGATIVE_INFINITY
-  for (const point of path) {
-    minX = Math.min(minX, point.x)
-    maxX = Math.max(maxX, point.x)
-    minZ = Math.min(minZ, point.z)
-    maxZ = Math.max(maxZ, point.z)
-  }
-  return {
-    minX: minX - paddingM,
-    maxX: maxX + paddingM,
-    minZ: minZ - paddingM,
-    maxZ: maxZ + paddingM,
-  }
-}
-
-const boundsOverlap = (
-  left: ReturnType<typeof boundsForPath>,
-  right: ReturnType<typeof boundsForPath>,
-): boolean =>
-  left.minX <= right.maxX
-    && left.maxX >= right.minX
-    && left.minZ <= right.maxZ
-    && left.maxZ >= right.minZ
-
 const pointSegmentDistanceM = (
   point: LocalPoint,
   start: LocalPoint,
@@ -1104,64 +946,6 @@ const segmentDistanceM = (
         pointSegmentDistanceM(b0, a0, a1),
         pointSegmentDistanceM(b1, a0, a1),
       )
-
-const roadsOverlapOnDeck = (
-  left: RoadLaneShape,
-  right: RoadLaneShape,
-): boolean => {
-  if (Math.abs(left.deckY - right.deckY) >= horizontalDepth.roadFeatureLaneStepM) return false
-  const overlapDistanceM = (left.widthM + right.widthM) / 2 + 1.5
-  if (!boundsOverlap(boundsForPath(left.path, overlapDistanceM), boundsForPath(right.path, overlapDistanceM))) return false
-  for (let leftIndex = 0; leftIndex < left.path.length - 1; leftIndex += 1) {
-    for (let rightIndex = 0; rightIndex < right.path.length - 1; rightIndex += 1) {
-      if (segmentDistanceM(left.path[leftIndex]!, left.path[leftIndex + 1]!, right.path[rightIndex]!, right.path[rightIndex + 1]!) <= overlapDistanceM) {
-        return true
-      }
-    }
-  }
-  return false
-}
-
-const roadLaneAssignmentsFor = (
-  tile: SceneryTile,
-  center: TileLonLat,
-  profile: SceneryGlbLodProfile,
-): ReadonlyMap<string, number> => {
-  const candidates = tile.features.lines.flatMap(feature => {
-    if (feature.kind !== 'road') return []
-    const priority = roadPriority(feature.className)
-    if (priority < profile.minRoadPriority) return []
-    const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
-    if (path.length < 2) return []
-    return [{
-      id: feature.id,
-      path,
-      widthM: roadShoulderOuterWidthM(feature.widthM),
-      deckY: feature.verticalOffsetM + priorityLiftForRoad(priority),
-      priority,
-    }]
-  }).sort((left, right) => right.priority - left.priority || left.id.localeCompare(right.id))
-  const assigned: AssignedRoadLaneShape[] = []
-  const lanes = new Map<string, number>()
-  for (const candidate of candidates) {
-    let lane = 0
-    while (assigned.some(existing => existing.lane === lane && roadsOverlapOnDeck(candidate, existing))) lane += 1
-    lanes.set(candidate.id, lane)
-    assigned.push({ ...candidate, lane })
-  }
-  return lanes
-}
-
-const roadDepthLaneY = (
-  feature: SceneryTile['features']['lines'][number],
-  priority: number,
-  lane: number,
-): number => {
-  return horizontalDepth.roadBaseY
-    + feature.verticalOffsetM
-    + priorityLiftForRoad(priority)
-    + lane * horizontalDepth.roadFeatureLaneStepM
-}
 
 const appendCylinder = (
   bucket: MeshBucket,
@@ -1396,13 +1180,10 @@ const appendTransport = (
   const shoulder = bucketFor(buckets, 'road-shoulder', 'road shoulders')
   const casing = bucketFor(buckets, 'road-casing', 'road casings')
   const fill = bucketFor(buckets, 'road-fill', 'road fills')
-  const majorFill = bucketFor(buckets, 'road-major-fill', 'major road fills')
-  const markings = bucketFor(buckets, 'road-marking', 'baked road markings')
   const rail = bucketFor(buckets, 'rail', 'rails')
   const water = bucketFor(buckets, 'water', 'waterways')
   const poles = bucketFor(buckets, 'street-light', 'street light poles')
   const lamps = bucketFor(buckets, 'street-lamp', 'street lamps')
-  const roadLaneByFeatureId = roadLaneAssignmentsFor(tile, center, profile)
   for (const feature of tile.features.lines) {
     const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
     if (path.length < 2) continue
@@ -1423,16 +1204,6 @@ const appendTransport = (
     }
     const priority = roadPriority(feature.className)
     if (priority < profile.minRoadPriority) continue
-    const roadY = roadDepthLaneY(feature, priority, roadLaneByFeatureId.get(feature.id) ?? 0)
-    const casingOuterWidthM = roadCasingOuterWidthM(feature.widthM)
-    const shoulderOuterWidthM = roadShoulderOuterWidthM(feature.widthM)
-    appendRibbon(shoulder, path, shoulderOuterWidthM, roadY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
-    appendRibbon(casing, path, casingOuterWidthM, roadY + horizontalDepth.roadCasingLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
-    appendRibbon(priority >= 60 ? majorFill : fill, path, feature.widthM, roadY + horizontalDepth.roadFillLiftM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
-    if (profile.includeRoadMarkings) {
-      appendRoadEdgeMarkings(markings, path, feature.widthM, roadY + horizontalDepth.roadEdgeMarkingLiftM, budget)
-      appendRoadMarkings(markings, path, feature.id, feature.widthM, roadY + horizontalDepth.roadCenterMarkingLiftM, budget)
-    }
     if (!profile.includeStreetLights || priority < 40 || feature.isTunnel || budget.streetLightsRemaining <= 0) continue
     let distance = 20 + stableHash(`lamp:${feature.id}`) % 38
     for (let index = 0; index < path.length - 1; index += 1) {

@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { compileSceneryGlbTile } from '../src/map/scenery-glb.ts'
-import type { SceneryTile } from '../src/map/scenery.ts'
+import { sceneryRoadTileFromSceneryTile, sceneryRoadTileSchema, type SceneryTile } from '../src/map/scenery.ts'
 import {
   droneSceneryTileCacheBudget,
   estimateDroneSceneryTileBytesForCache,
 } from '../src/ui/drone/drone-scenery-tiles.ts'
+import { roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay.ts'
 
 const readAscii = (
   bytes: Uint8Array,
@@ -581,7 +582,7 @@ describe('drone scenery GLB compiler', () => {
     expect(bytes.byteLength).toBeLessThan(1_000_000)
   })
 
-  test('bakes buildings, roads, water, vegetation, markings, lights, and POI primitives into the GLB', () => {
+  test('bakes buildings, water, vegetation, lights, and POI primitives into the GLB while roads move to overlay tiles', () => {
     const result = compileSceneryGlbTile(testTile)
     expect(result).not.toBeNull()
     const json = glbJson(result!.bytes)
@@ -598,12 +599,29 @@ describe('drone scenery GLB compiler', () => {
     ].some(name => materialNames.has(name))).toBe(true)
     expect(materialNames.has('roof parapets')).toBe(true)
     expect(materialNames.has('rooftop fixtures')).toBe(true)
-    expect(materialNames.has('major road asphalt')).toBe(true)
-    expect(materialNames.has('baked road markings')).toBe(true)
+    expect(materialNames.has('major road asphalt')).toBe(false)
+    expect(materialNames.has('baked road markings')).toBe(false)
     expect(materialNames.has('water surface')).toBe(true)
     expect(materialNames.has('tree canopy')).toBe(true)
     expect(materialNames.has('street lamp glass')).toBe(true)
     expect(materialNames.has('poi beacon')).toBe(true)
+  })
+
+  test('exports road centerlines and styling data to the road overlay sidecar', () => {
+    const roadTile = sceneryRoadTileFromSceneryTile(testTile)
+    const parsed = sceneryRoadTileSchema.safeParse(roadTile)
+
+    expect(parsed.success).toBe(true)
+    expect(roadTile.tileEncoding).toBe('leitbild-scenery-road-json-v1')
+    expect(roadTile.roads).toHaveLength(1)
+    expect(roadTile.roads[0]).toMatchObject({
+      id: 'road:1',
+      className: 'primary',
+      widthM: 17,
+      isBridge: false,
+      isTunnel: false,
+    })
+    expect(roadTile.roads[0]!.path).toHaveLength(3)
   })
 
   test('keeps facades closed while placing detail on outward relief planes', () => {
@@ -625,74 +643,74 @@ describe('drone scenery GLB compiler', () => {
     expect(Math.max(...reliefOffsets)).toBeLessThanOrEqual(0.09)
   })
 
-  test('separates road, water, and ground planes in compiler-owned depth strata', () => {
+  test('keeps GLB ground and water strata while road surfaces are owned by the overlay renderer', () => {
     const result = compileSceneryGlbTile(testTile)
     expect(result).not.toBeNull()
     const bytes = result!.bytes
     const parkY = firstYValue(bytes, /managed park grass/)
     const waterY = firstYValue(bytes, /water surface/)
-    const shoulderY = firstYValue(bytes, /road shoulder/)
-    const casingY = firstYValue(bytes, /road dark casing/)
-    const asphaltY = firstYValue(bytes, /major road asphalt/)
-    const markingY = firstYValue(bytes, /baked road markings/)
+    const materialNames = usedMaterialNames(glbJson(bytes))
 
     expect(waterY - parkY).toBeGreaterThanOrEqual(0.12)
-    expect(shoulderY - waterY).toBeGreaterThanOrEqual(0.45)
-    expect(casingY - shoulderY).toBeGreaterThanOrEqual(0.1)
-    expect(asphaltY - casingY).toBeGreaterThanOrEqual(0.1)
-    expect(markingY - asphaltY).toBeGreaterThanOrEqual(0.1)
+    expect(materialNames.has('major road asphalt')).toBe(false)
+    expect(materialNames.has('baked road markings')).toBe(false)
   })
 
-  test('assigns crossing roads to deterministic separate depth lanes', () => {
+  test('exports crossing roads to one overlay tile instead of stacking GLB depth lanes', () => {
     const result = compileSceneryGlbTile(crossingRoadTile())
     expect(result).not.toBeNull()
-    const asphaltYValues = roundedYValues(primitivePositionsByMaterialName(result!.bytes, /major road asphalt/))
-    const roadStackYValues = roundedYValues(primitivePositionsByMaterialName(
-      result!.bytes,
-      /road shoulders|road dark casing|major road asphalt|baked road markings/,
-    ))
+    const materialNames = usedMaterialNames(glbJson(result!.bytes))
+    const roadTile = sceneryRoadTileFromSceneryTile(crossingRoadTile())
 
-    expect(asphaltYValues.length).toBeGreaterThanOrEqual(2)
-    const deltas = asphaltYValues.slice(1).map((value, index) => value - asphaltYValues[index]!)
-    expect(Math.min(...deltas)).toBeGreaterThanOrEqual(0.05)
-    const stackDeltas = roadStackYValues.slice(1).map((value, index) => value - roadStackYValues[index]!)
-    expect(Math.min(...stackDeltas)).toBeGreaterThanOrEqual(0.05)
+    expect(materialNames.has('major road asphalt')).toBe(false)
+    expect(materialNames.has('baked road markings')).toBe(false)
+    expect(roadTile.roads).toHaveLength(2)
   })
 
-  test('caps bent road ribbons without same-material surface overlap', () => {
+  test('keeps bent road surfaces out of GLB and in the road overlay sidecar', () => {
     const result = compileSceneryGlbTile(bentRoadTile())
     expect(result).not.toBeNull()
     const quality = result!.summary.quality
+    const materialNames = usedMaterialNames(glbJson(result!.bytes))
 
+    expect(sceneryRoadTileFromSceneryTile(bentRoadTile()).roads).toHaveLength(1)
+    expect(materialNames.has('major road asphalt')).toBe(false)
     expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.same_material_horizontal_overlap')).toBe(false)
   })
 
-  test('treats closed road ribbons as closed topology instead of overlapping open ends', () => {
+  test('keeps closed road topology as overlay data instead of overlapping GLB caps', () => {
     const result = compileSceneryGlbTile(closedRoadTile())
     expect(result).not.toBeNull()
     const quality = result!.summary.quality
+    const roadTile = sceneryRoadTileFromSceneryTile(closedRoadTile())
 
+    expect(roadTile.roads[0]!.path[0]).toEqual(roadTile.roads[0]!.path.at(-1))
     expect(quality?.closeHorizontalOverlapCount).toBe(0)
     expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
   })
 
-  test('keeps short sharp road folds from emitting same-plane self-overlap', () => {
+  test('keeps sharp road folds as paint input instead of self-overlapping GLB slabs', () => {
     const result = compileSceneryGlbTile(hairpinRoadTile())
     expect(result).not.toBeNull()
     const quality = result!.summary.quality
+    const roadTile = sceneryRoadTileFromSceneryTile(hairpinRoadTile())
 
+    expect(roadTile.roads).toHaveLength(1)
+    expect(roadTile.roads[0]!.path).toEqual(hairpinRoadTile().features.lines[0]!.path)
     expect(quality?.closeHorizontalOverlapCount).toBe(0)
     expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
   })
 
-  test('allocates road lanes by full shoulder footprint, not only asphalt fill width', () => {
+  test('keeps parallel roads in one overlay tile instead of allocating vertical GLB lanes', () => {
     const result = compileSceneryGlbTile(parallelRoadShoulderTile())
     expect(result).not.toBeNull()
     const quality = result!.summary.quality
+    const roadTile = sceneryRoadTileFromSceneryTile(parallelRoadShoulderTile())
 
+    expect(roadTile.roads).toHaveLength(2)
     expect(quality?.closeHorizontalOverlapCount).toBe(0)
     expect(quality?.sameMaterialHorizontalOverlapCount).toBe(0)
     expect(quality?.findings.some(finding => finding.code === 'scenery.depth.close_horizontal_overlap')).toBe(false)
@@ -796,13 +814,21 @@ describe('drone scenery GLB compiler', () => {
     expect(materialNames.has('building facade trim')).toBe(true)
     expect(materialNames.has('roof parapets')).toBe(true)
     expect(materialNames.has('rooftop fixtures')).toBe(true)
-    expect(materialNames.has('baked road markings')).toBe(true)
+    expect(materialNames.has('baked road markings')).toBe(false)
     expect(materialNames.has('street lamp glass')).toBe(true)
     expect(materialNames.has('poi beacon')).toBe(true)
+    expect(sceneryRoadTileFromSceneryTile(denseBudgetTile()).roads.length).toBe(960)
   })
 })
 
 describe('drone scenery runtime cache policy', () => {
+  test('derives road overlay sidecars from loaded GLB tile URLs', () => {
+    expect(roadTileUrlFromModelUrl(
+      'https://leitbild.samsinn.app/map/scenery/current/drone-urban-flight/14/8686/4758.glb',
+      '/map/scenery/current/{recipeId}/{z}/{x}/{y}.roads.json',
+    )).toBe('/map/scenery/current/drone-urban-flight/14/8686/4758.roads.json')
+  })
+
   test('sizes visible tile residency from source content bytes without exhausting the working set', () => {
     const representativeLargeTile = {
       content: {

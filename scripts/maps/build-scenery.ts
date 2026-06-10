@@ -9,6 +9,7 @@ import { compileSceneryGlbTile } from '../../src/map/scenery-glb.ts'
 import { buildSceneryTilesetDocument } from '../../src/map/scenery-tileset.ts'
 import {
   sceneryAssetTilesetSchema,
+  sceneryRoadTileFromSceneryTile,
   sceneryTileHasFeatures,
   type SceneryAssetLodLevel,
   type SceneryAssetTileSummary,
@@ -357,6 +358,10 @@ for (const zoom of contentZooms) {
     const tilePath = join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.glb`)
     await mkdir(dirname(tilePath), { recursive: true })
     await Bun.write(tilePath, glb.bytes)
+    await Bun.write(
+      join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.roads.json`),
+      `${JSON.stringify(sceneryRoadTileFromSceneryTile(scenery))}\n`,
+    )
     writtenTileCount += 1
     polygonCount += scenery.features.polygons.length
     lineCount += scenery.features.lines.length

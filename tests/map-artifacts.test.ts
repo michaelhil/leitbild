@@ -85,6 +85,22 @@ const writeSceneryTileset = async (rootDir: string): Promise<void> => {
   const sceneryRoot = join(rootDir, 'current', 'scenery')
   await mkdir(join(sceneryRoot, 'drone-urban-flight', '14', '8686'), { recursive: true })
   await Bun.write(join(sceneryRoot, 'drone-urban-flight', '14', '8686', '4758.glb'), 'glb-bytes')
+  await Bun.write(join(sceneryRoot, 'drone-urban-flight', '14', '8686', '4758.roads.json'), JSON.stringify({
+    schemaVersion: 1,
+    tileEncoding: 'leitbild-scenery-road-json-v1',
+    recipeId: 'drone-urban-flight',
+    sourceTilesetId: 'leitbild-osm-norway',
+    tile: { z: 14, x: 8686, y: 4758, extent: 4096 },
+    roads: [{
+      id: 'road:fixture',
+      className: 'primary',
+      isBridge: false,
+      isTunnel: false,
+      path: [[1000, 1000], [3000, 3000]],
+      widthM: 16,
+      verticalOffsetM: 0,
+    }],
+  }))
   const tile = scenerySummary()
   await Bun.write(join(sceneryRoot, 'tileset.json'), JSON.stringify(buildSceneryTilesetDocument({
     tilesetId: 'leitbild-scenery-norway',
@@ -238,6 +254,7 @@ describe('vector map artifacts', () => {
         leitbild: {
           artifactFormat: '3d-tiles',
           tileEncoding: 'model/gltf-binary',
+          roadTileTemplate: '/map/scenery/current/{recipeId}/{z}/{x}/{y}.roads.json',
           counts: { writtenTileCount: 1 },
         },
       },
@@ -272,6 +289,14 @@ describe('vector map artifacts', () => {
     expect(tile?.status).toBe(200)
     expect(tile?.headers.get('content-type')).toBe('model/gltf-binary')
     expect(await tile?.text()).toBe('glb-bytes')
+
+    const roadTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/14/8686/4758.roads.json'), { rootDir })
+    expect(roadTile?.status).toBe(200)
+    expect(roadTile?.headers.get('content-type')).toContain('application/json')
+    expect(await roadTile?.json()).toMatchObject({
+      tileEncoding: 'leitbild-scenery-road-json-v1',
+      roads: [{ id: 'road:fixture', className: 'primary' }],
+    })
   })
 
   test('reference dataset PMTiles route serves promoted datasets from the manifest', async () => {

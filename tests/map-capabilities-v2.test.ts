@@ -187,6 +187,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     expect(scenery[0]!.artifact.lodStrategy).toBe('hierarchical-screen-space-error')
     expect(scenery[0]!.artifact.tilesetUrl).toBe('/map/scenery/current/tileset.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
+    expect(scenery[0]!.artifact.roadTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.roads.json')
     expect(scenery[0]!.recipes.find(recipe => recipe.id === 'drone-urban-flight')?.scenarioPackIds).toEqual(['drone'])
   })
 
@@ -223,6 +224,7 @@ describe('loadMapCapabilityManifest (disk reads)', () => {
     })
     expect(scenery[0]!.artifact.tilesetUrl).toBe('/map/scenery/current/tileset.json')
     expect(scenery[0]!.artifact.currentTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.glb')
+    expect(scenery[0]!.artifact.roadTileTemplate).toBe('/map/scenery/current/{recipeId}/{z}/{x}/{y}.roads.json')
   })
 
   test('marks corrupt precompiled scenery tilesets unavailable', async () => {
