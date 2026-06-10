@@ -1,12 +1,7 @@
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
-import { Material } from '@babylonjs/core/Materials/material'
-import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture'
-import { Texture } from '@babylonjs/core/Materials/Textures/texture'
 import { Color3 } from '@babylonjs/core/Maths/math.color.pure'
-import { Vector3 } from '@babylonjs/core/Maths/math.vector.pure'
-import type { ICanvasRenderingContext } from '@babylonjs/core/Engines/ICanvas'
-import type { Mesh } from '@babylonjs/core/Meshes/mesh'
-import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import type { Scene } from '@babylonjs/core/scene'
 import {
   sceneryRoadTileSchema,
@@ -19,9 +14,9 @@ import { localPointFromLonLat, type DroneWorldCenter } from './drone-map-world.t
 interface RoadTileRuntimeEntry {
   readonly key: string
   readonly controller: AbortController
-  mesh: Mesh | null
-  material: StandardMaterial | null
-  texture: DynamicTexture | null
+  meshes: Mesh[]
+  materials: StandardMaterial[]
+  loaded: boolean
 }
 
 interface RoadTileBounds {
@@ -31,13 +26,39 @@ interface RoadTileBounds {
   readonly north: number
 }
 
-type RoadCanvasContext = ICanvasRenderingContext & {
-  lineCap: string
+interface RoadPoint {
+  readonly x: number
+  readonly z: number
+}
+
+interface RoadDirection {
+  readonly x: number
+  readonly z: number
+  readonly nx: number
+  readonly nz: number
+}
+
+interface RoadGeometryBuilder {
+  readonly positions: number[]
+  readonly indices: number[]
+  readonly normals: number[]
+}
+
+export interface DroneRoadSurfaceMeshData {
+  readonly key: string
+  readonly materialKey: 'road-asphalt'
+  readonly colorHex: string
+  readonly y: number
+  readonly positions: ReadonlyArray<number>
+  readonly normals: ReadonlyArray<number>
+  readonly indices: ReadonlyArray<number>
+  readonly triangleCount: number
 }
 
 export interface DroneRoadOverlayMetrics {
   readonly loadedRoadTiles: number
   readonly pendingRoadTiles: number
+  readonly roadMeshTriangles: number
   readonly roadTextureBytes: number
 }
 
@@ -48,8 +69,8 @@ export interface DroneRoadOverlayRenderer {
   readonly dispose: () => void
 }
 
-const roadTextureSizePx = 512
-const roadPlaneY = 1.46
+const roadSurfaceY = 1.56
+const roadAsphaltColor = '#3f474b'
 const metersPerDegreeLat = 111_320
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
@@ -72,6 +93,13 @@ const tileBounds = (
   south: tileYToLat(coord.y + 1, coord.z),
 })
 
+const tileCenter = (
+  bounds: RoadTileBounds,
+): DroneWorldCenter => ({
+  lon: (bounds.west + bounds.east) / 2,
+  lat: (bounds.south + bounds.north) / 2,
+})
+
 export const roadTileUrlFromModelUrl = (
   modelUrl: string,
   roadTileTemplate: string,
@@ -89,154 +117,250 @@ export const roadTileUrlFromModelUrl = (
     .replace('{y}', y)
 }
 
-const roadPriority = (className: string): number => {
-  if (className === 'motorway' || className === 'motorway_link') return 90
-  if (className === 'trunk' || className === 'trunk_link') return 80
-  if (className === 'primary') return 70
-  if (className === 'secondary') return 60
-  if (className === 'tertiary') return 50
-  if (className === 'minor' || className === 'residential' || className === 'unclassified') return 40
-  return 30
+const roadSurfaceLayerY = (
+  feature: SceneryRoadFeature,
+): number | null => {
+  if (feature.isTunnel) return null
+  if (feature.isBridge) return roadSurfaceY + Math.max(2.2, feature.verticalOffsetM)
+  return roadSurfaceY + Math.max(0, feature.verticalOffsetM)
 }
 
-const roadFillColor = (feature: SceneryRoadFeature): string => {
-  const priority = roadPriority(feature.className)
-  if (feature.isTunnel) return 'rgba(88, 94, 98, 0.72)'
-  if (priority >= 70) return '#4a5057'
-  if (priority >= 50) return '#555a5d'
-  return '#62676a'
+const roadLayerKey = (
+  y: number,
+): string => `road:${Math.round(y * 100)}`
+
+const samePoint = (
+  left: RoadPoint,
+  right: RoadPoint,
+  toleranceM = 0.08,
+): boolean => Math.hypot(left.x - right.x, left.z - right.z) <= toleranceM
+
+const compactPath = (
+  path: ReadonlyArray<RoadPoint>,
+): ReadonlyArray<RoadPoint> => {
+  const compact: RoadPoint[] = []
+  for (const point of path) {
+    const previous = compact[compact.length - 1]
+    if (previous && samePoint(previous, point, 0.16)) continue
+    compact.push(point)
+  }
+  return compact
 }
 
-const roadCasingColor = (feature: SceneryRoadFeature): string =>
-  feature.isTunnel ? 'rgba(38, 45, 52, 0.58)' : '#26313a'
+const normalizedDirection = (
+  start: RoadPoint,
+  end: RoadPoint,
+): RoadDirection | null => {
+  const dx = end.x - start.x
+  const dz = end.z - start.z
+  const length = Math.hypot(dx, dz)
+  if (length < 0.05) return null
+  const x = dx / length
+  const z = dz / length
+  return {
+    x,
+    z,
+    nx: -z,
+    nz: x,
+  }
+}
 
-const roadShoulderColor = (feature: SceneryRoadFeature): string =>
-  feature.isBridge ? '#c8c2b0' : '#d2ccb8'
+const miterPoint = (config: {
+  readonly point: RoadPoint
+  readonly previous: RoadDirection
+  readonly next: RoadDirection
+  readonly halfWidthM: number
+  readonly side: 1 | -1
+}): RoadPoint => {
+  const normalX = config.previous.nx + config.next.nx
+  const normalZ = config.previous.nz + config.next.nz
+  const normalLength = Math.hypot(normalX, normalZ)
+  if (normalLength < 0.0001) {
+    return {
+      x: config.point.x + config.next.nx * config.halfWidthM * config.side,
+      z: config.point.z + config.next.nz * config.halfWidthM * config.side,
+    }
+  }
+  const miterX = normalX / normalLength
+  const miterZ = normalZ / normalLength
+  const denominator = Math.max(0.28, Math.abs(miterX * config.next.nx + miterZ * config.next.nz))
+  const length = Math.min(config.halfWidthM * 2.8, config.halfWidthM / denominator)
+  return {
+    x: config.point.x + miterX * length * config.side,
+    z: config.point.z + miterZ * length * config.side,
+  }
+}
+
+const appendVertex = (
+  builder: RoadGeometryBuilder,
+  point: RoadPoint,
+  y: number,
+): number => {
+  const index = builder.positions.length / 3
+  builder.positions.push(point.x, y, point.z)
+  builder.normals.push(0, 1, 0)
+  return index
+}
+
+const appendRoadRibbon = (
+  builder: RoadGeometryBuilder,
+  path: ReadonlyArray<RoadPoint>,
+  widthM: number,
+  y: number,
+): void => {
+  const points = compactPath(path)
+  const first = points[0]
+  const last = points[points.length - 1]
+  if (!first || !last || points.length < 2) return
+  const closed = points.length >= 4 && samePoint(first, last)
+  const roadPoints = closed ? points.slice(0, -1) : points
+  if (roadPoints.length < 2) return
+  const segmentCount = closed ? roadPoints.length : roadPoints.length - 1
+  const directions = Array.from({ length: segmentCount }, (_value, index) => {
+    const start = roadPoints[index]
+    const end = roadPoints[(index + 1) % roadPoints.length]
+    return start && end ? normalizedDirection(start, end) : null
+  })
+  if (directions.some(direction => direction === null)) return
+  const validDirections = directions as ReadonlyArray<RoadDirection>
+  const halfWidthM = Math.max(1.4, widthM / 2)
+  const leftIndexes: number[] = []
+  const rightIndexes: number[] = []
+
+  for (let index = 0; index < roadPoints.length; index += 1) {
+    const point = roadPoints[index]
+    if (!point) return
+    const previous = closed
+      ? validDirections[(index - 1 + validDirections.length) % validDirections.length]!
+      : index === 0 ? validDirections[0]! : validDirections[index - 1]!
+    const next = closed
+      ? validDirections[index % validDirections.length]!
+      : index >= validDirections.length ? validDirections[validDirections.length - 1]! : validDirections[index]!
+    const left = !closed && index === 0
+      ? { x: point.x + next.nx * halfWidthM, z: point.z + next.nz * halfWidthM }
+      : !closed && index === roadPoints.length - 1
+        ? { x: point.x + previous.nx * halfWidthM, z: point.z + previous.nz * halfWidthM }
+        : miterPoint({ point, previous, next, halfWidthM, side: 1 })
+    const right = !closed && index === 0
+      ? { x: point.x - next.nx * halfWidthM, z: point.z - next.nz * halfWidthM }
+      : !closed && index === roadPoints.length - 1
+        ? { x: point.x - previous.nx * halfWidthM, z: point.z - previous.nz * halfWidthM }
+        : miterPoint({ point, previous, next, halfWidthM, side: -1 })
+    leftIndexes.push(appendVertex(builder, left, y))
+    rightIndexes.push(appendVertex(builder, right, y))
+  }
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    const nextIndex = (index + 1) % roadPoints.length
+    const leftStart = leftIndexes[index]
+    const rightStart = rightIndexes[index]
+    const leftEnd = leftIndexes[nextIndex]
+    const rightEnd = rightIndexes[nextIndex]
+    if (
+      leftStart === undefined
+      || rightStart === undefined
+      || leftEnd === undefined
+      || rightEnd === undefined
+    ) continue
+    builder.indices.push(leftStart, leftEnd, rightStart, rightStart, leftEnd, rightEnd)
+  }
+}
+
+const localRoadPoint = (config: {
+  readonly point: readonly [number, number]
+  readonly extent: number
+  readonly bounds: RoadTileBounds
+  readonly center: DroneWorldCenter
+}): RoadPoint => {
+  const lon = config.bounds.west + config.point[0] / config.extent * (config.bounds.east - config.bounds.west)
+  const lat = config.bounds.north + config.point[1] / config.extent * (config.bounds.south - config.bounds.north)
+  const local = localPointFromLonLat(lon, lat, config.center)
+  return { x: local.x, z: local.z }
+}
 
 const orderedRoads = (
   roads: ReadonlyArray<SceneryRoadFeature>,
 ): ReadonlyArray<SceneryRoadFeature> =>
   [...roads].sort((left, right) =>
-    roadPriority(left.className) - roadPriority(right.className)
-      || left.widthM - right.widthM
-      || left.id.localeCompare(right.id),
+    roadSurfaceLayerY(left) === null && roadSurfaceLayerY(right) !== null ? 1
+      : roadSurfaceLayerY(left) !== null && roadSurfaceLayerY(right) === null ? -1
+        : left.widthM - right.widthM || left.id.localeCompare(right.id),
   )
 
-const pixelsPerMeterFor = (
-  tile: SceneryRoadTile,
-  bounds: RoadTileBounds,
-): number => {
-  const centerLat = (bounds.north + bounds.south) / 2
-  const widthM = Math.abs(bounds.east - bounds.west) * metersPerDegreeLonAt(centerLat)
-  const heightM = Math.abs(bounds.north - bounds.south) * metersPerDegreeLat
-  return roadTextureSizePx / Math.max(widthM, heightM, 1)
-}
-
-const drawRoadPath = (
-  context: RoadCanvasContext,
-  feature: SceneryRoadFeature,
-  widthPx: number,
-  extent: number,
-): void => {
-  if (feature.path.length < 2) return
-  context.beginPath()
-  for (const [index, point] of feature.path.entries()) {
-    const x = point[0] / extent * roadTextureSizePx
-    const y = point[1] / extent * roadTextureSizePx
-    if (index === 0) context.moveTo(x, y)
-    else context.lineTo(x, y)
+export const buildRoadSurfaceMeshes = (config: {
+  readonly tile: SceneryRoadTile
+  readonly center?: DroneWorldCenter
+}): ReadonlyArray<DroneRoadSurfaceMeshData> => {
+  const bounds = tileBounds(config.tile.tile)
+  const center = config.center ?? tileCenter(bounds)
+  const builders = new Map<string, { readonly y: number; readonly geometry: RoadGeometryBuilder }>()
+  for (const feature of orderedRoads(config.tile.roads)) {
+    const y = roadSurfaceLayerY(feature)
+    if (y === null) continue
+    const key = roadLayerKey(y)
+    const entry = builders.get(key) ?? {
+      y,
+      geometry: {
+        positions: [],
+        indices: [],
+        normals: [],
+      },
+    }
+    if (!builders.has(key)) builders.set(key, entry)
+    appendRoadRibbon(
+      entry.geometry,
+      feature.path.map(point => localRoadPoint({
+        point,
+        extent: config.tile.tile.extent,
+        bounds,
+        center,
+      })),
+      feature.widthM,
+      y,
+    )
   }
-  context.lineWidth = Math.max(1, widthPx)
-  context.stroke()
-}
-
-const drawRoadLayer = (
-  context: RoadCanvasContext,
-  roads: ReadonlyArray<SceneryRoadFeature>,
-  pixelsPerMeter: number,
-  widthFor: (feature: SceneryRoadFeature) => number,
-  colorFor: (feature: SceneryRoadFeature) => string,
-  extent: number,
-): void => {
-  context.setLineDash([])
-  context.lineCap = 'round'
-  context.lineJoin = 'round'
-  for (const feature of roads) {
-    context.strokeStyle = colorFor(feature)
-    drawRoadPath(context, feature, widthFor(feature) * pixelsPerMeter, extent)
-  }
-}
-
-const drawRoadMarkings = (
-  context: RoadCanvasContext,
-  roads: ReadonlyArray<SceneryRoadFeature>,
-  pixelsPerMeter: number,
-  extent: number,
-): void => {
-  context.lineCap = 'butt'
-  context.lineJoin = 'round'
-  context.strokeStyle = 'rgba(248, 246, 220, 0.82)'
-  for (const feature of roads) {
-    if (feature.widthM < 8 || roadPriority(feature.className) < 50 || feature.isTunnel) continue
-    context.setLineDash([Math.max(5, 7 * pixelsPerMeter), Math.max(8, 12 * pixelsPerMeter)])
-    drawRoadPath(context, feature, Math.max(1.1, 0.38 * pixelsPerMeter), extent)
-  }
-  context.setLineDash([])
-}
-
-const paintRoadTexture = (
-  texture: DynamicTexture,
-  tile: SceneryRoadTile,
-): void => {
-  const context = texture.getContext() as RoadCanvasContext
-  context.clearRect(0, 0, roadTextureSizePx, roadTextureSizePx)
-  const bounds = tileBounds(tile.tile)
-  const pixelsPerMeter = pixelsPerMeterFor(tile, bounds)
-  const roads = orderedRoads(tile.roads)
-  drawRoadLayer(context, roads, pixelsPerMeter, feature => feature.widthM + Math.max(6.5, feature.widthM * 0.28), roadShoulderColor, tile.tile.extent)
-  drawRoadLayer(context, roads, pixelsPerMeter, feature => feature.widthM + Math.max(3.5, feature.widthM * 0.16), roadCasingColor, tile.tile.extent)
-  drawRoadLayer(context, roads, pixelsPerMeter, feature => feature.widthM, roadFillColor, tile.tile.extent)
-  drawRoadMarkings(context, roads, pixelsPerMeter, tile.tile.extent)
-  texture.update(false)
+  return [...builders.entries()]
+    .filter(([, entry]) => entry.geometry.indices.length > 0)
+    .map(([key, entry]) => ({
+      key,
+      materialKey: 'road-asphalt',
+      colorHex: roadAsphaltColor,
+      y: entry.y,
+      positions: entry.geometry.positions,
+      normals: entry.geometry.normals,
+      indices: entry.geometry.indices,
+      triangleCount: entry.geometry.indices.length / 3,
+    }))
 }
 
 const createRoadMaterial = (
   scene: Scene,
-  texture: DynamicTexture,
+  surface: DroneRoadSurfaceMeshData,
 ): StandardMaterial => {
-  const material = new StandardMaterial('drone-road-overlay-material', scene)
-  texture.hasAlpha = true
-  texture.wrapU = Texture.CLAMP_ADDRESSMODE
-  texture.wrapV = Texture.CLAMP_ADDRESSMODE
-  material.diffuseTexture = texture
-  material.useAlphaFromDiffuseTexture = true
-  material.transparencyMode = Material.MATERIAL_ALPHATEST
-  material.alphaCutOff = 0.04
-  material.diffuseColor = Color3.White()
-  material.ambientColor = Color3.White()
-  material.specularColor = Color3.Black()
+  const material = new StandardMaterial(`drone-${surface.materialKey}`, scene)
+  const color = Color3.FromHexString(surface.colorHex)
+  material.diffuseColor = color
+  material.ambientColor = color.scale(0.28)
+  material.specularColor = new Color3(0.04, 0.04, 0.04)
   material.backFaceCulling = false
+  material.alpha = 1
   return material
 }
 
 const createRoadMesh = (
   scene: Scene,
-  tile: SceneryRoadTile,
-  center: DroneWorldCenter,
+  surface: DroneRoadSurfaceMeshData,
   material: StandardMaterial,
 ): Mesh => {
-  const bounds = tileBounds(tile.tile)
-  const westSouth = localPointFromLonLat(bounds.west, bounds.south, center)
-  const eastNorth = localPointFromLonLat(bounds.east, bounds.north, center)
-  const tileCenter = localPointFromLonLat((bounds.west + bounds.east) / 2, (bounds.south + bounds.north) / 2, center)
-  const mesh = MeshBuilder.CreateGround('drone-road-overlay-tile', {
-    width: Math.max(1, Math.abs(eastNorth.x - westSouth.x)),
-    height: Math.max(1, Math.abs(eastNorth.z - westSouth.z)),
-    subdivisions: 1,
-  }, scene)
-  mesh.position = new Vector3(tileCenter.x, roadPlaneY, tileCenter.z)
+  const mesh = new Mesh(`drone-road-surface:${surface.key}`, scene)
+  const vertexData = new VertexData()
+  vertexData.positions = [...surface.positions]
+  vertexData.normals = [...surface.normals]
+  vertexData.indices = [...surface.indices]
+  vertexData.applyToMesh(mesh)
   mesh.material = material
   mesh.isPickable = false
+  mesh.freezeWorldMatrix()
   return mesh
 }
 
@@ -261,9 +385,8 @@ export const createDroneRoadOverlayRenderer = (config: {
 
   const disposeEntry = (entry: RoadTileRuntimeEntry): void => {
     entry.controller.abort()
-    entry.mesh?.dispose(false, true)
-    entry.material?.dispose(false, true)
-    entry.texture?.dispose()
+    for (const mesh of entry.meshes) mesh.dispose(false, true)
+    for (const material of entry.materials) material.dispose(false, true)
     entries.delete(entry.key)
   }
 
@@ -274,17 +397,18 @@ export const createDroneRoadOverlayRenderer = (config: {
     try {
       const tile = await fetchRoadTile(roadTileUrl, entry.controller.signal)
       if (entry.controller.signal.aborted || !entries.has(entry.key)) return
-      if (tile.roads.length === 0) {
+      const surfaces = buildRoadSurfaceMeshes({ tile, center: config.center })
+      if (surfaces.length === 0) {
         entries.delete(entry.key)
         return
       }
-      const texture = new DynamicTexture(`drone-road-overlay:${entry.key}`, { width: roadTextureSizePx, height: roadTextureSizePx }, config.scene, false)
-      paintRoadTexture(texture, tile)
-      const material = createRoadMaterial(config.scene, texture)
-      const mesh = createRoadMesh(config.scene, tile, config.center, material)
-      entry.texture = texture
-      entry.material = material
-      entry.mesh = mesh
+      for (const surface of surfaces) {
+        const material = createRoadMaterial(config.scene, surface)
+        const mesh = createRoadMesh(config.scene, surface, material)
+        entry.materials.push(material)
+        entry.meshes.push(mesh)
+      }
+      entry.loaded = true
     } catch (error) {
       if (entry.controller.signal.aborted) return
       config.onError?.(error instanceof Error ? error.message : String(error))
@@ -299,9 +423,9 @@ export const createDroneRoadOverlayRenderer = (config: {
       const entry: RoadTileRuntimeEntry = {
         key: roadTileUrl,
         controller: new AbortController(),
-        mesh: null,
-        material: null,
-        texture: null,
+        meshes: [],
+        materials: [],
+        loaded: false,
       }
       entries.set(roadTileUrl, entry)
       void loadEntry(entry, roadTileUrl)
@@ -313,9 +437,10 @@ export const createDroneRoadOverlayRenderer = (config: {
       if (entry) disposeEntry(entry)
     },
     metrics: (): DroneRoadOverlayMetrics => ({
-      loadedRoadTiles: [...entries.values()].filter(entry => entry.mesh !== null).length,
-      pendingRoadTiles: [...entries.values()].filter(entry => entry.mesh === null).length,
-      roadTextureBytes: [...entries.values()].filter(entry => entry.texture !== null).length * roadTextureSizePx * roadTextureSizePx * 4,
+      loadedRoadTiles: [...entries.values()].filter(entry => entry.loaded).length,
+      pendingRoadTiles: [...entries.values()].filter(entry => !entry.loaded).length,
+      roadMeshTriangles: [...entries.values()].reduce((sum, entry) => sum + entry.meshes.reduce((meshSum, mesh) => meshSum + mesh.getTotalIndices() / 3, 0), 0),
+      roadTextureBytes: 0,
     }),
     dispose: (): void => {
       for (const entry of [...entries.values()]) disposeEntry(entry)

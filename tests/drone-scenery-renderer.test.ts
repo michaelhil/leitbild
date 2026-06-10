@@ -5,7 +5,7 @@ import {
   droneSceneryTileCacheBudget,
   estimateDroneSceneryTileBytesForCache,
 } from '../src/ui/drone/drone-scenery-tiles.ts'
-import { roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay.ts'
+import { buildRoadSurfaceMeshes, roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay.ts'
 
 const readAscii = (
   bytes: Uint8Array,
@@ -847,5 +847,54 @@ describe('drone scenery runtime cache policy', () => {
     expect(estimatedBytes).toBe(15 * 1024 * 1024)
     expect(estimatedBytes * 20).toBeLessThan(droneSceneryTileCacheBudget.maxBytes)
     expect(droneSceneryTileCacheBudget.unloadPercent).toBeLessThan(0.18)
+  })
+
+  test('builds opaque road mesh layers instead of texture-backed alpha planes', async () => {
+    const source = await Bun.file(new URL('../src/ui/drone/drone-road-overlay.ts', import.meta.url)).text()
+    const meshes = buildRoadSurfaceMeshes({ tile: sceneryRoadTileFromSceneryTile(crossingRoadTile()) })
+
+    expect(source).not.toContain('DynamicTexture')
+    expect(source).not.toContain('MATERIAL_ALPHATEST')
+    expect(source).not.toContain('useAlphaFromDiffuseTexture')
+    expect(meshes).toHaveLength(1)
+    expect(meshes[0]!.materialKey).toBe('road-asphalt')
+    expect(meshes[0]!.colorHex).toBe('#3f474b')
+    expect(meshes[0]!.triangleCount).toBeGreaterThan(0)
+    expect(meshes[0]!.positions.length % 3).toBe(0)
+    expect(new Set(Array.from({ length: meshes[0]!.positions.length / 3 }, (_value, index) => meshes[0]!.positions[index * 3 + 1]))).toEqual(new Set([meshes[0]!.y]))
+  })
+
+  test('separates real bridge roads by vertical layer without adding stacked road material bands', () => {
+    const bridgeTile = sceneryRoadTileFromSceneryTile({
+      ...crossingRoadTile(),
+      features: {
+        polygons: [],
+        labels: [],
+        lines: [
+          ...crossingRoadTile().features.lines,
+          {
+            id: 'bridge-road:c',
+            sourceLayer: 'transportation',
+            sourceRef: 'osm:way:bridge-c',
+            kind: 'road',
+            className: 'primary',
+            brunnel: 'bridge',
+            isBridge: true,
+            isTunnel: false,
+            path: [
+              tilePoint(900, 900),
+              tilePoint(3200, 3200),
+            ],
+            widthM: 16,
+            verticalOffsetM: 2.6,
+          },
+        ],
+      },
+    })
+    const meshes = buildRoadSurfaceMeshes({ tile: bridgeTile })
+
+    expect(meshes).toHaveLength(2)
+    expect(new Set(meshes.map(mesh => mesh.materialKey))).toEqual(new Set(['road-asphalt']))
+    expect(Math.max(...meshes.map(mesh => mesh.y)) - Math.min(...meshes.map(mesh => mesh.y))).toBeGreaterThanOrEqual(2.2)
   })
 })
