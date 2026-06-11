@@ -159,6 +159,14 @@ const averageGroundY = (
   ? 0
   : points.reduce((sum, point) => sum + groundYFor(point), 0) / points.length
 
+const lonLatFromLocalPoint = (
+  point: LocalPoint,
+  center: TileLonLat,
+): TileLonLat => ({
+  lon: center.lon + point.x / metersPerDegreeLonAt(center.lat),
+  lat: center.lat - point.z / metersPerDegreeLat,
+})
+
 const heightForHorizontalPoint = (
   provider: HorizontalHeightProvider,
   point: LocalPoint,
@@ -1103,7 +1111,7 @@ const appendVegetation = (
     const rings = localRingsFor(feature.rings, tile.tile, center, elevationSampler)
     const outer = rings[0]
     if (!outer || outer.length < 3) continue
-    const featureGroundY = averageGroundY(outer)
+    const surfaceY = surfaceHeightForFeature(feature, surfaceMaterialFor(feature.kind, feature.className))
     const area = Math.abs(ringArea(outer))
     const areaPerTree = feature.className === 'residential'
       ? profile.vegetationResidentialAreaM2
@@ -1123,9 +1131,10 @@ const appendVegetation = (
           }
       if (!pointInRing(candidate, outer)) continue
       const scale = 0.75 + random() * 0.85
-      appendCylinder(trunk, { x: candidate.x, y: featureGroundY + 2.1 * scale, z: candidate.z }, 0.34 * scale, 4.2 * scale, 6)
-      appendCone(canopy, { x: candidate.x, y: featureGroundY + 6.0 * scale, z: candidate.z }, 2.45 * scale, 5.2 * scale, 8)
-      appendCone(canopyLight, { x: candidate.x + 0.45 * scale, y: featureGroundY + 8.8 * scale, z: candidate.z - 0.25 * scale }, 1.75 * scale, 3.7 * scale, 8)
+      const treeGroundY = sampleElevationMeters(elevationSampler, lonLatFromLocalPoint(candidate, center)) + surfaceY
+      appendCylinder(trunk, { x: candidate.x, y: treeGroundY + 2.1 * scale, z: candidate.z }, 0.34 * scale, 4.2 * scale, 6)
+      appendCone(canopy, { x: candidate.x, y: treeGroundY + 6.0 * scale, z: candidate.z }, 2.45 * scale, 5.2 * scale, 8)
+      appendCone(canopyLight, { x: candidate.x + 0.45 * scale, y: treeGroundY + 8.8 * scale, z: candidate.z - 0.25 * scale }, 1.75 * scale, 3.7 * scale, 8)
       added += 1
       treeCount += 1
     }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { ElevationSampler } from '../src/map/elevation-sampler.ts'
 import { compileSceneryGlbTile } from '../src/map/scenery-glb.ts'
-import { sceneryRoadTileFromSceneryTile, sceneryRoadTileSchema, type SceneryTile } from '../src/map/scenery.ts'
+import { sceneryRoadTileFromSceneryTile, sceneryRoadTileSchema, sceneryTilePointLonLat, type SceneryTile } from '../src/map/scenery.ts'
 import {
   droneSceneryTileCacheBudget,
   estimateDroneSceneryTileBytesForCache,
@@ -750,6 +750,23 @@ describe('drone scenery GLB compiler', () => {
     expect(waterY).toBeGreaterThan(42)
     expect(Math.min(...wallYValues)).toBeGreaterThanOrEqual(42)
     expect(roadTile.roads[0]?.heightSamplesM).toEqual([42, 42, 42])
+  })
+
+  test('anchors generated vegetation to the local terrain surface instead of polygon-average height', () => {
+    const vegetationCenter = sceneryTilePointLonLat(tilePoint(1525, 2815), testTile.tile)
+    const sampler: ElevationSampler = {
+      kind: 'test-vegetation-bowl',
+      heightAtLonLat: point => {
+        const dx = (point.lon - vegetationCenter.lon) * 1_000_000
+        const dy = (point.lat - vegetationCenter.lat) * 1_000_000
+        return Math.hypot(dx, dy) < 150 ? 0 : 80
+      },
+    }
+    const result = compileSceneryGlbTile(testTile, { elevationSampler: sampler })
+    expect(result).not.toBeNull()
+    const trunkYValues = roundedYValues(primitivePositionsByMaterialName(result!.bytes, /tree trunks/))
+
+    expect(Math.min(...trunkYValues)).toBeLessThan(1)
   })
 
   test('exports crossing roads to one overlay tile instead of stacking GLB depth lanes', () => {
