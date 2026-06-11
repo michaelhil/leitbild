@@ -189,7 +189,7 @@ const sourceTemplate = process.env.LEITBILD_TERRAIN_SOURCE_TEMPLATE ?? defaultTe
 const zoom = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_ZOOM', 13)
 const concurrency = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_CONCURRENCY', 12)
 const maxTiles = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_MAX_TILES', 800)
-const rawPaddingDegrees = Number(process.env.LEITBILD_TERRAIN_BOOTSTRAP_PADDING_DEGREES ?? 0.015)
+const rawPaddingDegrees = Number(process.env.LEITBILD_TERRAIN_BOOTSTRAP_PADDING_DEGREES ?? 0.08)
 if (!Number.isFinite(rawPaddingDegrees) || rawPaddingDegrees < 0) {
   throw new Error('LEITBILD_TERRAIN_BOOTSTRAP_PADDING_DEGREES must be a nonnegative number')
 }
