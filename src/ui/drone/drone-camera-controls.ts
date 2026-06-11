@@ -1,4 +1,4 @@
-import type { DroneSceneCameraOrbit } from './drone-scene.ts'
+import type { DroneSceneCameraOrbit } from './drone-scene-types.ts'
 
 export interface DroneCameraOrbitInput {
   readonly orbitLeft: boolean

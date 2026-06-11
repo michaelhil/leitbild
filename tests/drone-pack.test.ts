@@ -162,6 +162,32 @@ const okResult = (response: PackQueryResponse): unknown => {
   return response.result
 }
 
+const horizontalDistanceM = (
+  from: DroneMotionFrame,
+  to: DroneMotionFrame,
+): number => {
+  const midLatRad = (from.lat + to.lat) * Math.PI / 360
+  const eastM = (to.lon - from.lon) * 111_320 * Math.cos(midLatRad)
+  const northM = (to.lat - from.lat) * 110_540
+  return Math.hypot(eastM, northM)
+}
+
+const assertSmoothMotionFrames = (
+  frames: ReadonlyArray<DroneMotionFrame>,
+): void => {
+  expect(frames.length).toBeGreaterThan(8)
+  for (let index = 1; index < frames.length; index += 1) {
+    const previous = frames[index - 1]!
+    const current = frames[index]!
+    const dtMs = Date.parse(current.observedAt) - Date.parse(previous.observedAt)
+    const dtSeconds = Math.max(0.001, dtMs / 1_000)
+    expect(current.sequence).toBeGreaterThan(previous.sequence)
+    expect(dtMs).toBeLessThanOrEqual(250)
+    expect(horizontalDistanceM(previous, current)).toBeLessThanOrEqual(85 * dtSeconds + 1.5)
+    expect(Math.abs(current.altitudeM - previous.altitudeM)).toBeLessThanOrEqual(24 * dtSeconds + 1.2)
+  }
+}
+
 describe('drone pack native runtime', () => {
   test('expands scenario drones into native vehicle state', async () => {
     const object = await droneScenarioSupport.expandObject({
@@ -398,6 +424,77 @@ describe('drone pack native runtime', () => {
           && latest.altitudeM > droneData(initial).pose.altitudeM
           && latest.eastMps > 0
       }, { timeoutMs: 500, intervalMs: 10 })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  test('native realtime manual loop keeps motion frames smooth under bursty fleet input', async () => {
+    const fleet = Array.from({ length: 8 }, (_, index) => drone({
+      id: `drone:native-stress-${index}`,
+      point: point(10.75 + index * 0.00003, 59.91 + index * 0.00002),
+      altitudeM: 24 + index,
+      headingDeg: 90,
+    }))
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: fleet,
+      scenario: {
+        scenarioId: 'scenario:native-manual-stress',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: fleet,
+        runtimeConfigs: { [droneNativeRuntimeId]: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
+        runtimeConfig: { maxDrones: 10, stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 },
+      },
+    })
+    const framesByDrone = new Map<string, DroneMotionFrame[]>()
+    const unsubscribe = connection.subscribe(emission => {
+      for (const message of emission.realtimeMessages ?? []) {
+        const parsed = parseDroneMotionFramesRealtimeMessage(message)
+        if (!parsed) continue
+        for (const frame of parsed.payload.frames) {
+          const frames = framesByDrone.get(frame.objectId) ?? []
+          frames.push(frame)
+          framesByDrone.set(frame.objectId, frames)
+        }
+      }
+    })
+
+    try {
+      if (!connection.receiveRealtimeInput) throw new Error('runtime does not accept realtime input')
+      for (let sequence = 0; sequence < 48; sequence += 1) {
+        const target = fleet[sequence % fleet.length]!
+        await connection.receiveRealtimeInput({
+          type: droneManualIntentRealtimeInputType,
+          at,
+          payload: {
+            droneId: target.id,
+            axes: { forward: 1, right: sequence % 2 === 0 ? 0.25 : -0.25, vertical: 0.35, yaw: sequence % 3 === 0 ? 0.18 : 0 },
+            inputSource: { kind: 'keyboard', label: 'Keyboard stress test' },
+            commandTtlMs: 350,
+            sampledAtMs: sequence * 8,
+            sequence,
+          },
+        })
+        await Bun.sleep(4)
+      }
+
+      await waitForCondition('bursty manual fleet input emits moving frames for every drone', () =>
+        fleet.every(object => {
+          const frames = framesByDrone.get(object.id) ?? []
+          const latest = frames.at(-1)
+          return frames.length > 8
+            && latest !== undefined
+            && latest.eastMps > 0.2
+            && latest.verticalSpeedMps > 0.05
+        }), { timeoutMs: 1_500, intervalMs: 20 })
+
+      for (const object of fleet) {
+        assertSmoothMotionFrames(framesByDrone.get(object.id) ?? [])
+      }
     } finally {
       unsubscribe()
       await connection.close()

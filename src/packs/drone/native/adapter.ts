@@ -73,15 +73,9 @@ const slugObjectId = (prefix: string, label: string): OperationalObject['id'] =>
   return objectIdSchema.parse(`${prefix}:${slug}`)
 }
 
-const objectData = (objects: ReadonlyMap<string, OperationalObject>, droneId: string): {
+interface DroneRuntimeRecord {
   readonly object: OperationalObject
   readonly data: DronePackData
-} => {
-  const object = objects.get(droneId)
-  if (!object) throw new Error(`unknown drone object: ${droneId}`)
-  const data = parseDroneObject(object)
-  if (!data) throw new Error(`object is not a valid native drone: ${droneId}`)
-  return { object, data }
 }
 
 const maxRuntimeCatchUpSteps = 5
@@ -101,11 +95,47 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const homePoints = new Map<string, GeoJsonPoint>()
     const missionPlans = new Map<string, NativeMissionPlan>()
     const geofences = new Map<string, ReadonlyArray<GeoJsonPolygon>>()
-    for (const object of config.initialObjects ?? config.scenario?.initialObjects ?? []) {
-      const data = parseDroneObject(object)
-      if (!data) continue
+    const droneRecords = new Map<string, DroneRuntimeRecord>()
+
+    const setRuntimeDrone = (
+      object: OperationalObject,
+      data: DronePackData,
+    ): DroneRuntimeRecord => {
+      const record = { object, data }
       objects.set(object.id, object)
-      homePoints.set(object.id, data.pose.point)
+      droneRecords.set(object.id, record)
+      return record
+    }
+
+    const upsertRuntimeObject = (
+      object: OperationalObject,
+    ): DroneRuntimeRecord | null => {
+      const data = parseDroneObject(object)
+      if (!data) {
+        objects.delete(object.id)
+        droneRecords.delete(object.id)
+        return null
+      }
+      return setRuntimeDrone(object, data)
+    }
+
+    const deleteRuntimeDrone = (objectId: string): void => {
+      objects.delete(objectId)
+      droneRecords.delete(objectId)
+      homePoints.delete(objectId)
+      missionPlans.delete(objectId)
+      geofences.delete(objectId)
+    }
+
+    const droneRecord = (droneId: string): DroneRuntimeRecord => {
+      const record = droneRecords.get(droneId)
+      if (!record) throw new Error(`unknown drone object: ${droneId}`)
+      return record
+    }
+
+    for (const object of config.initialObjects ?? config.scenario?.initialObjects ?? []) {
+      const record = upsertRuntimeObject(object)
+      if (record) homePoints.set(object.id, record.data.pose.point)
     }
 
     const handlers = new Set<PackRuntimeEventHandler>()
@@ -134,11 +164,8 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       for (const handler of handlers) handler(emission)
     }
 
-    const liveDroneObjects = (): ReadonlyArray<OperationalObject> =>
-      [...objects.values()].filter(object => {
-        const data = parseDroneObject(object)
-        return data !== null && data.health.state !== 'destroyed'
-      })
+    const liveDroneRecords = (): ReadonlyArray<DroneRuntimeRecord> =>
+      [...droneRecords.values()].filter(record => record.data.health.state !== 'destroyed')
 
     const motionFrameFor = (object: OperationalObject, data: DronePackData): DroneMotionFrame => ({
       objectId: object.id,
@@ -159,10 +186,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const emitMotionFrames = (at: IsoTimestamp, nowMs: number): void => {
       if (nowMs - lastMotionFrameMs < runtimeConfig.motionFrameIntervalMs) return
       lastMotionFrameMs = nowMs
-      const frames = liveDroneObjects().flatMap(object => {
-        const data = parseDroneObject(object)
-        return data ? [motionFrameFor(object, data)] : []
-      })
+      const frames = liveDroneRecords().map(record => motionFrameFor(record.object, record.data))
       if (frames.length === 0) return
       emit([], [droneMotionFramesRealtimeMessage({ at, frames })])
     }
@@ -195,7 +219,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       command?: CommandEnvelope,
     ): OperationalObject => {
       const next = withDronePackData(object, data, at)
-      objects.set(next.id, next)
+      setRuntimeDrone(next, data)
       emitObjectUpsert(next, at, persistence, command)
       return next
     }
@@ -211,9 +235,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       if (stepPlan.steps.length === 0) return
       for (const step of stepPlan.steps) {
         const at = new Date(step.nowMs).toISOString() as IsoTimestamp
-        for (const object of objects.values()) {
-          const data = parseDroneObject(object)
-          if (!data || data.health.state === 'destroyed') continue
+        for (const { object, data } of liveDroneRecords()) {
           const next = stepDroneObject({
             object,
             data,
@@ -224,15 +246,15 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
             missionPlans,
             geofences,
           })
-          objects.set(next.id, next)
+          upsertRuntimeObject(next)
         }
       }
       const at = nowIso()
       emitMotionFrames(at, nowMs)
       if (nowMs - lastProjectionMs < runtimeConfig.projectionIntervalMs) return
       lastProjectionMs = nowMs
-      const projectedObjects = liveDroneObjects()
-      emit(projectedObjects.map(object => ({
+      const projectedRecords = liveDroneRecords()
+      emit(projectedRecords.map(({ object }) => ({
         type: 'object.upserted' as const,
         object,
         at,
@@ -270,7 +292,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       readonly emitProjectedObject: boolean
     }): void => {
       const { payload, at } = input
-      const { object, data } = objectData(objects, payload.droneId)
+      const { object, data } = droneRecord(payload.droneId)
       const readiness = droneManualControlReadiness(data)
       if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
       const expiresAtMs = Date.now() + payload.commandTtlMs
@@ -293,13 +315,13 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         return
       }
       const updated = withDronePackData(object, next, at)
-      objects.set(updated.id, updated)
+      setRuntimeDrone(updated, next)
     }
 
     const handleCommand = async (command: CommandEnvelope): Promise<void> => {
       if (command.kind === createDroneCommandKind) {
         const payload = createDronePayloadSchema.parse(command.payload)
-        if ([...objects.values()].filter(object => parseDroneObject(object) !== null).length >= runtimeConfig.maxDrones) {
+        if (droneRecords.size >= runtimeConfig.maxDrones) {
           throw new Error(`native drone runtime is limited to ${runtimeConfig.maxDrones} drones`)
         }
         const model = requireDroneVehicleModel(payload.modelId, runtimeConfig.models)
@@ -313,7 +335,8 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           headingDeg: payload.headingDeg,
           at: createdAt,
         })
-        objects.set(object.id, object)
+        const record = upsertRuntimeObject(object)
+        if (!record) throw new Error(`created object is not a valid native drone: ${object.id}`)
         homePoints.set(object.id, payload.point)
         emitObjectUpsert(object, createdAt, 'durable', command)
         return
@@ -321,7 +344,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === armDroneCommandKind) {
         const payload = armDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         const at = nowIso()
         const next = {
           ...data,
@@ -356,7 +379,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === navigateDroneCommandKind) {
         const payload = navigateDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         assertTargetAllowed(payload.droneId, payload.target.point)
         if (!data.arming.armed) throw new Error('goto requires an armed drone')
         const at = nowIso()
@@ -366,7 +389,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === takeoffDroneCommandKind) {
         const payload = takeoffDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         if (!data.arming.armed) throw new Error('takeoff requires an armed drone')
         const at = nowIso()
         updateObject(object, {
@@ -386,7 +409,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === landDroneCommandKind || command.kind === returnToLaunchDroneCommandKind || command.kind === holdDroneCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         const at = nowIso()
         if (command.kind === holdDroneCommandKind) {
           missionPlans.delete(payload.droneId)
@@ -418,7 +441,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === uploadDroneMissionCommandKind) {
         const payload = uploadDroneMissionPayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         for (const item of payload.items) assertTargetAllowed(payload.droneId, item.point)
         missionPlans.set(payload.droneId, { planId: payload.planId, items: payload.items, currentIndex: 0 })
         const at = nowIso()
@@ -437,7 +460,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === startDroneMissionCommandKind || command.kind === pauseDroneMissionCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         const mission = missionPlans.get(payload.droneId)
         if (!mission) throw new Error(`no mission loaded for ${payload.droneId}`)
         const at = nowIso()
@@ -466,7 +489,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === clearDroneMissionCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         missionPlans.delete(payload.droneId)
         const at = nowIso()
         updateObject(object, {
@@ -479,7 +502,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === uploadDroneGeofenceCommandKind) {
         const payload = uploadDroneGeofencePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         geofences.set(payload.droneId, payload.polygons)
         const at = nowIso()
         updateObject(object, {
@@ -495,7 +518,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === clearDroneGeofenceCommandKind) {
         const payload = singleDronePayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         geofences.delete(payload.droneId)
         const at = nowIso()
         updateObject(object, {
@@ -507,7 +530,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === setDroneGimbalCommandKind) {
         const payload = setDroneGimbalPayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         const at = nowIso()
         updateObject(object, {
           ...data,
@@ -522,7 +545,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === configureDroneVehicleModelCommandKind) {
         const payload = configureDroneVehicleModelPayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
+        const { object, data } = droneRecord(payload.droneId)
         const model: DroneVehicleModel = payload.model
         const at = nowIso()
         updateObject(object, {
@@ -544,15 +567,10 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === swarmCommandKind) {
         const payload = swarmCommandPayloadSchema.parse(command.payload)
-        const targets = [...objects.values()].filter(object => {
-          const data = parseDroneObject(object)
-          if (!data) return false
-          return payload.droneIds.includes(object.id) || (payload.swarmId !== undefined && data.swarm?.swarmId === payload.swarmId)
-        })
+        const targets = [...droneRecords.values()].filter(({ object, data }) =>
+          payload.droneIds.includes(object.id) || (payload.swarmId !== undefined && data.swarm?.swarmId === payload.swarmId))
         const at = nowIso()
-        targets.forEach((object, index) => {
-          const data = parseDroneObject(object)
-          if (!data) return
+        targets.forEach(({ object, data }, index) => {
           if (payload.command.kind === 'hold') {
             updateObject(object, setDroneNavigation(data, 'hold', 'hold', at), at, 'durable', command)
             return
@@ -672,22 +690,12 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         for (const event of events) {
           if (event.controlInstanceId !== config.controlInstanceId) continue
           if (event.type === 'object.upserted') {
-            const data = parseDroneObject(event.object)
-            if (data) {
-              objects.set(event.object.id, event.object)
-              if (!homePoints.has(event.object.id)) homePoints.set(event.object.id, data.pose.point)
-            } else {
-              objects.delete(event.object.id)
-              homePoints.delete(event.object.id)
-              missionPlans.delete(event.object.id)
-              geofences.delete(event.object.id)
-            }
+            const record = upsertRuntimeObject(event.object)
+            if (record && !homePoints.has(event.object.id)) homePoints.set(event.object.id, record.data.pose.point)
+            if (!record) deleteRuntimeDrone(event.object.id)
           }
           if (event.type === 'object.deleted') {
-            objects.delete(event.objectId)
-            homePoints.delete(event.objectId)
-            missionPlans.delete(event.objectId)
-            geofences.delete(event.objectId)
+            deleteRuntimeDrone(event.objectId)
           }
         }
       },

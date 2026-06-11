@@ -6,7 +6,7 @@ import {
   droneSceneryTileCacheBudget,
   estimateDroneSceneryTileBytesForCache,
 } from '../src/ui/drone/drone-scenery-tiles.ts'
-import { buildRoadSurfaceMeshes, roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay.ts'
+import { buildRoadSurfaceMeshes, roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay-geometry.ts'
 
 const readAscii = (
   bytes: Uint8Array,
@@ -889,6 +889,17 @@ describe('drone scenery GLB compiler', () => {
     expect(source).not.toContain('sceneryMaterialDepthBias')
     expect(source).not.toContain('.zOffset')
     expect(source).not.toContain('maxZ: 12_000')
+  })
+
+  test('keeps road overlay geometry in the worker boundary', async () => {
+    const renderer = await Bun.file(new URL('../src/ui/drone/drone-road-overlay.ts', import.meta.url)).text()
+    const geometry = await Bun.file(new URL('../src/ui/drone/drone-road-overlay-geometry.ts', import.meta.url)).text()
+    const worker = await Bun.file(new URL('../src/ui/drone/drone-road-overlay-worker.ts', import.meta.url)).text()
+
+    expect(renderer).toContain("new Worker(new URL('./drone-road-overlay-worker.ts'")
+    expect(renderer).not.toContain('buildRoadSurfaceMeshes(')
+    expect(geometry).not.toContain('@babylonjs')
+    expect(worker).not.toContain('@babylonjs')
   })
 
   test('keeps coarse scenery tiles as lightweight fallback silhouettes', () => {

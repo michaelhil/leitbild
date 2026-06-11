@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Activity, Crosshair, Gamepad2, GripVertical, Keyboard, LocateFixed, Maximize2, MousePointer2, PanelRightClose, PanelRightOpen, PlaneLanding, RotateCcw, X } from 'lucide-svelte'
+  import { Maximize2, X } from 'lucide-svelte'
   import type { ControlInstanceId, ObjectId, OperationalObject } from '../../core/model/index.ts'
   import {
     attackCommandKind,
@@ -23,7 +23,6 @@
     droneKeyBindingDefinitions,
     droneManualAxesForPressedKeys,
     droneRuntimeAxesForPilotIntent,
-    formatKeyCode,
     readDroneKeyBindings,
     writeDroneKeyBindings,
     type DroneKeyBindingAction,
@@ -35,7 +34,10 @@
     droneManualAxesSignature,
     type DroneManualInputSourceKind,
   } from './drone-manual-command-stream.ts'
-  import { createDroneScene, type DroneSceneCameraOrbit, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
+  import type { DroneScenePerformanceSnapshot } from './drone-performance.ts'
+  import type { DroneSceneCameraOrbit, DroneSceneHandle, DroneSceneViewMode } from './drone-scene-types.ts'
+  import DroneFlightHud from './DroneFlightHud.svelte'
+  import DroneSettingsRail from './DroneSettingsRail.svelte'
 
   interface Props {
     readonly controlInstanceId: ControlInstanceId
@@ -148,6 +150,7 @@
   let gamepadSignature = ''
   let lastCommandRateUpdateMs = 0
   let lastRealtimeStatusUpdateMs = 0
+  let pendingMotionFrames: ReadonlyArray<DroneMotionFrame> = []
 
   const droneObjects = $derived(objects.filter(candidate => dronePackDataSchema.safeParse(candidate.packData).success))
   const selectedObject = $derived.by(() =>
@@ -341,6 +344,10 @@
     const value = event.currentTarget instanceof HTMLSelectElement ? event.currentTarget.value : ''
     const index = Number.parseInt(value, 10)
     selectedGamepadIndex = value === '' || Number.isNaN(index) ? null : index
+  }
+
+  const selectTarget = (event: Event): void => {
+    selectedTargetId = event.currentTarget instanceof HTMLSelectElement ? event.currentTarget.value : ''
   }
 
   const axis = (value: number): number =>
@@ -762,6 +769,7 @@
 
   runOnMount(() => {
     if (!sceneElement) throw new Error('drone scene element was not mounted')
+    let disposed = false
     windowBounds = clampWindowBounds(defaultWindowBoundsForViewport())
     try {
       keyBindings = readDroneKeyBindings(localStorage)
@@ -769,28 +777,43 @@
       commandStatus = err instanceof Error ? `Key bindings reset: ${err.message}` : `Key bindings reset: ${String(err)}`
       keyBindings = defaultDroneKeyBindings()
     }
-    sceneHandle = createDroneScene({
-      container: sceneElement,
-      getFocusDroneId: () => selectedObject.id,
-      getObjects: () => objects,
-      getViewMode: () => viewMode,
-      getCameraOrbit: () => cameraOrbit,
-      onReady: () => {
-        if (sceneStatus === 'Opening flight view') sceneStatus = 'Flight view ready'
-      },
-      onError: message => {
-        sceneStatus = message
-      },
-      onWorldStatus: message => {
-        sceneryStatus = message
-      },
-      onPerformance: snapshot => {
-        scenePerformance = snapshot
-      },
-    })
     unsubscribeMotionFrames = subscribeMotionFrames?.(frames => {
+      pendingMotionFrames = frames
       sceneHandle?.ingestMotionFrames(frames)
     }) ?? null
+    sceneStatus = 'Loading flight renderer'
+    sceneryStatus = 'Waiting for renderer'
+    void (async (): Promise<void> => {
+      try {
+        const module = await import('./drone-scene.ts')
+        if (disposed || !sceneElement) return
+        sceneStatus = 'Starting Babylon flight renderer'
+        sceneHandle = module.createDroneScene({
+          container: sceneElement,
+          getFocusDroneId: () => selectedObject.id,
+          getObjects: () => objects,
+          getViewMode: () => viewMode,
+          getCameraOrbit: () => cameraOrbit,
+          onReady: () => {
+            if (sceneStatus === 'Opening flight view' || sceneStatus === 'Loading flight renderer' || sceneStatus === 'Starting Babylon flight renderer') {
+              sceneStatus = 'Flight view ready'
+            }
+          },
+          onError: message => {
+            sceneStatus = message
+          },
+          onWorldStatus: message => {
+            sceneryStatus = message
+          },
+          onPerformance: snapshot => {
+            scenePerformance = snapshot
+          },
+        })
+        if (pendingMotionFrames.length > 0) sceneHandle.ingestMotionFrames(pendingMotionFrames)
+      } catch (err) {
+        if (!disposed) sceneStatus = err instanceof Error ? err.message : String(err)
+      }
+    })()
     refreshGamepads(true)
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
@@ -806,6 +829,7 @@
     window.addEventListener('gamepaddisconnected', onGamepadConnectionChange)
     animationId = requestAnimationFrame(pollInput)
     return () => {
+      disposed = true
       cancelAnimationFrame(animationId)
       manualCommandStream.reset()
       window.removeEventListener('keydown', onKeydown)
@@ -823,6 +847,7 @@
       if (mouseCaptured) document.exitPointerLock()
       unsubscribeMotionFrames?.()
       unsubscribeMotionFrames = null
+      pendingMotionFrames = []
       sceneHandle?.destroy()
       sceneHandle = null
     }
@@ -861,195 +886,41 @@
         onwheel={onSceneWheel}
       ></div>
       {#if data}
-        <div class="flight-hud" aria-label="Flight telemetry">
-          <div class="hud-row">
-            <span>ALT {Math.round(data.pose.altitudeM)} m</span>
-            <span>SPD {groundSpeedMps.toFixed(1)} m/s</span>
-            <span>BAT {Math.round(batteryPercent)}%</span>
-          </div>
-          <div class="hud-horizon">
-            <span></span>
-          </div>
-          <div class="hud-row">
-            <span>HDG {Math.round(data.pose.headingDeg)}°</span>
-            <span>P {data.attitude.pitchDeg.toFixed(1)}°</span>
-            <span>R {data.attitude.rollDeg.toFixed(1)}°</span>
-          </div>
-          <div class="hud-row muted">
-            <span>{data.vehicle.modelLabel}</span>
-            <span>{data.navigation.mode}</span>
-            <span>{data.link.state}</span>
-          </div>
-        </div>
+        <DroneFlightHud {data} {groundSpeedMps} {batteryPercent} />
       {/if}
     </div>
-    <div class="drone-control-shell" class:collapsed={controlPanelCollapsed}>
-      {#if controlPanelCollapsed}
-        <button
-          class="control-panel-reopen"
-          type="button"
-          aria-label="Open drone settings rail"
-          title="Open drone settings rail"
-          onclick={toggleControlPanel}
-        >
-          <PanelRightOpen size={18} />
-        </button>
-      {:else}
-        <button
-          class="control-panel-resize"
-          type="button"
-          aria-label="Resize drone settings rail"
-          title="Resize drone settings rail"
-          data-window-control
-          onpointerdown={startControlPanelResize}
-        >
-          <GripVertical size={16} />
-        </button>
-        <aside class="drone-control-panel">
-          <div class="control-panel-toolbar">
-            <IconButton label="Collapse drone settings rail" icon={PanelRightClose} variant="ghost" onClick={toggleControlPanel} />
-          </div>
-      <section>
-        <h3><LocateFixed size={15} /> Drone</h3>
-        <select value={selectedDroneId} aria-label="Controlled drone" onchange={selectDrone}>
-          {#each droneObjects as droneObject (droneObject.id)}
-            <option value={droneObject.id}>{droneObject.label}</option>
-          {/each}
-        </select>
-      </section>
-
-      <section>
-        <h3><Keyboard size={15} /> Manual</h3>
-        <div class="axis-grid">
-          <span>FWD {liveAxes.forward.toFixed(2)}</span>
-          <span>RIGHT {liveAxes.right.toFixed(2)}</span>
-          <span>VERT {liveAxes.vertical.toFixed(2)}</span>
-          <span>YAW {liveAxes.yaw.toFixed(2)}</span>
-        </div>
-      </section>
-
-      <section>
-        <h3><Keyboard size={15} /> Keys</h3>
-        <div class="key-binding-grid">
-          {#each flightBindingDefinitions as binding (binding.action)}
-            <button
-              class:capturing={bindingCaptureAction === binding.action}
-              type="button"
-              onclick={() => bindingCaptureAction = binding.action}
-            >
-              <span>{binding.label}</span>
-              <strong>{bindingCaptureAction === binding.action ? 'Press key' : formatKeyCode(keyBindings[binding.action])}</strong>
-            </button>
-          {/each}
-        </div>
-        <div class="key-binding-grid compact">
-          {#each cameraBindingDefinitions as binding (binding.action)}
-            <button
-              class:capturing={bindingCaptureAction === binding.action}
-              type="button"
-              onclick={() => bindingCaptureAction = binding.action}
-            >
-              <span>{binding.label}</span>
-              <strong>{bindingCaptureAction === binding.action ? 'Press key' : formatKeyCode(keyBindings[binding.action])}</strong>
-            </button>
-          {/each}
-          <button type="button" onclick={resetKeyBindings}>
-            <span>Reset</span>
-            <strong>Defaults</strong>
-          </button>
-        </div>
-      </section>
-
-      <section>
-        <h3><Activity size={15} /> Performance</h3>
-        <div class="perf-grid">
-          <span>FPS {scenePerformance ? Math.round(scenePerformance.fps) : '-'}</span>
-          <span>P95 {scenePerformance ? Math.round(scenePerformance.frameP95Ms) : '-'} ms</span>
-          <span>CPU {scenePerformance ? scenePerformance.frameCpuMs.toFixed(1) : '-'} ms</span>
-          <span>RDR {scenePerformance ? scenePerformance.renderMs.toFixed(1) : '-'} ms</span>
-          <span>JANK {scenePerformance ? Math.round(scenePerformance.jankPercent) : '-'}%</span>
-          <span>DRAW {scenePerformance ? scenePerformance.drawCalls : '-'}</span>
-          <span>TRI {scenePerformance ? Math.round(scenePerformance.triangles / 1000) : '-'}k</span>
-          <span>GEO {scenePerformance ? scenePerformance.geometries : '-'}</span>
-          <span>PR {scenePerformance ? scenePerformance.pixelRatio.toFixed(2) : '-'}</span>
-          <span>QL {scenePerformance?.quality ?? '-'}</span>
-          <span>SCN {scenePerformance ? scenePerformance.activeScenes : '-'}</span>
-          <span>RTT {lastCommandRoundTripMs === null ? '-' : Math.round(lastCommandRoundTripMs)} ms</span>
-          <span>CMD {commandRateHz.toFixed(1)} Hz</span>
-          <span>LOD {scenePerformance?.worldFeatures.sceneryStage ?? '-'}</span>
-          <span>TILE {scenePerformance ? scenePerformance.worldFeatures.tiles : '-'}</span>
-          <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
-          <span>BLD {scenePerformance ? scenePerformance.worldFeatures.buildings : '-'}</span>
-          <span>RD {scenePerformance ? scenePerformance.worldFeatures.roads : '-'}</span>
-          <span>RDT {scenePerformance ? scenePerformance.worldFeatures.roadOverlayTiles : '-'}</span>
-          <span>RDP {scenePerformance ? scenePerformance.worldFeatures.roadOverlayPendingTiles : '-'}</span>
-          <span>RTRI {scenePerformance ? Math.round(scenePerformance.worldFeatures.roadOverlayTriangles / 1000) : '-'}k</span>
-          <span>RMB {scenePerformance ? Math.round(scenePerformance.worldFeatures.roadOverlayBytes / 1_000_000) : '-'}</span>
-          <span>WTR {scenePerformance ? scenePerformance.worldFeatures.water : '-'}</span>
-          <span>VEG {scenePerformance ? scenePerformance.worldFeatures.vegetation : '-'}</span>
-          <span>LBL {scenePerformance ? scenePerformance.worldFeatures.roadLabels : '-'}</span>
-          <span>SRC {scenePerformance?.worldSource ?? '-'}</span>
-          <span>MAP {scenePerformance?.worldFeatures.scenerySource ?? '-'}</span>
-          <span>TRN {scenePerformance?.worldFeatures.terrain ?? '-'}</span>
-          <span>DEM {scenePerformance?.worldFeatures.terrainSurface ?? '-'}</span>
-          <span>LOAD {scenePerformance ? Math.round(scenePerformance.worldLoadMs) : '-'} ms</span>
-          <span>BUILD {scenePerformance ? Math.round(scenePerformance.worldBuildMs) : '-'} ms</span>
-        </div>
-      </section>
-
-      <section>
-        <h3><MousePointer2 size={15} /> Mouse</h3>
-        <div class="command-grid">
-          <button class:active={mouseControlEnabled} type="button" onclick={toggleMouseControl}><MousePointer2 size={15} /> {mouseControlEnabled ? 'On' : 'Enable'}</button>
-          <button type="button" disabled={!mouseControlEnabled} onclick={requestMouseCapture}><LocateFixed size={15} /> Capture</button>
-          <button type="button" onclick={centerMouseStick}><RotateCcw size={15} /> Center</button>
-        </div>
-        <span class="mouse-status">{mouseCaptured ? 'Pointer locked' : mouseControlEnabled ? 'Click scene to fly' : 'Disabled'}</span>
-      </section>
-
-      <section>
-        <h3><Gamepad2 size={15} /> Controller</h3>
-        <select value={selectedGamepadIndex === null ? '' : String(selectedGamepadIndex)} aria-label="Gamepad" onchange={selectGamepad}>
-          <option value="">Keyboard</option>
-          {#each gamepads as pad (pad.index)}
-            <option value={pad.index}>{pad.id}</option>
-          {/each}
-        </select>
-      </section>
-
-      <section>
-        <h3><LocateFixed size={15} /> Mode</h3>
-        <div class="command-grid">
-          <button type="button" onclick={() => void setMode('hold')}><LocateFixed size={15} /> Hold</button>
-          <button type="button" onclick={() => void setMode('land')}><PlaneLanding size={15} /> Land</button>
-          <button type="button" onclick={() => void setMode('return_to_launch')}><RotateCcw size={15} /> Return</button>
-        </div>
-      </section>
-
-      <section>
-        <h3><Crosshair size={15} /> Sensors</h3>
-        <div class="contact-list">
-          {#each sensorContacts as contact (`${contact.sensorId}:${contact.targetId}`)}
-            <span>{contact.targetLabel} · {Math.round(contact.distanceM)} m · {Math.round(contact.confidence * 100)}%</span>
-          {:else}
-            <span>No contacts</span>
-          {/each}
-        </div>
-      </section>
-
-      <section>
-        <h3><Crosshair size={15} /> Effect</h3>
-        <select bind:value={selectedTargetId} aria-label="Target object">
-          <option value="">Target</option>
-          {#each targetOptions as target (target.id)}
-            <option value={target.id}>{target.label}</option>
-          {/each}
-        </select>
-        <button type="button" disabled={!selectedTargetId} onclick={() => void attackTarget()}><Crosshair size={15} /> Apply</button>
-      </section>
-        </aside>
-      {/if}
-    </div>
+    <DroneSettingsRail
+      collapsed={controlPanelCollapsed}
+      {selectedDroneId}
+      {droneObjects}
+      {liveAxes}
+      {flightBindingDefinitions}
+      {cameraBindingDefinitions}
+      {keyBindings}
+      {bindingCaptureAction}
+      {scenePerformance}
+      {lastCommandRoundTripMs}
+      {commandRateHz}
+      {mouseControlEnabled}
+      {mouseCaptured}
+      {gamepads}
+      {selectedGamepadIndex}
+      {sensorContacts}
+      {targetOptions}
+      {selectedTargetId}
+      onToggleCollapsed={toggleControlPanel}
+      onStartResize={startControlPanelResize}
+      onSelectDrone={selectDrone}
+      onCaptureBinding={(action) => bindingCaptureAction = action}
+      onResetKeyBindings={resetKeyBindings}
+      onToggleMouseControl={toggleMouseControl}
+      onRequestMouseCapture={requestMouseCapture}
+      onCenterMouseStick={centerMouseStick}
+      onSelectGamepad={selectGamepad}
+      onSetMode={setMode}
+      onSelectTarget={selectTarget}
+      onAttackTarget={attackTarget}
+    />
   </div>
 
   <footer class="drone-window-footer">{footerStatus}</footer>
@@ -1109,22 +980,10 @@
     font-size: 12px;
   }
 
-  h2,
-  h3 {
+  h2 {
     margin: 0;
     letter-spacing: 0;
-  }
-
-  h2 {
     font-size: 15px;
-  }
-
-  h3 {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #e5e7eb;
   }
 
   .drone-window-header span {
@@ -1134,17 +993,14 @@
     font-size: 12px;
   }
 
-  .header-actions,
-  .command-grid {
+  .header-actions {
     display: flex;
     gap: 6px;
     align-items: center;
   }
 
   .header-actions button,
-  .command-grid button,
-  .drone-control-panel button,
-  .drone-control-panel select {
+  .window-resize-grip {
     min-height: 30px;
     border: 1px solid rgb(148 163 184 / 0.28);
     background: #1e293b;
@@ -1157,11 +1013,6 @@
   }
 
   .header-actions button.active {
-    background: #2563eb;
-    border-color: #60a5fa;
-  }
-
-  .drone-control-panel button.active {
     background: #2563eb;
     border-color: #60a5fa;
   }
@@ -1194,63 +1045,6 @@
     height: 100%;
   }
 
-  .drone-control-shell {
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-    background: #0b1120;
-    border-left: 1px solid rgb(148 163 184 / 0.2);
-  }
-
-  .drone-control-shell.collapsed {
-    display: grid;
-    place-items: start center;
-    padding-top: 10px;
-  }
-
-  .control-panel-reopen,
-  .control-panel-resize,
-  .window-resize-grip {
-    border: 1px solid rgb(148 163 184 / 0.28);
-    background: #1e293b;
-    color: #e2e8f0;
-  }
-
-  .control-panel-reopen {
-    display: inline-grid;
-    place-items: center;
-    width: 30px;
-    height: 34px;
-  }
-
-  .control-panel-resize {
-    position: absolute;
-    left: -7px;
-    top: 0;
-    z-index: 2;
-    display: grid;
-    place-items: center;
-    width: 13px;
-    height: 100%;
-    padding: 0;
-    border-top: 0;
-    border-bottom: 0;
-    cursor: col-resize;
-    opacity: 0.68;
-    touch-action: none;
-  }
-
-  .control-panel-resize:hover,
-  .control-panel-resize:focus-visible {
-    opacity: 1;
-    border-color: #60a5fa;
-  }
-
-  .control-panel-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    min-width: 0;
-  }
 
   .window-resize-grip {
     position: absolute;
@@ -1266,201 +1060,6 @@
     border-bottom: 0;
     cursor: nwse-resize;
     touch-action: none;
-  }
-
-  .drone-control-panel {
-    display: grid;
-    align-content: start;
-    gap: 12px;
-    height: 100%;
-    box-sizing: border-box;
-    padding: 12px;
-    overflow: auto;
-    background: #0b1120;
-  }
-
-  .drone-control-panel section {
-    display: grid;
-    gap: 8px;
-  }
-
-  .axis-grid,
-  .key-binding-grid,
-  .perf-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    font-size: 12px;
-    color: #cbd5e1;
-  }
-
-  .perf-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .axis-grid span,
-  .perf-grid span {
-    min-width: 0;
-    padding: 6px;
-    overflow: hidden;
-    background: #111827;
-    border: 1px solid rgb(148 163 184 / 0.18);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .key-binding-grid.compact {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .key-binding-grid button {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 6px;
-    align-items: center;
-    justify-content: initial;
-    min-width: 0;
-    padding: 5px 7px;
-    text-align: left;
-  }
-
-  .key-binding-grid button.capturing {
-    border-color: #facc15;
-    background: #334155;
-  }
-
-  .key-binding-grid button span,
-  .key-binding-grid button strong {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .key-binding-grid button span {
-    color: #cbd5e1;
-  }
-
-  .key-binding-grid button strong {
-    color: #f8fafc;
-    font-weight: 700;
-  }
-
-  .contact-list {
-    display: grid;
-    gap: 5px;
-    color: #cbd5e1;
-    font-size: 12px;
-  }
-
-  .mouse-status {
-    color: #93c5fd;
-    font-size: 12px;
-  }
-
-  .contact-list span {
-    min-width: 0;
-    padding: 6px;
-    overflow: hidden;
-    border: 1px solid rgb(148 163 184 / 0.18);
-    background: #111827;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .command-grid {
-    flex-wrap: wrap;
-  }
-
-  .command-grid button,
-  .drone-control-panel section > button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    padding: 0 9px;
-  }
-
-  .drone-control-panel select {
-    width: 100%;
-    padding: 0 8px;
-  }
-
-  .drone-control-panel button:disabled {
-    opacity: 0.48;
-  }
-
-  .flight-hud {
-    position: absolute;
-    left: 50%;
-    bottom: 18px;
-    display: grid;
-    gap: 7px;
-    width: min(520px, calc(100% - 32px));
-    transform: translateX(-50%);
-    color: #e0f2fe;
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    text-shadow: 0 1px 8px rgb(2 6 23 / 0.8);
-    pointer-events: none;
-  }
-
-  .hud-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .hud-row span {
-    min-width: 0;
-    padding: 4px 7px;
-    overflow: hidden;
-    border: 1px solid rgb(125 211 252 / 0.35);
-    background: rgb(15 23 42 / 0.42);
-    text-align: center;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .hud-row.muted {
-    color: #bae6fd;
-    font-size: 11px;
-  }
-
-  .hud-horizon {
-    position: relative;
-    height: 24px;
-  }
-
-  .hud-horizon::before,
-  .hud-horizon::after {
-    position: absolute;
-    top: 50%;
-    width: calc(50% - 34px);
-    height: 1px;
-    background: #facc15;
-    content: '';
-  }
-
-  .hud-horizon::before {
-    left: 0;
-  }
-
-  .hud-horizon::after {
-    right: 0;
-  }
-
-  .hud-horizon span {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    width: 16px;
-    height: 16px;
-    border-top: 2px solid #facc15;
-    border-left: 2px solid #facc15;
-    transform: translate(-50%, -30%) rotate(45deg);
   }
 
   @media (max-width: 720px) {
@@ -1479,34 +1078,5 @@
       overflow: hidden;
     }
 
-    .flight-hud {
-      bottom: 10px;
-      font-size: 10px;
-    }
-
-    .drone-control-shell {
-      border-top: 1px solid rgb(148 163 184 / 0.2);
-      border-left: 0;
-    }
-
-    .drone-control-panel {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      max-height: 270px;
-    }
-
-    .control-panel-resize {
-      display: none;
-    }
-
-    .command-grid {
-      align-items: stretch;
-    }
-  }
-
-  @media (max-width: 460px) {
-    .drone-control-panel {
-      grid-template-columns: 1fr;
-      max-height: 300px;
-    }
   }
 </style>

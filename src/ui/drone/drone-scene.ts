@@ -32,6 +32,7 @@ import {
 } from './drone-scenery-tiles.ts'
 import { createDroneRoadOverlayRenderer, type DroneRoadOverlayRenderer } from './drone-road-overlay.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
+import type { DroneSceneCameraOrbit, DroneSceneConfig, DroneSceneHandle, DroneSceneViewMode } from './drone-scene-types.ts'
 import {
   loadDroneTerrainModel,
   terrainHeightAt,
@@ -39,31 +40,8 @@ import {
   type DroneTerrainModel,
 } from './drone-terrain.ts'
 
-export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
+export type { DroneSceneCameraOrbit, DroneSceneConfig, DroneSceneHandle, DroneSceneViewMode }
 export type { DroneScenePerformanceSnapshot }
-
-export interface DroneSceneHandle {
-  readonly ingestMotionFrames: (frames: ReadonlyArray<DroneMotionFrame>) => void
-  readonly destroy: () => void
-}
-
-export interface DroneSceneCameraOrbit {
-  readonly yawOffsetRad: number
-  readonly pitchOffsetRad: number
-  readonly distanceM: number
-}
-
-interface DroneSceneConfig {
-  readonly container: HTMLElement
-  readonly getFocusDroneId: () => string
-  readonly getObjects: () => ReadonlyArray<OperationalObject>
-  readonly getViewMode: () => DroneSceneViewMode
-  readonly getCameraOrbit: () => DroneSceneCameraOrbit
-  readonly onReady?: () => void
-  readonly onError?: (message: string) => void
-  readonly onWorldStatus?: (message: string) => void
-  readonly onPerformance?: (snapshot: DroneScenePerformanceSnapshot) => void
-}
 
 interface LocalPoint {
   readonly x: number
@@ -627,6 +605,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const initializeScenery = async (): Promise<void> => {
     const startedAt = performance.now()
     try {
+      config.onWorldStatus?.('Checking 3D scenery capability')
       const sceneryStatus = await loadDroneWorldSceneryTilesetStatus()
       if (destroyed) return
       if (sceneryStatus.status !== 'available') {
@@ -634,11 +613,13 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         notifyReadyOnce()
         return
       }
+      config.onWorldStatus?.('Loading 3D scenery manifest')
       const info = await loadDroneSceneryTilesetInfo({ status: sceneryStatus })
       if (destroyed) return
       sceneOriginCenter = { lon: info.origin.lon, lat: info.origin.lat }
       if (info.terrainAligned) {
         try {
+          config.onWorldStatus?.('Loading DEM terrain')
           terrainStatus = await loadDroneWorldTerrainStatus()
           if (!destroyed) {
             terrainModel = await loadDroneTerrainModel({
@@ -677,12 +658,14 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
         baseWorld.referenceGround.setEnabled(true)
         baseWorld.distantHaze.setEnabled(true)
       }
+      config.onWorldStatus?.('Preparing road overlay renderer')
       roadOverlayRenderer = createDroneRoadOverlayRenderer({
         scene,
         center: sceneOriginCenter,
         roadTileTemplate: info.roadTileTemplate,
         ...(config.onError === undefined ? {} : { onError: config.onError }),
       })
+      config.onWorldStatus?.('Attaching 3D Tiles renderer')
       sceneryRenderer = createDroneSceneryTilesRenderer({
         scene,
         info,
