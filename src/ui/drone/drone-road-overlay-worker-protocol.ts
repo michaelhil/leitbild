@@ -1,13 +1,19 @@
-import type { SceneryRoadTile } from '../../map/scenery.ts'
 import type { DroneWorldCenter } from './drone-map-world.ts'
 import type { DroneRoadSurfaceMeshData } from './drone-road-overlay-geometry.ts'
 
 export interface RoadOverlayWorkerBuildRequest {
   readonly type: 'build'
   readonly id: number
-  readonly tile: SceneryRoadTile
+  readonly roadTileUrl: string
   readonly center?: DroneWorldCenter
 }
+
+export interface RoadOverlayWorkerCancelRequest {
+  readonly type: 'cancel'
+  readonly id: number
+}
+
+export type RoadOverlayWorkerRequest = RoadOverlayWorkerBuildRequest | RoadOverlayWorkerCancelRequest
 
 export interface RoadOverlayWorkerBuildSuccess {
   readonly type: 'built'

@@ -6,7 +6,7 @@ import {
   droneSceneryTileCacheBudget,
   estimateDroneSceneryTileBytesForCache,
 } from '../src/ui/drone/drone-scenery-tiles.ts'
-import { buildRoadSurfaceMeshes, roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay-geometry.ts'
+import { buildRoadSurfaceMeshes, roadMaxTrianglesPerSurface, roadTileUrlFromModelUrl } from '../src/ui/drone/drone-road-overlay-geometry.ts'
 
 const readAscii = (
   bytes: Uint8Array,
@@ -898,6 +898,16 @@ describe('drone scenery GLB compiler', () => {
 
     expect(renderer).toContain("new Worker(new URL('./drone-road-overlay-worker.ts'")
     expect(renderer).not.toContain('buildRoadSurfaceMeshes(')
+    expect(renderer).not.toContain('sceneryRoadTileSchema')
+    expect(renderer).not.toContain('vertexData.positions = [...surface.positions]')
+    expect(worker).toContain('await fetch(url, { signal })')
+    expect(worker).toContain('new Float32Array(surface.positions)')
+    expect(worker).toContain('new Uint32Array(surface.indices)')
+    expect(renderer).toContain('requestAnimationFrame(flushUploadJobs)')
+    expect(renderer).toContain('roadMeshUploadBudgetMs')
+    expect(renderer).toContain("worker.postMessage({ type: 'cancel', id })")
+    expect(worker).toContain('abortControllers.get(request.id)?.abort()')
+    expect(worker).toContain("workerScope.postMessage({ type: 'built'")
     expect(geometry).not.toContain('@babylonjs')
     expect(worker).not.toContain('@babylonjs')
   })
@@ -1170,7 +1180,8 @@ describe('drone scenery runtime cache policy', () => {
       'road-marking-center',
       'road-marking-edge',
     ]))
-    expect(meshes.length).toBeLessThanOrEqual(3)
+    expect(Math.max(...meshes.map(mesh => mesh.triangleCount))).toBeLessThanOrEqual(roadMaxTrianglesPerSurface)
+    expect(meshes.length).toBeLessThanOrEqual(8)
     expect(totalTriangles).toBeLessThan(60_000)
   })
 

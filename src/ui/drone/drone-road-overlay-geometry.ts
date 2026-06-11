@@ -30,6 +30,8 @@ interface RoadGeometryBuilder {
 }
 
 export type RoadMaterialKey = 'road-asphalt' | 'road-marking-edge' | 'road-marking-center' | 'road-marking-lane'
+export type RoadGeometryFloatBuffer = number[] | Float32Array
+export type RoadGeometryIndexBuffer = number[] | Uint32Array
 
 interface RoadMeshBuilderEntry {
   readonly key: string
@@ -75,9 +77,9 @@ export interface DroneRoadSurfaceMeshData {
   readonly materialKey: RoadMaterialKey
   readonly colorHex: string
   readonly y: number
-  readonly positions: ReadonlyArray<number>
-  readonly normals: ReadonlyArray<number>
-  readonly indices: ReadonlyArray<number>
+  readonly positions: RoadGeometryFloatBuffer
+  readonly normals: RoadGeometryFloatBuffer
+  readonly indices: RoadGeometryIndexBuffer
   readonly triangleCount: number
 }
 
@@ -98,6 +100,7 @@ const roadMinLaneDashM = 1.8
 const roadTargetLaneWidthM = 3.4
 const roadMinMarkedLaneWidthM = 2.75
 const roadMaxEstimatedLaneCount = 6
+export const roadMaxTrianglesPerSurface = 12_000
 const roadSegmentBucketM = 42
 const earthRadiusM = 6_378_137
 
@@ -816,6 +819,53 @@ const markingIntervalsForRoad = (
   )
 }
 
+const splitRoadSurfaceMeshData = (
+  surface: DroneRoadSurfaceMeshData,
+): ReadonlyArray<DroneRoadSurfaceMeshData> => {
+  if (surface.triangleCount <= roadMaxTrianglesPerSurface) return [surface]
+  const result: DroneRoadSurfaceMeshData[] = []
+  const maxIndexCount = roadMaxTrianglesPerSurface * 3
+  for (let startIndex = 0; startIndex < surface.indices.length; startIndex += maxIndexCount) {
+    const endIndex = Math.min(surface.indices.length, startIndex + maxIndexCount)
+    const positions: number[] = []
+    const normals: number[] = []
+    const indices: number[] = []
+    const vertexMap = new Map<number, number>()
+    for (let sourceIndexOffset = startIndex; sourceIndexOffset < endIndex; sourceIndexOffset += 1) {
+      const sourceVertexIndex = surface.indices[sourceIndexOffset]
+      if (sourceVertexIndex === undefined) continue
+      const mappedIndex = vertexMap.get(sourceVertexIndex)
+      if (mappedIndex !== undefined) {
+        indices.push(mappedIndex)
+        continue
+      }
+      const nextIndex = vertexMap.size
+      vertexMap.set(sourceVertexIndex, nextIndex)
+      indices.push(nextIndex)
+      const positionOffset = sourceVertexIndex * 3
+      positions.push(
+        surface.positions[positionOffset] ?? 0,
+        surface.positions[positionOffset + 1] ?? surface.y,
+        surface.positions[positionOffset + 2] ?? 0,
+      )
+      normals.push(
+        surface.normals[positionOffset] ?? 0,
+        surface.normals[positionOffset + 1] ?? 1,
+        surface.normals[positionOffset + 2] ?? 0,
+      )
+    }
+    result.push({
+      ...surface,
+      key: `${surface.key}:part-${result.length + 1}`,
+      positions,
+      normals,
+      indices,
+      triangleCount: indices.length / 3,
+    })
+  }
+  return result
+}
+
 export const buildRoadSurfaceMeshes = (config: {
   readonly tile: SceneryRoadTile
   readonly center?: DroneWorldCenter
@@ -932,7 +982,7 @@ export const buildRoadSurfaceMeshes = (config: {
       || roadMaterialOrder[left.materialKey] - roadMaterialOrder[right.materialKey]
       || left.key.localeCompare(right.key),
     )
-    .map(([key, entry]) => ({
+    .flatMap(([key, entry]) => splitRoadSurfaceMeshData({
       key,
       materialKey: entry.materialKey,
       colorHex: entry.colorHex,
