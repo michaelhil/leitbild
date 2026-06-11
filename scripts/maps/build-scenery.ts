@@ -21,6 +21,7 @@ import {
   sceneryTileHasFeatures,
   type SceneryAssetLodLevel,
   type SceneryAssetTileSummary,
+  type SceneryTile,
   type SceneryTileCoord,
 } from '../../src/map/scenery.ts'
 import type { TerrainDemEncoding } from '../../src/map/terrain-artifact.ts'
@@ -44,7 +45,7 @@ interface SceneryElevationSource {
     readonly path: string
     readonly required: boolean
   }
-  readonly samplerForTile: (tile: SceneryTileCoord & { readonly extent: number }) => Promise<ElevationSampler>
+  readonly samplerForTile: (tile: SceneryTile) => Promise<ElevationSampler>
 }
 
 const metersPerDegreeLat = 111_320
@@ -445,7 +446,7 @@ for (const zoom of contentZooms) {
       emptyTileCount += 1
       return
     }
-    const elevationSampler = await elevationSource.samplerForTile(scenery.tile)
+    const elevationSampler = await elevationSource.samplerForTile(scenery)
     const glb = compileSceneryGlbTile(scenery, { elevationSampler })
     if (!glb) {
       emptyTileCount += 1

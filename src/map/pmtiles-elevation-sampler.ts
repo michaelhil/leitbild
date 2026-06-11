@@ -35,7 +35,7 @@ export interface PmtilesElevationSamplerFactory {
     readonly absoluteHeightM: number
   }
   readonly samplerForBounds: (bounds: ElevationSamplerBounds) => Promise<ElevationSampler>
-  readonly samplerForSceneryTile: (tile: SceneryTile['tile']) => Promise<ElevationSampler>
+  readonly samplerForSceneryTile: (tile: SceneryTile) => Promise<ElevationSampler>
 }
 
 const createBunFileSource = (filePath: string, key: string): Source => ({
@@ -97,15 +97,62 @@ const sceneryTileBoundsFor = (
   }
 }
 
+const includeLonLat = (
+  bounds: ElevationSamplerBounds,
+  point: ElevationSamplerBounds,
+): ElevationSamplerBounds => ({
+  minLon: Math.min(bounds.minLon, point.minLon),
+  minLat: Math.min(bounds.minLat, point.minLat),
+  maxLon: Math.max(bounds.maxLon, point.maxLon),
+  maxLat: Math.max(bounds.maxLat, point.maxLat),
+})
+
+const boundsForSceneryPoint = (
+  point: SceneryTile['features']['labels'][number]['point'],
+  tile: SceneryTile['tile'],
+): ElevationSamplerBounds => {
+  const lonLat = sceneryTilePointLonLat(point, tile)
+  return {
+    minLon: lonLat.lon,
+    minLat: lonLat.lat,
+    maxLon: lonLat.lon,
+    maxLat: lonLat.lat,
+  }
+}
+
+const sceneryTileContentBoundsFor = (
+  scenery: SceneryTile,
+): ElevationSamplerBounds => {
+  let bounds = sceneryTileBoundsFor(scenery.tile)
+  for (const feature of scenery.features.polygons) {
+    for (const ring of feature.rings) {
+      for (const point of ring) bounds = includeLonLat(bounds, boundsForSceneryPoint(point, scenery.tile))
+    }
+  }
+  for (const feature of scenery.features.lines) {
+    for (const point of feature.path) bounds = includeLonLat(bounds, boundsForSceneryPoint(point, scenery.tile))
+  }
+  for (const feature of scenery.features.labels) {
+    bounds = includeLonLat(bounds, boundsForSceneryPoint(feature.point, scenery.tile))
+  }
+  return bounds
+}
+
 const terrainTileRangeForBounds = (
   bounds: ElevationSamplerBounds,
   zoom: number,
+  marginTiles = 0,
 ): ReadonlyArray<TileCoord> => {
   const northWest = tileForLonLat(bounds.minLon, bounds.maxLat, zoom)
   const southEast = tileForLonLat(bounds.maxLon, bounds.minLat, zoom)
+  const maxTile = 2 ** zoom - 1
+  const minX = Math.max(0, Math.min(northWest.x, southEast.x) - marginTiles)
+  const maxX = Math.min(maxTile, Math.max(northWest.x, southEast.x) + marginTiles)
+  const minY = Math.max(0, Math.min(northWest.y, southEast.y) - marginTiles)
+  const maxY = Math.min(maxTile, Math.max(northWest.y, southEast.y) + marginTiles)
   const tiles: TileCoord[] = []
-  for (let x = Math.min(northWest.x, southEast.x); x <= Math.max(northWest.x, southEast.x); x += 1) {
-    for (let y = Math.min(northWest.y, southEast.y); y <= Math.max(northWest.y, southEast.y); y += 1) {
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
       tiles.push({ z: zoom, x, y })
     }
   }
@@ -183,10 +230,11 @@ export const createPmtilesElevationSamplerFactory = async (config: {
     demEncoding,
   })
 
-  const samplerForBounds = async (
+  const samplerForBoundsWithMargin = async (
     bounds: ElevationSamplerBounds,
+    marginTiles: number,
   ): Promise<ElevationSampler> => {
-    const coords = terrainTileRangeForBounds(bounds, zoom)
+    const coords = terrainTileRangeForBounds(bounds, zoom, marginTiles)
     const tiles = new Map<string, LoadedDemTile>()
     await Promise.all(coords.map(async coord => {
       const loaded = await loadTileCached(coord)
@@ -209,6 +257,10 @@ export const createPmtilesElevationSamplerFactory = async (config: {
       },
     }
   }
+  const samplerForBounds = async (
+    bounds: ElevationSamplerBounds,
+  ): Promise<ElevationSampler> =>
+    samplerForBoundsWithMargin(bounds, 0)
 
   return {
     kind: 'pmtiles-dem',
@@ -220,7 +272,7 @@ export const createPmtilesElevationSamplerFactory = async (config: {
       absoluteHeightM: referenceHeightM,
     },
     samplerForBounds,
-    samplerForSceneryTile: async (tile: SceneryTile['tile']): Promise<ElevationSampler> =>
-      samplerForBounds(sceneryTileBoundsFor(tile)),
+    samplerForSceneryTile: async (tile: SceneryTile): Promise<ElevationSampler> =>
+      samplerForBoundsWithMargin(sceneryTileContentBoundsFor(tile), 1),
   }
 }
