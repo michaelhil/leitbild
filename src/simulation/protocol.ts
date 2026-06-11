@@ -1,4 +1,4 @@
-import type { CommandEnvelope, CommandResult, ControlInstanceEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
+import type { ActorId, ClientId, CommandEnvelope, CommandResult, ControlInstanceEvent, InteractionSignal, OperationalObject, Provenance, ScenarioProcessSystemDefinition, ScenarioWorldDefinition, SimulationClockState, TelemetryState } from '../core/model/index.ts'
 import type { IsoTimestamp, ObjectId, ControlInstanceId } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
 
@@ -35,9 +35,24 @@ export type PackRuntimeEvent =
       readonly signal: InteractionSignal
     })
 
+export interface PackRuntimeRealtimeMessage {
+  readonly type: string
+  readonly at: IsoTimestamp
+  readonly payload: unknown
+}
+
+export interface PackRuntimeRealtimeInput {
+  readonly type: string
+  readonly at: IsoTimestamp
+  readonly actorId?: ActorId
+  readonly clientId?: ClientId
+  readonly payload: unknown
+}
+
 export interface PackRuntimeEmission {
   readonly type: 'event.emission'
   readonly events: ReadonlyArray<PackRuntimeEvent>
+  readonly realtimeMessages?: ReadonlyArray<PackRuntimeRealtimeMessage>
   readonly emittedAt: IsoTimestamp
   readonly runtimeId: string
 }
@@ -48,6 +63,7 @@ export interface PackRuntimeConnection {
   readonly getSnapshot: () => Promise<PackRuntimeSnapshot>
   readonly subscribe: (handler: PackRuntimeEventHandler) => () => void
   readonly sendCommand: (command: CommandEnvelope) => Promise<CommandResult>
+  readonly receiveRealtimeInput?: (input: PackRuntimeRealtimeInput) => Promise<void>
   readonly commandEventPersistence?: (command: CommandEnvelope) => PackRuntimeEventPersistence
   readonly query: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly observeCommittedEvents: (events: ReadonlyArray<ControlInstanceEvent>) => Promise<void>
@@ -64,6 +80,7 @@ export interface PackRuntimeAdapter {
   readonly id: string
   readonly packId: string
   readonly acceptedCommandKinds: ReadonlyArray<string>
+  readonly acceptedRealtimeInputTypes?: ReadonlyArray<string>
   readonly commandEventPersistence?: Readonly<Record<string, PackRuntimeEventPersistence>>
   readonly queryKinds?: ReadonlyArray<string>
   readonly connect: (config: PackRuntimeConnectionConfig) => Promise<PackRuntimeConnection>

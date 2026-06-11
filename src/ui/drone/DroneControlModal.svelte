@@ -9,8 +9,10 @@
     returnToLaunchDroneCommandKind,
   } from '../../packs/drone/commands.ts'
   import { dronePackDataSchema, type DroneManualAxes } from '../../packs/drone/model.ts'
+  import { droneManualIntentRealtimeInputType, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { droneSensorContacts } from '../../packs/drone/query.ts'
   import { sendControlInstanceCommand, type ControlInstanceCommandRequest } from '../control-instance-client.ts'
+  import type { RuntimeInputRequest } from '../app/realtime-connection.ts'
   import type { CommandResponse } from '../types.ts'
   import IconButton from '../components/IconButton.svelte'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -39,7 +41,9 @@
     readonly controlInstanceId: ControlInstanceId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
+    readonly motionFrames?: ReadonlyArray<DroneMotionFrame>
     readonly sendRealtimeCommand?: (command: ControlInstanceCommandRequest) => Promise<CommandResponse>
+    readonly sendRealtimeInput?: (input: RuntimeInputRequest) => void
     readonly windowOffsetIndex?: number
     readonly close: () => void
   }
@@ -64,11 +68,21 @@
     readonly startWidth: number
   }
 
+  interface ManualControlDeliveryResult {
+    readonly transport: 'runtime-input' | 'command'
+    readonly result: {
+      readonly ok: boolean
+      readonly reason?: string
+    }
+  }
+
   let {
     controlInstanceId,
     object,
     objects,
+    motionFrames = [],
     sendRealtimeCommand,
+    sendRealtimeInput,
     windowOffsetIndex = 0,
     close,
   }: Props = $props()
@@ -394,45 +408,70 @@
     commandRateHz = commandSendTimes.length / 2
   }
 
-  const sendManualControl = async (axes: DroneManualAxes, sourceKind: DroneManualInputSourceKind): Promise<CommandResponse> => {
+  const sendManualControl = async (
+    axes: DroneManualAxes,
+    sourceKind: DroneManualInputSourceKind,
+    sequence: number,
+    startedAtMs: number,
+  ): Promise<ManualControlDeliveryResult> => {
     const activeGamepad = selectedGamepadIndex === null ? null : gamepads.find(pad => pad.index === selectedGamepadIndex)
     const source = sourceKind === 'gamepad' && activeGamepad
       ? { kind: 'gamepad' as const, gamepadIndex: activeGamepad.index, label: activeGamepad.id }
       : sourceKind === 'mouse'
         ? { kind: 'mouse' as const, label: mouseCaptured ? 'Mouse pointer lock' : 'Mouse' }
         : { kind: 'keyboard' as const, label: 'Keyboard' }
+    const commandPayload = {
+      droneId: selectedObject.id,
+      axes: droneRuntimeAxesForPilotIntent(axes),
+      inputSource: source,
+      commandTtlMs: 450,
+    }
+    if (sendRealtimeInput) {
+      try {
+        sendRealtimeInput({
+          type: droneManualIntentRealtimeInputType,
+          payload: {
+            ...commandPayload,
+            sampledAtMs: startedAtMs,
+            sequence,
+          },
+        })
+        return { transport: 'runtime-input', result: { ok: true } }
+      } catch (err) {
+        commandStatus = err instanceof Error ? `${err.message}; falling back to command path` : 'Realtime input failed; falling back to command path'
+      }
+    }
     const command: ControlInstanceCommandRequest = {
       kind: manualControlCommandKind,
       targetObjectIds: [selectedObject.id],
-      payload: {
-        droneId: selectedObject.id,
-        axes: droneRuntimeAxesForPilotIntent(axes),
-        inputSource: source,
-        commandTtlMs: 450,
-      },
+      payload: commandPayload,
     }
     try {
-      return sendRealtimeCommand
+      const response = sendRealtimeCommand
         ? await sendRealtimeCommand(command)
         : await sendControlInstanceCommand(controlInstanceId, command)
+      return { transport: 'command', result: response.result }
     } catch (err) {
       if (!sendRealtimeCommand) throw err
-      return await sendControlInstanceCommand(controlInstanceId, command)
+      const response = await sendControlInstanceCommand(controlInstanceId, command)
+      return { transport: 'command', result: response.result }
     }
   }
 
-  const manualCommandStream = createDroneManualCommandStream<CommandResponse>({
+  const manualCommandStream = createDroneManualCommandStream<ManualControlDeliveryResult>({
     sendIntervalMs,
     activeKeepaliveMs,
     maxInFlight: maxManualCommandInFlight,
-    send: async input => await sendManualControl(input.axes, input.sourceKind),
+    send: async input => await sendManualControl(input.axes, input.sourceKind, input.sequence, input.startedAtMs),
     onSend: event => {
       recordCommandSent(event.startedAtMs)
     },
     onResult: event => {
       if (event.stale) return
       lastCommandRoundTripMs = event.roundTripMs
-      commandStatus = event.value.result.ok ? 'Manual velocity sent' : `Rejected: ${event.value.result.reason ?? 'unknown'}`
+      commandStatus = event.value.result.ok
+        ? event.value.transport === 'runtime-input' ? 'Manual intent streamed' : 'Manual velocity sent'
+        : `Rejected: ${event.value.result.reason ?? 'unknown'}`
     },
     onError: event => {
       if (event.stale) return
@@ -708,6 +747,7 @@
       container: sceneElement,
       getFocusDroneId: () => selectedObject.id,
       getObjects: () => objects,
+      getMotionFrames: () => motionFrames,
       getViewMode: () => viewMode,
       getCameraOrbit: () => cameraOrbit,
       onReady: () => {

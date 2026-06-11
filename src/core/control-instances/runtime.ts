@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { CommandEnvelope, CommandResult, ControlInstanceEvent, EventId, ControlInstanceId, InteractionEffect, InteractionHandler, InteractionSignal, IsoTimestamp, ObjectId, OperationalObject, ProcedureCatalog, ProcedureDocument, ProcedureId, ProcedureSourceId, Provenance, ScenarioInstanceState, ScenarioScript, ScenarioScriptAction, ScenarioScriptStep, SimulationClockState, SimulationClockUpdate } from '../model/index.ts'
 import { actorIdSchema, commandEnvelopeSchema, deleteObjectCommandKind, deleteObjectPayloadSchema, interactionEffectSchema, interactionSignalSchema, notificationIdSchema, nowIso, simulationClockUpdateSchema } from '../model/index.ts'
 import type { PackQueryRequest, PackQueryResponse, PackWikiRef } from '../packs/protocol.ts'
-import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent } from '../../simulation/protocol.ts'
+import type { PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeRealtimeInput, PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 import type { EventLog } from './event-log.ts'
 import { createControlInstanceStateStore, type ControlInstanceStateSnapshot } from './state-store.ts'
 import type { ControlInstanceSnapshotStore } from './snapshot-store.ts'
@@ -36,6 +36,7 @@ interface PublishManyOptions {
 export interface ControlInstanceEventNotification {
   readonly type: 'event.notification'
   readonly events: ReadonlyArray<ControlInstanceEvent>
+  readonly realtimeMessages?: ReadonlyArray<PackRuntimeRealtimeMessage>
 }
 
 export type ControlInstanceEventHandler = (event: ControlInstanceEventNotification) => void
@@ -49,6 +50,7 @@ export interface ControlInstanceRuntime {
   readonly subscribe: (handler: ControlInstanceEventHandler) => () => void
   readonly publishResetBoundary: (config: { readonly scenarioId?: string }) => Promise<ControlInstanceEvent>
   readonly issueCommand: (actor: Actor, command: CommandEnvelope) => Promise<CommandResult>
+  readonly receiveRealtimeInput: (input: PackRuntimeRealtimeInput) => Promise<void>
   readonly queryPack: (request: PackQueryRequest) => Promise<PackQueryResponse>
   readonly procedureSourceStatus: (config?: { readonly sourceId?: ProcedureSourceId }) => ProcedureSourceLoadStatus
   readonly procedureCatalog: (config?: { readonly sourceId?: ProcedureSourceId; readonly refresh?: boolean }) => Promise<ProcedureCatalog>
@@ -611,6 +613,14 @@ export const createControlInstanceRuntime = async (config: {
         }
       }
       await flushPendingEvents()
+      if (emission.realtimeMessages && emission.realtimeMessages.length > 0) {
+        const notification: ControlInstanceEventNotification = {
+          type: 'event.notification',
+          events: [],
+          realtimeMessages: emission.realtimeMessages,
+        }
+        for (const handler of handlers) handler(notification)
+      }
     })
   }
 
@@ -796,6 +806,11 @@ export const createControlInstanceRuntime = async (config: {
     return await issueCommandThroughRuntime(actor, command, 'operator')
   }
 
+  const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => {
+    if (!config.runtimeConnection.receiveRealtimeInput) throw new Error(`runtime cannot receive realtime input type: ${input.type}`)
+    await config.runtimeConnection.receiveRealtimeInput(input)
+  }
+
   const setClock = async (update: SimulationClockUpdate): Promise<SimulationClockState> => {
     const parsedUpdate = simulationClockUpdateSchema.parse(update) as SimulationClockUpdate
     const currentClock = state.snapshot().clock
@@ -873,6 +888,7 @@ export const createControlInstanceRuntime = async (config: {
     },
     publishResetBoundary,
     issueCommand,
+    receiveRealtimeInput,
     queryPack,
     procedureSourceStatus: (statusConfig = {}) => procedureSourceService.readStatus(statusConfig),
     procedureCatalog: async (catalogConfig = {}) => await procedureSourceService.readCatalog(catalogConfig),

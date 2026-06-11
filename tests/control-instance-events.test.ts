@@ -89,6 +89,45 @@ describe('control instance event helpers', () => {
     expect(parsed.result.ok).toBe(true)
   })
 
+  test('parses runtime realtime messages separately from event batches', () => {
+    const parsed = parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'runtime.realtime',
+      controlInstanceId: 'sandbox',
+      scenarioId: 'oslo-drone-operations',
+      snapshotSeq: 42,
+      messages: [{
+        type: 'drone.motion.frames',
+        at: '2026-01-01T10:00:00.000Z',
+        payload: { frames: [] },
+      }],
+    }))
+
+    expect(parsed?.type).toBe('runtime.realtime')
+    if (parsed?.type !== 'runtime.realtime') throw new Error('expected runtime realtime message')
+    expect(parsed.snapshotSeq).toBe(42)
+    expect(parsed.messages[0]?.type).toBe('drone.motion.frames')
+    expect(parseControlInstanceEventBatchMessage(JSON.stringify({
+      type: 'runtime.realtime',
+      controlInstanceId: 'sandbox',
+      snapshotSeq: 42,
+      messages: [],
+    }))).toBeNull()
+  })
+
+  test('parses runtime input errors as visible protocol failures', () => {
+    const parsed = parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'runtime.input.error',
+      controlInstanceId: 'sandbox',
+      inputType: 'drone.manual.intent',
+      message: 'manual flight is not ready',
+    }))
+
+    expect(parsed?.type).toBe('runtime.input.error')
+    if (parsed?.type !== 'runtime.input.error') throw new Error('expected runtime input error')
+    expect(parsed.inputType).toBe('drone.manual.intent')
+    expect(parsed.message).toBe('manual flight is not ready')
+  })
+
   test('fails visibly for malformed WebSocket protocol payloads', () => {
     expect(() => parseControlInstanceEventBatchMessage('{')).toThrow('invalid WebSocket JSON')
     expect(() => parseControlInstanceEventBatchMessage(JSON.stringify({
@@ -111,6 +150,12 @@ describe('control instance event helpers', () => {
       scenarioId: 'halden',
       snapshotSeq: 12,
     }))).toThrow('missing control instance id')
+    expect(() => parseControlInstanceWebSocketMessage(JSON.stringify({
+      type: 'runtime.realtime',
+      controlInstanceId: 'sandbox',
+      snapshotSeq: 1,
+      messages: [{}],
+    }))).toThrow('missing type')
   })
 
   test('upserts objects without duplicating object ids', () => {

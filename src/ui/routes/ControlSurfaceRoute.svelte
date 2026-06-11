@@ -36,6 +36,7 @@
   import {
     applyControlInstanceEventBatchMessage,
   } from '../control-instance-events.ts'
+  import { parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../../packs/drone/realtime.ts'
   import { createMapAreaFeatureLoader } from '../app/map-area-feature-loader.ts'
   import { installPlacementGlobalEvents } from '../app/placement-global-events.ts'
   import { createRealtimeConnectionController } from '../app/realtime-connection.ts'
@@ -143,6 +144,7 @@
   let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
+  let droneMotionFrames = $state<ReadonlyArray<DroneMotionFrame>>([])
   let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
   let clock = $state<SimulationClockState | undefined>(undefined)
   let scenarioDefinition = $state<ScenarioDefinition | null>(null)
@@ -1175,6 +1177,11 @@
     return await realtimeConnection.sendCommand(controlInstanceId, command)
   }
 
+  const sendRealtimeInput = (input: Parameters<typeof realtimeConnection.sendRuntimeInput>[1]): void => {
+    if (!controlInstanceId) throw new Error('control instance is not ready')
+    realtimeConnection.sendRuntimeInput(controlInstanceId, input)
+  }
+
   const deleteObject = async (object: OperationalObject): Promise<void> => {
     commandStatus = `Deleting ${object.label}`
     await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
@@ -1290,6 +1297,20 @@
         if (parsed.events.some(event => event.type.startsWith('procedure.'))) {
           procedureRevision += 1
         }
+      },
+      onRuntimeRealtime: (parsed) => {
+        if (parsed.controlInstanceId !== id) return
+        if (expectedRealtimeScenarioId !== null && parsed.scenarioId !== expectedRealtimeScenarioId) return
+        if (!realtimeAttached) return
+        const frames = parsed.messages.flatMap(message => {
+          try {
+            return parseDroneMotionFramesRealtimeMessage(message)?.payload.frames ?? []
+          } catch (err) {
+            status = err instanceof Error ? err.message : String(err)
+            return []
+          }
+        })
+        if (frames.length > 0) droneMotionFrames = frames
       },
     })
   }
@@ -1675,7 +1696,9 @@
       {controlInstanceId}
       object={windowEntry.object}
       {objects}
+      motionFrames={droneMotionFrames}
       {sendRealtimeCommand}
+      {sendRealtimeInput}
       windowOffsetIndex={windowEntry.index}
       close={() => closeDroneControl(windowEntry.id)}
     />

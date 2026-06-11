@@ -2,6 +2,7 @@ import type { ControlInstanceId, SimulationClockState } from '../../core/model/i
 import {
   parseControlInstanceWebSocketMessage,
   type ControlInstanceEventBatchMessage,
+  type RuntimeRealtimeMessageBatch,
 } from '../control-instance-events.ts'
 import type { ControlInstanceCommandRequest } from '../control-instance-client.ts'
 import type { CommandResponse } from '../types.ts'
@@ -19,6 +20,7 @@ export interface RealtimeConnectionCallbacks {
   readonly onInvalidMessage: (message: string) => void
   readonly onReady: (message: RealtimeReadyMessage) => void
   readonly onEvent: (message: ControlInstanceEventBatchMessage) => void
+  readonly onRuntimeRealtime: (message: RuntimeRealtimeMessageBatch) => void
 }
 
 export interface RealtimeConnectionController {
@@ -27,6 +29,14 @@ export interface RealtimeConnectionController {
   readonly canCarry: (id: ControlInstanceId) => boolean
   readonly statusFor: (id: ControlInstanceId) => 'open' | 'connecting' | 'other'
   readonly sendCommand: (id: ControlInstanceId, command: ControlInstanceCommandRequest) => Promise<CommandResponse>
+  readonly sendRuntimeInput: (id: ControlInstanceId, input: RuntimeInputRequest) => void
+}
+
+export interface RuntimeInputRequest {
+  readonly type: string
+  readonly actorId?: string
+  readonly clientId?: string
+  readonly payload: unknown
 }
 
 export const createRealtimeConnectionController = (): RealtimeConnectionController => {
@@ -116,6 +126,14 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
           rejectCommand(parsed.requestId, parsed.message)
           return
         }
+        if (parsed.type === 'runtime.realtime') {
+          callbacks.onRuntimeRealtime(parsed)
+          return
+        }
+        if (parsed.type === 'runtime.input.error') {
+          callbacks.onError(`${parsed.inputType ?? 'Runtime input'} rejected: ${parsed.message}`)
+          return
+        }
         callbacks.onEvent(parsed)
       }
     },
@@ -154,6 +172,15 @@ export const createRealtimeConnectionController = (): RealtimeConnectionControll
           command,
         }))
       })
+    },
+    sendRuntimeInput: (id, input): void => {
+      if (socketId !== id || socket === null || socket.readyState !== WebSocket.OPEN) {
+        throw new Error('Realtime input channel is not open')
+      }
+      socket.send(JSON.stringify({
+        type: 'runtime.input',
+        input,
+      }))
     },
   }
 }

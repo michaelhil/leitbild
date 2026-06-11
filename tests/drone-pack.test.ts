@@ -25,6 +25,7 @@ import { parseDroneNativeRuntimeConfig } from '../src/packs/drone/native/config.
 import { droneNativeRuntimeId } from '../src/packs/drone/native/constants.ts'
 import { createScenarioDroneObject, withDronePackData } from '../src/packs/drone/native/object-state.ts'
 import { dronePack } from '../src/packs/drone/pack.ts'
+import { droneManualIntentRealtimeInputType, parseDroneMotionFramesRealtimeMessage, type DroneMotionFrame } from '../src/packs/drone/realtime.ts'
 import {
   answerDroneQuery,
   droneControllerBindings,
@@ -304,6 +305,99 @@ describe('drone pack native runtime', () => {
         const data = droneData(current)
         return data.pose.headingDeg > 1 && data.pose.headingDeg < 40 && (data.attitude.yawRateDegPerSec ?? 0) > 1
       }, { timeoutMs: 800, intervalMs: 20 })
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  test('native runtime emits compact realtime motion frames outside canonical object events', async () => {
+    const initial = drone({ id: 'drone:native-motion-frame', altitudeM: 18, headingDeg: 45 })
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [initial],
+      scenario: {
+        scenarioId: 'scenario:native-motion-frame',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: [initial],
+        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 } },
+        runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 200, motionFrameIntervalMs: 10 },
+      },
+    })
+    const frames: DroneMotionFrame[] = []
+    const eventCounts: number[] = []
+    const unsubscribe = connection.subscribe(emission => {
+      eventCounts.push(emission.events.length)
+      for (const message of emission.realtimeMessages ?? []) {
+        const parsed = parseDroneMotionFramesRealtimeMessage(message)
+        if (parsed) frames.push(...parsed.payload.frames)
+      }
+    })
+
+    try {
+      await waitForCondition('native runtime emits compact motion frames', () => frames.length > 0, { timeoutMs: 500, intervalMs: 10 })
+      const first = frames[0]
+      expect(first?.objectId).toBe(initial.id)
+      expect(first?.altitudeM).toBeGreaterThan(17)
+      expect(first?.headingDeg).toBeCloseTo(45)
+      expect(eventCounts.some(count => count === 0)).toBe(true)
+    } finally {
+      unsubscribe()
+      await connection.close()
+    }
+  })
+
+  test('native runtime applies manual realtime intent without command upsert churn', async () => {
+    const initial = drone({ id: 'drone:native-manual-intent', altitudeM: 18, headingDeg: 90 })
+    const adapter = createDroneNativePackRuntimeAdapter()
+    const connection = await adapter.connect({
+      controlInstanceId,
+      initialObjects: [initial],
+      scenario: {
+        scenarioId: 'scenario:native-manual-intent',
+        runtimeIds: [droneNativeRuntimeId],
+        world: { startsAt: at, environment: {} },
+        initialObjects: [initial],
+        runtimeConfigs: { [droneNativeRuntimeId]: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 } },
+        runtimeConfig: { stepIntervalMs: 10, projectionIntervalMs: 250, motionFrameIntervalMs: 10 },
+      },
+    })
+    const frames: DroneMotionFrame[] = []
+    const projectedEvents: OperationalObject[] = []
+    const unsubscribe = connection.subscribe(emission => {
+      for (const event of emission.events) {
+        if (event.type === 'object.upserted') projectedEvents.push(event.object)
+      }
+      for (const message of emission.realtimeMessages ?? []) {
+        const parsed = parseDroneMotionFramesRealtimeMessage(message)
+        if (parsed) frames.push(...parsed.payload.frames)
+      }
+    })
+
+    try {
+      if (!connection.receiveRealtimeInput) throw new Error('runtime does not accept realtime input')
+      const projectedBeforeInput = projectedEvents.length
+      await connection.receiveRealtimeInput({
+        type: droneManualIntentRealtimeInputType,
+        at,
+        payload: {
+          droneId: initial.id,
+          axes: { forward: 1, right: 0, vertical: 1, yaw: 0 },
+          inputSource: { kind: 'keyboard', label: 'Keyboard' },
+          commandTtlMs: 500,
+          sampledAtMs: 0,
+          sequence: 1,
+        },
+      })
+      expect(projectedEvents).toHaveLength(projectedBeforeInput)
+      await waitForCondition('manual realtime intent moves motion frames', () => {
+        const latest = frames.filter(frame => frame.objectId === initial.id).at(-1)
+        return latest !== undefined
+          && latest.altitudeM > droneData(initial).pose.altitudeM
+          && latest.eastMps > 0
+      }, { timeoutMs: 500, intervalMs: 10 })
     } finally {
       unsubscribe()
       await connection.close()

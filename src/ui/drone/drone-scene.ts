@@ -16,6 +16,7 @@ import { Scene } from '@babylonjs/core/scene'
 import '@babylonjs/loaders/glTF'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { dronePackDataSchema, type DronePackData } from '../../packs/drone/model.ts'
+import type { DroneMotionFrame } from '../../packs/drone/realtime.ts'
 import { babylonYawRadForHeadingDeg, babylonYawRateRadPerSecForHeadingRateDeg } from '../../packs/drone/spatial.ts'
 import {
   loadDroneWorldTerrainStatus,
@@ -55,6 +56,7 @@ interface DroneSceneConfig {
   readonly container: HTMLElement
   readonly getFocusDroneId: () => string
   readonly getObjects: () => ReadonlyArray<OperationalObject>
+  readonly getMotionFrames?: () => ReadonlyArray<DroneMotionFrame>
   readonly getViewMode: () => DroneSceneViewMode
   readonly getCameraOrbit: () => DroneSceneCameraOrbit
   readonly onReady?: () => void
@@ -114,7 +116,13 @@ interface MeshEntry {
   readonly visual: VisualPose
 }
 
+interface MotionFrameRecord {
+  readonly frame: DroneMotionFrame
+  readonly receivedAtMs: number
+}
+
 const maxDroneScenePixelRatio = 1.5
+const motionFrameMaxAgeMs = 500
 const minCameraDistanceM = 14
 const maxCameraDistanceM = 260
 const minCameraPitchRad = -0.06
@@ -159,6 +167,20 @@ const localPointFor = (
   return {
     x: local.x,
     y: groundY + (droneData.success ? droneData.data.pose.altitudeM : 1.4),
+    z: local.z,
+  }
+}
+
+const localPointForMotionFrame = (
+  frame: DroneMotionFrame,
+  center: DroneWorldCenter,
+  terrain: DroneTerrainModel,
+): LocalPoint => {
+  const local = localPointFromLonLat(frame.lon, frame.lat, center)
+  const groundY = terrainHeightAt(terrain, local.x, local.z)
+  return {
+    x: local.x,
+    y: groundY + frame.altitudeM,
     z: local.z,
   }
 }
@@ -312,6 +334,31 @@ const poseFor = (
     verticalSpeedMps: data?.velocity.verticalSpeedMps ?? 0,
     yawRateRadPerSec: babylonYawRateRadPerSecForHeadingRateDeg(data?.attitude.yawRateDegPerSec ?? 0),
     receivedAtMs,
+    data,
+  }
+}
+
+const poseForMotionFrame = (
+  record: MotionFrameRecord,
+  object: OperationalObject,
+  center: DroneWorldCenter,
+  terrain: DroneTerrainModel,
+): ObjectPose => {
+  const frame = record.frame
+  const parsed = dronePackDataSchema.safeParse(object.packData)
+  const data = parsed.success ? parsed.data : null
+  return {
+    key: `${center.lon.toFixed(6)}:${center.lat.toFixed(6)}`,
+    local: localPointForMotionFrame(frame, center, terrain),
+    yawRad: babylonYawRadForHeadingDeg(frame.headingDeg),
+    pitchRad: -frame.pitchDeg * Math.PI / 180,
+    rollRad: -frame.rollDeg * Math.PI / 180,
+    scale: data?.vehicle.visual.scale ?? 1,
+    velocityEastMps: frame.eastMps,
+    velocityNorthMps: frame.northMps,
+    verticalSpeedMps: frame.verticalSpeedMps,
+    yawRateRadPerSec: babylonYawRateRadPerSecForHeadingRateDeg(frame.yawRateDegPerSec),
+    receivedAtMs: record.receivedAtMs,
     data,
   }
 }
@@ -542,6 +589,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
 
   const performanceTracker = createDroneFramePerformanceTracker()
   const objectMeshes = new Map<string, MeshEntry>()
+  const motionFramesByObjectId = new Map<string, MotionFrameRecord>()
   let destroyed = false
   let sceneOriginCenter: DroneWorldCenter | null = null
   let terrainStatus: DroneWorldTerrainStatus = {
@@ -658,6 +706,31 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   }
   void initializeScenery()
 
+  const ingestMotionFrames = (
+    frames: ReadonlyArray<DroneMotionFrame>,
+    nowMs: number,
+  ): void => {
+    for (const frame of frames) {
+      const current = motionFramesByObjectId.get(frame.objectId)
+      if (current && frame.sequence <= current.frame.sequence) continue
+      motionFramesByObjectId.set(frame.objectId, { frame, receivedAtMs: nowMs })
+    }
+  }
+
+  const freshMotionPoseFor = (
+    object: OperationalObject,
+    center: DroneWorldCenter,
+    nowMs: number,
+  ): ObjectPose | null => {
+    const record = motionFramesByObjectId.get(object.id)
+    if (!record) return null
+    if (nowMs - record.receivedAtMs > motionFrameMaxAgeMs) {
+      motionFramesByObjectId.delete(object.id)
+      return null
+    }
+    return poseForMotionFrame(record, object, center, terrainModel)
+  }
+
   const updateObjects = (
     objects: ReadonlyArray<OperationalObject>,
     center: DroneWorldCenter,
@@ -666,7 +739,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   ): void => {
     const seen = new Set<string>()
     for (const object of objects) {
-      const pose = poseFor(object, center, terrainModel, nowMs)
+      const pose = freshMotionPoseFor(object, center, nowMs) ?? poseFor(object, center, terrainModel, nowMs)
       if (!pose) continue
       seen.add(object.id)
       const signature = meshSignatureFor(object)
@@ -755,6 +828,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const objects = config.getObjects()
     const fallbackCenter = centerFor(objects, config.getFocusDroneId())
     const activeCenter = sceneOriginCenter ?? fallbackCenter
+    ingestMotionFrames(config.getMotionFrames?.() ?? [], nowMs)
     updateObjects(objects, activeCenter, nowMs, dtSeconds)
 
     const focusId = config.getFocusDroneId()

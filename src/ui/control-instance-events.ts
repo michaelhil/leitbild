@@ -1,4 +1,5 @@
 import type { CommandResult, ControlInstanceId, IsoTimestamp, ObjectId, OperationalNotification, OperationalObject, ScenarioGuidance, ScenarioInstanceState, SimulationClockState } from '../core/model/index.ts'
+import type { PackRuntimeRealtimeMessage } from '../simulation/protocol.ts'
 
 export interface ControlInstanceEventPayload {
   readonly type: string
@@ -47,11 +48,28 @@ export interface RealtimeCommandErrorMessage {
   readonly message: string
 }
 
+export interface RuntimeRealtimeMessageBatch {
+  readonly type: 'runtime.realtime'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly messages: ReadonlyArray<PackRuntimeRealtimeMessage>
+}
+
+export interface RuntimeInputErrorMessage {
+  readonly type: 'runtime.input.error'
+  readonly controlInstanceId: ControlInstanceId
+  readonly inputType?: string
+  readonly message: string
+}
+
 export type ControlInstanceWebSocketMessage =
   | ControlInstanceEventBatchMessage
   | RealtimeReadyMessage
   | RealtimeCommandResultMessage
   | RealtimeCommandErrorMessage
+  | RuntimeRealtimeMessageBatch
+  | RuntimeInputErrorMessage
 
 interface ObjectApplicationResult {
   readonly objects: ReadonlyArray<OperationalObject>
@@ -118,6 +136,17 @@ const parseEventPayload = (value: unknown): ControlInstanceEventPayload => {
   }
 }
 
+const parseRealtimeMessage = (value: unknown): PackRuntimeRealtimeMessage => {
+  if (!isRecord(value)) throw new Error('invalid runtime realtime message: expected object')
+  if (typeof value.type !== 'string' || value.type.trim().length === 0) throw new Error('invalid runtime realtime message: missing type')
+  if (typeof value.at !== 'string') throw new Error('invalid runtime realtime message: missing timestamp')
+  return {
+    type: value.type,
+    at: value.at as IsoTimestamp,
+    payload: value.payload,
+  }
+}
+
 export const parseControlInstanceWebSocketMessage = (raw: string): ControlInstanceWebSocketMessage | null => {
   let parsed: unknown
   try {
@@ -155,6 +184,28 @@ export const parseControlInstanceWebSocketMessage = (raw: string): ControlInstan
       type: 'command.error',
       controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
       ...(typeof parsed.requestId === 'string' ? { requestId: parsed.requestId } : {}),
+      message: parsed.message,
+    }
+  }
+  if (parsed.type === 'runtime.realtime') {
+    if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid runtime realtime message batch: missing control instance id')
+    if (typeof parsed.snapshotSeq !== 'number') throw new Error('invalid runtime realtime message batch: missing snapshot sequence')
+    if (!Array.isArray(parsed.messages)) throw new Error('invalid runtime realtime message batch: missing messages array')
+    return {
+      type: 'runtime.realtime',
+      controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+      ...(typeof parsed.scenarioId === 'string' ? { scenarioId: parsed.scenarioId } : {}),
+      snapshotSeq: parsed.snapshotSeq,
+      messages: parsed.messages.map(parseRealtimeMessage),
+    }
+  }
+  if (parsed.type === 'runtime.input.error') {
+    if (typeof parsed.controlInstanceId !== 'string') throw new Error('invalid runtime input error message: missing control instance id')
+    if (typeof parsed.message !== 'string') throw new Error('invalid runtime input error message: missing message')
+    return {
+      type: 'runtime.input.error',
+      controlInstanceId: parsed.controlInstanceId as ControlInstanceId,
+      ...(typeof parsed.inputType === 'string' ? { inputType: parsed.inputType } : {}),
       message: parsed.message,
     }
   }

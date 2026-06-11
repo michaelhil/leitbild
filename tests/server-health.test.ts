@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, type ControlInstanceId, type ControlInstanceEvent, type ObjectId } from '../src/core/model/index.ts'
 import type { Actor } from '../src/core/control-instances/actors.ts'
 import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
-import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage } from '../src/core/api/realtime.ts'
+import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
 import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
@@ -24,6 +24,15 @@ const operatorActor: Actor = {
   id: actorIdSchema.parse('actor:operator'),
   label: 'Test operator',
   role: 'operator',
+}
+
+const captureRealtimeMessage = (
+  targetClient: CapturedRealtimeClient,
+  message: RealtimeOutboundMessage,
+): void => {
+  if (message.type !== 'events') return
+  targetClient.eventMessages.push(message)
+  targetClient.events.push(...message.events)
 }
 
 const waitForMovingObjectEvent = async (
@@ -149,10 +158,7 @@ describe('server health', () => {
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
-      send: (targetClient, message) => {
-        targetClient.eventMessages.push(message)
-        targetClient.events.push(...message.events)
-      },
+      send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },
@@ -211,10 +217,7 @@ describe('server health', () => {
     const secondClient: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
-      send: (targetClient, message) => {
-        targetClient.eventMessages.push(message)
-        targetClient.events.push(...message.events)
-      },
+      send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },
@@ -257,10 +260,7 @@ describe('server health', () => {
     const client: CapturedRealtimeClient = { events: [], eventMessages: [], readyMessages: [] }
     const realtime = createControlInstanceRealtimeManager<CapturedRealtimeClient>({
       registry,
-      send: (targetClient, message) => {
-        targetClient.eventMessages.push(message)
-        targetClient.events.push(...message.events)
-      },
+      send: captureRealtimeMessage,
       sendReady: (targetClient, message) => {
         targetClient.readyMessages.push(message.scenarioId ?? '')
       },

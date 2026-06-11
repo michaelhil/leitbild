@@ -1,7 +1,7 @@
 import type { CommandEnvelope, CommandResult, ControlInstanceEvent, GeoJsonPoint, GeoJsonPolygon, IsoTimestamp, OperationalObject, SimulationClockState } from '../../../core/model/index.ts'
 import { nowIso, objectIdSchema } from '../../../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../../../core/packs/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeEmission, PackRuntimeEvent, PackRuntimeEventHandler, PackRuntimeRealtimeMessage, PackRuntimeSnapshot } from '../../../simulation/protocol.ts'
 import {
   armDroneCommandKind,
   armDronePayloadSchema,
@@ -39,6 +39,13 @@ import { droneManualControlReadiness } from '../control-readiness.ts'
 import { droneAttackSignal } from '../interactions.ts'
 import { dronePackId, requireDroneVehicleModel, type DroneGuidedTarget, type DronePackData, type DroneVehicleModel } from '../model.ts'
 import { answerDroneQuery, droneQueryKinds } from '../query.ts'
+import {
+  droneManualIntentPayloadSchema,
+  droneManualIntentRealtimeInputType,
+  droneMotionFramesRealtimeMessage,
+  type DroneManualIntentPayload,
+  type DroneMotionFrame,
+} from '../realtime.ts'
 import { movePointByMeters } from '../spatial.ts'
 import { parseDroneNativeRuntimeConfig } from './config.ts'
 import { droneNativeAdapterId, droneNativeRuntimeId } from './constants.ts'
@@ -83,6 +90,7 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneNativeRuntimeId,
   packId: dronePackId,
   acceptedCommandKinds: droneCommandKinds,
+  acceptedRealtimeInputTypes: [droneManualIntentRealtimeInputType],
   commandEventPersistence: {
     [manualControlCommandKind]: 'projected',
   },
@@ -108,16 +116,55 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
       initialWallMs: Date.now(),
     })
     let lastProjectionMs = 0
+    let lastMotionFrameMs = 0
+    let motionFrameSequence = 0
 
-    const emit = (events: ReadonlyArray<PackRuntimeEvent>): void => {
-      if (events.length === 0 || closed) return
+    const emit = (
+      events: ReadonlyArray<PackRuntimeEvent>,
+      realtimeMessages: ReadonlyArray<PackRuntimeRealtimeMessage> = [],
+    ): void => {
+      if ((events.length === 0 && realtimeMessages.length === 0) || closed) return
       const emission: PackRuntimeEmission = {
         type: 'event.emission',
         runtimeId: droneNativeRuntimeId,
         emittedAt: nowIso(),
         events,
+        ...(realtimeMessages.length === 0 ? {} : { realtimeMessages }),
       }
       for (const handler of handlers) handler(emission)
+    }
+
+    const liveDroneObjects = (): ReadonlyArray<OperationalObject> =>
+      [...objects.values()].filter(object => {
+        const data = parseDroneObject(object)
+        return data !== null && data.health.state !== 'destroyed'
+      })
+
+    const motionFrameFor = (object: OperationalObject, data: DronePackData): DroneMotionFrame => ({
+      objectId: object.id,
+      sequence: motionFrameSequence++,
+      observedAt: data.pose.observedAt,
+      lon: data.pose.point.coordinates[0],
+      lat: data.pose.point.coordinates[1],
+      altitudeM: data.pose.altitudeM,
+      headingDeg: data.pose.headingDeg,
+      pitchDeg: data.attitude.pitchDeg,
+      rollDeg: data.attitude.rollDeg,
+      yawRateDegPerSec: data.attitude.yawRateDegPerSec ?? 0,
+      eastMps: data.velocity.eastMps,
+      northMps: data.velocity.northMps,
+      verticalSpeedMps: data.velocity.verticalSpeedMps,
+    })
+
+    const emitMotionFrames = (at: IsoTimestamp, nowMs: number): void => {
+      if (nowMs - lastMotionFrameMs < runtimeConfig.motionFrameIntervalMs) return
+      lastMotionFrameMs = nowMs
+      const frames = liveDroneObjects().flatMap(object => {
+        const data = parseDroneObject(object)
+        return data ? [motionFrameFor(object, data)] : []
+      })
+      if (frames.length === 0) return
+      emit([], [droneMotionFramesRealtimeMessage({ at, frames })])
     }
 
     const emitObjectUpsert = (
@@ -180,14 +227,11 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
           objects.set(next.id, next)
         }
       }
+      const at = nowIso()
+      emitMotionFrames(at, nowMs)
       if (nowMs - lastProjectionMs < runtimeConfig.projectionIntervalMs) return
       lastProjectionMs = nowMs
-      const projectedObjects = [...objects.values()]
-        .filter(object => {
-          const data = parseDroneObject(object)
-          return data !== null && data.health.state !== 'destroyed'
-        })
-      const at = nowIso()
+      const projectedObjects = liveDroneObjects()
       emit(projectedObjects.map(object => ({
         type: 'object.upserted' as const,
         object,
@@ -216,6 +260,41 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         lastCommandAt: at,
       },
     })
+
+    const applyManualIntent = (input: {
+      readonly payload: DroneManualIntentPayload
+      readonly at: IsoTimestamp
+      readonly actorId?: CommandEnvelope['actorId']
+      readonly clientId?: CommandEnvelope['clientId']
+      readonly command?: CommandEnvelope
+      readonly emitProjectedObject: boolean
+    }): void => {
+      const { payload, at } = input
+      const { object, data } = objectData(objects, payload.droneId)
+      const readiness = droneManualControlReadiness(data)
+      if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
+      const expiresAtMs = Date.now() + payload.commandTtlMs
+      const next = {
+        ...setDroneNavigation(data, 'manual', 'manual', at),
+        control: {
+          ...data.control,
+          ...(input.actorId === undefined ? {} : { pilotActorId: input.actorId }),
+          manualAxes: payload.axes,
+          inputSource: {
+            ...payload.inputSource,
+            ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+          },
+          lastCommandAt: at,
+          inputExpiresAt: new Date(expiresAtMs).toISOString() as IsoTimestamp,
+        },
+      }
+      if (input.emitProjectedObject) {
+        updateObject(object, next, at, 'projected', input.command)
+        return
+      }
+      const updated = withDronePackData(object, next, at)
+      objects.set(updated.id, updated)
+    }
 
     const handleCommand = async (command: CommandEnvelope): Promise<void> => {
       if (command.kind === createDroneCommandKind) {
@@ -264,26 +343,14 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
       if (command.kind === manualControlCommandKind) {
         const payload = manualControlPayloadSchema.parse(command.payload)
-        const { object, data } = objectData(objects, payload.droneId)
-        const readiness = droneManualControlReadiness(data)
-        if (!readiness.ready) throw new Error(readiness.reason ?? 'manual flight is not ready')
-        const at = nowIso()
-        const expiresAtMs = Date.now() + payload.commandTtlMs
-        const next = {
-          ...setDroneNavigation(data, 'manual', 'manual', at),
-          control: {
-            ...data.control,
-            pilotActorId: command.actorId,
-            manualAxes: payload.axes,
-            inputSource: {
-              ...payload.inputSource,
-              ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
-            },
-            lastCommandAt: at,
-            inputExpiresAt: new Date(expiresAtMs).toISOString() as IsoTimestamp,
-          },
-        }
-        updateObject(object, next, at, 'projected', command)
+        applyManualIntent({
+          payload,
+          at: nowIso(),
+          actorId: command.actorId,
+          ...(command.clientId === undefined ? {} : { clientId: command.clientId }),
+          command,
+          emitProjectedObject: true,
+        })
         return
       }
 
@@ -588,6 +655,16 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
         } catch (err) {
           return commandRejected(command, nowIso(), err instanceof Error ? err.message : String(err))
         }
+      },
+      receiveRealtimeInput: async (input): Promise<void> => {
+        if (input.type !== droneManualIntentRealtimeInputType) throw new Error(`unsupported drone realtime input type: ${input.type}`)
+        applyManualIntent({
+          payload: droneManualIntentPayloadSchema.parse(input.payload),
+          at: input.at,
+          ...(input.actorId === undefined ? {} : { actorId: input.actorId }),
+          ...(input.clientId === undefined ? {} : { clientId: input.clientId }),
+          emitProjectedObject: false,
+        })
       },
       query: async (request: PackQueryRequest): Promise<PackQueryResponse> =>
         answerDroneQuery({ request, objects: [...objects.values()], models: runtimeConfig.models }),

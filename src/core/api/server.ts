@@ -1,7 +1,7 @@
 import { resolve, normalize } from 'node:path'
 import type { ServerWebSocket } from 'bun'
 import { z } from 'zod'
-import { controlInstanceIdSchema, nowIso, type CommandResult, type ControlInstanceId } from '../model/index.ts'
+import { actorIdSchema, clientIdSchema, controlInstanceIdSchema, nowIso, type CommandResult, type ControlInstanceId } from '../model/index.ts'
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import {
   createMapArtifactConfigFromEnv,
@@ -36,6 +36,7 @@ import { buildManifest } from './discovery.ts'
 import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
+const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
   readonly registry: ControlInstanceRegistry
@@ -53,6 +54,21 @@ const realtimeClientCommandMessageSchema = z.object({
   requestId: z.string().min(1).max(128),
   command: z.unknown(),
 }).strict()
+
+const realtimeClientRuntimeInputMessageSchema = z.object({
+  type: z.literal('runtime.input'),
+  input: z.object({
+    type: z.string().min(1).max(128),
+    actorId: actorIdSchema.default(defaultRealtimeInputActorId),
+    clientId: clientIdSchema.optional(),
+    payload: z.unknown(),
+  }).strict(),
+}).strict()
+
+const realtimeClientMessageSchema = z.union([
+  realtimeClientCommandMessageSchema,
+  realtimeClientRuntimeInputMessageSchema,
+])
 
 const websocketText = (message: string | Buffer): string =>
   typeof message === 'string' ? message : message.toString('utf8')
@@ -219,6 +235,19 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
     }))
   }
 
+  const sendRealtimeInputError = (
+    socket: ServerWebSocket<WSData>,
+    inputType: string | undefined,
+    message: string,
+  ): void => {
+    socket.send(JSON.stringify({
+      type: 'runtime.input.error',
+      controlInstanceId: socket.data.controlInstanceId,
+      ...(inputType === undefined ? {} : { inputType }),
+      message,
+    }))
+  }
+
   const issueRealtimeCommand = async (
     controlInstanceId: ControlInstanceId,
     rawCommand: unknown,
@@ -258,9 +287,28 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
   ): Promise<void> => {
     let parsed
     try {
-      parsed = realtimeClientCommandMessageSchema.parse(JSON.parse(websocketText(message)) as unknown)
+      parsed = realtimeClientMessageSchema.parse(JSON.parse(websocketText(message)) as unknown)
     } catch (err) {
       sendRealtimeCommandError(socket, undefined, err instanceof Error ? err.message : String(err))
+      return
+    }
+    if (parsed.type === 'runtime.input') {
+      try {
+        const runtime = config.registry.get(socket.data.controlInstanceId)
+        if (!runtime) {
+          sendRealtimeInputError(socket, parsed.input.type, 'control instance not found')
+          return
+        }
+        await runtime.receiveRealtimeInput({
+          type: parsed.input.type,
+          at: nowIso(),
+          ...(parsed.input.actorId === undefined ? {} : { actorId: parsed.input.actorId }),
+          ...(parsed.input.clientId === undefined ? {} : { clientId: parsed.input.clientId }),
+          payload: parsed.input.payload,
+        })
+      } catch (err) {
+        sendRealtimeInputError(socket, parsed.input.type, err instanceof Error ? err.message : String(err))
+      }
       return
     }
     try {

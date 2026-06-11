@@ -1,7 +1,7 @@
 import type { CommandEnvelope, CommandResult, ControlInstanceEvent, OperationalObject } from '../core/model/index.ts'
 import { nowIso } from '../core/model/index.ts'
 import type { PackQueryRequest, PackQueryResponse } from '../core/packs/protocol.ts'
-import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
+import type { PackRuntimeAdapter, PackRuntimeConnection, PackRuntimeConnectionConfig, PackRuntimeEmission, PackRuntimeEventHandler, PackRuntimeRealtimeInput, PackScenarioRuntimeConfig, PackRuntimeSnapshot } from './protocol.ts'
 
 const duplicateObjectIds = (objects: ReadonlyArray<OperationalObject>): ReadonlyArray<string> => {
   const seen = new Set<string>()
@@ -49,6 +49,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
     id: 'runtime-hub',
     packId: 'runtime-hub',
     acceptedCommandKinds: adapters.flatMap(adapter => adapter.acceptedCommandKinds),
+    acceptedRealtimeInputTypes: adapters.flatMap(adapter => adapter.acceptedRealtimeInputTypes ?? []),
     connect: async (config: PackRuntimeConnectionConfig): Promise<PackRuntimeConnection> => {
       const missingRuntimeIds = config.scenario?.runtimeIds.filter(runtimeId => !adapterIds.has(runtimeId)) ?? []
       if (missingRuntimeIds.length > 0) throw new Error(`missing pack runtimes: ${missingRuntimeIds.join(', ')}`)
@@ -103,6 +104,13 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
         return target.connection.sendCommand(command)
       }
 
+      const receiveRealtimeInput = async (input: PackRuntimeRealtimeInput): Promise<void> => {
+        const target = connections.find(({ adapter }) => adapter.acceptedRealtimeInputTypes?.includes(input.type) ?? false)
+        if (!target) throw new Error(`no pack runtime accepts realtime input type: ${input.type}`)
+        if (!target.connection.receiveRealtimeInput) throw new Error(`pack runtime cannot receive realtime input type: ${input.type}`)
+        await target.connection.receiveRealtimeInput(input)
+      }
+
       const commandEventPersistence = (command: CommandEnvelope) => {
         const target = connections.find(({ adapter }) => adapter.acceptedCommandKinds.includes(command.kind))
         return target?.adapter.commandEventPersistence?.[command.kind] ?? 'durable'
@@ -131,6 +139,7 @@ export const createRuntimeHub = (adapters: ReadonlyArray<PackRuntimeAdapter>): P
           }
         },
         sendCommand,
+        receiveRealtimeInput,
         commandEventPersistence,
         query,
         observeCommittedEvents: async (events: ReadonlyArray<ControlInstanceEvent>): Promise<void> => {

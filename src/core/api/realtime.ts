@@ -1,6 +1,7 @@
 import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
 import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
 import type { ControlInstanceId, SimulationClockState } from '../model/index.ts'
+import type { PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 
 interface RealtimeSubscription {
   readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>
@@ -37,6 +38,16 @@ export interface RealtimeEventBatchMessage {
   readonly events: ControlInstanceEventNotification['events']
 }
 
+export interface RealtimeRuntimeMessageBatch {
+  readonly type: 'runtime.realtime'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly messages: ReadonlyArray<PackRuntimeRealtimeMessage>
+}
+
+export type RealtimeOutboundMessage = RealtimeEventBatchMessage | RealtimeRuntimeMessageBatch
+
 export interface ControlInstanceRealtimeManager<Client> {
   readonly addClient: (controlInstanceId: ControlInstanceId, client: Client) => void
   readonly removeClient: (controlInstanceId: ControlInstanceId, client: Client) => void
@@ -67,7 +78,7 @@ const realtimeStatusFromClients = <Client>(
 
 export const createControlInstanceRealtimeManager = <Client>(config: {
   readonly registry: ControlInstanceRegistry
-  readonly send: (client: Client, message: RealtimeEventBatchMessage) => void
+  readonly send: (client: Client, message: RealtimeOutboundMessage) => void
   readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
 }): ControlInstanceRealtimeManager<Client> => {
   const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
@@ -112,12 +123,22 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     if (subscription?.runtime !== runtime) return
     const clients = clientsByControlInstance.get(controlInstanceId)
     if (!clients) return
-    const message: RealtimeEventBatchMessage = {
-      type: 'events',
-      ...messageContextForRuntime(controlInstanceId, runtime),
-      events: notification.events,
+    if (notification.events.length > 0) {
+      const message: RealtimeEventBatchMessage = {
+        type: 'events',
+        ...messageContextForRuntime(controlInstanceId, runtime),
+        events: notification.events,
+      }
+      for (const client of clients) config.send(client, message)
     }
-    for (const client of clients) config.send(client, message)
+    if (notification.realtimeMessages && notification.realtimeMessages.length > 0) {
+      const message: RealtimeRuntimeMessageBatch = {
+        type: 'runtime.realtime',
+        ...messageContextForRuntime(controlInstanceId, runtime),
+        messages: notification.realtimeMessages,
+      }
+      for (const client of clients) config.send(client, message)
+    }
   }
 
   const readyMessageForRuntime = (
