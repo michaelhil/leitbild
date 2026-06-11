@@ -28,14 +28,30 @@ const latToTileY = (lat: number, zoom: number): number => {
   return Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * 2 ** zoom)
 }
 
+const tileXToLon = (
+  x: number,
+  zoom: number,
+): number =>
+  x / 2 ** zoom * 360 - 180
+
+const tileYToLat = (
+  y: number,
+  zoom: number,
+): number => {
+  const n = Math.PI - 2 * Math.PI * y / 2 ** zoom
+  return Math.atan(Math.sinh(n)) * 180 / Math.PI
+}
+
 const tileRangeForBounds = (
   bounds: PmtilesWriterBounds,
   zoom: number,
+  marginTiles: number,
 ): ReadonlyArray<TileCoord> => {
-  const minX = lonToTileX(bounds.minLon, zoom)
-  const maxX = lonToTileX(bounds.maxLon, zoom)
-  const minY = latToTileY(bounds.maxLat, zoom)
-  const maxY = latToTileY(bounds.minLat, zoom)
+  const maxTile = 2 ** zoom - 1
+  const minX = Math.max(0, lonToTileX(bounds.minLon, zoom) - marginTiles)
+  const maxX = Math.min(maxTile, lonToTileX(bounds.maxLon, zoom) + marginTiles)
+  const minY = Math.max(0, latToTileY(bounds.maxLat, zoom) - marginTiles)
+  const maxY = Math.min(maxTile, latToTileY(bounds.minLat, zoom) + marginTiles)
   const tiles: TileCoord[] = []
   for (let x = minX; x <= maxX; x += 1) {
     for (let y = minY; y <= maxY; y += 1) {
@@ -45,11 +61,36 @@ const tileRangeForBounds = (
   return tiles
 }
 
+const boundsForTileRange = (
+  tiles: ReadonlyArray<TileCoord>,
+  zoom: number,
+): PmtilesWriterBounds => {
+  if (tiles.length === 0) throw new Error('cannot derive terrain bounds from an empty tile set')
+  const minX = Math.min(...tiles.map(tile => tile.x))
+  const maxX = Math.max(...tiles.map(tile => tile.x))
+  const minY = Math.min(...tiles.map(tile => tile.y))
+  const maxY = Math.max(...tiles.map(tile => tile.y))
+  return {
+    minLon: tileXToLon(minX, zoom),
+    minLat: tileYToLat(maxY + 1, zoom),
+    maxLon: tileXToLon(maxX + 1, zoom),
+    maxLat: tileYToLat(minY, zoom),
+  }
+}
+
 const positiveIntegerEnv = (key: string, defaultValue: number): number => {
   const raw = process.env[key]
   if (!raw) return defaultValue
   const value = Number(raw)
   if (!Number.isInteger(value) || value <= 0) throw new Error(`${key} must be a positive integer`)
+  return value
+}
+
+const nonnegativeIntegerEnv = (key: string, defaultValue: number): number => {
+  const raw = process.env[key]
+  if (!raw) return defaultValue
+  const value = Number(raw)
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${key} must be a nonnegative integer`)
   return value
 }
 
@@ -189,6 +230,7 @@ const sourceTemplate = process.env.LEITBILD_TERRAIN_SOURCE_TEMPLATE ?? defaultTe
 const zoom = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_ZOOM', 13)
 const concurrency = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_CONCURRENCY', 12)
 const maxTiles = positiveIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_MAX_TILES', 800)
+const marginTiles = nonnegativeIntegerEnv('LEITBILD_TERRAIN_BOOTSTRAP_MARGIN_TILES', 1)
 const rawPaddingDegrees = Number(process.env.LEITBILD_TERRAIN_BOOTSTRAP_PADDING_DEGREES ?? 0.08)
 if (!Number.isFinite(rawPaddingDegrees) || rawPaddingDegrees < 0) {
   throw new Error('LEITBILD_TERRAIN_BOOTSTRAP_PADDING_DEGREES must be a nonnegative number')
@@ -196,10 +238,11 @@ if (!Number.isFinite(rawPaddingDegrees) || rawPaddingDegrees < 0) {
 const sceneryBounds = await boundsFromCurrentScenery(config.rootDir)
 const sourceBounds = boundsFromEnv() ?? sceneryBounds ?? defaultOsloBounds
 const bounds = expandedBounds(sourceBounds, rawPaddingDegrees)
-const tiles = tileRangeForBounds(bounds, zoom)
+const tiles = tileRangeForBounds(bounds, zoom, marginTiles)
 if (tiles.length > maxTiles) {
   throw new Error(`terrain bootstrap selected ${tiles.length} tiles, above LEITBILD_TERRAIN_BOOTSTRAP_MAX_TILES=${maxTiles}`)
 }
+const archiveBounds = boundsForTileRange(tiles, zoom)
 
 const currentDir = await realpath(join(config.rootDir, 'current'))
 const targetReleaseDir = resolve(config.releaseDir)
@@ -212,17 +255,19 @@ const terrainTiles = await mapWithConcurrency(tiles, concurrency, tile => fetchT
 const terrainBytes = writePmtilesArchive({
   tiles: terrainTiles,
   tileType: TileType.Png,
-  bounds,
+  bounds: archiveBounds,
   center: {
-    lon: (bounds.minLon + bounds.maxLon) / 2,
-    lat: (bounds.minLat + bounds.maxLat) / 2,
+    lon: (archiveBounds.minLon + archiveBounds.maxLon) / 2,
+    lat: (archiveBounds.minLat + archiveBounds.maxLat) / 2,
     zoom,
   },
   metadata: {
     id: terrainTilesetId,
     sourceTemplate,
     demEncoding: 'terrarium',
-    bounds,
+    bounds: archiveBounds,
+    requestedBounds: bounds,
+    marginTiles,
     zoom,
   },
 })
@@ -254,7 +299,9 @@ await writeFile(join(targetReleaseDir, 'terrain.json'), `${JSON.stringify({
   source: {
     demEncoding: 'terrarium',
     zoom,
-    bounds,
+    bounds: archiveBounds,
+    requestedBounds: bounds,
+    marginTiles,
     tileCount: terrainTiles.length,
   },
   artifact: terrainMetadata,
