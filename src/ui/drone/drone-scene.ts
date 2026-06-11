@@ -568,6 +568,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const performanceTracker = createDroneFramePerformanceTracker()
   const objectMeshes = new Map<string, MeshEntry>()
   const motionFramesByObjectId = new Map<string, MotionFrameRecord>()
+  const pendingMotionFramesByObjectId = new Map<string, DroneMotionFrame>()
   let destroyed = false
   let sceneOriginCenter: DroneWorldCenter | null = null
   let terrainStatus: DroneWorldTerrainStatus = {
@@ -689,15 +690,27 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   }
   void initializeScenery()
 
-  const ingestMotionFrames = (
+  const queueMotionFrames = (
     frames: ReadonlyArray<DroneMotionFrame>,
   ): void => {
-    const nowMs = performance.now()
     for (const frame of frames) {
-      const current = motionFramesByObjectId.get(frame.objectId)
-      if (current && frame.sequence <= current.frame.sequence) continue
-      motionFramesByObjectId.set(frame.objectId, { frame, receivedAtMs: nowMs })
+      const current = motionFramesByObjectId.get(frame.objectId)?.frame
+      const pending = pendingMotionFramesByObjectId.get(frame.objectId)
+      if (current && frame.sequence <= current.sequence) continue
+      if (pending && frame.sequence <= pending.sequence) continue
+      pendingMotionFramesByObjectId.set(frame.objectId, frame)
     }
+  }
+
+  const applyPendingMotionFrames = (
+    nowMs: number,
+  ): void => {
+    for (const [objectId, frame] of pendingMotionFramesByObjectId) {
+      const current = motionFramesByObjectId.get(objectId)?.frame
+      if (current && frame.sequence <= current.sequence) continue
+      motionFramesByObjectId.set(objectId, { frame, receivedAtMs: nowMs })
+    }
+    pendingMotionFramesByObjectId.clear()
   }
 
   const freshMotionPoseFor = (
@@ -811,6 +824,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const objects = config.getObjects()
     const fallbackCenter = centerFor(objects, config.getFocusDroneId())
     const activeCenter = sceneOriginCenter ?? fallbackCenter
+    applyPendingMotionFrames(nowMs)
     updateObjects(objects, activeCenter, nowMs, dtSeconds)
 
     const focusId = config.getFocusDroneId()
@@ -830,7 +844,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   })
 
   return {
-    ingestMotionFrames,
+    ingestMotionFrames: queueMotionFrames,
     destroy: (): void => {
       if (destroyed) return
       destroyed = true
@@ -839,6 +853,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       engine.stopRenderLoop()
       for (const entry of objectMeshes.values()) entry.root.dispose(false, true)
       objectMeshes.clear()
+      pendingMotionFramesByObjectId.clear()
+      motionFramesByObjectId.clear()
       sceneryRenderer?.dispose()
       roadOverlayRenderer?.dispose()
       terrainRoot?.dispose(false, true)

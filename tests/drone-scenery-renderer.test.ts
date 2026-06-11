@@ -891,6 +891,17 @@ describe('drone scenery GLB compiler', () => {
     expect(source).not.toContain('maxZ: 12_000')
   })
 
+  test('keeps realtime motion-frame timestamping owned by the Babylon render loop', async () => {
+    const source = await Bun.file(new URL('../src/ui/drone/drone-scene.ts', import.meta.url)).text()
+
+    expect(source).toContain('const pendingMotionFramesByObjectId = new Map<string, DroneMotionFrame>()')
+    expect(source).toContain('const queueMotionFrames = (')
+    expect(source).toContain('const applyPendingMotionFrames = (')
+    expect(source).toContain('motionFramesByObjectId.set(objectId, { frame, receivedAtMs: nowMs })')
+    expect(source).toContain('applyPendingMotionFrames(nowMs)\n    updateObjects(objects, activeCenter, nowMs, dtSeconds)')
+    expect(source).not.toContain('const ingestMotionFrames = (\n    frames: ReadonlyArray<DroneMotionFrame>,\n  ): void => {\n    const nowMs = performance.now()')
+  })
+
   test('keeps road overlay geometry in the worker boundary', async () => {
     const renderer = await Bun.file(new URL('../src/ui/drone/drone-road-overlay.ts', import.meta.url)).text()
     const geometry = await Bun.file(new URL('../src/ui/drone/drone-road-overlay-geometry.ts', import.meta.url)).text()
