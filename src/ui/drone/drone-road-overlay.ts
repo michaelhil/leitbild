@@ -120,8 +120,8 @@ const roadLaneLineColor = '#f8fafc'
 const roadPaintLiftM = 0.12
 const roadPaintWidthM = 0.56
 const roadEdgeInsetM = 0.85
-const roadEndpointPaintTrimM = 6
-const roadIntersectionPaintClearanceM = 13
+const roadEndpointPaintTrimM = 0
+const roadIntersectionSearchPaddingM = 13
 const roadMinPaintIntervalM = 2.8
 const roadLaneDashLengthM = 4
 const roadLaneDashGapM = 12
@@ -132,6 +132,10 @@ const roadMaxEstimatedLaneCount = 6
 const roadSegmentBucketM = 42
 const metersPerDegreeLat = 111_320
 const earthRadiusM = 6_378_137
+
+const roadIntersectionPaintClearanceM = (
+  feature: SceneryRoadFeature,
+): number => Math.max(5, Math.min(13, feature.widthM * 0.8))
 
 const roadMaterialColors: Record<RoadMaterialKey, string> = {
   'road-asphalt': roadAsphaltColor,
@@ -161,6 +165,11 @@ const paintableRoadClasses = new Set([
   'minor',
   'residential',
   'unclassified',
+])
+
+const roadEdgeLineClasses = new Set([
+  ...paintableRoadClasses,
+  'service',
 ])
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
@@ -581,8 +590,8 @@ const segmentCellRange = (
   min: number,
   max: number,
 ): readonly [number, number] => [
-  Math.floor((min - roadIntersectionPaintClearanceM) / roadSegmentBucketM),
-  Math.floor((max + roadIntersectionPaintClearanceM) / roadSegmentBucketM),
+  Math.floor((min - roadIntersectionSearchPaddingM) / roadSegmentBucketM),
+  Math.floor((max + roadIntersectionSearchPaddingM) / roadSegmentBucketM),
 ]
 
 const segmentBucketKey = (
@@ -644,8 +653,8 @@ const drawsRoadCenterLine = (
 const drawsRoadEdgeLines = (
   feature: SceneryRoadFeature,
 ): boolean =>
-  feature.widthM >= 8.8
-  && (paintableRoadClasses.has(feature.className) || feature.widthM >= 11.5)
+  feature.widthM >= 6.2
+  && (roadEdgeLineClasses.has(feature.className) || feature.widthM >= 11.5)
 
 const estimatedLaneCount = (
   feature: SceneryRoadFeature,
@@ -822,14 +831,15 @@ const markingIntervalsForRoad = (
   suppressionDistances: ReadonlyArray<number>,
 ): ReadonlyArray<RoadInterval> => {
   if (road.lengthM <= roadEndpointPaintTrimM * 2 + roadMinPaintIntervalM) return []
+  const intersectionClearanceM = roadIntersectionPaintClearanceM(road.feature)
   return subtractBlockedIntervals(
     {
       startM: roadEndpointPaintTrimM,
       endM: road.lengthM - roadEndpointPaintTrimM,
     },
     suppressionDistances.map(distanceM => ({
-      startM: Math.max(0, distanceM - roadIntersectionPaintClearanceM),
-      endM: Math.min(road.lengthM, distanceM + roadIntersectionPaintClearanceM),
+      startM: Math.max(0, distanceM - intersectionClearanceM),
+      endM: Math.min(road.lengthM, distanceM + intersectionClearanceM),
     })),
   )
 }

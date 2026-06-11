@@ -1003,6 +1003,79 @@ describe('drone scenery runtime cache policy', () => {
     expect(Math.min(...edgeSpans.map(span => span.length))).toBeGreaterThan(600)
   })
 
+  test('keeps smaller residential side markings continuous without overpainting center lanes', () => {
+    const smallRoadTile = sceneryRoadTileFromSceneryTile({
+      ...crossingRoadTile(),
+      features: {
+        polygons: [],
+        labels: [],
+        lines: [
+          {
+            id: 'local-road:small-residential',
+            sourceLayer: 'transportation',
+            sourceRef: 'osm:way:small-local-road',
+            kind: 'road',
+            className: 'residential',
+            isBridge: false,
+            isTunnel: false,
+            path: [
+              tilePoint(900, 2100),
+              tilePoint(3200, 2100),
+            ],
+            widthM: 7.2,
+            verticalOffsetM: 0,
+          },
+        ],
+      },
+    })
+    const meshes = buildRoadSurfaceMeshes({ tile: smallRoadTile })
+    const centerMarking = meshes.find(mesh => mesh.materialKey === 'road-marking-center')
+    const edgeMarking = meshes.find(mesh => mesh.materialKey === 'road-marking-edge')
+
+    expect(centerMarking).toBeUndefined()
+    expect(edgeMarking).toBeDefined()
+    const edgeSpans = xSpansByGeneratedQuad(edgeMarking!)
+    expect(edgeSpans).toHaveLength(2)
+    expect(Math.min(...edgeSpans.map(span => span.length))).toBeGreaterThan(620)
+  })
+
+  test('keeps compiler-width service road edge markings without center or lane dashes', () => {
+    const serviceRoadTile = sceneryRoadTileFromSceneryTile({
+      ...crossingRoadTile(),
+      features: {
+        polygons: [],
+        labels: [],
+        lines: [
+          {
+            id: 'service-road:small-access',
+            sourceLayer: 'transportation',
+            sourceRef: 'osm:way:small-service-road',
+            kind: 'road',
+            className: 'service',
+            isBridge: false,
+            isTunnel: false,
+            path: [
+              tilePoint(900, 2150),
+              tilePoint(3200, 2150),
+            ],
+            widthM: 7,
+            verticalOffsetM: 0,
+          },
+        ],
+      },
+    })
+    const meshes = buildRoadSurfaceMeshes({ tile: serviceRoadTile })
+    const materialKeys = new Set(meshes.map(mesh => mesh.materialKey))
+    const edgeMarking = meshes.find(mesh => mesh.materialKey === 'road-marking-edge')
+
+    expect(materialKeys.has('road-marking-center')).toBe(false)
+    expect(materialKeys.has('road-marking-lane')).toBe(false)
+    expect(edgeMarking).toBeDefined()
+    const edgeSpans = xSpansByGeneratedQuad(edgeMarking!)
+    expect(edgeSpans).toHaveLength(2)
+    expect(Math.min(...edgeSpans.map(span => span.length))).toBeGreaterThan(620)
+  })
+
   test('keeps dense road markings grouped into a small stable mesh set', () => {
     const meshes = buildRoadSurfaceMeshes({ tile: sceneryRoadTileFromSceneryTile(denseBudgetTile()) })
     const totalTriangles = meshes.reduce((sum, mesh) => sum + mesh.triangleCount, 0)
@@ -1013,7 +1086,7 @@ describe('drone scenery runtime cache policy', () => {
       'road-marking-edge',
     ]))
     expect(meshes.length).toBeLessThanOrEqual(3)
-    expect(totalTriangles).toBeLessThan(42_000)
+    expect(totalTriangles).toBeLessThan(60_000)
   })
 
   test('separates real bridge roads by vertical layer without adding stacked road material bands', () => {
