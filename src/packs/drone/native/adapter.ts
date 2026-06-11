@@ -42,6 +42,7 @@ import { answerDroneQuery, droneQueryKinds } from '../query.ts'
 import { movePointByMeters } from '../spatial.ts'
 import { parseDroneNativeRuntimeConfig } from './config.ts'
 import { droneNativeAdapterId, droneNativeRuntimeId } from './constants.ts'
+import { createDroneFixedStepScheduler } from './fixed-step.ts'
 import { missionTarget, nativeGuidedTarget, setDroneNavigation, stepDroneObject, targetInsideGeofence, type NativeMissionPlan } from './flight-loop.ts'
 import { createScenarioDroneObject, parseDroneObject, withDronePackData } from './object-state.ts'
 
@@ -76,6 +77,8 @@ const objectData = (objects: ReadonlyMap<string, OperationalObject>, droneId: st
   return { object, data }
 }
 
+const maxRuntimeCatchUpSteps = 5
+
 export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
   id: droneNativeRuntimeId,
   packId: dronePackId,
@@ -99,7 +102,11 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
 
     const handlers = new Set<PackRuntimeEventHandler>()
     let closed = false
-    let lastStepMs = Date.now()
+    const fixedStepScheduler = createDroneFixedStepScheduler({
+      stepMs: runtimeConfig.stepIntervalMs,
+      maxCatchUpSteps: maxRuntimeCatchUpSteps,
+      initialWallMs: Date.now(),
+    })
     let lastProjectionMs = 0
 
     const emit = (events: ReadonlyArray<PackRuntimeEvent>): void => {
@@ -153,29 +160,35 @@ export const createDroneNativePackRuntimeAdapter = (): PackRuntimeAdapter => ({
     const stepAll = (): void => {
       if (closed) return
       const nowMs = Date.now()
-      const dtSeconds = Math.max(0.001, Math.min(0.08, (nowMs - lastStepMs) / 1_000))
-      lastStepMs = nowMs
-      const at = nowIso()
-      const nextObjects: OperationalObject[] = []
-      for (const object of objects.values()) {
-        const data = parseDroneObject(object)
-        if (!data || data.health.state === 'destroyed') continue
-        const next = stepDroneObject({
-          object,
-          data,
-          nowMs,
-          dtSeconds,
-          at,
-          runtimeConfig,
-          missionPlans,
-          geofences,
-        })
-        objects.set(next.id, next)
-        nextObjects.push(next)
+      const stepPlan = fixedStepScheduler.advance(nowMs)
+      if (stepPlan.steps.length === 0) return
+      for (const step of stepPlan.steps) {
+        const at = new Date(step.nowMs).toISOString() as IsoTimestamp
+        for (const object of objects.values()) {
+          const data = parseDroneObject(object)
+          if (!data || data.health.state === 'destroyed') continue
+          const next = stepDroneObject({
+            object,
+            data,
+            nowMs: step.nowMs,
+            dtSeconds: step.dtSeconds,
+            at,
+            runtimeConfig,
+            missionPlans,
+            geofences,
+          })
+          objects.set(next.id, next)
+        }
       }
       if (nowMs - lastProjectionMs < runtimeConfig.projectionIntervalMs) return
       lastProjectionMs = nowMs
-      emit(nextObjects.map(object => ({
+      const projectedObjects = [...objects.values()]
+        .filter(object => {
+          const data = parseDroneObject(object)
+          return data !== null && data.health.state !== 'destroyed'
+        })
+      const at = nowIso()
+      emit(projectedObjects.map(object => ({
         type: 'object.upserted' as const,
         object,
         at,

@@ -28,6 +28,11 @@
     type DroneKeyBindingMap,
   } from './drone-key-bindings.ts'
   import { advanceDroneCameraOrbit } from './drone-camera-controls.ts'
+  import {
+    createDroneManualCommandStream,
+    droneManualAxesSignature,
+    type DroneManualInputSourceKind,
+  } from './drone-manual-command-stream.ts'
   import { createDroneScene, type DroneSceneCameraOrbit, type DroneSceneHandle, type DroneScenePerformanceSnapshot, type DroneSceneViewMode } from './drone-scene.ts'
 
   interface Props {
@@ -79,6 +84,7 @@
   const collapsedControlPanelWidth = 42
   const sendIntervalMs = 50
   const activeKeepaliveMs = 100
+  const maxManualCommandInFlight = 3
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
@@ -116,12 +122,7 @@
   let keys = new Set<string>()
   let cameraKeys = new Set<string>()
   let commandSendTimes: number[] = []
-  let lastSendMs = 0
   let lastCameraOrbitAtMs = 0
-  let lastAxesSignature = '0.00|0.00|0.00|0.00'
-  let lastManualBlockReason = ''
-  let lastManualBlockAtMs = 0
-  let manualSendInFlight = false
   let cameraShiftModifier = false
   let animationId = 0
   let lastGamepadRefreshMs = 0
@@ -213,6 +214,7 @@
     keys = new Set()
     mouseAxes = zeroAxes
     liveAxes = zeroAxes
+    manualCommandStream.reset()
     commandStatus = `Controlling ${next.label}`
   }
 
@@ -366,9 +368,7 @@
     }
   }
 
-  type ManualInputSourceKind = 'keyboard' | 'mouse' | 'gamepad'
-
-  const combinedAxes = (): { readonly axes: DroneManualAxes; readonly sourceKind: ManualInputSourceKind } => {
+  const combinedAxes = (): { readonly axes: DroneManualAxes; readonly sourceKind: DroneManualInputSourceKind } => {
     const keyboard = keyboardAxes()
     const mouse = mouseControlEnabled ? mouseAxes : zeroAxes
     const gamepad = gamepadAxes()
@@ -386,9 +386,6 @@
     return { axes, sourceKind }
   }
 
-  const axesSignature = (axes: DroneManualAxes): string =>
-    [axes.forward, axes.right, axes.vertical, axes.yaw].map(value => value.toFixed(2)).join('|')
-
   const axesAreActive = (axes: DroneManualAxes): boolean =>
     Math.abs(axes.forward) > 0 || Math.abs(axes.right) > 0 || Math.abs(axes.vertical) > 0 || Math.abs(axes.yaw) > 0
 
@@ -397,9 +394,7 @@
     commandRateHz = commandSendTimes.length / 2
   }
 
-  const sendManualControl = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
-    const startedAtMs = performance.now()
-    recordCommandSent(startedAtMs)
+  const sendManualControl = async (axes: DroneManualAxes, sourceKind: DroneManualInputSourceKind): Promise<CommandResponse> => {
     const activeGamepad = selectedGamepadIndex === null ? null : gamepads.find(pad => pad.index === selectedGamepadIndex)
     const source = sourceKind === 'gamepad' && activeGamepad
       ? { kind: 'gamepad' as const, gamepadIndex: activeGamepad.index, label: activeGamepad.id }
@@ -416,28 +411,38 @@
         commandTtlMs: 450,
       },
     }
-    let body: CommandResponse
     try {
-      body = sendRealtimeCommand
+      return sendRealtimeCommand
         ? await sendRealtimeCommand(command)
         : await sendControlInstanceCommand(controlInstanceId, command)
     } catch (err) {
       if (!sendRealtimeCommand) throw err
-      body = await sendControlInstanceCommand(controlInstanceId, command)
+      return await sendControlInstanceCommand(controlInstanceId, command)
     }
-    lastCommandRoundTripMs = performance.now() - startedAtMs
-    commandStatus = body.result.ok ? 'Manual velocity sent' : `Rejected: ${body.result.reason ?? 'unknown'}`
   }
 
-  const sendManualControlSafely = async (axes: DroneManualAxes, sourceKind: ManualInputSourceKind): Promise<void> => {
-    try {
-      await sendManualControl(axes, sourceKind)
-    } catch (err) {
-      commandStatus = err instanceof Error ? err.message : String(err)
-    } finally {
-      manualSendInFlight = false
-    }
-  }
+  const manualCommandStream = createDroneManualCommandStream<CommandResponse>({
+    sendIntervalMs,
+    activeKeepaliveMs,
+    maxInFlight: maxManualCommandInFlight,
+    send: async input => await sendManualControl(input.axes, input.sourceKind),
+    onSend: event => {
+      recordCommandSent(event.startedAtMs)
+    },
+    onResult: event => {
+      if (event.stale) return
+      lastCommandRoundTripMs = event.roundTripMs
+      commandStatus = event.value.result.ok ? 'Manual velocity sent' : `Rejected: ${event.value.result.reason ?? 'unknown'}`
+    },
+    onError: event => {
+      if (event.stale) return
+      lastCommandRoundTripMs = event.roundTripMs
+      commandStatus = event.error instanceof Error ? event.error.message : String(event.error)
+    },
+    onBlocked: event => {
+      commandStatus = `Rejected: ${event.reason}`
+    },
+  })
 
   const setMode = async (mode: 'hold' | 'land' | 'return_to_launch'): Promise<void> => {
     const kind = mode === 'hold'
@@ -479,29 +484,14 @@
     }
     const sample = combinedAxes()
     const axes = sample.axes
-    const signature = axesSignature(axes)
-    const active = axesAreActive(axes)
-    if (signature !== axesSignature(liveAxes)) liveAxes = axes
-    const changed = signature !== lastAxesSignature
-    const keepaliveDue = active && nowMs - lastSendMs >= activeKeepaliveMs
-    if (!manualSendInFlight && (changed || keepaliveDue) && nowMs - lastSendMs >= sendIntervalMs) {
-      if (active && data === null) {
-        lastSendMs = nowMs
-        lastAxesSignature = signature
-        const reason = 'selected object is not a drone'
-        if (reason !== lastManualBlockReason || nowMs - lastManualBlockAtMs > 1_000) {
-          lastManualBlockReason = reason
-          lastManualBlockAtMs = nowMs
-          commandStatus = `Rejected: ${reason}`
-        }
-        animationId = requestAnimationFrame(pollInput)
-        return
-      }
-      lastSendMs = nowMs
-      lastAxesSignature = signature
-      manualSendInFlight = true
-      void sendManualControlSafely(axes, sample.sourceKind)
-    }
+    const signature = droneManualAxesSignature(axes)
+    if (signature !== droneManualAxesSignature(liveAxes)) liveAxes = axes
+    manualCommandStream.update({
+      axes,
+      sourceKind: sample.sourceKind,
+      nowMs,
+      blockReason: axesAreActive(axes) && data === null ? 'selected object is not a drone' : undefined,
+    })
     animationId = requestAnimationFrame(pollInput)
   }
 
@@ -749,6 +739,7 @@
     animationId = requestAnimationFrame(pollInput)
     return () => {
       cancelAnimationFrame(animationId)
+      manualCommandStream.reset()
       window.removeEventListener('keydown', onKeydown)
       window.removeEventListener('keyup', onKeyup)
       window.removeEventListener('blur', onWindowBlur)

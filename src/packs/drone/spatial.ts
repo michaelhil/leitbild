@@ -1,7 +1,12 @@
 import type { GeoJsonPoint } from '../../core/model/index.ts'
 import { geoPointFromLonLat } from '../../core/model/index.ts'
+import {
+  horizontalOffsetMeters,
+  lonLatFromMeterOffset,
+  metersPerDegreeLonAt,
+} from '../../core/spatial/local-frame.ts'
 
-const metersPerDegreeLat = 111_320
+export { metersPerDegreeLonAt }
 
 export interface LocalOffsetM {
   readonly eastM: number
@@ -30,25 +35,19 @@ export const shortestAngleDeltaDeg = (fromDeg: number, toDeg: number): number =>
   return delta
 }
 
-export const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
-
-export const offsetMeters = (from: GeoJsonPoint, to: GeoJsonPoint): LocalOffsetM => {
-  const lat = (from.coordinates[1] + to.coordinates[1]) / 2
-  return {
-    eastM: (to.coordinates[0] - from.coordinates[0]) * metersPerDegreeLonAt(lat),
-    northM: (to.coordinates[1] - from.coordinates[1]) * metersPerDegreeLat,
-  }
-}
+export const offsetMeters = (from: GeoJsonPoint, to: GeoJsonPoint): LocalOffsetM =>
+  horizontalOffsetMeters(
+    { lon: from.coordinates[0], lat: from.coordinates[1] },
+    { lon: to.coordinates[0], lat: to.coordinates[1] },
+  )
 
 export const movePointByMeters = (
   point: GeoJsonPoint,
   offset: LocalOffsetM,
-): GeoJsonPoint =>
-  geoPointFromLonLat(
-    point.coordinates[0] + offset.eastM / metersPerDegreeLonAt(point.coordinates[1]),
-    point.coordinates[1] + offset.northM / metersPerDegreeLat,
-  )
+): GeoJsonPoint => {
+  const next = lonLatFromMeterOffset({ lon: point.coordinates[0], lat: point.coordinates[1] }, offset)
+  return geoPointFromLonLat(next.lon, next.lat)
+}
 
 export const horizontalDistanceM = (from: GeoJsonPoint, to: GeoJsonPoint): number => {
   const offset = offsetMeters(from, to)

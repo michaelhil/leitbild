@@ -133,7 +133,6 @@ const roadTargetLaneWidthM = 3.4
 const roadMinMarkedLaneWidthM = 2.75
 const roadMaxEstimatedLaneCount = 6
 const roadSegmentBucketM = 42
-const metersPerDegreeLat = 111_320
 const earthRadiusM = 6_378_137
 
 const roadIntersectionPaintClearanceM = (
@@ -174,9 +173,6 @@ const roadEdgeLineClasses = new Set([
   ...paintableRoadClasses,
   'service',
 ])
-
-const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
 const tileXToLon = (x: number, z: number): number =>
   x / 2 ** z * 360 - 180

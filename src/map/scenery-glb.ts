@@ -1,4 +1,10 @@
 import earcut from 'earcut'
+import {
+  localPointFromLonLat,
+  lonLatFromLocalPoint as coreLonLatFromLocalPoint,
+  metersPerDegreeLat,
+  metersPerDegreeLonAt,
+} from '../core/spatial/local-frame.ts'
 import type {
   SceneryAssetTileSummary,
   SceneryPoint,
@@ -56,8 +62,6 @@ interface MeshBucket {
 
 type HorizontalHeightProvider = number | ((point: LocalPoint) => number)
 
-const metersPerDegreeLat = 111_320
-
 const stableHash = (value: string): number => {
   let hash = 2166136261
   for (let index = 0; index < value.length; index += 1) {
@@ -74,9 +78,6 @@ const seededRandom = (seed: number): (() => number) => {
     return (state >>> 0) / 0xffffffff
   }
 }
-
-const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
 export const sceneryTileCenterLonLat = (
   tile: Pick<SceneryTile['tile'], 'z' | 'x' | 'y'>,
@@ -142,9 +143,10 @@ const localPointFromSceneryPoint = (
   elevationSampler: ElevationSampler,
 ): LocalPoint => {
   const lonLat = sceneryTilePointLonLat(point, tile)
+  const local = localPointFromLonLat(lonLat.lon, lonLat.lat, center)
   return {
-    x: (lonLat.lon - center.lon) * metersPerDegreeLonAt(center.lat),
-    z: -(lonLat.lat - center.lat) * metersPerDegreeLat,
+    x: local.x,
+    z: local.z,
     groundY: sampleElevationMeters(elevationSampler, lonLat),
   }
 }
@@ -162,10 +164,8 @@ const averageGroundY = (
 const lonLatFromLocalPoint = (
   point: LocalPoint,
   center: TileLonLat,
-): TileLonLat => ({
-  lon: center.lon + point.x / metersPerDegreeLonAt(center.lat),
-  lat: center.lat - point.z / metersPerDegreeLat,
-})
+): TileLonLat =>
+  coreLonLatFromLocalPoint(point, center)
 
 const heightForHorizontalPoint = (
   provider: HorizontalHeightProvider,

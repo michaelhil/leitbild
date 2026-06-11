@@ -1,5 +1,6 @@
 import type { DroneWorldCenter, DroneWorldTerrainStatus } from './drone-map-world.ts'
 import { decodeDemElevationM, type TerrainDemEncoding } from '../../map/dem-encoding.ts'
+import { lonLatFromLocalPoint } from '../../core/spatial/local-frame.ts'
 
 export {
   decodeMapboxElevationM,
@@ -52,20 +53,14 @@ interface TerrainSamplePoint {
   readonly coord: TileCoord
 }
 
-const metersPerDegreeLat = 111_320
 const terrainGridSize = 49
-
-const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
 const lonLatFromLocal = (
   x: number,
   z: number,
   center: DroneWorldCenter,
-): { readonly lon: number; readonly lat: number } => ({
-  lon: center.lon + x / metersPerDegreeLonAt(center.lat),
-  lat: center.lat - z / metersPerDegreeLat,
-})
+): { readonly lon: number; readonly lat: number } =>
+  lonLatFromLocalPoint({ x, z }, center)
 
 const tileCoordFloatFor = (
   lon: number,

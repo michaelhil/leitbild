@@ -1,4 +1,9 @@
 import {
+  localPointFromLonLat,
+  metersPerDegreeLat,
+  metersPerDegreeLonAt,
+} from '../core/spatial/local-frame.ts'
+import {
   sceneryAssetFormat,
   sceneryAssetTilesetSchema,
   sceneryAssetTileEncoding,
@@ -58,8 +63,6 @@ interface TileOffset {
   readonly z: number
 }
 
-const metersPerDegreeLat = 111_320
-
 const zeroFeatureCounts = (): SceneryTilesetFeatureCounts => ({
   polygons: 0,
   lines: 0,
@@ -82,9 +85,6 @@ const addFeatureCounts = (
   water: left.water + right.water,
   vegetation: left.vegetation + right.vegetation,
 })
-
-const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
 const tileKey = (coord: TileCoord): string =>
   `${coord.z}/${coord.x}/${coord.y}`
@@ -136,10 +136,8 @@ const localOffsetFromLonLat = (config: {
   readonly lat: number
   readonly originLon: number
   readonly originLat: number
-}): { readonly x: number; readonly z: number } => ({
-  x: (config.lon - config.originLon) * metersPerDegreeLonAt(config.originLat),
-  z: -(config.lat - config.originLat) * metersPerDegreeLat,
-})
+}): { readonly x: number; readonly z: number } =>
+  localPointFromLonLat(config.lon, config.lat, { lon: config.originLon, lat: config.originLat })
 
 const tileSizeMeters = (
   bounds: SceneryAssetBounds,

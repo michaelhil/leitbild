@@ -11,6 +11,7 @@ import {
 } from '../../core/model/index.ts'
 import { attackPayloadSchema } from './commands.ts'
 import { dronePackDataSchema, dronePackId, type DroneDamageRecord, type DronePackData } from './model.ts'
+import { offsetMeters } from './spatial.ts'
 
 export const droneAttackRequestedSignalType = 'drone.attack.requested'
 
@@ -22,17 +23,12 @@ const randomId = (): string =>
 const pointFor = (object: OperationalObject) =>
   object.spatial.position?.point ?? (object.spatial.geometry?.type === 'Point' ? object.spatial.geometry : null)
 
-const metersPerDegreeLat = 111_320
-
 const horizontalDistanceM = (left: OperationalObject, right: OperationalObject): number => {
   const leftPoint = pointFor(left)
   const rightPoint = pointFor(right)
   if (!leftPoint || !rightPoint) return Number.POSITIVE_INFINITY
-  const lat = ((leftPoint.coordinates[1] + rightPoint.coordinates[1]) / 2) * Math.PI / 180
-  const metersPerDegreeLon = Math.cos(lat) * metersPerDegreeLat
-  const dx = (rightPoint.coordinates[0] - leftPoint.coordinates[0]) * metersPerDegreeLon
-  const dy = (rightPoint.coordinates[1] - leftPoint.coordinates[1]) * metersPerDegreeLat
-  return Math.hypot(dx, dy)
+  const offset = offsetMeters(leftPoint, rightPoint)
+  return Math.hypot(offset.eastM, offset.northM)
 }
 
 const notification = (

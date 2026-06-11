@@ -114,7 +114,6 @@ interface MeshEntry {
   readonly visual: VisualPose
 }
 
-const metersPerDegreeLat = 111_320
 const maxDroneScenePixelRatio = 1.5
 const minCameraDistanceM = 14
 const maxCameraDistanceM = 260
@@ -122,9 +121,6 @@ const minCameraPitchRad = -0.06
 const maxCameraPitchRad = 1.18
 const baseGroundRadiusM = 9_000
 let activeDroneSceneCount = 0
-
-const metersPerDegreeLonAt = (latDeg: number): number =>
-  Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value))
