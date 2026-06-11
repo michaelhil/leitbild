@@ -118,6 +118,8 @@
     readonly objectId: ObjectId
   }
 
+  type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
+
   interface ProcedureSystemWindowEntry {
     readonly id: string
     readonly objectId: ObjectId
@@ -144,7 +146,6 @@
   let activePack = $state<LeitbildPack | null>(null)
   let controlInstanceId = $state<ControlInstanceId | null>(null)
   let objects = $state<OperationalObject[]>([])
-  let droneMotionFrames = $state<ReadonlyArray<DroneMotionFrame>>([])
   let scenarioState = $state<ScenarioInstanceState | undefined>(undefined)
   let clock = $state<SimulationClockState | undefined>(undefined)
   let scenarioDefinition = $state<ScenarioDefinition | null>(null)
@@ -213,6 +214,8 @@
   let procedureRunRefreshQueued = false
   let procedureRunRefreshKey = ''
   let procedureRunDocumentControlInstanceId: ControlInstanceId | null = null
+  let latestDroneMotionFrames: ReadonlyArray<DroneMotionFrame> = []
+  const droneMotionFrameConsumers = new Set<DroneMotionFrameConsumer>()
   const realtimeConnection = createRealtimeConnectionController()
   const railLayout = createRailLayoutState()
   const placement = createPlacementState({
@@ -1098,6 +1101,7 @@
     startupDismissed = false
     latestMapRuntimeDiagnostics = null
     pendingRealtimeControlInstanceId = null
+    latestDroneMotionFrames = []
     startupSteps = resetStartupStepsAfter(startupSteps, 'control-instance')
   }
 
@@ -1182,6 +1186,20 @@
     realtimeConnection.sendRuntimeInput(controlInstanceId, input)
   }
 
+  const subscribeDroneMotionFrames = (consumer: DroneMotionFrameConsumer): (() => void) => {
+    droneMotionFrameConsumers.add(consumer)
+    if (latestDroneMotionFrames.length > 0) consumer(latestDroneMotionFrames)
+    return () => {
+      droneMotionFrameConsumers.delete(consumer)
+    }
+  }
+
+  const publishDroneMotionFrames = (frames: ReadonlyArray<DroneMotionFrame>): void => {
+    if (frames.length === 0) return
+    latestDroneMotionFrames = frames
+    for (const consumer of droneMotionFrameConsumers) consumer(frames)
+  }
+
   const deleteObject = async (object: OperationalObject): Promise<void> => {
     commandStatus = `Deleting ${object.label}`
     await sendCommand(deleteObjectCommandKind, { objectId: object.id }, [object.id])
@@ -1243,6 +1261,7 @@
       return
     }
     realtimeAttached = false
+    latestDroneMotionFrames = []
     realtimeConnection.connect(id, {
       onOpen: () => {
         status = 'Realtime channel open'
@@ -1310,7 +1329,7 @@
             return []
           }
         })
-        if (frames.length > 0) droneMotionFrames = frames
+        publishDroneMotionFrames(frames)
       },
     })
   }
@@ -1696,9 +1715,9 @@
       {controlInstanceId}
       object={windowEntry.object}
       {objects}
-      motionFrames={droneMotionFrames}
       {sendRealtimeCommand}
       {sendRealtimeInput}
+      subscribeMotionFrames={subscribeDroneMotionFrames}
       windowOffsetIndex={windowEntry.index}
       close={() => closeDroneControl(windowEntry.id)}
     />

@@ -6,7 +6,7 @@ import { actorIdSchema, commandEnvelopeSchema, nowIso, type CommandEnvelope, typ
 import type { Actor } from '../src/core/control-instances/actors.ts'
 import { createHealthDetails, staticContentTypeForPath } from '../src/core/api/server.ts'
 import { createControlInstanceRealtimeManager, type RealtimeEventBatchMessage, type RealtimeOutboundMessage } from '../src/core/api/realtime.ts'
-import { createControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
+import { createControlInstanceRegistry, type ControlInstanceRegistry } from '../src/core/control-instances/registry.ts'
 import { createLocalAmbulancePackRuntimeAdapter } from '../src/packs/ambulance/sim/adapter.ts'
 import { createLocalTrafficPackRuntimeAdapter } from '../src/packs/traffic/sim/adapter.ts'
 import { createLocalWeatherPackRuntimeAdapter } from '../src/packs/weather/sim/adapter.ts'
@@ -242,6 +242,68 @@ describe('server health', () => {
       realtime.stop()
       await registry.close(controlInstanceId)
     }
+  })
+
+  test('does not snapshot the runtime for pure realtime broadcasts', () => {
+    const controlInstanceId = 'control-instance:runtime-realtime-cache-test' as ControlInstanceId
+    const handlers = new Set<Parameters<NonNullable<ReturnType<ControlInstanceRegistry['get']>>['subscribe']>[0]>()
+    let snapshotSeq = 7
+    let snapshotCalls = 0
+    const runtime = {
+      snapshot: () => {
+        snapshotCalls += 1
+        return {
+          objects: [],
+          seq: snapshotSeq,
+          scenario: { scenarioId: 'scenario:realtime-cache' },
+        }
+      },
+      subscribe: (handler: Parameters<NonNullable<ReturnType<ControlInstanceRegistry['get']>>['subscribe']>[0]) => {
+        handlers.add(handler)
+        return () => handlers.delete(handler)
+      },
+    } as unknown as NonNullable<ReturnType<ControlInstanceRegistry['get']>>
+    const registry = {
+      get: (id: ControlInstanceId) => id === controlInstanceId ? runtime : null,
+      acquireLease: () => () => {},
+    } as unknown as ControlInstanceRegistry
+    const messages: RealtimeOutboundMessage[] = []
+    const realtime = createControlInstanceRealtimeManager<{ readonly id: string }>({
+      registry,
+      send: (_client, message) => {
+        messages.push(message)
+      },
+      sendReady: () => {},
+    })
+
+    realtime.addClient(controlInstanceId, { id: 'client:1' })
+    const setupSnapshotCalls = snapshotCalls
+    for (const handler of handlers) {
+      handler({
+        type: 'event.notification',
+        events: [],
+        realtimeMessages: [{ type: 'test.motion', at: nowIso(), payload: { x: 1 } }],
+      })
+    }
+    expect(snapshotCalls).toBe(setupSnapshotCalls)
+    expect(messages.at(-1)).toMatchObject({
+      type: 'runtime.realtime',
+      snapshotSeq: 7,
+    })
+
+    snapshotSeq = 8
+    for (const handler of handlers) {
+      handler({
+        type: 'event.notification',
+        events: [{ type: 'test.event', seq: 8, at: nowIso() } as unknown as ControlInstanceEvent],
+      })
+    }
+    expect(snapshotCalls).toBe(setupSnapshotCalls + 1)
+    expect(messages.at(-1)).toMatchObject({
+      type: 'events',
+      snapshotSeq: 8,
+    })
+    realtime.stop()
   })
 
   test('closes idle runtimes after the last realtime client leaves', async () => {

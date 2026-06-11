@@ -41,9 +41,9 @@
     readonly controlInstanceId: ControlInstanceId
     readonly object: OperationalObject
     readonly objects: ReadonlyArray<OperationalObject>
-    readonly motionFrames?: ReadonlyArray<DroneMotionFrame>
     readonly sendRealtimeCommand?: (command: ControlInstanceCommandRequest) => Promise<CommandResponse>
     readonly sendRealtimeInput?: (input: RuntimeInputRequest) => void
+    readonly subscribeMotionFrames?: (consumer: DroneMotionFrameConsumer) => () => void
     readonly windowOffsetIndex?: number
     readonly close: () => void
   }
@@ -76,13 +76,15 @@
     }
   }
 
+  type DroneMotionFrameConsumer = (frames: ReadonlyArray<DroneMotionFrame>) => void
+
   let {
     controlInstanceId,
     object,
     objects,
-    motionFrames = [],
     sendRealtimeCommand,
     sendRealtimeInput,
+    subscribeMotionFrames,
     windowOffsetIndex = 0,
     close,
   }: Props = $props()
@@ -99,6 +101,8 @@
   const sendIntervalMs = 50
   const activeKeepaliveMs = 100
   const maxManualCommandInFlight = 3
+  const commandRateUpdateIntervalMs = 250
+  const realtimeStatusUpdateIntervalMs = 600
   const deadband = 0.08
   const zeroAxes: DroneManualAxes = { forward: 0, right: 0, vertical: 0, yaw: 0 }
   const defaultCameraOrbit: DroneSceneCameraOrbit = { yawOffsetRad: 0, pitchOffsetRad: 0.4, distanceM: 82 }
@@ -108,6 +112,7 @@
 
   let sceneElement = $state<HTMLDivElement | null>(null)
   let sceneHandle: DroneSceneHandle | null = null
+  let unsubscribeMotionFrames: (() => void) | null = null
   let windowBounds = $state<WindowBounds | null>(null)
   let windowDrag = $state<WindowPointerDrag | null>(null)
   let windowResize = $state<WindowPointerDrag | null>(null)
@@ -141,6 +146,8 @@
   let animationId = 0
   let lastGamepadRefreshMs = 0
   let gamepadSignature = ''
+  let lastCommandRateUpdateMs = 0
+  let lastRealtimeStatusUpdateMs = 0
 
   const droneObjects = $derived(objects.filter(candidate => dronePackDataSchema.safeParse(candidate.packData).success))
   const selectedObject = $derived.by(() =>
@@ -403,9 +410,21 @@
   const axesAreActive = (axes: DroneManualAxes): boolean =>
     Math.abs(axes.forward) > 0 || Math.abs(axes.right) > 0 || Math.abs(axes.vertical) > 0 || Math.abs(axes.yaw) > 0
 
+  const setCommandStatus = (nextStatus: string): void => {
+    if (commandStatus !== nextStatus) commandStatus = nextStatus
+  }
+
+  const updateCommandRate = (nowMs: number, force = false): void => {
+    commandSendTimes = commandSendTimes.filter(value => nowMs - value <= 2_000)
+    if (!force && nowMs - lastCommandRateUpdateMs < commandRateUpdateIntervalMs) return
+    lastCommandRateUpdateMs = nowMs
+    const nextRateHz = commandSendTimes.length / 2
+    if (nextRateHz !== commandRateHz) commandRateHz = nextRateHz
+  }
+
   const recordCommandSent = (startedAtMs: number): void => {
-    commandSendTimes = [...commandSendTimes, startedAtMs].filter(value => startedAtMs - value <= 2_000)
-    commandRateHz = commandSendTimes.length / 2
+    commandSendTimes.push(startedAtMs)
+    updateCommandRate(startedAtMs)
   }
 
   const sendManualControl = async (
@@ -468,18 +487,29 @@
     },
     onResult: event => {
       if (event.stale) return
+      const settledAtMs = event.startedAtMs + event.roundTripMs
+      if (!event.value.result.ok) {
+        lastCommandRoundTripMs = event.roundTripMs
+        setCommandStatus(`Rejected: ${event.value.result.reason ?? 'unknown'}`)
+        return
+      }
+      if (event.value.transport === 'runtime-input') {
+        if (settledAtMs - lastRealtimeStatusUpdateMs >= realtimeStatusUpdateIntervalMs) {
+          lastRealtimeStatusUpdateMs = settledAtMs
+          setCommandStatus('Manual intent streamed')
+        }
+        return
+      }
       lastCommandRoundTripMs = event.roundTripMs
-      commandStatus = event.value.result.ok
-        ? event.value.transport === 'runtime-input' ? 'Manual intent streamed' : 'Manual velocity sent'
-        : `Rejected: ${event.value.result.reason ?? 'unknown'}`
+      setCommandStatus('Manual velocity sent')
     },
     onError: event => {
       if (event.stale) return
       lastCommandRoundTripMs = event.roundTripMs
-      commandStatus = event.error instanceof Error ? event.error.message : String(event.error)
+      setCommandStatus(event.error instanceof Error ? event.error.message : String(event.error))
     },
     onBlocked: event => {
-      commandStatus = `Rejected: ${event.reason}`
+      setCommandStatus(`Rejected: ${event.reason}`)
     },
   })
 
@@ -516,11 +546,7 @@
     refreshGamepads()
     const nowMs = performance.now()
     advanceCameraOrbit(nowMs)
-    const activeCommandTimes = commandSendTimes.filter(value => nowMs - value <= 2_000)
-    if (activeCommandTimes.length !== commandSendTimes.length) {
-      commandSendTimes = activeCommandTimes
-      commandRateHz = activeCommandTimes.length / 2
-    }
+    updateCommandRate(nowMs)
     const sample = combinedAxes()
     const axes = sample.axes
     const signature = droneManualAxesSignature(axes)
@@ -747,7 +773,6 @@
       container: sceneElement,
       getFocusDroneId: () => selectedObject.id,
       getObjects: () => objects,
-      getMotionFrames: () => motionFrames,
       getViewMode: () => viewMode,
       getCameraOrbit: () => cameraOrbit,
       onReady: () => {
@@ -763,6 +788,9 @@
         scenePerformance = snapshot
       },
     })
+    unsubscribeMotionFrames = subscribeMotionFrames?.(frames => {
+      sceneHandle?.ingestMotionFrames(frames)
+    }) ?? null
     refreshGamepads(true)
     window.addEventListener('keydown', onKeydown)
     window.addEventListener('keyup', onKeyup)
@@ -793,6 +821,8 @@
       window.removeEventListener('gamepadconnected', onGamepadConnectionChange)
       window.removeEventListener('gamepaddisconnected', onGamepadConnectionChange)
       if (mouseCaptured) document.exitPointerLock()
+      unsubscribeMotionFrames?.()
+      unsubscribeMotionFrames = null
       sceneHandle?.destroy()
       sceneHandle = null
     }

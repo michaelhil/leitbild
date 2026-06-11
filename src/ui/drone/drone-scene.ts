@@ -43,6 +43,7 @@ export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
 export type { DroneScenePerformanceSnapshot }
 
 export interface DroneSceneHandle {
+  readonly ingestMotionFrames: (frames: ReadonlyArray<DroneMotionFrame>) => void
   readonly destroy: () => void
 }
 
@@ -56,7 +57,6 @@ interface DroneSceneConfig {
   readonly container: HTMLElement
   readonly getFocusDroneId: () => string
   readonly getObjects: () => ReadonlyArray<OperationalObject>
-  readonly getMotionFrames?: () => ReadonlyArray<DroneMotionFrame>
   readonly getViewMode: () => DroneSceneViewMode
   readonly getCameraOrbit: () => DroneSceneCameraOrbit
   readonly onReady?: () => void
@@ -708,8 +708,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
 
   const ingestMotionFrames = (
     frames: ReadonlyArray<DroneMotionFrame>,
-    nowMs: number,
   ): void => {
+    const nowMs = performance.now()
     for (const frame of frames) {
       const current = motionFramesByObjectId.get(frame.objectId)
       if (current && frame.sequence <= current.frame.sequence) continue
@@ -828,7 +828,6 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
     const objects = config.getObjects()
     const fallbackCenter = centerFor(objects, config.getFocusDroneId())
     const activeCenter = sceneOriginCenter ?? fallbackCenter
-    ingestMotionFrames(config.getMotionFrames?.() ?? [], nowMs)
     updateObjects(objects, activeCenter, nowMs, dtSeconds)
 
     const focusId = config.getFocusDroneId()
@@ -848,6 +847,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   })
 
   return {
+    ingestMotionFrames,
     destroy: (): void => {
       if (destroyed) return
       destroyed = true

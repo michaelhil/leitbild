@@ -3,9 +3,12 @@ import type { ControlInstanceEventNotification } from '../control-instances/runt
 import type { ControlInstanceId, SimulationClockState } from '../model/index.ts'
 import type { PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
 
+type RealtimeMessageContext = Omit<RealtimeReadyMessage, 'type' | 'clock'>
+
 interface RealtimeSubscription {
   readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>
   readonly unsubscribe: () => void
+  context: RealtimeMessageContext
 }
 
 interface SubscriptionReconciliation {
@@ -105,7 +108,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
   const messageContextForRuntime = (
     controlInstanceId: ControlInstanceId,
     runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
-  ): Omit<RealtimeReadyMessage, 'type' | 'clock'> => {
+  ): RealtimeMessageContext => {
     const snapshot = runtime.snapshot()
     return {
       controlInstanceId,
@@ -123,10 +126,14 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     if (subscription?.runtime !== runtime) return
     const clients = clientsByControlInstance.get(controlInstanceId)
     if (!clients) return
+    const messageContext = notification.events.length > 0
+      ? messageContextForRuntime(controlInstanceId, runtime)
+      : subscription.context
+    subscription.context = messageContext
     if (notification.events.length > 0) {
       const message: RealtimeEventBatchMessage = {
         type: 'events',
-        ...messageContextForRuntime(controlInstanceId, runtime),
+        ...messageContext,
         events: notification.events,
       }
       for (const client of clients) config.send(client, message)
@@ -134,7 +141,7 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     if (notification.realtimeMessages && notification.realtimeMessages.length > 0) {
       const message: RealtimeRuntimeMessageBatch = {
         type: 'runtime.realtime',
-        ...messageContextForRuntime(controlInstanceId, runtime),
+        ...messageContext,
         messages: notification.realtimeMessages,
       }
       for (const client of clients) config.send(client, message)
@@ -189,7 +196,11 @@ export const createControlInstanceRealtimeManager = <Client>(config: {
     if (existing?.runtime === runtime) return { runtime, changed: false }
     existing?.unsubscribe()
     const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, runtime, event))
-    subscriptionsByControlInstance.set(controlInstanceId, { runtime, unsubscribe })
+    subscriptionsByControlInstance.set(controlInstanceId, {
+      runtime,
+      unsubscribe,
+      context: messageContextForRuntime(controlInstanceId, runtime),
+    })
     return { runtime, changed: true }
   }
 
