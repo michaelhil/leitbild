@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { sampleElevationMeters, type ElevationSampler } from './elevation-sampler.ts'
 
 export const sceneryFeatureTileEncoding = 'leitbild-scenery-feature-json-v1' as const
 export const sceneryAssetTileEncoding = 'model/gltf-binary' as const
@@ -23,6 +24,24 @@ export const sceneryPointSchema = z.tuple([
   z.number().finite(),
 ])
 export type SceneryPoint = z.infer<typeof sceneryPointSchema>
+
+export interface SceneryLonLat {
+  readonly lon: number
+  readonly lat: number
+}
+
+export const sceneryTilePointLonLat = (
+  point: SceneryPoint,
+  tile: SceneryTile['tile'],
+): SceneryLonLat => {
+  const size = tile.extent * 2 ** tile.z
+  const worldX = point[0] + tile.extent * tile.x
+  const worldY = point[1] + tile.extent * tile.y
+  return {
+    lon: worldX * 360 / size - 180,
+    lat: 360 / Math.PI * Math.atan(Math.exp((1 - worldY * 2 / size) * Math.PI)) - 90,
+  }
+}
 
 export const sceneryPolygonKindSchema = z.enum(['aeroway', 'building', 'water', 'landcover', 'landuse'])
 export const sceneryLineKindSchema = z.enum(['aeroway', 'road', 'rail', 'waterway'])
@@ -106,8 +125,17 @@ export const sceneryRoadFeatureSchema = z.object({
   isBridge: z.boolean(),
   isTunnel: z.boolean(),
   path: z.array(sceneryPointSchema).min(2),
+  heightSamplesM: z.array(z.number().finite()).optional(),
   widthM: z.number().finite().positive(),
   verticalOffsetM: z.number().finite(),
+}).superRefine((feature, context) => {
+  if (feature.heightSamplesM !== undefined && feature.heightSamplesM.length !== feature.path.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['heightSamplesM'],
+      message: 'road heightSamplesM must match path length',
+    })
+  }
 })
 export type SceneryRoadFeature = z.infer<typeof sceneryRoadFeatureSchema>
 
@@ -125,6 +153,9 @@ export type SceneryRoadTile = z.infer<typeof sceneryRoadTileSchema>
 
 export const sceneryRoadTileFromSceneryTile = (
   tile: SceneryTile,
+  config?: {
+    readonly elevationSampler?: ElevationSampler
+  },
 ): SceneryRoadTile => sceneryRoadTileSchema.parse({
   schemaVersion: 1,
   tileEncoding: sceneryRoadTileEncoding,
@@ -148,6 +179,13 @@ export const sceneryRoadTileFromSceneryTile = (
       isBridge: feature.isBridge,
       isTunnel: feature.isTunnel,
       path: feature.path,
+      ...(config?.elevationSampler === undefined
+        ? {}
+        : {
+            heightSamplesM: feature.path.map(point =>
+              sampleElevationMeters(config.elevationSampler!, sceneryTilePointLonLat(point, tile.tile)),
+            ),
+          }),
       widthM: feature.widthM,
       verticalOffsetM: feature.verticalOffsetM,
     })),

@@ -1,7 +1,8 @@
 import { stat } from 'node:fs/promises'
 import { PMTiles, TileType, type Source } from 'pmtiles'
+import type { TerrainDemEncoding } from './dem-encoding.ts'
 
-export type TerrainDemEncoding = 'terrarium' | 'mapbox'
+export type { TerrainDemEncoding } from './dem-encoding.ts'
 
 export interface TerrainPmtilesMetadata {
   readonly filePath: string

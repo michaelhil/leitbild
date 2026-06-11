@@ -17,6 +17,8 @@
     "maps:scenery:audit": "bun run scripts/maps/audit-scenery.ts",
     "maps:terrain:ingest": "bun run scripts/maps/ingest-terrain.ts",
     "maps:terrain:validate": "bun run scripts/maps/validate-terrain.ts",
+    "maps:terrain:bootstrap": "bun run scripts/maps/bootstrap-terrain.ts",
+    "maps:terrain:audit": "bun run scripts/maps/audit-terrain.ts",
     "maps:rebuild": "bun run scripts/maps/rebuild-vector-map.ts",
     "maps:promote": "bun run scripts/maps/promote-vector-tiles.ts",
     "maps:status": "bun run scripts/maps/map-status.ts",

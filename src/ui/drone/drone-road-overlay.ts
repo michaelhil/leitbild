@@ -16,6 +16,8 @@ interface RoadTileRuntimeEntry {
   readonly controller: AbortController
   meshes: Mesh[]
   materials: StandardMaterial[]
+  triangleCount: number
+  byteLength: number
   loaded: boolean
 }
 
@@ -28,6 +30,7 @@ interface RoadTileBounds {
 
 interface RoadPoint {
   readonly x: number
+  readonly y: number
   readonly z: number
   readonly stationX?: number
   readonly stationZ?: number
@@ -102,7 +105,7 @@ export interface DroneRoadOverlayMetrics {
   readonly loadedRoadTiles: number
   readonly pendingRoadTiles: number
   readonly roadMeshTriangles: number
-  readonly roadTextureBytes: number
+  readonly roadMeshBytes: number
 }
 
 export interface DroneRoadOverlayRenderer {
@@ -229,10 +232,11 @@ export const roadTileUrlFromModelUrl = (
 
 const roadSurfaceLayerY = (
   feature: SceneryRoadFeature,
+  groundHeightM = 0,
 ): number | null => {
   if (feature.isTunnel) return null
-  if (feature.isBridge) return roadSurfaceY + Math.max(2.2, feature.verticalOffsetM)
-  return roadSurfaceY + Math.max(0, feature.verticalOffsetM)
+  if (feature.isBridge) return groundHeightM + roadSurfaceY + Math.max(2.2, feature.verticalOffsetM)
+  return groundHeightM + roadSurfaceY + Math.max(0, feature.verticalOffsetM)
 }
 
 const roadLayerKey = (
@@ -241,8 +245,8 @@ const roadLayerKey = (
 
 const roadMeshBuilderKey = (
   materialKey: RoadMaterialKey,
-  y: number,
-): string => `${materialKey}:${Math.round(y * 1000)}`
+  layerKey: string,
+): string => `${materialKey}:${layerKey}`
 
 const roadPaintY = (
   y: number,
@@ -297,6 +301,7 @@ const miterPoint = (config: {
   if (normalLength < 0.0001) {
     return {
       x: config.point.x + config.next.nx * config.halfWidthM * config.side,
+      y: config.point.y,
       z: config.point.z + config.next.nz * config.halfWidthM * config.side,
     }
   }
@@ -306,6 +311,7 @@ const miterPoint = (config: {
   const length = Math.min(config.halfWidthM * 2.8, config.halfWidthM / denominator)
   return {
     x: config.point.x + miterX * length * config.side,
+    y: config.point.y,
     z: config.point.z + miterZ * length * config.side,
   }
 }
@@ -313,10 +319,10 @@ const miterPoint = (config: {
 const appendVertex = (
   builder: RoadGeometryBuilder,
   point: RoadPoint,
-  y: number,
+  yOffsetM: number,
 ): number => {
   const index = builder.positions.length / 3
-  builder.positions.push(point.x, y, point.z)
+  builder.positions.push(point.x, point.y + yOffsetM, point.z)
   builder.normals.push(0, 1, 0)
   return index
 }
@@ -325,7 +331,7 @@ const appendRoadRibbon = (
   builder: RoadGeometryBuilder,
   path: ReadonlyArray<RoadPoint>,
   widthM: number,
-  y: number,
+  yOffsetM: number,
   minHalfWidthM = 1.4,
 ): void => {
   const points = compactPath(path)
@@ -357,17 +363,17 @@ const appendRoadRibbon = (
       ? validDirections[index % validDirections.length]!
       : index >= validDirections.length ? validDirections[validDirections.length - 1]! : validDirections[index]!
     const left = !closed && index === 0
-      ? { x: point.x + next.nx * halfWidthM, z: point.z + next.nz * halfWidthM }
+      ? { x: point.x + next.nx * halfWidthM, y: point.y, z: point.z + next.nz * halfWidthM }
       : !closed && index === roadPoints.length - 1
-        ? { x: point.x + previous.nx * halfWidthM, z: point.z + previous.nz * halfWidthM }
+        ? { x: point.x + previous.nx * halfWidthM, y: point.y, z: point.z + previous.nz * halfWidthM }
         : miterPoint({ point, previous, next, halfWidthM, side: 1 })
     const right = !closed && index === 0
-      ? { x: point.x - next.nx * halfWidthM, z: point.z - next.nz * halfWidthM }
+      ? { x: point.x - next.nx * halfWidthM, y: point.y, z: point.z - next.nz * halfWidthM }
       : !closed && index === roadPoints.length - 1
-        ? { x: point.x - previous.nx * halfWidthM, z: point.z - previous.nz * halfWidthM }
+        ? { x: point.x - previous.nx * halfWidthM, y: point.y, z: point.z - previous.nz * halfWidthM }
         : miterPoint({ point, previous, next, halfWidthM, side: -1 })
-    leftIndexes.push(appendVertex(builder, left, y))
-    rightIndexes.push(appendVertex(builder, right, y))
+    leftIndexes.push(appendVertex(builder, left, yOffsetM))
+    rightIndexes.push(appendVertex(builder, right, yOffsetM))
   }
 
   for (let index = 0; index < segmentCount; index += 1) {
@@ -426,6 +432,7 @@ const pointAtDistance = (
       : undefined
     return {
       x: start.x + (end.x - start.x) * t,
+      y: start.y + (end.y - start.y) * t,
       z: start.z + (end.z - start.z) * t,
       ...(stationX === undefined || stationZ === undefined ? {} : { stationX, stationZ }),
     }
@@ -484,9 +491,9 @@ const offsetPath = (
       : index >= validDirections.length ? validDirections[validDirections.length - 1]! : validDirections[index]!
     return [
       !closed && index === 0
-        ? { x: point.x + next.nx * halfWidthM * side, z: point.z + next.nz * halfWidthM * side }
+        ? { x: point.x + next.nx * halfWidthM * side, y: point.y, z: point.z + next.nz * halfWidthM * side }
         : !closed && index === roadPoints.length - 1
-          ? { x: point.x + previous.nx * halfWidthM * side, z: point.z + previous.nz * halfWidthM * side }
+          ? { x: point.x + previous.nx * halfWidthM * side, y: point.y, z: point.z + previous.nz * halfWidthM * side }
           : miterPoint({ point, previous, next, halfWidthM, side }),
     ]
   })
@@ -526,13 +533,13 @@ const appendPaintRibbon = (config: {
   readonly distances: ReadonlyArray<number>
   readonly interval: RoadInterval
   readonly lateralOffsetM: number
-  readonly y: number
+  readonly yOffsetM: number
 }): void => {
   const sliced = slicePathByDistance(config.path, config.distances, config.interval)
   if (sliced.length < 2) return
   const shifted = offsetPath(sliced, config.lateralOffsetM)
   if (shifted.length < 2) return
-  appendRoadRibbon(config.builder, shifted, roadPaintWidthM, config.y, roadPaintWidthM / 2)
+  appendRoadRibbon(config.builder, shifted, roadPaintWidthM, config.yOffsetM, roadPaintWidthM / 2)
 }
 
 const localRoadPoint = (config: {
@@ -540,12 +547,13 @@ const localRoadPoint = (config: {
   readonly extent: number
   readonly bounds: RoadTileBounds
   readonly center: DroneWorldCenter
+  readonly y: number
 }): RoadPoint => {
   const lon = config.bounds.west + config.point[0] / config.extent * (config.bounds.east - config.bounds.west)
   const lat = config.bounds.north + config.point[1] / config.extent * (config.bounds.south - config.bounds.north)
   const local = localPointFromLonLat(lon, lat, config.center)
   const station = mercatorStation(lon, lat)
-  return { x: local.x, z: local.z, stationX: station.x, stationZ: station.z }
+  return { x: local.x, y: config.y, z: local.z, stationX: station.x, stationZ: station.z }
 }
 
 const orderedRoads = (
@@ -564,22 +572,24 @@ const buildLocalRoadFeatures = (config: {
   readonly extent: number
 }): ReadonlyArray<RoadLocalFeature> =>
   orderedRoads(config.roads).flatMap((feature, index): RoadLocalFeature[] => {
-    const y = roadSurfaceLayerY(feature)
-    if (y === null) return []
-    const path = compactPath(feature.path.map(point => localRoadPoint({
+    const layerY = roadSurfaceLayerY(feature)
+    if (layerY === null) return []
+    const path = compactPath(feature.path.map((point, pointIndex) => localRoadPoint({
       point,
       extent: config.extent,
       bounds: config.bounds,
       center: config.center,
+      y: roadSurfaceLayerY(feature, feature.heightSamplesM?.[pointIndex] ?? 0) ?? layerY,
     })))
     const distances = pathDistances(path)
     const lengthM = distances[distances.length - 1] ?? 0
     if (path.length < 2 || lengthM < 0.05) return []
+    const y = path.reduce((sum, point) => sum + point.y, 0) / path.length
     return [{
       key: `${feature.id}:${index}`,
       feature,
       y,
-      layerKey: roadLayerKey(y),
+      layerKey: roadLayerKey(layerY),
       path,
       distances,
       lengthM,
@@ -860,8 +870,9 @@ export const buildRoadSurfaceMeshes = (config: {
   const builderFor = (
     materialKey: RoadMaterialKey,
     y: number,
+    layerKey: string,
   ): RoadMeshBuilderEntry => {
-    const key = roadMeshBuilderKey(materialKey, y)
+    const key = roadMeshBuilderKey(materialKey, layerKey)
     const entry = builders.get(key) ?? {
       key,
       materialKey,
@@ -879,10 +890,10 @@ export const buildRoadSurfaceMeshes = (config: {
 
   for (const road of roads) {
     appendRoadRibbon(
-      builderFor('road-asphalt', road.y).geometry,
+      builderFor('road-asphalt', road.y, road.layerKey).geometry,
       road.path,
       road.feature.widthM,
-      road.y,
+      0,
     )
   }
 
@@ -893,7 +904,7 @@ export const buildRoadSurfaceMeshes = (config: {
     const paintY = roadPaintY(road.y)
     const dashPhaseM = dashPhaseForRoad(road)
     if (drawsRoadCenterLine(road.feature)) {
-      const builder = builderFor('road-marking-center', paintY).geometry
+      const builder = builderFor('road-marking-center', paintY, road.layerKey).geometry
       for (const interval of intervals) {
         for (const dashInterval of dashedIntervals(interval, dashPhaseM)) {
           appendPaintRibbon({
@@ -902,14 +913,14 @@ export const buildRoadSurfaceMeshes = (config: {
             distances: road.distances,
             interval: dashInterval,
             lateralOffsetM: 0,
-            y: paintY,
+            yOffsetM: roadPaintLiftM,
           })
         }
       }
     }
     const laneDividerOffsets = roadLaneDividerOffsets(road.feature)
     if (laneDividerOffsets.length > 0) {
-      const builder = builderFor('road-marking-lane', paintY).geometry
+      const builder = builderFor('road-marking-lane', paintY, road.layerKey).geometry
       for (const interval of intervals) {
         for (const dashInterval of dashedIntervals(interval, dashPhaseM)) {
           for (const lateralOffsetM of laneDividerOffsets) {
@@ -919,7 +930,7 @@ export const buildRoadSurfaceMeshes = (config: {
               distances: road.distances,
               interval: dashInterval,
               lateralOffsetM,
-              y: paintY,
+              yOffsetM: roadPaintLiftM,
             })
           }
         }
@@ -929,7 +940,7 @@ export const buildRoadSurfaceMeshes = (config: {
       const halfWidthM = Math.max(1.4, road.feature.widthM / 2)
       const offsetM = Math.max(0, halfWidthM - roadEdgeInsetM)
       if (offsetM > roadPaintWidthM * 2) {
-        const builder = builderFor('road-marking-edge', paintY).geometry
+        const builder = builderFor('road-marking-edge', paintY, road.layerKey).geometry
         for (const interval of intervals) {
           appendPaintRibbon({
             builder,
@@ -937,7 +948,7 @@ export const buildRoadSurfaceMeshes = (config: {
             distances: road.distances,
             interval,
             lateralOffsetM: offsetM,
-            y: paintY,
+            yOffsetM: roadPaintLiftM,
           })
           appendPaintRibbon({
             builder,
@@ -945,7 +956,7 @@ export const buildRoadSurfaceMeshes = (config: {
             distances: road.distances,
             interval,
             lateralOffsetM: -offsetM,
-            y: paintY,
+            yOffsetM: roadPaintLiftM,
           })
         }
       }
@@ -1002,6 +1013,11 @@ const createRoadMesh = (
   return mesh
 }
 
+const roadSurfaceByteLength = (
+  surface: DroneRoadSurfaceMeshData,
+): number =>
+  (surface.positions.length + surface.normals.length + surface.indices.length) * 4
+
 const fetchRoadTile = async (
   url: string,
   signal: AbortSignal,
@@ -1045,6 +1061,8 @@ export const createDroneRoadOverlayRenderer = (config: {
         const mesh = createRoadMesh(config.scene, surface, material)
         entry.materials.push(material)
         entry.meshes.push(mesh)
+        entry.triangleCount += surface.triangleCount
+        entry.byteLength += roadSurfaceByteLength(surface)
       }
       entry.loaded = true
     } catch (error) {
@@ -1063,6 +1081,8 @@ export const createDroneRoadOverlayRenderer = (config: {
         controller: new AbortController(),
         meshes: [],
         materials: [],
+        triangleCount: 0,
+        byteLength: 0,
         loaded: false,
       }
       entries.set(roadTileUrl, entry)
@@ -1077,8 +1097,8 @@ export const createDroneRoadOverlayRenderer = (config: {
     metrics: (): DroneRoadOverlayMetrics => ({
       loadedRoadTiles: [...entries.values()].filter(entry => entry.loaded).length,
       pendingRoadTiles: [...entries.values()].filter(entry => !entry.loaded).length,
-      roadMeshTriangles: [...entries.values()].reduce((sum, entry) => sum + entry.meshes.reduce((meshSum, mesh) => meshSum + mesh.getTotalIndices() / 3, 0), 0),
-      roadTextureBytes: 0,
+      roadMeshTriangles: [...entries.values()].reduce((sum, entry) => sum + entry.triangleCount, 0),
+      roadMeshBytes: [...entries.values()].reduce((sum, entry) => sum + entry.byteLength, 0),
     }),
     dispose: (): void => {
       for (const entry of [...entries.values()]) disposeEntry(entry)

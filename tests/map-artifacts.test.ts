@@ -297,6 +297,10 @@ describe('vector map artifacts', () => {
       tileEncoding: 'leitbild-scenery-road-json-v1',
       roads: [{ id: 'road:fixture', className: 'primary' }],
     })
+
+    await Bun.write(join(currentDir, 'scenery', 'drone-urban-flight', '14', '8686', '4758.roads.json'), '{ not valid json')
+    const invalidRoadTile = await currentSceneryTileResponse(new URL('http://localhost/map/scenery/current/drone-urban-flight/14/8686/4758.roads.json'), { rootDir })
+    expect(invalidRoadTile?.status).toBe(415)
   })
 
   test('reference dataset PMTiles route serves promoted datasets from the manifest', async () => {

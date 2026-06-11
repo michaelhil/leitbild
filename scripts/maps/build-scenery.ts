@@ -3,8 +3,16 @@ import { dirname, join, resolve } from 'node:path'
 import { VectorTile } from '@mapbox/vector-tile'
 import { PbfReader } from 'pbf'
 import { PMTiles, TileType, type Source } from 'pmtiles'
+import {
+  assertSceneryBuildQualityGate,
+  publishStagedSceneryArtifact,
+  sceneryBuildQualityGateFromEnv,
+  stagingSceneryRootFor,
+} from '../../src/map/scenery-build-artifact.ts'
 import { defaultSceneryRecipes, mapTilesetId } from '../../src/map/capabilities.ts'
 import { compileSceneryTileFromVectorTile } from '../../src/map/scenery-compiler.ts'
+import { flatElevationSampler, type ElevationSampler } from '../../src/map/elevation-sampler.ts'
+import { createPmtilesElevationSamplerFactory, type PmtilesElevationSamplerFactory } from '../../src/map/pmtiles-elevation-sampler.ts'
 import { compileSceneryGlbTile } from '../../src/map/scenery-glb.ts'
 import { buildSceneryTilesetDocument } from '../../src/map/scenery-tileset.ts'
 import {
@@ -15,6 +23,7 @@ import {
   type SceneryAssetTileSummary,
   type SceneryTileCoord,
 } from '../../src/map/scenery.ts'
+import type { TerrainDemEncoding } from '../../src/map/terrain-artifact.ts'
 import { createMapPipelineConfig } from './config.ts'
 
 interface Bounds {
@@ -22,6 +31,20 @@ interface Bounds {
   readonly minLat: number
   readonly maxLon: number
   readonly maxLat: number
+}
+
+type SceneryTerrainMode = 'auto' | 'required' | 'flat'
+
+interface SceneryElevationSource {
+  readonly mode: 'flat' | 'dem'
+  readonly reason?: string
+  readonly inputArtifact?: {
+    readonly kind: 'terrain-dem-pmtiles'
+    readonly id: string
+    readonly path: string
+    readonly required: boolean
+  }
+  readonly samplerForTile: (tile: SceneryTileCoord & { readonly extent: number }) => Promise<ElevationSampler>
 }
 
 const metersPerDegreeLat = 111_320
@@ -127,6 +150,25 @@ const positiveNumberEnv = (key: string, defaultValue: number): number => {
   if (!Number.isFinite(value) || value <= 0) throw new Error(`${key} must be a positive finite number`)
   return value
 }
+
+const sceneryTerrainModeFromEnv = (): SceneryTerrainMode => {
+  const raw = process.env.LEITBILD_SCENERY_TERRAIN_MODE ?? 'auto'
+  if (raw === 'auto' || raw === 'required' || raw === 'flat') return raw
+  throw new Error('LEITBILD_SCENERY_TERRAIN_MODE must be auto, required, or flat')
+}
+
+const terrainDemEncodingFromEnv = (): TerrainDemEncoding => {
+  const raw = process.env.LEITBILD_SCENERY_TERRAIN_DEM_ENCODING ?? process.env.LEITBILD_TERRAIN_DEM_ENCODING ?? 'terrarium'
+  if (raw === 'terrarium' || raw === 'mapbox') return raw
+  throw new Error('terrain DEM encoding must be terrarium or mapbox')
+}
+
+const boundsCenter = (
+  bounds: Bounds,
+): { readonly lon: number; readonly lat: number } => ({
+  lon: (bounds.minLon + bounds.maxLon) / 2,
+  lat: (bounds.minLat + bounds.maxLat) / 2,
+})
 
 const parseZooms = (config: { readonly minZoom: number; readonly maxZoom: number }): ReadonlyArray<number> => {
   const defaultZooms = Array.from({ length: config.maxZoom - config.minZoom + 1 }, (_value, index) => config.minZoom + index)
@@ -270,6 +312,53 @@ const parseBounds = async (
   return await boundsFromScenarioConfigs(recipe)
 }
 
+const createSceneryElevationSource = async (config: {
+  readonly mapRoot: string
+  readonly bounds: Bounds
+}): Promise<SceneryElevationSource> => {
+  const mode = sceneryTerrainModeFromEnv()
+  if (mode === 'flat') {
+    return {
+      mode: 'flat',
+      reason: 'LEITBILD_SCENERY_TERRAIN_MODE=flat',
+      samplerForTile: async (): Promise<ElevationSampler> => flatElevationSampler,
+    }
+  }
+
+  const terrainPath = resolve(process.env.LEITBILD_SCENERY_TERRAIN_PMTILES_PATH ?? join(config.mapRoot, 'current', 'terrain.pmtiles'))
+  const demEncoding = terrainDemEncodingFromEnv()
+  let factory: PmtilesElevationSamplerFactory
+  try {
+    factory = await createPmtilesElevationSamplerFactory({
+      filePath: terrainPath,
+      demEncoding,
+      reference: boundsCenter(config.bounds),
+    })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    if (mode === 'required') {
+      throw new Error(`DEM terrain is required for scenery build but unavailable at ${terrainPath}: ${reason}`)
+    }
+    console.warn(`DEM terrain unavailable for scenery build; using explicit flat terrain. ${reason}`)
+    return {
+      mode: 'flat',
+      reason,
+      samplerForTile: async (): Promise<ElevationSampler> => flatElevationSampler,
+    }
+  }
+
+  return {
+    mode: 'dem',
+    inputArtifact: {
+      kind: 'terrain-dem-pmtiles',
+      id: 'leitbild-terrain-norway',
+      path: factory.filePath,
+      required: true,
+    },
+    samplerForTile: factory.samplerForSceneryTile,
+  }
+}
+
 const mapWithConcurrency = async <Input, Output>(
   items: ReadonlyArray<Input>,
   concurrency: number,
@@ -297,7 +386,9 @@ const recipeId = process.env.LEITBILD_SCENERY_RECIPE_ID ?? 'drone-urban-flight'
 const recipe = defaultSceneryRecipes.find(candidate => candidate.id === recipeId)
 if (!recipe) throw new Error(`unknown scenery recipe: ${recipeId}`)
 const outputRoot = resolve(process.env.LEITBILD_SCENERY_OUTPUT_ROOT ?? join(config.rootDir, 'current', 'scenery'))
+const stagingRoot = stagingSceneryRootFor(outputRoot)
 const concurrency = positiveIntegerEnv('LEITBILD_SCENERY_BUILD_CONCURRENCY', 16)
+const qualityGate = sceneryBuildQualityGateFromEnv()
 
 const file = Bun.file(pmtilesPath)
 if (!await file.exists()) throw new Error(`source PMTiles artifact does not exist: ${pmtilesPath}`)
@@ -305,7 +396,7 @@ const archive = new PMTiles(createBunFileSource(pmtilesPath, pmtilesPath))
 const header = await archive.getHeader()
 if (header.tileType !== TileType.Mvt) throw new Error(`scenery build requires an MVT PMTiles archive; found tileType ${header.tileType}`)
 const zooms = parseZooms({ minZoom: recipe.minZoom, maxZoom: recipe.maxZoom })
-const contentZooms = [Math.max(...zooms)]
+const contentZooms = zooms
 for (const zoom of zooms) {
   if (zoom < header.minZoom || zoom > header.maxZoom) throw new Error(`zoom ${zoom} is outside source PMTiles zoom range ${header.minZoom}-${header.maxZoom}`)
 }
@@ -316,8 +407,12 @@ const bounds = await parseBounds({
   maxLon: header.maxLon,
   maxLat: header.maxLat,
 }, recipe)
-await rm(join(outputRoot, recipe.id), { recursive: true, force: true })
-await rm(join(outputRoot, 'tileset.json'), { force: true })
+const elevationSource = await createSceneryElevationSource({
+  mapRoot: config.rootDir,
+  bounds,
+})
+await rm(stagingRoot, { recursive: true, force: true })
+try {
 let decodedTileCount = 0
 let emptyTileCount = 0
 let writtenTileCount = 0
@@ -350,17 +445,18 @@ for (const zoom of contentZooms) {
       emptyTileCount += 1
       return
     }
-    const glb = compileSceneryGlbTile(scenery)
+    const elevationSampler = await elevationSource.samplerForTile(scenery.tile)
+    const glb = compileSceneryGlbTile(scenery, { elevationSampler })
     if (!glb) {
       emptyTileCount += 1
       return
     }
-    const tilePath = join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.glb`)
+    const tilePath = join(stagingRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.glb`)
     await mkdir(dirname(tilePath), { recursive: true })
     await Bun.write(tilePath, glb.bytes)
     await Bun.write(
-      join(outputRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.roads.json`),
-      `${JSON.stringify(sceneryRoadTileFromSceneryTile(scenery))}\n`,
+      join(stagingRoot, recipe.id, String(tile.z), String(tile.x), `${tile.y}.roads.json`),
+      `${JSON.stringify(sceneryRoadTileFromSceneryTile(scenery, { elevationSampler }))}\n`,
     )
     writtenTileCount += 1
     polygonCount += scenery.features.polygons.length
@@ -411,14 +507,17 @@ const tileset = buildSceneryTilesetDocument({
     id: mapTilesetId,
     path: pmtilesPath,
     required: true,
-  }],
+  }, ...(elevationSource.inputArtifact === undefined ? [] : [elevationSource.inputArtifact])],
   recipes: [recipe],
   outputRoot,
   counts,
   tiles,
 })
 const parsedTileset = sceneryAssetTilesetSchema.parse(tileset)
-await Bun.write(join(outputRoot, 'tileset.json'), `${JSON.stringify(parsedTileset, null, 2)}\n`)
+assertSceneryBuildQualityGate(parsedTileset, qualityGate)
+await mkdir(stagingRoot, { recursive: true })
+await Bun.write(join(stagingRoot, 'tileset.json'), `${JSON.stringify(parsedTileset, null, 2)}\n`)
+await publishStagedSceneryArtifact({ stagingRoot, outputRoot })
 console.log(JSON.stringify({
   schemaVersion: parsedTileset.extras.leitbild.schemaVersion,
   artifactFormat: parsedTileset.extras.leitbild.artifactFormat,
@@ -432,8 +531,16 @@ console.log(JSON.stringify({
   zooms: parsedTileset.extras.leitbild.zooms,
   lodLevels: parsedTileset.extras.leitbild.lodLevels,
   inputArtifacts: parsedTileset.extras.leitbild.inputArtifacts,
+  elevation: {
+    mode: elevationSource.mode,
+    ...(elevationSource.reason === undefined ? {} : { reason: elevationSource.reason }),
+  },
   outputRoot: parsedTileset.extras.leitbild.outputRoot,
   quality: parsedTileset.extras.leitbild.quality,
   counts: parsedTileset.extras.leitbild.counts,
   geometricError: parsedTileset.geometricError,
 }, null, 2))
+} catch (error) {
+  await rm(stagingRoot, { recursive: true, force: true })
+  throw error
+}

@@ -24,6 +24,10 @@ export interface DroneScenePerformanceSnapshot {
     readonly points: number
     readonly buildings: number
     readonly roads: number
+    readonly roadOverlayTiles: number
+    readonly roadOverlayPendingTiles: number
+    readonly roadOverlayTriangles: number
+    readonly roadOverlayBytes: number
     readonly water: number
     readonly vegetation: number
     readonly roadLabels: number
@@ -50,6 +54,10 @@ export interface DroneFramePerformanceTracker {
     readonly points: number
     readonly buildings: number
     readonly roads: number
+    readonly roadOverlayTiles: number
+    readonly roadOverlayPendingTiles: number
+    readonly roadOverlayTriangles: number
+    readonly roadOverlayBytes: number
     readonly water: number
     readonly vegetation: number
     readonly roadLabels: number
@@ -102,6 +110,10 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
   let points = 0
   let buildings = 0
   let roads = 0
+  let roadOverlayTiles = 0
+  let roadOverlayPendingTiles = 0
+  let roadOverlayTriangles = 0
+  let roadOverlayBytes = 0
   let water = 0
   let vegetation = 0
   let roadLabels = 0
@@ -141,6 +153,10 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
       points = config.points
       buildings = config.buildings
       roads = config.roads
+      roadOverlayTiles = config.roadOverlayTiles
+      roadOverlayPendingTiles = config.roadOverlayPendingTiles
+      roadOverlayTriangles = config.roadOverlayTriangles
+      roadOverlayBytes = config.roadOverlayBytes
       water = config.water
       vegetation = config.vegetation
       roadLabels = config.roadLabels
@@ -176,6 +192,10 @@ export const createDroneFramePerformanceTracker = (): DroneFramePerformanceTrack
           points,
           buildings,
           roads,
+          roadOverlayTiles,
+          roadOverlayPendingTiles,
+          roadOverlayTriangles,
+          roadOverlayBytes,
           water,
           vegetation,
           roadLabels,

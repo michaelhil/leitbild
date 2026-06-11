@@ -93,6 +93,13 @@ interface CachedPmtilesArchive {
   readonly archive: PMTiles
 }
 
+interface CachedValidatedJsonText {
+  readonly filePath: string
+  readonly mtimeMs: number
+  readonly sizeBytes: number
+  readonly body: string
+}
+
 interface ReferenceDatasetArtifactResolution {
   readonly ok: true
   readonly filePath: string
@@ -106,6 +113,7 @@ interface ReferenceDatasetArtifactFailure {
 type ReferenceDatasetArtifactResult = ReferenceDatasetArtifactResolution | ReferenceDatasetArtifactFailure
 
 const pmtilesArchiveCache = new Map<string, CachedPmtilesArchive>()
+const validatedJsonTextCache = new Map<string, CachedValidatedJsonText>()
 
 export const createMapArtifactConfigFromEnv = (): MapArtifactConfig => ({
   rootDir: resolve(process.env.LEITBILD_MAP_ROOT ?? '/opt/leitbild/maps'),
@@ -127,6 +135,24 @@ const currentSceneryTilePath = (
   extension: 'glb' | 'roads.json',
 ): string =>
   resolve(config.rootDir, 'current', 'scenery', recipeId, String(coordinates.z), String(coordinates.x), `${coordinates.y}.${extension}`)
+
+const cachedValidatedJsonText = async (config: {
+  readonly filePath: string
+  readonly validate: (value: unknown) => void
+}): Promise<string> => {
+  const info = await stat(config.filePath)
+  const cached = validatedJsonTextCache.get(config.filePath)
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.sizeBytes === info.size) return cached.body
+  const body = await readFile(config.filePath, 'utf8')
+  config.validate(JSON.parse(body) as unknown)
+  validatedJsonTextCache.set(config.filePath, {
+    filePath: config.filePath,
+    mtimeMs: info.mtimeMs,
+    sizeBytes: info.size,
+    body,
+  })
+  return body
+}
 
 const glyphProbePath = (config: MapArtifactConfig): string =>
   resolve(config.rootDir, 'fonts', glyphProbeFontStack, `${glyphProbeRange}.pbf`)
@@ -600,8 +626,10 @@ export const currentSceneryTilesetResponse = async (
   }
   let body: string
   try {
-    body = await file.text()
-    sceneryAssetTilesetSchema.parse(JSON.parse(body) as unknown)
+    body = await cachedValidatedJsonText({
+      filePath,
+      validate: value => { sceneryAssetTilesetSchema.parse(value) },
+    })
   } catch (error) {
     return Response.json({
       ok: false,
@@ -649,8 +677,10 @@ export const currentSceneryTileResponse = async (
     if (extension === 'roads.json') {
       let body: string
       try {
-        body = await precompiledFile.text()
-        sceneryRoadTileSchema.parse(JSON.parse(body) as unknown)
+        body = await cachedValidatedJsonText({
+          filePath: precompiledPath,
+          validate: value => { sceneryRoadTileSchema.parse(value) },
+        })
       } catch (error) {
         return Response.json({
           ok: false,

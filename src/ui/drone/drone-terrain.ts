@@ -1,4 +1,10 @@
 import type { DroneWorldCenter, DroneWorldTerrainStatus } from './drone-map-world.ts'
+import { decodeDemElevationM, type TerrainDemEncoding } from '../../map/dem-encoding.ts'
+
+export {
+  decodeMapboxElevationM,
+  decodeTerrariumElevationM,
+} from '../../map/dem-encoding.ts'
 
 export interface DroneTerrainFlatModel {
   readonly kind: 'flat'
@@ -15,13 +21,18 @@ export interface DroneTerrainDemModel {
   readonly minHeightM: number
   readonly maxHeightM: number
   readonly source: {
-    readonly demEncoding: 'terrarium' | 'mapbox'
+    readonly demEncoding: TerrainDemEncoding
     readonly zoom: number
     readonly tileTemplate: string
   }
 }
 
 export type DroneTerrainModel = DroneTerrainFlatModel | DroneTerrainDemModel
+
+export interface DroneTerrainSurfaceGeometry {
+  readonly positions: number[]
+  readonly indices: number[]
+}
 
 interface TileCoord {
   readonly z: number
@@ -77,30 +88,6 @@ const tileUrlFor = (
     .replace('{z}', String(coord.z))
     .replace('{x}', String(coord.x))
     .replace('{y}', String(coord.y))
-
-export const decodeTerrariumElevationM = (
-  red: number,
-  green: number,
-  blue: number,
-): number =>
-  red * 256 + green + blue / 256 - 32_768
-
-export const decodeMapboxElevationM = (
-  red: number,
-  green: number,
-  blue: number,
-): number =>
-  -10_000 + (red * 256 * 256 + green * 256 + blue) * 0.1
-
-const decodeElevationM = (
-  red: number,
-  green: number,
-  blue: number,
-  encoding: 'terrarium' | 'mapbox',
-): number =>
-  encoding === 'terrarium'
-    ? decodeTerrariumElevationM(red, green, blue)
-    : decodeMapboxElevationM(red, green, blue)
 
 const imageDataFromBlob = async (
   blob: Blob,
@@ -159,7 +146,7 @@ const sampleLoadedTile = (
   const green = tile.image.data[index + 1]
   const blue = tile.image.data[index + 2]
   if (red === undefined || green === undefined || blue === undefined) return null
-  const elevation = decodeElevationM(red, green, blue, encoding)
+  const elevation = decodeDemElevationM(red, green, blue, encoding)
   return Number.isFinite(elevation) ? elevation : null
 }
 
@@ -283,4 +270,30 @@ export const loadDroneTerrainModel = async (config: {
       tileTemplate: config.terrain.tileTemplate,
     },
   }
+}
+
+export const terrainSurfaceGeometryFor = (
+  model: DroneTerrainModel,
+): DroneTerrainSurfaceGeometry | null => {
+  if (model.kind !== 'dem') return null
+  const positions: number[] = []
+  const indices: number[] = []
+  for (let row = 0; row < model.gridSize; row += 1) {
+    const z = -model.radiusM + row * model.sampleSpacingM
+    for (let column = 0; column < model.gridSize; column += 1) {
+      const x = -model.radiusM + column * model.sampleSpacingM
+      const y = model.heightsM[row * model.gridSize + column] ?? 0
+      positions.push(x, y, z)
+    }
+  }
+  for (let row = 0; row < model.gridSize - 1; row += 1) {
+    for (let column = 0; column < model.gridSize - 1; column += 1) {
+      const topLeft = row * model.gridSize + column
+      const topRight = topLeft + 1
+      const bottomLeft = topLeft + model.gridSize
+      const bottomRight = bottomLeft + 1
+      indices.push(topLeft, bottomLeft, topRight, topRight, bottomLeft, bottomRight)
+    }
+  }
+  return { positions, indices }
 }

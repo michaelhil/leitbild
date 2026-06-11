@@ -1,4 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdir, mkdtemp, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import {
+  assertSceneryBuildQualityGate,
+  publishStagedSceneryArtifact,
+} from '../src/map/scenery-build-artifact.ts'
 import { buildSceneryTilesetDocument } from '../src/map/scenery-tileset.ts'
 import type { SceneryAssetTileSummary, SceneryTilesetTile } from '../src/map/scenery.ts'
 
@@ -250,5 +257,36 @@ describe('Scenery 3D Tiles artifact', () => {
       '14/8680/4764',
     ])
     expect(findTile(tileset.root, '14/8681/4764')?.content?.extras?.leitbild?.quality?.riskScore).toBe(45)
+  })
+
+  test('rejects staged scenery that exceeds explicit quality gates', () => {
+    const tileset = createTileset([
+      tileSummary({ z: 14, x: 8680, y: 4764, byteLength: 4_000, riskScore: 12 }),
+    ])
+
+    expect(() => assertSceneryBuildQualityGate(tileset, {
+      maxErrorTiles: 0,
+      maxWarningTiles: 0,
+      maxRiskyTiles: 10,
+      maxRiskScore: 100,
+    })).toThrow('warningTileCount 1 exceeds 0')
+  })
+
+  test('publishes staged scenery without exposing partial output', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'leitbild-scenery-publish-test-'))
+    const outputRoot = join(root, 'scenery')
+    const stagingRoot = join(root, 'scenery-staging')
+    await mkdir(outputRoot, { recursive: true })
+    await mkdir(stagingRoot, { recursive: true })
+    await Bun.write(join(outputRoot, 'tileset.json'), 'old')
+    await Bun.write(join(stagingRoot, 'tileset.json'), 'new')
+
+    await publishStagedSceneryArtifact({ stagingRoot, outputRoot })
+
+    expect(await readFile(join(outputRoot, 'tileset.json'), 'utf8')).toBe('new')
+
+    const nextStagingRoot = join(root, 'missing-staging')
+    await expect(publishStagedSceneryArtifact({ stagingRoot: nextStagingRoot, outputRoot })).rejects.toThrow()
+    expect(await readFile(join(outputRoot, 'tileset.json'), 'utf8')).toBe('new')
   })
 })

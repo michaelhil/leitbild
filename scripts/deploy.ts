@@ -25,6 +25,8 @@ const verifyEndpoint = async (path: string): Promise<void> => {
   throw new Error(`Post-deploy verification failed for ${path}`, { cause: lastError })
 }
 
+const terrainBuildId = `terrain-${Date.now()}`
+
 // Fail fast before spending time on local checks when the execution environment
 // cannot open SSH. Codex sandboxed runs need escalation for this command.
 await ssh('true')
@@ -44,7 +46,9 @@ await $`rsync -az --delete -e "ssh -p ${port}" ./data/reference/ ${target}:/opt/
 
 await ssh(`cd /opt/leitbild/app && ${remoteBun} install --frozen-lockfile`)
 await ssh(`cd /opt/leitbild/app && ${remoteBun} run build:ui`)
-await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps ${remoteBun} run maps:scenery:build`)
+await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps LEITBILD_MAP_BUILD_ID=${terrainBuildId} LEITBILD_TERRAIN_BOOTSTRAP_PROMOTE=1 ${remoteBun} run maps:terrain:bootstrap`)
+await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps ${remoteBun} run maps:terrain:audit`)
+await ssh(`cd /opt/leitbild/app && LEITBILD_MAP_ROOT=/opt/leitbild/maps LEITBILD_SCENERY_TERRAIN_MODE=required ${remoteBun} run maps:scenery:build`)
 await ssh('cp /opt/leitbild/app/deploy/leitbild.service /etc/systemd/system/leitbild.service')
 await ssh('for unit in leitbild-drone-sitl.service leitbild-px4-gazebo.service leitbild-ardupilot-gazebo.service; do if systemctl list-unit-files "$unit" --no-legend | grep -q . || systemctl list-units "$unit" --all --no-legend | grep -q .; then systemctl disable --now "$unit"; fi; done')
 await ssh('rm -f /etc/systemd/system/leitbild-drone-sitl.service /etc/systemd/system/leitbild-px4-gazebo.service /etc/systemd/system/leitbild-ardupilot-gazebo.service')

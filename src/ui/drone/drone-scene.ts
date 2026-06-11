@@ -8,16 +8,18 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial'
 import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.pure'
 import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.pure'
 import type { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh'
+import { Mesh } from '@babylonjs/core/Meshes/mesh'
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder'
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode'
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData'
 import { Scene } from '@babylonjs/core/scene'
 import '@babylonjs/loaders/glTF'
 import type { OperationalObject } from '../../core/model/index.ts'
 import { dronePackDataSchema, type DronePackData } from '../../packs/drone/model.ts'
 import { babylonYawRadForHeadingDeg, babylonYawRateRadPerSecForHeadingRateDeg } from '../../packs/drone/spatial.ts'
 import {
-  localPointFromLonLat,
   loadDroneWorldTerrainStatus,
+  localPointFromLonLat,
   type DroneWorldCenter,
   type DroneWorldTerrainStatus,
 } from './drone-map-world.ts'
@@ -29,6 +31,12 @@ import {
 } from './drone-scenery-tiles.ts'
 import { createDroneRoadOverlayRenderer, type DroneRoadOverlayRenderer } from './drone-road-overlay.ts'
 import { createDroneFramePerformanceTracker, type DroneScenePerformanceSnapshot } from './drone-performance.ts'
+import {
+  loadDroneTerrainModel,
+  terrainHeightAt,
+  terrainSurfaceGeometryFor,
+  type DroneTerrainModel,
+} from './drone-terrain.ts'
 
 export type DroneSceneViewMode = '3d' | '2d' | 'fpv'
 export type { DroneScenePerformanceSnapshot }
@@ -145,14 +153,16 @@ const centerFor = (
 const localPointFor = (
   object: OperationalObject,
   center: DroneWorldCenter,
+  terrain: DroneTerrainModel,
 ): LocalPoint | null => {
   const point = pointFor(object)
   if (!point) return null
   const droneData = dronePackDataSchema.safeParse(object.packData)
   const local = localPointFromLonLat(point.coordinates[0], point.coordinates[1], center)
+  const groundY = terrainHeightAt(terrain, local.x, local.z)
   return {
     x: local.x,
-    y: droneData.success ? droneData.data.pose.altitudeM : 1.4,
+    y: groundY + (droneData.success ? droneData.data.pose.altitudeM : 1.4),
     z: local.z,
   }
 }
@@ -286,9 +296,10 @@ const createMeshFor = (scene: Scene, object: OperationalObject): TransformNode =
 const poseFor = (
   object: OperationalObject,
   center: DroneWorldCenter,
+  terrain: DroneTerrainModel,
   receivedAtMs: number,
 ): ObjectPose | null => {
-  const local = localPointFor(object, center)
+  const local = localPointFor(object, center, terrain)
   if (!local) return null
   const parsed = dronePackDataSchema.safeParse(object.packData)
   const data = parsed.success ? parsed.data : null
@@ -361,7 +372,13 @@ const applyTransform = (entry: MeshEntry): void => {
   entry.root.scaling.setAll(entry.visual.scale)
 }
 
-const createStableBaseWorld = (scene: Scene): TransformNode => {
+interface StableBaseWorld {
+  readonly root: TransformNode
+  readonly referenceGround: AbstractMesh
+  readonly distantHaze: AbstractMesh
+}
+
+const createStableBaseWorld = (scene: Scene): StableBaseWorld => {
   const root = new TransformNode('babylon-drone-stable-base-world', scene)
   const sky = MeshBuilder.CreateSphere('stable-sky-dome', { diameter: baseGroundRadiusM * 7, segments: 32 }, scene)
   const skyMaterial = material(scene, 'stable-sky-dome-material', '#a9cce6')
@@ -383,6 +400,35 @@ const createStableBaseWorld = (scene: Scene): TransformNode => {
   haze.isPickable = false
   haze.parent = root
 
+  return {
+    root,
+    referenceGround: ground,
+    distantHaze: haze,
+  }
+}
+
+const createTerrainSurface = (
+  scene: Scene,
+  model: DroneTerrainModel,
+): TransformNode | null => {
+  const geometry = terrainSurfaceGeometryFor(model)
+  if (!geometry) return null
+  const root = new TransformNode('babylon-drone-dem-terrain-root', scene)
+  const mesh = new Mesh('babylon-drone-dem-terrain-surface', scene)
+  const normals: number[] = []
+  VertexData.ComputeNormals(geometry.positions, geometry.indices, normals)
+  const vertexData = new VertexData()
+  vertexData.positions = geometry.positions
+  vertexData.indices = geometry.indices
+  vertexData.normals = normals
+  vertexData.applyToMesh(mesh)
+  const terrainMaterial = material(scene, 'babylon-drone-dem-terrain-material', '#6f8067')
+  terrainMaterial.specularColor = new Color3(0.02, 0.025, 0.02)
+  terrainMaterial.ambientColor = Color3.FromHexString('#6f8067').scale(0.28)
+  mesh.material = terrainMaterial
+  mesh.isPickable = false
+  mesh.parent = root
+  mesh.freezeWorldMatrix()
   return root
 }
 
@@ -489,7 +535,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   configureSceneColorPipeline(scene)
   scene.skipPointerMovePicking = true
   scene.autoClearDepthAndStencil = true
-  createStableBaseWorld(scene)
+  const baseWorld = createStableBaseWorld(scene)
 
   const camera = new UniversalCamera('drone-camera', new Vector3(0, 90, -120), scene)
   camera.fov = 0.84
@@ -502,7 +548,15 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const objectMeshes = new Map<string, MeshEntry>()
   let destroyed = false
   let sceneOriginCenter: DroneWorldCenter | null = null
-  let terrainStatus: DroneWorldTerrainStatus = { status: 'unknown', reason: 'terrain status not loaded yet' }
+  let terrainStatus: DroneWorldTerrainStatus = {
+    status: 'unavailable',
+    reason: 'terrain DEM is not attached to the Babylon scenery surface',
+  }
+  let terrainModel: DroneTerrainModel = {
+    kind: 'flat',
+    reason: terrainStatus.reason,
+  }
+  let terrainRoot: TransformNode | null = null
   let sceneryRenderer: DroneSceneryTilesRenderer | null = null
   let roadOverlayRenderer: DroneRoadOverlayRenderer | null = null
   let sceneryLoadMs = 0
@@ -529,12 +583,8 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   const initializeScenery = async (): Promise<void> => {
     const startedAt = performance.now()
     try {
-      const [sceneryStatus, terrain] = await Promise.all([
-        loadDroneWorldSceneryTilesetStatus(),
-        loadDroneWorldTerrainStatus(),
-      ])
+      const sceneryStatus = await loadDroneWorldSceneryTilesetStatus()
       if (destroyed) return
-      terrainStatus = terrain
       if (sceneryStatus.status !== 'available') {
         config.onError?.(`scenery capability unavailable: ${sceneryStatus.reason}`)
         notifyReadyOnce()
@@ -543,6 +593,46 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       const info = await loadDroneSceneryTilesetInfo({ status: sceneryStatus })
       if (destroyed) return
       sceneOriginCenter = { lon: info.origin.lon, lat: info.origin.lat }
+      if (info.terrainAligned) {
+        try {
+          terrainStatus = await loadDroneWorldTerrainStatus()
+          if (!destroyed) {
+            terrainModel = await loadDroneTerrainModel({
+              center: sceneOriginCenter,
+              radiusM: baseGroundRadiusM,
+              terrain: terrainStatus,
+            })
+            terrainRoot?.dispose(false, true)
+            terrainRoot = createTerrainSurface(scene, terrainModel)
+            if (terrainModel.kind === 'dem') {
+              baseWorld.referenceGround.setEnabled(false)
+              baseWorld.distantHaze.setEnabled(false)
+              config.onWorldStatus?.(`DEM terrain attached · ${terrainModel.minHeightM.toFixed(0)} to ${terrainModel.maxHeightM.toFixed(0)} m`)
+            } else {
+              baseWorld.referenceGround.setEnabled(true)
+              baseWorld.distantHaze.setEnabled(true)
+              config.onError?.(`terrain unavailable: ${terrainModel.reason}`)
+            }
+          }
+        } catch (error) {
+          terrainStatus = {
+            status: 'unavailable',
+            reason: error instanceof Error ? error.message : String(error),
+          }
+          terrainModel = { kind: 'flat', reason: terrainStatus.reason }
+          baseWorld.referenceGround.setEnabled(true)
+          baseWorld.distantHaze.setEnabled(true)
+          config.onError?.(`terrain unavailable: ${terrainStatus.reason}`)
+        }
+      } else {
+        terrainStatus = {
+          status: 'unavailable',
+          reason: 'scenery artifact was built without DEM terrain alignment',
+        }
+        terrainModel = { kind: 'flat', reason: terrainStatus.reason }
+        baseWorld.referenceGround.setEnabled(true)
+        baseWorld.distantHaze.setEnabled(true)
+      }
       roadOverlayRenderer = createDroneRoadOverlayRenderer({
         scene,
         center: sceneOriginCenter,
@@ -580,7 +670,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
   ): void => {
     const seen = new Set<string>()
     for (const object of objects) {
-      const pose = poseFor(object, center, nowMs)
+      const pose = poseFor(object, center, terrainModel, nowMs)
       if (!pose) continue
       seen.add(object.id)
       const signature = meshSignatureFor(object)
@@ -614,6 +704,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
 
   const updateWorldPerformance = (): void => {
     const metrics = sceneryRenderer?.metrics()
+    const roadMetrics = roadOverlayRenderer?.metrics()
     const info = sceneryRenderer?.info
     performanceTracker.updateWorld({
       sceneryStage: 'tileset',
@@ -627,11 +718,15 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       points: info?.counts.labels ?? 0,
       buildings: info?.counts.buildings ?? 0,
       roads: info?.counts.roads ?? 0,
+      roadOverlayTiles: roadMetrics?.loadedRoadTiles ?? 0,
+      roadOverlayPendingTiles: roadMetrics?.pendingRoadTiles ?? 0,
+      roadOverlayTriangles: roadMetrics?.roadMeshTriangles ?? 0,
+      roadOverlayBytes: roadMetrics?.roadMeshBytes ?? 0,
       water: info?.counts.water ?? 0,
       vegetation: info?.counts.vegetation ?? 0,
       roadLabels: 0,
       terrain: terrainLabel(terrainStatus),
-      terrainSurface: 'flat',
+      terrainSurface: terrainModel.kind === 'dem' ? 'dem' : 'flat',
     })
   }
 
@@ -693,6 +788,7 @@ export const createDroneScene = (config: DroneSceneConfig): DroneSceneHandle => 
       objectMeshes.clear()
       sceneryRenderer?.dispose()
       roadOverlayRenderer?.dispose()
+      terrainRoot?.dispose(false, true)
       scene.dispose()
       engine.dispose()
       canvas.remove()

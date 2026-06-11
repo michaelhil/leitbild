@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { ElevationSampler } from '../src/map/elevation-sampler.ts'
 import { compileSceneryGlbTile } from '../src/map/scenery-glb.ts'
 import { sceneryRoadTileFromSceneryTile, sceneryRoadTileSchema, type SceneryTile } from '../src/map/scenery.ts'
 import {
@@ -172,6 +173,11 @@ const yValuesForMesh = (
   mesh: ReturnType<typeof buildRoadSurfaceMeshes>[number],
 ): ReadonlySet<number> =>
   new Set(Array.from({ length: mesh.positions.length / 3 }, (_value, index) => mesh.positions[index * 3 + 1] ?? Number.NaN))
+
+const sortedYValuesForMesh = (
+  mesh: ReturnType<typeof buildRoadSurfaceMeshes>[number],
+): ReadonlyArray<number> =>
+  [...yValuesForMesh(mesh)].sort((left, right) => left - right)
 
 const minimumHorizontalDistanceFromOrigin = (
   meshes: ReadonlyArray<ReturnType<typeof buildRoadSurfaceMeshes>[number]>,
@@ -727,6 +733,25 @@ describe('drone scenery GLB compiler', () => {
     expect(materialNames.has('baked road markings')).toBe(false)
   })
 
+  test('applies one elevation sampler to GLB scenery and road sidecar samples', () => {
+    const sampler: ElevationSampler = {
+      kind: 'test-constant-42m',
+      heightAtLonLat: (): number => 42,
+    }
+    const result = compileSceneryGlbTile(testTile, { elevationSampler: sampler })
+    expect(result).not.toBeNull()
+    const bytes = result!.bytes
+    const parkY = firstYValue(bytes, /managed park grass/)
+    const waterY = firstYValue(bytes, /water surface/)
+    const wallYValues = roundedYValues(primitivePositionsByMaterialName(bytes, /building wall|warm building wall|cool building wall|brick building wall|stone building wall|dark glass building wall/))
+    const roadTile = sceneryRoadTileFromSceneryTile(testTile, { elevationSampler: sampler })
+
+    expect(parkY).toBeGreaterThan(42)
+    expect(waterY).toBeGreaterThan(42)
+    expect(Math.min(...wallYValues)).toBeGreaterThanOrEqual(42)
+    expect(roadTile.roads[0]?.heightSamplesM).toEqual([42, 42, 42])
+  })
+
   test('exports crossing roads to one overlay tile instead of stacking GLB depth lanes', () => {
     const result = compileSceneryGlbTile(crossingRoadTile())
     expect(result).not.toBeNull()
@@ -953,6 +978,38 @@ describe('drone scenery runtime cache policy', () => {
       expect(marking.indices.length % 3).toBe(0)
     }
     expect(minimumHorizontalDistanceFromOrigin(markings)).toBeGreaterThan(10)
+  })
+
+  test('drapes road overlay meshes from sidecar height samples without flattening markings', () => {
+    const sourceTile = {
+      ...crossingRoadTile(),
+      features: {
+        polygons: [],
+        labels: [],
+        lines: [crossingRoadTile().features.lines[0]!],
+      },
+    }
+    const roadTile = sceneryRoadTileFromSceneryTile(sourceTile)
+    const slopedRoadTile = {
+      ...roadTile,
+      roads: roadTile.roads.map(road => ({
+        ...road,
+        heightSamplesM: [2, 8],
+      })),
+    }
+    const meshes = buildRoadSurfaceMeshes({ tile: slopedRoadTile })
+    const asphalt = meshes.find(mesh => mesh.materialKey === 'road-asphalt')
+    const markings = meshes.filter(mesh => mesh.materialKey !== 'road-asphalt')
+
+    expect(asphalt).toBeDefined()
+    expect(markings.length).toBeGreaterThan(0)
+    const asphaltYValues = sortedYValuesForMesh(asphalt!)
+    expect(asphaltYValues.length).toBeGreaterThan(1)
+    for (const marking of markings) {
+      const markingYValues = sortedYValuesForMesh(marking)
+      expect(Math.min(...markingYValues) - Math.min(...asphaltYValues)).toBeGreaterThanOrEqual(0.11)
+      expect(Math.max(...markingYValues) - Math.max(...asphaltYValues)).toBeGreaterThanOrEqual(0.11)
+    }
   })
 
   test('draws continuous side markings and calibrated dashed center markings for ordinary roads', () => {

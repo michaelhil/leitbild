@@ -6,6 +6,28 @@ import type {
   SceneryTileQualityAudit,
   SceneryTileQualityFinding,
 } from './scenery.ts'
+import { sceneryTilePointLonLat } from './scenery.ts'
+import { flatElevationSampler, sampleElevationMeters, type ElevationSampler } from './elevation-sampler.ts'
+import {
+  defaultMaxScreenSpaceError,
+  detailBudgetForProfile,
+  facadeTrimReliefM,
+  facadeWindowReliefM,
+  horizontalDepth,
+  lodProfileForZoom,
+  ribbonJoinLiftM,
+  ribbonSelfLaneStepM,
+} from './scenery-glb-visual-policy.ts'
+import {
+  boundsForPrimitives,
+  glbFromPrimitives,
+} from './scenery-glb-writer.ts'
+import type {
+  PrimitiveSpec,
+  SceneryDetailBudget,
+  SceneryGlbBuildResult,
+  SceneryGlbLodProfile,
+} from './scenery-glb-types.ts'
 
 interface TileLonLat {
   readonly lon: number
@@ -15,25 +37,13 @@ interface TileLonLat {
 interface LocalPoint {
   readonly x: number
   readonly z: number
+  readonly groundY?: number
 }
 
 interface Vec3 {
   readonly x: number
   readonly y: number
   readonly z: number
-}
-
-type SceneryDepthPolicy = 'base-surface' | 'integrated-facade' | 'raised-geometry'
-
-interface MaterialSpec {
-  readonly key: string
-  readonly name: string
-  readonly color: readonly [number, number, number, number]
-  readonly depthPolicy: SceneryDepthPolicy
-  readonly metallicFactor?: number
-  readonly roughnessFactor?: number
-  readonly doubleSided?: boolean
-  readonly emissiveFactor?: readonly [number, number, number]
 }
 
 interface MeshBucket {
@@ -44,185 +54,9 @@ interface MeshBucket {
   readonly indices: number[]
 }
 
-interface PrimitiveSpec {
-  readonly name: string
-  readonly materialKey: string
-  readonly positions: Float32Array
-  readonly normals: Float32Array
-  readonly indices: Uint32Array
-}
-
-interface SceneryGlbBuildResult {
-  readonly bytes: Uint8Array
-  readonly summary: Omit<SceneryAssetTileSummary, 'byteLength'>
-}
-
-interface SceneryGlbLodProfile {
-  readonly lineSimplifyDistanceM: number
-  readonly minBuildingAreaM2: number
-  readonly minRoadPriority: number
-  readonly includeFacadeTrim: boolean
-  readonly includeFacadeWindows: boolean
-  readonly includeRoofParapets: boolean
-  readonly includeRoofFixtures: boolean
-  readonly includeStreetLights: boolean
-  readonly includePoiBeacons: boolean
-  readonly facadeWindowCellBudget: number
-  readonly facadeTrimBandBudget: number
-  readonly roofParapetSegmentBudget: number
-  readonly roofFixtureBudget: number
-  readonly streetLightBudget: number
-  readonly poiBeaconBudget: number
-  readonly vegetationMaxPerTile: number
-  readonly vegetationNaturalAreaM2: number
-  readonly vegetationResidentialAreaM2: number
-}
-
-interface SceneryDetailBudget {
-  facadeWindowCellsRemaining: number
-  facadeTrimBandsRemaining: number
-  roofParapetSegmentsRemaining: number
-  roofFixturesRemaining: number
-  streetLightsRemaining: number
-  poiBeaconsRemaining: number
-}
+type HorizontalHeightProvider = number | ((point: LocalPoint) => number)
 
 const metersPerDegreeLat = 111_320
-const defaultMaxScreenSpaceError = 16
-const facadeTrimReliefM = 0.055
-const facadeWindowReliefM = 0.085
-const ribbonJoinLiftM = 0.065
-const ribbonSelfLaneStepM = 0.07
-const horizontalDepth = {
-  landcoverBaseY: 0.04,
-  landuseBaseY: 0.18,
-  waterSurfaceY: 0.38,
-  wetlandBaseY: 0.48,
-  urbanBaseY: 0.60,
-  woodlandBaseY: 0.72,
-  aerowaySurfaceY: 0.78,
-  waterwayY: 0.84,
-  railCasingY: 0.98,
-  railSteelY: 1.12,
-  aerowayShoulderY: 1.26,
-  aerowayFillY: 1.34,
-  roofMaterialLiftStepM: 0.075,
-} as const
-
-const lodProfileForZoom = (
-  zoom: number,
-): SceneryGlbLodProfile => {
-  if (zoom <= 12) {
-    return {
-      lineSimplifyDistanceM: 2.2,
-      minBuildingAreaM2: 120,
-      minRoadPriority: 50,
-      includeFacadeTrim: false,
-      includeFacadeWindows: false,
-      includeRoofParapets: false,
-      includeRoofFixtures: false,
-      includeStreetLights: false,
-      includePoiBeacons: false,
-      facadeWindowCellBudget: 0,
-      facadeTrimBandBudget: 0,
-      roofParapetSegmentBudget: 0,
-      roofFixtureBudget: 0,
-      streetLightBudget: 0,
-      poiBeaconBudget: 0,
-      vegetationMaxPerTile: 0,
-      vegetationNaturalAreaM2: 20_000,
-      vegetationResidentialAreaM2: 40_000,
-    }
-  }
-  if (zoom === 13) {
-    return {
-      lineSimplifyDistanceM: 0.9,
-      minBuildingAreaM2: 32,
-      minRoadPriority: 40,
-      includeFacadeTrim: false,
-      includeFacadeWindows: false,
-      includeRoofParapets: false,
-      includeRoofFixtures: false,
-      includeStreetLights: false,
-      includePoiBeacons: false,
-      facadeWindowCellBudget: 0,
-      facadeTrimBandBudget: 0,
-      roofParapetSegmentBudget: 0,
-      roofFixtureBudget: 0,
-      streetLightBudget: 0,
-      poiBeaconBudget: 0,
-      vegetationMaxPerTile: 48,
-      vegetationNaturalAreaM2: 14_000,
-      vegetationResidentialAreaM2: 32_000,
-    }
-  }
-  return {
-    lineSimplifyDistanceM: 0.35,
-    minBuildingAreaM2: 0,
-    minRoadPriority: 30,
-    includeFacadeTrim: true,
-    includeFacadeWindows: true,
-    includeRoofParapets: true,
-    includeRoofFixtures: true,
-    includeStreetLights: true,
-    includePoiBeacons: true,
-    facadeWindowCellBudget: 11_000,
-    facadeTrimBandBudget: 2_200,
-    roofParapetSegmentBudget: 2_400,
-    roofFixtureBudget: 240,
-    streetLightBudget: 520,
-    poiBeaconBudget: 48,
-    vegetationMaxPerTile: 160,
-    vegetationNaturalAreaM2: 5_400,
-    vegetationResidentialAreaM2: 16_000,
-  }
-}
-
-const detailBudgetForProfile = (
-  profile: SceneryGlbLodProfile,
-): SceneryDetailBudget => ({
-  facadeWindowCellsRemaining: profile.facadeWindowCellBudget,
-  facadeTrimBandsRemaining: profile.facadeTrimBandBudget,
-  roofParapetSegmentsRemaining: profile.roofParapetSegmentBudget,
-  roofFixturesRemaining: profile.roofFixtureBudget,
-  streetLightsRemaining: profile.streetLightBudget,
-  poiBeaconsRemaining: profile.poiBeaconBudget,
-})
-
-const materials: ReadonlyArray<MaterialSpec> = [
-  { key: 'ground-grass', name: 'ground grass varied', color: [0.34, 0.49, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.94, doubleSided: true },
-  { key: 'ground-park', name: 'managed park grass', color: [0.28, 0.55, 0.25, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
-  { key: 'ground-field', name: 'field and farmland ground', color: [0.48, 0.54, 0.30, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
-  { key: 'ground-wetland', name: 'wetland ground', color: [0.26, 0.42, 0.35, 1], depthPolicy: 'base-surface', roughnessFactor: 0.98, doubleSided: true },
-  { key: 'ground-urban', name: 'urban ground', color: [0.58, 0.60, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.9, doubleSided: true },
-  { key: 'ground-wood', name: 'woodland floor', color: [0.18, 0.42, 0.22, 1], depthPolicy: 'base-surface', roughnessFactor: 0.96, doubleSided: true },
-  { key: 'water', name: 'water surface', color: [0.08, 0.49, 0.72, 1], depthPolicy: 'base-surface', roughnessFactor: 0.36, metallicFactor: 0.02, doubleSided: true },
-  { key: 'aeroway-shoulder', name: 'aeroway shoulder', color: [0.70, 0.67, 0.58, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
-  { key: 'aeroway-fill', name: 'aeroway pavement', color: [0.38, 0.41, 0.42, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
-  { key: 'rail-casing', name: 'rail dark casing', color: [0.12, 0.14, 0.17, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
-  { key: 'rail', name: 'rail steel', color: [0.55, 0.61, 0.68, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.42, metallicFactor: 0.45, doubleSided: true },
-  { key: 'building-wall', name: 'building wall', color: [0.73, 0.72, 0.67, 1], depthPolicy: 'base-surface', roughnessFactor: 0.72, doubleSided: true },
-  { key: 'building-wall-warm', name: 'warm building wall', color: [0.76, 0.66, 0.55, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
-  { key: 'building-wall-cool', name: 'cool building wall', color: [0.67, 0.71, 0.73, 1], depthPolicy: 'base-surface', roughnessFactor: 0.68, doubleSided: true },
-  { key: 'building-wall-brick', name: 'brick building wall', color: [0.64, 0.36, 0.28, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
-  { key: 'building-wall-stone', name: 'stone building wall', color: [0.61, 0.57, 0.51, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-wall-dark', name: 'dark glass building wall', color: [0.36, 0.41, 0.45, 1], depthPolicy: 'base-surface', roughnessFactor: 0.52, metallicFactor: 0.02, doubleSided: true },
-  { key: 'building-roof', name: 'building roof', color: [0.40, 0.44, 0.49, 1], depthPolicy: 'base-surface', roughnessFactor: 0.78, doubleSided: true },
-  { key: 'building-roof-light', name: 'light building roof', color: [0.64, 0.65, 0.61, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-roof-green', name: 'green copper roof', color: [0.37, 0.57, 0.50, 1], depthPolicy: 'base-surface', roughnessFactor: 0.7, metallicFactor: 0.08, doubleSided: true },
-  { key: 'building-roof-red', name: 'red tile roof', color: [0.57, 0.25, 0.18, 1], depthPolicy: 'base-surface', roughnessFactor: 0.82, doubleSided: true },
-  { key: 'building-roof-dark', name: 'dark roof membrane', color: [0.22, 0.25, 0.29, 1], depthPolicy: 'base-surface', roughnessFactor: 0.74, doubleSided: true },
-  { key: 'roof-parapet', name: 'roof parapets', color: [0.58, 0.60, 0.58, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.8, doubleSided: true },
-  { key: 'roof-fixture', name: 'rooftop fixtures', color: [0.50, 0.53, 0.55, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.62, metallicFactor: 0.05 },
-  { key: 'building-window', name: 'building windows', color: [0.34, 0.58, 0.76, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.2, metallicFactor: 0.02, emissiveFactor: [0.015, 0.035, 0.055], doubleSided: true },
-  { key: 'building-trim', name: 'building facade trim', color: [0.55, 0.58, 0.57, 1], depthPolicy: 'integrated-facade', roughnessFactor: 0.76, doubleSided: true },
-  { key: 'tree-trunk', name: 'tree trunks', color: [0.38, 0.22, 0.12, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.92 },
-  { key: 'tree-canopy', name: 'tree canopy', color: [0.16, 0.48, 0.22, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
-  { key: 'tree-canopy-light', name: 'tree canopy light', color: [0.25, 0.58, 0.28, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.98 },
-  { key: 'street-light', name: 'street light poles', color: [0.36, 0.40, 0.45, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.64, metallicFactor: 0.2 },
-  { key: 'street-lamp', name: 'street lamp glass', color: [1.0, 0.82, 0.36, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.3, emissiveFactor: [0.45, 0.32, 0.08] },
-  { key: 'poi', name: 'poi beacon', color: [0.16, 0.69, 0.95, 1], depthPolicy: 'raised-geometry', roughnessFactor: 0.36, emissiveFactor: [0.02, 0.18, 0.32] },
-]
 
 const stableHash = (value: string): number => {
   let hash = 2166136261
@@ -243,19 +77,6 @@ const seededRandom = (seed: number): (() => number) => {
 
 const metersPerDegreeLonAt = (latDeg: number): number =>
   Math.max(1, Math.cos(latDeg * Math.PI / 180) * metersPerDegreeLat)
-
-const tilePointToLonLat = (
-  point: SceneryPoint,
-  tile: SceneryTile['tile'],
-): TileLonLat => {
-  const size = tile.extent * 2 ** tile.z
-  const worldX = point[0] + tile.extent * tile.x
-  const worldY = point[1] + tile.extent * tile.y
-  return {
-    lon: worldX * 360 / size - 180,
-    lat: 360 / Math.PI * Math.atan(Math.exp((1 - worldY * 2 / size) * Math.PI)) - 90,
-  }
-}
 
 export const sceneryTileCenterLonLat = (
   tile: Pick<SceneryTile['tile'], 'z' | 'x' | 'y'>,
@@ -318,13 +139,30 @@ const localPointFromSceneryPoint = (
   point: SceneryPoint,
   tile: SceneryTile['tile'],
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
 ): LocalPoint => {
-  const lonLat = tilePointToLonLat(point, tile)
+  const lonLat = sceneryTilePointLonLat(point, tile)
   return {
     x: (lonLat.lon - center.lon) * metersPerDegreeLonAt(center.lat),
     z: -(lonLat.lat - center.lat) * metersPerDegreeLat,
+    groundY: sampleElevationMeters(elevationSampler, lonLat),
   }
 }
+
+const groundYFor = (
+  point: LocalPoint,
+): number => point.groundY ?? 0
+
+const averageGroundY = (
+  points: ReadonlyArray<LocalPoint>,
+): number => points.length === 0
+  ? 0
+  : points.reduce((sum, point) => sum + groundYFor(point), 0) / points.length
+
+const heightForHorizontalPoint = (
+  provider: HorizontalHeightProvider,
+  point: LocalPoint,
+): number => typeof provider === 'number' ? provider : provider(point)
 
 const openRing = (
   ring: ReadonlyArray<LocalPoint>,
@@ -449,7 +287,7 @@ const appendQuad = (
 const appendHorizontalPolygon = (
   bucket: MeshBucket,
   rings: ReadonlyArray<ReadonlyArray<LocalPoint>>,
-  y: number,
+  height: HorizontalHeightProvider,
 ): void => {
   const normalizedRings = rings.map(openRing).filter(ring => ring.length >= 3)
   const outer = normalizedRings[0]
@@ -468,7 +306,7 @@ const appendHorizontalPolygon = (
   const triangles = earcut(coordinates, holeIndices, 2)
   if (triangles.length === 0) return
   const base = bucket.positions.length / 3
-  for (const point of vertices) appendVertex(bucket, { x: point.x, y, z: point.z }, { x: 0, y: 1, z: 0 })
+  for (const point of vertices) appendVertex(bucket, { x: point.x, y: heightForHorizontalPoint(height, point), z: point.z }, { x: 0, y: 1, z: 0 })
   for (let index = 0; index < triangles.length; index += 3) {
     const a = triangles[index]
     const b = triangles[index + 1]
@@ -1118,21 +956,28 @@ const localRingsFor = (
   rings: ReadonlyArray<ReadonlyArray<SceneryPoint>>,
   tile: SceneryTile['tile'],
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
 ): ReadonlyArray<ReadonlyArray<LocalPoint>> =>
   rings
-    .map(ring => ring.map(point => localPointFromSceneryPoint(point, tile, center)))
+    .map(ring => ring.map(point => localPointFromSceneryPoint(point, tile, center, elevationSampler)))
     .filter(ring => ring.length >= 3)
 
 const appendSurfaces = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
 ): void => {
   for (const feature of tile.features.polygons) {
     if (feature.kind === 'building') continue
     const material = surfaceMaterialFor(feature.kind, feature.className)
     const bucket = bucketFor(buckets, material, `${material} surfaces`)
-    appendHorizontalPolygon(bucket, localRingsFor(feature.rings, tile.tile, center), surfaceHeightForFeature(feature, material))
+    const surfaceOffsetM = surfaceHeightForFeature(feature, material)
+    appendHorizontalPolygon(
+      bucket,
+      localRingsFor(feature.rings, tile.tile, center, elevationSampler),
+      point => groundYFor(point) + surfaceOffsetM,
+    )
   }
 }
 
@@ -1140,6 +985,7 @@ const appendBuildings = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
   profile: SceneryGlbLodProfile,
   budget: SceneryDetailBudget,
 ): void => {
@@ -1149,12 +995,13 @@ const appendBuildings = (
   const roofFixtures = bucketFor(buckets, 'roof-fixture', 'roof-mounted source-backed fixtures')
   for (const feature of tile.features.polygons) {
     if (feature.kind !== 'building') continue
-    const rings = localRingsFor(feature.rings, tile.tile, center)
+    const rings = localRingsFor(feature.rings, tile.tile, center, elevationSampler)
     if (rings.length === 0) continue
     const outerRing = rings[0]
     if (outerRing && Math.abs(ringArea(outerRing)) < profile.minBuildingAreaM2) continue
+    const buildingGroundY = averageGroundY(outerRing ?? [])
     const height = Math.max(2.5, feature.heightM ?? 8)
-    const minHeight = Math.max(0, feature.minHeightM ?? 0)
+    const minHeight = buildingGroundY + Math.max(0, feature.minHeightM ?? 0)
     const wallBucket = bucketFor(buckets, buildingWallMaterialFor(feature), `${buildingWallMaterialFor(feature)} shells`)
     const roofMaterial = buildingRoofMaterialFor(feature)
     const roofBucket = bucketFor(buckets, roofMaterial, `${roofMaterial} shells`)
@@ -1174,6 +1021,7 @@ const appendTransport = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
   profile: SceneryGlbLodProfile,
   budget: SceneryDetailBudget,
 ): void => {
@@ -1185,21 +1033,22 @@ const appendTransport = (
   const poles = bucketFor(buckets, 'street-light', 'street light poles')
   const lamps = bucketFor(buckets, 'street-lamp', 'street lamps')
   for (const feature of tile.features.lines) {
-    const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center))
+    const path = feature.path.map(point => localPointFromSceneryPoint(point, tile.tile, center, elevationSampler))
     if (path.length < 2) continue
+    const pathGroundY = averageGroundY(path)
     if (feature.kind === 'waterway') {
-      const waterwayY = horizontalDepth.waterwayY + feature.verticalOffsetM
+      const waterwayY = pathGroundY + horizontalDepth.waterwayY + feature.verticalOffsetM
       appendRibbon(water, path, feature.widthM, waterwayY, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       continue
     }
     if (feature.kind === 'rail') {
-      appendRibbon(railCasing, path, feature.widthM + 3.2, horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
-      appendRibbon(rail, path, feature.widthM, horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+      appendRibbon(railCasing, path, feature.widthM + 3.2, pathGroundY + horizontalDepth.railCasingY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
+      appendRibbon(rail, path, feature.widthM, pathGroundY + horizontalDepth.railSteelY + feature.verticalOffsetM, profile.lineSimplifyDistanceM, ribbonJoinLiftM)
       continue
     }
     if (feature.kind === 'aeroway') {
-      appendRibbon(aerowayShoulder, path, feature.widthM + 4, horizontalDepth.aerowayShoulderY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
-      appendRibbon(aerowayFill, path, feature.widthM, horizontalDepth.aerowayFillY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(aerowayShoulder, path, feature.widthM + 4, pathGroundY + horizontalDepth.aerowayShoulderY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
+      appendRibbon(aerowayFill, path, feature.widthM, pathGroundY + horizontalDepth.aerowayFillY + feature.verticalOffsetM, profile.lineSimplifyDistanceM)
       continue
     }
     const priority = roadPriority(feature.className)
@@ -1218,13 +1067,15 @@ const appendTransport = (
       const nx = -uz
       const nz = ux
       while (distance < length && budget.streetLightsRemaining > 0) {
+        const t = distance / length
+        const lampGroundY = groundYFor(start) + (groundYFor(end) - groundYFor(start)) * t
         for (const side of [-1, 1] as const) {
           if (budget.streetLightsRemaining <= 0) break
           const offset = side * Math.max(4.5, feature.widthM * 0.5 + 2.4)
           const x = start.x + ux * distance + nx * offset
           const z = start.z + uz * distance + nz * offset
-          appendCylinder(poles, { x, y: 3.1 + feature.verticalOffsetM, z }, 0.09, 6.2, 7)
-          appendBox(lamps, { x: x + nx * -side * 0.3, y: 6.34 + feature.verticalOffsetM, z: z + nz * -side * 0.3 }, { x: 0.45, y: 0.16, z: 0.9 })
+          appendCylinder(poles, { x, y: lampGroundY + 3.1 + feature.verticalOffsetM, z }, 0.09, 6.2, 7)
+          appendBox(lamps, { x: x + nx * -side * 0.3, y: lampGroundY + 6.34 + feature.verticalOffsetM, z: z + nz * -side * 0.3 }, { x: 0.45, y: 0.16, z: 0.9 })
           budget.streetLightsRemaining -= 1
         }
         distance += priority >= 70 ? 84 : 112
@@ -1238,6 +1089,7 @@ const appendVegetation = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
   profile: SceneryGlbLodProfile,
 ): void => {
   if (profile.vegetationMaxPerTile <= 0) return
@@ -1248,9 +1100,10 @@ const appendVegetation = (
   for (const feature of tile.features.polygons) {
     if (feature.kind !== 'landcover' && feature.kind !== 'landuse') continue
     if (!['wood', 'forest', 'scrub', 'heath', 'grass', 'park', 'residential'].includes(feature.className)) continue
-    const rings = localRingsFor(feature.rings, tile.tile, center)
+    const rings = localRingsFor(feature.rings, tile.tile, center, elevationSampler)
     const outer = rings[0]
     if (!outer || outer.length < 3) continue
+    const featureGroundY = averageGroundY(outer)
     const area = Math.abs(ringArea(outer))
     const areaPerTree = feature.className === 'residential'
       ? profile.vegetationResidentialAreaM2
@@ -1270,9 +1123,9 @@ const appendVegetation = (
           }
       if (!pointInRing(candidate, outer)) continue
       const scale = 0.75 + random() * 0.85
-      appendCylinder(trunk, { x: candidate.x, y: 2.1 * scale, z: candidate.z }, 0.34 * scale, 4.2 * scale, 6)
-      appendCone(canopy, { x: candidate.x, y: 6.0 * scale, z: candidate.z }, 2.45 * scale, 5.2 * scale, 8)
-      appendCone(canopyLight, { x: candidate.x + 0.45 * scale, y: 8.8 * scale, z: candidate.z - 0.25 * scale }, 1.75 * scale, 3.7 * scale, 8)
+      appendCylinder(trunk, { x: candidate.x, y: featureGroundY + 2.1 * scale, z: candidate.z }, 0.34 * scale, 4.2 * scale, 6)
+      appendCone(canopy, { x: candidate.x, y: featureGroundY + 6.0 * scale, z: candidate.z }, 2.45 * scale, 5.2 * scale, 8)
+      appendCone(canopyLight, { x: candidate.x + 0.45 * scale, y: featureGroundY + 8.8 * scale, z: candidate.z - 0.25 * scale }, 1.75 * scale, 3.7 * scale, 8)
       added += 1
       treeCount += 1
     }
@@ -1283,6 +1136,7 @@ const appendPoiBeacons = (
   buckets: Map<string, MeshBucket>,
   tile: SceneryTile,
   center: TileLonLat,
+  elevationSampler: ElevationSampler,
   profile: SceneryGlbLodProfile,
   budget: SceneryDetailBudget,
 ): void => {
@@ -1291,9 +1145,9 @@ const appendPoiBeacons = (
   for (const feature of tile.features.labels) {
     if (budget.poiBeaconsRemaining <= 0) break
     if (feature.kind === 'road_label') continue
-    const point = localPointFromSceneryPoint(feature.point, tile.tile, center)
-    appendCylinder(poi, { x: point.x, y: 4.5, z: point.z }, 0.22, 9, 8)
-    appendCone(poi, { x: point.x, y: 10.5, z: point.z }, 1.2, 2.2, 12)
+    const point = localPointFromSceneryPoint(feature.point, tile.tile, center, elevationSampler)
+    appendCylinder(poi, { x: point.x, y: groundYFor(point) + 4.5, z: point.z }, 0.22, 9, 8)
+    appendCone(poi, { x: point.x, y: groundYFor(point) + 10.5, z: point.z }, 1.2, 2.2, 12)
     budget.poiBeaconsRemaining -= 1
   }
 }
@@ -1310,64 +1164,6 @@ const primitivesFromBuckets = (
       normals: new Float32Array(bucket.normals),
       indices: new Uint32Array(bucket.indices),
     }))
-
-const align4 = (value: number): number =>
-  (value + 3) & ~3
-
-const appendBytes = (
-  chunks: Uint8Array[],
-  bytes: Uint8Array,
-): number => {
-  const offset = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-  chunks.push(bytes)
-  const padding = align4(offset + bytes.byteLength) - (offset + bytes.byteLength)
-  if (padding > 0) chunks.push(new Uint8Array(padding))
-  return offset
-}
-
-const bytesForFloat32 = (values: Float32Array): Uint8Array =>
-  new Uint8Array(values.buffer, values.byteOffset, values.byteLength)
-
-const bytesForUint32 = (values: Uint32Array): Uint8Array =>
-  new Uint8Array(values.buffer, values.byteOffset, values.byteLength)
-
-const minMaxForPositions = (
-  positions: Float32Array,
-): { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } => {
-  const min: [number, number, number] = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
-  const max: [number, number, number] = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
-  for (let index = 0; index < positions.length; index += 3) {
-    const x = positions[index] ?? 0
-    const y = positions[index + 1] ?? 0
-    const z = positions[index + 2] ?? 0
-    min[0] = Math.min(min[0], x)
-    min[1] = Math.min(min[1], y)
-    min[2] = Math.min(min[2], z)
-    max[0] = Math.max(max[0], x)
-    max[1] = Math.max(max[1], y)
-    max[2] = Math.max(max[2], z)
-  }
-  return { min, max }
-}
-
-const primitiveBounds = (
-  primitives: ReadonlyArray<PrimitiveSpec>,
-): { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] } => {
-  const min: [number, number, number] = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
-  const max: [number, number, number] = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
-  for (const primitive of primitives) {
-    const bounds = minMaxForPositions(primitive.positions)
-    min[0] = Math.min(min[0], bounds.min[0])
-    min[1] = Math.min(min[1], bounds.min[1])
-    min[2] = Math.min(min[2], bounds.min[2])
-    max[0] = Math.max(max[0], bounds.max[0])
-    max[1] = Math.max(max[1], bounds.max[1])
-    max[2] = Math.max(max[2], bounds.max[2])
-  }
-  return Number.isFinite(min[0])
-    ? { min, max }
-    : { min: [0, 0, 0], max: [0, 0, 0] }
-}
 
 interface HorizontalPlaneSample {
   readonly id: number
@@ -1805,130 +1601,6 @@ const auditSceneryTileQuality = (
   }
 }
 
-const concatChunks = (chunks: ReadonlyArray<Uint8Array>): Uint8Array => {
-  const total = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-  const output = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    output.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return output
-}
-
-const glbFromPrimitives = (
-  primitives: ReadonlyArray<PrimitiveSpec>,
-): Uint8Array => {
-  const chunks: Uint8Array[] = []
-  const bufferViews: unknown[] = []
-  const accessors: unknown[] = []
-  const meshPrimitives: unknown[] = []
-  const materialIndexByKey = new Map(materials.map((material, index) => [material.key, index]))
-
-  for (const primitive of primitives) {
-    const positionOffset = appendBytes(chunks, bytesForFloat32(primitive.positions))
-    const normalOffset = appendBytes(chunks, bytesForFloat32(primitive.normals))
-    const indexOffset = appendBytes(chunks, bytesForUint32(primitive.indices))
-
-    const positionViewIndex = bufferViews.length
-    bufferViews.push({ buffer: 0, byteOffset: positionOffset, byteLength: primitive.positions.byteLength, target: 34962 })
-    const normalViewIndex = bufferViews.length
-    bufferViews.push({ buffer: 0, byteOffset: normalOffset, byteLength: primitive.normals.byteLength, target: 34962 })
-    const indexViewIndex = bufferViews.length
-    bufferViews.push({ buffer: 0, byteOffset: indexOffset, byteLength: primitive.indices.byteLength, target: 34963 })
-
-    const positionAccessorIndex = accessors.length
-    const positionBounds = minMaxForPositions(primitive.positions)
-    accessors.push({
-      bufferView: positionViewIndex,
-      byteOffset: 0,
-      componentType: 5126,
-      count: primitive.positions.length / 3,
-      type: 'VEC3',
-      min: positionBounds.min,
-      max: positionBounds.max,
-    })
-    const normalAccessorIndex = accessors.length
-    accessors.push({
-      bufferView: normalViewIndex,
-      byteOffset: 0,
-      componentType: 5126,
-      count: primitive.normals.length / 3,
-      type: 'VEC3',
-    })
-    const indexAccessorIndex = accessors.length
-    accessors.push({
-      bufferView: indexViewIndex,
-      byteOffset: 0,
-      componentType: 5125,
-      count: primitive.indices.length,
-      type: 'SCALAR',
-    })
-
-    meshPrimitives.push({
-      attributes: {
-        POSITION: positionAccessorIndex,
-        NORMAL: normalAccessorIndex,
-      },
-      indices: indexAccessorIndex,
-      material: materialIndexByKey.get(primitive.materialKey) ?? 0,
-      extras: {
-        name: primitive.name,
-        droneSceneryKind: primitive.materialKey,
-      },
-    })
-  }
-
-  const bin = concatChunks(chunks)
-  const json = {
-    asset: {
-      version: '2.0',
-      generator: 'Leitbild scenery GLB compiler',
-      copyright: '© OpenStreetMap contributors; derived scenery generated by Leitbild',
-    },
-    scene: 0,
-    scenes: [{ nodes: [0] }],
-    nodes: [{ mesh: 0, name: 'Leitbild scenery tile' }],
-    meshes: [{ name: 'Leitbild scenery tile mesh', primitives: meshPrimitives }],
-    materials: materials.map(material => ({
-      name: material.name,
-      pbrMetallicRoughness: {
-        baseColorFactor: material.color,
-        metallicFactor: material.metallicFactor ?? 0,
-        roughnessFactor: material.roughnessFactor ?? 0.8,
-      },
-      extras: {
-        droneSceneryMaterialKey: material.key,
-        droneSceneryDepthPolicy: material.depthPolicy,
-      },
-      ...(material.doubleSided ? { doubleSided: true } : {}),
-      ...(material.emissiveFactor ? { emissiveFactor: material.emissiveFactor } : {}),
-    })),
-    buffers: [{ byteLength: bin.byteLength }],
-    bufferViews,
-    accessors,
-  }
-
-  const jsonBytes = new TextEncoder().encode(JSON.stringify(json))
-  const jsonChunkLength = align4(jsonBytes.byteLength)
-  const binChunkLength = align4(bin.byteLength)
-  const totalLength = 12 + 8 + jsonChunkLength + 8 + binChunkLength
-  const output = new Uint8Array(totalLength)
-  const view = new DataView(output.buffer)
-  view.setUint32(0, 0x46546c67, true)
-  view.setUint32(4, 2, true)
-  view.setUint32(8, totalLength, true)
-  view.setUint32(12, jsonChunkLength, true)
-  view.setUint32(16, 0x4e4f534a, true)
-  output.fill(0x20, 20, 20 + jsonChunkLength)
-  output.set(jsonBytes, 20)
-  const binHeaderOffset = 20 + jsonChunkLength
-  view.setUint32(binHeaderOffset, binChunkLength, true)
-  view.setUint32(binHeaderOffset + 4, 0x004e4942, true)
-  output.set(bin, binHeaderOffset + 8)
-  return output
-}
-
 const featureCountsFor = (tile: SceneryTile): SceneryAssetTileSummary['featureCounts'] => ({
   polygons: tile.features.polygons.length,
   lines: tile.features.lines.length,
@@ -1941,21 +1613,25 @@ const featureCountsFor = (tile: SceneryTile): SceneryAssetTileSummary['featureCo
 
 export const compileSceneryGlbTile = (
   tile: SceneryTile,
+  config?: {
+    readonly elevationSampler?: ElevationSampler
+  },
 ): SceneryGlbBuildResult | null => {
+  const elevationSampler = config?.elevationSampler ?? flatElevationSampler
   const center = sceneryTileCenterLonLat(tile.tile)
   const bounds = sceneryTileBounds(tile.tile)
   const lod = lodForTile(tile.tile, bounds, center)
   const profile = lodProfileForZoom(tile.tile.z)
   const budget = detailBudgetForProfile(profile)
   const buckets = new Map<string, MeshBucket>()
-  appendSurfaces(buckets, tile, center)
-  appendTransport(buckets, tile, center, profile, budget)
-  appendBuildings(buckets, tile, center, profile, budget)
-  appendVegetation(buckets, tile, center, profile)
-  appendPoiBeacons(buckets, tile, center, profile, budget)
+  appendSurfaces(buckets, tile, center, elevationSampler)
+  appendTransport(buckets, tile, center, elevationSampler, profile, budget)
+  appendBuildings(buckets, tile, center, elevationSampler, profile, budget)
+  appendVegetation(buckets, tile, center, elevationSampler, profile)
+  appendPoiBeacons(buckets, tile, center, elevationSampler, profile, budget)
   const primitives = primitivesFromBuckets(buckets)
   if (primitives.length === 0) return null
-  const localBounds = primitiveBounds(primitives)
+  const localBounds = boundsForPrimitives(primitives)
   const tileSize = tileSizeMeters(bounds, center)
   const verticalRadiusM = Math.max(Math.abs(localBounds.min[1]), Math.abs(localBounds.max[1]))
   const quality = auditSceneryTileQuality(tile, primitives)

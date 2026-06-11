@@ -920,6 +920,10 @@
           <span>POLY {scenePerformance ? scenePerformance.worldFeatures.polygons : '-'}</span>
           <span>BLD {scenePerformance ? scenePerformance.worldFeatures.buildings : '-'}</span>
           <span>RD {scenePerformance ? scenePerformance.worldFeatures.roads : '-'}</span>
+          <span>RDT {scenePerformance ? scenePerformance.worldFeatures.roadOverlayTiles : '-'}</span>
+          <span>RDP {scenePerformance ? scenePerformance.worldFeatures.roadOverlayPendingTiles : '-'}</span>
+          <span>RTRI {scenePerformance ? Math.round(scenePerformance.worldFeatures.roadOverlayTriangles / 1000) : '-'}k</span>
+          <span>RMB {scenePerformance ? Math.round(scenePerformance.worldFeatures.roadOverlayBytes / 1_000_000) : '-'}</span>
           <span>WTR {scenePerformance ? scenePerformance.worldFeatures.water : '-'}</span>
           <span>VEG {scenePerformance ? scenePerformance.worldFeatures.vegetation : '-'}</span>
           <span>LBL {scenePerformance ? scenePerformance.worldFeatures.roadLabels : '-'}</span>

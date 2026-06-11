@@ -3,35 +3,25 @@ import type { Scene } from '@babylonjs/core/scene'
 import { TilesRenderer } from '3d-tiles-renderer/babylonjs'
 import type { Tile } from '3d-tiles-renderer/core'
 import {
-  sceneryAssetFormat,
   sceneryAssetTilesetSchema,
-  sceneryAssetTileEncoding,
   type SceneryTilesetFeatureCounts,
   type SceneryTilesetOrigin,
 } from '../../map/scenery.ts'
+import {
+  loadDroneWorldSceneryTilesetStatus,
+  type DroneWorldSceneryTilesetStatus,
+} from './drone-world-capabilities.ts'
 
-export type DroneWorldSceneryTilesetStatus =
-  | {
-      readonly status: 'available'
-      readonly tilesetUrl: string
-      readonly tileTemplate: string
-      readonly roadTileTemplate: string
-      readonly path?: string
-    }
-  | {
-      readonly status: 'unavailable'
-      readonly reason: string
-      readonly path?: string
-    }
-  | {
-      readonly status: 'unknown'
-      readonly reason: string
-    }
+export {
+  loadDroneWorldSceneryTilesetStatus,
+  type DroneWorldSceneryTilesetStatus,
+} from './drone-world-capabilities.ts'
 
 export interface DroneSceneryTilesetInfo {
   readonly tilesetUrl: string
   readonly roadTileTemplate: string
   readonly origin: SceneryTilesetOrigin
+  readonly terrainAligned: boolean
   readonly bounds: {
     readonly minLon: number
     readonly minLat: number
@@ -98,11 +88,6 @@ const recordValue = (
 ): Record<string, unknown> | null =>
   value !== null && typeof value === 'object' ? value as Record<string, unknown> : null
 
-const stringValue = (
-  value: unknown,
-): string | null =>
-  typeof value === 'string' && value.length > 0 ? value : null
-
 const finiteNumberValue = (
   value: unknown,
 ): number | null =>
@@ -137,67 +122,6 @@ export const estimateDroneSceneryTileBytesForCache = (
   return 1
 }
 
-const sceneryStatusFromManifest = (
-  value: unknown,
-): DroneWorldSceneryTilesetStatus => {
-  const manifest = recordValue(value)
-  const tilesets = Array.isArray(manifest?.tilesets) ? manifest.tilesets : null
-  if (!tilesets) return { status: 'unknown', reason: 'map capability manifest has no tilesets array' }
-  const scenery = tilesets
-    .map(recordValue)
-    .find(tileset => tileset?.kind === 'scenery')
-  if (!scenery) return { status: 'unavailable', reason: 'scenery capability is not advertised' }
-
-  const availability = recordValue(scenery.availability)
-  const artifact = recordValue(scenery.artifact)
-  const availabilityStatus = stringValue(availability?.status)
-  const path = stringValue(availability?.path)
-  if (availabilityStatus === 'available') {
-    const tileEncoding = stringValue(artifact?.tileEncoding)
-    const format = stringValue(artifact?.format)
-    const tilesetUrl = stringValue(artifact?.tilesetUrl)
-    const tileTemplate = stringValue(artifact?.currentTileTemplate)
-    const roadTileTemplate = stringValue(artifact?.roadTileTemplate)
-    if (format !== sceneryAssetFormat || tileEncoding !== sceneryAssetTileEncoding || !tilesetUrl || !tileTemplate || !roadTileTemplate) {
-      return { status: 'unknown', reason: 'scenery capability is available but 3D Tiles metadata is incomplete' }
-    }
-    return path
-      ? { status: 'available', tilesetUrl, tileTemplate, roadTileTemplate, path }
-      : { status: 'available', tilesetUrl, tileTemplate, roadTileTemplate }
-  }
-
-  if (availabilityStatus === 'unavailable') {
-    const reason = stringValue(availability?.error) ?? 'precompiled scenery tileset is not present'
-    return path
-      ? { status: 'unavailable', reason, path }
-      : { status: 'unavailable', reason }
-  }
-
-  return { status: 'unknown', reason: 'scenery capability has an invalid availability status' }
-}
-
-const loadMapCapabilityManifestBody = async (
-  signal: AbortSignal | undefined,
-): Promise<unknown> => {
-  const response = await fetch('/map/capabilities.json', signal ? { signal } : undefined)
-  if (!response.ok) throw new Error(`map capability query failed with HTTP ${response.status}`)
-  return await response.json() as unknown
-}
-
-export const loadDroneWorldSceneryTilesetStatus = async (config: {
-  readonly signal?: AbortSignal
-} = {}): Promise<DroneWorldSceneryTilesetStatus> => {
-  try {
-    return sceneryStatusFromManifest(await loadMapCapabilityManifestBody(config.signal))
-  } catch (error) {
-    if (config.signal?.aborted) throw error
-    return {
-      status: 'unavailable',
-      reason: error instanceof Error ? `map capability query failed: ${error.message}` : `map capability query failed: ${String(error)}`,
-    }
-  }
-}
-
 export const loadDroneSceneryTilesetInfo = async (config: {
   readonly status: Extract<DroneWorldSceneryTilesetStatus, { readonly status: 'available' }>
   readonly signal?: AbortSignal
@@ -207,10 +131,12 @@ export const loadDroneSceneryTilesetInfo = async (config: {
   const parsed = sceneryAssetTilesetSchema.safeParse(await response.json())
   if (!parsed.success) throw new Error(`scenery tileset failed schema validation: ${parsed.error.message}`)
   const metadata = parsed.data.extras.leitbild
+  const terrainAligned = metadata.inputArtifacts.some(artifact => artifact.kind === 'terrain-dem-pmtiles' && artifact.required)
   return {
     tilesetUrl: config.status.tilesetUrl,
     roadTileTemplate: config.status.roadTileTemplate,
     origin: metadata.origin,
+    terrainAligned,
     bounds: metadata.bounds,
     counts: {
       polygons: metadata.counts.polygons,

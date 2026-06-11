@@ -3,6 +3,7 @@ import {
   decodeMapboxElevationM,
   decodeTerrariumElevationM,
   terrainHeightAt,
+  terrainSurfaceGeometryFor,
   type DroneTerrainModel,
 } from '../src/ui/drone/drone-terrain.ts'
 
@@ -39,5 +40,36 @@ describe('drone terrain model', () => {
     expect(terrainHeightAt(model, -5, -5)).toBe(10)
     expect(terrainHeightAt(model, 200, 200)).toBe(40)
     expect(terrainHeightAt({ kind: 'flat', reason: 'test' }, 0, 0)).toBe(0)
+  })
+
+  test('creates terrain surface geometry from the decoded DEM grid without changing height scale', () => {
+    const model: DroneTerrainModel = {
+      kind: 'dem',
+      center: { lon: 10.75, lat: 59.91 },
+      radiusM: 20,
+      gridSize: 3,
+      sampleSpacingM: 20,
+      heightsM: new Float32Array([
+        0, 15, 30,
+        20, 35, 50,
+        40, 55, 70,
+      ]),
+      minHeightM: 0,
+      maxHeightM: 70,
+      source: {
+        demEncoding: 'terrarium',
+        zoom: 13,
+        tileTemplate: '/map/terrain/current/{z}/{x}/{y}.png',
+      },
+    }
+    const geometry = terrainSurfaceGeometryFor(model)
+
+    expect(geometry).not.toBeNull()
+    expect(geometry?.positions).toHaveLength(27)
+    expect(geometry?.indices).toHaveLength(24)
+    expect(geometry?.positions[1]).toBe(0)
+    expect(geometry?.positions[13]).toBe(35)
+    expect(geometry?.positions[25]).toBe(70)
+    expect(terrainSurfaceGeometryFor({ kind: 'flat', reason: 'test' })).toBeNull()
   })
 })
