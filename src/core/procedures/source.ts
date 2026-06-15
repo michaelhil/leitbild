@@ -59,7 +59,7 @@ export interface ProcedureSourceService {
   readonly readDocument: (config: { readonly sourceId?: ProcedureSourceId; readonly procedureId: ProcedureId; readonly refresh?: boolean }) => Promise<ProcedureDocument>
 }
 
-const defaultCacheTtlMs = 5 * 60 * 1000
+const defaultCacheTtlMs = 60 * 60 * 1000
 
 export const defaultProcedureSources: ReadonlyArray<ProcedureSourceConfig> = [{
   sourceId: 'pwr-ops',

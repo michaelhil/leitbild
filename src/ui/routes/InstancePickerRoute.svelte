@@ -1,13 +1,11 @@
 <script lang="ts">
   import {
-    createControlInstance,
     deleteControlInstance,
     listControlInstances,
     listScenarios,
   } from '../control-instance-client.ts'
   import {
-    controlInstanceIdForScenarioRun,
-    createGeneratedRunId,
+    pathForNewScenarioRun,
     pathForScenarioRun,
   } from '../control-instance-route.ts'
   import { runOnMount } from '../svelte-lifecycle.svelte.ts'
@@ -17,7 +15,6 @@
   let instances = $state<ReadonlyArray<ControlInstanceSummary>>([])
   let scenarios = $state<ReadonlyArray<ScenarioListItem>>([])
   let status = $state('Loading')
-  let creatingScenarioId = $state<string | null>(null)
 
   const loadInstances = async (): Promise<void> => {
     const body = await listControlInstances()
@@ -37,31 +34,6 @@
     } catch (err) {
       status = err instanceof Error ? err.message : 'Unable to load scenarios'
     }
-  }
-
-  const createScenarioRun = async (scenarioId: string, navigation: 'assign' | 'replace' = 'assign'): Promise<void> => {
-    if (creatingScenarioId !== null) return
-    creatingScenarioId = scenarioId
-    status = 'Creating Control Instance'
-    try {
-      const runId = createGeneratedRunId()
-      const id = controlInstanceIdForScenarioRun(scenarioId, runId)
-      const body = await createControlInstance({ id, scenarioId })
-      if (body.id !== id) throw new Error(`created control instance ${body.id}, expected ${id}`)
-      const nextPath = pathForScenarioRun(scenarioId, runId)
-      if (navigation === 'replace') {
-        location.replace(nextPath)
-        return
-      }
-      location.href = nextPath
-    } catch (err) {
-      status = err instanceof Error ? err.message : 'control instance create failed'
-      creatingScenarioId = null
-    }
-  }
-
-  const openScenarioRun = (scenarioId: string, runId: string): void => {
-    location.href = pathForScenarioRun(scenarioId, runId)
   }
 
   const deleteScenarioRun = async (controlInstance: ControlInstanceSummary): Promise<void> => {
@@ -90,8 +62,7 @@
   {scenarios}
   {instances}
   {status}
-  {creatingScenarioId}
-  {createScenarioRun}
-  {openScenarioRun}
+  newScenarioRunPath={pathForNewScenarioRun}
+  scenarioRunPath={pathForScenarioRun}
   {deleteScenarioRun}
 />

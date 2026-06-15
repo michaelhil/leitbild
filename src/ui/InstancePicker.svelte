@@ -6,13 +6,12 @@
     readonly scenarios: ReadonlyArray<ScenarioListItem>
     readonly instances: ReadonlyArray<ControlInstanceSummary>
     readonly status: string
-    readonly creatingScenarioId?: string | null
-    readonly createScenarioRun: (scenarioId: string) => Promise<void>
-    readonly openScenarioRun: (scenarioId: string, runId: string) => void
+    readonly newScenarioRunPath: (scenarioId: string) => string
+    readonly scenarioRunPath: (scenarioId: string, runId: string) => string
     readonly deleteScenarioRun: (instance: ControlInstanceSummary) => Promise<void>
   }
 
-  let { scenarios, instances, status, creatingScenarioId = null, createScenarioRun, openScenarioRun, deleteScenarioRun }: Props = $props()
+  let { scenarios, instances, status, newScenarioRunPath, scenarioRunPath, deleteScenarioRun }: Props = $props()
 
   const runsForScenario = (scenarioId: string): ReadonlyArray<ControlInstanceSummary> =>
     instances.filter(instance => instance.scenarioId === scenarioId && instance.runId !== null)
@@ -46,34 +45,37 @@
                 <strong>{scenario.title}</strong>
                 <span class="object-meta">{scenario.description ?? scenario.id}</span>
               </span>
-              <button
+              <a
                 class="command-button compact scenario-new-run"
-                type="button"
-                disabled={creatingScenarioId !== null}
+                href={newScenarioRunPath(scenario.id)}
                 aria-label="Start new run for {scenario.title}"
-                onclick={() => createScenarioRun(scenario.id)}
               >
                 <Play size={15} strokeWidth={2.2} aria-hidden="true" />
-                {creatingScenarioId === scenario.id ? 'Starting' : 'New run'}
-              </button>
+                New run
+              </a>
             </header>
             {#if scenarioRuns.length === 0}
               <div class="empty-row compact">No active or persisted runs</div>
             {:else}
               <div class="scenario-run-list">
                 {#each scenarioRuns as instance (instance.id)}
+                  {@const runId = instance.runId}
                   <article class="instance-row">
-                    <button class="instance-open-target" type="button" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>
-                      <strong>{runLabel(instance)}</strong>
-                      <span class="object-meta">
-                        {instance.loaded ? 'Loaded' : 'Persisted'}
-                        · {instance.websocketClientCount} {instance.websocketClientCount === 1 ? 'user' : 'users'}
-                        {#if instance.objectCount !== null} · {instance.objectCount} objects{/if}
-                        {#if instance.snapshotSeq !== null} · seq {instance.snapshotSeq}{/if}
-                      </span>
-                    </button>
+                    {#if runId}
+                      <a class="instance-open-target" href={scenarioRunPath(scenario.id, runId)}>
+                        <strong>{runLabel(instance)}</strong>
+                        <span class="object-meta">
+                          {instance.loaded ? 'Loaded' : 'Persisted'}
+                          · {instance.websocketClientCount} {instance.websocketClientCount === 1 ? 'user' : 'users'}
+                          {#if instance.objectCount !== null} · {instance.objectCount} objects{/if}
+                          {#if instance.snapshotSeq !== null} · seq {instance.snapshotSeq}{/if}
+                        </span>
+                      </a>
+                    {/if}
                     <div class="instance-row-actions">
-                      <button class="instance-action open" type="button" onclick={() => instance.runId && openScenarioRun(scenario.id, instance.runId)}>Open</button>
+                      {#if runId}
+                        <a class="instance-action open" href={scenarioRunPath(scenario.id, runId)}>Open</a>
+                      {/if}
                       <button
                         class="instance-action delete"
                         type="button"

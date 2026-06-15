@@ -353,6 +353,7 @@ body.rail-resizing {
   color: var(--text);
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
 }
 
 .instance-open-target strong {
@@ -380,6 +381,7 @@ body.rail-resizing {
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .instance-action:hover,
@@ -1030,6 +1032,7 @@ body.rail-resizing {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  text-decoration: none;
 }
 
 .map-region {
