@@ -271,6 +271,16 @@ The sidebar agent list has a hover-reveal **×** on each row for deleting the ag
 
 The **Todos** panel (collapsible, below the room header) shows all tasks for the current room. Add todos manually or let agents create and complete them via the `delegate` tool.
 
+### Demos
+
+Open the **🪄 wand** in any room, or use **Settings → Demos**, to launch the
+capability demos. Empty rooms also show the demo catalog inline. The control-
+room set includes an intentionally unstructured four-agent broadcast, a
+four-agent scripted version of the same coordination problem, and a grounded
+PWR evidence workflow that combines the `pwr-ops` wiki with read-only live
+Leitbild simulator data. Nuclear scenarios are training demonstrations, not
+real-plant operational direction.
+
 ---
 
 ## Tool Reference

@@ -11,7 +11,7 @@ import { send } from '../ws-send.ts'
 import { $selectedRoomId, $rooms, $agents, $roomMembers, $selectedHumanByRoom } from '../stores.ts'
 import { updateLeitbildPanelForRoom } from '../leitbild-iframe-panel.ts'
 import { icon } from '../icon.ts'
-import { getDemo, type Demo, type DemoPrompt, type LeitbildDemoSetup } from './catalog.ts'
+import { getDemo, type Demo, type DemoAgentSpec, type DemoPrompt, type LeitbildDemoSetup } from './catalog.ts'
 import { $activeDemoByRoom } from './active-demo-store.ts'
 
 // Post `content` as if the user typed it in chat. Mirrors the same
@@ -57,10 +57,10 @@ const sendAsCurrentHuman = (content: string): boolean => {
   return true
 }
 
-const buildPromptRow = (entry: DemoPrompt, onSent: () => void): HTMLButtonElement => {
+const buildPromptRow = (demo: Demo, entry: DemoPrompt, onSent: () => void): HTMLButtonElement => {
   const btn = document.createElement('button')
   btn.className = 'w-full text-left px-3 py-2 mb-2 rounded border border-border bg-surface hover:bg-surface-strong'
-  btn.title = entry.prompt
+  btn.title = entry.prompt ?? entry.description
 
   const label = document.createElement('div')
   label.className = 'text-sm font-semibold text-text'
@@ -72,8 +72,15 @@ const buildPromptRow = (entry: DemoPrompt, onSent: () => void): HTMLButtonElemen
 
   btn.appendChild(label)
   btn.appendChild(desc)
-  btn.addEventListener('click', () => {
-    if (sendAsCurrentHuman(entry.prompt)) onSent()
+  btn.addEventListener('click', async () => {
+    btn.disabled = true
+    btn.classList.add('opacity-60', 'cursor-wait')
+    const completed = await executeDemoPrompt(demo, entry)
+    if (completed) onSent()
+    else {
+      btn.disabled = false
+      btn.classList.remove('opacity-60', 'cursor-wait')
+    }
   })
   return btn
 }
@@ -256,7 +263,11 @@ const selectLeitbildInstance = async (setup: LeitbildDemoSetup): Promise<Leitbil
 // the demo's tool allowlist. If no AI is in the room, the mirror still
 // works and the iframe shows; the user just won't get agent answers until
 // they add an AI member.
-const setupLeitbildDemo = async (roomId: string, setup: LeitbildDemoSetup): Promise<LeitbildSetupOk | LeitbildSetupFail> => {
+const setupLeitbildDemo = async (
+  roomId: string,
+  setup: LeitbildDemoSetup,
+  onlyAgentNames?: ReadonlySet<string>,
+): Promise<LeitbildSetupOk | LeitbildSetupFail> => {
   const roomName = $rooms.get()[roomId]?.name
   if (!roomName) return { ok: false, reason: 'Room not found' }
 
@@ -282,7 +293,12 @@ const setupLeitbildDemo = async (roomId: string, setup: LeitbildDemoSetup): Prom
   // 3. PATCH any AI members of the room with leitbildBinding + lb_* tools.
   const members = $roomMembers.get()[roomId] ?? []
   const agents = $agents.get()
-  const ais = members.map(id => agents[id]).filter((a): a is NonNullable<typeof a> => !!a && a.kind === 'ai')
+  const ais: ReadonlyArray<{ readonly name: string; readonly model?: string }> = onlyAgentNames
+    ? [...onlyAgentNames].map(name => ({ name }))
+    : members
+      .map(id => agents[id])
+      .filter((a): a is NonNullable<typeof a> => !!a && a.kind === 'ai')
+      .map(a => ({ name: a.name, model: a.model }))
   const modelCatalog = ais.length > 0 ? await fetchDemoModelCatalog() : undefined
   const modelUpdates: LeitbildModelUpdate[] = []
   for (const ai of ais) {
@@ -339,6 +355,175 @@ const ensurePackInstalled = async (packShortName: string, registryFullName: stri
       body: JSON.stringify({ source: registryFullName }),
     })
   } catch { /* non-fatal — modal still opens; tool calls will surface a clearer error */ }
+}
+
+interface CreatedDemoAgents {
+  readonly ok: true
+  readonly names: ReadonlyArray<string>
+}
+
+interface DemoActionFailure {
+  readonly ok: false
+  readonly reason: string
+}
+
+const createDemoAgents = async (
+  roomName: string,
+  specs: ReadonlyArray<DemoAgentSpec>,
+): Promise<CreatedDemoAgents | DemoActionFailure> => {
+  const catalog = await fetchDemoModelCatalog()
+  const model = catalog?.defaultModel || 'gemini-2.5-flash'
+
+  let existingNames: Set<string>
+  try {
+    const res = await fetch('/api/agents', { credentials: 'same-origin' })
+    if (!res.ok) return { ok: false, reason: `Could not list agents: HTTP ${res.status}` }
+    const body = await res.json() as ReadonlyArray<{ name?: unknown }>
+    existingNames = new Set(body.flatMap(a => typeof a.name === 'string' ? [a.name] : []))
+  } catch (err) {
+    return { ok: false, reason: `Could not list agents: ${(err as Error).message}` }
+  }
+
+  const names: string[] = []
+  for (const spec of specs) {
+    let name = spec.name
+    let suffix = 2
+    while (existingNames.has(name)) name = `${spec.name}${suffix++}`
+    existingNames.add(name)
+
+    try {
+      const create = await fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          name,
+          model,
+          persona: spec.persona,
+          ...(spec.tools ? { tools: spec.tools } : {}),
+          ...(spec.temperature !== undefined ? { temperature: spec.temperature } : {}),
+        }),
+      })
+      if (!create.ok) return { ok: false, reason: `Could not create ${name}: ${await parseErrorResponse(create)}` }
+
+      const add = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ agentName: name }),
+      })
+      if (!add.ok) return { ok: false, reason: `Created ${name}, but could not add it to the room: ${await parseErrorResponse(add)}` }
+      names.push(name)
+    } catch (err) {
+      return { ok: false, reason: `Could not set up ${name}: ${(err as Error).message}` }
+    }
+  }
+  return { ok: true, names }
+}
+
+const setRoomDeliveryMode = async (roomName: string, mode: 'broadcast' | 'manual'): Promise<DemoActionFailure | { readonly ok: true }> => {
+  try {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/delivery-mode`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ mode }),
+    })
+    return res.ok ? { ok: true } : { ok: false, reason: `Could not set ${mode} mode: ${await parseErrorResponse(res)}` }
+  } catch (err) {
+    return { ok: false, reason: `Could not set ${mode} mode: ${(err as Error).message}` }
+  }
+}
+
+const setRoomPaused = async (roomName: string, paused: boolean): Promise<boolean> => {
+  try {
+    const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/pause`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ paused }),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+const executeDemoPrompt = async (demo: Demo, entry: DemoPrompt): Promise<boolean> => {
+  const roomId = $selectedRoomId.get()
+  const roomName = roomId ? $rooms.get()[roomId]?.name : undefined
+  if (!roomId || !roomName) {
+    showToast(document.body, 'Open a room first to run this demo.', { type: 'error', position: 'fixed' })
+    return false
+  }
+
+  const action = entry.action
+  if (!action) {
+    if (!entry.prompt) {
+      showToast(document.body, 'This demo action has no prompt.', { type: 'error', position: 'fixed' })
+      return false
+    }
+    return sendAsCurrentHuman(entry.prompt)
+  }
+
+  if (action.kind === 'start-script') {
+    try {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/script/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ scriptName: action.scriptName }),
+      })
+      if (!res.ok) {
+        showToast(document.body, `Could not start script: ${await parseErrorResponse(res)}`, { type: 'error', position: 'fixed', durationMs: 10000 })
+        return false
+      }
+      showToast(document.body, 'Structured control-room script started. Follow the living document in the right rail.', { type: 'success', position: 'fixed', durationMs: 8000 })
+      return true
+    } catch (err) {
+      showToast(document.body, `Could not start script: ${(err as Error).message}`, { type: 'error', position: 'fixed', durationMs: 10000 })
+      return false
+    }
+  }
+
+  const created = await createDemoAgents(roomName, action.agents)
+  if (created.ok === false) {
+    showToast(document.body, created.reason, { type: 'error', position: 'fixed', durationMs: 10000 })
+    return false
+  }
+
+  if (action.kind === 'spawn-grounded') {
+    if (!demo.leitbildSetup) {
+      showToast(document.body, 'Grounded demo has no Leitbild setup.', { type: 'error', position: 'fixed' })
+      return false
+    }
+    const setup = await setupLeitbildDemo(roomId, demo.leitbildSetup, new Set(created.names))
+    if (setup.ok === false) {
+      showToast(document.body, `Leitbild setup failed: ${setup.reason}`, { type: 'error', position: 'fixed', durationMs: 10000 })
+      return false
+    }
+    const prompt = entry.prompt?.replaceAll('{{agent}}', created.names[0] ?? '')
+    if (!prompt || !sendAsCurrentHuman(prompt)) return false
+    const roomForPanel = $rooms.get()[roomId]?.name
+    if (roomForPanel) void updateLeitbildPanelForRoom(roomForPanel, roomId)
+    showToast(document.body, `${created.names.join(', ')} created and connected read-only to Leitbild.`, { type: 'success', position: 'fixed', durationMs: 8000 })
+    return true
+  }
+
+  const mode = await setRoomDeliveryMode(roomName, 'broadcast')
+  if (mode.ok === false) {
+    showToast(document.body, mode.reason, { type: 'error', position: 'fixed', durationMs: 10000 })
+    return false
+  }
+  await setRoomPaused(roomName, false)
+  if (!entry.prompt || !sendAsCurrentHuman(entry.prompt)) return false
+  showToast(document.body, `${created.names.length} agents created. Broadcast discussion will auto-pause after ${Math.round(action.autoPauseAfterMs / 1000)} seconds.`, { type: 'success', position: 'fixed', durationMs: 8000 })
+  window.setTimeout(() => {
+    void setRoomPaused(roomName, true).then(paused => {
+      if (paused) showToast(document.body, 'Unstructured demo paused automatically. Inspect the cross-talk, then unpause manually if you want more.', { type: 'success', position: 'fixed', durationMs: 10000 })
+    })
+  }, action.autoPauseAfterMs)
+  return true
 }
 
 export const openDemoModal = async (demoId: string): Promise<void> => {
@@ -410,28 +595,33 @@ export const openDemoModal = async (demoId: string): Promise<void> => {
 
   const onSent = (): void => { modal.close() }
   for (const p of demo.prompts) {
-    modal.scrollBody.appendChild(buildPromptRow(p, onSent))
+    modal.scrollBody.appendChild(buildPromptRow(demo, p, onSent))
   }
 
   document.body.appendChild(modal.overlay)
 }
 
 // === Room-header icon ============================================================
-// Ensure a 🎬 button is present in the room header iff a demo is pinned for
-// the currently-selected room. Click → re-open the demo modal.
+// Keep a 🪄 entry point in every open room. With no pinned demo it opens the
+// picker; once a demo is pinned it re-opens that demo directly.
 
 const HEADER_ICON_ID = 'demo-header-icon'
 
-const buildHeaderIcon = (demo: Demo): HTMLButtonElement => {
+const buildHeaderIcon = (demo?: Demo): HTMLButtonElement => {
   const btn = document.createElement('button')
   btn.id = HEADER_ICON_ID
   btn.setAttribute('data-room-icon-id', 'demo')
   btn.setAttribute('data-room-icon-label', 'Demo')
   btn.className = 'mode-btn icon-btn'
-  btn.title = `Open ${demo.title}`
-  btn.setAttribute('aria-label', `Open ${demo.title}`)
-  btn.appendChild(icon('wand', { size: 16, title: demo.title }))
-  btn.addEventListener('click', () => { void openDemoModal(demo.id) })
+  btn.dataset.demoId = demo?.id ?? ''
+  const title = demo ? `Open ${demo.title}` : 'Browse demos'
+  btn.title = title
+  btn.setAttribute('aria-label', title)
+  btn.appendChild(icon('wand', { size: 16, title }))
+  btn.addEventListener('click', () => {
+    if (demo) void openDemoModal(demo.id)
+    else void import('./index.ts').then(m => m.openDemosNavPicker())
+  })
   return btn
 }
 
@@ -448,10 +638,10 @@ export const refreshDemoHeaderIcon = (): void => {
   const removeIcon = (): void => { existingGroup?.remove() }
   if (!roomId) { removeIcon(); return }
   const demoId = $activeDemoByRoom.get()[roomId]
-  if (!demoId) { removeIcon(); return }
-  const demo = getDemo(demoId)
-  if (!demo) { removeIcon(); return }
-  if (existingGroup) return  // already correct
+  const demo = demoId ? getDemo(demoId) : undefined
+  const existingButton = existingGroup?.querySelector(`#${HEADER_ICON_ID}`) as HTMLButtonElement | null
+  if (existingButton?.dataset.demoId === (demo?.id ?? '')) return
+  existingGroup?.remove()
   // Append as a new toolbar-group at the end of the icon cluster so the
   // wand sits to the right of the Summary group, with a divider.
   const group = document.createElement('div')

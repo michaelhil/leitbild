@@ -138,8 +138,10 @@ WebSocket events broadcast to room subscribers:
 
 - **Persona is character + voice; role is what they push for in this step.**
   A character's persona stays constant across steps; their role changes.
-- **Two cast members in v1.** The runner alternates activation between
-  them. N>2 cast is a future extension.
+- **Two or more cast members.** The runner activates one speaker at a time
+  and advances round-robin unless a whisper explicitly addresses another
+  present cast member. Four-person scripts work well for demonstrations,
+  but more cast members make each consensus gate take longer.
 - **Interlocking goals create movement.** Step 1's role for Alex should
   imply something Sam needs to do for Alex to feel ready, and vice
   versa.

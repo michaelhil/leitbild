@@ -10,13 +10,44 @@
 export interface DemoPrompt {
   readonly label: string
   readonly description: string
-  // Sent verbatim as a chat message in the current room when clicked.
-  // Mention any required tool by name explicitly; modern models pick tools
-  // reliably when named.
-  readonly prompt: string
+  // Sent as a chat message unless action.kind starts a script. Mention any
+  // required tool by name explicitly; modern models pick tools reliably.
+  readonly prompt?: string
+  readonly action?: DemoPromptAction
 }
 
-export type DemoId = 'procedures' | 'biometrics' | 'aviation' | 'leitbild'
+export interface DemoAgentSpec {
+  readonly name: string
+  readonly persona: string
+  readonly tools?: ReadonlyArray<string>
+  readonly temperature?: number
+}
+
+export type DemoPromptAction =
+  | {
+      readonly kind: 'spawn-broadcast'
+      readonly agents: ReadonlyArray<DemoAgentSpec>
+      // A deliberately unstructured room can fan out quickly. Pause delivery
+      // after this bounded observation window so a demo cannot run forever.
+      readonly autoPauseAfterMs: number
+    }
+  | {
+      readonly kind: 'start-script'
+      readonly scriptName: string
+    }
+  | {
+      readonly kind: 'spawn-grounded'
+      readonly agents: ReadonlyArray<DemoAgentSpec>
+    }
+
+export type DemoId =
+  | 'control-room-chaos'
+  | 'control-room-script'
+  | 'pwr-evidence'
+  | 'procedures'
+  | 'biometrics'
+  | 'aviation'
+  | 'leitbild'
 
 export interface LeitbildDemoSetup {
   readonly baseUrl: string
@@ -41,6 +72,104 @@ export interface Demo {
 }
 
 export const DEMO_CATALOG: ReadonlyArray<Demo> = [
+  {
+    id: 'control-room-chaos',
+    title: 'Control Room: Unstructured',
+    blurb:
+      'See why “put several smart agents in one room” is not an orchestration strategy. This training-only demo creates four opinionated control-room personas in broadcast mode, gives them one ambiguous question, and pauses delivery automatically after 25 seconds. Use a fresh room. Re-open it from the 🪄 icon.',
+    requiredPacks: [],
+    requiredTools: [],
+    prompts: [
+      {
+        label: 'Create the crew and start the discussion',
+        description: 'Four agents react concurrently with no chair, turn order, shared evidence template, or decision gate.',
+        prompt:
+          'TRAINING SIMULATOR DISCUSSION — not operational direction. At 02:40, twenty minutes after an automatic reactor trip, steam-generator B level is rising on one channel while wide-range level is flat, its radiation monitor is slightly elevated but below alarm, pressurizer pressure is drifting down, and no shared evidence board exists. Discuss: which hypothesis should frame the crew response, what evidence is missing, and what should be communicated in the next five minutes? There is deliberately no moderator, speaking order, shared template, or decision rule. Respond to the human question, challenge at least one peer once, keep each message under 120 words, and stop after at most two contributions.',
+        action: {
+          kind: 'spawn-broadcast',
+          autoPauseAfterMs: 25_000,
+          agents: [
+            {
+              name: 'ChaosBoardOperator',
+              temperature: 0.8,
+              persona:
+                'You are a reactor board operator in a training simulator. You privilege live indications and trend recognition, distrust abstract debate, and push the group to act on what is visible. Be concise and assertive. Challenge one peer when their interpretation outruns the board evidence. Make no more than two contributions, then wait for a human.',
+            },
+            {
+              name: 'ChaosShiftSupervisor',
+              temperature: 0.8,
+              persona:
+                'You are the shift supervisor in a training simulator. You feel responsible for reaching a decision quickly and tend to close debate before every uncertainty is resolved. Be decisive, question delay, and challenge one peer. Make no more than two contributions, then wait for a human.',
+            },
+            {
+              name: 'ChaosSafetyEngineer',
+              temperature: 0.8,
+              persona:
+                'You are an independent nuclear-safety engineer in a training exercise. You focus on worst credible cases, common-mode failures, and premature closure. Interrupt overconfident claims with missing evidence. Do not give equipment-control instructions. Make no more than two contributions, then wait for a human.',
+            },
+            {
+              name: 'ChaosProcedureSpecialist',
+              temperature: 0.8,
+              persona:
+                'You are a procedure specialist in a training exercise, but you have not been given a shared evidence worksheet or a formal turn. You insist on procedural discipline, correct imprecise terminology, and challenge one peer whose framing does not match your recollection. Do not invent exact step text. Make no more than two contributions, then wait for a human.',
+            },
+          ],
+        },
+      },
+    ],
+  },
+  {
+    id: 'control-room-script',
+    title: 'Control Room: Scripted',
+    blurb:
+      'Run the same kind of ambiguous training problem as a living multi-agent script. Four personas take controlled turns through a shared fact ledger, source grounding, adversarial challenge, decision gate, and final brief. The script creates and removes its own cast. Re-open it from the 🪄 icon.',
+    requiredPacks: ['pwr-ops'],
+    requiredTools: ['procedure_lookup', 'wiki_lookup', 'eal_classify'],
+    prompts: [
+      {
+        label: 'Start the structured discussion',
+        description: 'Launch the four-person script and watch its living document in the right rail.',
+        action: { kind: 'start-script', scriptName: 'structured-control-room-response' },
+      },
+    ],
+  },
+  {
+    id: 'pwr-evidence',
+    title: 'PWR Evidence: Wiki + Live Sim',
+    blurb:
+      'Create a dedicated evidence analyst, connect it read-only to a live Leitbild PWR simulator, and require it to reconcile current simulator data with the pwr-ops wiki and emergency procedures. This is a training evidence workflow, not operational direction. Re-open it from the 🪄 icon.',
+    requiredPacks: ['pwr-ops'],
+    requiredTools: ['lb_state', 'lb_scenario', 'lb_query', 'procedure_lookup', 'wiki_lookup'],
+    leitbildSetup: {
+      baseUrl: 'https://leitbild.samsinn.app',
+      preferredScenarioId: 'halden-process-plant-demo',
+      candidateScenarioIds: ['halden-process-plant-demo', 'oslo-all-packs-demo'],
+      requiredPackId: 'process-plant',
+      requiredQueryKind: 'process-plant.systems.list',
+      probePayload: {},
+      agentTools: ['lb_state', 'lb_scenario', 'lb_query', 'procedure_lookup', 'wiki_lookup'],
+    },
+    prompts: [
+      {
+        label: 'Create analyst and build an evidence board',
+        description: 'Pull live PWR state, fetch the relevant wiki/procedure sources, and separate observations from criteria and inference.',
+        prompt:
+          '[[{{agent}}]] TRAINING EVIDENCE DRILL — not operational direction. First use lb_scenario and lb_state. Then use lb_query with packId="process-plant", kind="process-plant.systems.list", payload={} and choose one returned PWR systemId. Read that system with lb_query kind="process-plant.transient.diagnostics" and payload={"systemId":"<chosen-systemId>"}. Fetch E-0 with procedure_lookup in summary mode, and use wiki_lookup to fetch the most relevant scenario or system-description page for the observed state. Produce a compact evidence board with four columns: live observation, source/units, procedure or wiki criterion, and interpretation. End with the best-supported training hypothesis, missing evidence, and what would change the conclusion. Cite the procedure and wiki identifiers you actually fetched; do not invent unavailable simulator values.',
+        action: {
+          kind: 'spawn-grounded',
+          agents: [
+            {
+              name: 'PWREvidenceLead',
+              temperature: 0.2,
+              tools: ['lb_state', 'lb_scenario', 'lb_query', 'procedure_lookup', 'wiki_lookup'],
+              persona:
+                'You are a PWR simulator evidence analyst. You treat live Leitbild data as observations and pwr-ops pages/procedures as reference criteria, never blur the two, cite every fetched source by identifier, preserve units, and mark missing or contradictory evidence. You provide training analysis only, never real-plant operational direction.',
+            },
+          ],
+        },
+      },
+    ],
+  },
   {
     id: 'procedures',
     title: 'Procedure Demo',
