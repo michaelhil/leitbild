@@ -36,6 +36,10 @@ export interface Script {
   readonly name: string                                 // filesystem name
   readonly title: string
   readonly premise?: string
+  // Directed scripts activate one next speaker. Broadcast-pass scripts send
+  // each turn to the whole cast; every member gets one response opportunity
+  // and may use the pass tool when they have no relevant contribution.
+  readonly turnMode?: 'directed' | 'broadcast-pass'
   readonly cast: ReadonlyArray<CastMember>              // exactly 2 in v1
   readonly steps: ReadonlyArray<Step>                   // ≥1
   readonly source: string                               // raw .md text — for round-trip / debug
@@ -88,6 +92,7 @@ export interface ScriptRun {
   readiness: Record<string, boolean>                    // castName → ready_to_advance
   readyStreak: Record<string, number>                   // castName → consecutive ready turns this step
   roleOverrides: Record<string, string>                 // castName → current role override
+  broadcastSeen: string[]                               // cast names that answered this broadcast round
   stepLogs: StepLog[]                                   // index aligned with script.steps
   whisperFailures: number                               // consecutive failures, surfaced in UI
   priorMode?: 'broadcast' | 'manual'                    // restored on stop

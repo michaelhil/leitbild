@@ -27,6 +27,9 @@ const renderHeader = (script: Script, viewer: string | null): string => {
   const lines: string[] = []
   lines.push(`# SCRIPT: ${script.title}`)
   if (script.premise) lines.push(`Premise: ${script.premise}`)
+  if (script.turnMode === 'broadcast-pass') {
+    lines.push('Turn-taking: broadcast-pass (every cast member sees each turn; use pass when not relevant)')
+  }
   lines.push('')
   lines.push('## Cast')
   for (const c of script.cast) {

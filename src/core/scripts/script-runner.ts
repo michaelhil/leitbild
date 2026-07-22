@@ -269,6 +269,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
       readiness: Object.fromEntries(script.cast.map(c => [c.name, false])),
       readyStreak: Object.fromEntries(script.cast.map(c => [c.name, 0])),
       roleOverrides: {},
+      broadcastSeen: [],
       stepLogs: initialStepLogs(script),
       whisperFailures: 0,
       priorMode,
@@ -372,6 +373,12 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
         await advance(liveRun, false)
         return
       }
+      if (liveRun.script.turnMode === 'broadcast-pass') {
+        const next = liveRun.script.cast.find(c => !liveRun.broadcastSeen.includes(c.name))
+        const agent = next ? getSystem().team.getAgent(next.name) : undefined
+        if (agent) getSystem().activateAgentInRoom(agent.id, roomId)
+        return
+      }
       const last = lastSpeaker.get(roomId)
       const nextName = last ? nextSpeaker(liveRun, last, undefined) : startsCastName(liveRun.script)
       const agent = nextName ? getSystem().team.getAgent(nextName) : undefined
@@ -385,7 +392,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
   const onRoomMessage = (roomId: string, message: Message): void => {
     const run = runs.get(roomId)
     if (!run || run.ended) return
-    if (message.type !== 'chat') return
+    if (message.type !== 'chat' && message.type !== 'pass') return
     if (message.senderId === SYSTEM_SENDER_ID) return
 
     enqueue(roomId, async () => {
@@ -412,13 +419,18 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     lastSpeaker.set(run.roomId, castName)
 
     const system = getSystem()
-    const result = await classifyWhisper({
-      llm: system.llmService.bound({ source: 'whisper' }),
-      model: run.script.cast.find(c => c.name === castName)!.model,
-      message: message.content,
-      scriptContext: renderLivingScript(run, castName),
-      presentCast: run.script.cast.map(c => c.name),
-    })
+    const result = message.type === 'pass'
+      ? {
+          whisper: { ready_to_advance: true, notes: 'passed — no relevant contribution' },
+          usedFallback: false,
+        }
+      : await classifyWhisper({
+          llm: system.llmService.bound({ source: 'whisper' }),
+          model: run.script.cast.find(c => c.name === castName)!.model,
+          message: message.content,
+          scriptContext: renderLivingScript(run, castName),
+          presentCast: run.script.cast.map(c => c.name),
+        })
 
     const record: WhisperRecord = {
       turn: run.turn,
@@ -453,6 +465,9 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
       whispersByCast: { [castName]: record },
     }
     appendDialogue(run, entry)
+    if (run.script.turnMode === 'broadcast-pass' && !run.broadcastSeen.includes(castName)) {
+      run.broadcastSeen = [...run.broadcastSeen, castName]
+    }
 
     emit?.(run.roomId, 'script_dialogue_appended', {
       scriptId: run.script.id,
@@ -470,6 +485,19 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
 
     const room = system.house.getRoom(run.roomId)
     const allReady = run.script.cast.every(c => run.readiness[c.name] === true)
+    if (run.script.turnMode === 'broadcast-pass') {
+      const roundComplete = run.broadcastSeen.length >= run.script.cast.length
+      if (!roundComplete || room?.paused) return
+      run.broadcastSeen = []
+      if (allReady) {
+        await advance(run, false)
+        return
+      }
+      const next = startsCastName(run.script)
+      const agent = system.team.getAgent(next)
+      if (agent) system.activateAgentInRoom(agent.id, run.roomId)
+      return
+    }
     if (allReady) {
       // Pausing is a safe boundary: whisper classification and the finished
       // utterance are recorded, but step advancement waits for Resume.
@@ -540,6 +568,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
       run.readyStreak[c.name] = 0
     }
     run.roleOverrides = {}
+    run.broadcastSeen = []
 
     if (run.currentStep >= run.script.steps.length) {
       run.ended = true

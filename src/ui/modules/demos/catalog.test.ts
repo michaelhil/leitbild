@@ -48,6 +48,20 @@ describe('control-room demo catalog', () => {
       .toEqual(['procedure_lookup', 'wiki_lookup'])
   })
 
+  test('broadcast-pass demo uses broadcast turn-taking and the Turn-Taking category', () => {
+    const demo = getDemo('control-room-broadcast-pass')!
+    expect(demo.category).toBe('Turn-Taking Demos')
+    const action = demo.prompts[0]!.action
+    expect(action?.kind).toBe('start-script')
+    if (action?.kind !== 'start-script') throw new Error('wrong action')
+
+    const file = resolve(process.cwd(), 'examples', 'scripts', `${action.scriptName}.md`)
+    const script = parseScriptMd(action.scriptName, readFileSync(file, 'utf8'))
+    expect(script.turnMode).toBe('broadcast-pass')
+    expect(script.cast).toHaveLength(4)
+    expect(script.steps).toHaveLength(3)
+  })
+
   test('grounded demo provisions a read-only analyst with wiki and simulator tools', () => {
     const demo = getDemo('pwr-evidence')!
     const action = demo.prompts[0]!.action

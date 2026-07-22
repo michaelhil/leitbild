@@ -14,6 +14,7 @@ line-precise error.
 ```markdown
 # SCRIPT: <title>                       ← required, exactly one
 Premise: <one-line text>                 ← optional
+Turn-taking: broadcast-pass              ← optional; broadcast every turn to all cast
 
 ## Cast                                  ← required
 
@@ -37,6 +38,14 @@ Roles:
 Cast names must match between `## Cast` and every step's `Roles:` block.
 Exactly one cast member must carry the `(starts)` marker — they speak
 first when the script begins. Step numbers must be contiguous from 1.
+
+By default, the runner uses directed turn-taking: one cast member is
+activated after the previous post. `Turn-taking: broadcast-pass` changes the
+boundary to a broadcast round: every cast member receives each turn, in cast
+order, and may use the built-in `pass` tool when their discipline has no new
+contribution. Once the round is complete, readiness gates the next round or
+step. Agents should not address one another by name in this mode; the shared
+ledger and step goal provide the coordination surface.
 
 A complete reference script is in `examples/scripts/quarterly-planning.md`.
 

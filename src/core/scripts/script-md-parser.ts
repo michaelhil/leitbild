@@ -5,6 +5,7 @@
 //
 //   # SCRIPT: <title>                ← required, exactly one
 //   Premise: <one-line text>         ← optional
+//   Turn-taking: broadcast-pass      ← optional; broadcasts each turn to all cast
 //
 //   ## Cast                          ← required
 //   ### <CastName> [(starts)]
@@ -82,6 +83,7 @@ export const parseScriptMd = (name: string, source: string): Script => {
 
   // --- Premise: optional single line
   let premise: string | undefined
+  let turnMode: Script['turnMode']
   while (i < lines.length) {
     const ln = peek() ?? ''
     if (ln.trim() === '') { i++; continue }
@@ -91,6 +93,13 @@ export const parseScriptMd = (name: string, source: string): Script => {
       consume()
     }
     break
+  }
+  while (i < lines.length && (peek() ?? '').trim() === '') i++
+  const turnLine = peek() ?? ''
+  const turnMatch = /^Turn-taking:\s*(directed|broadcast-pass)\s*$/.exec(turnLine)
+  if (turnMatch) {
+    turnMode = turnMatch[1] as Script['turnMode']
+    consume()
   }
 
   // --- ## Cast
@@ -157,6 +166,7 @@ export const parseScriptMd = (name: string, source: string): Script => {
     name,
     title,
     ...(premise ? { premise } : {}),
+    ...(turnMode ? { turnMode } : {}),
     cast,
     steps,
     source,

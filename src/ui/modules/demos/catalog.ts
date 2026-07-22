@@ -43,6 +43,7 @@ export type DemoPromptAction =
 export type DemoId =
   | 'control-room-chaos'
   | 'control-room-script'
+  | 'control-room-broadcast-pass'
   | 'pwr-evidence'
   | 'procedures'
   | 'biometrics'
@@ -62,6 +63,7 @@ export interface LeitbildDemoSetup {
 export interface Demo {
   readonly id: DemoId
   readonly title: string
+  readonly category?: string
   readonly blurb: string                       // shown in the modal; mentions the 🪄 icon
   readonly requiredPacks: ReadonlyArray<string>
   // Tool names the prompts call. A boot-time test (catalog.test.ts) asserts
@@ -75,6 +77,7 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
   {
     id: 'control-room-chaos',
     title: 'Control Room: Unstructured',
+    category: 'Turn-Taking Demos',
     blurb:
       'See why “put several smart agents in one room” is not an orchestration strategy. This training-only demo creates four opinionated control-room personas in broadcast mode, gives them one ambiguous question, and pauses delivery automatically after 25 seconds. Use a fresh room. Re-open it from the 🪄 icon.',
     requiredPacks: [],
@@ -121,6 +124,7 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
   {
     id: 'control-room-script',
     title: 'Control Room: Scripted',
+    category: 'Turn-Taking Demos',
     blurb:
       'Run the same kind of ambiguous training problem as a living multi-agent script. Four personas take controlled turns through a shared fact ledger, source grounding, adversarial challenge, decision gate, and final brief. The script creates and removes its own cast. Re-open it from the 🪄 icon.',
     requiredPacks: ['pwr-ops'],
@@ -130,6 +134,22 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
         label: 'Start the structured discussion',
         description: 'Launch the four-person script and watch its living document in the right rail.',
         action: { kind: 'start-script', scriptName: 'structured-control-room-response' },
+      },
+    ],
+  },
+  {
+    id: 'control-room-broadcast-pass',
+    title: 'Control Room: Broadcast + Pass',
+    category: 'Turn-Taking Demos',
+    blurb:
+      'Run a structured discussion where every agent sees every turn. Each discipline contributes once per round or uses the pass tool when it has nothing new to add. No agent-to-agent addressing; the shared ledger and step gates keep the conversation coherent. Re-open it from the 🪄 icon.',
+    requiredPacks: ['pwr-ops'],
+    requiredTools: ['procedure_lookup', 'wiki_lookup', 'eal_classify'],
+    prompts: [
+      {
+        label: 'Start the broadcast-and-pass discussion',
+        description: 'Watch every agent receive each turn, contribute by discipline, or pass cleanly before the next round.',
+        action: { kind: 'start-script', scriptName: 'structured-broadcast-pass' },
       },
     ],
   },

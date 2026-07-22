@@ -80,7 +80,16 @@ export const openDemosNavPicker = async (): Promise<void> => {
   intro.textContent = 'Pick a demo. It pins to the current room — switching demos wipes the previous pin.'
   modal.scrollBody.appendChild(intro)
 
+  let lastCategory: string | undefined
   for (const demo of DEMO_CATALOG) {
+    const category = demo.category ?? 'Other Demos'
+    if (category !== lastCategory) {
+      const heading = document.createElement('h3')
+      heading.className = 'text-xs font-semibold uppercase tracking-wide text-text-muted mt-4 mb-2 first:mt-0'
+      heading.textContent = category
+      modal.scrollBody.appendChild(heading)
+      lastCategory = category
+    }
     const card = document.createElement('div')
     card.className = 'mb-2 rounded border border-border bg-surface'
 
