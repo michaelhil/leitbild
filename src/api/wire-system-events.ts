@@ -25,6 +25,13 @@ import type { AutoSaver } from '../core/storage/snapshot.ts'
 import type { WSManager } from './ws-handler.ts'
 import { asAIAgent } from '../agents/shared.ts'
 
+type PromptContextSnapshot = {
+  readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>
+  readonly model: string
+  readonly temperature?: number
+  readonly toolCount: number
+}
+
 export const wireSystemEvents = (
   system: System,
   wsManager: WSManager,
@@ -39,6 +46,9 @@ export const wireSystemEvents = (
   const broadcast = (msg: Parameters<WSManager['broadcast']>[0]): void => {
     wsManager.broadcastToInstance(instanceId, msg)
   }
+  // Context is held only until the corresponding message is posted, then
+  // delivered in a separate ephemeral WS event. It never enters snapshots.
+  const pendingPromptContexts = new Map<string, { context: PromptContextSnapshot; warnings: string[] }>()
 
   // Helper resolvers for room/agent name lookup (tolerate missing entities).
   const roomNameFor = (roomId: string): string =>
@@ -50,6 +60,11 @@ export const wireSystemEvents = (
 
   system.setOnMessagePosted((_roomId, message) => {
     broadcast({ type: 'message', message })
+    const pending = pendingPromptContexts.get(message.senderId)
+    if (pending) {
+      broadcast({ type: 'message_context', messageId: message.id, context: pending.context, ...(pending.warnings.length > 0 ? { warnings: pending.warnings } : {}) })
+      pendingPromptContexts.delete(message.senderId)
+    }
     sched()
   })
 
@@ -143,6 +158,26 @@ export const wireSystemEvents = (
   // Sampled to once per 25 chunks to avoid spamming the journal.
   const broadcastChunkCount = new Map<string, number>()
   system.setOnEvalEvent((agentName, event) => {
+    if (event.kind === 'context_ready') {
+      const agent = system.team.getAgent(agentName)
+      if (agent) {
+        pendingPromptContexts.set(agent.id, {
+          context: {
+            messages: event.messages,
+            model: event.model,
+            temperature: event.temperature,
+            toolCount: event.toolCount,
+          },
+          warnings: [],
+        })
+      }
+    } else if (event.kind === 'warning') {
+      const agent = system.team.getAgent(agentName)
+      if (agent) {
+        const pending = pendingPromptContexts.get(agent.id)
+        if (pending) pending.warnings.push(event.message)
+      }
+    }
     if (event.kind === 'chunk') {
       const k = agentName
       const n = (broadcastChunkCount.get(k) ?? 0) + 1

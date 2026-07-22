@@ -142,6 +142,18 @@ export const stateHandlers: StateHandlers = {
 
   // --- Messages ---
 
+  message_context(msg) {
+    $messageContexts.setKey(msg.messageId, {
+      messages: msg.context.messages,
+      model: msg.context.model,
+      temperature: msg.context.temperature,
+      toolCount: msg.context.toolCount,
+    })
+    if (msg.warnings && msg.warnings.length > 0) {
+      $messageWarnings.setKey(msg.messageId, [...msg.warnings])
+    }
+  },
+
   message(msg) {
     const m = toUIMessage(msg.message)
     const roomId = m.roomId ?? ''

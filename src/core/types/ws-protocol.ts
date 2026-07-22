@@ -70,6 +70,9 @@ export interface BiometricSignalWire {
 
 export type WSOutbound =
   | { readonly type: 'message'; readonly message: Message }
+  // Ephemeral prompt inspector payload for a freshly generated message. Kept
+  // separate from Message so full prompt transcripts are never persisted.
+  | { readonly type: 'message_context'; readonly messageId: string; readonly context: { readonly messages: ReadonlyArray<{ readonly role: string; readonly content: string }>; readonly model: string; readonly temperature?: number; readonly toolCount: number }; readonly warnings?: ReadonlyArray<string> }
   // lb_screenshot — server asks every connected session in this instance
   // to take a screenshot of its mounted Leitbild iframe and post the
   // result back via lb_screenshot_result. First responder wins; tool
