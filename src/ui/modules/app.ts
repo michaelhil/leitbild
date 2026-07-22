@@ -126,12 +126,6 @@ let client: WSClient | null = null
 
 const handleDeleteRoom = async (roomId: string, roomName: string): Promise<void> => {
   void roomId
-  const { confirmModal } = await import('./modals/confirm-modal.ts')
-  if (!(await confirmModal({
-    title: 'Delete room',
-    body: `Delete room "${roomName}"? This cannot be undone.`,
-    confirmLabel: 'Delete',
-  }))) return
   send({ type: 'delete_room', roomName })
 }
 
@@ -273,12 +267,6 @@ $agentListView.subscribe(({ agents, selectedAgentId, selectedRoomId, roomMemberI
       $selectedAgentId.set(agentId)
     },
     onDelete: async (agentName) => {
-      const { confirmModal } = await import('./modals/confirm-modal.ts')
-      if (!(await confirmModal({
-        title: 'Delete agent',
-        body: `Delete agent "${agentName}"? This cannot be undone.`,
-        confirmLabel: 'Delete',
-      }))) return
       void safeFetchJson(`/api/agents/${encodeURIComponent(agentName)}`, { method: 'DELETE' })
     },
   })
