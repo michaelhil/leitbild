@@ -5,7 +5,7 @@
 //
 // Mirrors summary-panel.ts in shape: minimal, store-driven, no internal state.
 
-import { $activeScriptByRoom, $scriptCatalog, $selectedRoomId } from '../stores.ts'
+import { $activeScriptByRoom, $roomPaused, $scriptCatalog, $selectedRoomId } from '../stores.ts'
 import { domRefs } from '../app-dom.ts'
 import { showToast } from '../toast.ts'
 import { showScriptDocPanel } from '../panels/script-doc-panel.ts'
@@ -43,6 +43,9 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
         btnScriptStart.classList.add('hidden')
         btnScriptAdvance.classList.remove('hidden')
         btnScriptStop.classList.remove('hidden')
+        const paused = $roomPaused.get()
+        btnScriptAdvance.title = paused ? 'Resume script' : 'Force-advance to next step'
+        btnScriptAdvance.setAttribute('aria-label', paused ? 'Resume script' : 'Force-advance')
       }
       const total = active.totalSteps || (active.stepIndex + 1)
       const stepTitle = active.stepTitle || '…'
@@ -72,6 +75,7 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
 
   $activeScriptByRoom.listen(refresh)
   $selectedRoomId.listen(refresh)
+  $roomPaused.listen(refresh)
 
   // --- Start popover ---
   const closePopover = (): void => {
@@ -142,6 +146,24 @@ export const initScriptPanel = (deps: ScriptPanelDeps): void => {
   btnScriptAdvance.onclick = async () => {
     const name = await getSelectedRoomName()
     if (!name) return
+    const roomId = $selectedRoomId.get()
+    const active = roomId ? $activeScriptByRoom.get()[roomId] : undefined
+    if (!active || active.ended) {
+      refresh()
+      return
+    }
+    if ($roomPaused.get()) {
+      const res = await fetch(`/api/rooms/${encodeURIComponent(name)}/pause`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paused: false }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'unknown' }))
+        showToast(document.body, `Resume failed: ${(data as { error?: string }).error ?? `HTTP ${res.status}`}`, { type: 'error', position: 'fixed' })
+      }
+      return
+    }
     const res = await fetch(`/api/rooms/${encodeURIComponent(name)}/script/advance`, { method: 'POST' })
     if (!res.ok) {
       const data = await res.json().catch(() => ({ error: 'unknown' }))
