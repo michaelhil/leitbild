@@ -1,15 +1,15 @@
-// Right-rail living-script document panel.
+// Right-rail script panel: immutable source above, live run status below.
 //
 // Visible only when a script is active in the selected room. Renders the
-// "director" view (all whispers shown). Re-fetches the rendered document
-// from /api/rooms/:room/script/document on every relevant WS event:
-// dialogue appended, readiness changed, step advanced, started, completed.
+// The source pane always shows the original script.md. Runtime dialogue never
+// enters that pane; it is summarized in the status pane below it.
 //
 // Width persists in localStorage. Hidden by default; user can dismiss via
 // the close button (the chip in the room header still flags an active run).
 
-import { $activeScriptByRoom, $selectedRoomId, $rooms } from '../stores.ts'
+import { $activeScriptByRoom, $selectedRoomId } from '../stores.ts'
 import { domRefs } from '../app-dom.ts'
+import { buildScriptStatusSnapshot } from './script-status.ts'
 
 const STORAGE_WIDTH_KEY = 'samsinn:script-doc-width'
 const STORAGE_HIDDEN_KEY = 'samsinn:script-doc-hidden'
@@ -18,6 +18,7 @@ const MIN_WIDTH = 240
 const MAX_WIDTH = 720
 
 let dismissed = false
+const sourceCache = new Map<string, string>()
 
 const readWidth = (): number => {
   const raw = localStorage.getItem(STORAGE_WIDTH_KEY)
@@ -49,88 +50,83 @@ const setVisible = (visible: boolean): void => {
   }
 }
 
+const fetchSource = async (scriptName: string): Promise<string> => {
+  const cached = sourceCache.get(scriptName)
+  if (cached !== undefined) return cached
+  try {
+    const res = await fetch(`/api/scripts/${encodeURIComponent(scriptName)}`)
+    if (res.ok) {
+      const data = await res.json() as { source?: unknown }
+      if (typeof data.source === 'string') {
+        sourceCache.set(scriptName, data.source)
+        return data.source
+      }
+    }
+  } catch { /* source pane keeps a visible fallback */ }
+  return '(script source unavailable)'
+}
+
+const renderStatus = (active: import('../stores.ts').ActiveScript): void => {
+  const root = domRefs.scriptDocStatus
+  root.replaceChildren()
+  const snapshot = buildScriptStatusSnapshot(active)
+  const heading = document.createElement('div')
+  heading.className = 'font-semibold text-text-strong mb-2'
+  heading.textContent = snapshot.complete
+    ? `Complete · ${active.totalSteps} steps`
+    : `Step ${active.stepIndex + 1}/${active.totalSteps} · ${snapshot.stepTitle}`
+  root.appendChild(heading)
+
+  if (snapshot.goal) {
+    const goal = document.createElement('div')
+    goal.className = 'text-text-muted mb-2'
+    goal.textContent = snapshot.goal
+    root.appendChild(goal)
+  }
+
+  const table = document.createElement('div')
+  table.className = 'border border-border rounded overflow-hidden'
+  for (const rowInfo of snapshot.rows) {
+    const row = document.createElement('div')
+    row.className = 'grid grid-cols-[1fr_auto_auto] items-center gap-2 px-2 py-1.5 border-b border-border last:border-b-0'
+
+    const name = document.createElement('div')
+    name.className = 'min-w-0 truncate font-medium'
+    name.textContent = rowInfo.name
+    name.title = rowInfo.name
+
+    const utterances = document.createElement('div')
+    utterances.className = 'text-text-muted whitespace-nowrap'
+    utterances.textContent = `${rowInfo.utterances} utterance${rowInfo.utterances === 1 ? '' : 's'}`
+
+    const state = document.createElement('div')
+    state.className = rowInfo.ready ? 'text-emerald-500 whitespace-nowrap' : 'text-amber-500 whitespace-nowrap'
+    state.textContent = rowInfo.ready
+      ? (active.ended ? 'complete' : `ready${rowInfo.readyStreak > 1 ? ` · ${rowInfo.readyStreak}×` : ''}`)
+      : 'not ready'
+
+    row.append(name, utterances, state)
+    table.appendChild(row)
+  }
+  root.appendChild(table)
+
+  if (active.whisperFailures > 0) {
+    const warning = document.createElement('div')
+    warning.className = 'mt-2 text-amber-500'
+    warning.textContent = `${active.whisperFailures} whisper classification failure${active.whisperFailures === 1 ? '' : 's'}`
+    root.appendChild(warning)
+  }
+}
+
 const fetchAndPaint = async (): Promise<void> => {
   const roomId = $selectedRoomId.get()
   if (!roomId) return
   const active = $activeScriptByRoom.get()[roomId]
   if (!active) return
-
-  // For active runs, the server-rendered document is authoritative (it
-  // includes Pressure-block state from the live runner). For ended runs,
-  // the runner state is gone — render from the store-cached stepLogs.
-  if (!active.ended) {
-    const roomName = $rooms.get()[roomId]?.name
-    if (!roomName) return
-    try {
-      const res = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/script/document?viewer=director`)
-      if (!res.ok) return
-      const data = await res.json() as { active: boolean; document?: string }
-      if (data.active && typeof data.document === 'string') {
-        domRefs.scriptDocBody.textContent = data.document
-        return
-      }
-    } catch { /* fall through to client render */ }
-  }
-
-  // Fallback: render from the store. Used for ended runs (server has
-  // discarded state) and as a safety net when the fetch fails.
-  domRefs.scriptDocBody.textContent = renderFromStore(active)
-}
-
-// Client-side renderer — used when the run has ended (server has discarded
-// state) and as a safety net when the live fetch fails. Produces the full
-// living document: header + cast + steps with goals/roles/pressure + dialogue.
-const renderFromStore = (active: import('../stores.ts').ActiveScript): string => {
-  const lines: string[] = []
-  lines.push(`# SCRIPT: ${active.title}`)
-  if (active.premise) lines.push(`Premise: ${active.premise}`)
-  lines.push('')
-  lines.push('## Cast')
-  for (const c of active.cast) {
-    const startsTag = c.starts ? '  (starts)' : ''
-    lines.push('')
-    lines.push(`### ${c.name}${startsTag}`)
-    lines.push(`- model: ${c.model}`)
-    const personaShort = c.persona.length > 200 ? c.persona.slice(0, 197).trim() + '…' : c.persona
-    lines.push(`- persona: ${personaShort}`)
-  }
-  lines.push('')
-  lines.push('---')
-
-  for (let i = 0; i < active.totalSteps; i++) {
-    const step = active.steps[i]
-    const isComplete = active.ended ? i <= active.stepIndex : i < active.stepIndex
-    const isCurrent = !active.ended && i === active.stepIndex
-    const status = isComplete ? '  [COMPLETE]' : isCurrent ? '  [CURRENT]' : ''
-    lines.push('')
-    lines.push(`## Step ${i + 1} — ${step?.title ?? `(step ${i + 1})`}${status}`)
-    if (step?.goal) lines.push(`Goal: ${step.goal}`)
-    if (step) {
-      lines.push('Roles:')
-      for (const c of active.cast) {
-        const role = step.roles[c.name] ?? ''
-        lines.push(`  ${c.name} — ${role || '—'}`)
-      }
-    }
-    const entries = active.stepLogs[i] ?? []
-    if (entries.length > 0) {
-      lines.push('')
-      for (const e of entries) {
-        lines.push(`  ${e.speaker}: ${e.content}`)
-        for (const [castName, rec] of Object.entries(e.whispersByCast)) {
-          const w = rec.whisper
-          const parts: string[] = []
-          if (w.notes) parts.push(`"${w.notes}"`)
-          if (w.addressing) parts.push(`→ ${w.addressing}`)
-          if (parts.length === 0) continue
-          lines.push(`    ↳ whisper (${castName}): ${parts.join(' ')}`)
-        }
-      }
-    }
-    if (isComplete) lines.push('  → advanced')
-  }
-
-  return lines.join('\n')
+  renderStatus(active)
+  const source = await fetchSource(active.scriptName)
+  const current = $activeScriptByRoom.get()[roomId]
+  if (current?.scriptName === active.scriptName) domRefs.scriptDocBody.textContent = source
 }
 
 const refreshVisibility = (): void => {
@@ -176,47 +172,6 @@ const initResize = (): void => {
   window.addEventListener('mouseup', onUp)
 }
 
-const openSourceModal = async (): Promise<void> => {
-  const roomId = $selectedRoomId.get()
-  if (!roomId) return
-  const active = $activeScriptByRoom.get()[roomId]
-  if (!active) return
-  let source = '(failed to load source)'
-  try {
-    const res = await fetch(`/api/scripts/${encodeURIComponent(active.scriptName)}`)
-    if (res.ok) {
-      const data = await res.json() as { source?: string }
-      if (typeof data.source === 'string') source = data.source
-    }
-  } catch { /* show fallback */ }
-
-  const overlay = document.createElement('div')
-  overlay.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[1100]'
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove() })
-
-  const dialog = document.createElement('div')
-  dialog.className = 'bg-surface border border-border rounded shadow-lg flex flex-col max-w-3xl w-[90vw] max-h-[80vh]'
-  const header = document.createElement('div')
-  header.className = 'px-4 py-2 border-b border-border flex items-center justify-between'
-  // Static shell + textContent on the script-name slot. scriptName is
-  // bounded by VALID_NAME server-side but textContent is the safer default.
-  header.innerHTML = '<div class="text-sm font-semibold"></div>'
-  header.querySelector('div')!.textContent = `${active.scriptName}.md — raw source`
-  const close = document.createElement('button')
-  close.className = 'icon-btn'
-  close.setAttribute('aria-label', 'Close')
-  close.innerHTML = '<span data-icon="x"></span>'
-  close.onclick = () => overlay.remove()
-  header.appendChild(close)
-  const body = document.createElement('pre')
-  body.className = 'flex-1 overflow-auto px-4 py-3 text-xs whitespace-pre-wrap font-mono'
-  body.textContent = source
-  dialog.appendChild(header)
-  dialog.appendChild(body)
-  overlay.appendChild(dialog)
-  document.body.appendChild(overlay)
-}
-
 export const initScriptDocPanel = (): void => {
   dismissed = readDismissed()
   initResize()
@@ -226,8 +181,6 @@ export const initScriptDocPanel = (): void => {
     writeDismissed(true)
     setVisible(false)
   }
-  domRefs.btnScriptDocSource.onclick = () => { void openSourceModal() }
-
   $activeScriptByRoom.listen(() => {
     // A new script run resets the dismissed flag — opening the panel for
     // the new script. (Closing it dismisses for THAT run, not forever.)

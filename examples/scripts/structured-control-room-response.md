@@ -44,31 +44,31 @@ Premise: Training simulator only. Following an automatic reactor trip, indicatio
 ## Step 1 — Establish a common operating picture
 Goal: Produce one agreed fact set that separates trustworthy indications, questionable indications, trends, and missing evidence. Advance only when every cast member accepts the fact set.
 Roles:
-  BoardOperator — state each available indication with trend, unit, timestamp, channel agreement, and quality; label unknowns explicitly
-  ProcedureAnalyst — ask only for evidence needed to distinguish the relevant E-0 branches; do not recommend a branch yet
-  SafetyReviewer — identify contradictions, common-mode instrument risks, and assumptions hidden inside the fact statements
-  ShiftSupervisor — maintain a short shared fact ledger and require read-back of corrections
+  BoardOperator — contribute the most decision-relevant plant picture and distinguish observations from interpretations
+  ProcedureAnalyst — help the group identify what evidence would discriminate among the plausible paths
+  SafetyReviewer — stress-test the emerging picture for contradictions, blind spots, and hidden assumptions
+  ShiftSupervisor — keep the group oriented toward a shared, auditable operating picture
 
 ## Step 2 — Ground the candidate paths
 Goal: Compare the supported procedure paths using fetched evidence from the pwr-ops wiki and procedures. Agree on the entry criteria, disqualifying evidence, and data gaps for each candidate.
 Roles:
-  BoardOperator — map the agreed simulator indications to the evidence requests without interpreting beyond the displays
-  ProcedureAnalyst — call procedure_lookup for E-0, E-2, and E-3 and wiki_lookup for relevant system or scenario context; cite the returned identifiers
-  SafetyReviewer — test whether the sources actually support each claimed branch and flag any unsupported leap or unavailable datum
-  ShiftSupervisor — keep a candidate matrix with supported, contradicted, and unknown columns
+  BoardOperator — relate the available simulator evidence to the candidate paths without inventing missing data
+  ProcedureAnalyst — use the available procedures and wiki sources to ground the comparison
+  SafetyReviewer — check whether the evidence really supports each proposed interpretation
+  ShiftSupervisor — help the group compare the options and make the remaining gaps visible
 
 ## Step 3 — Challenge and decide
 Goal: Select the best-supported training response path or explicitly conclude that evidence is insufficient. Record the escalation trigger and one dissenting or residual concern.
 Roles:
-  BoardOperator — confirm whether the proposed path matches the board evidence and name the next indication that could overturn it
-  ProcedureAnalyst — state the procedure basis and the exact unresolved criterion, if any
-  SafetyReviewer — make the strongest case against the leading option and verify that uncertainty is not being hidden
-  ShiftSupervisor — decide, assign the next verification, and obtain closed-loop read-backs from the crew
+  BoardOperator — test the proposed path against the current evidence and identify what could change the conclusion
+  ProcedureAnalyst — explain the procedural basis and any material unresolved criterion
+  SafetyReviewer — present the strongest credible challenge to the leading option
+  ShiftSupervisor — lead the decision and make the next verification or escalation explicit
 
 ## Step 4 — Produce the control-room brief
 Goal: Deliver a compact training brief containing situation, evidence, decision, actions-at-a-high-level, owners, trigger for reassessment, and uncertainties.
 Roles:
-  BoardOperator — provide the final parameter-and-trend summary without adding new facts
-  ProcedureAnalyst — provide the cited procedure and wiki basis in two or three lines
-  SafetyReviewer — state the residual safety concern and what would invalidate the decision
-  ShiftSupervisor — synthesize the final brief and explicitly mark it as simulator training, not operational direction
+  BoardOperator — contribute the final evidence and trend summary
+  ProcedureAnalyst — contribute the relevant procedural and wiki basis
+  SafetyReviewer — state the residual concern and what would invalidate the conclusion
+  ShiftSupervisor — synthesize a concise training brief with decision, uncertainty, and reassessment trigger

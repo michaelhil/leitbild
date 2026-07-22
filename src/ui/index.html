@@ -612,18 +612,24 @@
         </form>
       </div>
 
-      <!-- Right-rail: living-script document panel. Hidden until a script
-           is active in the selected room. Width persisted in localStorage. -->
+      <!-- Right-rail: script source + live status. Hidden until a script is
+           active in the selected room. Width persisted in localStorage. -->
       <div id="script-doc-resize" class="w-1 cursor-col-resize bg-border hover:bg-border-strong shrink-0 hidden"></div>
       <aside id="script-doc-rail" class="flex-col min-h-0 overflow-hidden bg-surface border-l border-border hidden" style="width: 360px;">
         <div class="px-3 py-2 border-b border-border flex items-center justify-between shrink-0 gap-2">
-          <span class="text-xs font-semibold">Script document</span>
+          <span class="text-xs font-semibold">Script</span>
           <div class="flex items-center gap-1">
-            <button id="btn-script-doc-source" class="text-xs text-text-muted hover:text-text-strong cursor-pointer underline" title="View raw script source">view source</button>
             <button id="btn-script-doc-close" class="icon-btn" title="Hide" aria-label="Hide"><span data-icon="x"></span></button>
           </div>
         </div>
-        <pre id="script-doc-body" class="flex-1 overflow-auto px-3 py-2 text-xs whitespace-pre-wrap font-mono leading-relaxed"></pre>
+        <section class="flex-1 min-h-0 flex flex-col border-b border-border">
+          <div class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-text-muted border-b border-border shrink-0">Original script source</div>
+          <pre id="script-doc-body" class="flex-1 min-h-0 overflow-auto px-3 py-2 text-xs whitespace-pre-wrap font-mono leading-relaxed"></pre>
+        </section>
+        <section class="shrink-0 max-h-[45%] overflow-auto">
+          <div class="px-3 py-1.5 text-[10px] uppercase tracking-wide text-text-muted border-b border-border">Live status</div>
+          <div id="script-doc-status" class="px-3 py-2 text-xs"></div>
+        </section>
       </aside>
       </div>
 
