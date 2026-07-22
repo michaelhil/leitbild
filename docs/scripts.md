@@ -1,14 +1,9 @@
 # Scripts — Multi-Agent Living Documents
 
 A script is a markdown document that orchestrates a multi-agent
-conversation. The same document evolves at runtime: each agent's spoken
-line gets inserted under the current step, and the result becomes both the
-agent's system prompt AND the right-rail panel you watch in the UI.
-
-There is no separate transcript fed to the cast — the script IS the
-transcript. Cast members read a single coherent document that names them,
-states the current step's goal, lists their role in that step, shows the
-dialogue so far in this step, and indicates whose turn it is.
+conversation. At runtime, the cast receives a rendered view of the script
+plus the current dialogue and readiness signals. The right rail keeps the
+original markdown source separate from a compact live status view.
 
 ## File format
 
@@ -85,8 +80,17 @@ The user message that follows the system prompt is a single instruction:
 
 ## What you see (right-rail panel)
 
-The same rendered document, but in **director view**: ALL whispers are
-visible. The panel:
+The panel is split into two views:
+
+- **Original script source** — the raw `script.md` fetched from the script
+  catalog. It never accumulates live dialogue.
+- **Live status** — the current step title and goal, plus one row per cast
+  member showing the number of utterances in that step and whether their
+  latest whisper says they are ready. A ready streak (`ready · N×`) shows
+  how many consecutive turns have been ready while waiting for peers.
+
+The status view also surfaces whisper failures and shows `Complete` when the
+run finishes. It:
 
 - Shows when a script is active in the selected room; hides otherwise
 - Drag-resizable (width persists in localStorage)
