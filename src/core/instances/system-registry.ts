@@ -270,9 +270,16 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     // and seedInstance races ahead.
     await opts.onSystemCreated?.(system, id, autoSaver)
 
-    // First-run seeding: when no snapshot existed, spawn Cafe + Aiden + You.
-    // Skipped when SAMSINN_SEED_EXAMPLE=0 (legacy env preserved).
-    if (!snapshot && process.env.SAMSINN_SEED_EXAMPLE !== '0') {
+    // First-run seeding: when no snapshot existed, or when an older/broken
+    // boot left an explicitly empty snapshot, spawn Cafe + Aiden + You.
+    // An empty snapshot is equivalent to a fresh instance: it contains no
+    // user state to preserve, and otherwise permanently suppresses the seed
+    // on every reload. Skipped when SAMSINN_SEED_EXAMPLE=0 (legacy env).
+    const snapshotIsEmpty = snapshot !== null
+      && snapshot.rooms.length === 0
+      && snapshot.agents.length === 0
+      && snapshot.humans.length === 0
+    if ((!snapshot || snapshotIsEmpty) && process.env.SAMSINN_SEED_EXAMPLE !== '0') {
       try {
         await seedInstance(system)
       } catch (err) {

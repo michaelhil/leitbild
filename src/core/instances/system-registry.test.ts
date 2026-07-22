@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, rm, stat, readdir } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, stat, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSystemRegistry, type SystemRegistry } from './system-registry.ts'
@@ -52,6 +52,24 @@ describe('SystemRegistry', () => {
     const a = await registry.getOrLoad(id)
     const b = await registry.getOrLoad(id)
     expect(a).toBe(b)
+  })
+
+  it('seeds an explicitly empty snapshot when first-run seeding is enabled', async () => {
+    const id = generateInstanceId()
+    // First materialize an empty instance with the test default (seeding off),
+    // then emulate an older autosave that left an empty snapshot on disk.
+    await registry.getOrLoad(id)
+    await registry.evictOne(id)
+    const paths = instancePaths(id)
+    await mkdir(paths.root, { recursive: true })
+    await Bun.write(paths.snapshot, JSON.stringify({
+      version: '26', timestamp: Date.now(), rooms: [], agents: [], humans: [],
+    }))
+
+    delete process.env.SAMSINN_SEED_EXAMPLE
+    const seeded = await registry.getOrLoad(id)
+    expect(seeded.house.listAllRooms().some(r => r.name === 'Cafe')).toBe(true)
+    expect(seeded.team.listAgents().some(a => a.name === 'Aiden')).toBe(true)
   })
 
   it('different ids return different systems', async () => {
