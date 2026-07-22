@@ -72,6 +72,7 @@ describe('script runner teardown', () => {
     const system = {
       house,
       team,
+      llmService: { bound: () => llm },
       spawnAIAgent: async (config: AIAgentConfig): Promise<Agent> => {
         const agent = createAIAgent(config, llm, () => {})
         team.addAgent(agent)
@@ -92,5 +93,64 @@ describe('script runner teardown', () => {
     expect(house.getRoom(room.profile.id)).toBe(room)
     expect(room.getParticipantIds()).toEqual([])
     expect(team.listAgents()).toEqual([])
+  })
+
+  test('pause lets the current cast post finish but blocks the next activation until resume', async () => {
+    const house = createHouse()
+    const team = createTeam()
+    const room = house.createRoom({ name: 'Pause Room', createdBy: 'test' })
+    const activations: string[] = []
+    const routeMessage: RouteMessage = (target, params) => {
+      const posted: Message[] = []
+      for (const roomId of target.rooms ?? []) {
+        const targetRoom = house.getRoom(roomId)
+        if (targetRoom) posted.push(targetRoom.post(params))
+      }
+      return posted
+    }
+    const roomOps = createRoomOperations({
+      team,
+      house,
+      routeMessage,
+      onMembershipChanged: () => {},
+      triggerScheduler,
+    })
+    const system = {
+      house,
+      team,
+      llmService: { bound: () => llm },
+      spawnAIAgent: async (config: AIAgentConfig): Promise<Agent> => {
+        const agent = createAIAgent(config, llm, () => {})
+        team.addAgent(agent)
+        return agent
+      },
+      addAgentToRoom: roomOps.addAgentToRoom,
+      removeAgentFromRoom: roomOps.removeAgentFromRoom,
+      removeAgent: () => true,
+      activateAgentInRoom: (agentId: string) => {
+        activations.push(team.getAgent(agentId)?.name ?? agentId)
+        return { ok: true, queued: false }
+      },
+    } as unknown as System
+    const runner = createScriptRunner({ getSystem: () => system })
+
+    await runner.startWith(room.profile.id, script)
+    expect(activations).toEqual(['Alex'])
+
+    room.setPaused(true)
+    const message = room.post({
+      senderId: team.getAgent('Alex')!.id,
+      senderName: 'Alex',
+      content: 'The current response is complete.',
+      type: 'chat',
+    })
+    runner.onRoomMessage(room.profile.id, message)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(activations).toEqual(['Alex'])
+
+    room.setPaused(false)
+    await runner.resume(room.profile.id)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(activations).toEqual(['Alex', 'Sam'])
   })
 })

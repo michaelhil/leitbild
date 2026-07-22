@@ -262,6 +262,10 @@ export const roomRoutes: RouteEntry[] = [
       const body = await parseBody(req)
       if (typeof body.paused !== 'boolean') return errorResponse('paused must be a boolean')
       room.setPaused(body.paused)
+      if (!body.paused) {
+        const script = system.scriptRunner?.getRun(room.profile.id)
+        if (script) void system.scriptRunner?.resume(room.profile.id)
+      }
       const evt = { type: 'delivery_mode_changed' as const, roomName: room.profile.name, mode: room.deliveryMode, paused: room.paused }
       if (broadcastToInstance) broadcastToInstance(instanceId, evt)
       else broadcast(evt)

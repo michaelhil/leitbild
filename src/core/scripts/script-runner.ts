@@ -31,6 +31,10 @@ export interface ScriptRunner {
   // activation gate. The Script must already be parsed (caller's responsibility).
   readonly startWith: (roomId: string, script: Script) => Promise<{ ok: boolean; reason?: string }>
   readonly stop: (roomId: string) => Promise<{ ok: boolean; reason?: string }>
+  // Resume a paused run at the next safe activation boundary. If a cast
+  // member is still generating, the in-flight response is allowed to finish
+  // and its normal post handler will continue the run.
+  readonly resume: (roomId: string) => Promise<{ ok: boolean; reason?: string }>
   readonly forceAdvance: (roomId: string) => Promise<{ ok: boolean; reason?: string }>
   readonly getRun: (roomId: string) => ScriptRun | undefined
   readonly listRuns: () => ReadonlyArray<ScriptRun>
@@ -346,6 +350,36 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     return { ok: true }
   }
 
+  const resume = async (roomId: string): Promise<{ ok: boolean; reason?: string }> => {
+    const run = runs.get(roomId)
+    if (!run || run.ended) return { ok: false, reason: 'no active script in this room' }
+    enqueue(roomId, async () => {
+      const liveRun = runs.get(roomId)
+      const room = getSystem().house.getRoom(roomId)
+      if (!liveRun || liveRun.ended || !room || room.paused) return
+
+      // If an utterance is still in flight, do not start a second one. Its
+      // onCastPost handler will observe the resumed room and continue.
+      const generating = liveRun.script.cast.some(member => {
+        const agent = getSystem().team.getAgent(member.name)
+        const ai = agent ? asAIAgent(agent) : undefined
+        return ai?.state.get() === 'generating' && ai.state.getContext() === roomId
+      })
+      if (generating) return
+
+      const allReady = liveRun.script.cast.every(c => liveRun.readiness[c.name] === true)
+      if (allReady) {
+        await advance(liveRun, false)
+        return
+      }
+      const last = lastSpeaker.get(roomId)
+      const nextName = last ? nextSpeaker(liveRun, last, undefined) : startsCastName(liveRun.script)
+      const agent = nextName ? getSystem().team.getAgent(nextName) : undefined
+      if (agent) getSystem().activateAgentInRoom(agent.id, roomId)
+    })
+    return { ok: true }
+  }
+
   // --- Reactive handler (subscribed to room.onMessagePosted) ---
 
   const onRoomMessage = (roomId: string, message: Message): void => {
@@ -434,11 +468,20 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     })
     void wasReady
 
+    const room = system.house.getRoom(run.roomId)
     const allReady = run.script.cast.every(c => run.readiness[c.name] === true)
     if (allReady) {
+      // Pausing is a safe boundary: whisper classification and the finished
+      // utterance are recorded, but step advancement waits for Resume.
+      if (room?.paused) return
       await advance(run, false)
       return
     }
+
+    // Do not schedule a follow-up while the room is paused. The current cast
+    // response has already been recorded and Resume will choose the next
+    // activation deterministically.
+    if (room?.paused) return
 
     // Honor the LLM's `addressing` hint if present and valid; else round-robin.
     const next = nextSpeaker(run, castName, record.whisper.addressing)
@@ -477,7 +520,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     // No whisper for user/director posts and step-advance — round-robin from the last speaker.
     const last = lastSpeaker.get(run.roomId)
     const nextName = last ? nextSpeaker(run, last, undefined) : startsCastName(run.script)
-    if (nextName) {
+    if (nextName && !getSystem().house.getRoom(run.roomId)?.paused) {
       const system = getSystem()
       const agent = system.team.getAgent(nextName)
       if (agent) system.activateAgentInRoom(agent.id, run.roomId)
@@ -527,7 +570,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     // No whisper for user/director posts and step-advance — round-robin from the last speaker.
     const last = lastSpeaker.get(run.roomId)
     const nextName = last ? nextSpeaker(run, last, undefined) : startsCastName(run.script)
-    if (nextName) {
+    if (nextName && !getSystem().house.getRoom(run.roomId)?.paused) {
       const system = getSystem()
       const agent = system.team.getAgent(nextName)
       if (agent) system.activateAgentInRoom(agent.id, run.roomId)
@@ -571,6 +614,7 @@ export const createScriptRunner = (deps: ScriptRunnerDeps): ScriptRunner => {
     start,
     startWith,
     stop,
+    resume,
     forceAdvance,
     getRun: (roomId) => runs.get(roomId),
     listRuns: () => [...runs.values()],
