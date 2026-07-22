@@ -721,7 +721,11 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
       // Keep both so an agent's `model: 'qwen2.5-coder'` (legacy unprefixed)
       // resolves alongside `groq:llama-3.3-70b-versatile`.
       availableModelsCache = [...fromRouter, ...fromOllama]
-    } catch { /* keep prior cache on transient failure */ }
+    } catch (err) {
+      // Preserve the last known-good cache, but keep discovery failures
+      // actionable in the journal instead of silently claiming availability.
+      console.warn(`[models] failed to refresh effective-model cache: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
   // Single resolution path. The agent stores the user's preferred model as a
   // bare alias (`claude-haiku-4-5`, `gemini-2.5-pro`) or a pinned form

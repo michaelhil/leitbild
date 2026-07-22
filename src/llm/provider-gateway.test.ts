@@ -21,6 +21,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createProviderGateway, PROVIDER_GATEWAY_DEFAULTS } from './provider-gateway.ts'
 import type { LLMProvider, ChatRequest, ChatResponse } from '../core/types/llm.ts'
+import { createAbortError } from './errors.ts'
 
 const stubProvider = (): LLMProvider => ({
   chat: async (_req: ChatRequest): Promise<ChatResponse> =>
@@ -39,6 +40,17 @@ const blockingStreamProvider = (): LLMProvider => ({
   },
   models: async () => [],
   runningModels: async () => [],
+})
+
+const abortAwareStreamProvider = (): LLMProvider => ({
+  ...stubProvider(),
+  stream: async function* (_request, signal) {
+    yield { delta: 'started', done: false }
+    await new Promise<void>((_resolve, reject) => {
+      if (signal?.aborted) reject(createAbortError())
+      else signal?.addEventListener('abort', () => reject(createAbortError()), { once: true })
+    })
+  },
 })
 
 describe('createProviderGateway config merge', () => {
@@ -91,6 +103,48 @@ describe('createProviderGateway config merge', () => {
     )[Symbol.asyncIterator]()
     await expect(second.next()).rejects.toThrow(/queue full/)
     await first.return?.()
+  })
+
+  test('queued stream can be cancelled without waiting for a provider slot', async () => {
+    const gw = createProviderGateway(blockingStreamProvider(), { maxConcurrent: 1, queueTimeoutMs: 10_000 })
+    const first = gw.stream({ model: 'm', messages: [] })[Symbol.asyncIterator]()
+    await first.next()
+    const controller = new AbortController()
+    const queued = gw.stream({ model: 'm', messages: [] }, controller.signal)[Symbol.asyncIterator]()
+    const pending = queued.next()
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(gw.getMetrics().queueDepth).toBe(0)
+    expect(gw.getMetrics().circuitState).toBe('closed')
+    await first.return?.()
+  })
+
+  test('mid-stream cancellation is neutral for error rate and circuit health', async () => {
+    const gw = createProviderGateway(abortAwareStreamProvider(), { maxConcurrent: 1 })
+    const controller = new AbortController()
+    const stream = gw.stream({ model: 'm', messages: [] }, controller.signal)[Symbol.asyncIterator]()
+    expect((await stream.next()).value?.delta).toBe('started')
+    controller.abort()
+    await expect(stream.next()).rejects.toMatchObject({ name: 'AbortError' })
+    expect(gw.getMetrics().errorCount).toBe(0)
+    expect(gw.getMetrics().circuitState).toBe('closed')
+  })
+
+  test('refreshModels preserves stale cache but reports discovery failure', async () => {
+    let fail = false
+    const provider: LLMProvider = {
+      ...stubProvider(),
+      models: async () => {
+        if (fail) throw new Error('catalog unavailable')
+        return ['m']
+      },
+    }
+    const gw = createProviderGateway(provider)
+    await gw.refreshModels()
+    expect(gw.getHealth().availableModels).toEqual(['m'])
+    fail = true
+    await expect(gw.refreshModels()).rejects.toThrow(/catalog unavailable/)
+    expect(gw.getHealth().availableModels).toEqual(['m'])
   })
 })
 

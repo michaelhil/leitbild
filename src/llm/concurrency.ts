@@ -1,7 +1,7 @@
 // Concurrency primitives for the LLM gateway: a fixed-capacity ring buffer
 // for rolling metrics, and a bounded semaphore with queue timeout + shed.
 
-import { createGatewayError } from './errors.ts'
+import { createAbortError, createGatewayError } from './errors.ts'
 
 // === Ring Buffer ===
 
@@ -40,13 +40,15 @@ interface QueuedRequest {
   readonly resolve: () => void
   readonly reject: (err: Error) => void
   readonly enqueuedAt: number
+  readonly cleanup: () => void
 }
 
 export const createSemaphore = (max: number) => {
   let active = 0
   const queue: QueuedRequest[] = []
 
-  const acquire = async (timeoutMs: number, maxQueueDepth: number): Promise<number> => {
+  const acquire = async (timeoutMs: number, maxQueueDepth: number, signal?: AbortSignal): Promise<number> => {
+    if (signal?.aborted) throw createAbortError()
     const enqueuedAt = performance.now()
     if (active < max) {
       active++
@@ -56,16 +58,32 @@ export const createSemaphore = (max: number) => {
       throw createGatewayError('queue_full', 'LLM gateway queue full — request shed')
     }
     return new Promise<number>((resolve, reject) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const onAbort = (): void => {
+        const idx = queue.indexOf(entry)
+        if (idx !== -1) queue.splice(idx, 1)
+        if (timer) clearTimeout(timer)
+        reject(createAbortError())
+      }
       const entry: QueuedRequest = {
-        resolve: () => resolve(Math.round(performance.now() - enqueuedAt)),
+        resolve: () => {
+          entry.cleanup()
+          resolve(Math.round(performance.now() - enqueuedAt))
+        },
         reject,
         enqueuedAt,
+        cleanup: () => {
+          if (timer) clearTimeout(timer)
+          signal?.removeEventListener('abort', onAbort)
+        },
       }
       queue.push(entry)
-      setTimeout(() => {
+      signal?.addEventListener('abort', onAbort, { once: true })
+      timer = setTimeout(() => {
         const idx = queue.indexOf(entry)
         if (idx !== -1) {
           queue.splice(idx, 1)
+          entry.cleanup()
           reject(createGatewayError('queue_timeout', `LLM gateway queue timeout after ${timeoutMs}ms`))
         }
       }, timeoutMs)

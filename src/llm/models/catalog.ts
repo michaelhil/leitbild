@@ -32,6 +32,17 @@ export interface CuratedModel {
   readonly kind?: 'fast' | 'thinking'
 }
 
+// System-wide model policy. Keep default and fallback choices here so seed
+// agents, demos, the model picker, and LLMService do not grow independent
+// model-name exceptions. The primary remains bare so the router may use any
+// provider that genuinely reports it; fallback refs are pinned because they
+// intentionally cross model/provider boundaries.
+export const DEFAULT_MODEL_ID = 'gpt-5.4'
+export const DEFAULT_MODEL_FALLBACK: ReadonlyArray<string> = [
+  'openai:gpt-5.4-mini',
+  'kimi:moonshot-v1-8k',
+]
+
 // Keyed by provider name. Order within an array is the display order.
 // The FIRST entry per provider is considered the provider's "pick" — used
 // when computing the server-side default model if no other hint is available.
@@ -44,10 +55,12 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     // gpt-5.4 first: curated default for the showcase demos. The gpt-5 family
     // detection in openai-compatible.ts (`startsWith('gpt-5')`) already routes
     // it through max_completion_tokens + temperature-rejection branches.
-    { id: 'gpt-5.4',      label: '5.4 (default)',                       supportsImages: true },
-    { id: 'gpt-4o-mini',  label: '4o-mini (cheap, fast)',               supportsImages: true },
-    { id: 'gpt-4.1-mini', label: '4.1-mini (better tool discipline)',   supportsImages: true },
-    { id: 'gpt-4o',       label: '4o (premium)',                        supportsImages: true },
+    { id: DEFAULT_MODEL_ID, label: '5.4 (default)',                     supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.4-mini',  label: '5.4 mini (fast fallback)',           supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.5',       label: '5.5 (frontier)',                     supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.6-terra', label: '5.6 Terra (balanced)',               supportsTools: true, supportsImages: true },
+    { id: 'gpt-5.6-luna',  label: '5.6 Luna (high volume)',             supportsTools: true, supportsImages: true },
+    { id: 'gpt-4o-mini',   label: '4o-mini (legacy, cheap)',            supportsTools: true, supportsImages: true },
   ],
   kimi: [
     // moonshot-v1-* first: non-thinking models. The kimi-k2.x family
@@ -56,9 +69,9 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     // ignored). Samsinn doesn't surface OAI-compat `reasoning_content`
     // yet, so k2.x responses look truncated/empty when reasoning eats
     // the token budget. k2.x stays reachable via "Show all" in the UI.
-    { id: 'moonshot-v1-128k', label: '128k (default)', supportsImages: false },
-    { id: 'moonshot-v1-32k',  label: '32k',            supportsImages: false },
-    { id: 'moonshot-v1-8k',   label: '8k (cheapest)',  supportsImages: false },
+    { id: 'moonshot-v1-128k', label: '128k (default)', supportsTools: true, supportsImages: false },
+    { id: 'moonshot-v1-32k',  label: '32k',            supportsTools: true, supportsImages: false },
+    { id: 'moonshot-v1-8k',   label: '8k (fast fallback)', supportsTools: true, supportsImages: false },
   ],
   gemini: [
     // Flash first: Pro's capacity has been chronically tight (frequent 503
@@ -66,9 +79,10 @@ export const CURATED_MODELS: Record<string, ReadonlyArray<CuratedModel>> = {
     // Pro stays available — agents that explicitly want Pro pick it via
     // the inspector. Cross-provider rescue requires an explicit
     // `modelFallback` chain on the agent (no implicit equivalence map).
-    { id: 'gemini-2.5-flash',      label: 'Flash (default — fast, ample capacity)',  supportsImages: true },
-    { id: 'gemini-2.5-pro',        label: 'Pro (best reasoning, capacity-flaky)',    supportsImages: true },
-    { id: 'gemini-2.5-flash-lite', label: 'Flash-Lite (cheapest, weaker reasoning)', supportsImages: true },
+    { id: 'gemini-3.6-flash',      label: '3.6 Flash (current stable)', supportsTools: true, supportsImages: true },
+    { id: 'gemini-3.5-flash',      label: '3.5 Flash (stable)',         supportsTools: true, supportsImages: true },
+    { id: 'gemini-3.1-flash-lite', label: '3.1 Flash-Lite (efficient)', supportsTools: true, supportsImages: true },
+    { id: 'gemini-2.5-flash',      label: '2.5 Flash (legacy)',         supportsTools: true, supportsImages: true },
   ],
   groq: [
     { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B (fast)',    supportsImages: false },

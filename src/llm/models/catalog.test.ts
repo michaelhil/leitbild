@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { describe, expect, test } from 'bun:test'
-import { CURATED_MODELS } from './catalog.ts'
+import { CURATED_MODELS, DEFAULT_MODEL_FALLBACK, DEFAULT_MODEL_ID } from './catalog.ts'
 
 // Each pattern matches model IDs that EXPOSE a separate reasoning channel
 // (reasoning_content / reasoning / thinking blocks) — i.e. ones where
@@ -35,6 +35,15 @@ const isLikelyThinking = (id: string): boolean =>
   THINKING_ID_PATTERNS.some(rx => rx.test(id))
 
 describe('CURATED_MODELS thinking-tag invariant', () => {
+  test('the requested GPT-5.4 policy is the single catalog default', () => {
+    expect(CURATED_MODELS.openai?.[0]?.id).toBe(DEFAULT_MODEL_ID)
+    expect(DEFAULT_MODEL_ID).toBe('gpt-5.4')
+    expect(CURATED_MODELS.openai?.[0]?.supportsTools).toBe(true)
+    expect(DEFAULT_MODEL_FALLBACK).toEqual([
+      'openai:gpt-5.4-mini',
+      'kimi:moonshot-v1-8k',
+    ])
+  })
   test('every catalog entry whose id matches a thinking pattern carries kind: thinking', () => {
     const violations: Array<{ provider: string; id: string }> = []
     for (const [provider, models] of Object.entries(CURATED_MODELS)) {

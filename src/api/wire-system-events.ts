@@ -178,6 +178,11 @@ export const wireSystemEvents = (
   //   • agent error message in chat — hard failure (chain exhausted)
   // The setter is left in place so observability sinks (logging) can still
   // subscribe; only the WS broadcast is removed.
+  system.setOnProviderAllFailed(() => {
+    // Intentional no-op: LLMService may still rescue this router-level
+    // failure. Installing the primary callback prevents lateBinding from
+    // reporting a false wiring fault while observers continue to receive it.
+  })
 
   system.setOnProviderStreamFailed((agentId, model, provider, reason) => {
     broadcast({

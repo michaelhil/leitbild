@@ -20,6 +20,7 @@
 
 import { readFile, writeFile, rename, chmod, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { DEFAULT_MODEL_FALLBACK } from './models/catalog.ts'
 
 export const POLICY_VERSION = 1
 
@@ -33,7 +34,10 @@ export interface LLMPolicyFileShape {
   }
 }
 
-const DEFAULT_FILE: LLMPolicyFileShape = { version: POLICY_VERSION }
+const DEFAULT_FILE: LLMPolicyFileShape = {
+  version: POLICY_VERSION,
+  defaults: { modelFallback: DEFAULT_MODEL_FALLBACK },
+}
 
 export interface PolicyLoadResult {
   readonly data: LLMPolicyFileShape
@@ -68,14 +72,16 @@ export const loadPolicy = async (path: string): Promise<PolicyLoadResult> => {
   let modelFallback: ReadonlyArray<string> | undefined
   if (defaults && Array.isArray(defaults.modelFallback)) {
     const items = defaults.modelFallback.filter((s): s is string => typeof s === 'string' && s.trim().length > 0).map(s => s.trim())
-    if (items.length > 0) modelFallback = items
-    else if (defaults.modelFallback.length > 0) warnings.push(`${path}: defaults.modelFallback contained no valid entries`)
+    // An explicit empty array disables the built-in chain. Invalid non-empty
+    // arrays warn and fall back to the safe system default.
+    if (items.length > 0 || defaults.modelFallback.length === 0) modelFallback = items
+    else warnings.push(`${path}: defaults.modelFallback contained no valid entries`)
   } else if (defaults && defaults.modelFallback !== undefined) {
     warnings.push(`${path}: defaults.modelFallback must be an array of strings`)
   }
   const data: LLMPolicyFileShape = {
     version: POLICY_VERSION,
-    ...(modelFallback ? { defaults: { modelFallback } } : {}),
+    defaults: { modelFallback: modelFallback ?? DEFAULT_MODEL_FALLBACK },
   }
   return { data, warnings }
 }
@@ -124,9 +130,10 @@ export const createPolicyStore = async (init: PolicyStoreInit): Promise<{ store:
   const store: PolicyStore = {
     getModelFallback: () => current.defaults?.modelFallback,
     setModelFallback: async (chain) => {
-      const next: LLMPolicyFileShape = chain && chain.length > 0
-        ? { version: POLICY_VERSION, defaults: { modelFallback: [...chain] } }
-        : { version: POLICY_VERSION }
+      const next: LLMPolicyFileShape = {
+        version: POLICY_VERSION,
+        defaults: { modelFallback: chain ? [...chain] : [] },
+      }
       await savePolicy(init.path, next)
       current = next
     },

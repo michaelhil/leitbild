@@ -136,9 +136,8 @@ describe('provider-monitor — unhealthy streak', () => {
     }
     monitor.recordChatOutcome({ ok: false, error: new Error('boom') })
     expect(monitor.getState().sub).toBe('unhealthy')
-    // Still allows calls — unhealthy is a soft signal, traffic is how we
-    // learn it recovered.
-    expect(monitor.mayCall()).toBe(true)
+    // Quarantined until the metadata heartbeat succeeds.
+    expect(monitor.mayCall()).toBe(false)
   })
 
   test('success resets streak and returns to ok', () => {

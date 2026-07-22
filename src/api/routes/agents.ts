@@ -7,6 +7,7 @@ import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } fr
 import type { ToolRegistry } from '../../core/types/tool.ts'
 import type { System } from '../../main.ts'
 import type { RouteEntry } from './types.ts'
+import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 
 // Soft model-availability check used by both POST and PATCH agent handlers.
 // 'unverified' means we have no provider info yet (key not configured /
@@ -21,7 +22,12 @@ const resolveModelStatus = async (system: System, requestedModel: string): Promi
   const routerAvailable = await system.llm.models().catch(() => [] as string[])
   const allAvailable = [...ollamaAvailable, ...routerAvailable]
   if (allAvailable.length === 0) return 'unverified'
-  return allAvailable.includes(requestedModel) ? 'ok' : 'unavailable'
+  const requested = parsePrefixedModel(requestedModel)
+  const available = allAvailable.some(ref => {
+    const parsed = parsePrefixedModel(ref)
+    return parsed.modelId === requested.modelId && (!requested.provider || parsed.provider === requested.provider)
+  })
+  return available ? 'ok' : 'unavailable'
 }
 
 const PROMPT_SECTIONS: ReadonlyArray<PromptSection> = ['persona', 'room', 'house', 'responseFormat', 'skills']

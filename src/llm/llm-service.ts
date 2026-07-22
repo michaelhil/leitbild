@@ -48,6 +48,7 @@ import { parsePrefixedModel } from './models/parse-prefix.ts'
 import { resolveDefaultModelChain, type ProviderSnapshot } from './models/default-resolver.ts'
 import { CURATED_MODELS } from './models/catalog.ts'
 import { isAgentFallbackable as classifyIsAgentFallbackable } from '../agents/error-classify.ts'
+import { isAbortError } from './errors.ts'
 
 // === Source tagging — every call site declares its identity ===
 
@@ -435,6 +436,7 @@ export const createLLMService = (deps: LLMServiceDeps): LLMService => {
           })
           return
         } catch (err) {
+          if (isAbortError(err, signal)) throw err
           lastError = err
           const errObj = err as { code?: string; message?: string }
           if (typeof errObj.code === 'string' && firstFallbackable === null) {

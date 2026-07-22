@@ -52,7 +52,8 @@ const renderFallbackSection = async (container: HTMLElement): Promise<void> => {
     <div class="text-xs font-semibold text-text-strong mb-1">System fallback chain</div>
     <div class="text-[11px] text-text-muted mb-2">
       Comma-separated model refs tried when an agent's primary fails.
-      Example: <code>openai:gpt-4o-mini, anthropic:claude-haiku-4-5</code>
+      Default: <code>openai:gpt-5.4-mini, kimi:moonshot-v1-8k</code>.
+      Leave empty only to disable automatic cross-provider recovery.
     </div>
     <div class="flex gap-2 items-center">
       <input type="text" id="fallback-chain-input" class="input flex-1 text-xs"

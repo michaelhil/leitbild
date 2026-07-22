@@ -43,5 +43,9 @@ const FALLBACKABLE_AGENT_CODES: ReadonlySet<AgentResponseErrorCode> = new Set([
 export const isAgentFallbackable = (err: unknown): boolean => {
   // No throw → no failure → trivially "yes" (irrelevant; never reached).
   if (err === undefined || err === null) return true
+  // A bad key belongs to one provider/account. Preserve the no_api_key
+  // diagnosis for the UI, but let LLMService continue to an explicitly
+  // configured provider/model fallback instead of taking the whole system down.
+  if (isCloudProviderError(err) && err.code === 'auth') return true
   return FALLBACKABLE_AGENT_CODES.has(classifyLLMError(err).code)
 }

@@ -207,16 +207,19 @@ describe('LLMService — bare network retry', () => {
   })
 })
 
-describe('LLMService — auth errors are not fallbackable', () => {
-  test('cloud auth error stops chain walk immediately', async () => {
+describe('LLMService — provider auth isolation', () => {
+  test('cloud auth error preserves diagnosis but walks to another provider/model', async () => {
     const calls: string[] = []
     const router = fakeRouter({
       chat: async (req) => {
         calls.push(req.model)
-        throw createCloudProviderError({
-          code: 'auth', provider: 'openai', status: 401,
-          message: 'invalid key',
-        })
+        if (req.model === 'primary') {
+          throw createCloudProviderError({
+            code: 'auth', provider: 'openai', status: 401,
+            message: 'invalid key',
+          })
+        }
+        return okChat(req.model)
       },
     })
     const svc = createLLMService({
@@ -224,9 +227,8 @@ describe('LLMService — auth errors are not fallbackable', () => {
       getSystemChain: () => ['fallback-1', 'fallback-2'],
     })
     const provider = svc.bound({ source: 'agent' })
-    await expect(provider.chat({ model: 'primary', messages: [] })).rejects.toThrow(/invalid key/)
-    // Auth is not fallbackable — only the primary is tried (with one network
-    // retry attempt that doesn't fire because auth isn't a network error).
-    expect(calls).toEqual(['primary'])
+    const response = await provider.chat({ model: 'primary', messages: [] })
+    expect(response.content).toContain('fallback-1')
+    expect(calls).toEqual(['primary', 'fallback-1'])
   })
 })

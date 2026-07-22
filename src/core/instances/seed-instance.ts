@@ -15,9 +15,7 @@
 
 import type { System } from '../../main.ts'
 import { resolveDefaultModel, type ProviderSnapshot } from '../../llm/models/default-resolver.ts'
-import { CURATED_MODELS } from '../../llm/models/catalog.ts'
-
-const FALLBACK_MODEL = 'gpt-5.4'
+import { CURATED_MODELS, DEFAULT_MODEL_ID } from '../../llm/models/catalog.ts'
 
 // Build a minimal ProviderSnapshot[] from live System state. Mirrors the
 // subset of /api/routes/house.ts:/api/models that resolveDefaultModel needs.
@@ -47,9 +45,12 @@ const buildProviderSnapshots = (system: System): ReadonlyArray<ProviderSnapshot>
       m && (m.sub === 'down' || m.sub === 'unhealthy') ? 'down' :
       m && m.sub === 'backoff' ? 'cooldown' :
       'ok'
-    // Curated picks first, then reported. resolveDefaultModel takes the head.
-    const curated = (CURATED_MODELS[name] ?? []).map(c => ({ id: c.id }))
-    const reported = (system.gateways[name]?.getHealth().availableModels ?? []).map(id => ({ id }))
+    // Curated order defines preference, but only provider-reported models are
+    // routable. Do not seed an unavailable recommendation into a live system.
+    const reportedIds = system.gateways[name]?.getHealth().availableModels ?? []
+    const reportedSet = new Set(reportedIds)
+    const curated = (CURATED_MODELS[name] ?? []).filter(c => reportedSet.has(c.id)).map(c => ({ id: c.id }))
+    const reported = reportedIds.map(id => ({ id }))
     const seen = new Set<string>()
     const models: Array<{ id: string }> = []
     for (const m of [...curated, ...reported]) {
@@ -67,7 +68,7 @@ export const seedInstance = async (system: System): Promise<void> => {
   const existing = system.house.listAllRooms().some(p => p.name === 'Cafe')
   if (existing) return
 
-  const model = resolveDefaultModel(buildProviderSnapshots(system)) || FALLBACK_MODEL
+  const model = resolveDefaultModel(buildProviderSnapshots(system)) || DEFAULT_MODEL_ID
 
   // Room first so spawned agents have something to join.
   const room = system.house.createRoom({ name: 'Cafe', createdBy: 'system' })

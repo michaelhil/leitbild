@@ -14,7 +14,7 @@ export interface ContextInfo {
 }
 
 // Curated context windows for cloud providers that don't expose it in /models.
-// Source: each provider's public docs as of early 2026. When in doubt, omit
+// Source: each provider's public docs as of 2026-07-21. When in doubt, omit
 // rather than guess — the UI falls back to "unknown" which is honest.
 const CLOUD_TABLE: Record<string, Record<string, number>> = {
   anthropic: {
@@ -37,10 +37,15 @@ const CLOUD_TABLE: Record<string, Record<string, number>> = {
     'gpt-5.1':      400_000,
     'gpt-5.1-mini': 400_000,
     'gpt-5.1-pro':  400_000,
-    'gpt-5.4':      400_000,
+    'gpt-5.4':    1_050_000,
     'gpt-5.4-mini': 400_000,
     'gpt-5.4-nano': 200_000,
-    'gpt-5.4-pro':  400_000,
+    'gpt-5.4-pro': 1_050_000,
+    'gpt-5.5':     1_050_000,
+    'gpt-5.5-pro': 1_050_000,
+    'gpt-5.6-sol':   1_050_000,
+    'gpt-5.6-terra': 1_050_000,
+    'gpt-5.6-luna':  1_050_000,
     'o1':           200_000,
     'o1-mini':      128_000,
     'o3':           200_000,
@@ -48,6 +53,9 @@ const CLOUD_TABLE: Record<string, Record<string, number>> = {
     'o4-mini':      200_000,
   },
   gemini: {
+    'gemini-3.6-flash':      1_048_576,
+    'gemini-3.5-flash':      1_048_576,
+    'gemini-3.1-flash-lite': 1_048_576,
     'gemini-2.5-flash-lite': 1_048_576,
     'gemini-2.5-flash':      1_048_576,
     'gemini-2.5-pro':        2_097_152,

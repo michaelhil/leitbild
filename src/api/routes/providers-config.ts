@@ -164,7 +164,9 @@ export const providersConfigRoutes: RouteEntry[] = [
         // user sees the loaded model immediately after pointing at a new URL.
         const gw = system.gateways[name]
         if (gw && (nextKey || (isLocal(name) && 'baseUrl' in body))) {
-          void gw.refreshModels().catch(() => { /* swallow — UI will surface */ })
+          void gw.refreshModels().catch(err => {
+            console.warn(`[providers:${name}] model refresh failed after config update: ${err instanceof Error ? err.message : String(err)}`)
+          })
         }
       } else {
         requiresRestart = true

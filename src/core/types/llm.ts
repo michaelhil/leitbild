@@ -6,7 +6,7 @@ import type { ToolDefinition, NativeToolCall } from './tool.ts'
 
 export type CircuitState = 'closed' | 'open' | 'half_open'
 
-export type RequestStatus = 'success' | 'error' | 'timeout' | 'circuit_open' | 'shed'
+export type RequestStatus = 'success' | 'cancelled' | 'error' | 'timeout' | 'circuit_open' | 'shed'
 
 export interface RequestRecord {
   readonly model: string

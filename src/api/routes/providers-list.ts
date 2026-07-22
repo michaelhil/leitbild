@@ -56,6 +56,13 @@ const subToLegacyStatus = (sub: MonitorSubState | null): ProviderStatus => {
   return 'ok'
 }
 
+const routabilityStatus = (
+  base: ProviderStatus,
+  isLocalProvider: boolean,
+  modelCount: number | undefined,
+): ProviderStatus =>
+  base === 'ok' && isLocalProvider && (modelCount ?? 0) === 0 ? 'down' : base
+
 const monitorToLegacyCooldown = (
   m: MonitorState | null,
 ): { coldUntilMs: number; reason: string } | null => {
@@ -114,11 +121,11 @@ export const providersListRoutes: RouteEntry[] = [
           maxConcurrent: m.maxConcurrent ?? PROVIDER_PROFILES[name].defaultMaxConcurrent,
           cooldown: monitorToLegacyCooldown(monState),
           // Status mapping: local providers can't be 'no_key' (don't need one).
-          status: !userEnabled
+          status: routabilityStatus(!userEnabled
             ? 'disabled'
             : (!hasKey && !local)
               ? 'no_key'
-              : subToLegacyStatus(monState?.sub ?? null),
+              : subToLegacyStatus(monState?.sub ?? null), local, monState?.modelCount),
           monitor: monitorPayload(monState),
           recentFailures: failures,
         })
@@ -138,7 +145,11 @@ export const providersListRoutes: RouteEntry[] = [
         enabled: ollamaUserEnabled,
         maxConcurrent: merged.ollama.maxConcurrent ?? 2,
         cooldown: monitorToLegacyCooldown(ollamaMon),
-        status: !ollamaUserEnabled ? 'disabled' : subToLegacyStatus(ollamaMon?.sub ?? null),
+        status: routabilityStatus(
+          !ollamaUserEnabled ? 'disabled' : subToLegacyStatus(ollamaMon?.sub ?? null),
+          true,
+          ollamaMon?.modelCount,
+        ),
         monitor: monitorPayload(ollamaMon),
         recentFailures: ollamaFailures,
       })

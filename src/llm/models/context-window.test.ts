@@ -19,6 +19,17 @@ describe('getContextWindowSync', () => {
     expect(info.contextMax).toBe(400_000)
   })
 
+  test('GPT-5.4 flagship uses its current 1.05M context window', () => {
+    const info = getContextWindowSync('openai', 'gpt-5.4')
+    expect(info.source).toBe('known_table')
+    expect(info.contextMax).toBe(1_050_000)
+  })
+
+  test('current GPT-5.6 and Gemini Flash entries are known', () => {
+    expect(getContextWindowSync('openai', 'gpt-5.6-terra').contextMax).toBe(1_050_000)
+    expect(getContextWindowSync('gemini', 'gemini-3.6-flash').contextMax).toBe(1_048_576)
+  })
+
   test('exact-match gpt-5-nano: smaller window', () => {
     const info = getContextWindowSync('openai', 'gpt-5-nano')
     expect(info.contextMax).toBe(200_000)

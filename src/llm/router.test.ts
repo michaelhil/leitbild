@@ -312,7 +312,7 @@ describe('createProviderRouter — streaming', () => {
     expect(chunks.map(c => c.delta).join('')).toBe('ok')
   })
 
-  test('stream failover attempts shed immediately instead of waiting in gateway queues', async () => {
+  test('a provider-originated queue_full still falls through without forcing zero-depth queues', async () => {
     const a = createFakeGateway({
       streamResponses: [createGatewayError('queue_full', 'LLM gateway queue full — request shed')],
       availableModels: ['m'],
@@ -326,8 +326,8 @@ describe('createProviderRouter — streaming', () => {
     for await (const chunk of router.stream(chatReq('m'))) chunks.push(chunk)
 
     expect(chunks.map(c => c.delta).join('')).toBe('ok')
-    expect(a.streamOptions()[0]?.maxQueueDepth).toBe(0)
-    expect(b.streamOptions()[0]?.maxQueueDepth).toBe(0)
+    expect(a.streamOptions()[0]?.maxQueueDepth).toBeUndefined()
+    expect(b.streamOptions()[0]?.maxQueueDepth).toBeUndefined()
   })
 
   test('mid-stream failure → provider_stream_failed event, no retry', async () => {

@@ -23,7 +23,7 @@
 
 import type { LLMProvider, ChatRequest, ChatResponse, StreamChunk, GatewayMetrics } from '../core/types/llm.ts'
 import type { ProviderGateway, ChatCallOptions } from './provider-gateway.ts'
-import { createCloudProviderError, isCloudProviderError, isFallbackable, isGatewayError } from './errors.ts'
+import { createCloudProviderError, isAbortError, isCloudProviderError, isFallbackable, isGatewayError } from './errors.ts'
 import type { ProviderMonitor, MonitorState } from './provider-monitor.ts'
 
 // === Events ===
@@ -362,6 +362,7 @@ export const createProviderRouter = (
         // (provider, code) logs immediately, repeats are summarised every
         // WARN_SUPPRESS_MS so a known-broken account doesn't fill the log.
         warnOnce('rethrow', name, err.code, `[llm:${name}] attempt failed (rethrow) code=${err.code} status=${err.status ?? '?'} model=${request.model}: ${err.message}`)
+        if (err.code === 'auth') monitors[name]?.markUnhealthy(err.message, 'auth')
         return 'rethrow'
       }
       monitors[name]?.recordChatOutcome({ ok: false, error: err, model: request.model, agentId })
@@ -521,7 +522,7 @@ export const createProviderRouter = (
       })
     }
     const adjusted: ChatRequest = { ...request, model: modelId }
-    return providers[name]!.chat(adjusted, { ...options, maxQueueDepth: 0 })
+    return providers[name]!.chat(adjusted, options)
   }
 
   const chat = async (request: ChatRequest, options?: RouterCallOptions): Promise<ChatResponse> => {
@@ -619,8 +620,9 @@ export const createProviderRouter = (
       // pinned, in which case we emit all_failed and rethrow).
       let iter: AsyncIterator<StreamChunk>
       try {
-        iter = gateway.stream!(adjusted, signal, { ...options, maxQueueDepth: 0 })[Symbol.asyncIterator]()
+        iter = gateway.stream!(adjusted, signal, options)[Symbol.asyncIterator]()
       } catch (err) {
+        if (isAbortError(err, signal)) throw err
         const decision = classifyProviderError(err, name, attempts, request, agentId)
         if (decision === 'rethrow') throw err
         if (pinned) {
@@ -634,6 +636,7 @@ export const createProviderRouter = (
       try {
         firstChunk = await iter.next()
       } catch (err) {
+        if (isAbortError(err, signal)) throw err
         const decision = classifyProviderError(err, name, attempts, request, agentId)
         if (decision === 'rethrow') throw err
         if (pinned) {
@@ -682,6 +685,7 @@ export const createProviderRouter = (
           yield await augmentDone(r.value)
         }
       } catch (err) {
+        if (isAbortError(err, signal)) throw err
         // Mid-stream failure — surface as event, no retry. Record with
         // monitor so it counts toward health (could be a flaky upstream).
         const reason = err instanceof Error ? err.message : String(err)

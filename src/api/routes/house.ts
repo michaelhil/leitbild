@@ -67,21 +67,34 @@ export const houseRoutes: RouteEntry[] = [
             'ok'
 
           const reported = gw?.getHealth().availableModels ?? []
+          const reportedSet = new Set(reported)
           const curated = CURATED_MODELS[name] ?? []
           const pinnedList = merged.cloud[name as keyof typeof merged.cloud]?.pinnedModels ?? []
           const pinnedSet = new Set(pinnedList)
 
           // Merge order:
-          //   1. Pinned models (in the order the user pinned them)
-          //   2. Curated models not already pinned
+          //   1. Curated models (defines the system default)
+          //   2. User-pinned models not already curated
           //   3. Everything else the provider reported
           const seen = new Set<string>()
           const models: typeof providers[number]['models'] = []
           const curatedLabel: Record<string, string | undefined> = {}
           for (const c of curated) curatedLabel[c.id] = c.label
 
+          for (const c of curated) {
+            if (seen.has(c.id) || !reportedSet.has(c.id)) continue
+            seen.add(c.id)
+            const ctx = getContextWindowSync(name, c.id)
+            models.push({
+              id: c.id,
+              contextMax: ctx.contextMax,
+              recommended: true,
+              ...(pinnedSet.has(c.id) ? { pinned: true } : {}),
+              ...(c.label ? { label: c.label } : {}),
+            })
+          }
           for (const id of pinnedList) {
-            if (seen.has(id)) continue
+            if (seen.has(id) || !reportedSet.has(id)) continue
             seen.add(id)
             const ctx = getContextWindowSync(name, id)
             models.push({
@@ -90,17 +103,6 @@ export const houseRoutes: RouteEntry[] = [
               recommended: true,
               pinned: true,
               ...(curatedLabel[id] ? { label: curatedLabel[id] } : {}),
-            })
-          }
-          for (const c of curated) {
-            if (seen.has(c.id)) continue
-            seen.add(c.id)
-            const ctx = getContextWindowSync(name, c.id)
-            models.push({
-              id: c.id,
-              contextMax: ctx.contextMax,
-              recommended: true,
-              ...(c.label ? { label: c.label } : {}),
             })
           }
           for (const id of reported) {

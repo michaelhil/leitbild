@@ -74,13 +74,25 @@ export const isGatewayError = (err: unknown): err is GatewayError =>
 export const isCloudProviderError = (err: unknown): err is CloudProviderError =>
   err instanceof Error && (err as { kind?: string }).kind === 'cloud_error'
 
+export const createAbortError = (message = 'The operation was aborted'): Error => {
+  const err = new Error(message)
+  err.name = 'AbortError'
+  return err
+}
+
+// Cancellation is caller intent, not provider health. Some runtimes throw a
+// DOMException while others surface a plain Error named AbortError, so the
+// signal is authoritative and the name is the portable fallback.
+export const isAbortError = (err: unknown, signal?: AbortSignal): boolean =>
+  signal?.aborted === true || (err instanceof Error && err.name === 'AbortError')
+
 // 4xx Ollama errors are permanent (model not found, bad request). Don't retry, don't trip circuit breaker.
 export const isPermanent = (err: OllamaError): boolean =>
   err.status >= 400 && err.status < 500
 
-// Cloud errors that indicate the provider is unusable for this request but the
-// request itself is fine (try next provider): rate_limit, quota, provider_down.
-// auth and bad_request are permanent (config problem — propagate, no fallback).
+// Cloud errors suitable for same-model router fallthrough. Auth and bad_request
+// remain provider/request configuration errors at this layer; LLMService may
+// still advance an explicit cross-provider model chain for auth isolation.
 export const isFallbackable = (err: CloudProviderError): boolean =>
   err.code === 'rate_limit' || err.code === 'quota' || err.code === 'provider_down'
 

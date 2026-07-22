@@ -13,7 +13,7 @@ import type {
   CircuitState, RequestStatus, RequestRecord, GatewayMetrics, ProviderHealth,
 } from '../core/types/llm.ts'
 import { createCircuitBreaker } from './circuit-breaker.ts'
-import { createGatewayError, isGatewayError } from './errors.ts'
+import { createGatewayError, isAbortError, isGatewayError } from './errors.ts'
 import { createRingBuffer, createSemaphore } from './concurrency.ts'
 
 export type { CircuitState, RequestStatus, RequestRecord, GatewayMetrics, ProviderHealth }
@@ -204,7 +204,7 @@ export const createProviderGateway = (
       throw createGatewayError('circuit_open', 'Circuit breaker open')
     }
     const queueDepth = options?.maxQueueDepth ?? config.maxQueueDepth
-    const queueWaitMs = await semaphore.acquire(config.queueTimeoutMs, queueDepth)
+    const queueWaitMs = await semaphore.acquire(config.queueTimeoutMs, queueDepth, signal)
     const startMs = performance.now()
     try {
       yield* provider.stream(enrich(request), signal)
@@ -216,12 +216,13 @@ export const createProviderGateway = (
         status: 'success', timestamp: Date.now(),
       })
     } catch (err) {
-      if (!isPermanent(err)) cb.recordFailure()
+      const cancelled = isAbortError(err, signal)
+      if (!cancelled && !isPermanent(err)) cb.recordFailure()
       metrics.push({
         model: request.model, promptTokens: 0, completionTokens: 0,
         durationMs: Math.round(performance.now() - startMs),
         queueWaitMs, tokensPerSecond: 0,
-        status: 'error', timestamp: Date.now(),
+        status: cancelled ? 'cancelled' : 'error', timestamp: Date.now(),
       })
       throw err
     } finally {
@@ -233,8 +234,11 @@ export const createProviderGateway = (
     try {
       const list = await provider.models()
       emitHealth({ ...health, availableModels: list, lastCheckedAt: Date.now() })
-    } catch {
+    } catch (err) {
       // Leave availableModels unchanged; transient failure shouldn't clear the cache.
+      // Propagate so warm-up and heartbeat callers can report the failure
+      // instead of falsely declaring an empty or stale catalog healthy.
+      throw err
     }
   }
 
@@ -252,7 +256,7 @@ export const createProviderGateway = (
     const cutoff = Date.now() - windowMs
     const recent = metrics.toArray().filter(r => r.timestamp >= cutoff)
     const requestCount = recent.length
-    const errorCount = recent.filter(r => r.status !== 'success').length
+    const errorCount = recent.filter(r => r.status !== 'success' && r.status !== 'cancelled').length
     const errorRate = requestCount > 0 ? errorCount / requestCount : 0
     const durations = recent.filter(r => r.status === 'success').map(r => r.durationMs).sort((a, b) => a - b)
     const tpsValues = recent.filter(r => r.tokensPerSecond > 0).map(r => r.tokensPerSecond)

@@ -265,8 +265,11 @@ export const createProviderMonitor = (
       }
       return false
     }
-    // 'ok' and 'unhealthy' both allow calls — unhealthy is a soft signal,
-    // not a hard block. Letting traffic through is how we learn it's back.
+    // Unhealthy providers are quarantined until their metadata heartbeat
+    // succeeds. This is especially important for a rejected/rotated API key:
+    // continuing to send every agent through the same known-bad credential
+    // defeats cross-provider fallback and wastes latency.
+    if (state.sub === 'unhealthy') return false
     return true
   }
 
@@ -354,7 +357,16 @@ export const createProviderMonitor = (
       // careful: cloud providers' /models endpoints can return 401 if the
       // key was just rotated; we don't want that to look like 'down'.
       const decision = err !== undefined ? classify(err) : { kind: 'unhealthy' as const, reason: 'heartbeat failed', code: 'heartbeat' }
-      if (decision.kind === 'permanent' || decision.kind === 'gateway') return
+      if (decision.kind === 'gateway') return
+      if (decision.kind === 'permanent') {
+        // Keep a provider explicitly marked unhealthy (for example after a
+        // chat auth failure) quarantined, but continue metadata probes so a
+        // rotated key can recover without a restart.
+        state = { ...state, lastError: { code: decision.code, message: decision.reason }, lastErrorAt: now() }
+        if (state.sub !== 'unhealthy') transitionToUnhealthy(decision.reason)
+        scheduleNextHeartbeat()
+        return
+      }
       state = { ...state, lastError: { code: decision.code, message: decision.reason }, lastErrorAt: now() }
       if (decision.kind === 'backoff') {
         transitionToBackoff(decision.cooldownMs, decision.reason, decision.code)

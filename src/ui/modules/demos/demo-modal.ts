@@ -156,8 +156,6 @@ interface DemoModelCatalog {
   readonly defaultModel: string
 }
 
-const staleDemoModelIds = new Set(['gpt-5.4'])
-
 const parseErrorResponse = async (res: Response): Promise<string> => {
   try {
     const body = await res.json() as { error?: unknown }
@@ -217,10 +215,6 @@ const rescueModelForDemo = (currentModel: string | undefined, catalog: DemoModel
   if (!catalog || !catalog.defaultModel) return undefined
   const current = currentModel?.trim()
   if (current) {
-    const parsed = parseModelRef(current)
-    // gpt-5.4 was the earlier showcase default. Existing demo rooms can keep
-    // old agents on it even after ops pins a healthier default such as gpt-5.1.
-    if (parsed.modelId !== catalog.defaultModel && staleDemoModelIds.has(parsed.modelId)) return catalog.defaultModel
     if (modelIsRoutable(current, catalog)) return undefined
   }
   if (!modelIsRoutable(catalog.defaultModel, catalog)) return undefined
@@ -372,7 +366,10 @@ const createDemoAgents = async (
   specs: ReadonlyArray<DemoAgentSpec>,
 ): Promise<CreatedDemoAgents | DemoActionFailure> => {
   const catalog = await fetchDemoModelCatalog()
-  const model = catalog?.defaultModel || 'gemini-2.5-flash'
+  if (!catalog?.defaultModel || !modelIsRoutable(catalog.defaultModel, catalog)) {
+    return { ok: false, reason: 'No routable default model is available for demo agents' }
+  }
+  const model = catalog.defaultModel
 
   let existingNames: Set<string>
   try {
