@@ -29,6 +29,7 @@ import {
   $pendingToolCheckins,
   $liveThinking,
   $messageThinking,
+  type AgentContext,
 } from '../../stores.ts'
 import type { WSOutbound } from '../../../../core/types/ws-protocol.ts'
 import { showToast } from '../../toast.ts'
@@ -178,11 +179,21 @@ export const stateHandlers: StateHandlers = {
       if (sender && sender.state === 'generating') {
         $agents.setKey(m.senderId, { ...sender, state: 'idle', context: undefined })
       }
-      const agentCtx = $agentContexts.get()[m.senderId]
+      // Normally context_ready precedes the posted message on the same WS.
+      // Keep a sender-name fallback for messages whose sender snapshot was
+      // received after the eval event (or when an older client has a stale
+      // id/name mapping).
+      const contexts = $agentContexts.get()
+      const agentCtx = contexts[m.senderId] ?? (
+        m.senderName
+          ? Object.entries(contexts).find(([agentId]) => $agents.get()[agentId]?.name === m.senderName)?.[1]
+          : undefined
+      )
       if (agentCtx) {
         $messageContexts.setKey(m.id, agentCtx)
         const remaining = { ...$agentContexts.get() }
-        delete remaining[m.senderId]
+        const contextAgentId = Object.entries(contexts).find(([, ctx]) => ctx === agentCtx)?.[0] ?? m.senderId
+        delete remaining[contextAgentId]
         $agentContexts.set(remaining)
       }
       const agentWarn = $agentWarnings.get()[m.senderId]
@@ -279,12 +290,33 @@ export const stateHandlers: StateHandlers = {
     } else if (event.kind === 'tool_result' && event.tool) {
       $thinkingTools.setKey(id, `${event.tool} ${event.success ? '✓' : '✗'}`)
     } else if (event.kind === 'context_ready') {
-      $agentContexts.setKey(id, {
+      const context: AgentContext = {
         messages: event.messages,
         model: event.model,
         temperature: event.temperature,
         toolCount: event.toolCount,
-      })
+      }
+      $agentContexts.setKey(id, context)
+
+      // Broadcasts are usually ordered, but message and eval callbacks can
+      // race across async paths. If the message landed first, attach this
+      // context to the newest uncaptured message from the same agent now.
+      // This makes the inspector reliable for fresh messages regardless of
+      // event ordering.
+      for (const messages of Object.values($roomMessages.get())) {
+        const candidate = [...messages].reverse().find(m =>
+          m.senderId === id &&
+          (m.type === 'chat' || m.type === 'pass' || m.type === 'error') &&
+          m.generationMs !== undefined &&
+          !$messageContexts.get()[m.id],
+        )
+        if (!candidate) continue
+        $messageContexts.setKey(candidate.id, context)
+        const remaining = { ...$agentContexts.get() }
+        delete remaining[id]
+        $agentContexts.set(remaining)
+        break
+      }
     } else if (event.kind === 'warning') {
       const existing = $agentWarnings.get()[id] ?? []
       $agentWarnings.setKey(id, [...existing, event.message])

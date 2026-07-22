@@ -13,7 +13,7 @@
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { stateHandlers } from './state.ts'
-import { $roomMessages, $rooms, $selectedRoomId, $agents } from '../../stores.ts'
+import { $roomMessages, $rooms, $selectedRoomId, $agents, $messageContexts, $agentContexts } from '../../stores.ts'
 import type { WSOutbound } from '../../../../core/types/ws-protocol.ts'
 
 type Snapshot = Extract<WSOutbound, { readonly type: 'snapshot' }>
@@ -253,5 +253,31 @@ describe('stateHandlers — thinking persistence (PR 4)', () => {
     // At the moment the listener fired (synchronously off setKey), the
     // thinking had to already be in $messageThinking.
     expect(seenWhenRoomMessagesFired).toBe('pre-transfer reasoning')
+  })
+})
+
+describe('stateHandlers — prompt-context handoff', () => {
+  beforeEach(() => {
+    $roomMessages.set({})
+    $messageContexts.set({})
+    $agentContexts.set({})
+    $agents.set({})
+  })
+
+  test('context_ready arriving after the message still captures the fresh message', () => {
+    $agents.setKey('agent-1', { id: 'agent-1', name: 'Aiden', state: 'generating', kind: 'ai' } as never)
+    stateHandlers.message!({
+      type: 'message',
+      message: {
+        id: 'msg-race', roomId: 'room-1', senderId: 'agent-1', senderName: 'Aiden',
+        content: 'the answer', timestamp: 1, type: 'chat', generationMs: 250,
+      },
+    } as never)
+    stateHandlers.agent_activity!({
+      type: 'agent_activity', agentName: 'Aiden',
+      event: { kind: 'context_ready', messages: [{ role: 'user', content: 'question' }], model: 'gpt-5.4', toolCount: 0 },
+    } as never)
+    expect($messageContexts.get()['msg-race']?.model).toBe('gpt-5.4')
+    expect($agentContexts.get()['agent-1']).toBeUndefined()
   })
 })
