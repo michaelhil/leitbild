@@ -77,7 +77,7 @@ export const openDemosNavPicker = async (): Promise<void> => {
 
   const intro = document.createElement('p')
   intro.className = 'text-sm text-text-subtle mb-3'
-  intro.textContent = 'Pick a demo. It pins to the current room — switching demos wipes the previous pin.'
+  intro.textContent = 'Pick a demo. Samsinn creates and opens a dedicated room so its agents, messages, and script state stay isolated.'
   modal.scrollBody.appendChild(intro)
 
   let lastCategory: string | undefined

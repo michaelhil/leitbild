@@ -79,7 +79,7 @@ export const DEMO_CATALOG: ReadonlyArray<Demo> = [
     title: 'Control Room: Unstructured',
     category: 'Turn-Taking Demos',
     blurb:
-      'See why “put several smart agents in one room” is not an orchestration strategy. This training-only demo creates four opinionated control-room personas in broadcast mode, gives them one ambiguous question, and pauses delivery automatically after 25 seconds. Use a fresh room. Re-open it from the 🪄 icon.',
+      'See why “put several smart agents in one room” is not an orchestration strategy. This training-only demo creates four opinionated control-room personas in broadcast mode, gives them one ambiguous question, and pauses delivery automatically after 25 seconds. Samsinn opens it in a dedicated room. Re-open it from the 🪄 icon.',
     requiredPacks: [],
     requiredTools: [],
     prompts: [

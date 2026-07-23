@@ -1,18 +1,114 @@
 // ============================================================================
-// Demo modal — opens for the currently-active demo. Shows blurb + clickable
-// prompt rows. Click a row → post the prompt as the current human into the
-// current room. Also wires the 🎬 header-icon that re-opens the modal while
-// a demo is pinned.
+// Demo modal — a new launch creates and selects a dedicated room, then shows
+// the blurb + clickable prompt rows. Click a row → post the prompt as the
+// current human. The 🎬 header icon re-opens the modal in that same room.
 // ============================================================================
 
 import { createModal } from '../modals/detail-modal.ts'
 import { showToast } from '../toast.ts'
 import { send } from '../ws-send.ts'
-import { $selectedRoomId, $rooms, $agents, $roomMembers, $selectedHumanByRoom } from '../stores.ts'
+import { $selectedRoomId, $selectedAgentId, $rooms, $agents, $roomMembers, $selectedHumanByRoom } from '../stores.ts'
 import { updateLeitbildPanelForRoom } from '../leitbild-iframe-panel.ts'
 import { icon } from '../icon.ts'
 import { getDemo, type Demo, type DemoAgentSpec, type DemoPrompt, type LeitbildDemoSetup } from './catalog.ts'
 import { $activeDemoByRoom } from './active-demo-store.ts'
+
+interface DedicatedDemoRoom {
+  readonly id: string
+  readonly name: string
+}
+
+// Every new demo launch gets an isolated room. This prevents stale script
+// state, unrelated agents, delivery settings, and old messages from changing
+// the demo. The currently selected human follows the user into the room so
+// click-to-send prompts work immediately.
+const createDedicatedDemoRoom = async (demo: Demo): Promise<DedicatedDemoRoom | undefined> => {
+  const previousRoomId = $selectedRoomId.get()
+  const preferredHumanId = previousRoomId
+    ? $selectedHumanByRoom.get()[previousRoomId]
+    : undefined
+  let createdRoomName: string | undefined
+
+  try {
+    const agentsRes = await fetch('/api/agents', { credentials: 'same-origin' })
+    if (!agentsRes.ok) throw new Error(`could not list agents (${agentsRes.status})`)
+    const agentList = await agentsRes.json() as ReadonlyArray<{ id: string; name: string; kind: 'ai' | 'human' }>
+    const human = agentList.find(a => a.id === preferredHumanId && a.kind === 'human')
+      ?? agentList.find(a => a.kind === 'human' && a.name === 'You')
+      ?? agentList.find(a => a.kind === 'human')
+
+    const create = await fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ name: `Demo: ${demo.title}`, createdBy: 'demo-launcher' }),
+    })
+    if (!create.ok) throw new Error(`could not create room: ${await parseErrorResponse(create)}`)
+    const created = await create.json() as {
+      value?: { profile?: { id?: unknown; name?: unknown } }
+    }
+    const id = created.value?.profile?.id
+    const name = created.value?.profile?.name
+    if (typeof id !== 'string' || typeof name !== 'string') {
+      throw new Error('room creation returned no room identity')
+    }
+    createdRoomName = name
+
+    let demoHuman = human
+    if (demoHuman) {
+      const add = await fetch(`/api/rooms/${encodeURIComponent(name)}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ agentName: demoHuman.name }),
+      })
+      if (!add.ok) throw new Error(`could not add ${demoHuman.name}: ${await parseErrorResponse(add)}`)
+    } else {
+      const existingNames = new Set(agentList.map(a => a.name))
+      let humanName = 'Demo User'
+      let suffix = 2
+      while (existingNames.has(humanName)) humanName = `Demo User ${suffix++}`
+      const addHuman = await fetch('/api/agents/human', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ name: humanName, roomName: name }),
+      })
+      if (!addHuman.ok) throw new Error(`could not create demo user: ${await parseErrorResponse(addHuman)}`)
+      const body = await addHuman.json() as { id?: unknown; name?: unknown }
+      if (typeof body.id !== 'string' || typeof body.name !== 'string') {
+        throw new Error('demo user creation returned no identity')
+      }
+      demoHuman = { id: body.id, name: body.name, kind: 'human' }
+      $agents.setKey(demoHuman.id, { ...demoHuman, state: 'idle' })
+    }
+
+    // Mirror the already-authoritative REST results immediately. Matching WS
+    // events may arrive before or after these writes; setKey is idempotent.
+    $rooms.setKey(id, { id, name })
+    $roomMembers.setKey(id, [demoHuman.id])
+    $selectedHumanByRoom.setKey(id, demoHuman.id)
+    $selectedAgentId.set(null)
+    $selectedRoomId.set(id)
+    createdRoomName = undefined
+    return { id, name }
+  } catch (err) {
+    if (createdRoomName) {
+      try {
+        await fetch(`/api/rooms/${encodeURIComponent(createdRoomName)}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        })
+      } catch { /* best-effort rollback of this launch's empty room */ }
+    }
+    showToast(
+      document.body,
+      `Could not create demo room: ${err instanceof Error ? err.message : String(err)}`,
+      { type: 'error', position: 'fixed', durationMs: 10000 },
+    )
+    return undefined
+  }
+}
 
 // Post `content` as if the user typed it in chat. Mirrors the same
 // resolution logic the chat form uses (sender = last-picked human for
@@ -85,7 +181,7 @@ const buildPromptRow = (demo: Demo, entry: DemoPrompt, onSent: () => void): HTML
   return btn
 }
 
-// Ensure the demo packs are merged into the current room's active set.
+// Ensure the demo packs are merged into the selected demo room's active set.
 // Awaited so the user can't click a prompt before activation lands and
 // hit "no tools available." Returns true iff activation succeeded (or
 // was a no-op because packs were already active).
@@ -362,6 +458,7 @@ interface DemoActionFailure {
 }
 
 const createDemoAgents = async (
+  roomId: string,
   roomName: string,
   specs: ReadonlyArray<DemoAgentSpec>,
 ): Promise<CreatedDemoAgents | DemoActionFailure> => {
@@ -402,6 +499,10 @@ const createDemoAgents = async (
         }),
       })
       if (!create.ok) return { ok: false, reason: `Could not create ${name}: ${await parseErrorResponse(create)}` }
+      const createdAgent = await create.json() as { id?: unknown; name?: unknown }
+      if (typeof createdAgent.id !== 'string' || typeof createdAgent.name !== 'string') {
+        return { ok: false, reason: `Agent creation returned no identity for ${name}` }
+      }
 
       const add = await fetch(`/api/rooms/${encodeURIComponent(roomName)}/members`, {
         method: 'POST',
@@ -410,7 +511,21 @@ const createDemoAgents = async (
         body: JSON.stringify({ agentName: name }),
       })
       if (!add.ok) return { ok: false, reason: `Created ${name}, but could not add it to the room: ${await parseErrorResponse(add)}` }
-      names.push(name)
+
+      // Do not depend on websocket event ordering. Leitbild setup and prompt
+      // sending both inspect these stores immediately after this function.
+      $agents.setKey(createdAgent.id, {
+        id: createdAgent.id,
+        name: createdAgent.name,
+        kind: 'ai',
+        model,
+        state: 'idle',
+      })
+      const members = $roomMembers.get()[roomId] ?? []
+      if (!members.includes(createdAgent.id)) {
+        $roomMembers.setKey(roomId, [...members, createdAgent.id])
+      }
+      names.push(createdAgent.name)
     } catch (err) {
       return { ok: false, reason: `Could not set up ${name}: ${(err as Error).message}` }
     }
@@ -483,7 +598,7 @@ const executeDemoPrompt = async (demo: Demo, entry: DemoPrompt): Promise<boolean
     }
   }
 
-  const created = await createDemoAgents(roomName, action.agents)
+  const created = await createDemoAgents(roomId, roomName, action.agents)
   if (created.ok === false) {
     showToast(document.body, created.reason, { type: 'error', position: 'fixed', durationMs: 10000 })
     return false
@@ -523,20 +638,29 @@ const executeDemoPrompt = async (demo: Demo, entry: DemoPrompt): Promise<boolean
   return true
 }
 
-export const openDemoModal = async (demoId: string): Promise<void> => {
+export const openDemoModal = async (
+  demoId: string,
+  options: { readonly reuseCurrentRoom?: boolean } = {},
+): Promise<void> => {
   const demo = getDemo(demoId)
   if (!demo) {
     showToast(document.body, `Unknown demo: ${demoId}`, { type: 'error', position: 'fixed' })
     return
   }
-  const roomId = $selectedRoomId.get()
-  if (!roomId) {
-    showToast(document.body, 'Open a room first, then launch the demo.', { type: 'error', position: 'fixed' })
+
+  let roomId = $selectedRoomId.get()
+  if (!options.reuseCurrentRoom) {
+    const dedicated = await createDedicatedDemoRoom(demo)
+    if (!dedicated) return
+    roomId = dedicated.id
+  } else if (!roomId) {
+    showToast(document.body, 'The demo room is no longer available.', { type: 'error', position: 'fixed' })
     return
   }
+  if (!roomId) return
 
   // Side-effects: install biometrics if needed, then merge required packs
-  // into the current room's active set so the tools become visible to the
+  // into the dedicated room's active set so the tools become visible to the
   // AI BEFORE the user can click a prompt. Order matters: pack must be
   // installed before activation can succeed.
   if (demo.id === 'biometrics') {
@@ -546,6 +670,31 @@ export const openDemoModal = async (demoId: string): Promise<void> => {
   if (!activated) {
     showToast(document.body, `Couldn't activate required packs (${demo.requiredPacks.join(', ')}) — the AI may not see this demo's tools.`, { type: 'error', position: 'fixed', durationMs: 8000 })
   }
+
+  // Script/spawn actions create their own cast when clicked. Plain-prompt
+  // demos previously borrowed whatever AI happened to be in the room; a
+  // dedicated room therefore needs one purpose-built guide up front.
+  if (!options.reuseCurrentRoom && demo.prompts.some(prompt => !prompt.action)) {
+    const roomName = $rooms.get()[roomId]?.name
+    if (!roomName) {
+      showToast(document.body, 'The new demo room could not be resolved.', { type: 'error', position: 'fixed' })
+      return
+    }
+    const created = await createDemoAgents(roomId, roomName, [{
+      name: `${demo.title} Guide`,
+      persona: [
+        `You are the dedicated facilitator for the "${demo.title}" demonstration.`,
+        'Follow the prompt the user selects, use the available demo tools when they are relevant, and report tool evidence clearly and concisely.',
+        'For nuclear-domain material, act as a training and reference assistant—not as real-time operational authority.',
+      ].join(' '),
+      tools: demo.requiredTools,
+    }])
+    if (created.ok === false) {
+      showToast(document.body, `Could not create the demo guide: ${created.reason}`, { type: 'error', position: 'fixed', durationMs: 10000 })
+      return
+    }
+  }
+
   if (demo.id === 'leitbild') {
     if (!demo.leitbildSetup) {
       showToast(document.body, 'Leitbild demo setup is missing from the catalog.', { type: 'error', position: 'fixed', durationMs: 10000 })
@@ -587,7 +736,7 @@ export const openDemoModal = async (demoId: string): Promise<void> => {
 
   const hint = document.createElement('div')
   hint.className = 'text-xs text-text-subtle mb-2'
-  hint.textContent = `Click any prompt to post it as you in the current room:`
+  hint.textContent = 'Click any prompt to post it as you in this dedicated demo room:'
   modal.scrollBody.appendChild(hint)
 
   const onSent = (): void => { modal.close() }
@@ -616,7 +765,7 @@ const buildHeaderIcon = (demo?: Demo): HTMLButtonElement => {
   btn.setAttribute('aria-label', title)
   btn.appendChild(icon('wand', { size: 16, title }))
   btn.addEventListener('click', () => {
-    if (demo) void openDemoModal(demo.id)
+    if (demo) void openDemoModal(demo.id, { reuseCurrentRoom: true })
     else void import('./index.ts').then(m => m.openDemosNavPicker())
   })
   return btn
