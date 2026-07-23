@@ -13,7 +13,7 @@ import { handleAPI } from './http-routes.ts'
 import { handleWSMessage, type WSData } from './ws-handler.ts'
 import {
   INSTANCE_COOKIE,
-  buildInstanceCookie, getJoinFromQuery,
+  buildInstanceCookie, getInstanceFromQuery, getInstanceId, getJoinFromQuery,
   resolveOrMintInstance, isSessionBoundToOtherInstance,
 } from './instance-cookie.ts'
 import { resolve, normalize } from 'node:path'
@@ -301,6 +301,14 @@ export const createServer = (config: ServerConfig) => {
       // its actor via senderId; non-content commands fall back to 'system'
       // attribution server-side.
       if (pathname === '/ws') {
+        // A real UI load receives samsinn_instance from the initial `/`
+        // response before opening its socket. Refuse direct/cookieless WS
+        // probes instead of minting and persisting a new seeded instance for
+        // every reconnecting bot or monitor that does not retain cookies.
+        // Scripted callers may use ?instance=<id> explicitly.
+        if (getInstanceId(req) === null && getInstanceFromQuery(url) === null) {
+          return sec(new Response('Instance cookie required', { status: 401 }))
+        }
         if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
           return sec(new Response('Unauthorized', { status: 401 }))
         }

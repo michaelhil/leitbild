@@ -52,6 +52,7 @@ export const instanceRoutes: RouteEntry[] = [
       const onDisk = await ctx.instances.listOnDisk()
       const live = ctx.instances.liveIds()
       const current = getInstanceId(req)
+      const seen = new Set(onDisk.map(entry => entry.id))
       const out = onDisk.map(entry => ({
         id: entry.id,
         snapshotMtimeMs: entry.snapshotMtimeMs,
@@ -59,6 +60,13 @@ export const instanceRoutes: RouteEntry[] = [
         isLive: live.has(entry.id),
         isCurrent: entry.id === current,
       }))
+      // A freshly created instance is materialized in memory before its
+      // first durable snapshot. Include it immediately so the create/switch
+      // flow and admin list agree even during that short window.
+      for (const id of live) {
+        if (seen.has(id)) continue
+        out.push({ id, snapshotMtimeMs: 0, snapshotSizeBytes: 0, isLive: true, isCurrent: id === current })
+      }
       // Sort: current first, then live, then by mtime desc.
       out.sort((a, b) => {
         if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
