@@ -309,6 +309,12 @@ export const createServer = (config: ServerConfig) => {
         if (getInstanceId(req) === null && getInstanceFromQuery(url) === null) {
           return sec(new Response('Instance cookie required', { status: 401 }))
         }
+        // Query-bound scripted clients may only attach to an existing
+        // instance; never let an arbitrary `?instance=` value mint one.
+        const queryInstance = getInstanceFromQuery(url)
+        if (getInstanceId(req) === null && queryInstance !== null && !(await registry.exists(queryInstance))) {
+          return sec(new Response('Instance not found', { status: 404 }))
+        }
         if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
           return sec(new Response('Unauthorized', { status: 401 }))
         }
@@ -322,6 +328,20 @@ export const createServer = (config: ServerConfig) => {
 
         const upgraded = server.upgrade(req, { data: { sessionToken, instanceId } })
         return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
+      }
+
+      // Do this gate before registry.getOrLoad. The route-level gate in
+      // handleAPI is intentionally retained as defense in depth, but if it
+      // runs after getOrLoad a cookieless probe has already materialized and
+      // seeded a persistent instance.
+      if (
+        pathname.startsWith('/api/') &&
+        pathname !== '/api/auth' &&
+        pathname !== '/api/system/info' &&
+        pathname !== '/api/system/diagnostics' &&
+        getInstanceId(req) === null
+      ) {
+        return sec(new Response('No session', { status: 401 }))
       }
 
       // === API + static dispatch ===
