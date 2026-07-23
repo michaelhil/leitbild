@@ -30,9 +30,31 @@ export type { UIMessage, AgentInfo, RoomProfile }
 // === Identity ===
 
 export const $myAgentId = atom<string | null>(null)
+const SESSION_TOKEN_KEY = 'ta_session'
 export const $sessionToken = atom(
-  typeof localStorage !== 'undefined' ? localStorage.getItem('ta_session') ?? '' : '',
+  typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_TOKEN_KEY) ?? '' : '',
 )
+
+// Viewer tokens are per-tab, not per-origin. localStorage made every open
+// tab share one server session and overwrite the connection map entry.
+// Clear the legacy cross-tab value once this module loads.
+if (typeof localStorage !== 'undefined') {
+  try { localStorage.removeItem(SESSION_TOKEN_KEY) } catch { /* privacy mode */ }
+}
+
+export const persistSessionToken = (token: string): void => {
+  $sessionToken.set(token)
+  if (typeof sessionStorage !== 'undefined') {
+    try { sessionStorage.setItem(SESSION_TOKEN_KEY, token) } catch { /* privacy mode */ }
+  }
+}
+
+export const rotateSessionTokenForInstanceSwitch = (): void => {
+  $sessionToken.set('')
+  if (typeof sessionStorage !== 'undefined') {
+    try { sessionStorage.removeItem(SESSION_TOKEN_KEY) } catch { /* privacy mode */ }
+  }
+}
 
 // === Connection ===
 

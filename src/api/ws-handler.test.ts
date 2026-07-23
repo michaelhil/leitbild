@@ -360,6 +360,38 @@ describe('WSManager.safeSend backpressure', () => {
     expect(closed()).toBeNull()
   })
 
+  test('instance switch releases the old viewer session and closes its socket', () => {
+    const wsManager = createWSManager({ getSystem: () => undefined })
+    const { ws, closed } = makeWS()
+    wsManager.sessions.set('tab-token', {
+      instanceId: 'old123def456ghij',
+      sessionToken: 'tab-token',
+      lastActivity: Date.now(),
+    })
+    wsManager.wsConnections.set('tab-token', ws)
+
+    expect(wsManager.releaseSessionForInstanceSwitch('tab-token', 'new123def456ghij')).toBe(true)
+    expect(closed()).toEqual({ code: 4003, reason: 'instance switched' })
+    expect(wsManager.sessions.has('tab-token')).toBe(false)
+    expect(wsManager.wsConnections.has('tab-token')).toBe(false)
+  })
+
+  test('ordinary reconnect keeps a session already bound to the same instance', () => {
+    const wsManager = createWSManager({ getSystem: () => undefined })
+    const { ws, closed } = makeWS()
+    wsManager.sessions.set('tab-token', {
+      instanceId: 'same123def456ghi',
+      sessionToken: 'tab-token',
+      lastActivity: Date.now(),
+    })
+    wsManager.wsConnections.set('tab-token', ws)
+
+    expect(wsManager.releaseSessionForInstanceSwitch('tab-token', 'same123def456ghi')).toBe(false)
+    expect(closed()).toBeNull()
+    expect(wsManager.sessions.has('tab-token')).toBe(true)
+    expect(wsManager.wsConnections.get('tab-token')).toBe(ws)
+  })
+
   test('buildSnapshot returns null when system is evicted (caller closes 4001)', () => {
     const wsManager = createWSManager({ getSystem: () => undefined })
     const result = wsManager.buildSnapshot('test0123456789ab', 'agent-id')

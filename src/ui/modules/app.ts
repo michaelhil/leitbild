@@ -872,8 +872,15 @@ const connect = () => {
     if (typeof msg.type !== 'string') return
     const handler = wsDispatch[msg.type]
     if (handler) handler(raw as Parameters<typeof handler>[0])
-  }, (connected) => {
+  }, (connected, terminalReason) => {
     $connected.set(connected)
+    if (terminalReason === 'instance-deleted') {
+      showToast(document.body, 'This instance was deleted. Reload the page to create a fresh instance.', {
+        type: 'error',
+        position: 'fixed',
+        durationMs: 15000,
+      })
+    }
   })
   setWSClient(client)
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import {
   generateInstanceId, getInstanceId, buildInstanceCookie,
   getInstanceFromQuery, getJoinFromQuery, resolveInstanceId,
-  resolveOrMintInstance, isSessionBoundToOtherInstance,
+  resolveOrMintInstance,
   INSTANCE_COOKIE,
 } from './instance-cookie.ts'
 
@@ -198,25 +198,5 @@ describe('resolveOrMintInstance — mint-vs-reuse policy', () => {
     expect(minted.isNew).toBe(true)
     expect(minted.instanceId).not.toBe('../etc/passwd')
     expect(minted.setCookieValue).not.toBeNull()
-  })
-})
-
-describe('isSessionBoundToOtherInstance — WS upgrade guard', () => {
-  it('returns false when no existing session under this token', () => {
-    expect(isSessionBoundToOtherInstance(undefined, 'abc123def456ghij')).toBe(false)
-  })
-
-  it('returns false when existing session matches the resolved instance', () => {
-    expect(isSessionBoundToOtherInstance(
-      { instanceId: 'abc123def456ghij' },
-      'abc123def456ghij',
-    )).toBe(false)
-  })
-
-  it('returns true when existing session is bound to a different instance (cookie was switched)', () => {
-    expect(isSessionBoundToOtherInstance(
-      { instanceId: 'abc123def456ghij' },
-      'zzz123def456ghij',
-    )).toBe(true)
   })
 })

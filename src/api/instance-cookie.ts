@@ -131,11 +131,3 @@ export const resolveOrMintInstance = (req: Request, url: URL): MintedInstance =>
     isNew: true,
   }
 }
-
-// WS session-token reuse guard: refuse upgrade when an existing session
-// under the same token is bound to a different instance (browser swapped
-// cookies on us). Returns true ⇒ caller must 403.
-export const isSessionBoundToOtherInstance = (
-  existing: { instanceId: string } | undefined,
-  instanceId: string,
-): boolean => existing !== undefined && existing.instanceId !== instanceId

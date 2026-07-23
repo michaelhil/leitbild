@@ -9,12 +9,12 @@ import type { SystemRegistry } from '../core/instances/system-registry.ts'
 import type { WSManager } from './ws-handler.ts'
 import { DEFAULTS } from '../core/types/constants.ts'
 import { authEnabled, isValidSession, sessionFromRequest, validateToken, issueSession, buildSessionCookie, getAuthLimiter } from './auth.ts'
-import { handleAPI } from './http-routes.ts'
+import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
 import { handleWSMessage, type WSData } from './ws-handler.ts'
 import {
   INSTANCE_COOKIE,
   buildInstanceCookie, getInstanceFromQuery, getInstanceId, getJoinFromQuery,
-  resolveOrMintInstance, isSessionBoundToOtherInstance,
+  resolveOrMintInstance,
 } from './instance-cookie.ts'
 import { resolve, normalize } from 'node:path'
 import { getCaptureRegistry } from '../core/biometrics/registry.ts'
@@ -165,6 +165,30 @@ export const createServer = (config: ServerConfig) => {
   const port = config.port ?? DEFAULTS.port
   const uiPath = resolve(config.uiPath ?? `${import.meta.dir}/../ui`)
   const transpiler = new Bun.Transpiler({ loader: 'ts' })
+  // Root navigation issues an instance cookie before any per-instance
+  // System exists. Keep that deliberate reservation briefly so the first
+  // API/WS request can distinguish it from a cookie for a deleted instance.
+  // Bounded to prevent unauthenticated page hits from growing memory forever.
+  const pendingInstanceIds = new Map<string, number>()
+  const PENDING_INSTANCE_TTL_MS = 5 * 60_000
+  const MAX_PENDING_INSTANCES = 4096
+  const rememberPendingInstance = (id: string): void => {
+    const now = Date.now()
+    for (const [candidate, expiresAt] of pendingInstanceIds) {
+      if (expiresAt > now && pendingInstanceIds.size < MAX_PENDING_INSTANCES) break
+      pendingInstanceIds.delete(candidate)
+    }
+    pendingInstanceIds.set(id, now + PENDING_INSTANCE_TTL_MS)
+  }
+  const isPendingInstance = (id: string): boolean => {
+    const expiresAt = pendingInstanceIds.get(id)
+    if (expiresAt === undefined) return false
+    if (expiresAt <= Date.now()) {
+      pendingInstanceIds.delete(id)
+      return false
+    }
+    return true
+  }
 
   // Note: per-instance event wiring (broadcasts + autosave) is set up by
   // registry.onSystemCreated. createServer no longer wires anything itself.
@@ -228,6 +252,15 @@ export const createServer = (config: ServerConfig) => {
         }
       }
 
+      // Process-global bootstrap/diagnostic routes must never cross the
+      // per-instance registry boundary. In particular, deployment probes
+      // against /api/system/diagnostics previously created a seeded tenant.
+      const unscoped = await handleUnscopedAPI(req, pathname, {
+        remoteAddress: server.requestIP(req)?.address,
+        diagnostics: config.diagnostics,
+      })
+      if (unscoped) return sec(unscoped)
+
       // === ?join=<id> redirect — set cookie + 303 to a clean URL ===
       // Strip the join param and preserve the rest, so a shared link with
       // extra params (?join=abc&room=general) doesn't loop the redirect.
@@ -253,25 +286,60 @@ export const createServer = (config: ServerConfig) => {
         }))
       }
 
+      // A cookie whose instance was deleted must not silently mint a new
+      // System on background API polling or WebSocket reconnect. That was
+      // the source of "delete all" immediately producing several seeded
+      // instances: each old tab/retry received a different random id.
+      //
+      // Only a top-level navigation renews the cookie. It serves HTML
+      // without materializing the instance; the subsequent WS open performs
+      // the single deliberate load. Other static assets remain readable,
+      // while API calls fail closed and WS gets a terminal close code.
+      const cookieInstanceId = getInstanceId(req)
+      const staleCookie = cookieInstanceId !== null
+        && !isPendingInstance(cookieInstanceId)
+        && !(await registry.exists(cookieInstanceId))
+      if (staleCookie) {
+        const staleStatic = await serveStatic(pathname, uiPath, transpiler)
+        if (staleStatic !== null) {
+          if (pathname === '/' || pathname === '/index.html') {
+            const fresh = resolveOrMintInstance(new Request(req.url, { method: req.method }), url)
+            const headers = new Headers(staleStatic.headers)
+            if (fresh.setCookieValue) {
+              rememberPendingInstance(fresh.instanceId)
+              headers.append('Set-Cookie', fresh.setCookieValue)
+            }
+            return sec(new Response(staleStatic.body, { status: staleStatic.status, headers }))
+          }
+          return sec(staleStatic)
+        }
+        if (pathname === '/favicon.ico') return sec(new Response(null, { status: 204 }))
+        if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
+          return sec(new Response('Unauthorized', { status: 401 }))
+        }
+        if (pathname === '/ws') {
+          const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
+          const upgraded = server.upgrade(req, {
+            data: {
+              sessionToken,
+              instanceId: cookieInstanceId!,
+              terminalClose: 'instance-deleted',
+            },
+          })
+          return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
+        }
+        return sec(new Response('Instance was deleted. Reload to create a fresh instance.', {
+          status: 410,
+          headers: { 'Content-Type': 'text/plain' },
+        }))
+      }
+
       // === Resolve which instance this request is for ===
       // Cookieless requests get a per-visitor id. The cookie is set on the
       // way out; the instance itself is materialized lazily by /ws or an
       // /api/* call from the UI — never by a static GET or a cookieless
       // probe (see F1/F5 below).
-      let { instanceId, setCookieValue } = resolveOrMintInstance(req, url)
-
-      // F3: stale-cookie soft-expiry. When the cookie names an id that
-      // is neither live in memory nor present on disk (e.g. operator
-      // purged the instance dir; idle-evicted + trashed + purged by the
-      // janitor), drop the cookie and mint a fresh id. Silent — the user
-      // gets a clean session, no error surface. Prevents the
-      // resurrection-from-stale-cookie path that re-seeds an instance
-      // under a previously-deleted id.
-      if (setCookieValue === null && !(await registry.exists(instanceId))) {
-        const fresh = resolveOrMintInstance(new Request(req.url, { method: req.method }), url)
-        instanceId = fresh.instanceId
-        setCookieValue = fresh.setCookieValue
-      }
+      const { instanceId, setCookieValue } = resolveOrMintInstance(req, url)
 
       // F1: static-only paths never need a per-instance system. Serve
       // them before getOrLoad so bots/crawlers/uptime probes that just
@@ -280,7 +348,10 @@ export const createServer = (config: ServerConfig) => {
       // same id.
       const earlyStatic = await serveStatic(pathname, uiPath, transpiler)
       if (earlyStatic !== null) {
-        if (setCookieValue) {
+        // Only a real page navigation starts a visitor session. Direct
+        // module/CSS probes remain completely cookieless.
+        if (setCookieValue && (pathname === '/' || pathname === '/index.html')) {
+          rememberPendingInstance(instanceId)
           const headers = new Headers(earlyStatic.headers)
           headers.append('Set-Cookie', setCookieValue)
           return sec(new Response(earlyStatic.body, { status: earlyStatic.status, headers }))
@@ -290,9 +361,7 @@ export const createServer = (config: ServerConfig) => {
       // /favicon.ico has no file but bots GET it constantly. 204 with
       // cookie, no instance.
       if (pathname === '/favicon.ico') {
-        const headers = new Headers()
-        if (setCookieValue) headers.append('Set-Cookie', setCookieValue)
-        return sec(new Response(null, { status: 204, headers }))
+        return sec(new Response(null, { status: 204 }))
       }
 
       // === WebSocket upgrade ===
@@ -320,11 +389,10 @@ export const createServer = (config: ServerConfig) => {
         }
         const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
 
-        // Session token reuse — refuse if the existing session is bound to
-        // a different instance (browser cookie was switched).
-        if (isSessionBoundToOtherInstance(wsManager.sessions.get(sessionToken), instanceId)) {
-          return sec(new Response('Session token belongs to a different instance', { status: 403 }))
-        }
+        // An intentional instance switch keeps the tab's viewer token but
+        // changes its cookie. Release the old binding before upgrade instead
+        // of rejecting the new socket and leaving the UI blank.
+        wsManager.releaseSessionForInstanceSwitch(sessionToken, instanceId)
 
         const upgraded = server.upgrade(req, { data: { sessionToken, instanceId } })
         return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
@@ -338,7 +406,6 @@ export const createServer = (config: ServerConfig) => {
         pathname.startsWith('/api/') &&
         pathname !== '/api/auth' &&
         pathname !== '/api/system/info' &&
-        pathname !== '/api/system/diagnostics' &&
         getInstanceId(req) === null
       ) {
         return sec(new Response('No session', { status: 401 }))
@@ -346,6 +413,7 @@ export const createServer = (config: ServerConfig) => {
 
       // === API + static dispatch ===
       // Resolve the system for this cookie (lazy-loads from disk if evicted).
+      pendingInstanceIds.delete(instanceId)
       const system = await registry.getOrLoad(instanceId)
       const remoteAddress = server.requestIP(req)?.address
       const apiResponse = await handleAPI(req, pathname, system, instanceId, {
@@ -380,9 +448,14 @@ export const createServer = (config: ServerConfig) => {
 
     websocket: {
       async open(ws) {
+        if (ws.data.terminalClose === 'instance-deleted') {
+          ws.close(4004, 'instance deleted; reload to create a fresh instance')
+          return
+        }
         // Ensure the instance is loaded (lazy materialization on first
         // visit). The session entry is keyed by sessionToken so reconnects
         // and stale-sweep work the same.
+        pendingInstanceIds.delete(ws.data.instanceId)
         await registry.getOrLoad(ws.data.instanceId)
         const existing = wsManager.sessions.get(ws.data.sessionToken)
         const session = existing ?? { instanceId: ws.data.instanceId, sessionToken: ws.data.sessionToken, lastActivity: Date.now() }
@@ -398,6 +471,12 @@ export const createServer = (config: ServerConfig) => {
       async message(ws, raw) {
         const session = wsManager.sessions.get(ws.data.sessionToken)
         if (!session) return
+        // A superseded socket may outlive a token rebind briefly. Never let
+        // it dispatch against its old System using the new session scope.
+        if (session.instanceId !== ws.data.instanceId) {
+          ws.close(4003, 'instance switched')
+          return
+        }
         session.lastActivity = Date.now()
         // Resolve the cookie's system (lazy-load if evicted between connect
         // and message). Eviction during an active WS is rare — onSystemEvicted
@@ -411,7 +490,9 @@ export const createServer = (config: ServerConfig) => {
         // v15+ WS sessions own no agent. Just drop the connection map
         // entry; sessions can persist briefly for reconnect (sweep cleans
         // them up after SESSION_STALE_MS).
-        wsManager.wsConnections.delete(ws.data.sessionToken)
+        if (wsManager.wsConnections.get(ws.data.sessionToken) === ws) {
+          wsManager.wsConnections.delete(ws.data.sessionToken)
+        }
       },
     },
   })

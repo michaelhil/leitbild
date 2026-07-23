@@ -70,11 +70,49 @@ const readPackageInfo = async (): Promise<SystemInfo> => {
   return cachedInfo
 }
 
+export const systemInfoResponse = async (): Promise<Response> =>
+  json(await readPackageInfo())
+
+export const authResponse = async (req: Request, remoteAddress?: string): Promise<Response> => {
+  if (req.method === 'GET') {
+    const enabled = authEnabled()
+    if (!enabled) return json({ authEnabled: false, authenticated: true })
+    const { sessionFromRequest, isValidSession } = await import('../auth.ts')
+    const session = sessionFromRequest(req)
+    return json({ authEnabled: true, authenticated: isValidSession(session) })
+  }
+  if (!authEnabled()) {
+    return json({ ok: true })
+  }
+  const limit = getAuthLimiter().check(remoteAddress)
+  if (!limit.ok) {
+    const retryS = Math.ceil(limit.retryAfterMs / 1000)
+    return new Response(
+      JSON.stringify({ error: `too many auth attempts — try again in ${retryS}s` }),
+      { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryS) } },
+    )
+  }
+  const body = await parseBody(req)
+  const candidate = typeof body.token === 'string' ? body.token : ''
+  if (!validateToken(candidate)) {
+    console.warn(`[auth] failed token attempt from ${remoteAddress ?? 'unknown'}`)
+    return errorResponse('invalid token', 401)
+  }
+  const sessionId = issueSession()
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': buildSessionCookie(sessionId),
+    },
+  })
+}
+
 export const systemRoutes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/system\/info$/,
-    handler: async () => json(await readPackageInfo()),
+    handler: async () => systemInfoResponse(),
   },
   {
     // Auth status — used by the UI to decide whether to show the token prompt.
@@ -82,48 +120,12 @@ export const systemRoutes: RouteEntry[] = [
     // current request carries a valid session cookie.
     method: 'GET',
     pattern: /^\/api\/auth$/,
-    handler: async (req) => {
-      const enabled = authEnabled()
-      if (!enabled) return json({ authEnabled: false, authenticated: true })
-      const { sessionFromRequest, isValidSession } = await import('../auth.ts')
-      const session = sessionFromRequest(req)
-      return json({ authEnabled: true, authenticated: isValidSession(session) })
-    },
+    handler: async (req) => authResponse(req),
   },
   {
     method: 'POST',
     pattern: /^\/api\/auth$/,
-    handler: async (req, _match, ctx) => {
-      if (!authEnabled()) {
-        // Dev / unset-token mode — pretend success so the UI flow still runs.
-        return json({ ok: true })
-      }
-      // A1: rate-limit per IP BEFORE validating, so a brute-force attempt
-      // doesn't run validateToken at line speed.
-      const limit = getAuthLimiter().check(ctx.remoteAddress)
-      if (!limit.ok) {
-        const retryS = Math.ceil(limit.retryAfterMs / 1000)
-        return new Response(
-          JSON.stringify({ error: `too many auth attempts — try again in ${retryS}s` }),
-          { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryS) } },
-        )
-      }
-      const body = await parseBody(req)
-      const candidate = typeof body.token === 'string' ? body.token : ''
-      if (!validateToken(candidate)) {
-        // A1: log so an operator running journalctl can notice an attack.
-        console.warn(`[auth] failed token attempt from ${ctx.remoteAddress ?? 'unknown'}`)
-        return errorResponse('invalid token', 401)
-      }
-      const sessionId = issueSession()
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Set-Cookie': buildSessionCookie(sessionId),
-        },
-      })
-    },
+    handler: async (req, _match, ctx) => authResponse(req, ctx.remoteAddress),
   },
   {
     // Process-global cap/limit observability snapshot. Read by ops/admin

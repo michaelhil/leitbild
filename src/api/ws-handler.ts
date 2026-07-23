@@ -64,6 +64,10 @@ export interface ClientSession {
 export interface WSData {
   sessionToken: string
   instanceId: string                  // bound at upgrade from cookie
+  // A deleted-instance handshake is upgraded only so the browser can
+  // receive a meaningful 4xxx close code. The open handler closes it
+  // before loading or materializing any System.
+  terminalClose?: 'instance-deleted'
 }
 
 // === Session + State Management ===
@@ -71,6 +75,10 @@ export interface WSData {
 export interface WSManager {
   readonly sessions: Map<string, ClientSession>
   readonly wsConnections: Map<string, WSConnection>
+  // A browser tab keeps its viewer token across ordinary reconnects. When
+  // that tab intentionally switches instances, release the old binding and
+  // close its tracked socket so the same token can bind to the new cookie.
+  readonly releaseSessionForInstanceSwitch: (sessionToken: string, nextInstanceId: string) => boolean
   // Send to a single ws with backpressure protection. Used by the
   // per-agent transport closures in server.ts. Returns true if the bytes
   // were enqueued, false if the consumer was dropped for being too slow.
@@ -123,6 +131,22 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   const sessions = new Map<string, ClientSession>()
   const wsConnections = new Map<string, WSConnection>()
   const stateUnsubs = new Map<string, () => void>()
+
+  const releaseSessionForInstanceSwitch = (sessionToken: string, nextInstanceId: string): boolean => {
+    const existing = sessions.get(sessionToken)
+    if (!existing || existing.instanceId === nextInstanceId) return false
+    const oldWs = wsConnections.get(sessionToken)
+    if (oldWs) {
+      try { oldWs.close(4003, 'instance switched') } catch { /* already closed */ }
+      // Only remove the connection we actually closed. A delayed close
+      // callback from an older socket must never delete its replacement.
+      if (wsConnections.get(sessionToken) === oldWs) {
+        wsConnections.delete(sessionToken)
+      }
+    }
+    sessions.delete(sessionToken)
+    return true
+  }
 
   // Single backpressure-checking send. If the kernel send buffer holds more
   // than MAX_WS_BUFFERED_BYTES the consumer is too slow — close the socket
@@ -249,7 +273,8 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
   }
 
   return {
-    sessions, wsConnections, safeSend, broadcast, broadcastToInstance,
+    sessions, wsConnections, releaseSessionForInstanceSwitch,
+    safeSend, broadcast, broadcastToInstance,
     subscribeAgentState, unsubscribeAgentState, buildSnapshot, sweepStaleSessions,
     // --- Diagnostics ---
     markWired: (id: string) => { wiredInstances.add(id) },

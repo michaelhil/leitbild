@@ -7,6 +7,7 @@
 import {
   $myAgentId,
   $sessionToken,
+  persistSessionToken,
   $rooms,
   $agents,
   $roomMessages,
@@ -48,8 +49,7 @@ export const stateHandlers: StateHandlers = {
 
   snapshot(msg) {
     if (msg.sessionToken) {
-      $sessionToken.set(msg.sessionToken)
-      localStorage.setItem('ta_session', msg.sessionToken)
+      persistSessionToken(msg.sessionToken)
     }
     // v15+: snapshot.agentId is now optional and unused. WS sessions are
     // pure viewers — there's no per-tab "my" agent. "Self" styling has

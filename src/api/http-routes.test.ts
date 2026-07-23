@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { describe, test, expect, beforeEach } from 'bun:test'
-import { handleAPI } from './http-routes.ts'
+import { handleAPI, handleUnscopedAPI } from './http-routes.ts'
 import { createHouse } from '../core/house.ts'
 import { createTeam } from '../agents/team.ts'
 import { createToolRegistry } from '../core/tool-registry.ts'
@@ -314,6 +314,43 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
       subscribeAgentState: noopSubscribe,
     })
     expect(res?.status).toBe(401)
+  })
+})
+
+describe('unscoped bootstrap routes', () => {
+  test('cookieless health probe is process-scoped', async () => {
+    const res = await handleUnscopedAPI(
+      new Request('http://localhost/health'),
+      '/health',
+      { diagnostics: { snapshot: () => ({ instances: [], wsSessions: 0 }) } },
+    )
+    expect(res?.status).toBe(200)
+    expect(await res?.json()).toEqual({
+      status: 'ok',
+      scope: 'process',
+      instances: 0,
+      wsSessions: 0,
+    })
+  })
+
+  test('diagnostics is served without a per-instance System', async () => {
+    const snapshot = { instances: [], wsSessions: 0 }
+    const res = await handleUnscopedAPI(
+      new Request('http://localhost/api/system/diagnostics'),
+      '/api/system/diagnostics',
+      { diagnostics: { snapshot: () => snapshot } },
+    )
+    expect(res?.status).toBe(200)
+    expect(await res?.json()).toEqual(snapshot)
+  })
+
+  test('ordinary tenant routes are not claimed by the unscoped dispatcher', async () => {
+    const res = await handleUnscopedAPI(
+      new Request('http://localhost/api/rooms'),
+      '/api/rooms',
+      {},
+    )
+    expect(res).toBeNull()
   })
 })
 

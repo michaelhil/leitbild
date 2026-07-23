@@ -24,7 +24,8 @@ import { providersConfigRoutes } from './routes/providers-config.ts'
 import { providersTestRoutes } from './routes/providers-test.ts'
 import { triggerRoutes } from './routes/triggers.ts'
 import { packsRoutes } from './routes/packs.ts'
-import { systemRoutes } from './routes/system.ts'
+import { authResponse, systemInfoResponse, systemRoutes } from './routes/system.ts'
+import { json } from './routes/helpers.ts'
 import { instanceRoutes } from './routes/instances.ts'
 import { bugRoutes } from './routes/bugs.ts'
 import { bookmarkRoutes } from './routes/bookmarks.ts'
@@ -99,6 +100,40 @@ export interface RouteDeps {
   readonly leitbildMirror?: RouteContext['leitbildMirror']
 }
 
+// Routes that are process-global and intentionally usable before an
+// instance cookie exists. Dispatch them before registry.getOrLoad: passing
+// these through the per-instance dispatcher used to materialize a seeded
+// instance for every diagnostics/auth/info probe.
+export const handleUnscopedAPI = async (
+  req: Request,
+  pathname: string,
+  deps: Pick<RouteDeps, 'remoteAddress' | 'diagnostics'>,
+): Promise<Response | null> => {
+  if (pathname === '/health' && req.method === 'GET' && getInstanceId(req) === null) {
+    const diagnostics = deps.diagnostics?.snapshot() ?? { instances: [], wsSessions: 0 }
+    return json({
+      status: 'ok',
+      scope: 'process',
+      instances: diagnostics.instances.length,
+      wsSessions: diagnostics.wsSessions,
+    })
+  }
+  if (pathname === '/api/system/info' && req.method === 'GET') {
+    return systemInfoResponse()
+  }
+  if (pathname === '/api/auth' && (req.method === 'GET' || req.method === 'POST')) {
+    return authResponse(req, deps.remoteAddress)
+  }
+  if (pathname === '/api/system/diagnostics' && req.method === 'GET') {
+    if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+    if (!deps.diagnostics) return new Response('diagnostics not wired', { status: 500 })
+    return json(deps.diagnostics.snapshot())
+  }
+  return null
+}
+
 export const handleAPI = async (
   req: Request,
   pathname: string,
@@ -123,7 +158,6 @@ export const handleAPI = async (
     pathname.startsWith('/api/') &&
     pathname !== '/api/auth' &&
     pathname !== '/api/system/info' &&
-    pathname !== '/api/system/diagnostics' &&  // system-wide, not per-instance — used by deploy smoke probe
     getInstanceId(req) === null
   ) {
     return new Response('No session', { status: 401 })

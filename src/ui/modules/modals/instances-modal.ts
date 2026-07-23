@@ -20,6 +20,7 @@
 
 import { showToast } from '../toast.ts'
 import { triggerReset } from '../reset-button.ts'
+import { rotateSessionTokenForInstanceSwitch } from '../stores.ts'
 
 interface InstanceRow {
   readonly id: string
@@ -309,6 +310,7 @@ const handleSwitch = async (id: string): Promise<void> => {
       showToast(document.body, body.error ?? `Switch failed (${res.status})`, { type: 'error', position: 'fixed' })
       return
     }
+    rotateSessionTokenForInstanceSwitch()
     window.location.reload()
   } catch {
     showToast(document.body, 'Switch failed', { type: 'error', position: 'fixed' })
@@ -397,6 +399,7 @@ const handleCreate = async (createBtn: HTMLButtonElement, listEl: HTMLElement): 
       void listEl   // referenced for clarity
       return
     }
+    rotateSessionTokenForInstanceSwitch()
     window.location.reload()
   } catch {
     showToast(document.body, 'Create failed', { type: 'error', position: 'fixed' })

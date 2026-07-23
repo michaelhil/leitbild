@@ -23,7 +23,7 @@ export interface WSClient {
 export const createWSClient = (
   sessionToken: string,
   onMessage: (msg: unknown) => void,
-  onStatusChange: (connected: boolean) => void,
+  onStatusChange: (connected: boolean, terminalReason?: 'instance-deleted') => void,
 ): WSClient => {
   let ws: WebSocket | null = null
   let attempt = 0
@@ -43,8 +43,15 @@ export const createWSClient = (
       onStatusChange(true)
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (event.code === 4004) {
+        onStatusChange(false, 'instance-deleted')
+        return
+      }
       onStatusChange(false)
+      // The server intentionally superseded this socket during an instance
+      // switch. The reloaded page owns the replacement connection.
+      if (event.code === 4003) return
       const delay = nextDelayMs()
       attempt++
       setTimeout(connect, delay)
