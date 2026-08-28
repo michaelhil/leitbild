@@ -4,6 +4,7 @@
   "description": "Multi-agent room communication system with multi-instance deploy, delivery modes, scripts (improv scenes), MCP server, and bug reporting to GitHub",
   "module": "src/index.ts",
   "type": "module",
+  "packageManager": "bun@1.4.0",
   "scripts": {
     "start": "bun run build:css && bun run src/main.ts",
     "start:remote": "OLLAMA_URL=http://192.168.0.222:11434 bun run start",
@@ -40,7 +41,7 @@
     "typescript": "5.9.3"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": "1.4.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

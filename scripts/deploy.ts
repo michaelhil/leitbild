@@ -13,6 +13,7 @@ const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const SERVICE = 'samsinn.service'
 const SERVICE_USER = 'samsinn'
 const BUN_BIN = '/home/samsinn/.bun/bin/bun'
+export const REQUIRED_BUN_VERSION = '1.4.0'
 const LOCAL_HEALTH_URL = 'http://127.0.0.1:3000/health'
 const PUBLIC_URLS = ['https://samsinn.app/health', 'https://leitbild.samsinn.app/health'] as const
 
@@ -53,6 +54,12 @@ Options:
 `
 
 export const isSafeReleaseId = (value: string): boolean => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)
+
+export const assertBunVersion = (actual: string): void => {
+  if (actual !== REQUIRED_BUN_VERSION) {
+    throw new Error(`Bun ${REQUIRED_BUN_VERSION} is required; found ${actual}`)
+  }
+}
 
 export const parseDeployArgs = (args: ReadonlyArray<string>): DeployOptions => {
   let dryRun = false
@@ -238,6 +245,11 @@ const confirmMutation = (description: string, yes: boolean): void => {
 
 export const remotePreflightScript = (updateService: boolean): string => `
 set -euo pipefail
+actual_bun="$(${BUN_BIN} --version)"
+test "$actual_bun" = ${shellQuote(REQUIRED_BUN_VERSION)} || {
+  echo "Refusing deploy: Bun ${REQUIRED_BUN_VERSION} required at ${BUN_BIN}; found $actual_bun" >&2
+  exit 1
+}
 test "$(systemctl is-active caddy.service)" = active
 test "$(systemctl is-active leitbild.service)" = active
 test "$(systemctl is-active ${SERVICE})" = active
@@ -415,6 +427,7 @@ const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> =
 
 const deploy = async (options: DeployOptions): Promise<void> => {
   const repoRoot = resolve(import.meta.dir, '..')
+  assertBunVersion(Bun.version)
   await run('TypeScript checks', ['bun', 'run', 'check'], repoRoot)
   await run('Deterministic unit test suite', ['bun', 'run', 'test:unit'], repoRoot)
   await run('Build production CSS', ['bun', 'run', 'build:css'], repoRoot)
