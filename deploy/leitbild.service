@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/leitbild/app
+WorkingDirectory=/opt/leitbild/current
 Environment=PORT=4177
 Environment=LEITBILD_DATA_DIR=/opt/leitbild/data
 Environment=LEITBILD_MAP_ROOT=/opt/leitbild/maps

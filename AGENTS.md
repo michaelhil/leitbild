@@ -97,8 +97,8 @@
 - `bun test` runs tests.
 - `bun run check` should run type checking once configured.
 - `bun run health` should run project health checks once configured.
-- `bun run deploy` deploys to the Hetzner sandbox. It defaults to `root@178.104.229.113` and accepts `HETZNER_HOST`, `HETZNER_USER`, `HETZNER_PORT`, and `HETZNER_BUN` overrides.
+- `bun run deploy` validates, packages, and deploys an immutable code-only release through the configured `ssh samsinn` alias. Use `--test <path>` for relevant tests or `--full` for all tests. It never publishes map/reference/OSRM artifacts.
 
 ## Delivery Rule
 
-- After completing code changes, push to `main` and deploy to `leitbild.samsinn.app` unless the user explicitly says not to.
+- After completing code changes, deploy from the local worktree to `leitbild.samsinn.app` unless the user explicitly says not to. Commit logical changes locally; push `main` to GitHub at useful backup/milestone points rather than as a deployment prerequisite.
