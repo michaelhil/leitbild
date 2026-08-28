@@ -12,11 +12,10 @@
 //     interfere with a real user's session.
 //   * Post f2eda78 (F1–F5 cookieless-instance hardening), pointing a
 //     made-up cookie at a made-up id no longer materializes anything —
-//     F3 soft-expires unknown ids and mints a server-chosen one,
-//     returning Set-Cookie. The probe sends a seed cookie to trigger
-//     F3 and CAPTURES the server-issued cookie for all subsequent
-//     requests. F5 (cookieless /api/* → 401) is satisfied because the
-//     seed request still carries a cookie.
+//     F3 soft-expires unknown ids. The probe follows the browser contract:
+//     top-level navigation replaces the stale cookie, then the first API
+//     request materializes the server-chosen instance. F5 (cookieless
+//     /api/* → 401) is satisfied because every API request carries it.
 // ============================================================================
 
 const SESSION_COOKIE_PREFIX = 'samsinn_session='
@@ -73,27 +72,25 @@ export const bootstrapProbe = async (opts: BootstrapOptions): Promise<ProbeConte
   const sessionCookie = token ? await authenticate(baseUrl, token) : undefined
 
   if (target === 'fresh') {
-    // Send a fresh probe-id cookie. The server's F3 stale-cookie soft-
-    // expiry fires (the id isn't on disk), mints a new id, materializes
-    // the instance via getOrLoad, and returns Set-Cookie with the real
-    // id. We capture that and use it for every subsequent request — the
-    // probe's intent ("give me a fresh instance") is satisfied; the
-    // server, not the probe, picks the final id. The 'probe' prefix was
-    // useful for journal-greppability before F3; now the server-minted
-    // id is authoritative and the prefix is moot.
+    // Send a fresh probe-id cookie through the same top-level navigation
+    // flow as a browser. F3 treats the unknown id as stale: API requests
+    // return 410, while navigation replaces it with a pending server id.
+    // The following /api/rooms call deliberately materializes that id.
     const seedInstance = generateProbeInstanceId()
     const seedCookie = sessionCookie
       ? `${sessionCookie}; ${INSTANCE_COOKIE_PREFIX}${seedInstance}`
       : `${INSTANCE_COOKIE_PREFIX}${seedInstance}`
-    const warm = await fetch(`${baseUrl}/api/rooms`, { headers: { Cookie: seedCookie } })
-    if (!warm.ok) fail(`probe instance warmup ${warm.status}`)
-    const issued = warm.headers
+    const navigation = await fetch(`${baseUrl}/`, { headers: { Cookie: seedCookie } })
+    if (!navigation.ok) fail(`probe navigation ${navigation.status}`)
+    const issued = navigation.headers
       .getSetCookie()
       .find(c => c.startsWith(`${INSTANCE_COOKIE_PREFIX}`))
       ?.split(';')[0]
-    if (!issued) fail('probe warmup did not return a samsinn_instance Set-Cookie (F3 soft-expiry expected to fire)')
+    if (!issued) fail('probe navigation did not return a replacement samsinn_instance Set-Cookie')
     const instance = issued!.slice(INSTANCE_COOKIE_PREFIX.length)
     const cookie = sessionCookie ? `${sessionCookie}; ${issued}` : issued!
+    const warm = await fetch(`${baseUrl}/api/rooms`, { headers: { Cookie: cookie } })
+    if (!warm.ok) fail(`probe instance warmup ${warm.status}`)
     return { baseUrl, wsBaseUrl, cookie, instance, sessionCookie }
   }
 
