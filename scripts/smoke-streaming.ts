@@ -37,7 +37,7 @@ const fail = (msg: string): never => {
 const main = async (): Promise<void> => {
   const ctx = await bootstrapProbe({
     baseUrl,
-    target: 'reuse-wired',
+    target: 'fresh',
     token: process.env.SAMSINN_TOKEN,
   })
 
