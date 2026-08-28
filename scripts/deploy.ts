@@ -217,7 +217,7 @@ const createArtifact = async (repoRoot: string): Promise<{
   await copyArtifactFiles(repoRoot, stageRoot, paths)
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   const tarCommand = process.platform === 'darwin'
-    ? ['tar', '--no-mac-metadata', '-czf', archivePath, '-C', stageRoot, '.']
+    ? ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.']
     : ['tar', '-czf', archivePath, '-C', stageRoot, '.']
   await run('Create immutable release artifact', tarCommand, repoRoot)
   return {
