@@ -249,10 +249,10 @@ const createArtifact = async (repoRoot: string, options: DeployOptions): Promise
 
   await copyArtifactFiles(repoRoot, stageRoot, paths)
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
-  if (process.platform === 'darwin') {
-    await run('Strip local extended attributes', ['xattr', '-cr', stageRoot], repoRoot)
-  }
-  await run('Create immutable code-only artifact', ['tar', '-czf', archivePath, '-C', stageRoot, '.'], repoRoot)
+  const tarCommand = process.platform === 'darwin'
+    ? ['tar', '--no-mac-metadata', '-czf', archivePath, '-C', stageRoot, '.']
+    : ['tar', '-czf', archivePath, '-C', stageRoot, '.']
+  await run('Create immutable code-only artifact', tarCommand, repoRoot)
   return {
     archivePath,
     archiveChecksum: await sha256File(archivePath),
@@ -347,6 +347,10 @@ test ! -e "$release_dir" || { echo "Release already exists: $release_id" >&2; ex
 printf '%s  %s\n' "$archive_sha" "$archive" | sha256sum --check --status
 mkdir "$incoming"
 tar -xzf "$archive" --no-same-owner -C "$incoming"
+if find "$incoming" -name '._*' -print -quit | grep -q .; then
+  echo "Refusing release containing AppleDouble metadata files" >&2
+  exit 1
+fi
 test "$(jq -r '.app' "$incoming/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
 test "$(jq -r '.releaseId' "$incoming/DEPLOYMENT.json")" = "$release_id"
 test "$(sha256sum "$incoming/bun.lock" | cut -d ' ' -f 1)" = "$lock_sha"
