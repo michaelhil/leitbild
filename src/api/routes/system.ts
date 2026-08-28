@@ -198,6 +198,7 @@ export const systemRoutes: RouteEntry[] = [
         id: i.id,
         wired: i.wired,
         agentCount: i.agentCount,
+        generatingAgentCount: i.generatingAgentCount,
         lastBroadcastAt: i.lastBroadcastAt ?? null,
         lastBroadcastAgeMs: i.lastBroadcastAt ? now - i.lastBroadcastAt : null,
       }))

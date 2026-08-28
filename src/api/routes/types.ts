@@ -45,6 +45,7 @@ export interface DiagnosticsCapability {
       readonly id: string
       readonly wired: boolean
       readonly agentCount: number
+      readonly generatingAgentCount: number
       readonly lastBroadcastAt: number | null
     }>
     readonly wsSessions: number

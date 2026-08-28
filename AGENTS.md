@@ -5,7 +5,7 @@ Rules for working in this repo. Architecture overview is in [README.md](README.m
 ## Version, workflow, commands
 
 - **Version**: `package.json` is the single source of truth. Boot log, `/api/system/info`, UI footer, and bug-report modal all resolve it dynamically. When bumping, only edit `package.json` + README's top-line `> v0.X.Y` reference + the README changelog row + the git tag. Do NOT add hardcoded versions anywhere in `src/`. The dev server caches the version at first `/api/system/info` hit; restart after a bump.
-- **Workflow**: commit each logical change as its own commit; push to master often. Branches/worktrees are fine if the CLI uses them; merge back before close.
+- **Workflow**: commit each logical change as its own commit. Production iterations deploy directly from the local worktree; GitHub pushes are milestone/off-machine backups rather than a deployment prerequisite. Branches/worktrees are fine if the CLI uses them; merge back before close.
 - **Commands**:
   - `bun run check` — typecheck (always run after non-trivial edits)
   - `bun test` — full suite; `bun test -t '^(?!.*Ollama)'` skips Ollama integration (= `bun run test:unit`)

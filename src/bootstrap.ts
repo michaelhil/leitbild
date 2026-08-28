@@ -890,10 +890,12 @@ export const bootstrap = async (): Promise<void> => {
     snapshot: () => ({
       instances: registry.list().map(meta => {
         const sys = registry.tryGetLive(meta.id)
+        const aiAgents = sys?.team.listByKind('ai') ?? []
         return {
           id: meta.id,
           wired: wsManager.isWired(meta.id),
-          agentCount: sys ? sys.team.listByKind('ai').length : 0,
+          agentCount: aiAgents.length,
+          generatingAgentCount: aiAgents.filter(agent => agent.state.get() === 'generating').length,
           lastBroadcastAt: wsManager.lastBroadcastAt(meta.id),
         }
       }),

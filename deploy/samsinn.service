@@ -10,16 +10,17 @@ Type=simple
 User=samsinn
 Group=samsinn
 
-# Canonical install layout (matches deploy/RUNBOOK.md):
-#   /opt/samsinn        — repo checkout, owned by samsinn:samsinn
-#   /var/lib/samsinn    — SAMSINN_HOME (snapshots, providers.json, logs)
-# If you keep the old layout (~samsinn/talkingAgents + ~samsinn/.samsinn),
-# update WorkingDirectory, ExecStart, ReadWritePaths, and the SAMSINN_HOME
-# Environment line below.
-WorkingDirectory=/opt/samsinn
+# Release layout:
+#   /opt/samsinn-deploy/current   — atomic link to one immutable code release
+#   /opt/samsinn-deploy/releases  — complete source artifacts + manifests
+#   /opt/samsinn-deploy/deps      — dependency trees keyed by bun.lock sha256
+#   /var/lib/samsinn              — persistent snapshots, providers, packs, logs
+WorkingDirectory=/opt/samsinn-deploy/current
 
 # Adjust the bun path if you installed Bun system-wide.
-ExecStart=/home/samsinn/.bun/bin/bun run start
+# CSS is built and verified before upload. bootstrap.ts retains its stale-file
+# safety check, but normal production startup performs no package resolution.
+ExecStart=/home/samsinn/.bun/bin/bun run src/main.ts
 
 # Restart policy: bring the server back fast after a crash OR after the
 # /api/system/reset endpoint exits the process. Crash-loop guard
@@ -53,9 +54,7 @@ StandardError=journal
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=read-only
-# Keep Bun's cache writable for runtime package resolution; ProtectHome=read-only
-# would otherwise block writes under the service account's home.
-ReadWritePaths=/opt/samsinn /var/lib/samsinn /home/samsinn/.bun
+ReadWritePaths=/var/lib/samsinn
 PrivateTmp=true
 
 [Install]

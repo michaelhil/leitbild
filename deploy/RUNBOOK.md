@@ -4,6 +4,11 @@ Operator's manual for a single-host Hetzner deploy: Bun under systemd,
 Caddy in front for TLS + WS proxy. Targets one box (CAX11, ARM64, ~€4/mo)
 running both samsinn and Caddy on the same host.
 
+Production development now uses immutable local-worktree releases rather than
+editing or pulling the active checkout. See [RELEASES.md](RELEASES.md) for the
+current edit → validate → deploy → live-test loop. The clone/pull instructions
+below remain useful for bootstrapping a new host and legacy recovery only.
+
 This runbook does **not** cover Kubernetes, Docker Compose, or multi-host
 deploys. The Dockerfile in this repo is a tertiary artifact for users who
 prefer containers.
@@ -327,10 +332,10 @@ makes this safe from email/Slack links.
   `/var/lib/samsinn/instances/.trash/<id>-<ts>` after 7 days
   (`SAMSINN_TRASH_TTL_MS`). For ad-hoc cleanup:
   `rm -rf /var/lib/samsinn/instances/.trash/*`.
-- **Deployment:** GitHub pushes run CI but do not deploy. The legacy
-  `.github/workflows/deploy.yml` path is manual-only (Actions tab →
-  Deploy → Run workflow) until it is replaced by the local verified,
-  staged-release process. It requires `DEPLOY_SSH_KEY` and `DEPLOY_HOST`.
+- **Deployment:** `bun run deploy` validates the local worktree, packages a
+  complete immutable release, transfers it over the `ssh samsinn` alias,
+  atomically activates it, and runs health + streaming checks. GitHub pushes
+  run CI but do not deploy. See [RELEASES.md](RELEASES.md).
 
 ---
 
