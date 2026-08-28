@@ -13,6 +13,7 @@ Rules for working in this repo. Architecture overview is in [README.md](README.m
   - `bun run start` / `dev` / `headless` (MCP only) / `dev:remote` (`OLLAMA_URL=http://192.168.0.222:11434`)
   - `bun run health` — codebase audit (typecheck + type-coverage + escape-hatch grep + dep-cruiser + knip). Writes `.health/YYYY-MM-DD.md`. Pre-push hook runs a fast subset (`scripts/install-hooks.sh` to install).
 - **Runtime**: Bun 1.4.0 is pinned locally and in production. Some code uses `Bun.serve`, `Bun.file`, `bun:test`; do not assume Node.
+- **TypeScript toolchain**: `@typescript/native` supplies the TypeScript 7 `tsc` used by `bun run check`. The `typescript` dependency intentionally aliases `@typescript/typescript6` because API-based tools such as `type-coverage` still need the TypeScript 6 compiler API. Keep both until TypeScript 7 exposes a compatible API.
 
 ## Stable invariants (would not be obvious from reading the code)
 

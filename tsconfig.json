@@ -9,6 +9,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
+    "types": ["bun"],
     "noEmit": true,
 
     "strict": true,
