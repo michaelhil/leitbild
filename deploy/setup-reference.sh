@@ -32,11 +32,6 @@ else
   echo "/etc/leitbild/reference.env already present (left untouched)"
 fi
 
-# 4. Install + enable the systemd units.
-cp /opt/leitbild/app/deploy/leitbild-reference-pull.service /etc/systemd/system/
-cp /opt/leitbild/app/deploy/leitbild-reference-pull.timer /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now leitbild-reference-pull.timer
-echo "leitbild-reference-pull.timer enabled"
-
-systemctl list-timers --all | grep -E '(leitbild-reference|NEXT)' || true
+# Reference builds are intentionally manual. From the active immutable release,
+# load /etc/leitbild/reference.env and run the relevant reference:* command.
+echo "Reference tooling ready; no timer was installed"

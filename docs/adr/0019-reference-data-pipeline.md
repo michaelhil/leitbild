@@ -4,6 +4,10 @@
 
 Proposed. Promoted to Accepted once Phase A.7 confirms the landed code matches this decision.
 
+Operational amendment (2026-08-28): scheduled pull units were retired. Reference
+builds remain explicit operator actions from the active immutable code release;
+this does not change the data model or artifact layout decided here.
+
 ## Context
 
 Leitbild repeatedly needs to ingest slow-moving, externally-sourced, geospatial reference data and surface it on the map as contextual information for operators, packs, scenarios, and AI agents.
@@ -39,7 +43,8 @@ The runtime library lives at `src/reference-data/` as a top-level peer of `src/m
 
 The build CLI lives at `scripts/reference-build.ts` and `scripts/reference-promote.ts`, mirroring the existing `scripts/maps-*` split for OSM.
 
-The deploy artifacts (systemd unit, timer, pull script) live under `deploy/`, named with the `leitbild-reference-*` prefix to avoid collision with the existing `leitbild-pull-deploy-*` and any future `leitbild-maps-*` units.
+Reference builds use the checked-in `reference:*` commands from the active code
+release. No timer or source-pull deployment path is installed.
 
 Per-dataset on-disk layout on Hetzner mirrors the existing OSM tile layout:
 

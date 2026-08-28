@@ -49,7 +49,7 @@ The default Planetiler heap is `3g` so the pipeline can run on the current Hetzn
 
 The initial Hetzner sandbox has 3.7 GiB RAM, 8 GiB swap, and 2 vCPU. Planetiler can run there, but it warns that the OS page cache is constrained for memory-mapped temporary files. A 16 GiB / 8 vCPU conversion host is the preferred operating target once map rebuilds become routine.
 
-Run these on Hetzner from `/opt/leitbild/app`:
+Run these on Hetzner from `/opt/leitbild/current`:
 
 ```sh
 LEITBILD_MAP_ROOT=/opt/leitbild/maps bun run maps:rebuild

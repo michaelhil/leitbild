@@ -75,7 +75,9 @@ bun run reference:promote --dataset aero-norway --build <build-id>   # roll back
 bun run reference:status                      # print current symlink targets and AIRAC/build ids
 ```
 
-The systemd timer `leitbild-reference-pull.timer` runs `bun run reference:build` weekly on Thursday at 03:30 UTC.
+Reference publication is deliberately separate from code deployment and is not
+scheduled. An operator runs the relevant `reference:*` commands explicitly from
+`/opt/leitbild/current` after checking source availability and disk headroom.
 
 ## Environment variables
 

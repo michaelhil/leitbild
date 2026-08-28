@@ -67,10 +67,6 @@ bun run deploy -- --list
 bun run deploy -- --rollback <release-id>
 ```
 
-Releases and dependency trees are deliberately not auto-pruned. The existing
-`/opt/leitbild/app` rsync tree remains available during initial proof and should
-be removed only in a later approved cleanup.
-
-The previous code+map deployment remains temporarily available as
-`bun run deploy:legacy`. It must not be used for ordinary development because
-it rebuilds and promotes terrain/scenery during a code deployment.
+Releases and dependency trees are deliberately not auto-pruned. Retention is a
+separate operator action, so an ordinary code deploy cannot destroy rollback
+data.
