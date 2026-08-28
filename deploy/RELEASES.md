@@ -50,11 +50,6 @@ included, deleted, reset, or restored by this deployer.
 /var/lib/samsinn                            persistent application state
 ```
 
-The previous `/opt/samsinn` Git checkout remains untouched during the initial
-migration so the backed-up systemd unit can restore the legacy service if first
-activation fails. Remove it only after the release path has been proven and a
-separate deletion is approved.
-
 ## Safety and rollback
 
 Before upload, the deployer checks both application services, Caddy, local
@@ -77,6 +72,6 @@ is a separate operator action so a routine deploy cannot destroy rollback data.
 ## GitHub
 
 Commit when a logical change is worth preserving and push at milestones for CI,
-collaboration, and off-machine backup. The legacy pull-based deployment is
-available temporarily as `bun run deploy:legacy`; do not use it after the
-systemd unit has moved to `/opt/samsinn-deploy/current`.
+collaboration, and off-machine backup. GitHub has no production deployment or
+configuration-mutation workflow; production releases originate only from this
+local deploy command.
