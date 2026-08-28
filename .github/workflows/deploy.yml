@@ -1,10 +1,9 @@
 # ============================================================================
-# Deploy — push-to-master automation.
+# Deploy — legacy manual production deployment.
 #
-# Runs after CI's `check` job succeeds on master. SSHes to the Hetzner box
-# using a deploy-only SSH key, pulls, restarts samsinn, then runs the smoke
-# script as a gate. If the smoke check exits non-zero the workflow reports
-# red and you get an email — same signal as a broken CI.
+# This workflow is manual-only so ordinary GitHub backup/milestone pushes do
+# not mutate production. It retains the existing pull-based deploy path until
+# the local verified, staged-release deployment replaces it.
 #
 # Required GitHub Actions secrets (Settings → Secrets and variables → Actions):
 #   DEPLOY_SSH_KEY  — private key (paired with the public key authorised on
@@ -14,25 +13,13 @@
 # SAMSINN_TOKEN is read on the BOX from /etc/samsinn/env (root-readable);
 # no need to duplicate it as a GitHub secret.
 #
-# Manual trigger: GitHub Actions tab → Deploy → Run workflow. Useful when
-# you want to redeploy the latest master without making a no-op commit.
-#
-# Bypassing auto-deploy: delete this file (or temporarily disable it from
-# the Actions UI). The local fallback `bun run scripts/deploy.ts` remains
-# available either way.
+# Trigger: GitHub Actions tab → Deploy → Run workflow.
 # ============================================================================
 
 name: Deploy
 
 on:
-  # Triggered AFTER the CI workflow completes on master. The conditional
-  # below skips the deploy when CI failed so we never push a broken
-  # commit. Use workflow_dispatch to redeploy without a new commit.
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [master]
-  workflow_dispatch:    # manual run from the Actions UI
+  workflow_dispatch:
 
 concurrency:
   group: deploy-prod
@@ -40,8 +27,6 @@ concurrency:
 
 jobs:
   deploy:
-    # Skip when CI failed. workflow_dispatch (manual) always runs.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 8
 
@@ -77,7 +62,7 @@ jobs:
           '
 
       - name: Caddy drift check (CSP hosts)
-        # The auto-deploy pipeline intentionally does NOT replace
+        # The legacy manual deploy pipeline intentionally does NOT replace
         # /etc/caddy/Caddyfile (per CLAUDE.md: deploy/Caddyfile is a
         # TEMPLATE; prod has tuned values). But that lets CSP / header
         # changes shipped in the repo silently never reach the edge —
@@ -117,4 +102,3 @@ jobs:
             cd /opt/samsinn
             /home/samsinn/.bun/bin/bun run scripts/streaming-probe.ts --evict-reload
           '
-

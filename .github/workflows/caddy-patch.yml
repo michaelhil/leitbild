@@ -1,7 +1,7 @@
 # ============================================================================
 # Caddy patch — surgical, idempotent edits to the live /etc/caddy/Caddyfile.
 #
-# The auto-deploy workflow syncs CODE; it intentionally does NOT replace
+# The legacy manual deploy workflow syncs CODE; it intentionally does NOT replace
 # /etc/caddy/Caddyfile (per CLAUDE.md project rule: the repo template
 # carries placeholders and may diverge from prod's tuned config). That
 # leaves a real gap: CSP / header / proxy changes shipped in

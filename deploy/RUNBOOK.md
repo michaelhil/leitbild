@@ -327,15 +327,10 @@ makes this safe from email/Slack links.
   `/var/lib/samsinn/instances/.trash/<id>-<ts>` after 7 days
   (`SAMSINN_TRASH_TTL_MS`). For ad-hoc cleanup:
   `rm -rf /var/lib/samsinn/instances/.trash/*`.
-- **Auto-deploy:** every successful CI run on `master` triggers
-  `.github/workflows/deploy.yml` (via `workflow_run` — runs only
-  when CI is green). It SSHes to this box, pulls, restarts, and
-  runs the smoke script as a gate. Required GitHub Actions secrets:
-  `DEPLOY_SSH_KEY` (private key), `DEPLOY_HOST` (the IP),
-  `DEPLOY_TOKEN` (`SAMSINN_TOKEN`). Manual run: Actions tab →
-  Deploy → Run workflow. Bypass: delete the workflow file or
-  disable it from the Actions UI. Local fallback: `bun run deploy`
-  from your laptop (uses your normal SSH key, same steps).
+- **Deployment:** GitHub pushes run CI but do not deploy. The legacy
+  `.github/workflows/deploy.yml` path is manual-only (Actions tab →
+  Deploy → Run workflow) until it is replaced by the local verified,
+  staged-release process. It requires `DEPLOY_SSH_KEY` and `DEPLOY_HOST`.
 
 ---
 
