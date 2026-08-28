@@ -249,9 +249,10 @@ const createArtifact = async (repoRoot: string, options: DeployOptions): Promise
 
   await copyArtifactFiles(repoRoot, stageRoot, paths)
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
-  await run('Create immutable code-only artifact', [
-    'env', 'COPYFILE_DISABLE=1', 'tar', '-czf', archivePath, '-C', stageRoot, '.',
-  ], repoRoot)
+  if (process.platform === 'darwin') {
+    await run('Strip local extended attributes', ['xattr', '-cr', stageRoot], repoRoot)
+  }
+  await run('Create immutable code-only artifact', ['tar', '-czf', archivePath, '-C', stageRoot, '.'], repoRoot)
   return {
     archivePath,
     archiveChecksum: await sha256File(archivePath),
