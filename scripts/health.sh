@@ -28,7 +28,7 @@ run_tsc() {
 }
 
 run_typecov() {
-  bunx -y type-coverage@latest --strict --ignore-catch --at-least 98 \
+  bun run type-coverage --strict --ignore-catch --at-least 98 \
     >"$TMPDIR_HEALTH/typecov.txt" 2>&1
   echo "$?"
 }
@@ -91,13 +91,13 @@ run_stale_doc_phrases() {
 }
 
 run_depcruise() {
-  bunx -y dependency-cruiser@latest "src/**/*.ts" --output-type err \
+  bun run dependency-cruiser "src/**/*.ts" --output-type err \
     >"$TMPDIR_HEALTH/depcruise.txt" 2>&1
   echo "$?"
 }
 
 run_knip() {
-  bunx -y knip@latest --reporter compact \
+  bun run knip --reporter compact \
     >"$TMPDIR_HEALTH/knip.txt" 2>&1 || true
 }
 

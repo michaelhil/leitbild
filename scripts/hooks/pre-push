@@ -34,7 +34,7 @@ if [ "$ESCAPE_COUNT" -gt "$BASELINE_ESCAPE" ]; then
 fi
 
 echo "→ Pre-push: dependency-cruiser --validate"
-if ! bunx -y dependency-cruiser@latest --config .dependency-cruiser.cjs "src/**/*.ts" --output-type err >/tmp/depcruise-pre-push.txt 2>&1; then
+if ! bun run dependency-cruiser --config .dependency-cruiser.cjs "src/**/*.ts" --output-type err >/tmp/depcruise-pre-push.txt 2>&1; then
   # Tool ran but found violations. Check whether they include hard-error rules
   # (boundary violations are hard errors; cycles are also hard errors here but
   # currently grandfathered via .health/suppressed.md). For now: only block on

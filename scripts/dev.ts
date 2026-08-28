@@ -41,13 +41,13 @@ const spawnChild = (cmd: string[], label: string): Bun.Subprocess => {
 }
 
 const server = spawnChild(
-  ['bun', '--watch', 'src/main.ts'],
+  [process.execPath, '--watch', 'src/main.ts'],
   'server',
 )
 
 const css = spawnChild(
   [
-    'bunx', '@tailwindcss/cli',
+    process.execPath, 'run', 'tailwindcss',
     '-i', 'src/ui/input.css',
     '-o', 'src/ui/dist.css',
     '--watch',

@@ -20,7 +20,7 @@ export interface EnsureCssOptions {
 }
 
 const DEFAULT_BUILD_COMMAND: ReadonlyArray<string> = [
-  'bunx', '@tailwindcss/cli',
+  process.execPath, 'run', 'tailwindcss',
   '-i', 'src/ui/input.css',
   '-o', 'src/ui/dist.css',
   '--minify',

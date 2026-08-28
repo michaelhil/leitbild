@@ -6,7 +6,7 @@ import { ensureCssBuilt } from './ensure-css-built.ts'
 
 // Stub build command — writes a marker file so the test can verify the
 // helper actually invoked it. Real tailwind isn't shelled out from a unit
-// test (slow + would need network for the bunx download in CI).
+// test (slow and unrelated to the staleness logic under test).
 const STUB_OUTPUT = '/* stub build */'
 const stubCommand = (uiPath: string, marker: string): ReadonlyArray<string> => [
   'bash', '-c',
