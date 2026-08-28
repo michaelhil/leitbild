@@ -4,7 +4,7 @@
 
 - Use TypeScript for all source code.
 - Do not create JavaScript files unless the user explicitly approves.
-- Use Bun for package management, scripts, tests, and local runtime.
+- Use Bun 1.4.0 for package management, scripts, tests, and local/production runtime.
 - Maintain exactly one main HTTP server at `src/core/api/server.ts`.
 - Keep runtime mechanics conceptually separate from Leitbild core. Local runtimes must use the same adapter boundary as remote runtimes.
 - Validate external input at trust boundaries: HTTP, WebSocket, runtime feeds, file imports, AI-generated dashboard specs, and generated code.

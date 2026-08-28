@@ -12,6 +12,7 @@ const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
 const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const SERVICE = 'leitbild.service'
 const BUN_BIN = '/root/.bun/bin/bun'
+export const REQUIRED_BUN_VERSION = '1.4.0'
 const LOCAL_HEALTH_URL = 'http://127.0.0.1:4177/health'
 const PUBLIC_URLS = ['https://leitbild.samsinn.app/health', 'https://samsinn.app/health'] as const
 const LOCAL_PROBES = ['/health', '/api/scenarios', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
@@ -61,6 +62,12 @@ Map, reference, OSRM, and control-instance data are never included or changed.
 `
 
 export const isSafeReleaseId = (value: string): boolean => /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(value)
+
+export const assertBunVersion = (actual: string): void => {
+  if (actual !== REQUIRED_BUN_VERSION) {
+    throw new Error(`Bun ${REQUIRED_BUN_VERSION} is required; found ${actual}`)
+  }
+}
 
 export const parseDeployArgs = (args: ReadonlyArray<string>): DeployOptions => {
   let dryRun = false
@@ -271,6 +278,11 @@ const confirmMutation = (description: string, yes: boolean): void => {
 
 export const remotePreflightScript = (updateService: boolean): string => `
 set -euo pipefail
+actual_bun="$(${BUN_BIN} --version)"
+test "$actual_bun" = ${shellQuote(REQUIRED_BUN_VERSION)} || {
+  echo "Refusing deploy: Bun ${REQUIRED_BUN_VERSION} required at ${BUN_BIN}; found $actual_bun" >&2
+  exit 1
+}
 test "$(systemctl is-active caddy.service)" = active
 test "$(systemctl is-active samsinn.service)" = active
 test "$(systemctl is-active ${SERVICE})" = active
@@ -459,6 +471,7 @@ const validate = async (repoRoot: string, options: DeployOptions): Promise<void>
 
 const deploy = async (options: DeployOptions): Promise<void> => {
   const repoRoot = resolve(import.meta.dir, '..')
+  assertBunVersion(Bun.version)
   await validate(repoRoot, options)
   const artifact = await createArtifact(repoRoot, options)
   try {

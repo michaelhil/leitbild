@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  assertBunVersion,
   isSafeReleaseId,
   makeReleaseId,
   parseDeployArgs,
+  REQUIRED_BUN_VERSION,
   remoteDeployScript,
   remotePreflightScript,
 } from './deploy.ts'
@@ -50,6 +52,17 @@ describe('Leitbild release identity', () => {
     expect(isSafeReleaseId(id)).toBe(true)
     expect(isSafeReleaseId('bad/id')).toBe(false)
     expect(isSafeReleaseId('bad;id')).toBe(false)
+  })
+})
+
+describe('Leitbild release runtime version', () => {
+  test('pins Bun consistently and rejects runtime drift', async () => {
+    const packageJson = await Bun.file(new URL('../package.json', import.meta.url)).json()
+    expect(packageJson.packageManager).toBe(`bun@${REQUIRED_BUN_VERSION}`)
+    expect(packageJson.engines.bun).toBe(REQUIRED_BUN_VERSION)
+    expect(() => assertBunVersion(REQUIRED_BUN_VERSION)).not.toThrow()
+    expect(() => assertBunVersion('1.3.14')).toThrow('Bun 1.4.0 is required')
+    expect(remotePreflightScript(false)).toContain('/root/.bun/bin/bun --version')
   })
 })
 

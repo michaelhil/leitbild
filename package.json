@@ -4,6 +4,7 @@
   "description": "A research platform for map-based control-center work",
   "type": "module",
   "module": "src/index.ts",
+  "packageManager": "bun@1.4.0",
   "scripts": {
     "start": "bun run build:ui && bun run src/index.ts",
     "dev": "bun run build:ui && bun --watch src/index.ts",
@@ -59,6 +60,6 @@
     "typescript": "^6.0.3"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": "1.4.0"
   }
 }
