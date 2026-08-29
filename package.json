@@ -13,12 +13,14 @@
     "check:samsinn": "bun run --cwd apps/samsinn check",
     "check:leitbild": "bun run --cwd apps/leitbild check",
     "check:host": "bun run --cwd apps/workspace-host check",
-    "check": "bun run check:boundaries && bun run check:contracts && bun run check:samsinn && bun run check:leitbild && bun run check:host",
+    "check:integration": "bun run --cwd packages/integration-tests check",
+    "check": "bun run check:boundaries && bun run check:contracts && bun run check:samsinn && bun run check:leitbild && bun run check:host && bun run check:integration",
     "test:contracts": "bun run --cwd packages/platform-contracts test",
     "test:samsinn": "bun run --cwd apps/samsinn test:unit",
     "test:leitbild": "bun run --cwd apps/leitbild test",
     "test:host": "bun run --cwd apps/workspace-host test",
-    "test": "bun run test:contracts && bun run test:samsinn && bun run test:leitbild && bun run test:host"
+    "test:integration": "bun run --cwd packages/integration-tests test",
+    "test": "bun run test:contracts && bun run test:samsinn && bun run test:leitbild && bun run test:host && bun run test:integration"
   },
   "engines": {
     "bun": "1.4.0"

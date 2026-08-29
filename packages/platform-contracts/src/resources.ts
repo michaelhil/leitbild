@@ -53,7 +53,7 @@ export const moduleResourceDescriptorSchema = z.object({
   title: z.string().trim().min(1).max(256),
   description: z.string().trim().min(1).max(2048).optional(),
   capabilityIds: z.array(capabilityIdSchema),
-  updatedAt: isoTimestampSchema,
+  observedAt: isoTimestampSchema,
 }).strict().superRefine((resource, ctx) => {
   const seen = new Set<string>()
   resource.capabilityIds.forEach((capabilityId, index) => {

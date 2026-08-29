@@ -37,7 +37,7 @@ import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
 import { workspaceIdSchema, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { createOpenAccessContext } from '../workspaces/request-context.ts'
 import type { LeitbildWorkspaceRuntime, LeitbildWorkspaceRuntimeRegistry } from '../workspaces/runtime-registry.ts'
-import { handleWorkspaceApi } from './workspace-routes.ts'
+import { handleMicroworldModuleApi } from './workspace-module-api.ts'
 import type { LeitbildPack } from '../packs/protocol.ts'
 import { buildLeitbildCapabilityManifest } from '../packs/capabilities.ts'
 
@@ -377,6 +377,8 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
       }
       const discoveryRouteResponse = await handleDiscoveryRoute(req, url)
       if (discoveryRouteResponse) return secure(discoveryRouteResponse)
+      const workspaceModuleResponse = await handleMicroworldModuleApi(req, url, config.workspaces)
+      if (workspaceModuleResponse) return secure(workspaceModuleResponse)
       if (url.pathname === '/map/capabilities.json') return secure(await mapCapabilitiesResponse(mapArtifacts))
       if (url.pathname === '/map/style.json') return secure(mapStyleResponse(url.searchParams.get('theme')))
       if (url.pathname.startsWith('/map/tiles/current/')) {
@@ -405,9 +407,6 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         const glyphResponse = await mapGlyphResponse(url, mapArtifacts)
         if (glyphResponse) return secure(glyphResponse)
       }
-
-      const workspaceApiResponse = await handleWorkspaceApi(req, url, config.workspaces)
-      if (workspaceApiResponse) return secure(workspaceApiResponse)
 
       const workspaceScopeMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\//)
       if (workspaceScopeMatch) {

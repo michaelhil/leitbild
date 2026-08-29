@@ -95,7 +95,7 @@ describe('dynamic Resource and Capability discovery', () => {
       },
       title: 'Run 01',
       capabilityIds: ['microworld.simulation-run.read'],
-      updatedAt: now,
+      observedAt: now,
     })
     expect(String(resource.ref.id)).toBe('run-01')
 

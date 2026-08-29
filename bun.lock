@@ -71,6 +71,17 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/integration-tests": {
+      "name": "@samsinn-leitbild/integration-tests",
+      "version": "0.1.0",
+      "dependencies": {
+        "@samsinn-leitbild/platform-contracts": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.4.0",
+        "typescript": "^6.0.3",
+      },
+    },
     "packages/platform-contracts": {
       "name": "@samsinn-leitbild/platform-contracts",
       "version": "1.0.0",
@@ -329,6 +340,8 @@
     "@rolldown/binding-win32-x64-msvc": ["@rolldown/binding-win32-x64-msvc@1.2.6", "", { "os": "win32", "cpu": "x64" }, "sha512-np8iZSLfXlAD4kWhiyq/u0Yt8oZDtRQ8lGhQaCXo2rl37KNjeU0GjJuwr4P3oeZ++ROfofsKNBqR5LTO8aXyWQ=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
+
+    "@samsinn-leitbild/integration-tests": ["@samsinn-leitbild/integration-tests@workspace:packages/integration-tests"],
 
     "@samsinn-leitbild/platform-contracts": ["@samsinn-leitbild/platform-contracts@workspace:packages/platform-contracts"],
 

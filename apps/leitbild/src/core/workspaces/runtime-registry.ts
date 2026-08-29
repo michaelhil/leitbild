@@ -1,4 +1,6 @@
-import { newWorkspaceId, type ModuleBinding, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import type { InteractionHandler } from '../model/index.ts'
 import type { ScenarioCatalog } from '../scenarios/catalog.ts'
 import type { ProcedureSourceService } from '../procedures/source.ts'
@@ -12,16 +14,12 @@ export interface LeitbildWorkspaceRuntime {
 }
 
 export interface LeitbildWorkspaceRuntimeRegistry {
-  readonly defaultWorkspace: () => Promise<WorkspaceRecord>
   readonly list: () => Promise<ReadonlyArray<WorkspaceRecord>>
-  readonly provision: (config: {
-    readonly displayName: string
-    readonly id?: WorkspaceId
-    readonly modules?: ReadonlyArray<ModuleBinding>
-  }) => Promise<LeitbildWorkspaceRuntime>
+  readonly provision: (id: WorkspaceId) => Promise<LeitbildWorkspaceRuntime>
   readonly getOrLoad: (id: WorkspaceId) => Promise<LeitbildWorkspaceRuntime>
   readonly getLoaded: (id: WorkspaceId) => LeitbildWorkspaceRuntime | undefined
   readonly close: (id: WorkspaceId) => Promise<boolean>
+  readonly remove: (id: WorkspaceId) => Promise<boolean>
   readonly shutdown: () => Promise<void>
 }
 
@@ -68,28 +66,11 @@ export const createLeitbildWorkspaceRuntimeRegistry = (config: {
     return await loading
   }
 
-  const provision = async (provisionConfig: {
-    readonly displayName: string
-    readonly id?: WorkspaceId
-    readonly modules?: ReadonlyArray<ModuleBinding>
-  }): Promise<LeitbildWorkspaceRuntime> => {
-    const displayName = provisionConfig.displayName.trim()
-    if (displayName.length === 0) throw new Error('Workspace display name must be non-empty')
-    const id = provisionConfig.id ?? newWorkspaceId()
-    const existing = (await config.workspaceDirectory.list()).find(workspace => workspace.id === id)
-    if (existing && existing.displayName !== displayName) {
-      throw new Error(`Workspace display name mismatch for ${id}`)
-    }
-    const workspace = await config.workspaceDirectory.ensure({
-      id,
-      displayName,
-      ...(provisionConfig.modules === undefined ? {} : { modules: provisionConfig.modules }),
-    })
+  const provision = async (id: WorkspaceId): Promise<LeitbildWorkspaceRuntime> => {
+    const workspace = await config.workspaceDirectory.create(id)
     const current = loaded.get(id)
     if (!current) return await getOrLoad(id)
-    const updated = { ...current, workspace }
-    loaded.set(id, updated)
-    return updated
+    return current
   }
 
   const close = async (id: WorkspaceId): Promise<boolean> => {
@@ -102,13 +83,21 @@ export const createLeitbildWorkspaceRuntimeRegistry = (config: {
     return true
   }
 
+  const remove = async (id: WorkspaceId): Promise<boolean> => {
+    const exists = await config.workspaceDirectory.get(id)
+    if (!exists) return false
+    await close(id)
+    await rm(join(config.dataDir, 'workspaces', id, 'leitbild'), { recursive: true, force: true })
+    return await config.workspaceDirectory.delete(id)
+  }
+
   return {
-    defaultWorkspace: () => config.workspaceDirectory.ensureDefault(),
     list: () => config.workspaceDirectory.list(),
     provision,
     getOrLoad,
     getLoaded: (id) => loaded.get(id),
     close,
+    remove,
     shutdown: async () => {
       for (const id of [...loaded.keys()]) await close(id)
     },

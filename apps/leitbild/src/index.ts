@@ -55,7 +55,6 @@ const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter 
 const dataDir = process.env.LEITBILD_DATA_DIR ?? 'data'
 const workspaceDirectory = createLocalWorkspaceDirectory({
   path: join(dataDir, 'workspace-directory.json'),
-  defaultDisplayName: 'Leitbild',
 })
 const runtimeAdapters: ReadonlyArray<PackRuntimeAdapter> = [
   createLocalAmbulancePackRuntimeAdapter({ routing }),
@@ -77,7 +76,6 @@ const workspaces = createLeitbildWorkspaceRuntimeRegistry({
   runtimeAdapters,
   interactionHandlers: leitbildPacks.flatMap(pack => pack.interactions?.handlers ?? []),
 })
-await workspaces.defaultWorkspace()
 
 const server = createServer({ workspaces, packs: leitbildPacks })
 

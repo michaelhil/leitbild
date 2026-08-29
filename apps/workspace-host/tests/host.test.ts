@@ -58,7 +58,7 @@ const createMicroworldModule = () => {
             ref: { workspaceId, moduleId: 'microworld', type: 'microworld.simulation-run', id: 'run-01' },
             title: 'Run 01',
             capabilityIds: ['microworld.simulation-run.read'],
-            updatedAt: new Date().toISOString(),
+            observedAt: new Date().toISOString(),
           }],
         })
       }

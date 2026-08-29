@@ -63,7 +63,7 @@ export const buildSimulationRunActor = (actorId: Actor['id']): Actor => ({
   role: 'operator',
 })
 
-const actorIdForAccessContext = (accessContext: AccessContext): Actor['id'] =>
+export const actorIdForAccessContext = (accessContext: AccessContext): Actor['id'] =>
   accessContext.actor.id === undefined
     ? defaultOperatorActorId
     : actorIdSchema.parse(`actor:${accessContext.actor.kind}:${accessContext.actor.id}`)

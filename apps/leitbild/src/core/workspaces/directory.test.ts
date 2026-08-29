@@ -16,34 +16,38 @@ const createDirectory = async () => {
   const root = await mkdtemp(join(tmpdir(), 'leitbild-workspaces-'))
   temporaryDirectories.push(root)
   const path = join(root, 'directory.json')
-  return { path, directory: createLocalWorkspaceDirectory({ path, defaultDisplayName: 'Leitbild' }) }
+  return { path, directory: createLocalWorkspaceDirectory({ path }) }
 }
 
-describe('local Workspace directory', () => {
-  test('persists one stable default Workspace', async () => {
+describe('Microworld Workspace shard directory', () => {
+  test('creates only Host-supplied Workspace ids and persists no Host metadata', async () => {
     const { path, directory } = await createDirectory()
-    const first = await directory.ensureDefault()
-    const reloaded = createLocalWorkspaceDirectory({ path, defaultDisplayName: 'Ignored after creation' })
-    expect((await reloaded.ensureDefault()).id).toBe(first.id)
+    const id = newWorkspaceId()
+    const first = await directory.create(id)
+    const reloaded = createLocalWorkspaceDirectory({ path })
+    expect(await reloaded.create(id)).toEqual(first)
+    expect(first).toEqual({ id, createdAt: expect.any(String) })
   })
 
-  test('keeps independent Workspace records', async () => {
+  test('keeps and deletes independent Workspace shards without a default or archive', async () => {
     const { directory } = await createDirectory()
-    const first = await directory.ensure({ id: newWorkspaceId(), displayName: 'First' })
-    const second = await directory.ensure({ id: newWorkspaceId(), displayName: 'Second' })
-    expect((await directory.get(first.id))?.displayName).toBe('First')
-    expect((await directory.get(second.id))?.displayName).toBe('Second')
+    const first = await directory.create(newWorkspaceId())
+    const second = await directory.create(newWorkspaceId())
+    expect((await directory.list()).map(workspace => workspace.id)).toEqual([first.id, second.id])
+    expect(await directory.delete(first.id)).toBe(true)
+    expect(await directory.get(first.id)).toBeUndefined()
+    expect(await directory.get(second.id)).toEqual(second)
   })
 
-  test('fails visibly for corrupt persisted data', async () => {
+  test('fails visibly for corrupt or obsolete persisted data', async () => {
     const { path, directory } = await createDirectory()
-    await writeFile(path, '{broken', 'utf8')
+    await writeFile(path, JSON.stringify({ schemaVersion: 1, workspaces: [] }), 'utf8')
     expect(directory.list()).rejects.toThrow()
   })
 
   test('creates explicit open access context and rejects malformed supplied request ids', async () => {
     const { directory } = await createDirectory()
-    const workspace = await directory.ensureDefault()
+    const workspace = await directory.create(newWorkspaceId())
     expect(createOpenAccessContext(workspace.id, new Request('http://leitbild.test')).workspaceId).toBe(workspace.id)
     expect(() => createOpenAccessContext(workspace.id, new Request('http://leitbild.test', {
       headers: { 'x-request-id': 'not-a-uuid' },
