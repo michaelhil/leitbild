@@ -11,3 +11,9 @@ bun run --cwd apps/suite start
 ```
 
 Set `SUITE_HOME` for the suite directory file and `PORT`/`BIND_HOST` for its HTTP listener.
+
+The UI uses relative API links, so it works both at `/` locally and behind the
+production `/suite/` path prefix. Production uses a dedicated, hardened
+`samsinn-suite.service` on loopback port 3100; Caddy strips `/suite` before
+proxying. The suite's Workspace directory remains outside immutable releases
+under `/var/lib/samsinn-suite`.

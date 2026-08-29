@@ -40,8 +40,8 @@ label{display:block;margin-bottom:.5rem}input{padding:.6rem;min-width:20rem}butt
 <form id="create"><label>Name <input name="displayName" required maxlength="256"></label><button>Create Workspace</button></form>
 <main>${workspaces.map(workspaceCard).join('') || '<p>No Workspaces yet.</p>'}</main>
 <script>
-document.querySelector('#create').addEventListener('submit',async event=>{event.preventDefault();const displayName=new FormData(event.target).get('displayName');const response=await fetch('/api/workspaces',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName})});if(!response.ok){alert(await response.text());return}location.reload()})
-document.querySelectorAll('[data-retry]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;const response=await fetch('/api/workspaces/'+button.dataset.retry+'/provision',{method:'POST'});if(!response.ok){alert(await response.text());return}location.reload()}))
+document.querySelector('#create').addEventListener('submit',async event=>{event.preventDefault();const displayName=new FormData(event.target).get('displayName');const response=await fetch('api/workspaces',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({displayName})});if(!response.ok){alert(await response.text());return}location.reload()})
+document.querySelectorAll('[data-retry]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;const response=await fetch('api/workspaces/'+button.dataset.retry+'/provision',{method:'POST'});if(!response.ok){alert(await response.text());return}location.reload()}))
 </script></body></html>`
 
 const errorResponse = (status: number, code: string, message: string): Response =>

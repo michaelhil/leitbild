@@ -35,6 +35,15 @@ samsinn.example.com {
 		-Server
 	}
 
+	# The optional suite is mounted under one stable production prefix. Caddy
+	# strips the prefix; the suite UI uses relative API links at either mount.
+	redir /suite /suite/ 308
+	handle_path /suite/* {
+		reverse_proxy 127.0.0.1:3100
+	}
+
 	# WebSocket upgrade is handled transparently by reverse_proxy.
-	reverse_proxy 127.0.0.1:3000
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }
