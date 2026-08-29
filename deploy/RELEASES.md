@@ -14,9 +14,11 @@ bun run deploy -- --dry-run
 bun run deploy
 ```
 
-The deploy gate runs `bun run check`, `bun run test:unit`, and
+The deploy gate runs `bun run check`, `bun run test:deploy`, and
 `bun run build:css`. Tests requiring a local Ollama daemon are deliberately not
-part of this deterministic gate; production streaming is checked after restart.
+part of this deterministic gate. The live-network research-tool integrations
+are also excluded so third-party availability cannot block a release;
+production streaming is checked after restart.
 
 The first migration to the release-layout unit requires:
 
@@ -57,9 +59,10 @@ health, disk headroom, active Samsinn generations, and the expected systemd
 layout. Connected browsers are reported but do not block deployment. An active
 agent generation blocks it.
 
-Activation uses an atomic `current` symlink switch. Failed local health or
-streaming smoke checks reactivate the previous code release. The deployer does
-not attempt persistent-data migrations.
+Activation holds a stack-wide deployment lock and uses an atomic `current`
+symlink switch. Failed local health, streaming smoke, or public health checks
+reactivate the previous code release. Manual rollback must pass the same checks.
+The deployer does not attempt persistent-data migrations.
 
 ```bash
 bun run deploy -- --list

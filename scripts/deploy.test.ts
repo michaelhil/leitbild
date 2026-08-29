@@ -7,6 +7,7 @@ import {
   REQUIRED_BUN_VERSION,
   remoteDeployScript,
   remotePreflightScript,
+  remoteRollbackScript,
 } from './deploy.ts'
 
 const bashSyntaxExit = async (script: string): Promise<number> => {
@@ -75,7 +76,7 @@ describe('release runtime version', () => {
 describe('remote release transaction', () => {
   test('renders syntactically valid guarded shell', async () => {
     expect(await bashSyntaxExit(remotePreflightScript(true))).toBe(0)
-    expect(await bashSyntaxExit(remoteDeployScript({
+    const deployScript = remoteDeployScript({
       manifest: {
         schemaVersion: 1,
         app: 'samsinn',
@@ -92,6 +93,15 @@ describe('remote release transaction', () => {
       },
       archiveChecksum: 'b'.repeat(64),
       lockChecksum: 'c'.repeat(64),
-    }, '/tmp/release.tgz', true))).toBe(0)
+    }, '/tmp/release.tgz', true)
+    expect(await bashSyntaxExit(deployScript)).toBe(0)
+    expect(deployScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(deployScript).toContain('scripts/smoke-streaming.ts')
+    expect(deployScript).toContain('https://samsinn.app/health')
+    const rollbackScript = remoteRollbackScript('release-1')
+    expect(await bashSyntaxExit(rollbackScript)).toBe(0)
+    expect(rollbackScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(rollbackScript).toContain('scripts/smoke-streaming.ts')
+    expect(rollbackScript).toContain('https://samsinn.app/health')
   })
 })

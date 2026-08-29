@@ -218,7 +218,7 @@ const createArtifact = async (repoRoot: string): Promise<{
     sourceDigest: digest,
     fileCount: paths.length,
     validation: 'full',
-    validationCommands: ['bun run check', 'bun run test:unit', 'bun run build:css'],
+    validationCommands: ['bun run check', 'bun run test:deploy', 'bun run build:css'],
   }
 
   await copyArtifactFiles(repoRoot, stageRoot, paths)
@@ -277,8 +277,10 @@ export const remoteDeployScript = (artifact: {
   const releaseId = artifact.manifest.releaseId
   const releaseDir = `${RELEASES_DIR}/${releaseId}`
   return `
-${remotePreflightScript(updateService)}
 set -euo pipefail
+exec 9>/run/lock/samsinn-stack-deploy.lock
+flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
+${remotePreflightScript(updateService)}
 deploy_root=${shellQuote(DEPLOY_ROOT)}
 current_link=${shellQuote(CURRENT_LINK)}
 releases_dir=${shellQuote(RELEASES_DIR)}
@@ -371,6 +373,12 @@ if ! (set -a; . /etc/samsinn/env; set +a; cd "$current_link"; ${BUN_BIN} run scr
   rollback_activation
   exit 1
 fi
+for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
+  if ! curl -fsS -o /dev/null "$url"; then
+    rollback_activation
+    exit 1
+  fi
+done
 rm -f -- "$archive"
 printf 'activated_release=%s previous=%s\n' "$release_id" "\${previous:-none}"
 `
@@ -397,31 +405,44 @@ const listReleases = async (): Promise<void> => {
   `])
 }
 
-const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> => {
-  confirmMutation(`Rollback Samsinn production to ${releaseId}?`, yes)
-  await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(false)])
+export const remoteRollbackScript = (releaseId: string): string => {
   const target = `${RELEASES_DIR}/${releaseId}`
-  await run('Activate previous release', ['ssh', SSH_HOST, `set -euo pipefail
+  return `set -euo pipefail
+    exec 9>/run/lock/samsinn-stack-deploy.lock
+    flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
     target=${shellQuote(target)}
     current=${shellQuote(CURRENT_LINK)}
     test -d "$target"
     test "$(jq -r '.app' "$target/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
     previous="$(readlink -f "$current")"
+    verify_target() {
+      for attempt in $(seq 1 30); do
+        if systemctl is-active --quiet ${SERVICE} && curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then break; fi
+        test "$attempt" -lt 30 || return 1
+        sleep 1
+      done
+      (set -a; . /etc/samsinn/env; set +a; cd "$current"; ${BUN_BIN} run scripts/smoke-streaming.ts) || return 1
+      for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
+        curl -fsS -o /dev/null "$url" || return 1
+      done
+    }
     next=${shellQuote(`${DEPLOY_ROOT}/.rollback-${releaseId}`)}
     ln -s "$target" "$next"
     mv -Tf "$next" "$current"
-    if systemctl restart ${SERVICE}; then
-      for attempt in $(seq 1 30); do
-        if curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then exit 0; fi
-        sleep 1
-      done
-    fi
+    if systemctl restart ${SERVICE} && verify_target; then exit 0; fi
     restore=${shellQuote(`${DEPLOY_ROOT}/.restore-${releaseId}`)}
     ln -s "$previous" "$restore"
     mv -Tf "$restore" "$current"
     systemctl restart ${SERVICE}
+    verify_target || { echo "Previous Samsinn release did not recover cleanly" >&2; exit 2; }
     exit 1
-  `])
+  `
+}
+
+const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> => {
+  confirmMutation(`Rollback Samsinn production to ${releaseId}?`, yes)
+  await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(false)])
+  await run('Activate previous release', ['ssh', SSH_HOST, remoteRollbackScript(releaseId)])
   await verifyPublicHealth()
 }
 
@@ -429,7 +450,7 @@ const deploy = async (options: DeployOptions): Promise<void> => {
   const repoRoot = resolve(import.meta.dir, '..')
   assertBunVersion(Bun.version)
   await run('TypeScript checks', ['bun', 'run', 'check'], repoRoot)
-  await run('Deterministic unit test suite', ['bun', 'run', 'test:unit'], repoRoot)
+  await run('Deterministic deploy-safe test suite', ['bun', 'run', 'test:deploy'], repoRoot)
   await run('Build production CSS', ['bun', 'run', 'build:css'], repoRoot)
 
   const artifact = await createArtifact(repoRoot)
@@ -438,6 +459,9 @@ const deploy = async (options: DeployOptions): Promise<void> => {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)
     console.log(`Base commit: ${artifact.manifest.baseCommit}`)
     console.log(`Dirty worktree: ${artifact.manifest.dirty ? 'yes' : 'no'}`)
+    if (artifact.manifest.dirty) {
+      for (const entry of artifact.manifest.worktreeStatus) console.log(`  ${entry}`)
+    }
     console.log(`Files: ${artifact.manifest.fileCount}`)
     console.log(`Artifact: ${(size / 1024 / 1024).toFixed(2)} MiB`)
     console.log(`Source digest: ${artifact.manifest.sourceDigest}`)
