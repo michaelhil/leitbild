@@ -86,7 +86,7 @@ describe('Leitbild Workspace Host', () => {
     const { modules, host, store } = createFixture()
     const workspace = await host.create({ name: null })
     expect(workspace.modules.map(item => [String(item.moduleId), item.status])).toEqual([
-      ['agents', 'ready'], ['collab', 'ready'], ['world', 'ready'],
+      ['agents', 'ready'], ['world', 'ready'],
     ])
     expect(modules.every(item => item.state.workspaces.has(workspace.id))).toBe(true)
     expect(host.rename(workspace.id, { name: 'Exercise Alpha' }).name).toBe('Exercise Alpha')

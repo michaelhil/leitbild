@@ -2,7 +2,7 @@
   import { coreModuleIds, type Workspace } from '@leitbild/contracts'
 
   type Page = { readonly kind: 'list' } | { readonly kind: 'workspace'; readonly id: string }
-  const moduleTitles: Readonly<Record<string, string>> = { world: 'World', collab: 'Collab', agents: 'Agents' }
+  const moduleTitles: Readonly<Record<string, string>> = { world: 'World', agents: 'Agents' }
 
   const page = (): Page => {
     if (location.pathname === '/workspaces') return { kind: 'list' }
@@ -78,7 +78,7 @@
   })
 
   const deleteWorkspace = (): Promise<void> => run(async () => {
-    if (!workspace || !confirm('Delete this Workspace and all of its World, Collab, and Agent state?')) return
+    if (!workspace || !confirm('Delete this Workspace and all of its World and Agents state?')) return
     await request(`/api/workspaces/${workspace.id}`, { method: 'DELETE' })
     location.href = '/workspaces'
   })
@@ -99,7 +99,7 @@
   {:else if currentPage.kind === 'list'}
     <section class="hero">
       <div><p class="eyebrow">Leitbild</p><h1>Workspaces</h1></div>
-      <p>Each Workspace contains World, Collab, and Agents.</p>
+      <p>Each Workspace contains World and Agents.</p>
     </section>
 
     {#if error}<p class="notice error">{error}</p>{/if}

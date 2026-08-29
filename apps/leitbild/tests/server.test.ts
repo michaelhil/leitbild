@@ -58,7 +58,7 @@ describe('Leitbild server', () => {
     expect(createdResponse.status).toBe(201)
     const created = (await createdResponse.json() as { workspace: { id: string; name: string | null; modules: unknown[] } }).workspace
     expect(created.name).toBeNull()
-    expect(created.modules).toHaveLength(3)
+    expect(created.modules).toHaveLength(2)
 
     const renamedResponse = await fetch(`${baseUrl}/api/workspaces/${created.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Exercise Alpha' }),

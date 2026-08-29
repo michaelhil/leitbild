@@ -1,6 +1,6 @@
 # Leitbild Platform
 
-The Leitbild Platform gives World, Collab, and Agents one product identity without absorbing their domain state or behavior.
+The Leitbild Platform gives World and Agents one product identity without absorbing their domain state or behavior.
 
 ## Language
 
@@ -17,7 +17,7 @@ A technical bounded context that owns domain state and behavior and can particip
 _Avoid_: Experience, Pack, process
 
 **Core Module**:
-World, Collab, or Agents: a Module provisioned for every Workspace while its expensive runtime activity remains lazy.
+World or Agents: a Module provisioned for every Workspace while its expensive runtime activity remains lazy.
 _Avoid_: optional Experience, user-installed Module
 
 **Module Provisioning State**:
@@ -55,7 +55,7 @@ _Avoid_: Blueprint, controller, reconciliation, Agent configuration
 ## Relationships
 
 - A Leitbild Host can manage many Workspaces.
-- Every Workspace provisions World, Collab, and Agents.
+- Every Workspace provisions World and Agents.
 - A Module owns its Workspace-scoped domain state.
 - A Pack belongs to exactly one Module.
 - A Resource belongs to exactly one Module and one Workspace.

@@ -14,8 +14,8 @@ leitbild.app {
 		reverse_proxy 127.0.0.1:4177
 	}
 
-	@collab_agents path_regexp collab_agents ^(?:/workspaces/[^/]+/(?:collab|agents)|/api/workspaces/[^/]+/(?:collab|agents)(?:/.*)?|/api/(?:auth|system/.*|packs(?:/.*)?)|/modules/.*|/lib/.*|/core/.*|/biometrics/.*|/dist\.css)$
-	handle @collab_agents {
+	@agents path_regexp agents ^(?:/workspaces/[^/]+/agents|/api/workspaces/[^/]+/agents(?:/.*)?|/api/(?:auth|system/.*|packs(?:/.*)?)|/modules/.*|/lib/.*|/core/.*|/biometrics/.*|/dist\.css)$
+	handle @agents {
 		reverse_proxy 127.0.0.1:3000
 	}
 

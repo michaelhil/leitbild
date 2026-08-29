@@ -1,8 +1,8 @@
 [Unit]
 Description=Leitbild host and workspace shell
-After=network-online.target leitbild-world.service leitbild-collab-agents.service
+After=network-online.target leitbild-world.service leitbild-agents.service
 Wants=network-online.target
-Requires=leitbild-world.service leitbild-collab-agents.service
+Requires=leitbild-world.service leitbild-agents.service
 
 [Service]
 Type=simple

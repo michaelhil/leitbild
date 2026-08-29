@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { moduleIdSchema, type ModuleId } from './ids.ts'
 
-export const coreModuleIds = ['world', 'collab', 'agents'].map(value => moduleIdSchema.parse(value)) as readonly ModuleId[]
+export const coreModuleIds = ['world', 'agents'].map(value => moduleIdSchema.parse(value)) as readonly ModuleId[]
 
 const relativePathTemplateSchema = z.string().min(1).max(512).superRefine((value, ctx) => {
   if (!value.startsWith('/')) ctx.addIssue({ code: 'custom', message: 'path template must start with /' })

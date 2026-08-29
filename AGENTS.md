@@ -6,7 +6,7 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - A Module owns its domain state and behavior. The Host must not own Rooms, Agents, Scenarios, Simulation Runs, Pack configuration, projections, or runtime-private state.
 - Modules communicate through `packages/contracts`; they never import another Module's implementation.
 - The contracts package contains identifiers and validated wire schemas, not shared business logic, persistence services, runtime implementations, or UI components.
-- Every Workspace provisions the World, Collab, and Agents core Modules. Do not add Experiences, user-controlled Module installation, or alternate Workspace compositions.
+- Every Workspace provisions the World and Agents core Modules. Rooms and messaging are internal Agents domains, not another Module. Do not add Experiences, user-controlled Module installation, or alternate Workspace compositions.
 - Agents discover Resources and Capabilities at runtime. Do not persist Module-specific resource ids or bindings in Agent configuration.
 - A Binding is allowed only for continuous system behavior that must persist without an Agent choosing on every action.
 - Packs belong to exactly one Module. Do not create a universal Pack runtime.
@@ -15,4 +15,4 @@ These rules apply across the repository. Module-local `AGENTS.md` files may add 
 - Expensive Module runtimes remain lazy even though all core Modules are provisioned for every Workspace.
 - Use Bun 1.4.0 and TypeScript. Prefer functional modules, factory functions, explicit ports, and validated boundaries.
 - Do not add silent fallbacks, mocks in production, compatibility behavior, API versions, migrations, aliases, archives, or legacy parsing.
-- Commit each logical phase separately. Do not deploy this experimental branch to production until its standalone, combined, and baseline benchmark gates pass.
+- Commit each logical phase separately. Deploy only after standalone and combined validation passes.

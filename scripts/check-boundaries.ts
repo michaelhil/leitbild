@@ -12,10 +12,10 @@ const appImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)
 const packageImport = (names: string): RegExp => new RegExp(`(?:from\\s*|import\\s*)[('"\\x60]@leitbild/(?:${names})(?:/|['"\\x60])`)
 
 const boundaries: ReadonlyArray<Boundary> = [
-  { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('collab-agents|leitbild'), packageImport('collab-agents|host')] },
-  { owner: 'Collab/Agents', root: resolve(repositoryRoot, 'apps/collab-agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
-  { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|collab-agents'), packageImport('world|collab-agents')] },
-  { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|collab-agents|leitbild'), packageImport('world|collab-agents|host')] },
+  { owner: 'World', root: resolve(repositoryRoot, 'apps/world'), forbidden: [appImport('agents|leitbild'), packageImport('agents|host')] },
+  { owner: 'Agents', root: resolve(repositoryRoot, 'apps/agents'), forbidden: [appImport('world|leitbild'), packageImport('world|host')] },
+  { owner: 'Leitbild Host', root: resolve(repositoryRoot, 'apps/leitbild'), forbidden: [appImport('world|agents'), packageImport('world|agents')] },
+  { owner: 'Contracts', root: resolve(repositoryRoot, 'packages/contracts'), forbidden: [appImport('world|agents|leitbild'), packageImport('world|agents|host')] },
 ]
 
 const sourceGlob = new Bun.Glob('**/*.{ts,tsx,svelte}')

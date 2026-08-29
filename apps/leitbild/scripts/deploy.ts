@@ -9,14 +9,14 @@ const SSH_HOST = process.env.LEITBILD_SSH_HOST ?? 'samsinn'
 const WORKSPACE_ROOT = resolve(import.meta.dir, '../../..')
 const HOST_ROOT = resolve(import.meta.dir, '..')
 const WORLD_ROOT = resolve(WORKSPACE_ROOT, 'apps/world')
-const COLLAB_AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/collab-agents')
+const AGENTS_ROOT = resolve(WORKSPACE_ROOT, 'apps/agents')
 const CONTRACTS_ROOT = resolve(WORKSPACE_ROOT, 'packages/contracts')
 const DEPLOY_ROOT = '/opt/leitbild'
 const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
 const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const STATE_ROOT = '/var/lib/leitbild'
-const SERVICES = ['leitbild-world.service', 'leitbild-collab-agents.service', 'leitbild-host.service'] as const
+const SERVICES = ['leitbild-world.service', 'leitbild-agents.service', 'leitbild-host.service'] as const
 const SERVICE_USER = 'leitbild'
 const BUN_BIN = `${DEPLOY_ROOT}/runtime/bun`
 const PUBLIC_HEALTH_URL = 'https://leitbild.app/health'
@@ -163,10 +163,10 @@ const createArtifact = async () => {
   await mkdir(stageRoot)
   const hostEntries = await entriesFor(HOST_ROOT, 'apps/leitbild', await directoryFiles(HOST_ROOT, 'src/ui/dist'))
   const worldEntries = await entriesFor(WORLD_ROOT, 'apps/world', await directoryFiles(WORLD_ROOT, 'src/ui/dist'))
-  const collabAgentsEntries = await entriesFor(COLLAB_AGENTS_ROOT, 'apps/collab-agents', ['src/ui/dist.css'])
+  const agentsEntries = await entriesFor(AGENTS_ROOT, 'apps/agents', ['src/ui/dist.css'])
   const contractEntries = await entriesFor(CONTRACTS_ROOT, 'packages/contracts')
   const rootEntries: ArtifactEntry[] = ['package.json', 'bun.lock'].map(path => ({ source: join(WORKSPACE_ROOT, path), target: path }))
-  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...collabAgentsEntries, ...contractEntries]
+  const entries = [...rootEntries, ...hostEntries, ...worldEntries, ...agentsEntries, ...contractEntries]
   const sourceDigest = await digestEntries(entries)
   const contractsDigest = await digestEntries(contractEntries)
   const createdAt = new Date().toISOString()
@@ -227,12 +227,12 @@ cleanup() { rm -rf -- "$incoming"; rm -f -- "$archive"; }
 trap cleanup EXIT
 if test ${install ? '1' : '0'} -eq 1; then
   id -u ${SERVICE_USER} >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin ${SERVICE_USER}
-  install -d -o ${SERVICE_USER} -g ${SERVICE_USER} -m 0700 ${shellQuote(`${STATE_ROOT}/host`)} ${shellQuote(`${STATE_ROOT}/world`)} ${shellQuote(`${STATE_ROOT}/collab-agents`)}
+  install -d -o ${SERVICE_USER} -g ${SERVICE_USER} -m 0700 ${shellQuote(`${STATE_ROOT}/host`)} ${shellQuote(`${STATE_ROOT}/world`)} ${shellQuote(`${STATE_ROOT}/agents`)}
   install -d -o root -g root -m 0755 ${shellQuote(DEPLOY_ROOT)}
   install -d -o root -g root -m 0755 /etc/leitbild
   cat > /etc/leitbild/platform.env <<'EOF'
 WORKSPACE_HOST_URL=https://leitbild.app
-WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"collab","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module/collab"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module/agents"}]
+WORKSPACE_MODULES=[{"moduleId":"world","internalBaseUrl":"http://127.0.0.1:4177","manifestPath":"/.well-known/workspace-module"},{"moduleId":"agents","internalBaseUrl":"http://127.0.0.1:3000","manifestPath":"/.well-known/workspace-module"}]
 EOF
   chmod 0600 /etc/leitbild/platform.env
 fi
@@ -245,11 +245,11 @@ test "$(jq -r .releaseId "$incoming/DEPLOYMENT.json")" = "$release_id"
 if test ! -d "$dep_dir/node_modules"; then
   dep_tmp="${DEPS_DIR}/.incoming-${artifact.lockChecksum}-$$"
   rm -rf -- "$dep_tmp"
-  mkdir -p "$dep_tmp/apps/leitbild" "$dep_tmp/apps/world" "$dep_tmp/apps/collab-agents" "$dep_tmp/packages"
+  mkdir -p "$dep_tmp/apps/leitbild" "$dep_tmp/apps/world" "$dep_tmp/apps/agents" "$dep_tmp/packages"
   cp "$incoming/package.json" "$incoming/bun.lock" "$dep_tmp/"
   cp "$incoming/apps/leitbild/package.json" "$dep_tmp/apps/leitbild/"
   cp "$incoming/apps/world/package.json" "$dep_tmp/apps/world/"
-  cp "$incoming/apps/collab-agents/package.json" "$dep_tmp/apps/collab-agents/"
+  cp "$incoming/apps/agents/package.json" "$dep_tmp/apps/agents/"
   cp -a "$incoming/packages/contracts" "$dep_tmp/packages/"
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
   sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile --production' sh "$dep_tmp" ${shellQuote(BUN_BIN)}
@@ -258,7 +258,7 @@ fi
 ln -s "$dep_dir/node_modules" "$incoming/node_modules"
 ln -s "$dep_dir/apps/leitbild/node_modules" "$incoming/apps/leitbild/node_modules"
 ln -s "$dep_dir/apps/world/node_modules" "$incoming/apps/world/node_modules"
-ln -s "$dep_dir/apps/collab-agents/node_modules" "$incoming/apps/collab-agents/node_modules"
+ln -s "$dep_dir/apps/agents/node_modules" "$incoming/apps/agents/node_modules"
 mv "$incoming" "$release_dir"
 next_link="${DEPLOY_ROOT}/.next-$release_id"
 ln -s "$release_dir" "$next_link"
@@ -312,7 +312,7 @@ const main = async (): Promise<void> => {
   await run('Platform tests', ['bun', 'run', 'test'])
   await run('Build Leitbild host UI', ['bun', 'run', 'build:ui'], HOST_ROOT)
   await run('Build World UI', ['bun', 'run', 'build:ui'], WORLD_ROOT)
-  await run('Build Collab/Agents CSS', ['bun', 'run', 'build:css'], COLLAB_AGENTS_ROOT)
+  await run('Build Agents CSS', ['bun', 'run', 'build:css'], AGENTS_ROOT)
   const artifact = await createArtifact()
   try {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)

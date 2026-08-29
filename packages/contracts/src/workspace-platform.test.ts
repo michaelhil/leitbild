@@ -64,7 +64,7 @@ describe('Workspace', () => {
 
 describe('Module contracts', () => {
   test('defines one fixed core Module set', () => {
-    expect(coreModuleIds.map(String)).toEqual(['world', 'collab', 'agents'])
+    expect(coreModuleIds.map(String)).toEqual(['world', 'agents'])
   })
 
   test('requires relative Workspace-scoped endpoint templates', () => {
@@ -168,15 +168,15 @@ describe('Binding', () => {
     const binding = resourceBindingSchema.parse({
       id: newBindingId(),
       workspaceId,
-      ownerModuleId: 'collab',
-      kind: 'collab.room-mirror',
+      ownerModuleId: 'agents',
+      kind: 'agents.room-mirror',
       source: { workspaceId, moduleId: 'world', type: 'world.simulation-run', id: 'run-01' },
-      target: { workspaceId, moduleId: 'collab', type: 'collab.room', id: 'ops' },
+      target: { workspaceId, moduleId: 'agents', type: 'agents.room', id: 'ops' },
       configuration: {},
       createdAt: now,
       updatedAt: now,
     })
-    expect(String(binding.ownerModuleId)).toBe('collab')
+    expect(String(binding.ownerModuleId)).toBe('agents')
 
     expect(() => resourceBindingSchema.parse({
       ...binding,

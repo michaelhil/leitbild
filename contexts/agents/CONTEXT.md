@@ -1,8 +1,24 @@
 # Agents
 
-The Agents context owns configurable AI actors and the runtime that lets them reason and act through permitted Workspace Capabilities.
+The Agents context owns multi-participant Rooms, configurable AI actors, and the runtime that lets people and AI agents coordinate and act through permitted Workspace Capabilities.
 
 ## Language
+
+**Room**:
+A durable shared conversation space with membership, messages, delivery behavior, and Room-specific settings.
+_Avoid_: Workspace, channel, Simulation Run
+
+**Membership**:
+The relationship that permits an Actor to participate in one Room.
+_Avoid_: Workspace access policy, Module provisioning state
+
+**Message**:
+A durable contribution by an Actor to a Room.
+_Avoid_: simulation event, Capability invocation
+
+**Agent Script**:
+A declarative coordination sequence executed through Rooms and their members.
+_Avoid_: Workspace Template, cross-Module workflow engine
 
 **Agent**:
 An AI actor with a model configuration, instructions, skills, tools, and bounded context assembly policy.

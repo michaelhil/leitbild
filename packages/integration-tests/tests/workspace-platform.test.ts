@@ -7,14 +7,14 @@ import { createServer as createWorldServer } from '../../../apps/world/src/core/
 import { createWorldModuleState } from '../../../apps/world/src/core/workspaces/module-state.ts'
 import { createWorldWorkspaceRuntimeRegistry } from '../../../apps/world/src/core/workspaces/runtime-registry.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog } from '../../../apps/world/tests/helpers.ts'
-import { handleCollabAgentsModuleApi } from '../../../apps/collab-agents/src/api/workspace-module-api.ts'
-import { asAIAgent } from '../../../apps/collab-agents/src/agents/shared.ts'
-import { createDeploymentRuntime } from '../../../apps/collab-agents/src/core/deployment-runtime.ts'
-import { createCollabAgentsModuleState } from '../../../apps/collab-agents/src/core/workspaces/module-state.ts'
+import { handleAgentsModuleApi } from '../../../apps/agents/src/api/workspace-module-api.ts'
+import { asAIAgent } from '../../../apps/agents/src/agents/shared.ts'
+import { createDeploymentRuntime } from '../../../apps/agents/src/core/deployment-runtime.ts'
+import { createAgentsModuleState } from '../../../apps/agents/src/core/workspaces/module-state.ts'
 import {
-  createWorkspaceRuntimeRegistry as createCollabAgentsWorkspaceRuntimeRegistry,
-  type WorkspaceRuntimeRegistry as CollabAgentsWorkspaceRuntimeRegistry,
-} from '../../../apps/collab-agents/src/core/workspaces/runtime-registry.ts'
+  createWorkspaceRuntimeRegistry as createAgentsWorkspaceRuntimeRegistry,
+  type WorkspaceRuntimeRegistry as AgentsWorkspaceRuntimeRegistry,
+} from '../../../apps/agents/src/core/workspaces/runtime-registry.ts'
 import { createWorkspaceHost } from '../../../apps/leitbild/src/host.ts'
 import { createModuleGateway } from '../../../apps/leitbild/src/module-gateway.ts'
 import { createWorkspaceHostServer } from '../../../apps/leitbild/src/server.ts'
@@ -26,8 +26,8 @@ afterEach(async () => {
   for (const operation of cleanup.splice(0).reverse()) await operation()
 })
 
-describe('Workspace Host with the real World Module', () => {
-  test('provisions real World, Collab, and Agents Modules without stored Resource bindings', async () => {
+describe('Workspace Host with real Modules', () => {
+  test('provisions real World and Agents Modules without stored Resource bindings', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'workspace-combined-world-'))
     const uiDir = await mkdtemp(join(tmpdir(), 'workspace-combined-ui-'))
     const leitbildHome = await mkdtemp(join(tmpdir(), 'workspace-combined-leitbild-'))
@@ -38,7 +38,7 @@ describe('Workspace Host with the real World Module', () => {
     process.env.PROVIDER = 'ollama'
     process.env.LEITBILD_SEED_WORKSPACE = '0'
 
-    let leitbildRegistry: CollabAgentsWorkspaceRuntimeRegistry | undefined
+    let leitbildRegistry: AgentsWorkspaceRuntimeRegistry | undefined
     cleanup.push(async () => {
       await leitbildRegistry?.shutdown()
       if (originalLeitbildHome === undefined) delete process.env.LEITBILD_HOME
@@ -67,14 +67,14 @@ describe('Workspace Host with the real World Module', () => {
     })
     cleanup.push(() => worldServer.stop())
 
-    const leitbildState = createCollabAgentsModuleState()
+    const leitbildState = createAgentsModuleState()
     const leitbildServer = Bun.serve({
       hostname: '127.0.0.1',
       port: 0,
       async fetch(request) {
         if (!leitbildRegistry) return Response.json({ error: { code: 'runtime_unavailable' } }, { status: 503 })
         const url = new URL(request.url)
-        return await handleCollabAgentsModuleApi(request, url, { state: leitbildState, registry: leitbildRegistry })
+        return await handleAgentsModuleApi(request, url, { state: leitbildState, registry: leitbildRegistry })
           ?? new Response('Not found', { status: 404 })
       },
     })
@@ -92,14 +92,9 @@ describe('Workspace Host with the real World Module', () => {
             manifestPath: '/.well-known/workspace-module',
           }),
           moduleRegistrationSchema.parse({
-            moduleId: 'collab',
-            internalBaseUrl: `http://127.0.0.1:${leitbildServer.port}`,
-            manifestPath: '/.well-known/workspace-module/collab',
-          }),
-          moduleRegistrationSchema.parse({
             moduleId: 'agents',
             internalBaseUrl: `http://127.0.0.1:${leitbildServer.port}`,
-            manifestPath: '/.well-known/workspace-module/agents',
+            manifestPath: '/.well-known/workspace-module',
           }),
         ],
       }),
@@ -108,7 +103,7 @@ describe('Workspace Host with the real World Module', () => {
     cleanup.push(() => hostServer.stop(true))
     const baseUrl = `http://127.0.0.1:${hostServer.port}`
 
-    leitbildRegistry = createCollabAgentsWorkspaceRuntimeRegistry({
+    leitbildRegistry = createAgentsWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
       moduleState: leitbildState,
       workspaceHostUrl: baseUrl,
@@ -126,7 +121,6 @@ describe('Workspace Host with the real World Module', () => {
     }).workspace
     expect(workspace.modules.map(module => [module.moduleId, module.status])).toEqual([
       ['agents', 'ready'],
-      ['collab', 'ready'],
       ['world', 'ready'],
     ])
 
@@ -190,6 +184,6 @@ describe('Workspace Host with the real World Module', () => {
 
     expect((await fetch(`${baseUrl}/api/workspaces/${workspace.id}`, { method: 'DELETE' })).status).toBe(204)
     expect(await worldRegistry.list()).toEqual([])
-    expect(await leitbildState.enabled(workspaceIdSchema.parse(workspace.id))).toEqual(new Set())
+    expect(await leitbildState.has(workspaceIdSchema.parse(workspace.id))).toBe(false)
   })
 })

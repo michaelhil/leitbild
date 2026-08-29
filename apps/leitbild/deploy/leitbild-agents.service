@@ -1,0 +1,37 @@
+[Unit]
+Description=Leitbild Agents module
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leitbild
+Group=leitbild
+WorkingDirectory=/opt/leitbild/current/apps/agents
+Environment=PORT=3000
+Environment=LEITBILD_BIND_HOST=127.0.0.1
+Environment=NODE_ENV=production
+Environment=LEITBILD_HOME=/var/lib/leitbild/agents
+Environment=WORKSPACE_HOST_URL=http://127.0.0.1:3100
+Environment=LEITBILD_SECURE_COOKIES=1
+Environment=LEITBILD_MAX_LOADED_WORKSPACES=128
+EnvironmentFile=-/etc/leitbild/agents.env
+ExecStart=/opt/leitbild/runtime/bun run src/main.ts
+Restart=on-failure
+RestartSec=5s
+MemoryMax=2G
+CPUQuota=180%
+LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/leitbild/agents
+PrivateTmp=true
+PrivateDevices=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
