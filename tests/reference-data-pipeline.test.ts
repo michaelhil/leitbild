@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, stat } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { ccByNcSa40, nlod20, repoOwned } from '../src/reference-data/licences.ts'
-import { buildDataset, currentBuildId, promoteBuild } from '../src/reference-data/pipeline.ts'
+import { buildDataset, currentBuildId, promoteBuild, removeStaleBuilds } from '../src/reference-data/pipeline.ts'
 import { manualSource } from '../src/reference-data/sources/manual.ts'
 import {
   asDatasetId,
@@ -155,5 +155,29 @@ describe('promoteBuild', () => {
     const currentPath = join(env.referenceRoot, 'releases', String(validConfig.id), 'current')
     const sidecarStat = await stat(join(currentPath, 'test-exclusion.features.geojson'))
     expect(sidecarStat.isFile()).toBe(true)
+  })
+})
+
+describe('removeStaleBuilds', () => {
+  test('keeps the current build plus the requested newest builds', async () => {
+    const env = await mkEnv()
+    const builds = ['build-01', 'build-02', 'build-03', 'build-04', 'build-05']
+    for (const id of builds) {
+      await mkdir(join(env.referenceRoot, 'builds', String(validConfig.id), id), { recursive: true })
+    }
+    await promoteBuild(env.referenceRoot, validConfig.id, 'build-02' as never)
+
+    const removed = await removeStaleBuilds(env.referenceRoot, validConfig.id, 2)
+
+    expect(removed.map(String)).toEqual(['build-01', 'build-03'])
+    expect((await stat(join(env.referenceRoot, 'builds', String(validConfig.id), 'build-02'))).isDirectory()).toBe(true)
+    expect((await stat(join(env.referenceRoot, 'builds', String(validConfig.id), 'build-04'))).isDirectory()).toBe(true)
+    expect((await stat(join(env.referenceRoot, 'builds', String(validConfig.id), 'build-05'))).isDirectory()).toBe(true)
+    await expect(stat(join(env.referenceRoot, 'builds', String(validConfig.id), 'build-01'))).rejects.toThrow()
+  })
+
+  test('rejects an unsafe retention count', async () => {
+    const env = await mkEnv()
+    await expect(removeStaleBuilds(env.referenceRoot, validConfig.id, 0)).rejects.toThrow('positive integer')
   })
 })

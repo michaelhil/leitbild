@@ -60,7 +60,11 @@ Every dataset is produced by one call to `buildDataset(config)` followed by one 
       current -> /opt/leitbild/reference/builds/<dataset-id>/<build-id>/
 ```
 
-The last three builds per dataset are retained for rollback. Caddy serves `/map/datasets/<id>/current.pmtiles` from `releases/<dataset-id>/current/`.
+Promotion never deletes build data. Operators enforce the retention policy with
+`bun run reference:prune` (dry-run by default) and
+`bun run reference:prune -- --yes` after reviewing the candidates. Pruning keeps
+the current build plus the newest three builds per dataset. Caddy serves
+`/map/datasets/<id>/current.pmtiles` from `releases/<dataset-id>/current/`.
 
 ## Commands
 

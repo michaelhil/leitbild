@@ -1,4 +1,4 @@
-import { mkdir, rename, symlink, unlink, writeFile, lstat, readdir, readlink } from 'node:fs/promises'
+import { mkdir, rename, symlink, rm, writeFile, lstat, readdir, readlink } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { assertKnownLicence } from './licences.ts'
 import { composeDatasetManifest, writeAuditReport, writeDatasetManifest, type AuditReport } from './manifest-writer.ts'
@@ -227,6 +227,7 @@ export const removeStaleBuilds = async (
   datasetId: DatasetConfig['id'],
   retain: number,
 ): Promise<ReadonlyArray<BuildId>> => {
+  if (!Number.isInteger(retain) || retain < 1) throw new Error('retain must be a positive integer')
   const all = await listBuildIds(referenceRoot, datasetId)
   const current = await currentBuildId(referenceRoot, datasetId)
   const keep = new Set<string>(all.slice(-retain).map(String))
@@ -235,13 +236,8 @@ export const removeStaleBuilds = async (
   for (const id of all) {
     if (keep.has(String(id))) continue
     const dir = join(referenceRoot, 'builds', String(datasetId), String(id))
-    try {
-      await unlink(dir)
-      removed.push(id)
-    } catch {
-      // Directory; rmdir is intentionally not done in v1 to avoid surprise. Stale builds
-      // are kept until a follow-up cleanup pass is authored.
-    }
+    await rm(dir, { recursive: true, force: true })
+    removed.push(id)
   }
   return removed
 }

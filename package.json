@@ -25,6 +25,7 @@
     "maps:status": "bun run scripts/maps/map-status.ts",
     "reference:build": "bun run scripts/reference/build.ts",
     "reference:promote": "bun run scripts/reference/promote.ts",
+    "reference:prune": "bun run scripts/reference/prune.ts",
     "reference:status": "bun run scripts/reference/status.ts",
     "reference:rebuild": "bun run scripts/reference/rebuild.ts",
     "process-plant:benchmark": "bun run scripts/process-plant/six-unit-benchmark.ts",
