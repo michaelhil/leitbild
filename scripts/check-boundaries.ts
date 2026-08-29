@@ -27,11 +27,19 @@ const boundaries: ReadonlyArray<Boundary> = [
     ],
   },
   {
+    owner: 'Suite',
+    root: resolve(repositoryRoot, 'apps/suite'),
+    forbidden: [
+      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/(?:samsinn|leitbild)(?:\/|['"`])/,
+      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/(?:samsinn|leitbild)(?:\/|['"`])/,
+    ],
+  },
+  {
     owner: 'Platform contracts',
     root: resolve(repositoryRoot, 'packages/platform-contracts'),
     forbidden: [
-      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/(?:samsinn|leitbild)(?:\/|['"`])/,
-      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/(?:samsinn|leitbild)(?:\/|['"`])/,
+      /(?:from\s*|import\s*)[('"`][^'"`]*apps\/(?:samsinn|leitbild|suite)(?:\/|['"`])/,
+      /(?:from\s*|import\s*)[('"`]@samsinn-leitbild\/(?:samsinn|leitbild|suite)(?:\/|['"`])/,
     ],
   },
 ]
