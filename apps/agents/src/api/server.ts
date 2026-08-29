@@ -113,7 +113,7 @@ const serveStatic = async (pathname: string, uiPath: string, transpiler: Bun.Tra
 
 const applySecurityHeaders = (response: Response): Response => {
   response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('X-Frame-Options', 'DENY')
+  response.headers.set('X-Frame-Options', 'SAMEORIGIN')
   if (!response.headers.has('Referrer-Policy')) response.headers.set('Referrer-Policy', 'same-origin')
   return response
 }
