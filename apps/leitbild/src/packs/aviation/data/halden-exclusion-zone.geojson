@@ -1,0 +1,33 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "halden-npp-exclusion-zone",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [11.330, 59.115],
+          [11.395, 59.110],
+          [11.445, 59.130],
+          [11.445, 59.160],
+          [11.395, 59.180],
+          [11.330, 59.175],
+          [11.290, 59.155],
+          [11.290, 59.130],
+          [11.330, 59.115]
+        ]]
+      },
+      "properties": {
+        "name": "Halden NPP exclusion zone",
+        "category": "exclusion",
+        "floorM": 0,
+        "ceilingM": 2000,
+        "floorLabel": "GND",
+        "ceilingLabel": "2000 m MSL",
+        "remarks": "Scenario-authored exclusion around the Halden process-plant demo site.",
+        "source": "manual"
+      }
+    }
+  ]
+}

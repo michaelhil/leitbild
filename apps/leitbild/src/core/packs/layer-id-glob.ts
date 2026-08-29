@@ -1,0 +1,32 @@
+// Tiny glob matcher for MapLibre layer-id patterns contributed via
+// LeitbildPack.mapLayerGroups[].layerIdPattern.
+//
+// Semantics:
+//   `*` matches one ':'-separated segment (no ':' allowed within a `*`).
+//   No `**`, no character classes, no `?`. Patterns are colon-delimited so
+//   layer ids are partitioned cleanly.
+//
+// Examples:
+//   `reference:aero-norway:*:*` matches `reference:aero-norway:tma:fill`
+//   `reference:aero-norway:airport:*` matches `reference:aero-norway:airport:label`
+//   `reference:aero-norway:*:*` does NOT match `reference:aero-norway:tma:fill:extra`
+//   (segment count must match)
+
+const escapeRegexLiteral = (s: string): string => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+
+export const compileLayerIdPattern = (pattern: string): RegExp => {
+  const segments = pattern.split(':')
+  const reSegments = segments.map(seg => (seg === '*' ? '[^:]+' : escapeRegexLiteral(seg)))
+  return new RegExp(`^${reSegments.join(':')}$`)
+}
+
+export const layerIdMatchesPattern = (layerId: string, pattern: string): boolean =>
+  compileLayerIdPattern(pattern).test(layerId)
+
+export const layerIdsMatching = (
+  layerIds: ReadonlyArray<string>,
+  pattern: string,
+): ReadonlyArray<string> => {
+  const re = compileLayerIdPattern(pattern)
+  return layerIds.filter(id => re.test(id))
+}

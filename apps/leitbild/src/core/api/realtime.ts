@@ -1,0 +1,237 @@
+import type { ControlInstanceRegistry } from '../control-instances/registry.ts'
+import type { ControlInstanceEventNotification } from '../control-instances/runtime.ts'
+import type { ControlInstanceId, SimulationClockState } from '../model/index.ts'
+import type { PackRuntimeRealtimeMessage } from '../../simulation/protocol.ts'
+
+type RealtimeMessageContext = Omit<RealtimeReadyMessage, 'type' | 'clock'>
+
+interface RealtimeSubscription {
+  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>
+  readonly unsubscribe: () => void
+  context: RealtimeMessageContext
+}
+
+interface SubscriptionReconciliation {
+  readonly runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>> | null
+  readonly changed: boolean
+}
+
+export interface RealtimeStatus {
+  readonly websocketClientCount: number
+  readonly subscribedControlInstanceCount: number
+  readonly controlInstances: ReadonlyArray<{
+    readonly id: ControlInstanceId
+    readonly websocketClientCount: number
+  }>
+}
+
+export interface RealtimeReadyMessage {
+  readonly type: 'realtime.ready'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly clock?: SimulationClockState
+}
+
+export interface RealtimeEventBatchMessage {
+  readonly type: 'events'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly events: ControlInstanceEventNotification['events']
+}
+
+export interface RealtimeRuntimeMessageBatch {
+  readonly type: 'runtime.realtime'
+  readonly controlInstanceId: ControlInstanceId
+  readonly scenarioId?: string
+  readonly snapshotSeq: number
+  readonly messages: ReadonlyArray<PackRuntimeRealtimeMessage>
+}
+
+export type RealtimeOutboundMessage = RealtimeEventBatchMessage | RealtimeRuntimeMessageBatch
+
+export interface ControlInstanceRealtimeManager<Client> {
+  readonly addClient: (controlInstanceId: ControlInstanceId, client: Client) => void
+  readonly removeClient: (controlInstanceId: ControlInstanceId, client: Client) => void
+  readonly reconcile: () => void
+  readonly status: () => RealtimeStatus
+  readonly stop: () => void
+}
+
+export const emptyRealtimeStatus = (): RealtimeStatus => ({
+  websocketClientCount: 0,
+  subscribedControlInstanceCount: 0,
+  controlInstances: [],
+})
+
+const realtimeStatusFromClients = <Client>(
+  clientsByControlInstance: ReadonlyMap<ControlInstanceId, ReadonlySet<Client>>,
+  subscribedControlInstanceCount: number,
+): RealtimeStatus => {
+  const controlInstances = [...clientsByControlInstance.entries()]
+    .map(([id, clients]) => ({ id, websocketClientCount: clients.size }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  return {
+    websocketClientCount: controlInstances.reduce((count, item) => count + item.websocketClientCount, 0),
+    subscribedControlInstanceCount,
+    controlInstances,
+  }
+}
+
+export const createControlInstanceRealtimeManager = <Client>(config: {
+  readonly registry: ControlInstanceRegistry
+  readonly send: (client: Client, message: RealtimeOutboundMessage) => void
+  readonly sendReady: (client: Client, message: RealtimeReadyMessage) => void
+}): ControlInstanceRealtimeManager<Client> => {
+  const clientsByControlInstance = new Map<ControlInstanceId, Set<Client>>()
+  const subscriptionsByControlInstance = new Map<ControlInstanceId, RealtimeSubscription>()
+  const releasesByClient = new Map<Client, { readonly controlInstanceId: ControlInstanceId; readonly release: () => void }>()
+
+  const releaseClientLease = (client: Client): void => {
+    const lease = releasesByClient.get(client)
+    if (!lease) return
+    lease.release()
+    releasesByClient.delete(client)
+  }
+
+  const ensureClientLease = (controlInstanceId: ControlInstanceId, client: Client): void => {
+    const lease = releasesByClient.get(client)
+    if (lease?.controlInstanceId === controlInstanceId) return
+    lease?.release()
+    releasesByClient.set(client, {
+      controlInstanceId,
+      release: config.registry.acquireLease(controlInstanceId, 'realtime'),
+    })
+  }
+
+  const messageContextForRuntime = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): RealtimeMessageContext => {
+    const snapshot = runtime.snapshot()
+    return {
+      controlInstanceId,
+      ...(snapshot.scenario?.scenarioId === undefined ? {} : { scenarioId: snapshot.scenario.scenarioId }),
+      snapshotSeq: snapshot.seq,
+    }
+  }
+
+  const broadcastToControlInstance = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    notification: ControlInstanceEventNotification,
+  ): void => {
+    const subscription = subscriptionsByControlInstance.get(controlInstanceId)
+    if (subscription?.runtime !== runtime) return
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    if (!clients) return
+    const messageContext = notification.events.length > 0
+      ? messageContextForRuntime(controlInstanceId, runtime)
+      : subscription.context
+    subscription.context = messageContext
+    if (notification.events.length > 0) {
+      const message: RealtimeEventBatchMessage = {
+        type: 'events',
+        ...messageContext,
+        events: notification.events,
+      }
+      for (const client of clients) config.send(client, message)
+    }
+    if (notification.realtimeMessages && notification.realtimeMessages.length > 0) {
+      const message: RealtimeRuntimeMessageBatch = {
+        type: 'runtime.realtime',
+        ...messageContext,
+        messages: notification.realtimeMessages,
+      }
+      for (const client of clients) config.send(client, message)
+    }
+  }
+
+  const readyMessageForRuntime = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): RealtimeReadyMessage => {
+    const snapshot = runtime.snapshot()
+    return {
+      type: 'realtime.ready',
+      ...messageContextForRuntime(controlInstanceId, runtime),
+      ...(snapshot.clock === undefined ? {} : { clock: snapshot.clock }),
+    }
+  }
+
+  const sendReadyToControlInstance = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+  ): void => {
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    if (!clients) return
+    const message = readyMessageForRuntime(controlInstanceId, runtime)
+    for (const client of clients) config.sendReady(client, message)
+  }
+
+  const sendReadyToClient = (
+    controlInstanceId: ControlInstanceId,
+    runtime: NonNullable<ReturnType<ControlInstanceRegistry['get']>>,
+    client: Client,
+  ): void => {
+    config.sendReady(client, readyMessageForRuntime(controlInstanceId, runtime))
+  }
+
+  const reconcileControlInstanceSubscription = (controlInstanceId: ControlInstanceId): SubscriptionReconciliation => {
+    const clients = clientsByControlInstance.get(controlInstanceId)
+    const existing = subscriptionsByControlInstance.get(controlInstanceId)
+    if (!clients || clients.size === 0) {
+      existing?.unsubscribe()
+      subscriptionsByControlInstance.delete(controlInstanceId)
+      return { runtime: null, changed: existing !== undefined }
+    }
+    const runtime = config.registry.get(controlInstanceId)
+    if (!runtime) {
+      existing?.unsubscribe()
+      subscriptionsByControlInstance.delete(controlInstanceId)
+      return { runtime: null, changed: existing !== undefined }
+    }
+    for (const client of clients) ensureClientLease(controlInstanceId, client)
+    if (existing?.runtime === runtime) return { runtime, changed: false }
+    existing?.unsubscribe()
+    const unsubscribe = runtime.subscribe(event => broadcastToControlInstance(controlInstanceId, runtime, event))
+    subscriptionsByControlInstance.set(controlInstanceId, {
+      runtime,
+      unsubscribe,
+      context: messageContextForRuntime(controlInstanceId, runtime),
+    })
+    return { runtime, changed: true }
+  }
+
+  return {
+    addClient: (controlInstanceId, client): void => {
+      const clients = clientsByControlInstance.get(controlInstanceId) ?? new Set<Client>()
+      clients.add(client)
+      clientsByControlInstance.set(controlInstanceId, clients)
+      const { runtime } = reconcileControlInstanceSubscription(controlInstanceId)
+      if (runtime) sendReadyToClient(controlInstanceId, runtime, client)
+    },
+    removeClient: (controlInstanceId, client): void => {
+      const clients = clientsByControlInstance.get(controlInstanceId)
+      if (!clients) return
+      clients.delete(client)
+      releaseClientLease(client)
+      if (clients.size === 0) clientsByControlInstance.delete(controlInstanceId)
+      reconcileControlInstanceSubscription(controlInstanceId)
+    },
+    reconcile: (): void => {
+      for (const controlInstanceId of clientsByControlInstance.keys()) {
+        const { runtime, changed } = reconcileControlInstanceSubscription(controlInstanceId)
+        if (runtime && changed) sendReadyToControlInstance(controlInstanceId, runtime)
+      }
+    },
+    status: () => realtimeStatusFromClients(clientsByControlInstance, subscriptionsByControlInstance.size),
+    stop: (): void => {
+      for (const { unsubscribe } of subscriptionsByControlInstance.values()) unsubscribe()
+      for (const client of [...releasesByClient.keys()]) releaseClientLease(client)
+      subscriptionsByControlInstance.clear()
+      clientsByControlInstance.clear()
+    },
+  }
+}

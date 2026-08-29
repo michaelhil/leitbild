@@ -1,0 +1,720 @@
+{
+  "schemaVersion": 1,
+  "durationMs": 600000,
+  "stepMs": 1000,
+  "sampleIntervalMs": 2000,
+  "caseCount": 15,
+  "checkCount": 117,
+  "failedCheckCount": 0,
+  "wallMs": 31021.4905,
+  "realtimeFactor": 290.12145628528066,
+  "minRealtimeFactor": 12,
+  "checks": [
+    {
+      "caseId": "long-steady-state",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.4 max=61.2%"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "long-run power remains plausible",
+      "passed": true,
+      "details": "end=2701.4MW"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "long-run pressure remains plausible",
+      "passed": true,
+      "details": "end=15.19MPa"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "long-run drift remains limited",
+      "passed": true,
+      "details": "start=2721.1 end=2701.4MW"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.2 max=61.2%"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "load step down lowers turbine output",
+      "passed": true,
+      "details": "before=801.9 min=495.0MW"
+    },
+    {
+      "caseId": "load-follow-cycle",
+      "description": "load step up recovers turbine output",
+      "passed": true,
+      "details": "recovered=828.1MW"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=4.55e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.4 max=65.0%"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "SGTR produces leak flow",
+      "passed": true,
+      "details": "leak=135.09kg/s"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "SGTR raises secondary radiation",
+      "passed": true,
+      "details": "radiation=95.914mSv/h"
+    },
+    {
+      "caseId": "moderate-sgtr",
+      "description": "SGTR drains primary inventory",
+      "passed": true,
+      "details": "before=284982 end=261786kg"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=4.55e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.4 max=61.2%"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "first secondary leak path becomes active",
+      "passed": true,
+      "details": "sgB=70.09kg/s"
+    },
+    {
+      "caseId": "multi-sg-leak",
+      "description": "second secondary leak path becomes active independently",
+      "passed": true,
+      "details": "sgC=83.01kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=7.0 max=61.2%"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "loss of feedwater materially lowers SG level",
+      "passed": true,
+      "details": "before=58.6 end=7.0%"
+    },
+    {
+      "caseId": "loss-feedwater-no-recovery",
+      "description": "main feedwater contribution remains low after trip",
+      "passed": true,
+      "details": "maxFeed=0.0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=7.0 max=61.2%"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "main feedwater remains isolated after trip",
+      "passed": true,
+      "details": "maxMain=0.0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "auxiliary feedwater reaches aligned branch",
+      "passed": true,
+      "details": "maxAux=70.0kg/s"
+    },
+    {
+      "caseId": "loss-feedwater-afw-recovery",
+      "description": "auxiliary feedwater prevents severe dryout in aligned SG",
+      "passed": true,
+      "details": "endLevel=21.1%"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=55.0 max=78.6%"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "first tripped RCP flow coasts down",
+      "passed": true,
+      "details": "before=3946 end=260kg/s"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "second tripped RCP does not instantly collapse",
+      "passed": true,
+      "details": "before=3946 short=2257kg/s"
+    },
+    {
+      "caseId": "rcp-pair-coastdown",
+      "description": "second tripped RCP materially lowers flow",
+      "passed": true,
+      "details": "before=3946 end=260kg/s"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=41.8 max=61.2%"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "offsite loss de-energizes safety train before recovery",
+      "passed": true,
+      "details": "busAAt120s=false"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "diesel generators start after command",
+      "passed": true,
+      "details": "dieselA=true dieselB=true"
+    },
+    {
+      "caseId": "station-blackout-diesel-recovery",
+      "description": "diesels restore safety buses after tie-in",
+      "passed": true,
+      "details": "busA=true busB=true"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=55.0 max=61.2%"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "degraded offsite voltage source is observed",
+      "passed": true,
+      "details": "sourceSag=0.74"
+    },
+    {
+      "caseId": "degraded-voltage",
+      "description": "offsite source voltage recovers after source recovery",
+      "passed": true,
+      "details": "endVoltage=1.00"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=55.0 max=61.2%"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "cooling-water pump trip lowers cooling flow",
+      "passed": true,
+      "details": "before=43000 end=0kg/s"
+    },
+    {
+      "caseId": "cooling-water-loss",
+      "description": "cooling-water loss raises condenser backpressure",
+      "passed": true,
+      "details": "before=19779 peak=73111Pa"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.4 max=61.2%"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "relief path carries steam when opened",
+      "passed": true,
+      "details": "relief=33.85kg/s"
+    },
+    {
+      "caseId": "pressurizer-control-challenge",
+      "description": "pressurizer pressure remains bounded through challenge",
+      "passed": true,
+      "details": "min=15.74 max=16.51MPa"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=55.0 max=62.8%"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "main steam safety valve opens on isolated high pressure path",
+      "passed": true,
+      "details": "valve=1.00"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "main steam safety path releases steam to containment",
+      "passed": true,
+      "details": "release=691.4kg/s"
+    },
+    {
+      "caseId": "main-steam-isolation-release",
+      "description": "steam release raises containment pressure",
+      "passed": true,
+      "details": "before=0.101 peak=0.119MPa"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=1.14e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.4 max=61.2%"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "charging path carries CVCS flow",
+      "passed": true,
+      "details": "charging=90.00kg/s"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "vessel boron concentration rises after borated makeup",
+      "passed": true,
+      "details": "before=1232.6 end=1424.6ppm"
+    },
+    {
+      "caseId": "boration-and-letdown",
+      "description": "boron increase produces negative reactivity feedback",
+      "passed": true,
+      "details": "minBoronFeedback=-18.0pcm"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=54.2 max=73.0%"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "large break produces primary leak flow",
+      "passed": true,
+      "details": "release=1102.7kg/s"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "containment receives released primary mass",
+      "passed": true,
+      "details": "incomingMass=1106.0kg/s sump=14kg"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "accumulator injects during depressurization",
+      "passed": true,
+      "details": "injection=40.9kg/s"
+    },
+    {
+      "caseId": "large-break-loca",
+      "description": "accumulator inventory falls during injection",
+      "passed": true,
+      "details": "start=35000 end=32141kg"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "all numeric telemetry remains finite",
+      "passed": true,
+      "details": "all finite"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "nonnegative telemetry remains nonnegative",
+      "passed": true,
+      "details": "all nonnegative"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "feedwater headers preserve flow balance",
+      "passed": true,
+      "details": "main=2.27e-13 aux=0.00e+0kg/s"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "steam generator levels stay bounded",
+      "passed": true,
+      "details": "min=39.1 max=77.5%"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "electrical bus voltage ratios stay bounded",
+      "passed": true,
+      "details": "min=0.00 max=1.00"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "combined stress includes SGTR leak",
+      "passed": true,
+      "details": "sgtr=103.23kg/s"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "combined stress includes feedwater degradation",
+      "passed": true,
+      "details": "feed=0.0kg/s"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "combined stress lowers tripped loop flow",
+      "passed": true,
+      "details": "before=3946 end=260kg/s"
+    },
+    {
+      "caseId": "combined-stress",
+      "description": "combined stress lowers turbine output after load cut",
+      "passed": true,
+      "details": "before=544.3 end=286.0MW"
+    },
+    {
+      "caseId": "long-steady-state",
+      "description": "extended validation remains faster than realtime",
+      "passed": true,
+      "details": "realtimeFactor=290.1x min=12.0x"
+    }
+  ],
+  "artifacts": {
+    "summaryJsonPath": "docs/assets/process-plant-extended-validation-summary.json",
+    "traceSvgPath": "docs/assets/process-plant-extended-validation-traces.svg"
+  }
+}

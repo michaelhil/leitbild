@@ -1,0 +1,49 @@
+{
+  "id": "norway-airspace",
+  "schemaVersion": 1,
+  "title": "Norway airspace",
+  "description": "Activates the aviation pack and renders Norwegian airspace polygons plus Avinor airport points. Layer-group toggles live in the control rail.",
+  "packs": ["aviation"],
+  "runtimeOverrides": {
+    "aviation": "aviation.multi"
+  },
+  "world": {
+    "startsAt": "2026-01-01T10:00:00.000Z",
+    "mapCenter": [15.0, 63.0],
+    "environment": {
+      "city": "Norway",
+      "mode": "airspace-view"
+    }
+  },
+  "objects": [],
+  "initialContexts": [],
+  "runtimeConfigs": {
+    "aviation": { "source": "vatsim" }
+  },
+  "surface": {
+    "schemaVersion": 1,
+    "regions": [
+      {
+        "id": "main-map",
+        "primitive": "map",
+        "visible": true,
+        "config": {
+          "center": [15.0, 63.0],
+          "zoom": 6,
+          "layers": ["objects", "highlights"]
+        }
+      },
+      {
+        "id": "left-rail",
+        "primitive": "objectRail",
+        "visible": true,
+        "config": {
+          "width": 280,
+          "sections": []
+        }
+      },
+      { "id": "system-footer", "primitive": "systemFooter", "visible": true, "config": {} },
+      { "id": "guidance-overlay", "primitive": "guidanceOverlay", "visible": true, "config": {} }
+    ]
+  }
+}

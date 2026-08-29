@@ -1,0 +1,183 @@
+import type { OperationalObject } from '../model/index.ts'
+import type { LeitbildPack, PackCommandRequest, PackCreationGeometry, PackMapAreaFeature, PackObjectPresentation, PackQueryRequest, PackTargetContext } from './protocol.ts'
+
+const packForObject = (
+  packs: ReadonlyArray<LeitbildPack>,
+  object: OperationalObject,
+): LeitbildPack | null => {
+  const matches = packs.filter(pack => pack.categories.some(category => category.matches(object)))
+  if (matches.length > 1) {
+    throw new Error(`ambiguous pack ownership for object ${object.id}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0] ?? null
+}
+
+const assertUniquePackIds = (
+  values: ReadonlyArray<{ readonly id: string }>,
+  kind: string,
+): void => {
+  const seen = new Set<string>()
+  for (const value of values) {
+    if (seen.has(value.id)) throw new Error(`duplicate ${kind}: ${value.id}`)
+    seen.add(value.id)
+  }
+}
+
+const packForCreateType = (
+  packs: ReadonlyArray<LeitbildPack>,
+  typeId: string,
+): LeitbildPack => {
+  const matches = packs.filter(pack => pack.createObjectTypes.some(type => type.id === typeId))
+  if (matches.length === 0) throw new Error(`unknown create object type: ${typeId}`)
+  if (matches.length > 1) {
+    throw new Error(`ambiguous create object type ${typeId}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0]!
+}
+
+const packsForTargetCommand = (
+  packs: ReadonlyArray<LeitbildPack>,
+  controller: OperationalObject,
+  target: OperationalObject,
+  context: PackTargetContext,
+): ReadonlyArray<LeitbildPack> =>
+  packs.filter(pack => pack.isController(controller) && pack.isTarget(controller, target, context))
+
+const packForCancelCommand = (
+  packs: ReadonlyArray<LeitbildPack>,
+  controller: OperationalObject,
+): LeitbildPack => {
+  const matches = packs.filter(pack => pack.isController(controller))
+  if (matches.length === 0) throw new Error(`no pack can cancel target for ${controller.id}`)
+  if (matches.length > 1) {
+    throw new Error(`ambiguous cancel target command for ${controller.id}: ${matches.map(pack => pack.id).join(', ')}`)
+  }
+  return matches[0]!
+}
+
+export const createCompositePack = (config: {
+  readonly id: string
+  readonly name: string
+  readonly packs: ReadonlyArray<LeitbildPack>
+}): LeitbildPack => {
+  if (config.packs.length === 0) throw new Error('composite pack requires at least one pack')
+  assertUniquePackIds(config.packs.flatMap(pack => pack.categories), 'object category')
+  assertUniquePackIds(config.packs.flatMap(pack => pack.createObjectTypes), 'create object type')
+  const primaryPack = config.packs[0]!
+  return {
+    id: config.id,
+    name: config.name,
+    categories: config.packs.flatMap(pack => pack.categories),
+    createObjectTypes: config.packs.flatMap(pack => pack.createObjectTypes),
+    interactionHandlers: config.packs.flatMap(pack => pack.interactionHandlers ?? []),
+    presentObject: (object, context): PackObjectPresentation => {
+      const pack = packForObject(config.packs, object)
+      const presentation = pack ? pack.presentObject(object, context) : primaryPack.presentObject(object, context)
+      if (context.tier !== 'detail') return presentation
+      const contextualFields = config.packs.flatMap(candidate =>
+        candidate.contextualFields?.(object, context) ?? []
+      )
+      if (contextualFields.length === 0) return presentation
+      const existingKeys = new Set(presentation.fields.map(field => field.key))
+      return {
+        ...presentation,
+        fields: [
+          ...presentation.fields,
+          ...contextualFields.filter(field => !existingKeys.has(field.key)),
+        ],
+      }
+    },
+    mapAreaFeatures: (context): ReadonlyArray<PackMapAreaFeature> =>
+      config.packs.flatMap(pack => pack.mapAreaFeatures?.(context) ?? []),
+    mapAreaFeatureLayers: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['mapAreaFeatureLayers']>[number][] = []
+      for (const pack of config.packs) {
+        for (const layer of pack.mapAreaFeatureLayers ?? []) {
+          if (seen.has(layer)) continue
+          seen.add(layer)
+          out.push(layer)
+        }
+      }
+      return out
+    })(),
+    mapAreaFeatureSourcePackIds: (() => {
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const pack of config.packs) {
+        if (pack.mapAreaFeatures === undefined && pack.mapAreaFeatureQueries === undefined) continue
+        const sourcePackIds = pack.mapAreaFeatureSourcePackIds ?? [pack.id]
+        for (const packId of sourcePackIds) {
+          if (seen.has(packId)) continue
+          seen.add(packId)
+          out.push(packId)
+        }
+      }
+      return out
+    })(),
+    mapAreaFeatureQueries: (context): ReadonlyArray<PackQueryRequest> =>
+      config.packs.flatMap(pack => pack.mapAreaFeatureQueries?.(context) ?? []),
+    defaultObjectLabel: (typeId, context): string => {
+      return packForCreateType(config.packs, typeId).defaultObjectLabel(typeId, context)
+    },
+    buildCreateObjectCommand: (typeId: string, label: string, geometry: PackCreationGeometry, parameters?: unknown): PackCommandRequest => {
+      return packForCreateType(config.packs, typeId).buildCreateObjectCommand(typeId, label, geometry, parameters)
+    },
+    isController: (object): boolean =>
+      config.packs.some(pack => pack.isController(object)),
+    isTarget: (controller, candidate, context): boolean =>
+      config.packs.some(pack => pack.isController(controller) && pack.isTarget(controller, candidate, context)),
+    buildSetTargetCommand: (controller, target, context): PackCommandRequest => {
+      const matches = packsForTargetCommand(config.packs, controller, target, context)
+      if (matches.length === 0) throw new Error(`no pack can target ${target.id} from ${controller.id}`)
+      if (matches.length > 1) {
+        throw new Error(`ambiguous target command from ${controller.id} to ${target.id}: ${matches.map(pack => pack.id).join(', ')}`)
+      }
+      return matches[0]!.buildSetTargetCommand(controller, target, context)
+    },
+    buildCancelTargetCommand: (controller, context): PackCommandRequest => {
+      return packForCancelCommand(config.packs, controller).buildCancelTargetCommand(controller, context)
+    },
+    // Aggregate map-layer groups across composed packs. The rail renders all of
+    // them; ids are namespaced by pack convention (`aviation:airspace`,
+    // `aviation:airports`) so collisions are unusual but flagged here.
+    mapLayerGroups: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['mapLayerGroups']>[number][] = []
+      for (const pack of config.packs) {
+        for (const group of pack.mapLayerGroups ?? []) {
+          if (seen.has(group.id)) {
+            throw new Error(`composite pack ${config.id}: duplicate mapLayerGroup id "${group.id}"`)
+          }
+          seen.add(group.id)
+          out.push(group)
+        }
+      }
+      return out
+    })(),
+    // Aggregate reference-dataset builders too so any code holding the composite
+    // pack (e.g. the registry collector in tests) sees what each constituent
+    // wanted to ship.
+    referenceDatasetBuilders: (() => {
+      const out: NonNullable<LeitbildPack['referenceDatasetBuilders']>[number][] = []
+      for (const pack of config.packs) {
+        for (const builder of pack.referenceDatasetBuilders ?? []) out.push(builder)
+      }
+      return out
+    })(),
+    referenceDatasetIds: (() => {
+      const seen = new Set<string>()
+      const out: NonNullable<LeitbildPack['referenceDatasetIds']>[number][] = []
+      for (const pack of config.packs) {
+        const ids = pack.referenceDatasetIds ?? pack.referenceDatasetBuilders?.map(builder => builder.id) ?? []
+        for (const id of ids) {
+          const key = String(id)
+          if (seen.has(key)) continue
+          seen.add(key)
+          out.push(id)
+        }
+      }
+      return out
+    })(),
+  }
+}

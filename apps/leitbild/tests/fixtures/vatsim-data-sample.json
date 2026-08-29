@@ -1,0 +1,80 @@
+{
+  "general": {
+    "version": 3,
+    "update_timestamp": "2026-01-01T10:00:00.000Z"
+  },
+  "pilots": [
+    {
+      "cid": 1234567,
+      "name": "Test Pilot",
+      "callsign": "SAS321",
+      "server": "GERMANY-1",
+      "pilot_rating": 0,
+      "latitude": 60.193,
+      "longitude": 11.1004,
+      "altitude": 32000,
+      "groundspeed": 470,
+      "transponder": "2200",
+      "heading": 245,
+      "qnh_i_hg": 29.92,
+      "qnh_mb": 1013,
+      "flight_plan": {
+        "flight_rules": "I",
+        "aircraft": "B738/M-SDE3FGHIRWY/LB1",
+        "aircraft_faa": "B738/L",
+        "aircraft_short": "B738",
+        "departure": "ENGM",
+        "arrival": "EGLL",
+        "alternate": "EGKK",
+        "cruise_tas": "470",
+        "altitude": "FL360",
+        "deptime": "1000",
+        "enroute_time": "0200",
+        "fuel_time": "0330",
+        "remarks": "PBN/A1B1C1D1L1O1S2",
+        "route": "GOLEM2N GOLEM ..."
+      },
+      "logon_time": "2026-01-01T08:30:00.000Z",
+      "last_updated": "2026-01-01T09:59:58.000Z"
+    },
+    {
+      "cid": 7654321,
+      "name": "Ground Pilot",
+      "callsign": "WIF999",
+      "server": "GERMANY-1",
+      "pilot_rating": 0,
+      "latitude": 59.91,
+      "longitude": 10.755,
+      "altitude": 50,
+      "groundspeed": 0,
+      "transponder": "2000",
+      "heading": 90,
+      "qnh_i_hg": 29.92,
+      "qnh_mb": 1013,
+      "flight_plan": null,
+      "logon_time": "2026-01-01T09:50:00.000Z",
+      "last_updated": "2026-01-01T09:59:58.000Z"
+    },
+    {
+      "cid": 9999999,
+      "name": "Out Of Bbox",
+      "callsign": "BAW100",
+      "server": "USA-1",
+      "pilot_rating": 0,
+      "latitude": 40.6413,
+      "longitude": -73.7781,
+      "altitude": 35000,
+      "groundspeed": 480,
+      "transponder": "1234",
+      "heading": 90,
+      "qnh_i_hg": 29.92,
+      "qnh_mb": 1013,
+      "flight_plan": null,
+      "logon_time": "2026-01-01T09:50:00.000Z",
+      "last_updated": "2026-01-01T09:59:58.000Z"
+    }
+  ],
+  "controllers": [],
+  "atis": [],
+  "servers": []
+}

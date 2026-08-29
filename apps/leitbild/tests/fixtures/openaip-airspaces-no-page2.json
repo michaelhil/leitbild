@@ -1,0 +1,38 @@
+{
+  "items": [
+    {
+      "_id": "fixture-stavanger-tma-multi",
+      "name": "STAVANGER TMA",
+      "type": 7,
+      "icaoClass": 2,
+      "byNotam": false,
+      "country": "NO",
+      "upperLimit": { "value": null, "unit": null, "referenceDatum": null },
+      "lowerLimit": { "value": 1500, "unit": 1, "referenceDatum": 1 },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [[[5.5, 58.7], [6.2, 58.7], [6.2, 59.1], [5.5, 59.1], [5.5, 58.7]]],
+          [[[6.5, 58.9], [7.0, 58.9], [7.0, 59.2], [6.5, 59.2], [6.5, 58.9]]]
+        ]
+      }
+    },
+    {
+      "_id": "fixture-novel-type",
+      "name": "MYSTERY CLASS",
+      "type": 999,
+      "byNotam": false,
+      "country": "NO",
+      "upperLimit": { "value": 5000, "unit": 1, "referenceDatum": 1 },
+      "lowerLimit": { "value": 0, "unit": 1, "referenceDatum": 0 },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[10.5, 60.0], [10.6, 60.0], [10.6, 60.1], [10.5, 60.1], [10.5, 60.0]]]
+      }
+    }
+  ],
+  "totalCount": 6,
+  "totalPages": 2,
+  "page": 2,
+  "limit": 4
+}

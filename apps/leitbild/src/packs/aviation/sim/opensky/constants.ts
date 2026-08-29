@@ -1,0 +1,26 @@
+// OpenSky V2 API + OAuth2 endpoints.
+// Norway bbox (lamin, lomin, lamax, lomax) covers ENOR including offshore extensions.
+// Polling cadence is configurable but defaults conservatively. One poll every
+// 30 s stays below a 4000-credit/day budget for a single live CI and gives
+// operators a useful live picture without hammering the upstream.
+
+export const OPENSKY_API_BASE = 'https://opensky-network.org'
+export const OPENSKY_STATES_PATH = '/api/states/all'
+export const OPENSKY_TOKEN_URL = 'https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token'
+
+export const OPENSKY_DEFAULT_POLL_INTERVAL_MS = 30_000
+export const OPENSKY_DEFAULT_STALE_AFTER_MS = 60_000
+
+export const NORWAY_BBOX = {
+  lamin: 57.5,
+  lomin: 3.0,
+  lamax: 71.5,
+  lomax: 32.0,
+} as const
+
+export type OpenSkyBbox = {
+  readonly lamin: number
+  readonly lomin: number
+  readonly lamax: number
+  readonly lomax: number
+}

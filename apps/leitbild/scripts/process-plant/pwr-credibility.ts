@@ -1,0 +1,802 @@
+import {
+  compileProcessPlantSystem,
+  createProcessPlantMultiSystemTestbed,
+  processPlantPwrReferenceAssemblyRef,
+  processPlantPwrReferenceGraphIcRef,
+  resolveProcessPlantIcConfigForGraph,
+  type CompiledComponent,
+  type CompiledProcessPlantSystem,
+  type ProcessPlantMultiSystemConfig,
+  type ProcessPlantScheduledAction,
+  type VariablePath,
+} from '../../src/packs/process-plant/index.ts'
+import {
+  evaluateProcessPlantCredibilityTarget,
+  processPlantCredibilityCaseResultSummaries,
+  processPlantCredibilityTraceForCase,
+  renderProcessPlantCredibilityReportSvg,
+  writeProcessPlantCredibilityArtifacts,
+  type ProcessPlantCredibilityTarget,
+} from './credibility-harness.ts'
+
+const durationMs = 600_000
+const stepMs = 1_000
+const sampleIntervalMs = 2_000
+const artifactRoot = process.env.PROCESS_PLANT_CREDIBILITY_ARTIFACT_ROOT ?? 'docs/assets'
+const summaryJsonPath = `${artifactRoot}/process-plant-pwr-credibility-summary.json`
+const reportSvgPath = `${artifactRoot}/process-plant-pwr-credibility-report.svg`
+
+const variablePath = (value: string): VariablePath => value as VariablePath
+
+type SourceRefId =
+  | 'nrc-srp-ch15'
+  | 'iaea-ssg-2'
+  | 'nrc-trace'
+  | 'oecd-nea-mslb'
+  | 'leitbild-pwr-scope'
+
+interface SourceRef {
+  readonly id: SourceRefId
+  readonly title: string
+  readonly url: string
+  readonly note: string
+}
+
+const sourceRefs: Readonly<Record<SourceRefId, SourceRef>> = {
+  'nrc-srp-ch15': {
+    id: 'nrc-srp-ch15',
+    title: 'NRC NUREG-0800 Chapter 15',
+    url: 'https://www.nrc.gov/reading-rm/doc-collections/nuregs/staff/sr0800/ch15/index.html',
+    note: 'Event-family taxonomy for LWR transient and accident analysis.',
+  },
+  'iaea-ssg-2': {
+    id: 'iaea-ssg-2',
+    title: 'IAEA SSG-2 Rev. 1 deterministic safety analysis guide',
+    url: 'https://nucleus.iaea.org/sites/committees/Set%20of%20valid%20safety%20standards%20202409/safety%20standards_%20valid%20set/SSG-2%20Rev%201%20Deterministic%20Safety%20Analysis%20for%20Nuclear%20Power%20Plants.pdf',
+    note: 'Verification, validation, input qualification, assumptions, and documentation discipline.',
+  },
+  'nrc-trace': {
+    id: 'nrc-trace',
+    title: 'NRC thermal-hydraulic computer codes',
+    url: 'https://www.nrc.gov/about-nrc/regulatory/research/safetycodes.html',
+    note: 'Boundary marker for phenomena handled by licensing-grade system codes, not by Leitbild.',
+  },
+  'oecd-nea-mslb': {
+    id: 'oecd-nea-mslb',
+    title: 'OECD/NEA PWR Main Steam-Line Break benchmark',
+    url: 'https://harbor.oecd-nea.org/jcms/pl_32205/pressurised-water-reactor-main-steam-line-break-mslb-benchmark',
+    note: 'Benchmark pattern for event sequence, setpoints, plant conditions, and trace comparisons.',
+  },
+  'leitbild-pwr-scope': {
+    id: 'leitbild-pwr-scope',
+    title: 'Leitbild PWR operational-simulator scope',
+    url: 'docs/wiki/pwr-ops.md',
+    note: 'Local scope boundary: deterministic lumped operational simulator, not a licensing-basis safety-analysis code.',
+  },
+}
+
+type CaseId =
+  | 'steady-power'
+  | 'loss-feedwater-afw'
+  | 'loss-feedwater-auto-afw'
+  | 'loss-heat-sink-dryout'
+  | 'turbine-trip-bypass'
+  | 'pressurizer-relief-challenge'
+  | 'sgtr'
+  | 'small-loca'
+  | 'all-rcp-trip'
+  | 'loss-offsite-power'
+
+interface CredibilityCase {
+  readonly id: CaseId
+  readonly title: string
+  readonly eventFamily: string
+  readonly description: string
+  readonly sourceRefs: ReadonlyArray<SourceRefId>
+  readonly parameters?: Record<string, Record<string, unknown>>
+  readonly initialState?: Record<string, unknown>
+  readonly actions: (system: CompiledProcessPlantSystem) => ReadonlyArray<ProcessPlantScheduledAction>
+}
+
+type CredibilityTarget = ProcessPlantCredibilityTarget<CaseId, SourceRefId>
+
+const scheduledComponentTrip = (
+  id: string,
+  atMs: number,
+  componentId: string,
+): ProcessPlantScheduledAction => ({
+  id,
+  atMs,
+  type: 'tripComponent',
+  componentId: componentId as never,
+})
+
+const setVariable = (
+  id: string,
+  atMs: number,
+  path: string,
+  value: number | boolean,
+): ProcessPlantScheduledAction => ({
+  id,
+  atMs,
+  type: 'setVariable',
+  path: variablePath(path),
+  value,
+})
+
+const componentsMatching = (
+  system: CompiledProcessPlantSystem,
+  predicate: (component: CompiledComponent) => boolean,
+): ReadonlyArray<CompiledComponent> =>
+  system.graph.components.filter(predicate)
+
+const tripComponentsMatching = (
+  system: CompiledProcessPlantSystem,
+  atMs: number,
+  idPrefix: string,
+  predicate: (component: CompiledComponent) => boolean,
+): ReadonlyArray<ProcessPlantScheduledAction> =>
+  componentsMatching(system, predicate).map(component =>
+    scheduledComponentTrip(`${idPrefix}-${component.id}`, atMs, String(component.id)),
+  )
+
+const setValvePositionsMatching = (
+  system: CompiledProcessPlantSystem,
+  atMs: number,
+  idPrefix: string,
+  positionFraction: number,
+  predicate: (component: CompiledComponent) => boolean,
+): ReadonlyArray<ProcessPlantScheduledAction> =>
+  componentsMatching(system, predicate).map(component =>
+    setVariable(`${idPrefix}-${component.id}`, atMs, `${component.id}.positionFraction`, positionFraction),
+  )
+
+const isMainFeedwaterPump = (component: CompiledComponent): boolean =>
+  component.kind === 'centrifugalPump' && String(component.id).startsWith('mainFeedwaterPump')
+
+const isAuxFeedwaterPump = (component: CompiledComponent): boolean =>
+  component.kind === 'centrifugalPump' && String(component.id).startsWith('auxFeedwaterPump')
+
+const isAuxFeedwaterValve = (component: CompiledComponent): boolean =>
+  component.kind === 'processValve' && String(component.id).startsWith('auxFeedwaterValve')
+
+const isReactorCoolantPump = (component: CompiledComponent): boolean =>
+  component.kind === 'centrifugalPump' && String(component.id).startsWith('rcp')
+
+const cases: ReadonlyArray<CredibilityCase> = [
+  {
+    id: 'steady-power',
+    title: 'Steady Power Operation',
+    eventFamily: 'Normal full-power operation',
+    description: 'Six hundred seconds without a fault should stay close to the reference operating band.',
+    sourceRefs: ['iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: () => [],
+  },
+  {
+    id: 'loss-feedwater-afw',
+    title: 'Loss Of Feedwater With AFW',
+    eventFamily: 'NRC SRP 15.2.7 loss of normal feedwater flow',
+    description: 'Main feedwater trips; auxiliary feedwater starts and should preserve a secondary heat sink.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: system => [
+      ...tripComponentsMatching(system, 60_000, 'trip-main-feedwater', isMainFeedwaterPump),
+      ...componentsMatching(system, isAuxFeedwaterPump).map(component =>
+        setVariable(`start-${component.id}`, 180_000, `${component.id}.running`, true),
+      ),
+      ...setValvePositionsMatching(system, 180_000, 'open-aux-feedwater-valve', 1, isAuxFeedwaterValve),
+    ],
+  },
+  {
+    id: 'loss-feedwater-auto-afw',
+    title: 'Loss Of Feedwater With Automatic AFW',
+    eventFamily: 'NRC SRP 15.2.7 loss of normal feedwater flow',
+    description: 'Main feedwater trips; graph-aware reference I&C should diagnose low-low SG level and actuate AFW without manual schedule help.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: system => [
+      ...tripComponentsMatching(system, 60_000, 'trip-main-feedwater-auto-afw', isMainFeedwaterPump),
+    ],
+  },
+  {
+    id: 'loss-heat-sink-dryout',
+    title: 'Loss Of Secondary Heat Sink Without AFW Inventory',
+    eventFamily: 'NRC SRP Chapter 15 heat-sink degradation envelope',
+    description: 'Normal feedwater is lost while AFW inventory is unavailable; SG level should uncover tubes and degrade heat transfer in the compact model.',
+    sourceRefs: ['nrc-srp-ch15', 'nrc-trace', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    initialState: {
+      'auxFeedwaterTank.inventoryKg': 0,
+      'auxFeedwaterTank.levelPercent': 0,
+      'auxFeedwaterTank.availableOutletFlowKgPerS': 0,
+    },
+    actions: system => [
+      ...tripComponentsMatching(system, 60_000, 'trip-main-feedwater-no-afw-inventory', isMainFeedwaterPump),
+    ],
+  },
+  {
+    id: 'turbine-trip-bypass',
+    title: 'Turbine Trip With Steam Bypass',
+    eventFamily: 'NRC SRP 15.2 turbine trip and loss of load family',
+    description: 'The turbine path is isolated; electrical load should collapse and main steam bypass/pressure relief behavior should become visible.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: () => [
+      setVariable('close-turbine-stop-valve', 90_000, 'turbineStopValve.positionFraction', 0),
+      setVariable('reject-turbine-load', 90_000, 'turbine.loadFraction', 0),
+    ],
+  },
+  {
+    id: 'pressurizer-relief-challenge',
+    title: 'Pressurizer Overpressure Relief Challenge',
+    eventFamily: 'NRC SRP 15 reactor coolant system pressure-control challenge',
+    description: 'An initial high-pressure condition should actuate relief and drive pressure back toward the operating envelope.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    initialState: {
+      'pressurizer.pressureMPa': 16.45,
+      'pressurizer.steamPressureMPa': 16.45,
+    },
+    actions: () => [],
+  },
+  {
+    id: 'sgtr',
+    title: 'Steam Generator Tube Leak',
+    eventFamily: 'NRC SRP 15.6.3 steam generator tube failure indication',
+    description: 'Primary-to-secondary leakage should drain RCS inventory and produce affected-secondary radiation.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: () => [
+      setVariable('open-sg-a-tube-leak', 90_000, 'sgA.tubeLeakFraction', 0.18),
+    ],
+  },
+  {
+    id: 'small-loca',
+    title: 'Small LOCA With Accumulator Response',
+    eventFamily: 'NRC SRP 15.6.5 loss-of-coolant accident spectrum',
+    description: 'A primary boundary leak should depressurize, send mass to containment, and actuate passive inventory support.',
+    sourceRefs: ['nrc-srp-ch15', 'nrc-trace', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: () => [
+      setVariable('open-hot-leg-a-boundary-leak', 90_000, 'rcs-hot-leg-a.leak.areaFraction', 0.45),
+    ],
+  },
+  {
+    id: 'all-rcp-trip',
+    title: 'Loss Of Forced Primary Flow',
+    eventFamily: 'NRC SRP 15.3.1 loss of forced reactor coolant flow',
+    description: 'All reactor coolant pumps trip; loop flow should coast down, reference protection should trip the reactor, and core cooling indicators should respond.',
+    sourceRefs: ['nrc-srp-ch15', 'nrc-trace', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: system => tripComponentsMatching(system, 90_000, 'trip-rcp', isReactorCoolantPump),
+  },
+  {
+    id: 'loss-offsite-power',
+    title: 'Loss Of Offsite Power',
+    eventFamily: 'NRC SRP 15.2.6 loss of nonemergency AC power',
+    description: 'Offsite power is lost; emergency diesels should restore safety buses and essential loads.',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+    actions: () => [
+      { id: 'loss-of-offsite-power', atMs: 90_000, type: 'lossOfOffsitePower' },
+      setVariable('start-diesel-a', 110_000, 'dieselGeneratorA.startCommand', true),
+      setVariable('start-diesel-b', 110_000, 'dieselGeneratorB.startCommand', true),
+    ],
+  },
+]
+
+const telemetryVariables = [
+  'core.powerMw',
+  'core.totalThermalPowerMw',
+  'core.decayHeatMw',
+  'core.coreCoolingAvailabilityFraction',
+  'core.coreHeatRemovalDeficitMw',
+  'core.fuelHeatupRateCPerS',
+  'core.rodInsertionFraction',
+  'vessel.primaryCoolantInventoryKg',
+  'vessel.primaryLeakFlowKgPerS',
+  'vessel.safetyInjectionFlowKgPerS',
+  'vessel.tubeLeakFlowKgPerS',
+  'vessel.reliefOutflowKgPerS',
+  'vessel-release-to-containment.flowKgPerS',
+  'pressurizer.pressureMPa',
+  'pressurizer.levelPercent',
+  'pressurizer.reliefFlowKgPerS',
+  'pressurizer.reliefValvePositionFraction',
+  'sgA.levelPercent',
+  'sgA.tubeCoverageFraction',
+  'sgA.tubeUncoveredFraction',
+  'sgA.availableHeatTransferFraction',
+  'sgA.heatTransferMw',
+  'sgA.feedwaterFlowKgPerS',
+  'sgA.steamOutflowKgPerS',
+  'sgA.pressureMPa',
+  'sgA.primaryToSecondaryLeakKgPerS',
+  'sgA.secondaryRadiationMSvPerH',
+  'rcpA.loopFlowKgPerS',
+  'turbine.electricMw',
+  'turbine.loadFraction',
+  'turbine.steamAvailabilityFraction',
+  'turbineStopValve.effectivePositionFraction',
+  'turbineBypassValve.effectivePositionFraction',
+  'turbine-bypass-valve-to-condenser.flowKgPerS',
+  'main-steam-header-to-turbine-bypass-valve.pressureMPa',
+  'mainSteamSafetyValve.effectivePositionFraction',
+  'main-steam-header-to-safety-valve.flowKgPerS',
+  'main-steam-safety-valve-to-containment.flowKgPerS',
+  'condenser.backPressurePa',
+  'containment.pressureMPa',
+  'containment.incomingMassKgPerS',
+  'containment.sumpInventoryKg',
+  'containment.radiationSourceTermMSvPerH',
+  'safetyAccumulatorA.outletFlowKgPerS',
+  'safetyAccumulatorA.liquidInventoryKg',
+  'motor-afw-pump-to-header.flowKgPerS',
+  'aux-feedwater-valve-a-to-sg-a.flowKgPerS',
+  'safetyBusA.voltageFraction',
+  'safetyBusB.voltageFraction',
+  'plantControlsLoadA.servedFraction',
+  'plantControlsLoadB.servedFraction',
+] as const satisfies ReadonlyArray<string>
+
+const targets: ReadonlyArray<CredibilityTarget> = [
+  {
+    id: 'steady-pzr-pressure-band',
+    caseId: 'steady-power',
+    label: 'Pressurizer pressure remains in the reference operating band',
+    signal: 'pressurizer.pressureMPa final value',
+    expectation: 'Stable PWR operation should remain close to nominal RCS pressure.',
+    measure: { kind: 'point', path: variablePath('pressurizer.pressureMPa'), atMs: durationMs },
+    acceptable: { min: 14.8, max: 15.8 },
+    severity: 'gate',
+    sourceRefs: ['iaea-ssg-2', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'steady-sg-level-band',
+    caseId: 'steady-power',
+    label: 'Steam-generator level remains controllable',
+    signal: 'sgA.levelPercent final value',
+    expectation: 'Normal operation should not drift toward dryout or high-level challenge.',
+    measure: { kind: 'point', path: variablePath('sgA.levelPercent'), atMs: durationMs },
+    acceptable: { min: 45, max: 70 },
+    severity: 'gate',
+    sourceRefs: ['iaea-ssg-2', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'steady-turbine-output-band',
+    caseId: 'steady-power',
+    label: 'Electric output remains in the reference plant range',
+    signal: 'turbine.electricMw final value',
+    expectation: 'The reference plant should produce a plausible large-PWR electrical output at power.',
+    measure: { kind: 'point', path: variablePath('turbine.electricMw'), atMs: durationMs },
+    acceptable: { min: 650, max: 950 },
+    severity: 'watch',
+    sourceRefs: ['leitbild-pwr-scope'],
+  },
+  {
+    id: 'lofw-level-decline',
+    caseId: 'loss-feedwater-afw',
+    label: 'Loss of feedwater visibly lowers SG level before recovery',
+    signal: 'sgA.levelPercent delta from T+80s to T+170s',
+    expectation: 'Normal feedwater loss should deplete secondary inventory before AFW recovery.',
+    measure: { kind: 'delta', path: variablePath('sgA.levelPercent'), fromMs: 80_000, toMs: 170_000 },
+    acceptable: { max: -8 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2'],
+  },
+  {
+    id: 'lofw-afw-flow',
+    caseId: 'loss-feedwater-afw',
+    label: 'Auxiliary feedwater reaches the affected SG branch',
+    signal: 'aux-feedwater-valve-a-to-sg-a.flowKgPerS max after T+190s',
+    expectation: 'AFW should provide a visible secondary heat-sink recovery path.',
+    measure: { kind: 'maxAfter', path: variablePath('aux-feedwater-valve-a-to-sg-a.flowKgPerS'), afterMs: 190_000 },
+    acceptable: { min: 20 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'lofw-no-dryout',
+    caseId: 'loss-feedwater-afw',
+    label: 'AFW recovery avoids SG dryout in the demo window',
+    signal: 'sgA.levelPercent min after T+60s',
+    expectation: 'The modeled recovery should preserve a usable heat sink during the scenario.',
+    measure: { kind: 'minAfter', path: variablePath('sgA.levelPercent'), afterMs: 60_000 },
+    acceptable: { min: 5 },
+    severity: 'gate',
+    sourceRefs: ['iaea-ssg-2', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'auto-afw-level-challenge',
+    caseId: 'loss-feedwater-auto-afw',
+    label: 'Automatic AFW waits for a real low-low level challenge',
+    signal: 'sgA.levelPercent min after T+60s',
+    expectation: 'The automatic response should not mask the initiating loss of feedwater before SG level challenges the low-low setpoint.',
+    measure: { kind: 'minAfter', path: variablePath('sgA.levelPercent'), afterMs: 60_000 },
+    acceptable: { min: 5, max: 24 },
+    severity: 'watch',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'auto-afw-flow',
+    caseId: 'loss-feedwater-auto-afw',
+    label: 'Reference I&C actuates AFW after low-low SG level',
+    signal: 'aux-feedwater-valve-a-to-sg-a.flowKgPerS max after T+120s',
+    expectation: 'Graph-aware steam-generator I&C should open the affected AFW branch without a hand-coded manual schedule.',
+    measure: { kind: 'maxAfter', path: variablePath('aux-feedwater-valve-a-to-sg-a.flowKgPerS'), afterMs: 120_000 },
+    acceptable: { min: 20 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'auto-afw-heat-sink-preserved',
+    caseId: 'loss-feedwater-auto-afw',
+    label: 'Automatic AFW preserves usable SG heat transfer',
+    signal: 'sgA.heatTransferMw min after T+260s',
+    expectation: 'The affected steam generator should retain a meaningful heat sink after AFW actuation.',
+    measure: { kind: 'minAfter', path: variablePath('sgA.heatTransferMw'), afterMs: 260_000 },
+    acceptable: { min: 120 },
+    severity: 'gate',
+    sourceRefs: ['iaea-ssg-2', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'dryout-tube-uncovering',
+    caseId: 'loss-heat-sink-dryout',
+    label: 'Loss of secondary heat sink uncovers SG tubes',
+    signal: 'sgA.tubeCoverageFraction min after T+180s',
+    expectation: 'Without AFW inventory, SG level should uncover the tube bundle rather than leaving heat transfer artificially intact.',
+    measure: { kind: 'minAfter', path: variablePath('sgA.tubeCoverageFraction'), afterMs: 180_000 },
+    acceptable: { max: 0.75 },
+    severity: 'gate',
+    sourceRefs: ['nrc-trace', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'dryout-heat-transfer-degrades',
+    caseId: 'loss-heat-sink-dryout',
+    label: 'Tube uncovering degrades steam-generator heat transfer',
+    signal: 'sgA.availableHeatTransferFraction min after T+180s',
+    expectation: 'The compact SG model should reduce available heat transfer as tubes uncover.',
+    measure: { kind: 'minAfter', path: variablePath('sgA.availableHeatTransferFraction'), afterMs: 180_000 },
+    acceptable: { max: 0.8 },
+    severity: 'gate',
+    sourceRefs: ['nrc-trace', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'dryout-core-heat-removal-deficit',
+    caseId: 'loss-heat-sink-dryout',
+    label: 'Loss of heat sink creates a visible core heat-removal deficit',
+    signal: 'core.coreHeatRemovalDeficitMw max after T+240s',
+    expectation: 'Heat-sink degradation should be visible in core diagnostic terms even in a lumped model.',
+    measure: { kind: 'maxAfter', path: variablePath('core.coreHeatRemovalDeficitMw'), afterMs: 240_000 },
+    acceptable: { min: 100 },
+    severity: 'watch',
+    sourceRefs: ['nrc-trace', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'turbine-trip-load-rejection',
+    caseId: 'turbine-trip-bypass',
+    label: 'Turbine trip rejects generator load',
+    signal: 'turbine.electricMw final value',
+    expectation: 'A turbine trip or load rejection should collapse electrical output.',
+    measure: { kind: 'point', path: variablePath('turbine.electricMw'), atMs: durationMs },
+    acceptable: { max: 25 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'turbine-trip-stop-valve-closes',
+    caseId: 'turbine-trip-bypass',
+    label: 'Turbine stop valve closes',
+    signal: 'turbineStopValve.effectivePositionFraction final value',
+    expectation: 'The isolated turbine path should be explicit in the component graph variables.',
+    measure: { kind: 'point', path: variablePath('turbineStopValve.effectivePositionFraction'), atMs: durationMs },
+    acceptable: { max: 0.05 },
+    severity: 'gate',
+    sourceRefs: ['leitbild-pwr-scope'],
+  },
+  {
+    id: 'turbine-trip-bypass-flow',
+    caseId: 'turbine-trip-bypass',
+    label: 'Steam bypass opens to absorb the load rejection',
+    signal: 'turbine-bypass-valve-to-condenser.flowKgPerS max after T+100s',
+    expectation: 'A turbine trip should route main steam to the condenser bypass before relying on safety-valve discharge.',
+    measure: { kind: 'maxAfter', path: variablePath('turbine-bypass-valve-to-condenser.flowKgPerS'), afterMs: 100_000 },
+    acceptable: { min: 100 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'turbine-trip-pressure-challenge',
+    caseId: 'turbine-trip-bypass',
+    label: 'Main steam pressure challenge is visible',
+    signal: 'main-steam-header-to-turbine-bypass-valve.pressureMPa max after T+100s',
+    expectation: 'The load rejection should produce a detectable main-steam pressure challenge, not only a UI state change.',
+    measure: { kind: 'maxAfter', path: variablePath('main-steam-header-to-turbine-bypass-valve.pressureMPa'), afterMs: 100_000 },
+    acceptable: { min: 8.2 },
+    severity: 'watch',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'pzr-relief-flow',
+    caseId: 'pressurizer-relief-challenge',
+    label: 'Pressurizer relief flow occurs during overpressure challenge',
+    signal: 'pressurizer.reliefFlowKgPerS max after T+0s',
+    expectation: 'A high RCS-pressure condition should create a visible relief path.',
+    measure: { kind: 'maxAfter', path: variablePath('pressurizer.reliefFlowKgPerS'), afterMs: 0 },
+    acceptable: { min: 10 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'pzr-pressure-recovers',
+    caseId: 'pressurizer-relief-challenge',
+    label: 'Pressurizer pressure returns below high-trip challenge band',
+    signal: 'pressurizer.pressureMPa final value',
+    expectation: 'Relief and normal pressure control should reduce pressure after the overpressure challenge.',
+    measure: { kind: 'point', path: variablePath('pressurizer.pressureMPa'), atMs: durationMs },
+    acceptable: { min: 14.8, max: 16.25 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'pzr-relief-path-drains-primary-inventory',
+    caseId: 'pressurizer-relief-challenge',
+    label: 'Relief path is visible in primary inventory accounting',
+    signal: 'vessel.reliefOutflowKgPerS max after T+0s',
+    expectation: 'Pressurizer relief should be coupled to vessel inventory diagnostics, not only a local pressurizer display variable.',
+    measure: { kind: 'maxAfter', path: variablePath('vessel.reliefOutflowKgPerS'), afterMs: 0 },
+    acceptable: { min: 5 },
+    severity: 'watch',
+    sourceRefs: ['leitbild-pwr-scope'],
+  },
+  {
+    id: 'sgtr-leak-flow',
+    caseId: 'sgtr',
+    label: 'SGTR produces measurable primary-to-secondary leakage',
+    signal: 'sgA.primaryToSecondaryLeakKgPerS max after T+100s',
+    expectation: 'A tube leak should create an affected-SG leak path without contaminating unrelated SGs.',
+    measure: { kind: 'maxAfter', path: variablePath('sgA.primaryToSecondaryLeakKgPerS'), afterMs: 100_000 },
+    acceptable: { min: 40, max: 220 },
+    severity: 'watch',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'sgtr-primary-inventory-loss',
+    caseId: 'sgtr',
+    label: 'SGTR drains primary inventory',
+    signal: 'vessel.primaryCoolantInventoryKg delta from T+80s to final',
+    expectation: 'Primary-to-secondary leakage should produce a durable RCS inventory consequence.',
+    measure: { kind: 'delta', path: variablePath('vessel.primaryCoolantInventoryKg'), fromMs: 80_000, toMs: durationMs },
+    acceptable: { min: -80_000, max: -8_000 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2'],
+  },
+  {
+    id: 'sgtr-radiation-indication',
+    caseId: 'sgtr',
+    label: 'Affected secondary radiation rises',
+    signal: 'sgA.secondaryRadiationMSvPerH max after T+100s',
+    expectation: 'SGTR diagnosis should be visible through affected secondary radiation.',
+    measure: { kind: 'maxAfter', path: variablePath('sgA.secondaryRadiationMSvPerH'), afterMs: 100_000 },
+    acceptable: { min: 20 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'loca-primary-release',
+    caseId: 'small-loca',
+    label: 'Primary boundary leak creates containment release flow',
+    signal: 'vessel-release-to-containment.flowKgPerS max after T+100s',
+    expectation: 'A primary-boundary break should move mass from RCS to containment.',
+    measure: { kind: 'maxAfter', path: variablePath('vessel-release-to-containment.flowKgPerS'), afterMs: 100_000 },
+    acceptable: { min: 50 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'nrc-trace'],
+  },
+  {
+    id: 'loca-containment-pressure-rise',
+    caseId: 'small-loca',
+    label: 'Containment pressure rises after release',
+    signal: 'containment.pressureMPa delta from T+80s to final',
+    expectation: 'Containment should respond thermodynamically to primary mass-energy release.',
+    measure: { kind: 'delta', path: variablePath('containment.pressureMPa'), fromMs: 80_000, toMs: durationMs },
+    acceptable: { min: 0.01 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'iaea-ssg-2'],
+  },
+  {
+    id: 'loca-accumulator-flow',
+    caseId: 'small-loca',
+    label: 'Accumulator injects after depressurization',
+    signal: 'safetyAccumulatorA.outletFlowKgPerS max after T+100s',
+    expectation: 'Passive safety injection should become visible as RCS pressure falls below the accumulator head.',
+    measure: { kind: 'maxAfter', path: variablePath('safetyAccumulatorA.outletFlowKgPerS'), afterMs: 100_000 },
+    acceptable: { min: 1 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-coastdown',
+    caseId: 'all-rcp-trip',
+    label: 'Forced primary flow coasts down rather than teleporting to zero',
+    signal: 'rcpA.loopFlowKgPerS delta from T+88s to T+110s',
+    expectation: 'RCP trip should show inertia/coastdown, not an instant hydraulic collapse.',
+    measure: { kind: 'delta', path: variablePath('rcpA.loopFlowKgPerS'), fromMs: 88_000, toMs: 110_000 },
+    acceptable: { min: -5_000, max: -500 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-cooling-availability-response',
+    caseId: 'all-rcp-trip',
+    label: 'Core cooling availability responds to loss of forced flow',
+    signal: 'core.coreCoolingAvailabilityFraction min after T+120s',
+    expectation: 'Loss of forced primary flow should be visible in core cooling diagnostics.',
+    measure: { kind: 'minAfter', path: variablePath('core.coreCoolingAvailabilityFraction'), afterMs: 120_000 },
+    acceptable: { min: 0.04, max: 0.35 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'nrc-trace', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-reactor-trip-power-suppression',
+    caseId: 'all-rcp-trip',
+    label: 'Reference protection suppresses fission power after low-flow trip',
+    signal: 'core.powerMw final value',
+    expectation: 'Loss of forced primary flow should actuate reactor protection and reduce fission power to a shutdown-range value.',
+    measure: { kind: 'point', path: variablePath('core.powerMw'), atMs: durationMs },
+    acceptable: { max: 100 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-reactor-trip-rods-inserted',
+    caseId: 'all-rcp-trip',
+    label: 'Reference protection inserts rods after low-flow trip',
+    signal: 'core.rodInsertionFraction final value',
+    expectation: 'A low-flow reactor trip should be procedure-visible through rod insertion as well as reduced power.',
+    measure: { kind: 'point', path: variablePath('core.rodInsertionFraction'), atMs: durationMs },
+    acceptable: { min: 0.95 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-reactor-trip-turbine-isolated',
+    caseId: 'all-rcp-trip',
+    label: 'Reactor trip isolates turbine load path',
+    signal: 'turbineStopValve.effectivePositionFraction final value',
+    expectation: 'The protection response should couple reactor trip, turbine trip, and feedwater isolation behavior.',
+    measure: { kind: 'point', path: variablePath('turbineStopValve.effectivePositionFraction'), atMs: durationMs },
+    acceptable: { max: 0.05 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'rcp-fuel-heatup-bounded',
+    caseId: 'all-rcp-trip',
+    label: 'Fuel heatup remains bounded in the demo window',
+    signal: 'core.fuelHeatupRateCPerS max after T+90s',
+    expectation: 'The compact model should show bounded thermal consequence during pump coastdown and protection response without claiming severe-accident fidelity.',
+    measure: { kind: 'maxAfter', path: variablePath('core.fuelHeatupRateCPerS'), afterMs: 90_000 },
+    acceptable: { min: 0.01, max: 2.0 },
+    severity: 'watch',
+    sourceRefs: ['nrc-trace', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'loop-safety-bus-a-recovery',
+    caseId: 'loss-offsite-power',
+    label: 'Safety bus A recovers after diesel start',
+    signal: 'safetyBusA.voltageFraction min after T+150s',
+    expectation: 'LOOP should be visible but recover essential safety bus voltage after EDG start.',
+    measure: { kind: 'minAfter', path: variablePath('safetyBusA.voltageFraction'), afterMs: 150_000 },
+    acceptable: { min: 0.9 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'loop-safety-bus-b-recovery',
+    caseId: 'loss-offsite-power',
+    label: 'Safety bus B recovers after diesel start',
+    signal: 'safetyBusB.voltageFraction min after T+150s',
+    expectation: 'LOOP should be visible but recover redundant safety bus voltage after EDG start.',
+    measure: { kind: 'minAfter', path: variablePath('safetyBusB.voltageFraction'), afterMs: 150_000 },
+    acceptable: { min: 0.9 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+  {
+    id: 'loop-essential-loads-served',
+    caseId: 'loss-offsite-power',
+    label: 'Essential plant-control loads remain served after recovery',
+    signal: 'plantControlsLoadA.servedFraction min after T+150s',
+    expectation: 'Emergency power recovery should preserve essential control loads.',
+    measure: { kind: 'minAfter', path: variablePath('plantControlsLoadA.servedFraction'), afterMs: 150_000 },
+    acceptable: { min: 0.99 },
+    severity: 'gate',
+    sourceRefs: ['nrc-srp-ch15', 'leitbild-pwr-scope'],
+  },
+]
+
+const compiledSystem = (testCase: CredibilityCase): CompiledProcessPlantSystem =>
+  compileProcessPlantSystem({
+    id: testCase.id,
+    pack: 'process-plant',
+    componentLibrary: 'process-plant',
+    assemblyRef: processPlantPwrReferenceAssemblyRef,
+    assemblyConfig: { loopCount: 4, title: `Credibility ${testCase.title}` },
+    ...(testCase.parameters === undefined ? {} : { parameters: testCase.parameters }),
+    ...(testCase.initialState === undefined ? {} : { initialState: testCase.initialState }),
+  })
+
+const configs = (): ReadonlyArray<ProcessPlantMultiSystemConfig> =>
+  cases.map(testCase => {
+    const system = compiledSystem(testCase)
+    return {
+      system,
+      schedule: { actions: testCase.actions(system) },
+      protection: resolveProcessPlantIcConfigForGraph(processPlantPwrReferenceGraphIcRef, system.graph),
+      telemetry: {
+        sampleIntervalMs,
+        variables: telemetryVariables.map(variablePath),
+      },
+    }
+  })
+
+const main = async (): Promise<void> => {
+  const runConfigs = configs()
+  const started = performance.now()
+  const traces = createProcessPlantMultiSystemTestbed(runConfigs).runFor(durationMs, stepMs)
+  const wallMs = performance.now() - started
+  const results = targets.map(target => evaluateProcessPlantCredibilityTarget(processPlantCredibilityTraceForCase(traces, target.caseId), target))
+  const caseResults = processPlantCredibilityCaseResultSummaries(cases, results)
+  const failedGateTargets = results.filter(result => !result.passed && result.severity === 'gate')
+  const failedWatchTargets = results.filter(result => !result.passed && result.severity === 'watch')
+  const firstGraph = runConfigs[0]?.system.graph
+
+  const summary = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    durationMs,
+    stepMs,
+    sampleIntervalMs,
+    assemblyRef: processPlantPwrReferenceAssemblyRef,
+    assemblyConfig: { loopCount: 4 },
+    caseCount: cases.length,
+    targetCount: targets.length,
+    failedGateTargetCount: failedGateTargets.length,
+    failedWatchTargetCount: failedWatchTargets.length,
+    wallMs,
+    realtimeFactor: durationMs * cases.length / wallMs,
+    graph: firstGraph === undefined
+      ? null
+      : {
+          componentCount: firstGraph.components.length,
+          linkCount: firstGraph.links.length,
+          variableCount: firstGraph.variables.length,
+        },
+    sourceRefs,
+    cases,
+    caseResults,
+    results,
+    icRef: processPlantPwrReferenceGraphIcRef,
+    artifacts: {
+      summaryJsonPath,
+      reportSvgPath,
+    },
+  }
+
+  await writeProcessPlantCredibilityArtifacts({
+    summaryJsonPath,
+    reportSvgPath,
+    summary,
+    reportSvg: renderProcessPlantCredibilityReportSvg({
+      title: 'PWR Credibility Target Report',
+      subtitle: `Source-backed target envelopes against the modular PWR assembly. Gate failures: ${failedGateTargets.length}; watch misses: ${failedWatchTargets.length}; wall ${wallMs.toFixed(0)}ms.`,
+      scope: 'Scope: operational/training credibility, not licensing-basis safety analysis.',
+      cases,
+      results,
+    }),
+  })
+
+  console.log(JSON.stringify({
+    caseCount: summary.caseCount,
+    targetCount: summary.targetCount,
+    failedGateTargetCount: summary.failedGateTargetCount,
+    failedWatchTargetCount: summary.failedWatchTargetCount,
+    realtimeFactor: summary.realtimeFactor,
+    summaryJsonPath,
+    reportSvgPath,
+  }, null, 2))
+}
+
+await main()

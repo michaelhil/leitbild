@@ -1,0 +1,104 @@
+# ADR 0012: Svelte 5 UI Architecture
+
+## Status
+
+Accepted.
+
+## Context
+
+Leitbild uses Svelte 5, but early UI code used classic Svelte component patterns such as `export let`, `$:` reactive statements, `on:` event directives, and slots. Those patterns still work, but mixing classic syntax with Svelte 5 runes makes state ownership harder to audit.
+
+The control surface is becoming central to Leitbild: it coordinates Control Instance state, map rendering, object presentation, placement workflows, modal workflows, and future adaptive UI surfaces. Regressions in derived UI state, such as category field visibility not updating after a refactor, show that hidden reactive dependencies are a real risk.
+
+## Decision
+
+Svelte 5 runes are the default architecture for new and actively migrated UI code.
+
+- Use `$props` for component inputs.
+- Use `$state` for local mutable UI state.
+- Use `$derived` for derived UI state.
+- Use `$effect` only for synchronization with external systems, timers, browser APIs, network connections, or imperative libraries.
+- Use modern event attributes such as `onclick` in migrated components.
+- Prefer snippets over slots when migrating shared composition components and when the result improves typed composition.
+- Use `.svelte.ts` modules for shared client-side UI state when the module has real depth: lifecycle, invariants, persistence, or coordination behind a small interface.
+- Use `runOnMount` from `src/ui/svelte-lifecycle.svelte.ts` for mount-only external lifecycle setup. `$effect` is not an `onMount` replacement: it tracks rune reads in its synchronous body, including reads hidden inside called functions.
+
+The primary `src/ui` Svelte component surface should stay fully migrated: no `export let`, `$:` reactive statements, `on:` event directives, deprecated module-script syntax, slot-based modal APIs, or `<svelte:component>` usage unless there is a written reason.
+
+## State Ownership Rules
+
+- The Control Instance Projected State remains canonical shared operational truth.
+- Svelte state may hold client-local UI state such as selected controls, open menus, rail width, startup modal state, placement drafts, and transient map lifecycle flags.
+- Svelte state must not become a second canonical object store.
+- Derived UI models may be represented as pure TypeScript selectors when this improves testability or prevents hidden reactive dependency bugs.
+- Pure selectors should not become pass-through modules. They must concentrate real derivation logic or be deleted.
+
+## Migration Order
+
+1. Resolve dirty partial migrations before starting new UI work.
+2. Migrate `ControlRail` and its immediate rail components first, because this is where the field-visibility regression occurred.
+3. Migrate leaf components next.
+4. Migrate modal composition and form ownership.
+5. Extract deep client UI state modules from `App.svelte`.
+6. Migrate `OperationalMap` carefully, keeping MapLibre/deck.gl lifecycle imperative and isolated.
+7. Audit remaining classic syntax and either migrate it or document why it remains.
+
+This migration is complete for the current `src/ui` component set as of the runes pass that introduced `rail-layout-state.svelte.ts` and `placement-state.svelte.ts`.
+
+## Structural Patterns
+
+- `App.svelte` coordinates Control Instance state, route selection, startup lifecycle, and lazy loading, but delegates deeper UI workflows to focused rune state modules.
+- `rail-layout-state.svelte.ts` owns rail width persistence, collapse behavior, and resize pointer listeners. It does not own map invalidation.
+- `placement-state.svelte.ts` owns map placement mode, route/polygon point accumulation, create-draft creation, and user-facing placement status text.
+- `ModalShell.svelte` uses snippets for typed modal body/footer composition instead of slot fragments.
+- `OperationalMap.svelte` is a thin imperative map shell. Svelte effects synchronize input boundaries such as object updates, theme changes, configured layer visibility, and placement cursor changes, while `src/ui/map-runtime/*` owns MapLibre construction, base-map readiness, reference-layer registration, deck.gl operational overlays, and frame-budgeted render updates.
+- Reference geometry is not operational geometry. Large imported datasets such as OSM grid lines, airspace, contours, and facility footprints should render as vector-tile reference layers; operational rendering should carry commandable/monitorable assets, selected branches, alarms, and high-cadence visual state.
+- MapLibre resize must be driven by the observed rendered size of the map container, not by rail state, modal state, startup state, arbitrary revision counters, or delayed activation frames. A `ResizeObserver` at the map boundary is the project pattern for keeping MapLibre's internal transform in sync with browser layout.
+- `runOnMount` is the project vocabulary for one-time setup and cleanup of browser event listeners, intervals, WebSocket startup orchestration, and MapLibre construction. It wraps setup in `untrack` so these lifecycle effects do not accidentally subscribe to the state they initialize.
+
+## Effect Policy
+
+Use raw `$effect` only when the code is meant to rerun as reactive inputs change.
+
+Examples:
+
+- Synchronize changed objects into MapLibre sources.
+- Apply a changed map theme.
+- Start or stop startup-modal autoclose timers when readiness changes.
+- Copy a new create-draft prop into local form state.
+
+Use `runOnMount` when the code is meant to run once for component lifecycle setup.
+
+Examples:
+
+- Register and unregister browser event listeners.
+- Start and clear an interval.
+- Create and destroy the MapLibre map instance.
+- Observe the MapLibre container and call `map.resize()` only when the rendered container dimensions actually change.
+- Start the app's initial route/control-instance boot sequence.
+
+Do not call command, startup, socket, or map-construction functions from a raw `$effect` unless the rerun behavior is intentional and documented near the effect. Hidden rune reads through helper functions are still dependencies.
+
+## Consequences
+
+Benefits:
+
+- More explicit state ownership.
+- Fewer hidden dependency bugs in derived UI state.
+- Better locality for UI state and lifecycle behavior.
+- Cleaner seams between Svelte UI, Control Instance state, MapLibre, and pack presentation.
+
+Costs:
+
+- Runes are now used throughout the current UI component surface, which reduces mixed-pattern overhead.
+- Runes require discipline: `$effect` can become a dumping ground if used for ordinary derivation.
+- `.svelte.ts` state modules can become shallow pass-through wrappers if created too eagerly.
+
+## Guardrails
+
+- Do not use `$effect` to compute values that can be `$derived`.
+- Do not use raw `$effect` for mount-only external lifecycle setup; use `runOnMount`.
+- Do not add global UI stores for state that is local to one surface.
+- Do not duplicate canonical Control Instance object state in Svelte modules.
+- Do not create compatibility layers for both old and new Svelte patterns. Migrate the touched slice cleanly.
+- Do not add `requestAnimationFrame` or timeout-based "map activation" heuristics to paper over MapLibre lifecycle bugs. Find the concrete lifecycle boundary instead.

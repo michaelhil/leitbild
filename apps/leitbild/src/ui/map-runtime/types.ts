@@ -1,0 +1,170 @@
+import type { Layer } from '@deck.gl/core'
+import type { Map as MapLibreMap } from 'maplibre-gl'
+import type { GeoJsonLineString, GeoJsonPoint, GeoJsonPolygon, OperationalObject } from '../../core/model/index.ts'
+import type { PackMapAreaFeature, PackObjectPresentation, PackObjectStatusTone } from '../../core/packs/protocol.ts'
+import type { MapPerformanceDiagnosticsSnapshot } from './map-performance-diagnostics.ts'
+
+export type RenderPhase =
+  | 'base'
+  | 'reference'
+  | 'operational-static'
+  | 'operational-dynamic'
+  | 'ui-overlay'
+
+export type RenderFamily =
+  | 'base-map'
+  | 'reference-layers'
+  | 'operational-points'
+  | 'operational-paths'
+  | 'operational-areas'
+  | 'placement'
+  | 'diagnostics'
+
+export type ColorRgba = readonly [number, number, number, number]
+export type Position2 = readonly [number, number]
+export type Position3 = readonly [number, number, number]
+
+export interface OperationalPointFeature {
+  readonly id: string
+  readonly object: OperationalObject
+  readonly position: Position3
+  readonly symbolId: string
+  readonly color: ColorRgba
+  readonly statusTone: PackObjectStatusTone
+  readonly selected: boolean
+  readonly highlighted: boolean
+  readonly hasNewInfo: boolean
+  readonly muted: boolean
+  readonly sizePx: number
+  readonly rotationDeg: number
+  readonly priority: number
+  readonly signature: string
+}
+
+export interface OperationalPathFeature {
+  readonly id: string
+  readonly kind: 'route' | 'traffic' | 'weather-line'
+  readonly path: ReadonlyArray<Position2>
+  readonly color: ColorRgba
+  readonly casingColor: ColorRgba
+  readonly widthPx: number
+  readonly selected: boolean
+  readonly priority: number
+  readonly signature: string
+}
+
+export interface OperationalAreaFeature {
+  readonly id: string
+  readonly kind: 'traffic' | 'weather-base' | 'weather-cell' | 'weather-influence'
+  readonly polygon: GeoJsonPolygon
+  readonly color: ColorRgba
+  readonly lineColor: ColorRgba
+  readonly opacity: number
+  readonly lineWidthPx: number
+  readonly sortKey: number
+  readonly signature: string
+}
+
+export interface OperationalSymbolFeature {
+  readonly id: string
+  readonly position: Position3
+  readonly symbolId: string
+  readonly color: ColorRgba
+  readonly opacity: number
+  readonly sizePx: number
+  readonly summary: string
+  readonly signature: string
+}
+
+export interface OperationalRenderInput {
+  readonly objects: ReadonlyArray<OperationalObject>
+  readonly selectedControllerId: string | null
+  readonly highlightedObjectIds: ReadonlyArray<string>
+  readonly hiddenObjectCategoryIds: ReadonlyArray<string>
+  readonly placementPoints: ReadonlyArray<GeoJsonPoint>
+  readonly packAreaFeatures: ReadonlyArray<PackMapAreaFeature>
+  readonly hasNewInfo: (object: OperationalObject) => boolean
+  readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+}
+
+export interface OperationalRenderSnapshot {
+  readonly points: ReadonlyArray<OperationalPointFeature>
+  readonly paths: ReadonlyArray<OperationalPathFeature>
+  readonly areas: ReadonlyArray<OperationalAreaFeature>
+  readonly areaSymbols: ReadonlyArray<OperationalSymbolFeature>
+  readonly placementPoints: ReadonlyArray<Position3>
+  readonly revisions: {
+    readonly points: number
+    readonly paths: number
+    readonly areas: number
+    readonly areaSymbols: number
+    readonly placement: number
+  }
+}
+
+export interface MapRuntimeLayers {
+  readonly deckLayers: ReadonlyArray<Layer>
+}
+
+export interface MapRuntimeDiagnosticPhaseReport {
+  readonly phase: RenderPhase | 'runtime'
+  readonly status: 'running' | 'ready' | 'failed'
+  readonly message: string
+  readonly details?: ReadonlyArray<MapRuntimeDiagnosticDetail>
+  readonly error?: MapRuntimeError
+}
+
+export interface MapRuntimeError {
+  readonly phase: RenderPhase | 'runtime'
+  readonly message: string
+  readonly sourceId?: string
+  readonly recoverable: boolean
+}
+
+export interface MapRuntimeDiagnosticDetail {
+  readonly label: string
+  readonly value: string
+}
+
+export interface MapRuntimeDiagnostic {
+  readonly phase: RenderPhase | 'runtime'
+  readonly status: 'pending' | 'running' | 'ready' | 'failed'
+  readonly message: string
+  readonly startedAtMs: number
+  readonly completedAtMs?: number
+  readonly details: ReadonlyArray<MapRuntimeDiagnosticDetail>
+}
+
+export interface MapRuntimeDiagnosticsSnapshot {
+  readonly phases: ReadonlyArray<MapRuntimeDiagnostic>
+  readonly latestError?: MapRuntimeError
+  readonly performance?: MapPerformanceDiagnosticsSnapshot
+}
+
+export interface MapRuntimeHandle {
+  readonly map: MapLibreMap
+  readonly updateLayers: (layers: MapRuntimeLayers) => void
+  readonly reportDiagnosticPhase: (report: MapRuntimeDiagnosticPhaseReport) => void
+  readonly setDiagnosticDetails: (
+    phase: RenderPhase | 'runtime',
+    details: ReadonlyArray<MapRuntimeDiagnosticDetail>,
+  ) => void
+  readonly setStyleUrl: (styleUrl: string) => Promise<void>
+  readonly resize: () => void
+  readonly diagnostics: () => MapRuntimeDiagnosticsSnapshot
+  readonly destroy: () => void
+}
+
+export interface MapFeatureProjectionContext {
+  readonly selectedControllerId: string | null
+  readonly highlightedObjectIds: ReadonlySet<string>
+  readonly hiddenObjectCategoryIds: ReadonlySet<string>
+  readonly hasNewInfo: (object: OperationalObject) => boolean
+  readonly presentationFor: (object: OperationalObject) => PackObjectPresentation
+}
+
+export const lineStringPositions = (geometry: GeoJsonLineString): ReadonlyArray<Position2> =>
+  geometry.coordinates.map(coordinate => [coordinate[0], coordinate[1]] as const)
+
+export const pointPosition = (point: GeoJsonPoint): Position3 =>
+  [point.coordinates[0], point.coordinates[1], 0]

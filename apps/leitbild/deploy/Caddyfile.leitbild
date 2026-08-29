@@ -1,0 +1,39 @@
+leitbild.samsinn.app {
+  encode zstd gzip
+
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    -Server
+  }
+
+  handle /map/tiles/current.pmtiles {
+    root * /opt/leitbild/maps/current
+    rewrite * /norway.pmtiles
+    header Content-Type application/vnd.pmtiles
+    file_server
+  }
+
+  handle_path /map/fonts/* {
+    root * /opt/leitbild/maps/fonts
+    file_server
+  }
+
+  # Reference-data tilesets — one PMTiles per dataset.
+  # Path matcher restricts public serving to *.pmtiles. Sidecar GeoJSON
+  # files alongside in the same release directory are NOT exposed (they're
+  # consumed only by the server-side spatial index). See ADR 0021.
+  @reference_pmtiles {
+    path_regexp refpm ^/map/datasets/([^/]+)/current/([^/]+)\.pmtiles$
+  }
+  handle @reference_pmtiles {
+    root * /opt/leitbild/reference/releases
+    rewrite * /{re.refpm.1}/current/{re.refpm.2}.pmtiles
+    header Content-Type application/vnd.pmtiles
+    file_server
+  }
+
+  reverse_proxy 127.0.0.1:4177
+}

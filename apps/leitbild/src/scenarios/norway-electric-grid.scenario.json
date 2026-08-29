@@ -1,0 +1,139 @@
+{
+  "id": "norway-electric-grid",
+  "schemaVersion": 1,
+  "title": "Norway electric-grid operations",
+  "description": "A source-derived Norway electric-grid demonstration using real OSM/NVE reference topology for the operational grid arena, with hydro generation, consumer zones, frequency/voltage dynamics, branch loading, storage, EV charging, and load-shedding behavior.",
+  "packs": [
+    "electric-grid"
+  ],
+  "runtimeOverrides": {},
+  "world": {
+    "startsAt": "2026-01-01T10:00:00.000Z",
+    "mapCenter": [
+      10.5,
+      62.4
+    ],
+    "environment": {
+      "city": "Norway",
+      "mode": "electric-grid-demo"
+    }
+  },
+  "objects": [
+    {
+      "pack": "electric-grid",
+      "type": "regional_grid",
+      "id": "grid:source-derived-norway-arena",
+      "label": "Source-derived Norway grid arena",
+      "position": [
+        15.5,
+        64.7
+      ],
+      "arenaId": "source-derived-norway-grid",
+      "provenance": {
+        "method": "converted",
+        "sourceId": "source-derived-norway-grid-arena-v1",
+        "confidence": "medium"
+      }
+    }
+  ],
+  "initialContexts": [],
+  "runtimeConfigs": {
+    "electric-grid": {
+      "topology": {
+        "kind": "built-in",
+        "arenaId": "source-derived-norway-grid"
+      }
+    }
+  },
+  "surface": {
+    "schemaVersion": 1,
+    "regions": [
+      {
+        "id": "main-map",
+        "primitive": "map",
+        "visible": true,
+        "config": {
+          "center": [
+            10.5,
+            62.4
+          ],
+          "zoom": 5,
+          "layers": [
+            "objects",
+            "grid",
+            "highlights"
+          ]
+        }
+      },
+      {
+        "id": "left-rail",
+        "primitive": "objectRail",
+        "visible": true,
+        "config": {
+          "width": 330,
+          "sections": [
+            {
+              "categoryId": "grid-system",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-generation",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-consumers",
+              "collapsed": false
+            },
+            {
+              "categoryId": "grid-branches",
+              "collapsed": true
+            },
+            {
+              "categoryId": "grid-substations",
+              "collapsed": true
+            }
+          ]
+        }
+      },
+      {
+        "id": "system-footer",
+        "primitive": "systemFooter",
+        "visible": true,
+        "config": {}
+      },
+      {
+        "id": "guidance-overlay",
+        "primitive": "guidanceOverlay",
+        "visible": true,
+        "config": {}
+      }
+    ]
+  },
+  "script": {
+    "steps": [
+      {
+        "id": "grid-intro-guidance",
+        "at": {
+          "kind": "after_scenario_start",
+          "seconds": 1
+        },
+        "title": "Grid operations intro",
+        "actions": [
+          {
+            "type": "show_guidance",
+            "guidance": {
+              "id": "grid-intro",
+              "title": "Norway electric-grid operations",
+              "message": "Monitor frequency, branch loading, voltage health, generation dispatch, consumer supply, and EV charging. Select generators, lines, or loads in the rail to exercise accepted grid commands.",
+              "objectIds": [
+                "grid:norway-system"
+              ],
+              "dismissible": true,
+              "tone": "default"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
