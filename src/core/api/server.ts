@@ -41,6 +41,7 @@ const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 interface ServerConfig {
   readonly registry: ControlInstanceRegistry
   readonly port?: number
+  readonly bindHost?: string
   readonly uiDistPath?: string
   readonly mapArtifacts?: MapArtifactConfig
 }
@@ -210,6 +211,7 @@ export const handleDiscoveryRoute = async (req: Request, url: URL): Promise<Resp
 
 export const createServer = (config: ServerConfig): { readonly stop: () => void; readonly port: number } => {
   const port = config.port ?? Number(process.env.PORT ?? 3000)
+  const bindHost = config.bindHost ?? process.env.LEITBILD_BIND_HOST ?? '0.0.0.0'
   const uiDistPath = resolve(config.uiDistPath ?? `${import.meta.dir}/../../ui/dist`)
   const mapArtifacts = config.mapArtifacts ?? createMapArtifactConfigFromEnv()
   const realtime = createControlInstanceRealtimeManager<ServerWebSocket<WSData>>({
@@ -326,6 +328,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
 
   const server = Bun.serve<WSData>({
     port,
+    hostname: bindHost,
     async fetch(req, serverApi) {
       const secure = (response: Response): Response => withSecurityHeaders(response)
       const url = new URL(req.url)

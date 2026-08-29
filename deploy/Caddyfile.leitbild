@@ -1,4 +1,14 @@
 leitbild.samsinn.app {
+  encode zstd gzip
+
+  header {
+    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    -Server
+  }
+
   handle /map/tiles/current.pmtiles {
     root * /opt/leitbild/maps/current
     rewrite * /norway.pmtiles
