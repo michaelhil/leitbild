@@ -2,6 +2,8 @@
 Description=Samsinn/Leitbild Workspace Host
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -14,7 +16,10 @@ Environment=WORKSPACE_HOST_HOME=/var/lib/workspace-host
 EnvironmentFile=/etc/workspace-host/env
 ExecStart=/opt/workspace-platform/runtime/bun run src/index.ts
 Restart=on-failure
-RestartSec=5
+RestartSec=5s
+MemoryMax=256M
+CPUQuota=50%
+LimitNOFILE=4096
 UMask=0077
 
 NoNewPrivileges=true

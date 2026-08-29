@@ -10,7 +10,8 @@
     "dev": "bun run build:ui && bun --watch src/index.ts",
     "build:ui": "vite build",
     "check": "tsc --noEmit && vite build",
-    "test": "bun run build:ui && bun test"
+    "test": "bun run build:ui && bun test",
+    "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
     "@samsinn-leitbild/platform-contracts": "workspace:*",
