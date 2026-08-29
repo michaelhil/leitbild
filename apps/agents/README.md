@@ -62,10 +62,10 @@ Module discovery and lifecycle are available at:
 
 ```text
 GET /.well-known/workspace-module
-PUT|DELETE /internal/agents/workspaces/{workspaceId}
-GET /internal/agents/workspaces/{workspaceId}/resources
-GET /internal/agents/workspaces/{workspaceId}/capabilities
-POST /internal/agents/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke
+PUT|DELETE /internal/workspaces/{workspaceId}
+GET /internal/workspaces/{workspaceId}/resources
+GET /internal/workspaces/{workspaceId}/capabilities
+POST /internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke
 ```
 
 Deployment resources are intentionally unscoped:

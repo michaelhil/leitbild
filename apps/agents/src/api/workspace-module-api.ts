@@ -21,10 +21,10 @@ export const agentsModuleManifest = workspaceModuleManifestSchema.parse({
     description: 'Rooms, messages, coordination, AI Agent profiles, model execution, tools, context, and evaluations.',
   },
   endpoints: {
-    workspace: '/internal/agents/workspaces/{workspaceId}',
-    resources: '/internal/agents/workspaces/{workspaceId}/resources',
-    capabilities: '/internal/agents/workspaces/{workspaceId}/capabilities',
-    invoke: '/internal/agents/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
+    workspace: '/internal/workspaces/{workspaceId}',
+    resources: '/internal/workspaces/{workspaceId}/resources',
+    capabilities: '/internal/workspaces/{workspaceId}/capabilities',
+    invoke: '/internal/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke',
   },
   ui: { workspace: '/workspaces/{workspaceId}/agents' },
 })
@@ -231,7 +231,7 @@ export const handleAgentsModuleApi = async (
   try {
     if (url.pathname === '/.well-known/workspace-module' && request.method === 'GET') return json(agentsModuleManifest)
 
-    const match = url.pathname.match(/^\/internal\/agents\/workspaces\/([^/]+)(?:\/(resources|capabilities)|\/capabilities\/([^/]+)\/invoke)?$/)
+    const match = url.pathname.match(/^\/internal\/workspaces\/([^/]+)(?:\/(resources|capabilities)|\/capabilities\/([^/]+)\/invoke)?$/)
     if (!match) return null
     const workspaceId = workspaceIdSchema.parse(decodeURIComponent(match[1] ?? ''))
     const collection = match[2]

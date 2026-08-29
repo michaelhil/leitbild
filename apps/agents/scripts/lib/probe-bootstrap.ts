@@ -68,7 +68,7 @@ export const bootstrapProbe = async (opts: BootstrapOptions): Promise<ProbeConte
 
   if (target === 'fresh') {
     const workspaceId = crypto.randomUUID()
-    const provision = await fetch(`${baseUrl}/internal/agents/workspaces/${workspaceId}`, {
+    const provision = await fetch(`${baseUrl}/internal/workspaces/${workspaceId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspaceId }),

@@ -81,18 +81,18 @@ describe('Agents Workspace Module API', () => {
 
   test('provisions and discovers Rooms and Agent Profiles through one Module', async () => {
     const workspaceId = newWorkspaceId()
-    expect((await request('PUT', `/internal/agents/workspaces/${workspaceId}`, { workspaceId })).status).toBe(201)
+    expect((await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })).status).toBe(201)
 
     const capabilities = moduleCapabilityCollectionSchema.parse(
-      await (await request('GET', `/internal/agents/workspaces/${workspaceId}/capabilities`)).json(),
+      await (await request('GET', `/internal/workspaces/${workspaceId}/capabilities`)).json(),
     )
     expect(capabilities.capabilities.every(capability => capability.id.startsWith('agents.'))).toBe(true)
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.room.create')
     expect(capabilities.capabilities.map(capability => String(capability.id))).toContain('agents.agent.create')
 
-    expect((await request('POST', `/internal/agents/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`,
+    expect((await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.room.create/invoke`,
       invokeBody(workspaceId, 'agents.room.create', { name: 'Operations' }))).status).toBe(201)
-    const createAgent = await request('POST', `/internal/agents/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`,
+    const createAgent = await request('POST', `/internal/workspaces/${workspaceId}/capabilities/agents.agent.create/invoke`,
       invokeBody(workspaceId, 'agents.agent.create', {
         name: 'Analyst', model: 'test-model', persona: 'Analyse.',
         toolGrants: [{ capabilityId: 'world.simulation-run.read' }],
@@ -101,14 +101,14 @@ describe('Agents Workspace Module API', () => {
     const agentId = (await createAgent.json() as { result: { id: string } }).result.id
 
     const resources = moduleResourceCollectionSchema.parse(
-      await (await request('GET', `/internal/agents/workspaces/${workspaceId}/resources`)).json(),
+      await (await request('GET', `/internal/workspaces/${workspaceId}/resources`)).json(),
     )
     expect(resources.resources.map(resource => resource.title)).toEqual(['Operations', 'Analyst'])
     expect(resources.resources.map(resource => String(resource.ref.type))).toEqual(['agents.room', 'agents.agent'])
 
     const agentProfile = await request(
       'POST',
-      `/internal/agents/workspaces/${workspaceId}/capabilities/agents.agent.read/invoke`,
+      `/internal/workspaces/${workspaceId}/capabilities/agents.agent.read/invoke`,
       invokeBody(workspaceId, 'agents.agent.read', {}, { type: 'agents.agent', id: agentId }),
     )
     expect((await agentProfile.json() as {
@@ -118,8 +118,8 @@ describe('Agents Workspace Module API', () => {
 
   test('removing Agents removes the complete Module', async () => {
     const workspaceId = newWorkspaceId()
-    await request('PUT', `/internal/agents/workspaces/${workspaceId}`, { workspaceId })
-    expect((await request('DELETE', `/internal/agents/workspaces/${workspaceId}`)).status).toBe(204)
-    expect((await request('GET', `/internal/agents/workspaces/${workspaceId}/resources`)).status).toBe(404)
+    await request('PUT', `/internal/workspaces/${workspaceId}`, { workspaceId })
+    expect((await request('DELETE', `/internal/workspaces/${workspaceId}`)).status).toBe(204)
+    expect((await request('GET', `/internal/workspaces/${workspaceId}/resources`)).status).toBe(404)
   })
 })
