@@ -2,9 +2,9 @@
 
 ## Decision
 
-The experimental Workspace Host has no material control-plane performance regression that blocks the rewrite. On the first repeatable local run it started and created Workspaces faster than the old Suite. Workspace listing was slower, but remained sub-millisecond on average while returning a progressively growing set of up to 75 Workspaces.
+The completed experimental Workspace Host has no material control-plane performance regression that blocks the rewrite. In the repeatable post-rewrite run it started and created Workspaces materially faster than the old Suite. Workspace listing was slightly slower, but remained sub-millisecond while returning a progressively growing set of up to 75 Workspaces.
 
-This is a narrow regression test, not a production capacity claim. The architecture must still pass the behavioral scenarios in the implementation plan, especially dynamic Agent discovery and the standalone/combined Experience distributions.
+This is a narrow regression test, not a production capacity claim. Dynamic Agent discovery and the standalone/combined Experience topology are covered by the real-Module integration and local browser acceptance tests rather than this control-plane microbenchmark.
 
 ## Reproduction
 
@@ -21,7 +21,7 @@ The script creates a detached temporary worktree for the fixed baseline, install
 | Build | Git revision | Persistence |
 | --- | --- | --- |
 | Old Suite baseline | `d2125236f0bf6882b4e295b254201dd58806271d` | JSON file |
-| Experimental Workspace Host | `0f1f04c0b4089a3005f6be6ca91977626583265e` | SQLite |
+| Experimental Workspace Host | `53885a6560b42806810e0ed82be2cc28a5aa9651` | SQLite |
 
 Environment: Apple M2, arm64 macOS/Darwin 25.3.0, Bun 1.4.0. Measurements were taken over loopback on 2026-08-29 with no Modules configured, isolating the Workspace control plane.
 
@@ -29,13 +29,13 @@ Environment: Apple M2, arm64 macOS/Darwin 25.3.0, Bun 1.4.0. Measurements were t
 
 | Metric | Old Suite | Workspace Host | Observation |
 | --- | ---: | ---: | --- |
-| Startup to healthy | 72.16 ms | 43.16 ms | Host 40% faster |
-| Create mean | 1.225 ms | 0.809 ms | Host 34% faster |
-| Create p50 | 0.950 ms | 0.498 ms | Host 48% faster |
-| Create p95 | 2.176 ms | 1.037 ms | Host 52% faster |
-| List mean | 0.223 ms | 0.629 ms | Host 0.406 ms slower |
-| List p50 | 0.165 ms | 0.460 ms | Host 0.295 ms slower |
-| List p95 | 0.423 ms | 1.665 ms | Host 1.243 ms slower |
+| Startup to healthy | 74.38 ms | 43.57 ms | Host 41% faster |
+| Create mean | 1.476 ms | 0.442 ms | Host 70% faster |
+| Create p50 | 0.993 ms | 0.399 ms | Host 60% faster |
+| Create p95 | 1.849 ms | 0.485 ms | Host 74% faster |
+| List mean | 0.261 ms | 0.383 ms | Host 0.122 ms slower |
+| List p50 | 0.174 ms | 0.385 ms | Host 0.211 ms slower |
+| List p95 | 0.495 ms | 0.568 ms | Host 0.073 ms slower |
 | Persisted file after 75 creates | 16,237 bytes | 28,672 bytes | SQLite has fixed page overhead |
 
 ## Interpretation and limits
