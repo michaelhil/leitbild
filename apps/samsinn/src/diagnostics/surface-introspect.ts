@@ -8,7 +8,7 @@
 // leaf (no diagnostic-shaped state seeping in).
 
 import type { ToolDefinition } from '../core/types/tool.ts'
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import { createToolSurface, inferProviderFromModelRef, type GetRoomActivation } from '../tool-surface/index.ts'
 import { packNameFor } from '../core/types/tool-pack.ts'
@@ -55,7 +55,7 @@ export interface AgentSurface {
 }
 
 export const introspectAgentSurface = (
-  system: System,
+  system: SamsinnWorkspaceRuntime,
   agentName: string,
   roomId: string,
 ): AgentSurface | { error: string } => {

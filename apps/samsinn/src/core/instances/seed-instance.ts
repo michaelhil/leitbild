@@ -13,15 +13,15 @@
 // the snapshot stable across "no key → key added" transitions.
 // ============================================================================
 
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import { resolveDefaultModel, type ProviderSnapshot } from '../../llm/models/default-resolver.ts'
 import { CURATED_MODELS, DEFAULT_MODEL_ID } from '../../llm/models/catalog.ts'
 
-// Build a minimal ProviderSnapshot[] from live System state. Mirrors the
+// Build a minimal ProviderSnapshot[] from live SamsinnWorkspaceRuntime state. Mirrors the
 // subset of /api/routes/house.ts:/api/models that resolveDefaultModel needs.
 // No /api/models HTTP call — that would self-trigger before the server has
 // bound a port.
-const buildProviderSnapshots = (system: System): ReadonlyArray<ProviderSnapshot> => {
+const buildProviderSnapshots = (system: SamsinnWorkspaceRuntime): ReadonlyArray<ProviderSnapshot> => {
   const out: ProviderSnapshot[] = []
   const monitor = system.llm.getMonitorSnapshot()
   for (const name of system.providerConfig.order) {
@@ -63,7 +63,7 @@ const buildProviderSnapshots = (system: System): ReadonlyArray<ProviderSnapshot>
   return out
 }
 
-export const seedInstance = async (system: System): Promise<void> => {
+export const seedInstance = async (system: SamsinnWorkspaceRuntime): Promise<void> => {
   // Idempotency: if a Cafe already exists (e.g. re-seed call), bail.
   const existing = system.house.listAllRooms().some(p => p.name === 'Cafe')
   if (existing) return

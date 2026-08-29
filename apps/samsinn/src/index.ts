@@ -47,9 +47,9 @@ export { createListRoomsTool, createGetTimeTool } from './tools/built-in/index.t
 // LLM providers
 export { createOllamaProvider } from './llm/ollama.ts'
 
-// System + Server
-export { createSystem } from './main.ts'
-export type { System } from './main.ts'
+// SamsinnWorkspaceRuntime + Server
+export { createSamsinnWorkspaceRuntime } from './main.ts'
+export type { SamsinnWorkspaceRuntime } from './main.ts'
 export { createServer } from './api/server.ts'
 
 // MCP Server

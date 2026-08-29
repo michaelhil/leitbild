@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { System } from '../../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../../main.ts'
 import type { ToolContext } from '../../../core/types/tool.ts'
 import {
   createListRoomsTool,
@@ -19,7 +19,7 @@ const dummyContext: ToolContext = {
   callerName: 'mcp-client',
 }
 
-export const registerRoomTools = (mcpServer: McpServer, system: System): void => {
+export const registerRoomTools = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
   const listRooms = createListRoomsTool(system.house)
   mcpServer.tool(
     listRooms.name,

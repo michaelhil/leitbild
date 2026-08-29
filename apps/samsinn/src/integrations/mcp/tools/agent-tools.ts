@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { System } from '../../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../../main.ts'
 import type { AIAgent } from '../../../core/types/agent.ts'
 import type { ToolContext } from '../../../core/types/tool.ts'
 import { asAIAgent } from '../../../agents/shared.ts'
@@ -12,7 +12,7 @@ const dummyContext: ToolContext = {
   callerName: 'mcp-client',
 }
 
-export const registerAgentTools = (mcpServer: McpServer, system: System): void => {
+export const registerAgentTools = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
   const listAgents = createListAgentsTool(system.team)
   mcpServer.tool(
     listAgents.name,
@@ -52,7 +52,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: System): void =
   // Per-section prompt toggles. UI label → key mapping (for spec authors):
   //   "Agent persona"   → persona
   //   "Room prompt"     → room
-  //   "System prompt"   → house   (the global housePrompt, NOT the LLM role:'system')
+  //   "SamsinnWorkspaceRuntime prompt"   → house   (the global housePrompt, NOT the LLM role:'system')
   //   "Response format" → responseFormat
   //   "Skills"          → skills
   const includePromptsShape = z.object({
@@ -71,7 +71,7 @@ export const registerAgentTools = (mcpServer: McpServer, system: System): void =
 
   mcpServer.tool(
     'create_agent',
-    'Create a new AI agent (not added to any room by default). Every optional field maps 1:1 to AIAgentConfig — see src/core/types/agent.ts. `includePrompts` uses keys (persona/room/house/responseFormat/skills); UI labels map as: "System prompt" = house, "Agent persona" = persona, "Room prompt" = room, "Skills" = skills, "Response format" = responseFormat.',
+    'Create a new AI agent (not added to any room by default). Every optional field maps 1:1 to AIAgentConfig — see src/core/types/agent.ts. `includePrompts` uses keys (persona/room/house/responseFormat/skills); UI labels map as: "SamsinnWorkspaceRuntime prompt" = house, "Agent persona" = persona, "Room prompt" = room, "Skills" = skills, "Response format" = responseFormat.',
     {
       name: z.string().describe('Agent name'),
       model: z.string().describe('Model ID. Cloud models are provider-prefixed: "anthropic:claude-haiku-4-5", "gemini:gemini-2.5-flash", "groq:llama-3.3-70b-versatile", etc. Ollama models are bare: "llama3.2" or "qwen2.5:14b". Call GET /api/models for the live list.'),

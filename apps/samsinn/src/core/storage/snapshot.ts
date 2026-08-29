@@ -535,7 +535,7 @@ export interface AutoSaver {
 const MAX_DEFER_MS = 30_000
 
 // Backoff schedule for transient save failures. Mirrors the eviction-flush
-// retry policy in system-registry.ts so the same disk-full / perm-flip
+// retry policy in runtime-registry.ts so the same disk-full / perm-flip
 // scenario is handled identically by the background path. Total wait if all
 // three retries are needed: ~80s before the next mutation re-arms the timer.
 const SAVE_RETRY_BACKOFF_MS: ReadonlyArray<number> = [5_000, 15_000, 60_000]
@@ -573,7 +573,7 @@ export const createAutoSaver = (
         return
       }
       // Bounded retry on transient errors (disk full, perm flip, etc.).
-      // Same policy as eviction flush — see system-registry.ts:329.
+      // Same policy as eviction flush — see runtime-registry.ts:329.
       let lastErr: unknown = null
       for (let attempt = 0; attempt <= SAVE_RETRY_BACKOFF_MS.length; attempt++) {
         try {

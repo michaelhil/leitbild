@@ -13,7 +13,7 @@
 // queue (Promise<void> chain) prevents whisper races.
 // ============================================================================
 
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { Script, ScriptRun, WhisperRecord, StepLog, DialogueEntry, CastMember } from '../types/script.ts'
 import type { Message, DeliveryMode } from '../types/messaging.ts'
 import type { AIAgentConfig } from '../types/agent.ts'
@@ -59,7 +59,7 @@ export type ScriptEventEmitter = (
 ) => void
 
 export interface ScriptRunnerDeps {
-  readonly getSystem: () => System
+  readonly getSystem: () => SamsinnWorkspaceRuntime
   readonly emit?: ScriptEventEmitter
 }
 

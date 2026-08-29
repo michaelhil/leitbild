@@ -269,7 +269,7 @@ export const systemRoutes: RouteEntry[] = [
         // The instance directory was moved to .trash. The browser keeps
         // the same cookie; on reconnect, registry.getOrLoad creates a
         // fresh empty House under the same id. WS connections were closed
-        // by the onSystemEvicted hook.
+        // by the onWorkspaceRuntimeEvicted hook.
         sendToInstance({ type: 'reset_committed', oldId: id, newId: result.instanceId })
         resetTimers.delete(id)
       }, RESET_COUNTDOWN_MS)
@@ -284,7 +284,7 @@ export const systemRoutes: RouteEntry[] = [
     // Per-instance evict — drops the cookie's System from memory, leaves
     // the snapshot on disk. Distinct from /reset (which trashes the dir).
     // No countdown, no broadcast: the WS close on the cookie's session
-    // (handled by onSystemEvicted) is the user-visible signal, identical
+    // (handled by onWorkspaceRuntimeEvicted) is the user-visible signal, identical
     // to the idle-evict path. Cookie-only auth, mirroring /reset.
     method: 'POST',
     pattern: /^\/api\/system\/evict$/,

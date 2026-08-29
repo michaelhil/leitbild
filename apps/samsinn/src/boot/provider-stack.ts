@@ -1,15 +1,15 @@
 // ============================================================================
 // Provider stack construction — the wiring that bit us three times after
 // the wiki commit. Extracted from bootstrap.ts so the dependency order
-// (load store → providerKeys → providerSetup → SharedRuntime) lives in one
+// (load store → providerKeys → providerSetup → DeploymentRuntime) lives in one
 // place and the contract between steps is visible.
 //
-// Returns the SharedRuntime + the providerKeys reference (callers may need
+// Returns the DeploymentRuntime + the providerKeys reference (callers may need
 // it for live key edits in the providers admin endpoint).
 // ============================================================================
 
 import { sharedPaths } from '../core/paths.ts'
-import { createSharedRuntime, type SharedRuntime } from '../core/shared-runtime.ts'
+import { createDeploymentRuntime, type DeploymentRuntime } from '../core/deployment-runtime.ts'
 import { createLimitMetrics, type LimitMetrics } from '../core/limit-metrics.ts'
 import { initInstanceLimiter } from '../api/routes/instances.ts'
 import { parseProviderConfig, summariseProviderConfig, type ProviderConfig } from '../llm/providers-config.ts'
@@ -21,7 +21,7 @@ export interface ProviderStack {
   readonly providerConfig: ProviderConfig
   readonly providerKeys: ProviderKeys
   readonly limitMetrics: LimitMetrics
-  readonly shared: SharedRuntime
+  readonly deployment: DeploymentRuntime
 }
 
 export const buildProviderStack = async (): Promise<ProviderStack> => {
@@ -35,7 +35,7 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
   const providerConfig = parseProviderConfig({ fileStore })
 
   // 3. Construct limitMetrics first so the same instance flows into the
-  // cloud-provider adapters (SSE-overflow tracking) AND SharedRuntime.
+  // cloud-provider adapters (SSE-overflow tracking) AND DeploymentRuntime.
   const limitMetrics = createLimitMetrics()
 
   // 4. Build providerKeys BEFORE providerSetup. The router's
@@ -51,17 +51,17 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
   // 5. Build providerSetup (gateways + router) using the keys we just made.
   const providerSetup = buildProvidersFromConfig(providerConfig, { limitMetrics, providerKeys })
 
-  // 6. Construct SharedRuntime — same providerKeys, same limitMetrics, same
+  // 6. Construct DeploymentRuntime — same providerKeys, same limitMetrics, same
   // setup. Single source for live key edits.
-  const shared = createSharedRuntime({ providerConfig, providerSetup, limitMetrics, providerKeys })
+  const deployment = createDeploymentRuntime({ providerConfig, providerSetup, limitMetrics, providerKeys })
 
   // 7. Wire the instance-create rate-limiter with the global metrics handle
   // so LRU evictions are counted. Idempotent — safe if called more than
   // once. Bug + auth limiters are scoped per-route-file and don't need
   // metrics wiring (per-IP eviction is rare for those endpoints).
-  initInstanceLimiter(shared.limitMetrics)
+  initInstanceLimiter(deployment.limitMetrics)
 
-  return { providerConfig, providerKeys, limitMetrics, shared }
+  return { providerConfig, providerKeys, limitMetrics, deployment }
 }
 
 export const summariseProviders = (config: ProviderConfig): string =>

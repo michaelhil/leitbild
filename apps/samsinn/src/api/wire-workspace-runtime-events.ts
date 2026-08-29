@@ -1,10 +1,10 @@
 // ============================================================================
-// wireSystemEvents — single source of truth for connecting a System's
+// wireWorkspaceRuntimeEvents — single source of truth for connecting a SamsinnWorkspaceRuntime's
 // per-tenant event slots to the WS broadcast layer + the autosaver.
 //
 // Lives at the boundary between the multi-tenant registry and the WS
-// transport. Called once per System (at construction time today; per
-// `onSystemCreated` hook of SystemRegistry once Phase F4 lands).
+// transport. Called once per SamsinnWorkspaceRuntime (at construction time today; per
+// `onWorkspaceRuntimeCreated` hook of WorkspaceRuntimeRegistry once Phase F4 lands).
 //
 // What it wires:
 //   - 25 system callback slots that previously lived in server.ts and
@@ -16,11 +16,11 @@
 //   - Keeps server.ts a pure HTTP/WS transport orchestrator.
 //   - Keeps ws-handler.ts focused on connection state + buildSnapshot.
 //   - Single edit site when adding a new system event kind.
-//   - Phase F4 hooks this into registry.onSystemCreated so each lazy-
-//     loaded System gets the same wiring without ad-hoc setup code.
+//   - Phase F4 hooks this into registry.onWorkspaceRuntimeCreated so each lazy-
+//     loaded SamsinnWorkspaceRuntime gets the same wiring without ad-hoc setup code.
 // ============================================================================
 
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { AutoSaver } from '../core/storage/snapshot.ts'
 import type { WSManager } from './ws-handler.ts'
 import { asAIAgent } from '../agents/shared.ts'
@@ -32,8 +32,8 @@ type PromptContextSnapshot = {
   readonly toolCount: number
 }
 
-export const wireSystemEvents = (
-  system: System,
+export const wireWorkspaceRuntimeEvents = (
+  system: SamsinnWorkspaceRuntime,
   wsManager: WSManager,
   autoSaver: AutoSaver,
   instanceId: string,
@@ -192,7 +192,7 @@ export const wireSystemEvents = (
   // === Provider routing events → toasts ===
   // The shared router fires routing events with an agentId; the registry's
   // reverse index resolves agentId → instanceId in setProviderEventDispatcher,
-  // and the per-instance System's late-bound setOnProvider* slots receive
+  // and the per-instance SamsinnWorkspaceRuntime's late-bound setOnProvider* slots receive
   // them and re-broadcast scoped to the originating instance.
 
   system.setOnProviderBound((agentId, model, oldProvider, newProvider) => {
@@ -271,7 +271,7 @@ export const wireSystemEvents = (
   })
 
   // === Ollama gateway health (shared across instances; broadcast unscoped) ===
-  // Note: ollama gateway is a shared resource (created in SharedRuntime once).
+  // Note: ollama gateway is a shared resource (created in DeploymentRuntime once).
   // Health changes go to ALL connected clients regardless of instance —
   // that matches the underlying state (one gateway, one health value).
   system.ollama?.onHealthChange((health) => {
@@ -279,12 +279,12 @@ export const wireSystemEvents = (
   })
 
   // === Snapshot-restored agents: subscribe at wire time ===
-  // Covers ONE specific path: agents already present when wireSystemEvents
+  // Covers ONE specific path: agents already present when wireWorkspaceRuntimeEvents
   // runs. Today that's exclusively snapshot-restored agents — restoreFrom
-  // Snapshot runs in buildSystem BEFORE onSystemCreated (system-registry.ts:
-  // 192-203), so by the time wireSystemEvents fires, the snapshot's agents
+  // Snapshot runs in buildWorkspaceRuntime BEFORE onWorkspaceRuntimeCreated (runtime-registry.ts:
+  // 192-203), so by the time wireWorkspaceRuntimeEvents fires, the snapshot's agents
   // exist on system.team but bypassed the wireAgentTracking spawn-wrapper
-  // (which is installed by onSystemCreated, also AFTER restore).
+  // (which is installed by onWorkspaceRuntimeCreated, also AFTER restore).
   //
   // Future spawns (seed, REST, WS, script-engine, anything programmatic)
   // are covered by wireAgentTracking's spawnAIAgent wrapper. Do NOT add

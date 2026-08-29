@@ -1,4 +1,4 @@
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { ClientSession, WSManager, WSConnection } from '../ws-handler.ts'
 import type { WSInbound, WSOutbound } from '../../core/types/ws-protocol.ts'
 
@@ -8,7 +8,7 @@ export interface CommandContext {
   // close on overflow). Bun's ServerWebSocket satisfies this shape.
   readonly ws: WSConnection
   readonly session: ClientSession
-  readonly system: System
+  readonly system: SamsinnWorkspaceRuntime
   readonly broadcast: (msg: WSOutbound) => void
   readonly wsManager: WSManager
   // Process-level Leitbild mirror. Optional so test helpers that build
@@ -25,13 +25,13 @@ export const sendError = (wsManager: WSManager, ws: WSConnection, message: strin
   wsManager.safeSend(ws, JSON.stringify({ type: 'error', message } satisfies WSOutbound))
 }
 
-export const requireRoom = (wsManager: WSManager, ws: WSConnection, system: System, roomName: string): ReturnType<typeof system.house.getRoom> => {
+export const requireRoom = (wsManager: WSManager, ws: WSConnection, system: SamsinnWorkspaceRuntime, roomName: string): ReturnType<typeof system.house.getRoom> => {
   const room = system.house.getRoom(roomName)
   if (!room) sendError(wsManager, ws, `Room "${roomName}" not found`)
   return room
 }
 
-export const requireAgent = (wsManager: WSManager, ws: WSConnection, system: System, agentName: string): ReturnType<typeof system.team.getAgent> => {
+export const requireAgent = (wsManager: WSManager, ws: WSConnection, system: SamsinnWorkspaceRuntime, agentName: string): ReturnType<typeof system.team.getAgent> => {
   const agent = system.team.getAgent(agentName)
   if (!agent) sendError(wsManager, ws, `Agent "${agentName}" not found`)
   return agent

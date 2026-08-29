@@ -26,7 +26,7 @@ const FAST_MODEL = 'llama3.2:latest'
 
 // === Test system factory ===
 
-const createSystem = () => {
+const createTestSystem = () => {
   const team = createTeam()
   const deliver = (agentId: string, message: Message) => {
     team.getAgent(agentId)?.receive(message)
@@ -75,7 +75,7 @@ const makePassProvider = (reason = 'not relevant') =>
 
 describe('Integration — Full message lifecycle', () => {
   test('room message → AI agent → response delivered to room members', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     // Set up human observer
     const humanInbox: Message[] = []
@@ -128,7 +128,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('AI agent passes — no message delivered', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     const humanInbox: Message[] = []
     const human = createHumanAgent({ name: 'Alice' }, (msg) => { humanInbox.push(msg) })
@@ -157,7 +157,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('multiple messages during generation — re-evaluation sees all', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     const capturedContexts: Array<ReadonlyArray<{ role: string; content: string }>> = []
     let callCount = 0
@@ -217,7 +217,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('agent sees own response in re-evaluation context', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     let callCount = 0
     const capturedContexts: Array<ReadonlyArray<{ role: string; content: string }>> = []
@@ -274,7 +274,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('two AI agents converse in the same room', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     // Agent A always responds
     const providerA = makeRespondProvider('Agent A says hi!')
@@ -339,7 +339,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('join generates summary and includes it as [NEW] in first context', async () => {
-    const { house, team, routeMessage } = createSystem()
+    const { house, team, routeMessage } = createTestSystem()
 
     const room = house.createRoom({ name: 'Active',  createdBy: SYSTEM_SENDER_ID })
 
@@ -391,7 +391,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('pass flushes to history — second eval sees prior message as context not [NEW]', async () => {
-    const { house, team, routeMessage } = createSystem()
+    const { house, team, routeMessage } = createTestSystem()
 
     const room = house.createRoom({ name: 'History', createdBy: SYSTEM_SENDER_ID })
 
@@ -440,7 +440,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('concurrent rooms — each room has independent context', async () => {
-    const { house, team, routeMessage } = createSystem()
+    const { house, team, routeMessage } = createTestSystem()
 
     const room1 = house.createRoom({ name: 'Room-1',  createdBy: SYSTEM_SENDER_ID })
     const room2 = house.createRoom({ name: 'Room-2',  createdBy: SYSTEM_SENDER_ID })
@@ -497,7 +497,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('system and join messages are not shown to LLM as user messages', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     let capturedMessages: ReadonlyArray<{ role: string; content: string }> = []
     const provider: LLMProvider = {
@@ -532,7 +532,7 @@ describe('Integration — Full message lifecycle', () => {
   })
 
   test('agent state transitions — generating and idle — are reported', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     const states: Array<{ state: string; context?: string }> = []
     let resolveChat: (() => void) | null = null
@@ -580,7 +580,7 @@ describe('Integration — Full message lifecycle', () => {
 
 describe('Integration — spawnAIAgent full wiring', () => {
   test('spawnAIAgent wires onDecision to routeMessage automatically', async () => {
-    const { house, team, intro, routeMessage } = createSystem()
+    const { house, team, intro, routeMessage } = createTestSystem()
 
     const humanInbox: Message[] = []
     const human = createHumanAgent({ name: 'Alice' }, (msg) => { humanInbox.push(msg) })
@@ -611,7 +611,7 @@ describe('Integration — spawnAIAgent full wiring', () => {
   })
 
   test('spawnAIAgent does NOT auto-join rooms — must be added explicitly', async () => {
-    const { house, team, intro, routeMessage } = createSystem()
+    const { house, team, intro, routeMessage } = createTestSystem()
 
     const provider = makePassProvider()
     const agent = await spawnAIAgent(
@@ -634,7 +634,7 @@ describe('Integration — spawnAIAgent full wiring', () => {
   })
 
   test('spawnAIAgent with tools — tool calls are executed', async () => {
-    const { house, team, intro, routeMessage } = createSystem()
+    const { house, team, intro, routeMessage } = createTestSystem()
     const toolRegistry = createToolRegistry()
     toolRegistry.register(createGetTimeTool())
 
@@ -687,7 +687,7 @@ describe('Integration — spawnAIAgent full wiring', () => {
   })
 
   test('addAgentToRoom posts join message with metadata', async () => {
-    const { house, team, routeMessage } = createSystem()
+    const { house, team, routeMessage } = createTestSystem()
 
     const room = house.createRoom({ name: 'NewRoom',  createdBy: SYSTEM_SENDER_ID })
 
@@ -718,7 +718,7 @@ describe('Integration — spawnAIAgent full wiring', () => {
 
 describe('Integration — Room + Team + routeMessage', () => {
   test('human agent receives messages from room', async () => {
-    const { team, intro, routeMessage } = createSystem()
+    const { team, intro, routeMessage } = createTestSystem()
 
     const aliceInbox: Message[] = []
     const alice = createHumanAgent(
@@ -746,7 +746,7 @@ describe('Integration — Room + Team + routeMessage', () => {
   })
 
   test('routeMessage stamps roomId on room messages', () => {
-    const { house, routeMessage } = createSystem()
+    const { house, routeMessage } = createTestSystem()
     const specific = house.createRoom({ name: 'Specific',  createdBy: 'test' })
 
     const msgs = routeMessage({ rooms: [specific.profile.id] }, { senderId: 'test', content: 'Hello', type: 'chat' })
@@ -755,7 +755,7 @@ describe('Integration — Room + Team + routeMessage', () => {
   })
 
   test('correlationId shared across multi-room delivery', () => {
-    const { house, routeMessage } = createSystem()
+    const { house, routeMessage } = createTestSystem()
 
     const room1 = house.createRoom({ name: 'Alpha', createdBy: 'test' })
     const room2 = house.createRoom({ name: 'Beta', createdBy: 'test' })
@@ -773,7 +773,7 @@ describe('Integration — Room + Team + routeMessage', () => {
   })
 
   test('multiple rooms operate independently with team delivery', async () => {
-    const { house, team, routeMessage } = createSystem()
+    const { house, team, routeMessage } = createTestSystem()
 
     const room1 = house.createRoom({ name: 'Room 1',  createdBy: 'test' })
     const room2 = house.createRoom({ name: 'Room 2',  createdBy: 'test' })
@@ -801,7 +801,7 @@ describe('Integration — Room + Team + routeMessage', () => {
   })
 
   test('findByName resolves rooms and agents', () => {
-    const { house, team } = createSystem()
+    const { house, team } = createTestSystem()
 
     const room = house.createRoom({ name: 'Planning',  createdBy: 'test' })
     expect(house.getRoom('Planning')).toBe(room)
@@ -814,7 +814,7 @@ describe('Integration — Room + Team + routeMessage', () => {
   })
 
   test('team name uniqueness enforced', () => {
-    const { team } = createSystem()
+    const { team } = createTestSystem()
 
     const alice = createHumanAgent({ name: 'Alice' }, () => {})
     team.addAgent(alice)
@@ -828,7 +828,7 @@ describe('Integration — AI Agent with real Ollama', () => {
   const ollamaProvider = createOllamaProvider(DEFAULTS.ollamaBaseUrl)
 
   test('spawnAIAgent creates agent (no auto-join), explicit join posts join message', async () => {
-    const { house, team, intro, routeMessage } = createSystem()
+    const { house, team, intro, routeMessage } = createTestSystem()
 
     const agent = await spawnAIAgent(
       {
@@ -855,7 +855,7 @@ describe('Integration — AI Agent with real Ollama', () => {
   }, 60_000)
 
   test('human and AI agent converse via room', async () => {
-    const { house, team, intro, routeMessage } = createSystem()
+    const { house, team, intro, routeMessage } = createTestSystem()
 
     const humanInbox: Message[] = []
     const human = createHumanAgent(

@@ -19,8 +19,8 @@ export interface LimitMetricsSnapshot {
   // LLM retries surface via onEvent({kind:'warning'}) per attempt — also
   // not tracked here to avoid threading metrics through evaluation+spawn.
   sseBufferExceeded: number            // openai-compatible SSE buffer overflow
-  evictionFlushRetries: number         // system-registry retry loop (per attempt)
-  evictionForceEvicts: number          // system-registry force-evict after exhaustion
+  evictionFlushRetries: number         // runtime-registry retry loop (per attempt)
+  evictionForceEvicts: number          // runtime-registry force-evict after exhaustion
   wsBackpressureDropped: number        // ws-handler closed slow consumer
   rateLimitEvicted: number             // rate-limit LRU dropped a key
   staleSessionsEvicted: number         // ws-handler TTL sweep dropped a session

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { createAIAgent } from '../../agents/ai-agent.ts'
 import { createTeam } from '../../agents/team.ts'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import { createHouse } from '../house.ts'
 import { createRoomOperations } from '../room-operations.ts'
 import type { TriggerScheduler } from '../triggers/scheduler.ts'
@@ -82,7 +82,7 @@ describe('script runner teardown', () => {
       removeAgentFromRoom: roomOps.removeAgentFromRoom,
       removeAgent,
       activateAgentInRoom: () => ({ ok: true, queued: false }),
-    } as unknown as System
+    } as unknown as SamsinnWorkspaceRuntime
     const runner = createScriptRunner({ getSystem: () => system })
 
     await expect(runner.startWith(room.profile.id, script)).resolves.toEqual({ ok: true })
@@ -131,7 +131,7 @@ describe('script runner teardown', () => {
         activations.push(team.getAgent(agentId)?.name ?? agentId)
         return { ok: true, queued: false }
       },
-    } as unknown as System
+    } as unknown as SamsinnWorkspaceRuntime
     const runner = createScriptRunner({ getSystem: () => system })
 
     await runner.startWith(room.profile.id, script)

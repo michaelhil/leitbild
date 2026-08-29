@@ -2,13 +2,13 @@
 // HTTP Routes — Shared helpers + thin route-table dispatcher.
 //
 // Pure request→response functions. No WebSocket or server lifecycle concerns.
-// All routes delegate to System methods — no business logic here.
+// All routes delegate to SamsinnWorkspaceRuntime methods — no business logic here.
 //
 // Route modules live in routes/: rooms, agents, messages, house.
 // The dispatcher iterates the route table, matches method+pattern, calls handler.
 // ============================================================================
 
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { authEnabled, isValidSession, sessionFromRequest } from './auth.ts'
 import { getInstanceId } from './instance-cookie.ts'
@@ -138,7 +138,7 @@ export const handleUnscopedAPI = async (
 export const handleAPI = async (
   req: Request,
   pathname: string,
-  system: System,
+  system: SamsinnWorkspaceRuntime,
   instanceId: string,
   accessContext: AccessContext,
   deps: RouteDeps,

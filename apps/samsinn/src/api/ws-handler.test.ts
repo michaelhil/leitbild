@@ -11,7 +11,7 @@ import { createHumanAgent } from '../agents/human-agent.ts'
 import type { DeliverFn, Message } from '../core/types/messaging.ts'
 import type { RouteMessage } from '../core/types/agent.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { ClientSession, WSManager } from './ws-handler.ts'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
@@ -34,7 +34,7 @@ const makeLLMProvider = () => ({
   dispose: () => {},
 })
 
-const makeSystem = (): System => {
+const makeSystem = (): SamsinnWorkspaceRuntime => {
   const house = createHouse({ deliver: noopDeliver })
   const team = createTeam()
   house.createRoom({ name: 'TestRoom', createdBy: 'system' })
@@ -87,7 +87,7 @@ const makeSystem = (): System => {
     setOnSummaryRunCompleted: () => {},
     setOnSummaryRunFailed: () => {},
     setOnSummaryConfigChanged: () => {},
-  } as unknown as System
+  } as unknown as SamsinnWorkspaceRuntime
 }
 
 // Captures all messages sent to a WS connection
@@ -108,13 +108,13 @@ const makeWS = () => {
 }
 
 type FakeWS = ReturnType<typeof makeWS>['ws']
-const dispatch = (ws: FakeWS, session: ClientSession, system: System, wsManager: WSManager, payload: unknown) =>
+const dispatch = (ws: FakeWS, session: ClientSession, system: SamsinnWorkspaceRuntime, wsManager: WSManager, payload: unknown) =>
   handleWSMessage(ws, session, JSON.stringify(payload), system, wsManager)
 
 // === Tests ===
 
 describe('WS Handler', () => {
-  let system: System
+  let system: SamsinnWorkspaceRuntime
   let session: ClientSession
   let wsManager: WSManager
   let humanId: string
@@ -406,7 +406,7 @@ describe('WSManager.safeSend backpressure', () => {
     const { createLimitMetrics } = await import('../core/limit-metrics.ts')
     const limitMetrics = createLimitMetrics()
     const removed: string[] = []
-    const fakeSystem = { removeAgent: (id: string) => { removed.push(id); return true } } as unknown as System
+    const fakeSystem = { removeAgent: (id: string) => { removed.push(id); return true } } as unknown as SamsinnWorkspaceRuntime
     const wsManager = createWSManager({
       getSystem: () => fakeSystem,
       limitMetrics,

@@ -51,7 +51,7 @@ export interface EvalRecord {
 
 export interface EvalBuffer {
   // Subscribe to a system's multi-subscriber eval-event channel. The
-  // wire-system-events broadcaster owns setOnEvalEvent (single slot);
+  // wire-workspace-runtime-events broadcaster owns setOnEvalEvent (single slot);
   // the ring buffer attaches via the additional listener slot so both
   // can coexist. Returns an unsubscribe.
   readonly attach: (addListener: (cb: OnEvalEvent) => () => void) => () => void

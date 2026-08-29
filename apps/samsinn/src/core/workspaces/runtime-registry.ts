@@ -1,9 +1,9 @@
 // ============================================================================
-// SystemRegistry — per-tenant House lifecycle keyed by instance ID.
+// WorkspaceRuntimeRegistry — per-tenant House lifecycle keyed by instance ID.
 //
-// One process holds many instances; each is a System bound to its own
+// One process holds many instances; each is a SamsinnWorkspaceRuntime bound to its own
 // snapshot file. The registry lazy-loads from disk on first request,
-// keeps the System in memory while active, and evicts idle ones after
+// keeps the SamsinnWorkspaceRuntime in memory while active, and evicts idle ones after
 // SAMSINN_IDLE_MS (default 30 min) by flushing snapshot + dropping the
 // in-memory reference. Subsequent requests lazy-reload from disk.
 //
@@ -27,15 +27,15 @@
 //
 // What lives outside the registry's concern:
 //   - Snapshot path resolution (uses instancePaths from core/paths.ts)
-//   - Per-instance event-callback wiring (wireSystemEvents)
+//   - Per-instance event-callback wiring (wireWorkspaceRuntimeEvents)
 //   - Janitor (instance-cleanup.ts) — operates on disk only
 //
-// === buildSystem ordering (subtle; was the source of 5d73a8e) ===
-// Inside buildSystem(id):
-//   1. createSystem(...)           — new in-memory System, no events wired.
+// === buildWorkspaceRuntime ordering (subtle; was the source of 5d73a8e) ===
+// Inside buildWorkspaceRuntime(id):
+//   1. createSamsinnWorkspaceRuntime(...)           — new in-memory SamsinnWorkspaceRuntime, no events wired.
 //   2. loadSnapshot + restoreFromSnapshot  — agents rehydrated.
 //   3. buildAutoSaver              — debounced snapshot writer.
-//   4. opts.onSystemCreated(...)   — caller's wiring runs HERE.
+//   4. opts.onWorkspaceRuntimeCreated(...)   — caller's wiring runs HERE.
 //   5. seedInstance(system) (if no snapshot)  — Cafe + Aiden + You.
 //   6. return { system, autoSaver }
 // THEN in getOrLoad:
@@ -44,14 +44,14 @@
 // Steps 4 runs BEFORE step 7. Inside the hook, `registry.autoSaverFor(id)`
 // returns null (the entry isn't in the map yet) and `tryGetLive(id)` returns
 // undefined. Anything the hook needs that depends on per-id state must be
-// passed in directly — that's why onSystemCreated takes (system, id, autoSaver)
+// passed in directly — that's why onWorkspaceRuntimeCreated takes (system, id, autoSaver)
 // as arguments, not just (system, id). Resist any refactor that moves
 // "look up the saver from the registry" into the hook.
 // ============================================================================
 
-import type { System } from '../../main.ts'
-import type { SharedRuntime } from '../shared-runtime.ts'
-import { createSystem } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
+import type { DeploymentRuntime } from '../deployment-runtime.ts'
+import { createSamsinnWorkspaceRuntime } from '../../main.ts'
 import {
   loadSnapshot, restoreFromSnapshot, createAutoSaver, type AutoSaver,
 } from '../storage/snapshot.ts'
@@ -59,7 +59,7 @@ import { instancePaths, isValidInstanceId, sharedPaths, trashPath } from '../pat
 import { mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { asAIAgent } from '../../agents/shared.ts'
-import { seedInstance } from './seed-instance.ts'
+import { seedInstance } from '../instances/seed-instance.ts'
 
 // --- Defaults & env ---
 
@@ -100,7 +100,7 @@ export interface InstanceOnDisk {
 }
 
 interface InstanceEntry {
-  readonly system: System
+  readonly system: SamsinnWorkspaceRuntime
   readonly autoSaver: AutoSaver
   readonly onIdle: () => Promise<void>          // hook called by registry on evict
   lastTouchedAt: number
@@ -108,12 +108,12 @@ interface InstanceEntry {
   evictionPromise?: Promise<void>               // present iff state='evicting'
 }
 
-export interface SystemRegistryOptions {
-  readonly shared: SharedRuntime
+export interface WorkspaceRuntimeRegistryOptions {
+  readonly deployment: DeploymentRuntime
   readonly idleMs?: number                      // override default 30 min
   readonly drainMs?: number                     // override default 5s
   readonly maxLoadedInstances?: number          // hard LRU safety bound
-  // Hook called immediately after a fresh System is constructed (either
+  // Hook called immediately after a fresh SamsinnWorkspaceRuntime is constructed (either
   // first load or post-eviction reload). Bootstrap wires WS broadcasts here.
   // The autoSaver is passed in directly because the registry's map entry
   // isn't set until AFTER this hook returns — so registry.autoSaverFor(id)
@@ -122,25 +122,25 @@ export interface SystemRegistryOptions {
   // instances.
   //
   // The hook is awaited. It MUST complete (wireAgentTracking +
-  // wireSystemEvents installed) before seedInstance runs — otherwise
+  // wireWorkspaceRuntimeEvents installed) before seedInstance runs — otherwise
   // the seeded AI bypasses the spawn-wrapper and never gets per-agent
   // hooks (state subscription, attachAgent). Returning Promise<void> is
   // mandatory for any hook that does async work.
-  readonly onSystemCreated?: (system: System, id: string, autoSaver: AutoSaver) => Promise<void> | void
-  // Hook called immediately before a System is dropped from memory.
+  readonly onWorkspaceRuntimeCreated?: (system: SamsinnWorkspaceRuntime, id: string, autoSaver: AutoSaver) => Promise<void> | void
+  // Hook called immediately before a SamsinnWorkspaceRuntime is dropped from memory.
   // Bootstrap removes the WS callback wiring here.
-  readonly onSystemEvicted?: (system: System, id: string) => void
+  readonly onWorkspaceRuntimeEvicted?: (system: SamsinnWorkspaceRuntime, id: string) => void
   // Fires exactly once, after the first successful getOrLoad in this
   // process. Replaces the boot-time validateBootstrap call: the contract
-  // check still runs before any traffic actually reaches a System, but
+  // check still runs before any traffic actually reaches a SamsinnWorkspaceRuntime, but
   // we don't materialize a throwaway boot instance just to validate.
   // Receives the instance id so contract checks can verify per-instance
   // wiring (e.g. wsManager.isWired(id)).
-  readonly onFirstLoad?: (system: System, id: string) => void
+  readonly onFirstLoad?: (system: SamsinnWorkspaceRuntime, id: string) => void
 }
 
-export interface SystemRegistry {
-  readonly getOrLoad: (id: string) => Promise<System>
+export interface WorkspaceRuntimeRegistry {
+  readonly getOrLoad: (id: string) => Promise<SamsinnWorkspaceRuntime>
   readonly evictOne: (id: string) => Promise<void>
   readonly evictIdle: (now?: number) => Promise<number>
   // Trash the instance's on-disk state and drop from memory. The same id
@@ -162,10 +162,10 @@ export interface SystemRegistry {
   readonly idleMs: () => number
   readonly maxLoadedInstances: () => number
   // Boundary access to the in-memory autosaver for an active instance.
-  // wireSystemEvents needs it to schedule saves from broadcast callbacks.
+  // wireWorkspaceRuntimeEvents needs it to schedule saves from broadcast callbacks.
   // Returns null if the instance is not currently in memory.
   readonly autoSaverFor: (id: string) => AutoSaver | null
-  // In-memory only lookup. Returns the live System for `id` if it is
+  // In-memory only lookup. Returns the live SamsinnWorkspaceRuntime for `id` if it is
   // currently loaded and active (not evicting), else undefined.
   //
   // SILENTLY returns undefined for evicted/unloaded instances. Every
@@ -176,7 +176,7 @@ export interface SystemRegistry {
   // call site that quietly skips when the answer should be "load this"
   // is how silent-skip bugs hide — see CLAUDE.md "no silent skips on
   // optional dependencies."
-  readonly tryGetLive: (id: string) => System | undefined
+  readonly tryGetLive: (id: string) => SamsinnWorkspaceRuntime | undefined
   // Agent → instance reverse index for provider routing events. Bootstrap
   // wires shared.setProviderEventDispatcher to use this.
   readonly attachAgent: (agentId: string, instanceId: string) => void
@@ -186,7 +186,7 @@ export interface SystemRegistry {
 
 // ============================================================================
 
-export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistry => {
+export const createWorkspaceRuntimeRegistry = (opts: WorkspaceRuntimeRegistryOptions): WorkspaceRuntimeRegistry => {
   const idleMs = opts.idleMs ?? idleMsFromEnv()
   const drainMs = opts.drainMs ?? DEFAULT_DRAIN_MS
   const maxLoadedInstances = opts.maxLoadedInstances ?? maxLoadedInstancesFromEnv()
@@ -194,7 +194,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     throw new Error(`[registry] maxLoadedInstances must be a positive integer; got ${String(maxLoadedInstances)}`)
   }
   const map = new Map<string, InstanceEntry>()
-  const pendingLoads = new Map<string, Promise<System>>()
+  const pendingLoads = new Map<string, Promise<SamsinnWorkspaceRuntime>>()
   // Reverse index for provider event routing. Populated when an agent
   // is spawned in an instance; cleared on agent removal or instance evict.
   const agentInstanceMap = new Map<string, string>()
@@ -210,7 +210,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
   //   A short final wait (100ms) converges. Without this, an agent stuck in
   //   eval would have its result land in the now-evicted system as a ghost
   //   message on next reload.
-  const drainAgents = async (system: System): Promise<void> => {
+  const drainAgents = async (system: SamsinnWorkspaceRuntime): Promise<void> => {
     const timeout = new Promise<void>(res => setTimeout(res, drainMs))
     const aiAgents = system.team.listAgents()
       .flatMap(a => { const ai = asAIAgent(a); return ai ? [ai] : [] })
@@ -230,13 +230,13 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
   }
 
   // Build the per-instance autosaver. Callback wiring (which schedules
-  // save on each mutation) lives in src/api/wire-system-events.ts, which
-  // gets the saver via autoSaverFor(id). The onSystemCreated hook calls
-  // wireSystemEvents — that's the single source of save scheduling.
-  const buildAutoSaver = (_system: System, snapshotPath: string): AutoSaver =>
+  // save on each mutation) lives in src/api/wire-workspace-runtime-events.ts, which
+  // gets the saver via autoSaverFor(id). The onWorkspaceRuntimeCreated hook calls
+  // wireWorkspaceRuntimeEvents — that's the single source of save scheduling.
+  const buildAutoSaver = (_system: SamsinnWorkspaceRuntime, snapshotPath: string): AutoSaver =>
     createAutoSaver(_system, snapshotPath)
 
-  // Build a fresh System for `id`, restoring from snapshot if present.
+  // Build a fresh SamsinnWorkspaceRuntime for `id`, restoring from snapshot if present.
   // Note: we DO NOT mkdir here. The instance dir is created lazily by
   // saveSnapshot's own mkdir(recursive) on the first real autosave write.
   //
@@ -247,10 +247,10 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
   // signal (the UI opening /ws, or an explicit /api call from a cookie
   // holder). Stale cookies for purged ids are soft-expired by server.ts
   // before they reach getOrLoad.
-  const buildSystem = async (id: string): Promise<{ system: System; autoSaver: AutoSaver }> => {
+  const buildWorkspaceRuntime = async (id: string): Promise<{ system: SamsinnWorkspaceRuntime; autoSaver: AutoSaver }> => {
     const paths = instancePaths(id)
-    const system = createSystem({
-      shared: opts.shared,
+    const system = createSamsinnWorkspaceRuntime({
+      deployment: opts.deployment,
       instanceLabel: id,
       vectorsFile: paths.vectors,
     })
@@ -274,19 +274,19 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
 
     // Notify the registry's caller (e.g. WS broadcast wiring). autoSaver
     // is passed explicitly because the map entry isn't installed until
-    // buildSystem returns; an autoSaverFor(id) lookup inside the hook
+    // buildWorkspaceRuntime returns; an autoSaverFor(id) lookup inside the hook
     // would return null.
     //
     // AWAITED on purpose: the hook installs wireAgentTracking (the spawn
     // wrapper that installs per-agent state subscriptions, provider-event
-    // attach, etc.) and wireSystemEvents (the system-wide WS broadcast
+    // attach, etc.) and wireWorkspaceRuntimeEvents (the system-wide WS broadcast
     // subscribers). seedInstance below calls system.spawnAIAgent — if it
     // ran before the wrapper was installed, the seeded agent would bypass
     // per-agent wiring (no thinking indicator, no state broadcasts, no
     // provider-event scoping). The hook is async because of logging.configure;
     // without await, the first await inside the hook releases a microtask
     // and seedInstance races ahead.
-    await opts.onSystemCreated?.(system, id, autoSaver)
+    await opts.onWorkspaceRuntimeCreated?.(system, id, autoSaver)
 
     // First-run seeding: when no snapshot existed, or when an older/broken
     // boot left an explicitly empty snapshot, spawn Cafe + Aiden + You.
@@ -316,7 +316,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
   // --- Public API ---
 
   let firstLoadFired = false
-  const fireFirstLoadOnce = (system: System, id: string): void => {
+  const fireFirstLoadOnce = (system: SamsinnWorkspaceRuntime, id: string): void => {
     if (firstLoadFired) return
     firstLoadFired = true
     try { opts.onFirstLoad?.(system, id) } catch (err) {
@@ -355,7 +355,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     return evicted
   }
 
-  const getOrLoad = async (id: string): Promise<System> => {
+  const getOrLoad = async (id: string): Promise<SamsinnWorkspaceRuntime> => {
     if (!isValidInstanceId(id)) {
       throw new Error(`[registry] invalid instance id: ${id}`)
     }
@@ -379,9 +379,9 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     if (pending) return pending
 
     // Cold path: register the pending promise, do the work, transfer to map.
-    const loadPromise = (async (): Promise<System> => {
+    const loadPromise = (async (): Promise<SamsinnWorkspaceRuntime> => {
       try {
-        const { system, autoSaver } = await buildSystem(id)
+        const { system, autoSaver } = await buildWorkspaceRuntime(id)
         const entry: InstanceEntry = {
           system,
           autoSaver,
@@ -432,7 +432,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
           break
         } catch (err) {
           lastErr = err
-          opts.shared.limitMetrics.inc('evictionFlushRetries')
+          opts.deployment.limitMetrics.inc('evictionFlushRetries')
           const reason = err instanceof Error ? err.message : String(err)
           console.error(`[registry] evict ${id} flush attempt ${attempt + 1}/${backoffMs.length} failed: ${reason}`)
           if (attempt < backoffMs.length - 1) {
@@ -441,17 +441,17 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
         }
       }
       if (!flushed) {
-        opts.shared.limitMetrics.inc('evictionForceEvicts')
+        opts.deployment.limitMetrics.inc('evictionForceEvicts')
         const reason = lastErr instanceof Error ? lastErr.message : String(lastErr)
         console.error(`[registry] evict ${id}: flush exhausted retries — FORCING EVICTION; recent state may be lost. last error: ${reason}`)
       }
 
-      try { opts.onSystemEvicted?.(entry.system, id) } catch (err) {
+      try { opts.onWorkspaceRuntimeEvicted?.(entry.system, id) } catch (err) {
         console.error(`[registry] evict ${id} hook threw: ${err instanceof Error ? err.message : String(err)}`)
       }
       entry.autoSaver.dispose()
       // Stop the per-instance schedulers' setIntervals. Without this, the
-      // timer closures pin the entire System (House + agents + history) and
+      // timer closures pin the entire SamsinnWorkspaceRuntime (House + agents + history) and
       // keep firing every tick on an evicted instance — memory leak +
       // wasted CPU proportional to (evicted-with-active-schedulers) ×
       // tick frequency. autoSaver.dispose handles its own debounce timer;
@@ -463,7 +463,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
         console.error(`[registry] evict ${id} summaryScheduler.dispose threw: ${err instanceof Error ? err.message : String(err)}`)
       }
       // Stop any active script runs. Less leak risk than the scheduler
-      // intervals (no setInterval pinning the System), but in-flight LLM
+      // intervals (no setInterval pinning the SamsinnWorkspaceRuntime), but in-flight LLM
       // whisper calls + bounded setTimeouts keep the closure alive briefly;
       // explicit stop releases queue chains and any spawned cast that
       // wasn't already drained. Best-effort — eviction proceeds regardless.
@@ -606,7 +606,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
   const instanceForAgent = (agentId: string): string | undefined =>
     agentInstanceMap.get(agentId)
 
-  const tryGetLive = (id: string): System | undefined => {
+  const tryGetLive = (id: string): SamsinnWorkspaceRuntime | undefined => {
     const entry = map.get(id)
     if (!entry || entry.state !== 'active') return undefined
     return entry.system

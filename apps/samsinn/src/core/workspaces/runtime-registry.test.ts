@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtemp, mkdir, rm, stat, readdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSystemRegistry, type SystemRegistry } from './system-registry.ts'
-import { createSharedRuntime } from '../shared-runtime.ts'
+import { createWorkspaceRuntimeRegistry, type WorkspaceRuntimeRegistry } from './runtime-registry.ts'
+import { createDeploymentRuntime } from '../deployment-runtime.ts'
 import { instancePaths } from '../paths.ts'
 import { generateInstanceId } from '../../api/instance-cookie.ts'
 
@@ -11,10 +11,10 @@ import { generateInstanceId } from '../../api/instance-cookie.ts'
 // into a per-test tmpdir. The shared runtime is built with no providers
 // (single-Ollama mode, but Ollama URL never hit) so tests are network-free.
 
-describe('SystemRegistry', () => {
+describe('WorkspaceRuntimeRegistry', () => {
   let originalHome: string | undefined
   let homeDir: string
-  let registry: SystemRegistry
+  let registry: WorkspaceRuntimeRegistry
 
   beforeEach(async () => {
     originalHome = process.env.SAMSINN_HOME
@@ -24,8 +24,8 @@ describe('SystemRegistry', () => {
     process.env.PROVIDER = 'ollama'
     // Disable first-run seeding — these tests assert empty-House semantics.
     process.env.SAMSINN_SEED_EXAMPLE = '0'
-    const shared = createSharedRuntime()
-    registry = createSystemRegistry({ shared, idleMs: 1_000_000 })  // long idle so no auto-evict in unit tests
+    const shared = createDeploymentRuntime()
+    registry = createWorkspaceRuntimeRegistry({ deployment: shared, idleMs: 1_000_000 })  // long idle so no auto-evict in unit tests
   })
 
   afterEach(async () => {
@@ -152,8 +152,8 @@ describe('SystemRegistry', () => {
   // --- Idle eviction ---
 
   it('evictIdle drops instances older than idleMs', async () => {
-    const reg = createSystemRegistry({
-      shared: createSharedRuntime(),
+    const reg = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime(),
       idleMs: 50,
     })
     const idA = generateInstanceId()
@@ -170,8 +170,8 @@ describe('SystemRegistry', () => {
   })
 
   it('enforces the loaded-instance capacity by evicting least-recently-used state', async () => {
-    const reg = createSystemRegistry({
-      shared: createSharedRuntime(),
+    const reg = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime(),
       idleMs: 1_000_000,
       maxLoadedInstances: 2,
     })
@@ -195,8 +195,8 @@ describe('SystemRegistry', () => {
   })
 
   it('keeps the capacity bound when cold loads complete concurrently', async () => {
-    const reg = createSystemRegistry({
-      shared: createSharedRuntime(),
+    const reg = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime(),
       maxLoadedInstances: 1,
     })
     const ids = [generateInstanceId(), generateInstanceId(), generateInstanceId()]
@@ -277,11 +277,11 @@ describe('SystemRegistry', () => {
 
   // --- Hooks ---
 
-  it('onSystemCreated fires once per fresh load', async () => {
+  it('onWorkspaceRuntimeCreated fires once per fresh load', async () => {
     const calls: string[] = []
-    const reg = createSystemRegistry({
-      shared: createSharedRuntime(),
-      onSystemCreated: (_sys, id) => { calls.push(id) },
+    const reg = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime(),
+      onWorkspaceRuntimeCreated: (_sys, id) => { calls.push(id) },
     })
     const id = generateInstanceId()
     await reg.getOrLoad(id)
@@ -293,11 +293,11 @@ describe('SystemRegistry', () => {
     await reg.shutdown()
   })
 
-  it('onSystemEvicted fires before the system is dropped', async () => {
+  it('onWorkspaceRuntimeEvicted fires before the system is dropped', async () => {
     const calls: string[] = []
-    const reg = createSystemRegistry({
-      shared: createSharedRuntime(),
-      onSystemEvicted: (_sys, id) => calls.push(id),
+    const reg = createWorkspaceRuntimeRegistry({
+      deployment: createDeploymentRuntime(),
+      onWorkspaceRuntimeEvicted: (_sys, id) => calls.push(id),
     })
     const id = generateInstanceId()
     await reg.getOrLoad(id)

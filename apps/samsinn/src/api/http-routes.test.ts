@@ -10,7 +10,7 @@ import { createToolRegistry } from '../core/tool-registry.ts'
 import { createLimitMetrics } from '../core/limit-metrics.ts'
 import type { DeliverFn } from '../core/types/messaging.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import { accessContextSchema, newRequestId } from '@samsinn-leitbild/platform-contracts'
 import { workspaceIdForLegacyInstance } from '../core/workspaces/request-context.ts'
 
@@ -28,7 +28,7 @@ const TEST_ACCESS_CONTEXT = accessContextSchema.parse({
   actor: { kind: 'anonymous' },
 })
 
-const makeSystem = (): System => {
+const makeSystem = (): SamsinnWorkspaceRuntime => {
   const house = createHouse({ deliver: noopDeliver })
   const team = createTeam()
   const toolRegistry = createToolRegistry()
@@ -47,9 +47,9 @@ const makeSystem = (): System => {
   }
   return {
     house, team, toolRegistry,
-    llm: { models: async () => [], chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } }) } as unknown as System['llm'],
+    llm: { models: async () => [], chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 } }) } as unknown as SamsinnWorkspaceRuntime['llm'],
     ollama,
-    providerConfig: { order: ['ollama'], ollamaUrl: 'http://localhost:11434', ollamaMaxConcurrent: 2, cloud: {}, ollamaOnly: false, forceFailProvider: null, droppedFromOrder: [], orderFromUser: false } as unknown as System['providerConfig'],
+    providerConfig: { order: ['ollama'], ollamaUrl: 'http://localhost:11434', ollamaMaxConcurrent: 2, cloud: {}, ollamaOnly: false, forceFailProvider: null, droppedFromOrder: [], orderFromUser: false } as unknown as SamsinnWorkspaceRuntime['providerConfig'],
     routeMessage: () => [],
     removeAgent: (id: string) => team.removeAgent(id),
     removeRoom: (id: string) => house.removeRoom(id),
@@ -70,7 +70,7 @@ const makeSystem = (): System => {
     setOnProviderStreamFailed: () => {},
     dispatchProviderEvent: () => {},
     limitMetrics: createLimitMetrics(),
-  } as unknown as System
+  } as unknown as SamsinnWorkspaceRuntime
 }
 
 // All requests carry the samsinn_instance cookie. handleAPI gates
@@ -88,7 +88,7 @@ const req = (method: string, path: string, body?: unknown): Request => {
   })
 }
 
-const call = (system: System, r: Request, path: string, opts: { remoteAddress?: string } = {}) =>
+const call = (system: SamsinnWorkspaceRuntime, r: Request, path: string, opts: { remoteAddress?: string } = {}) =>
   handleAPI(r, path, system, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
     broadcast: noopBroadcast,
     subscribeAgentState: noopSubscribe,
@@ -98,7 +98,7 @@ const call = (system: System, r: Request, path: string, opts: { remoteAddress?: 
 // === Tests ===
 
 describe('HTTP Routes', () => {
-  let system: System
+  let system: SamsinnWorkspaceRuntime
 
   beforeEach(() => {
     system = makeSystem()
@@ -340,7 +340,7 @@ describe('unscoped bootstrap routes', () => {
     })
   })
 
-  test('diagnostics is served without a per-instance System', async () => {
+  test('diagnostics is served without a per-instance SamsinnWorkspaceRuntime', async () => {
     const snapshot = { instances: [], wsSessions: 0 }
     const res = await handleUnscopedAPI(
       new Request('http://localhost/api/system/diagnostics'),
@@ -369,7 +369,7 @@ describe('unscoped bootstrap routes', () => {
 // refactor moves routes around the gate, this regression test fails loudly.
 
 describe('HTTP Routes — auth gate (deploy mode)', () => {
-  let system: System
+  let system: SamsinnWorkspaceRuntime
   let originalToken: string | undefined
 
   beforeEach(() => {
@@ -507,7 +507,7 @@ describe('GET /api/system/limits (no auth)', () => {
   })
 
   // --- POST /api/system/evict ---
-  // Cookie-bound evict: drops the System from memory, snapshot stays.
+  // Cookie-bound evict: drops the SamsinnWorkspaceRuntime from memory, snapshot stays.
   // Mirrors /api/system/reset's auth shape but without the countdown
   // and without trashing the directory.
 
@@ -564,7 +564,7 @@ describe('GET /api/system/limits (no auth)', () => {
 // require a real spawnAIAgent which would pull in the full LLM stack.
 
 describe('HTTP Routes — agents (audit gap)', () => {
-  let system: System
+  let system: SamsinnWorkspaceRuntime
 
   beforeEach(() => {
     system = makeSystem()
@@ -617,7 +617,7 @@ describe('HTTP Routes — agents (audit gap)', () => {
 })
 
 describe('HTTP Routes — agent triggers (audit gap)', () => {
-  let system: System
+  let system: SamsinnWorkspaceRuntime
 
   beforeEach(() => {
     system = makeSystem()

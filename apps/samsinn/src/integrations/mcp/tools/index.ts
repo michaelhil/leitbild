@@ -1,12 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { System } from '../../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../../main.ts'
 import { registerRoomTools } from './room-tools.ts'
 import { registerAgentTools } from './agent-tools.ts'
 import { registerMessageTools } from './message-tools.ts'
 import { registerWebTools } from './web-tools.ts'
 import { registerSystemTools } from './system-tools.ts'
 
-export const registerAllMCPTools = (mcpServer: McpServer, system: System): void => {
+export const registerAllMCPTools = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
   registerRoomTools(mcpServer, system)
   registerAgentTools(mcpServer, system)
   registerMessageTools(mcpServer, system)

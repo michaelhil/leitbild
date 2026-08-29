@@ -5,7 +5,7 @@ import { modelSupportsTools } from '../../llm/models/catalog.ts'
 import { estimateTokens } from '../../agents/context-builder.ts'
 import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
 import type { ToolRegistry } from '../../core/types/tool.ts'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { RouteEntry } from './types.ts'
 import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 
@@ -17,7 +17,7 @@ import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 // on it. Effective-model resolution at call time picks a working fallback.
 type ModelStatus = 'ok' | 'unavailable' | 'unverified'
 
-const resolveModelStatus = async (system: System, requestedModel: string): Promise<ModelStatus> => {
+const resolveModelStatus = async (system: SamsinnWorkspaceRuntime, requestedModel: string): Promise<ModelStatus> => {
   const ollamaAvailable = system.ollama?.getHealth().availableModels ?? []
   const routerAvailable = await system.llm.models().catch(() => [] as string[])
   const allAvailable = [...ollamaAvailable, ...routerAvailable]

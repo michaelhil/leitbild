@@ -1,4 +1,4 @@
-import type { System } from '../../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../../main.ts'
 import type { Room } from '../../../core/types/room.ts'
 import type { Agent } from '../../../core/types/agent.ts'
 
@@ -11,13 +11,13 @@ export const errorResult = (message: string) => ({
   isError: true as const,
 })
 
-export const resolveRoom = (system: System, roomName: string): Room => {
+export const resolveRoom = (system: SamsinnWorkspaceRuntime, roomName: string): Room => {
   const room = system.house.getRoom(roomName)
   if (!room) throw new Error(`Room "${roomName}" not found`)
   return room
 }
 
-export const resolveAgent = (system: System, agentName: string): Agent => {
+export const resolveAgent = (system: SamsinnWorkspaceRuntime, agentName: string): Agent => {
   const agent = system.team.getAgent(agentName)
   if (!agent) throw new Error(`Agent "${agentName}" not found`)
   return agent

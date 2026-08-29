@@ -1,6 +1,6 @@
 // ============================================================================
-// SharedRuntime — the slice of System that's safe to share across multiple
-// instances. Built once at boot; reused by every createSystem call to avoid
+// DeploymentRuntime — the slice of System that's safe to share across multiple
+// instances. Built once at boot; reused by every createSamsinnWorkspaceRuntime call to avoid
 // duplicating provider gateways, API-quota state, and the LLM router.
 //
 // What's shared:
@@ -17,7 +17,7 @@
 //   - sharedSkillStore — every loaded skill (pack and free-standing). Each
 //     instance reads from the same store; install/uninstall mutate one place.
 //
-// What stays per-instance (built fresh by createSystem):
+// What stays per-instance (built fresh by createSamsinnWorkspaceRuntime):
 //   - House (rooms, agents, artifacts, messages, members, mute/pause)
 //   - Team
 //   - Tool-registry OVERLAY — house-bound built-ins (createListRoomsTool,
@@ -43,18 +43,18 @@ import { createToolRegistry } from './tool-registry.ts'
 import { createSkillStore } from '../skills/loader.ts'
 import { createLimitMetrics, type LimitMetrics } from './limit-metrics.ts'
 
-export interface SharedRuntime {
+export interface DeploymentRuntime {
   readonly providerConfig: ProviderConfig
   readonly providerKeys: ProviderKeys
   readonly providerSetup: ProviderSetupResult
   // MCP-backed tools loaded ONCE per process at boot (each MCP server is
   // a stdio child process; we don't want N children for N instances).
-  // Each instance's createSystem registers these definitions into its
+  // Each instance's createSamsinnWorkspaceRuntime registers these definitions into its
   // own ToolRegistry — the underlying connection is shared.
   // Mutable list so bootstrap can populate after construction.
   mcpTools: Tool[]
   // Provider routing events fan out via a single listener on the shared
-  // router. The dispatcher is set once by the SystemRegistry, which has
+  // router. The dispatcher is set once by the WorkspaceRuntimeRegistry, which has
   // the agentId → instanceId reverse index. Default: noop.
   setProviderEventDispatcher: (fn: (event: ProviderRoutingEvent) => void) => void
   // Process-global counters for cap/limit hits. Read-only API; the only
@@ -72,14 +72,14 @@ export interface SharedRuntime {
   // Cross-provider LLM policy (system default fallback chain). Loaded once
   // at boot from ~/.samsinn/llm-policy.json, mutable through the UI at
   // request time. Mutable because boot-vs-bootstrap construction order
-  // means we attach it after createSharedRuntime returns.
+  // means we attach it after createDeploymentRuntime returns.
   llmPolicyStore?: import('../llm/llm-policy-store.ts').PolicyStore
 }
 
-export interface CreateSharedRuntimeOptions {
+export interface CreateDeploymentRuntimeOptions {
   readonly providerConfig?: ProviderConfig
   // TEST-ONLY: inject a pre-built setup (matches the previous
-  // CreateSystemOptions.providerSetup escape hatch). Production code
+  // CreateSamsinnWorkspaceRuntimeOptions.providerSetup escape hatch). Production code
   // does NOT pass this — bootstrap.ts goes through src/boot/provider-stack.ts
   // which constructs the setup once and passes it here together with
   // matching providerKeys. If you find yourself adding `providerSetup`
@@ -89,12 +89,12 @@ export interface CreateSharedRuntimeOptions {
   //   - src/boot/bootstrap-e2e.test.ts (end-to-end boot path)
   readonly providerSetup?: ProviderSetupResult
   // Optional pre-built metrics handle. Bootstrap supplies one so the same
-  // instance can be passed to buildProvidersFromConfig before SharedRuntime
+  // instance can be passed to buildProvidersFromConfig before DeploymentRuntime
   // exists. Tests/headless paths omit and we lazy-create.
   readonly limitMetrics?: LimitMetrics
   // Optional pre-built provider keys store. Bootstrap supplies this so the
   // SAME ProviderKeys instance flows into both `buildProvidersFromConfig`
-  // (used by bootstrap to wire limitMetrics into adapters) AND SharedRuntime.
+  // (used by bootstrap to wire limitMetrics into adapters) AND DeploymentRuntime.
   // Without this, bootstrap built providerSetup with NO providerKeys → router
   // had `isProviderEnabled = undefined` → every provider (including keyless
   // anthropic) was tried on every request → Helper got `[pass] LLM error:
@@ -102,9 +102,9 @@ export interface CreateSharedRuntimeOptions {
   readonly providerKeys?: ProviderKeys
 }
 
-export const createSharedRuntime = (
-  opts: CreateSharedRuntimeOptions = {},
-): SharedRuntime => {
+export const createDeploymentRuntime = (
+  opts: CreateDeploymentRuntimeOptions = {},
+): DeploymentRuntime => {
   const providerConfig = opts.providerConfig ?? parseProviderConfig()
 
   // Mutable runtime registry of API keys. Boot-time keys (env or stored)
@@ -125,7 +125,7 @@ export const createSharedRuntime = (
     opts.providerSetup ?? buildProvidersFromConfig(providerConfig, { providerKeys })
 
   // Single listener on the shared router. The registered dispatcher
-  // (set by SystemRegistry) routes events to the correct per-instance
+  // (set by WorkspaceRuntimeRegistry) routes events to the correct per-instance
   // subscriber via the agentId reverse index.
   let dispatcher: (event: ProviderRoutingEvent) => void = () => { /* noop */ }
   providerSetup.router.onRoutingEvent((event) => {
@@ -138,7 +138,7 @@ export const createSharedRuntime = (
   const limitMetrics = opts.limitMetrics ?? createLimitMetrics()
   // Empty at construction — bootstrap.ts populates with external tools,
   // skills (which register their bundled tools), packs, MCP tools, and the
-  // codegen/pack admin tools. createSystem then wraps this in an overlay.
+  // codegen/pack admin tools. createSamsinnWorkspaceRuntime then wraps this in an overlay.
   const sharedToolRegistry = createToolRegistry()
   const sharedSkillStore = createSkillStore()
   return {

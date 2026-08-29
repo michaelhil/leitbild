@@ -1,5 +1,5 @@
 // ============================================================================
-// MCP Server — Exposes the Samsinn System as MCP tools and resources.
+// MCP Server — Exposes the Samsinn SamsinnWorkspaceRuntime as MCP tools and resources.
 //
 // Symmetric with client.ts: the client consumes external MCP tools, the server
 // exposes Samsinn as MCP tools for external LLMs/agents to orchestrate.
@@ -15,14 +15,14 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { OnDeliveryModeChanged, OnTurnChanged } from '../../core/types/room.ts'
 import { registerAllMCPTools } from './tools/index.ts'
 import { registerMCPResources } from './resources.ts'
 
 // === Factory ===
 
-export const createMCPServer = (system: System, version = '0.0.0'): McpServer => {
+export const createMCPServer = (system: SamsinnWorkspaceRuntime, version = '0.0.0'): McpServer => {
   const mcpServer = new McpServer(
     { name: 'samsinn', version },
     { capabilities: { resources: {}, tools: {}, logging: {} } },
@@ -36,7 +36,7 @@ export const createMCPServer = (system: System, version = '0.0.0'): McpServer =>
 
 // === Wire system event callbacks to MCP logging notifications ===
 
-export const wireEventNotifications = (system: System, mcpServer: McpServer): void => {
+export const wireEventNotifications = (system: SamsinnWorkspaceRuntime, mcpServer: McpServer): void => {
   const sendNotification = (data: Record<string, unknown>): void => {
     try {
       mcpServer.server.sendLoggingMessage({ level: 'info', data: JSON.stringify(data) })

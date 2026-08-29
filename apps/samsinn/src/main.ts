@@ -1,7 +1,7 @@
 // ============================================================================
-// samsinn — System Factory + Entry Point
+// samsinn — SamsinnWorkspaceRuntime Factory + Entry Point
 //
-// createSystem() builds the full system. Can be imported without side effects.
+// createSamsinnWorkspaceRuntime() builds the full system. Can be imported without side effects.
 // When run directly (bun run src/main.ts), starts up and prints diagnostics.
 // ============================================================================
 
@@ -34,7 +34,7 @@ import { createLLMService, type LLMService } from './llm/llm-service.ts'
 import type { ProviderSetupResult } from './llm/providers-setup.ts'
 import type { ProviderConfig } from './llm/providers-config.ts'
 import type { ProviderKeys } from './llm/provider-keys.ts'
-import { createSharedRuntime, type SharedRuntime } from './core/shared-runtime.ts'
+import { createDeploymentRuntime, type DeploymentRuntime } from './core/deployment-runtime.ts'
 import type { LimitMetrics } from './core/limit-metrics.ts'
 import type { ProviderGateway } from './llm/provider-gateway.ts'
 import { createOverlayToolRegistry } from './core/tool-registry.ts'
@@ -48,7 +48,7 @@ import {
   // House-bound built-ins (registered into the per-instance overlay).
   // Process-wide built-ins (createPassTool, createGetTimeTool, createWebTools,
   // createTestToolTool, createListSkillsTool, createWriteSkillTool,
-  // createWriteToolTool, createPackTools) live in shared.sharedToolRegistry —
+  // createWriteToolTool, createPackTools) live in deployment.sharedToolRegistry —
   // see bootstrap.ts.
   createListRoomsTool,
   createCreateRoomTool, createDeleteRoomTool, createAddToRoomTool, createRemoveFromRoomTool,
@@ -89,7 +89,7 @@ import {
   mkSummaryRunStarted, mkSummaryUpdated,
 } from './logging/event-mapping.ts'
 
-export interface System {
+export interface SamsinnWorkspaceRuntime {
   readonly house: House
   readonly team: Team
   readonly routeMessage: RouteMessage
@@ -124,7 +124,7 @@ export interface System {
   readonly refreshAvailableModels: () => Promise<void>
   // Per-instance ring buffer of recent agent evals — fuel for
   // /api/diagnostics/evals/*. Subscribes via addEvalEventListener so
-  // it coexists with the wire-system-events broadcaster.
+  // it coexists with the wire-workspace-runtime-events broadcaster.
   readonly evalBuffer: import('./diagnostics/eval-buffer.ts').EvalBuffer
   readonly toolRegistry: ToolRegistry
   // Refresh every AI agent's ToolExecutor / ToolDefinitions to reflect the
@@ -175,7 +175,7 @@ export interface System {
   readonly setOnAgentSettingsChanged: (callback: OnAgentSettingsChanged) => void
   // Notify subscribers that an agent's persisted settings (persona, model,
   // tools, triggers, name, etc.) just changed. Called by the API/MCP layer
-  // after applying mutations; wire-system-events translates this into a
+  // after applying mutations; wire-workspace-runtime-events translates this into a
   // scheduleSave so edits don't stay in memory until the next message-post.
   readonly notifyAgentSettingsChanged: () => void
   readonly setOnEvalEvent: (callback: OnEvalEvent) => void
@@ -207,8 +207,8 @@ export interface System {
   readonly addEventObserver: (observer: LogEventObserver) => () => void
   readonly logging: LoggingHandle
 
-  // --- Process-global limit/cap counters (held on SharedRuntime) ---
-  // Same instance across every System in this process; surfaced via
+  // --- Process-global limit/cap counters (held on DeploymentRuntime) ---
+  // Same instance across every SamsinnWorkspaceRuntime in this process; surfaced via
   // GET /api/system/limits.
   readonly limitMetrics: LimitMetrics
 }
@@ -225,43 +225,43 @@ export interface LoggingHandle {
   readonly configure: (partial: Partial<LogConfig>) => Promise<void>
 }
 
-export interface CreateSystemOptions {
-  // Pre-built shared runtime. When passed, createSystem skips internal
+export interface CreateSamsinnWorkspaceRuntimeOptions {
+  // Pre-built deployment runtime. When passed, createSamsinnWorkspaceRuntime skips internal
   // provider construction and uses these. Phase D's HouseRegistry passes
-  // one shared runtime to many createSystem calls — that's the whole point.
-  readonly shared?: SharedRuntime
-  // Legacy: when shared is absent, build from these (preserves test API).
+  // one deployment runtime to many workspace runtime factories.
+  readonly deployment?: DeploymentRuntime
+  // Standalone/test path: when deployment is absent, build it locally.
   readonly providerConfig?: ProviderConfig
   readonly providerSetup?: ProviderSetupResult
   // Diagnostic label used in unsubscribed-callback warnings (lateBinding).
   // Threaded by the registry; tests/headless paths can omit (becomes "?").
   readonly instanceLabel?: string
-  // Per-instance vector store path (RAG features). When set, createSystem
+  // Per-instance vector store path (RAG features). When set, createSamsinnWorkspaceRuntime
   // wires the memory indexer + recall tool. Omitted in tests / single-tenant
   // paths that don't have an instance ID — RAG features are no-op there.
   readonly vectorsFile?: string
 }
 
-export const createSystem = (options: CreateSystemOptions = {}): System => {
-  // Either reuse a shared runtime (multi-instance) or build one inline
+export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRuntimeOptions = {}): SamsinnWorkspaceRuntime => {
+  // Either reuse a deployment runtime (multi-workspace) or build one inline
   // (legacy single-tenant + tests). The result is the same shape either way.
-  const sharedWasGiven = options.shared !== undefined
-  const shared: SharedRuntime = options.shared ?? createSharedRuntime({
+  const deploymentWasGiven = options.deployment !== undefined
+  const deployment: DeploymentRuntime = options.deployment ?? createDeploymentRuntime({
     ...(options.providerConfig ? { providerConfig: options.providerConfig } : {}),
     ...(options.providerSetup ? { providerSetup: options.providerSetup } : {}),
   })
-  const { providerConfig, providerKeys, providerSetup } = shared
+  const { providerConfig, providerKeys, providerSetup } = deployment
   const { router: llm, ollama, ollamaRaw, gateways, monitors } = providerSetup
 
   // LLMService — single gateway for every LLM call. Owns cooldown skip,
   // fallback-chain walk (with system default policy), unified [llm] log
   // line, source tagging. See src/llm/llm-service.ts for the contract.
-  // System default chain comes from shared.llmPolicyStore (loaded by
+  // SamsinnWorkspaceRuntime default chain comes from deployment.llmPolicyStore (loaded by
   // bootstrap from ~/.samsinn/llm-policy.json); read at request time so
   // UI edits propagate without restart.
   const llmService: LLMService = createLLMService({
     router: llm,
-    getSystemChain: () => shared.llmPolicyStore?.getModelFallback(),
+    getSystemChain: () => deployment.llmPolicyStore?.getModelFallback(),
   })
 
   const team = createTeam()
@@ -323,7 +323,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   }
 
   // 21 typed lateBinding slots. See CLAUDE.md "Rejected refactors" before
-  // proposing an event-bus replacement or createSystem split.
+  // proposing an event-bus replacement or createSamsinnWorkspaceRuntime split.
   const messagePosted = lateBinding<OnMessagePosted>('messagePosted')
   const turnChanged = lateBinding<OnTurnChanged>('turnChanged')
   const deliveryModeChanged = lateBinding<OnDeliveryModeChanged>('deliveryModeChanged')
@@ -346,7 +346,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   const scriptEvent = lateBinding<ScriptEventEmitter>('scriptEvent')
 
   // Diagnostics ring buffer — subscribes to the multi-subscriber eval-event
-  // channel so it coexists with the wire-system-events broadcaster.
+  // channel so it coexists with the wire-workspace-runtime-events broadcaster.
   const evalBuffer = createEvalBuffer()
   evalBuffer.attach(evalEvent.add)
 
@@ -392,12 +392,12 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
     callSystemLLM: (options) => callLLM(llmService.bound({ source: 'system' }), options),
   }
   const house = createHouse(houseCallbacks)
-  const routeMessage = createMessageRouter({ house, limitMetrics: shared.limitMetrics })
+  const routeMessage = createMessageRouter({ house, limitMetrics: deployment.limitMetrics })
   // Per-instance overlay over the process-shared tool registry. Pack tools,
   // skill-bundled tools, external tools, MCP tools and the codegen suite
   // live in shared (registered once at boot). Only house-bound built-ins
   // (room ops, post_to_room, write_script) register into the overlay below.
-  const toolRegistry = createOverlayToolRegistry(shared.sharedToolRegistry)
+  const toolRegistry = createOverlayToolRegistry(deployment.sharedToolRegistry)
 
   // Summary engine + scheduler — default model is the first AI agent's model,
   // or a fallback when none exists yet.
@@ -469,7 +469,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
     isScriptRunningInRoom: (roomId) => scriptRunnerRef?.getRun(roomId) !== undefined,
   })
 
-  // System-level membership operations — extracted to core/room-operations.ts.
+  // SamsinnWorkspaceRuntime-level membership operations — extracted to core/room-operations.ts.
   const roomOps = createRoomOperations({
     team,
     house,
@@ -575,7 +575,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   // Register HOUSE-BOUND built-in tools into the per-instance overlay.
   // Process-wide tools (pass, get_time, web *, test_tool, list_skills,
   // write_skill / write_tool, install_pack et al, MCP tools, external tools,
-  // skill-bundled tools, pack-bundled tools) live in shared.sharedToolRegistry
+  // skill-bundled tools, pack-bundled tools) live in deployment.sharedToolRegistry
   // and are registered once at boot — see bootstrap.ts.
   toolRegistry.registerAll([
     // Room management — bound to per-instance house
@@ -620,7 +620,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   const skillsDir = sharedPaths.skills()
   const scriptsDir = sharedPaths.scripts()
   const packsDir = sharedPaths.packs()
-  const skillStore = shared.sharedSkillStore
+  const skillStore = deployment.sharedSkillStore
   const bundledExamplesDir = `${process.cwd()}/examples/scripts`
   // Pack-bundled scripts: each reload re-scans ~/.samsinn/packs/<ns>/scripts/
   // and tags each loaded script with `pack: <ns>` so the runner gates by
@@ -691,10 +691,10 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   // backed; same migration as skillStore is a future PR).
   toolRegistry.register(createWriteScriptTool(scriptStore, () => { /* onChange already broadcasts */ }))
 
-  // Forward-ref so the runner can call System.* without a build-order cycle.
-  const systemRef: { current: System | undefined } = { current: undefined }
+  // Forward-ref so the runner can call SamsinnWorkspaceRuntime.* without a build-order cycle.
+  const systemRef: { current: SamsinnWorkspaceRuntime | undefined } = { current: undefined }
   const scriptRunner = createScriptRunner({
-    getSystem: () => systemRef.current as System,
+    getSystem: () => systemRef.current as SamsinnWorkspaceRuntime,
     emit: (roomId, event, detail) => scriptEvent.proxy(roomId, event, detail),
   })
   // Wire the runner into the room callback declared up-front.
@@ -765,14 +765,14 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
       // Process-global counter sink — context-builder bumps
       // multimodalImagesDropped whenever it swaps image bytes for a text
       // placeholder. Surfaces in /api/system/health.
-      metricsSink: shared.limitMetrics,
+      metricsSink: deployment.limitMetrics,
     })
 
   // Provider-routing-event listener lives on the shared router (see
-  // createSharedRuntime). The dispatcher is normally set by SystemRegistry
-  // (multi-instance) — but when this System is built standalone (tests
+  // createDeploymentRuntime). The dispatcher is normally set by WorkspaceRuntimeRegistry
+  // (multi-instance) — but when this SamsinnWorkspaceRuntime is built standalone (tests
   // and the headless legacy path), we set the dispatcher to forward
-  // events to *this* System's late-bound subscribers. Multi-instance
+  // events to *this* SamsinnWorkspaceRuntime's late-bound subscribers. Multi-instance
   // boot overrides this when registry sets its own dispatcher.
 
   const boundSpawnHumanAgent = async (
@@ -879,10 +879,10 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
   }
 
   // Standalone path (test + legacy): forward provider routing events to
-  // *this* System. Multi-instance boot replaces this dispatcher via
-  // SystemRegistry → shared.setProviderEventDispatcher.
-  if (!sharedWasGiven) {
-    shared.setProviderEventDispatcher((event) => {
+  // *this* SamsinnWorkspaceRuntime. Multi-instance boot replaces this dispatcher via
+  // WorkspaceRuntimeRegistry → deployment.setProviderEventDispatcher.
+  if (!deploymentWasGiven) {
+    deployment.setProviderEventDispatcher((event) => {
       if (event.type === 'provider_bound') {
         providerBound.proxy(event.agentId, event.model, event.oldProvider, event.newProvider)
       } else if (event.type === 'provider_all_failed') {
@@ -893,10 +893,10 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
     })
   }
 
-  const system: System = {
+  const system: SamsinnWorkspaceRuntime = {
     house, team, routeMessage,
     llm, llmService, ollama, providerConfig, providerKeys, gateways, monitors,
-    ...(shared.llmPolicyStore ? { llmPolicyStore: shared.llmPolicyStore } : {}),
+    ...(deployment.llmPolicyStore ? { llmPolicyStore: deployment.llmPolicyStore } : {}),
     refreshAvailableModels,
     evalBuffer,
     toolRegistry, refreshAllAgentTools, skillStore, skillsDir,
@@ -951,7 +951,7 @@ export const createSystem = (options: CreateSystemOptions = {}): System => {
     setOnDocumentStatusChange: (cb) => { documentLateBinding.onStatusChange = cb },
     addEventObserver: (observer) => addEventObserver(observer, loggingState.sessionRef),
     logging,
-    limitMetrics: shared.limitMetrics,
+    limitMetrics: deployment.limitMetrics,
   }
   systemRef.current = system
   // Kick off the cache refresh. Race with the very first eval is benign —

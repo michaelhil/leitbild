@@ -28,7 +28,7 @@ import {
 } from '../core/storage/snapshot.ts'
 import { SYSTEM_SENDER_ID } from '../core/types/constants.ts'
 
-const buildSystem = () => {
+const buildWorkspaceRuntime = () => {
   const house = createHouse({})
   return { house, team: { listAgents: () => [], getAgent: () => undefined } }
 }
@@ -45,7 +45,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
     // 1. Live instance with two rooms each holding a pack we'll uninstall.
-    const live = buildSystem()
+    const live = buildWorkspaceRuntime()
     const cafe = live.house.createRoom({ name: 'Cafe', createdBy: SYSTEM_SENDER_ID })
     const office = live.house.createRoom({ name: 'Office', createdBy: SYSTEM_SENDER_ID })
     cafe.setActivePacks(['aviation', 'menus'])
@@ -70,7 +70,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     expect(onDisk?.rooms.find(r => r.profile.name === 'Cafe')?.activePacks).toContain('aviation')
 
     // 4. Reload into a fresh system.
-    const reloaded = buildSystem()
+    const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
       { house: reloaded.house, spawnAIAgent: async () => {} },
       onDisk!,
@@ -98,7 +98,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'm3-multi-scrub-'))
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
-    const live = buildSystem()
+    const live = buildWorkspaceRuntime()
     const room = live.house.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
     room.setActivePacks(['a', 'b', 'c', 'd'])
     await saveSnapshot(serializeSystem(live), snapshotPath)
@@ -107,7 +107,7 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     await appendPendingScrub(snapshotPath, { namespace: 'a', scheduledAt: '2026-05-06T10:00:00.000Z' })
     await appendPendingScrub(snapshotPath, { namespace: 'c', scheduledAt: '2026-05-06T10:01:00.000Z' })
 
-    const reloaded = buildSystem()
+    const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
       { house: reloaded.house, spawnAIAgent: async () => {} },
       (await loadSnapshot(snapshotPath))!,
@@ -120,14 +120,14 @@ describe('M3: evict-reload + cross-instance pack scrub round-trip', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'm3-noop-scrub-'))
     const snapshotPath = join(tmpDir, 'snapshot.json')
 
-    const live = buildSystem()
+    const live = buildWorkspaceRuntime()
     const room = live.house.createRoom({ name: 'Hub', createdBy: SYSTEM_SENDER_ID })
     room.setActivePacks(['kept'])
     await saveSnapshot(serializeSystem(live), snapshotPath)
 
     await appendPendingScrub(snapshotPath, { namespace: 'never-was-active', scheduledAt: '2026-05-06T10:00:00.000Z' })
 
-    const reloaded = buildSystem()
+    const reloaded = buildWorkspaceRuntime()
     await restoreFromSnapshot(
       { house: reloaded.house, spawnAIAgent: async () => {} },
       (await loadSnapshot(snapshotPath))!,

@@ -1,5 +1,5 @@
 // ============================================================================
-// System.resetState tests.
+// SamsinnWorkspaceRuntime.resetState tests.
 //
 // resetState is the Phase 3 primitive that backs the `reset_system` MCP tool.
 // It clears rooms and agents; preserves tool registry + skills + provider
@@ -9,13 +9,13 @@
 // ============================================================================
 
 import { describe, test, expect } from 'bun:test'
-import { createSystem } from './main.ts'
+import { createSamsinnWorkspaceRuntime } from './main.ts'
 import { SYSTEM_SENDER_ID } from './core/types/constants.ts'
 import { createHumanAgent } from './agents/human-agent.ts'
 
-describe('System.resetState', () => {
+describe('SamsinnWorkspaceRuntime.resetState', () => {
   test('clears rooms and agents, returns counts, preserves infrastructure', async () => {
-    const system = createSystem()
+    const system = createSamsinnWorkspaceRuntime()
 
     // Seed state: 2 rooms, 2 human agents (no LLM traffic needed).
     system.house.createRoom({ name: 'alpha', createdBy: SYSTEM_SENDER_ID })
@@ -42,7 +42,7 @@ describe('System.resetState', () => {
   })
 
   test('name re-use after reset — re-create agents/rooms with the same names', async () => {
-    const system = createSystem()
+    const system = createSamsinnWorkspaceRuntime()
 
     system.house.createRoom({ name: 'trial', createdBy: SYSTEM_SENDER_ID })
     const agent1 = createHumanAgent({ name: 'solver' }, () => {})
@@ -67,9 +67,9 @@ describe('lateBinding warn-once', () => {
     console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')) }
 
     try {
-      const system = createSystem({ instanceLabel: 'test-instance' })
+      const system = createSamsinnWorkspaceRuntime({ instanceLabel: 'test-instance' })
       // Use `bookmarksChanged` — wired into house callbacks but with no
-      // internal subscribers (wire-system-events would normally set one;
+      // internal subscribers (wire-workspace-runtime-events would normally set one;
       // tests skip that). Firing it without a subscriber should warn once.
       //
       // (The original version of this test fired `messagePosted` via room.post
@@ -94,7 +94,7 @@ describe('lateBinding warn-once', () => {
     console.warn = (...args: unknown[]) => { warnings.push(args.join(' ')) }
 
     try {
-      const system = createSystem({ instanceLabel: 'test-2' })
+      const system = createSamsinnWorkspaceRuntime({ instanceLabel: 'test-2' })
       // Set the subscriber BEFORE any event — no warning should fire.
       system.setOnMessagePosted(() => { /* ok */ })
       const room = system.house.createRoom({ name: 'lb-test-2', createdBy: SYSTEM_SENDER_ID })

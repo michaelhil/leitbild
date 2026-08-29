@@ -1,5 +1,5 @@
 // System-level room/membership operations — extracted from main.ts to keep
-// createSystem focused on factory wiring. Pure dependency injection: the
+// createSamsinnWorkspaceRuntime focused on factory wiring. Pure dependency injection: the
 // factory closes over team/house/routeMessage and the late-bound callbacks
 // it needs, and returns four functions with the original signatures.
 //

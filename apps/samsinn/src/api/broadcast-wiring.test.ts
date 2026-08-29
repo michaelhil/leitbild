@@ -1,8 +1,8 @@
 // ============================================================================
 // Integration test: cookie-bound instances get full broadcast wiring.
 //
-// The bug fixed in 5d73a8e was that wireSystemEvents was silently skipped
-// for non-boot instances because onSystemCreated ran before the registry's
+// The bug fixed in 5d73a8e was that wireWorkspaceRuntimeEvents was silently skipped
+// for non-boot instances because onWorkspaceRuntimeCreated ran before the registry's
 // internal map.set() — autoSaverFor(id) returned null, the `if (autoSaver)`
 // guard short-circuited, and every cookie-bound instance booted with
 // setOnEvalEvent / setOnMessagePosted / state.subscribe all unwired.
@@ -21,10 +21,10 @@ import { describe, test, expect, afterEach } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSharedRuntime } from '../core/shared-runtime.ts'
-import { createSystemRegistry } from '../core/instances/system-registry.ts'
+import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
+import { createWorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import { createWSManager, type WSManager } from './ws-handler.ts'
-import { wireSystemEvents } from './wire-system-events.ts'
+import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 
@@ -42,23 +42,23 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-streaming-'))
     process.env.SAMSINN_HOME = homeDir
 
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
 
-    // Forward-declared wsManager — the registry's onSystemCreated closes over
+    // Forward-declared wsManager — the registry's onWorkspaceRuntimeCreated closes over
     // this. The bootstrap pattern relies on wsManager being assigned before
     // any registry.getOrLoad() runs.
     let wsManager!: WSManager
     const broadcasts: Array<{ instanceId: string; msg: WSOutbound }> = []
 
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver) => {
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         // The exact same call that bootstrap.ts makes — this is the wiring
         // the bug skipped.
-        wireSystemEvents(system, wsManager, autoSaver, id)
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
 
@@ -86,7 +86,7 @@ describe('cookie-bound instance broadcast wiring (regression for 5d73a8e)', () =
 
     // Trigger a message that fires onMessagePosted. This is the chain the
     // bug broke: room.post -> onMessagePosted (via lateBinding proxy) ->
-    // wireSystemEvents-installed callback -> broadcastToInstance.
+    // wireWorkspaceRuntimeEvents-installed callback -> broadcastToInstance.
     sys.routeMessage(
       { rooms: [rooms[0]!.id] },
       { senderId: 'system', senderName: 'system', content: 'test note', type: 'system' },

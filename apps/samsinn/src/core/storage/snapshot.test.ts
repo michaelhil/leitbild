@@ -17,7 +17,7 @@ const noopDeliver: DeliverFn = () => {}
 const createTestSystem = () => {
   const team = createTeam()
   const house = createHouse({ deliver: noopDeliver })
-  // Create default room (main.ts does this in createSystem, but we're testing standalone)
+  // Create default room (main.ts does this in createSamsinnWorkspaceRuntime, but we're testing standalone)
   house.createRoom({ name: 'Introductions', createdBy: 'system' })
   return { house, team }
 }

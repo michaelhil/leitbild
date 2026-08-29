@@ -1,40 +1,40 @@
 // ============================================================================
 // Bootstrap — Startup logic for direct execution.
 //
-// Builds the shared runtime, the SystemRegistry, the WS manager, the
+// Builds the shared runtime, the WorkspaceRuntimeRegistry, the WS manager, the
 // janitor, and either the HTTP+WS server or the headless MCP stdio server.
 //
-// Multi-tenant: SystemRegistry holds N per-cookie systems. Each one is
+// Multi-tenant: WorkspaceRuntimeRegistry holds N per-cookie systems. Each one is
 // lazy-loaded on first request, evicted after SAMSINN_IDLE_MS (default
 // 30 min), and persisted at $SAMSINN_HOME/instances/<id>/snapshot.json.
 // Shared runtime: provider router, gateways, ProviderKeys, MCP tools.
 //
 // === Construction order (matters; do not reshuffle without thinking) ===
 //
-//   1. SharedRuntime  — provider router, gateways, shared registry/store.
-//   2. MCP tools      — register into shared.sharedToolRegistry once.
+//   1. DeploymentRuntime  — provider router, gateways, shared registry/store.
+//   2. MCP tools      — register into deployment.sharedToolRegistry once.
 //   3. Process tools  — pure / network / codegen tools registered once
 //                       into shared (gated by SAMSINN_ENABLE_*).
-//   4. SystemRegistry — onSystemCreated hook closes over wsManager (set in 5).
+//   4. WorkspaceRuntimeRegistry — onWorkspaceRuntimeCreated hook closes over wsManager (set in 5).
 //   5. wsManager      — assigned BEFORE any registry.getOrLoad runs, so
 //                       the hook always sees a defined value. Failure to
 //                       respect this is how 5d73a8e happened: any cookie-
-//                       bound instance whose onSystemCreated fired with
-//                       wsManager undefined silently skipped wireSystemEvents.
+//                       bound instance whose onWorkspaceRuntimeCreated fired with
+//                       wsManager undefined silently skipped wireWorkspaceRuntimeEvents.
 //   6. Pack admin     — install/update/uninstall_pack registered last
 //                       because they need the cross-instance refresh
 //                       callback that walks `registry.list()`.
 //   7. Boot system    — getOrLoad seeds the first cookieless visitor.
-//                       wsManager already exists; onSystemCreated wires it.
+//                       wsManager already exists; onWorkspaceRuntimeCreated wires it.
 //   8. Janitor + timers + HTTP server.
 //
 // Single wiring path: every instance (boot AND cookie-bound) gets its
-// broadcasts wired by the same onSystemCreated hook. There is NO rescue
+// broadcasts wired by the same onWorkspaceRuntimeCreated hook. There is NO rescue
 // branch elsewhere in this file. If you find yourself reaching for one,
 // the lifecycle invariant above is broken — fix it there.
 // ============================================================================
 
-import { createSystemRegistry } from './core/instances/system-registry.ts'
+import { createWorkspaceRuntimeRegistry } from './core/workspaces/runtime-registry.ts'
 import { startJanitor } from './core/instances/instance-cleanup.ts'
 import { DEFAULTS } from './core/types/constants.ts'
 import { registerAllMCPServers } from './integrations/mcp/client.ts'
@@ -51,13 +51,13 @@ import { sharedPaths, instancePaths } from './core/paths.ts'
 import { appendPendingScrub } from './core/storage/snapshot.ts'
 import { createToolRegistry } from './core/tool-registry.ts'
 import { generateInstanceId } from './api/instance-cookie.ts'
-import { wireSystemEvents } from './api/wire-system-events.ts'
+import { wireWorkspaceRuntimeEvents } from './api/wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './api/agent-tracking.ts'
 import { validateBootstrap } from './boot/validate.ts'
 import { buildProviderStack, summariseProviders } from './boot/provider-stack.ts'
 import { createWSManager } from './api/ws-handler.ts'
 // Process-wide tool factories. Anything that doesn't bind to a per-instance
-// `house` registers into shared.sharedToolRegistry once at boot, not per
+// `house` registers into deployment.sharedToolRegistry once at boot, not per
 // instance — see registerSharedTools below.
 import {
   createPassTool, createGetTimeTool, createTestToolTool, createListSkillsTool,
@@ -80,12 +80,12 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // === Provider stack ===
-  // All the wiring (config → keys → setup → SharedRuntime) lives in one
+  // All the wiring (config → keys → setup → DeploymentRuntime) lives in one
   // place: src/boot/provider-stack.ts. That's where the bug class fixed
   // in commits f04e61e / d0c1f73 / 3729e50 surfaced; isolating the order
   // keeps the contract obvious.
-  const { providerConfig, shared } = await buildProviderStack()
-  const providerSetup = shared.providerSetup
+  const { providerConfig, deployment } = await buildProviderStack()
+  const providerSetup = deployment.providerSetup
 
   // Load LLM policy (system default fallback chain). Persisted at
   // ~/.samsinn/llm-policy.json; UI edits via Settings → Providers take
@@ -98,7 +98,7 @@ export const bootstrap = async (): Promise<void> => {
     ...(envChain && envChain.length > 0 ? { envChain } : {}),
   })
   for (const w of policyWarnings) console.warn(`[llm-policy] ${w}`)
-  shared.llmPolicyStore = llmPolicyStore
+  deployment.llmPolicyStore = llmPolicyStore
 
   const pkg = await Bun.file(`${import.meta.dir}/../package.json`).json() as { version: string }
   console.log(`Samsinn v${pkg.version}${headless ? ' (headless)' : ''}`)
@@ -106,22 +106,22 @@ export const bootstrap = async (): Promise<void> => {
   console.log(summariseProviders(providerConfig))
 
   // === Boot logging template ===
-  // Each per-instance system applies this in its onSystemCreated hook.
+  // Each per-instance system applies this in its onWorkspaceRuntimeCreated hook.
   const bootLogConfig = parseLogConfigFromEnv()
 
   // === MCP tools — load once at boot ===
   // Each MCP server is a stdio child process. We register the Tool[]
-  // definitions directly into shared.sharedToolRegistry so every per-instance
-  // overlay can resolve them; the underlying connection is shared. Also kept
-  // on shared.mcpTools as a list for any consumer that needs the raw set.
+  // definitions directly into deployment.sharedToolRegistry so every per-instance
+  // overlay can resolve them; the underlying connection is deployment. Also kept
+  // on deployment.mcpTools as a list for any consumer that needs the raw set.
   const mcpConfigPath = `${import.meta.dir}/../mcp-servers.json`
   let mcpDisconnect = async (): Promise<void> => {}
   if (existsSync(mcpConfigPath)) {
     const tempRegistry = createToolRegistry()
     const result = await registerAllMCPServers(tempRegistry, await Bun.file(mcpConfigPath).json())
-    shared.mcpTools.push(...tempRegistry.list())
+    deployment.mcpTools.push(...tempRegistry.list())
     for (const tool of tempRegistry.list()) {
-      try { shared.sharedToolRegistry.register(tool) } catch { /* duplicate ignored */ }
+      try { deployment.sharedToolRegistry.register(tool) } catch { /* duplicate ignored */ }
     }
     mcpDisconnect = result.disconnect
   }
@@ -147,13 +147,13 @@ export const bootstrap = async (): Promise<void> => {
   // === Process-wide tool/skill/pack scan — once, into shared ===
   // Single FS scan: external tools, free-standing skills (cwd + samsinn-home),
   // and packs all register into the SHARED registry/store. Per-instance
-  // Systems wrap this in an overlay (see createSystem in main.ts).
-  // Replaces the old per-instance loaders that ran inside onSystemCreated
+  // Systems wrap this in an overlay (see createSamsinnWorkspaceRuntime in main.ts).
+  // Replaces the old per-instance loaders that ran inside onWorkspaceRuntimeCreated
   // and re-scanned everything for every cookie that hit the server.
-  await loadExternalTools(shared.sharedToolRegistry)
-  await loadSkills(resolve(process.cwd(), 'skills'), shared.sharedSkillStore, shared.sharedToolRegistry)
-  await loadSkills(sharedPaths.skills(), shared.sharedSkillStore, shared.sharedToolRegistry)
-  await loadAllPacks(sharedPaths.packs(), shared.sharedToolRegistry, shared.sharedSkillStore)
+  await loadExternalTools(deployment.sharedToolRegistry)
+  await loadSkills(resolve(process.cwd(), 'skills'), deployment.sharedSkillStore, deployment.sharedToolRegistry)
+  await loadSkills(sharedPaths.skills(), deployment.sharedSkillStore, deployment.sharedToolRegistry)
+  await loadAllPacks(sharedPaths.packs(), deployment.sharedToolRegistry, deployment.sharedSkillStore)
 
   // Bundled packs — compiled into the binary. Each pack's tools register
   // with kind:'pack-bundled' + pack:<namespace> so per-room activation
@@ -169,11 +169,11 @@ export const bootstrap = async (): Promise<void> => {
   {
     const { BUNDLED_DEMO_TOOLS } = await import('./packs/synthetic-demos/tools/index.ts')
     for (const tool of BUNDLED_DEMO_TOOLS) {
-      shared.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'demos', displayName: tool.name })
+      deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'demos', displayName: tool.name })
     }
     const { PWR_OPS_TOOLS } = await import('./packs/pwr-ops/index.ts')
     for (const tool of PWR_OPS_TOOLS) {
-      shared.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'pwr-ops', displayName: tool.name })
+      deployment.sharedToolRegistry.registerWithSource(tool, { kind: 'pack-bundled', pack: 'pwr-ops', displayName: tool.name })
     }
   }
 
@@ -230,7 +230,7 @@ export const bootstrap = async (): Promise<void> => {
   // === Process-wide built-in tools (no per-instance state) ===
   // Anything that doesn't bind to a per-instance House registers ONCE here.
   // House-bound tools (room ops, artifacts, post_to_room, …) stay in
-  // createSystem and live in the per-instance overlay.
+  // createSamsinnWorkspaceRuntime and live in the per-instance overlay.
   const isDeployMode = !!(process.env.SAMSINN_TOKEN && process.env.SAMSINN_TOKEN.length > 0)
   const flag = (name: string, defaultOn: boolean): boolean => {
     const v = process.env[name]
@@ -250,10 +250,10 @@ export const bootstrap = async (): Promise<void> => {
   // the runtime to whatever is on disk at boot.
   const packsEnabled = flag('SAMSINN_ENABLE_PACKS', true)
 
-  shared.sharedToolRegistry.register(createPassTool())
-  shared.sharedToolRegistry.register(createGetTimeTool())
-  shared.sharedToolRegistry.register(createTestToolTool(shared.sharedToolRegistry))
-  shared.sharedToolRegistry.register(createListSkillsTool(shared.sharedSkillStore))
+  deployment.sharedToolRegistry.register(createPassTool())
+  deployment.sharedToolRegistry.register(createGetTimeTool())
+  deployment.sharedToolRegistry.register(createTestToolTool(deployment.sharedToolRegistry))
+  deployment.sharedToolRegistry.register(createListSkillsTool(deployment.sharedSkillStore))
   // Geo: one-shot migration of any pre-registry layout, then register the
   // shared geodata tools. The migration is idempotent — subsequent boots
   // see the registry file and do nothing.
@@ -272,11 +272,11 @@ export const bootstrap = async (): Promise<void> => {
     }
     return undefined
   }
-  shared.sharedToolRegistry.register(createGeoLookupTool({ getActivePacks: getRoomActivePacksForGeo }))
-  shared.sharedToolRegistry.register(createGeoAddTool())
-  shared.sharedToolRegistry.register(createGeoRemoveTool())
-  shared.sharedToolRegistry.register(createGeoListCategoriesTool())
-  shared.sharedToolRegistry.register(createGeoListFeaturesTool())
+  deployment.sharedToolRegistry.register(createGeoLookupTool({ getActivePacks: getRoomActivePacksForGeo }))
+  deployment.sharedToolRegistry.register(createGeoAddTool())
+  deployment.sharedToolRegistry.register(createGeoRemoveTool())
+  deployment.sharedToolRegistry.register(createGeoListCategoriesTool())
+  deployment.sharedToolRegistry.register(createGeoListFeaturesTool())
   // Leitbild agent tools (V2.A) — visible to all rooms, but each requires
   // the caller's agent to have a leitbildBinding in its config (otherwise
   // returns an explanatory error). Tool execution looks up the binding via
@@ -302,7 +302,7 @@ export const bootstrap = async (): Promise<void> => {
       return registry.instanceForAgent(agentId)
     }
     for (const tool of createLeitbildTools({ getBinding: getLeitbildBinding, getScope: getLeitbildScope })) {
-      shared.sharedToolRegistry.register(tool)
+      deployment.sharedToolRegistry.register(tool)
     }
     // V2.B: command tool (operator role only — enforced at execution time
     // inside the tool, not at registration time). Same lookup for binding,
@@ -318,7 +318,7 @@ export const bootstrap = async (): Promise<void> => {
       return undefined
     }
     for (const tool of createLeitbildCommandTools({ getBinding: getLeitbildBinding, getAgentName, getScope: getLeitbildScope })) {
-      shared.sharedToolRegistry.register(tool)
+      deployment.sharedToolRegistry.register(tool)
     }
     // V3 (this commit): lb_screenshot agent tool. Requires a connected
     // browser session — broadcasts via wsManager.broadcastToInstance,
@@ -341,7 +341,7 @@ export const bootstrap = async (): Promise<void> => {
         return undefined
       },
     })
-    shared.sharedToolRegistry.register(screenshotTool)
+    deployment.sharedToolRegistry.register(screenshotTool)
   }
   // Wikis used to be a fetched-content subsystem. As of commit N, packs
   // declare wiki URLs as metadata only (pack.json `wikis: [{ name, url }]`)
@@ -354,7 +354,7 @@ export const bootstrap = async (): Promise<void> => {
   // for non-user geodata.
 
   if (networkToolsEnabled) {
-    shared.sharedToolRegistry.registerAll(createWebTools({
+    deployment.sharedToolRegistry.registerAll(createWebTools({
       tavilyApiKey: process.env.TAVILY_API_KEY,
       braveApiKey: process.env.BRAVE_API_KEY,
       googleApiKey: process.env.GOOGLE_CSE_API_KEY,
@@ -365,7 +365,7 @@ export const bootstrap = async (): Promise<void> => {
     // write_skill writes a SKILL.md file and registers into the shared store —
     // visible across instances immediately. write_tool / pack admin land
     // below, after `registry` exists (they need cross-instance refresh).
-    shared.sharedToolRegistry.register(createWriteSkillTool(shared.sharedSkillStore, sharedPaths.skills()))
+    deployment.sharedToolRegistry.register(createWriteSkillTool(deployment.sharedSkillStore, sharedPaths.skills()))
   }
 
   // === Per-agent wiring on spawn/remove ===
@@ -373,41 +373,41 @@ export const bootstrap = async (): Promise<void> => {
   // (src/api/agent-state-wiring.test.ts) exercises the SAME code that runs
   // in production. Do not duplicate the wrapper logic here.
 
-  // === SystemRegistry ===
-  // The onSystemCreated hook closes over `wsManager` (assigned right after
-  // createSystemRegistry returns, before any `registry.getOrLoad()` call).
+  // === WorkspaceRuntimeRegistry ===
+  // The onWorkspaceRuntimeCreated hook closes over `wsManager` (assigned right after
+  // createWorkspaceRuntimeRegistry returns, before any `registry.getOrLoad()` call).
   // The hook always sees a defined value. In headless mode the wsManager is
   // constructed but never accepts upgrades — no WS clients connect.
   // Definite-assignment assertion (`!`) is fine: the assignment site below
   // runs synchronously before any registry consumer code.
   let wsManager!: ReturnType<typeof createWSManager>
 
-  // Leitbild mirror service — created eagerly so the onSystemCreated hook
+  // Leitbild mirror service — created eagerly so the onWorkspaceRuntimeCreated hook
   // can call restoreAll(system.house) for any room with persisted
   // leitbildMirror config. Without this, restored mirrors stay dormant
   // until a human hits the mirror endpoint (lazy reattach).
   const { createMirrorService } = await import('./integrations/leitbild/mirror-service.ts')
-  const leitbildMirror = createMirrorService({ limitMetrics: shared.limitMetrics })
+  const leitbildMirror = createMirrorService({ limitMetrics: deployment.limitMetrics })
 
-  // === SystemRegistry ===
-  const registry = createSystemRegistry({
-    shared,
+  // === WorkspaceRuntimeRegistry ===
+  const registry = createWorkspaceRuntimeRegistry({
+    deployment,
     // Lazy validateBootstrap: fires once on the first successful getOrLoad.
     // Replaces the boot-time call against a throwaway boot system. Contract
     // still runs before any traffic actually reaches a System; we just
     // don't materialize an empty instance dir for the privilege.
     // The wsManager closure is safe because (a) the let-with-assertion
     // pattern guarantees it's set before any getOrLoad runs, and (b) the
-    // onSystemCreated hook below calls wireSystemEvents synchronously,
+    // onWorkspaceRuntimeCreated hook below calls wireWorkspaceRuntimeEvents synchronously,
     // so by the time onFirstLoad fires the wired-state is already true.
     onFirstLoad: (system, id) => validateBootstrap(system, {
       isWsWired: () => wsManager.isWired(id),
     }),
-    onSystemCreated: async (system, id, autoSaver) => {
+    onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
       // No per-instance FS scans: external tools, skills, packs and MCP
-      // tools all live in shared.sharedToolRegistry (populated above before
+      // tools all live in deployment.sharedToolRegistry (populated above before
       // the registry was built). Per-instance toolRegistry is a thin overlay
-      // that adds house-bound built-ins on top. See main.ts createSystem.
+      // that adds house-bound built-ins on top. See main.ts createSamsinnWorkspaceRuntime.
       // Configure logging from env template.
       try {
         await system.logging.configure(bootLogConfig)
@@ -433,8 +433,8 @@ export const bootstrap = async (): Promise<void> => {
       // Wire WS broadcasts + autosave. wsManager is guaranteed assigned
       // by the time any getOrLoad runs (see the `let wsManager!:` block
       // above). autoSaver is passed in directly because the registry map
-      // entry isn't set until buildSystem returns.
-      wireSystemEvents(system, wsManager, autoSaver, id)
+      // entry isn't set until buildWorkspaceRuntime returns.
+      wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       // Reattach any Leitbild mirrors whose room config was restored from
       // snapshot. Without this, mirrors stay dormant until the lazy
       // reattach-on-GET fires (which requires a human or agent hitting
@@ -442,7 +442,7 @@ export const bootstrap = async (): Promise<void> => {
       // errors by posting a [mirror error] system message.
       void leitbildMirror.restoreAll(system.house, id)
     },
-    onSystemEvicted: (system, id) => {
+    onWorkspaceRuntimeEvicted: (system, id) => {
       // Close WS sessions for this instance — they hold dangling references.
       for (const [token, sess] of [...wsManager.sessions]) {
         if (sess.instanceId !== id) continue
@@ -520,8 +520,8 @@ export const bootstrap = async (): Promise<void> => {
   // Two independent gates: codegenEnabled covers write_tool (arbitrary TS
   // on disk); packsEnabled covers vetted GitHub pack management.
   if (codegenEnabled) {
-    shared.sharedToolRegistry.register(createWriteToolTool(
-      shared.sharedToolRegistry, shared.sharedSkillStore, crossInstanceRefreshAllAgentTools,
+    deployment.sharedToolRegistry.register(createWriteToolTool(
+      deployment.sharedToolRegistry, deployment.sharedSkillStore, crossInstanceRefreshAllAgentTools,
     ))
   }
   if (packsEnabled) {
@@ -648,10 +648,10 @@ export const bootstrap = async (): Promise<void> => {
       return out
     }
 
-    shared.sharedToolRegistry.registerAll(createPackTools({
+    deployment.sharedToolRegistry.registerAll(createPackTools({
       packsDir: sharedPaths.packs(),
-      toolRegistry: shared.sharedToolRegistry,
-      skillStore: shared.sharedSkillStore,
+      toolRegistry: deployment.sharedToolRegistry,
+      skillStore: deployment.sharedSkillStore,
       refreshAllAgentTools: crossInstanceRefreshAllAgentTools,
       notifyPacksChanged: crossInstanceNotifyPacksChanged,
       scrubActivePacks: crossInstanceScrubActivePacks,
@@ -666,13 +666,13 @@ export const bootstrap = async (): Promise<void> => {
   // single boot system. State subscriptions broadcast scoped to the
   // originating instance via broadcastToInstance.
   // Order matters: this assignment MUST happen before the first getOrLoad,
-  // otherwise the onSystemCreated hook would observe `wsManager` undefined
-  // and silently skip wireSystemEvents — that was the source of a long
+  // otherwise the onWorkspaceRuntimeCreated hook would observe `wsManager` undefined
+  // and silently skip wireWorkspaceRuntimeEvents — that was the source of a long
   // latent bug fixed in commit 5d73a8e. Pre-assigning wsManager keeps the
   // hook's wiring path single, with no rescue branch elsewhere.
   wsManager = createWSManager({
     getSystem: (id) => registry.tryGetLive(id),
-    limitMetrics: shared.limitMetrics,
+    limitMetrics: deployment.limitMetrics,
   })
 
   // Wire the per-provider monitor heartbeat to the live WS-client count.
@@ -685,7 +685,7 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // === Provider routing event dispatcher (registry-aware) ===
-  shared.setProviderEventDispatcher((event) => {
+  deployment.setProviderEventDispatcher((event) => {
     if (!event.agentId) return   // events without an agentId can't be routed
     const instanceId = registry.instanceForAgent(event.agentId)
     if (!instanceId) return      // late event for evicted/removed agent
@@ -703,8 +703,8 @@ export const bootstrap = async (): Promise<void> => {
     const headlessId = generateInstanceId()
     const system = await registry.getOrLoad(headlessId)
 
-    // wsManager not used in headless mode; create a stub so wireSystemEvents
-    // (called inside onSystemCreated) ran with `wsManager === undefined`
+    // wsManager not used in headless mode; create a stub so wireWorkspaceRuntimeEvents
+    // (called inside onWorkspaceRuntimeCreated) ran with `wsManager === undefined`
     // and skipped wiring. That's intentional — there are no WS clients in
     // headless. Provider events dispatch through the shared listener
     // anyway; agent.dispatchProviderEvent still proxies to MCP if configured.
@@ -763,7 +763,7 @@ export const bootstrap = async (): Promise<void> => {
   // Tool surface log — sourced from the shared registry (process-wide).
   // Per-instance overlays (house-bound built-ins) aren't included; those
   // are uniform across instances anyway.
-  console.log(`Tools: ${shared.sharedToolRegistry.list().map(t => t.name).join(', ')}`)
+  console.log(`Tools: ${deployment.sharedToolRegistry.list().map(t => t.name).join(', ')}`)
 
   // Activation summary — operator-visible verification that the pack
   // surface is what they expect. Counts fan out from the shared registry:
@@ -775,8 +775,8 @@ export const bootstrap = async (): Promise<void> => {
   // here are upper bounds per pack — the per-room filter applies the
   // 'core'/'local' implicit-active rule on top.
   {
-    const entries = shared.sharedToolRegistry.listEntries()
-    const skillEntries = shared.sharedSkillStore.list()
+    const entries = deployment.sharedToolRegistry.listEntries()
+    const skillEntries = deployment.sharedSkillStore.list()
     const counts = new Map<string, { tools: number; skills: number }>()
     const bump = (pack: string, kind: 'tools' | 'skills'): void => {
       const slot = counts.get(pack) ?? { tools: 0, skills: 0 }

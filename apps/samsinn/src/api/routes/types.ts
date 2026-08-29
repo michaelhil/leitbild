@@ -1,4 +1,4 @@
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { Agent } from '../../core/types/agent.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
 import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
@@ -13,7 +13,7 @@ export interface ResetInstanceFail {
 }
 export type ResetInstanceResult = ResetInstanceOk | ResetInstanceFail
 
-// Distinct from reset: evict drops the System from in-memory state but
+// Distinct from reset: evict drops the SamsinnWorkspaceRuntime from in-memory state but
 // leaves the on-disk snapshot intact. The next request lazy-reloads via
 // restoreFromSnapshot, exercising the evict→reload boundary that the
 // streaming-probe deploy gate uses to catch unsubscribeAgentState-style
@@ -56,7 +56,7 @@ export interface DiagnosticsCapability {
 }
 
 export interface RouteContext {
-  readonly system: System
+  readonly system: SamsinnWorkspaceRuntime
   readonly accessContext: AccessContext
   // Instance bound to this request via the cookie (resolved before dispatch).
   readonly instanceId: string

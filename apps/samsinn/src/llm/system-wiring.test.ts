@@ -1,12 +1,12 @@
 // ============================================================================
-// E2E integration test: verifies createSystem wires router routing events
+// E2E integration test: verifies createSamsinnWorkspaceRuntime wires router routing events
 // through to the late-bound onProviderBound / onProviderAllFailed / onProvider
-// StreamFailed callbacks exposed on System. Without this wiring, Phase 3
+// StreamFailed callbacks exposed on SamsinnWorkspaceRuntime. Without this wiring, Phase 3
 // toast UI would never receive events.
 // ============================================================================
 
 import { describe, test, expect } from 'bun:test'
-import { createSystem } from '../main.ts'
+import { createSamsinnWorkspaceRuntime } from '../main.ts'
 import type { ProviderSetupResult } from './providers-setup.ts'
 import type { ProviderGateway } from './provider-gateway.ts'
 import type { ChatRequest, ChatResponse, GatewayMetrics, ProviderHealth } from '../core/types/llm.ts'
@@ -82,12 +82,12 @@ const baseConfig = {
   orderFromUser: false,
 }
 
-describe('System.llm wiring — router events reach late-bound callbacks', () => {
+describe('SamsinnWorkspaceRuntime.llm wiring — router events reach late-bound callbacks', () => {
   test('successful chat fires onProviderBound with agent context', async () => {
     const a = makeGateway()
     const b = makeGateway()
     const setup = makeSetup({ a, b }, ['a', 'b'])
-    const system = createSystem({ providerConfig: baseConfig, providerSetup: setup })
+    const system = createSamsinnWorkspaceRuntime({ providerConfig: baseConfig, providerSetup: setup })
 
     const events: Array<{ agentId: string | null; model: string; oldProvider: string | null; newProvider: string }> = []
     system.setOnProviderBound((agentId, model, oldProvider, newProvider) => {
@@ -113,7 +113,7 @@ describe('System.llm wiring — router events reach late-bound callbacks', () =>
     })
     const b = makeGateway()
     const setup = makeSetup({ a, b }, ['a', 'b'])
-    const system = createSystem({ providerConfig: baseConfig, providerSetup: setup })
+    const system = createSamsinnWorkspaceRuntime({ providerConfig: baseConfig, providerSetup: setup })
 
     const events: Array<{ newProvider: string }> = []
     system.setOnProviderBound((_, __, ___, newProvider) => { events.push({ newProvider }) })
@@ -137,7 +137,7 @@ describe('System.llm wiring — router events reach late-bound callbacks', () =>
       responses: [createCloudProviderError({ code: 'provider_down', provider: 'b', message: '503' })],
     })
     const setup = makeSetup({ a, b }, ['a', 'b'])
-    const system = createSystem({ providerConfig: baseConfig, providerSetup: setup })
+    const system = createSamsinnWorkspaceRuntime({ providerConfig: baseConfig, providerSetup: setup })
 
     const failEvents: Array<{ model: string; attempts: ReadonlyArray<{ provider: string }> }> = []
     system.setOnProviderAllFailed((_, model, attempts) => {
@@ -160,7 +160,7 @@ describe('System.llm wiring — router events reach late-bound callbacks', () =>
   test('callSystemLLM path emits events with agentId=null', async () => {
     const a = makeGateway()
     const setup = makeSetup({ a }, ['a'])
-    const system = createSystem({ providerConfig: { ...baseConfig, order: ['a'] }, providerSetup: setup })
+    const system = createSamsinnWorkspaceRuntime({ providerConfig: { ...baseConfig, order: ['a'] }, providerSetup: setup })
 
     const events: Array<{ agentId: string | null }> = []
     system.setOnProviderBound((agentId) => { events.push({ agentId }) })

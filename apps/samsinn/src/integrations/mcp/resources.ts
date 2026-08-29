@@ -1,8 +1,8 @@
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 
-export const registerMCPResources = (mcpServer: McpServer, system: System): void => {
+export const registerMCPResources = (mcpServer: McpServer, system: SamsinnWorkspaceRuntime): void => {
   mcpServer.resource(
     'rooms',
     'samsinn://rooms',

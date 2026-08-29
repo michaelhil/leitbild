@@ -15,18 +15,18 @@
 //     nowhere to render.
 //
 //   - subscribeAgentState was called in 3 places: REST agent-create,
-//     WS agent-create, and a one-shot init-loop in wireSystemEvents that
+//     WS agent-create, and a one-shot init-loop in wireWorkspaceRuntimeEvents that
 //     iterated `system.team.listAgents()` at wire time. The init-loop
-//     covered SNAPSHOT-RESTORED agents (which exist before wireSystemEvents
+//     covered SNAPSHOT-RESTORED agents (which exist before wireWorkspaceRuntimeEvents
 //     runs). It did NOT cover agents spawned AFTER wire — including
 //     seedFreshInstance's Helper, script-engine cast members, and any
 //     programmatic spawn. They silently bypassed subscription.
 //
-// FIX (bootstrap.ts wireAgentTracking + wire-system-events.ts init-loop)
+// FIX (bootstrap.ts wireAgentTracking + wire-workspace-runtime-events.ts init-loop)
 //   - Per-agent subscription is centralized in the wireAgentTracking spawn
 //     wrapper. Every system.spawnAIAgent / spawnHumanAgent / removeAgent
 //     call goes through it. Subscribe is idempotent so the wrapper coexists
-//     with the snapshot-init-loop in wireSystemEvents.
+//     with the snapshot-init-loop in wireWorkspaceRuntimeEvents.
 //   - REST + WS handlers no longer call subscribeAgentState themselves.
 //
 // WHAT THIS TEST PROVES
@@ -41,10 +41,10 @@ import { describe, test, expect, afterEach, beforeEach } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSharedRuntime } from '../core/shared-runtime.ts'
-import { createSystemRegistry } from '../core/instances/system-registry.ts'
+import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
+import { createWorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import { createWSManager, type WSManager } from './ws-handler.ts'
-import { wireSystemEvents } from './wire-system-events.ts'
+import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './agent-tracking.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
@@ -66,7 +66,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
   })
 
   test('seed-spawned agent: subscribeAgentState IS called and agent_state broadcasts arrive', async () => {
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
@@ -80,14 +80,14 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const broadcasts: Array<{ instanceId: string; msg: WSOutbound }> = []
     const subscribed: Array<{ agentId: string; agentName: string; instanceId: string }> = []
 
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver: AutoSaver) => {
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
         // Simulate bootstrap.ts's first async step (logging.configure).
-        // Critical: this releases a microtask, so if buildSystem doesn't
+        // Critical: this releases a microtask, so if buildWorkspaceRuntime doesn't
         // await this hook, seedFreshInstance races ahead and spawns Helper
         // BEFORE wireAgentTracking installs its spawn-wrapper. The race-fix
-        // in system-registry.ts must await opts.onSystemCreated.
+        // in runtime-registry.ts must await opts.onWorkspaceRuntimeCreated.
         await new Promise(r => setImmediate(r))
 
         wireAgentTracking(system, id, {
@@ -110,7 +110,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
           },
           unsubscribeAgentState: () => { /* exercised by the second test */ },
         })
-        wireSystemEvents(system, wsManager, autoSaver, id)
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
 
@@ -122,7 +122,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
 
     // 1. Seed must have produced exactly one AI agent (Helper).
     // Regression context: there used to be a 'general' fallback room
-    // creation in onSystemCreated that ran sync before seed could check
+    // creation in onWorkspaceRuntimeCreated that ran sync before seed could check
     // `rooms.length > 0`, causing seed to short-circuit and Helper to
     // never spawn. The fallback was removed; if it sneaks back in,
     // this assertion catches it.
@@ -137,7 +137,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
 
     // 2. Per-agent subscription must have been routed through the wrapper.
     // Pre-fix: zero entries — the only places that called subscribeAgentState
-    // were REST/WS handlers (none ran here) and the wireSystemEvents init-
+    // were REST/WS handlers (none ran here) and the wireWorkspaceRuntimeEvents init-
     // loop (which iterated team BEFORE seed spawned Helper).
     const subForHelper = subscribed.filter(s => s.agentId === helper.id && s.instanceId === cookieId)
     expect(subForHelper).toHaveLength(1)
@@ -176,7 +176,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
   })
 
   test('removeAgent path: unsubscribeAgentState is called by the wrapper', async () => {
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
@@ -184,9 +184,9 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     let wsManager!: WSManager
     const unsubscribed: string[] = []
 
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver: AutoSaver) => {
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
         wireAgentTracking(system, id, {
           attach: registry.attachAgent,
           detach: registry.detachAgent,
@@ -196,7 +196,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
             wsManager.unsubscribeAgentState(agentId)
           },
         })
-        wireSystemEvents(system, wsManager, autoSaver, id)
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
 
@@ -213,7 +213,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
 
   test('evict + reload cycle: agent_state broadcasts still arrive for snapshot-restored agents', async () => {
     // Regression for the "responses pop in fully formed, no thinking
-    // indicator" bug on samsinn.app. Cause: onSystemEvicted closed WS
+    // indicator" bug on samsinn.app. Cause: onWorkspaceRuntimeEvicted closed WS
     // sessions but did not call wsManager.unsubscribeAgentState for the
     // evicted agents. stateUnsubs (a process-global Map keyed by
     // agent.id) kept entries bound to the dead agent.state closures.
@@ -223,28 +223,28 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     // re-subscription. The reloaded agents' notifyState() fired to
     // nowhere — no 'generating' broadcast, no thinking indicator,
     // even though chunk broadcasts worked fine. Fix in bootstrap.ts
-    // onSystemEvicted: also unsubscribe each agent.
-    const shared = createSharedRuntime({
+    // onWorkspaceRuntimeEvicted: also unsubscribe each agent.
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
 
     let wsManager!: WSManager
 
-    const registry = createSystemRegistry({
-      shared,
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
       idleMs: 10_000_000, // disable idle eviction; we'll evict explicitly
       drainMs: 100,
-      onSystemCreated: async (system, id, autoSaver: AutoSaver) => {
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
         wireAgentTracking(system, id, {
           attach: registry.attachAgent,
           detach: registry.detachAgent,
           subscribeAgentState: wsManager.subscribeAgentState,
           unsubscribeAgentState: wsManager.unsubscribeAgentState,
         })
-        wireSystemEvents(system, wsManager, autoSaver, id)
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
-      onSystemEvicted: (system, _id) => {
+      onWorkspaceRuntimeEvicted: (system, _id) => {
         // Mirror bootstrap.ts: detach + unsubscribe every agent so
         // stateUnsubs doesn't carry stale closures across reload.
         // If the unsubscribeAgentState call below is removed, the
@@ -346,7 +346,7 @@ describe('per-agent state subscription is wired for every spawn path', () => {
       const types = wsMessages.slice(beforeReloadCount).map(d => {
         try { const m = JSON.parse(d) as { type?: string; state?: string }; return `${m.type}/${m.state ?? '-'}` } catch { return '?' }
       })
-      throw new Error(`No 'generating' broadcast post-reload. Got ${wsMessages.length - beforeReloadCount} messages: [${types.join(', ')}] — onSystemEvicted likely didn't unsubscribeAgentState.`)
+      throw new Error(`No 'generating' broadcast post-reload. Got ${wsMessages.length - beforeReloadCount} messages: [${types.join(', ')}] — onWorkspaceRuntimeEvicted likely didn't unsubscribeAgentState.`)
     }
     expect(postReloadGenerating.length).toBeGreaterThan(0)
   })

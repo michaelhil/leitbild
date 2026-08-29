@@ -8,7 +8,7 @@
 // The dispatch loop tries each handler in order; first match wins.
 // ============================================================================
 
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { Agent } from '../core/types/agent.ts'
 import type { AgentProfile } from '../core/types/messaging.ts'
 import type { RoomState } from '../core/types/room.ts'
@@ -69,7 +69,7 @@ export interface WSData {
   instanceId: string                  // bound at upgrade from cookie
   // A deleted-instance handshake is upgraded only so the browser can
   // receive a meaningful 4xxx close code. The open handler closes it
-  // before loading or materializing any System.
+  // before loading or materializing any SamsinnWorkspaceRuntime.
   terminalClose?: 'instance-deleted'
 }
 
@@ -90,7 +90,7 @@ export interface WSManager {
   // that applies regardless of which instance a client belongs to.
   readonly broadcast: (msg: WSOutbound) => void
   // Per-instance broadcast — only delivers to ws connections whose session
-  // has matching instanceId. Used by wireSystemEvents so an event fired in
+  // has matching instanceId. Used by wireWorkspaceRuntimeEvents so an event fired in
   // instance A doesn't reach instance B's clients.
   readonly broadcastToInstance: (instanceId: string, msg: WSOutbound) => void
   readonly subscribeAgentState: (agent: Agent, instanceId: string) => void
@@ -107,7 +107,7 @@ export interface WSManager {
   // Returns the number of sessions dropped.
   readonly sweepStaleSessions: (now?: number) => number
   // Diagnostic surface — exposed via /api/system/diagnostics. Read-only.
-  // markWired(id) is called by wireSystemEvents on first call per instance
+  // markWired(id) is called by wireWorkspaceRuntimeEvents on first call per instance
   // so the diagnostics endpoint can report which instances actually had
   // their broadcast slots wired. lastBroadcastAt is the timestamp of the
   // most recent broadcastToInstance call for that id (regardless of how
@@ -118,13 +118,13 @@ export interface WSManager {
   readonly sessionCount: () => number
 }
 
-// Resolver: given an instanceId, return the live System if currently in
+// Resolver: given an instanceId, return the live SamsinnWorkspaceRuntime if currently in
 // memory, or undefined. WSManager uses this to scope buildSnapshot/state
 // subscriptions to the caller's tenant rather than closing over a single
 // boot system. The shared Ollama gateway is the same across instances, so
 // any live system's ollama field works (callers pass the resolved one in).
 export interface WSManagerDeps {
-  readonly getSystem: (instanceId: string) => System | undefined
+  readonly getSystem: (instanceId: string) => SamsinnWorkspaceRuntime | undefined
   // Optional — when present, backpressure drops are counted. Tests omit.
   readonly limitMetrics?: LimitMetrics
 }
@@ -173,7 +173,7 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     }
   }
 
-  // Diagnostic state — populated by wireSystemEvents (markWired) and
+  // Diagnostic state — populated by wireWorkspaceRuntimeEvents (markWired) and
   // every broadcastToInstance call (lastBroadcastByInstance). Surfaced
   // via /api/system/diagnostics. No effect on hot-path latency.
   const wiredInstances = new Set<string>()
@@ -192,8 +192,8 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     }
   }
 
-  // System callback wiring (room/membership/agent-activity/provider-events/
-  // summary lifecycle/ollama-health) lives in src/api/wire-system-events.ts.
+  // SamsinnWorkspaceRuntime callback wiring (room/membership/agent-activity/provider-events/
+  // summary lifecycle/ollama-health) lives in src/api/wire-workspace-runtime-events.ts.
   // Ollama metrics are pulled by the dashboard via GET /api/ollama/metrics
   // (3s polling) — no WS push path.
 
@@ -218,9 +218,9 @@ export const createWSManager = (deps: WSManagerDeps): WSManager => {
     }
   }
 
-  // Existing-agent subscription seeding moved into wireSystemEvents so
-  // it runs at the right time (after the System is fully populated by
-  // any snapshot restore). Single-tenant boot path calls wireSystemEvents
+  // Existing-agent subscription seeding moved into wireWorkspaceRuntimeEvents so
+  // it runs at the right time (after the SamsinnWorkspaceRuntime is fully populated by
+  // any snapshot restore). Single-tenant boot path calls wireWorkspaceRuntimeEvents
   // immediately after createWSManager, so behavior is preserved.
 
   const buildSnapshot = (instanceId: string, sessionToken?: string): Extract<WSOutbound, { type: 'snapshot' }> | null => {
@@ -303,7 +303,7 @@ export const handleWSMessage = async (
   ws: WSConnection,
   session: ClientSession,
   raw: string,
-  system: System,
+  system: SamsinnWorkspaceRuntime,
   wsManager: WSManager,
   leitbildMirror?: import('../integrations/leitbild/mirror-service.ts').MirrorService,
 ): Promise<void> => {

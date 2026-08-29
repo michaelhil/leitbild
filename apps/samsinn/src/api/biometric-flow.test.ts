@@ -14,7 +14,7 @@
 //   6. Snapshot save round-trip → biometric messages are content-redacted
 //
 // NO MOCKS. The test uses:
-//   - real createSharedRuntime + real createSystemRegistry
+//   - real createDeploymentRuntime + real createWorkspaceRuntimeRegistry
 //   - real per-instance System with real House, ToolRegistry, capture registry
 //   - real WS handler dispatch via handleWSMessage
 //   - real snapshot save → reload via captureSnapshot + redactBiometricMessages
@@ -33,10 +33,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 const TEST_WORKSPACE_ID = newWorkspaceId()
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSharedRuntime } from '../core/shared-runtime.ts'
-import { createSystemRegistry } from '../core/instances/system-registry.ts'
+import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
+import { createWorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import { createWSManager, handleWSMessage, type WSManager, type WSConnection } from './ws-handler.ts'
-import { wireSystemEvents } from './wire-system-events.ts'
+import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { BiometricSignalWire } from '../core/types/ws-protocol.ts'
 import { getCaptureRegistry } from '../core/biometrics/registry.ts'
@@ -70,16 +70,16 @@ describe('biometrics capture flow (no mocks)', () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-bio-'))
     process.env.SAMSINN_HOME = homeDir
 
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
 
     let wsManager!: WSManager
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver) => {
-        wireSystemEvents(system, wsManager, autoSaver, id)
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
     wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
@@ -202,15 +202,15 @@ describe('biometrics capture flow (no mocks)', () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-bio-redact-'))
     process.env.SAMSINN_HOME = homeDir
 
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver) => {
-        wireSystemEvents(system, wsManager, autoSaver, id)
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
     wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
@@ -256,15 +256,15 @@ describe('biometrics capture flow (no mocks)', () => {
   test('agent-initiated stop emits biometric_capture_stop_requested via registry hook', async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-bio-agentstop-'))
     process.env.SAMSINN_HOME = homeDir
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver) => {
-        wireSystemEvents(system, wsManager, autoSaver, id)
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
     wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })
@@ -321,15 +321,15 @@ describe('biometrics capture flow (no mocks)', () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-bio-claim-'))
     process.env.SAMSINN_HOME = homeDir
 
-    const shared = createSharedRuntime({
+    const shared = createDeploymentRuntime({
       providerConfig: baseConfig,
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
-    const registry = createSystemRegistry({
-      shared,
-      onSystemCreated: async (system, id, autoSaver) => {
-        wireSystemEvents(system, wsManager, autoSaver, id)
+    const registry = createWorkspaceRuntimeRegistry({
+      deployment: shared,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
+        wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
     })
     wsManager = createWSManager({ getSystem: (id) => registry.tryGetLive(id) })

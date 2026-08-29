@@ -1,7 +1,7 @@
 // ============================================================================
-// validateBootstrap — single runtime contract check for the wired System.
+// validateBootstrap — single runtime contract check for the wired SamsinnWorkspaceRuntime.
 //
-// Called once per System construction (post bootstrap, pre-serve). Throws
+// Called once per SamsinnWorkspaceRuntime construction (post bootstrap, pre-serve). Throws
 // loudly with a message that names the bug class each contract guards.
 //
 // Why one function, not scattered asserts: every check lives in one file
@@ -15,7 +15,7 @@
 // will produce confusing follow-on errors. Keep checks in dependency order.
 // ============================================================================
 
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 
 class BootstrapContractError extends Error {
   constructor(message: string, public readonly bugRef: string) {
@@ -33,21 +33,21 @@ const fail = (message: string, bugRef: string): never => {
 
 export interface ValidateBootstrapContext {
   // Closure that reports whether wsManager has wired this system's
-  // broadcasts (via wireSystemEvents → markWired). Bootstrap supplies
+  // broadcasts (via wireWorkspaceRuntimeEvents → markWired). Bootstrap supplies
   // `() => wsManager.isWired(id)`. Headless mode supplies undefined
   // (no WS clients, so the contract is N/A).
   readonly isWsWired?: () => boolean
 }
 
-export const validateBootstrap = (system: System, ctx: ValidateBootstrapContext = {}): void => {
+export const validateBootstrap = (system: SamsinnWorkspaceRuntime, ctx: ValidateBootstrapContext = {}): void => {
   // === Provider stack contracts ===
 
-  // Contract 1: providerKeys must be wired into the System.
+  // Contract 1: providerKeys must be wired into the SamsinnWorkspaceRuntime.
   // Without this, the router has no isProviderEnabled filter and walks
   // every provider in the order — including keyless ones (anthropic) —
   // producing 401 auth errors on every chat call.
   if (!system.providerKeys) {
-    fail('providerKeys is missing on System', 'commit d0c1f73')
+    fail('providerKeys is missing on SamsinnWorkspaceRuntime', 'commit d0c1f73')
   }
 
   // Contract 2: every gateway in the configured order must have a positive
@@ -71,20 +71,20 @@ export const validateBootstrap = (system: System, ctx: ValidateBootstrapContext 
   // Trivially true on every code path today, but pinned because every other
   // contract assumes the router exists.
   if (!system.llm) {
-    fail('System.llm (ProviderRouter) is missing', 'arch invariant')
+    fail('SamsinnWorkspaceRuntime.llm (ProviderRouter) is missing', 'arch invariant')
   }
 
   // Contract 4: wsManager.isWired(id) must return true for this system by
   // the time this contract runs. Captures the 5d73a8e invariant: every
-  // per-instance system is wired by the registry's onSystemCreated hook,
+  // per-instance system is wired by the registry's onWorkspaceRuntimeCreated hook,
   // which fires BEFORE onFirstLoad (where this validator is called from).
-  // If wsManager was undefined when onSystemCreated fired, wireSystemEvents
+  // If wsManager was undefined when onWorkspaceRuntimeCreated fired, wireWorkspaceRuntimeEvents
   // was silently skipped — the bug pattern that made cookie-bound instances
   // broadcast nothing for three days unnoticed. Headless mode supplies
   // isWsWired=undefined (no WS clients to wire).
   if (ctx.isWsWired !== undefined && !ctx.isWsWired()) {
     fail(
-      'wsManager.isWired returned false at first-load — wireSystemEvents was not called for this system',
+      'wsManager.isWired returned false at first-load — wireWorkspaceRuntimeEvents was not called for this system',
       'commit 5d73a8e',
     )
   }

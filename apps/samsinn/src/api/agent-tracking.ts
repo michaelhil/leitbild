@@ -8,7 +8,7 @@
 // which goes through here.
 //
 // Per-agent hooks (each must be idempotent so this wrapper can co-exist with
-// the snapshot-restore init-loop in wireSystemEvents):
+// the snapshot-restore init-loop in wireWorkspaceRuntimeEvents):
 //   1. attachAgent(agentId, instanceId)
 //        — registry's reverse index for provider-routing events.
 //   2. wsManager.subscribeAgentState(agent, instanceId)
@@ -21,7 +21,7 @@
 // Bug class this prevents: a previous regression silently dropped state
 // events for SEED-spawned and SCRIPT-spawned agents because the only callers
 // of subscribeAgentState lived in REST/WS create handlers + a one-shot
-// init-loop in wireSystemEvents. Adding a new agent-creation entry point
+// init-loop in wireWorkspaceRuntimeEvents. Adding a new agent-creation entry point
 // (e.g. seedFreshInstance) bypassed both. Centralizing here makes the
 // invariant impossible to miss: every spawn goes through this wrapper.
 //
@@ -30,7 +30,7 @@
 // ============================================================================
 
 import type { Agent } from '../core/types/agent.ts'
-import type { System } from '../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../main.ts'
 
 export interface AgentTrackingDeps {
   readonly attach: (agentId: string, instanceId: string) => void
@@ -40,7 +40,7 @@ export interface AgentTrackingDeps {
 }
 
 export const wireAgentTracking = (
-  system: System,
+  system: SamsinnWorkspaceRuntime,
   instanceId: string,
   deps: AgentTrackingDeps,
 ): void => {

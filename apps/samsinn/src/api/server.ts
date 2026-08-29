@@ -5,7 +5,7 @@
 // Handles Bun.serve setup, static file serving, and WebSocket upgrade.
 // ============================================================================
 
-import type { SystemRegistry } from '../core/instances/system-registry.ts'
+import type { WorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
 import type { WSManager } from './ws-handler.ts'
 import { DEFAULTS } from '../core/types/constants.ts'
 import { authEnabled, isValidSession, sessionFromRequest, validateToken, issueSession, buildSessionCookie, getAuthLimiter } from './auth.ts'
@@ -25,7 +25,7 @@ import { createOpenAccessContext, workspaceIdForLegacyInstance } from '../core/w
 // === Server Config ===
 
 interface ServerConfig {
-  readonly registry: SystemRegistry
+  readonly registry: WorkspaceRuntimeRegistry
   readonly workspaceDirectory: WorkspaceDirectory
   readonly wsManager: WSManager
   readonly port?: number
@@ -196,7 +196,7 @@ export const createServer = (config: ServerConfig) => {
   }
 
   // Note: per-instance event wiring (broadcasts + autosave) is set up by
-  // registry.onSystemCreated. createServer no longer wires anything itself.
+  // registry.onWorkspaceRuntimeCreated. createServer no longer wires anything itself.
 
   // Biometric: when an agent calls biometrics_stop, the capture registry
   // emits a stop request. Broadcast biometric_capture_stop_requested so any
@@ -506,7 +506,7 @@ export const createServer = (config: ServerConfig) => {
         }
         session.lastActivity = Date.now()
         // Resolve the cookie's system (lazy-load if evicted between connect
-        // and message). Eviction during an active WS is rare — onSystemEvicted
+        // and message). Eviction during an active WS is rare — onWorkspaceRuntimeEvicted
         // closes the WS — but races are possible and getOrLoad returns the
         // reloaded system safely.
         const targetSystem = await registry.getOrLoad(ws.data.instanceId)

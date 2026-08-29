@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { providersConfigRoutes } from './providers-config.ts'
 import { createProviderKeys } from '../../llm/provider-keys.ts'
 import { mergeWithEnv } from '../../llm/providers-store.ts'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 
 const findHandler = (method: string, path: string) => {
   for (const entry of providersConfigRoutes) {
@@ -25,11 +25,11 @@ const findHandler = (method: string, path: string) => {
   throw new Error(`no route for ${method} ${path}`)
 }
 
-const buildSystem = async (
+const buildWorkspaceRuntime = async (
   providersJson: object,
   envKeyName: string,
   envKeyValue: string,
-): Promise<{ system: System; storePath: string }> => {
+): Promise<{ system: SamsinnWorkspaceRuntime; storePath: string }> => {
   const dir = await mkdtemp(join(tmpdir(), 'samsinn-pc-'))
   const storePath = join(dir, 'providers.json')
   await writeFile(storePath, JSON.stringify(providersJson))
@@ -46,13 +46,13 @@ const buildSystem = async (
     providerConfig: { baseUrls: {} as Record<string, string | undefined> },
     gateways: {},
     refreshAvailableModels: () => {},
-  } as unknown as System
+  } as unknown as SamsinnWorkspaceRuntime
   return { system, storePath }
 }
 
 describe('PUT /api/providers/:name', () => {
   test('pinning models on an env-only provider does NOT wipe the in-memory key', async () => {
-    const { system } = await buildSystem(
+    const { system } = await buildWorkspaceRuntime(
       { kimi: { pinnedModels: [] } },  // file has NO apiKey for kimi
       'KIMI_API_KEY',
       'sk-env-only-kimi-key',
@@ -73,7 +73,7 @@ describe('PUT /api/providers/:name', () => {
   })
 
   test('explicit apiKey:null still clears the in-memory key', async () => {
-    const { system } = await buildSystem(
+    const { system } = await buildWorkspaceRuntime(
       { kimi: { apiKey: 'stored', pinnedModels: [] } },
       'KIMI_API_KEY',
       '',
@@ -91,7 +91,7 @@ describe('PUT /api/providers/:name', () => {
   })
 
   test('saving a new apiKey replaces the in-memory key', async () => {
-    const { system } = await buildSystem({ kimi: {} }, 'KIMI_API_KEY', '')
+    const { system } = await buildWorkspaceRuntime({ kimi: {} }, 'KIMI_API_KEY', '')
     const { handler, match } = findHandler('PUT', '/api/providers/kimi')
     const req = new Request('http://localhost/api/providers/kimi', {
       method: 'PUT',
@@ -104,12 +104,12 @@ describe('PUT /api/providers/:name', () => {
 
   test('PUT preserves stored `order` on disk', async () => {
     const order = ['openai', 'kimi', 'gemini']
-    const { system, storePath } = await buildSystem(
+    const { system, storePath } = await buildWorkspaceRuntime(
       { kimi: { pinnedModels: [] } } as never,
       'KIMI_API_KEY',
       'sk-env',
     )
-    // Re-write store with an order key (buildSystem doesn't accept order).
+    // Re-write store with an order key (buildWorkspaceRuntime doesn't accept order).
     const { readFile } = await import('node:fs/promises')
     await writeFile(storePath, JSON.stringify({ version: 1, providers: { kimi: { pinnedModels: [] } }, order }))
 

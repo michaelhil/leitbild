@@ -1,11 +1,11 @@
 import { json, errorResponse, parseBody } from './helpers.ts'
 import type { RouteEntry } from './types.ts'
-import type { System } from '../../main.ts'
+import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import { parseOllamaConfigPatch, type LLMGateway } from '../../llm/gateway.ts'
 
 // Guard: all /api/ollama/* routes need Ollama to be a configured provider.
 // When Ollama is excluded from the router, these endpoints return 503.
-const requireOllama = (system: System): LLMGateway | Response => {
+const requireOllama = (system: SamsinnWorkspaceRuntime): LLMGateway | Response => {
   if (!system.ollama) {
     return errorResponse('Ollama is not a configured provider in this deployment', 503)
   }
