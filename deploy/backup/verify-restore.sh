@@ -10,6 +10,7 @@ fi
 backup_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 backup_repository="${SAMSINN_BACKUP_REPOSITORY:-/Users/hilde/Documents/ChatGPT/server-backups/restic-repository}"
 backup_password_command="$backup_script_dir/restic-password.sh"
+backup_restic_bin="${SAMSINN_RESTIC_BIN:-/opt/homebrew/bin/restic}"
 backup_restore_root="$(mktemp -d /tmp/samsinn-restore-drill.XXXXXX)"
 trap 'rm -rf -- "$backup_restore_root"' EXIT
 
@@ -17,7 +18,7 @@ backup_restore_scope() {
   local backup_requested_scope="$1"
   local backup_scope_root="$backup_restore_root/$backup_requested_scope"
   mkdir "$backup_scope_root"
-  restic --repo "$backup_repository" --password-command "$backup_password_command" \
+  "$backup_restic_bin" --repo "$backup_repository" --password-command "$backup_password_command" \
     dump --host samsinn-production --tag "$backup_requested_scope" latest \
     "samsinn-stack-${backup_requested_scope}.tar" |
     tar -xf - -C "$backup_scope_root"
@@ -40,7 +41,7 @@ backup_restore_scope() {
   echo "Restore drill passed for $backup_requested_scope backup."
 }
 
-restic --repo "$backup_repository" --password-command "$backup_password_command" check
+"$backup_restic_bin" --repo "$backup_repository" --password-command "$backup_password_command" check
 if [[ "$backup_scope" == all ]]; then
   backup_restore_scope critical
   backup_restore_scope static
