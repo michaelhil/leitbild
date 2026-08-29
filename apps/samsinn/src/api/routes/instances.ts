@@ -1,0 +1,147 @@
+// ============================================================================
+// Instances admin — list / create / switch / delete the per-tenant Houses.
+//
+// Surfaces the on-disk + in-memory registry to the UI's Instances modal under
+// Settings. Reset of the *current* instance still goes through /api/system/reset
+// (existing 10s-countdown UX). Delete here is a one-shot for non-current
+// instances and refuses to delete the cookie-bound one — the user must switch
+// or reset first.
+//
+// Create is rate-limited by remote IP (sliding 60-second window) so a
+// drive-by spammer can't materialize thousands of instance directories.
+// Cookieless callers always get a fresh id, so cookie-keyed limits would
+// be useless against the abuse path — IP is the stable identifier.
+// ============================================================================
+
+import { json, errorResponse } from './helpers.ts'
+import type { RouteEntry } from './types.ts'
+import { getInstanceId } from '../instance-cookie.ts'
+import { createRateLimiter, type RateLimiter } from '../rate-limit.ts'
+import type { LimitMetrics } from '../../core/limit-metrics.ts'
+
+const REQUIRED = (msg = 'instances admin not wired') => errorResponse(msg, 501)
+
+// --- Instance-create rate limiter (per IP, sliding 60-second window) ---
+//
+// Defaults aimed at single-user / small-team deploys where a real human
+// creates maybe one instance per minute, never five. Cookie-keyed limits
+// would be useless: cookieless callers get a fresh id every request.
+//
+// Lazily constructed so bootstrap can pass a LimitMetrics handle for LRU
+// eviction tracking. Bug submission has its own limiter (see
+// routes/bugs.ts) and auth too (see api/auth.ts) — splitting them lets
+// each tune independently and keeps each route file in charge of its
+// own throttling.
+let instanceLimiter: RateLimiter | null = null
+export const initInstanceLimiter = (limitMetrics?: LimitMetrics): RateLimiter => {
+  if (instanceLimiter) return instanceLimiter
+  instanceLimiter = createRateLimiter({
+    windowMs: Number(process.env.SAMSINN_CREATE_RATE_WINDOW_MS) || 60_000,
+    max: Number(process.env.SAMSINN_CREATE_RATE_LIMIT) || 5,
+    ...(limitMetrics ? { limitMetrics } : {}),
+  })
+  return instanceLimiter
+}
+
+export const instanceRoutes: RouteEntry[] = [
+  {
+    method: 'GET',
+    pattern: /^\/api\/instances$/,
+    handler: async (req, _match, ctx) => {
+      if (!ctx.instances) return REQUIRED()
+      const onDisk = await ctx.instances.listOnDisk()
+      const live = ctx.instances.liveIds()
+      const current = getInstanceId(req)
+      const seen = new Set(onDisk.map(entry => entry.id))
+      const out = onDisk.map(entry => ({
+        id: entry.id,
+        snapshotMtimeMs: entry.snapshotMtimeMs,
+        snapshotSizeBytes: entry.snapshotSizeBytes,
+        isLive: live.has(entry.id),
+        isCurrent: entry.id === current,
+      }))
+      // A freshly created instance is materialized in memory before its
+      // first durable snapshot. Include it immediately so the create/switch
+      // flow and admin list agree even during that short window.
+      for (const id of live) {
+        if (seen.has(id)) continue
+        out.push({ id, snapshotMtimeMs: 0, snapshotSizeBytes: 0, isLive: true, isCurrent: id === current })
+      }
+      // Sort: current first, then live, then by mtime desc.
+      out.sort((a, b) => {
+        if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
+        if (a.isLive !== b.isLive) return a.isLive ? -1 : 1
+        return b.snapshotMtimeMs - a.snapshotMtimeMs
+      })
+      return json({ instances: out, currentId: current })
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/instances$/,
+    handler: async (_req, _match, ctx) => {
+      if (!ctx.instances) return REQUIRED()
+      const limit = initInstanceLimiter().check(ctx.remoteAddress)
+      if (!limit.ok) {
+        const retryS = Math.ceil(limit.retryAfterMs / 1000)
+        return new Response(
+          JSON.stringify({ error: `create rate limit — try again in ${retryS}s` }),
+          {
+            status: 429,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': String(retryS) },
+          },
+        )
+      }
+      const result = await ctx.instances.createNew()
+      return json({ id: result.id }, 201)
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/instances\/([a-z0-9]{16})\/switch$/,
+    handler: async (req, match, ctx) => {
+      if (!ctx.instances) return REQUIRED()
+      const targetId = match[1]!
+      // Validate the target exists on disk (or is currently live). Refuses
+      // arbitrary ids so a stray switch can't resurrect an empty instance
+      // under a guessed id.
+      const onDisk = await ctx.instances.listOnDisk()
+      const live = ctx.instances.liveIds()
+      if (!live.has(targetId) && !onDisk.some(e => e.id === targetId)) {
+        return errorResponse(`instance "${targetId}" not found`, 404)
+      }
+      const setCookie = ctx.instances.buildSwitchCookie(targetId, req)
+      return new Response(JSON.stringify({ ok: true, id: targetId }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Set-Cookie': setCookie },
+      })
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/instances\/purge-trash$/,
+    handler: async (_req, _match, ctx) => {
+      if (!ctx.instances) return REQUIRED()
+      const result = await ctx.instances.purgeTrash()
+      return json(result)
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/instances\/([a-z0-9]{16})$/,
+    handler: async (req, match, ctx) => {
+      if (!ctx.instances) return REQUIRED()
+      const targetId = match[1]!
+      const current = getInstanceId(req)
+      if (current === targetId) {
+        return errorResponse(
+          'cannot delete the current instance — switch to another or use /api/system/reset',
+          409,
+        )
+      }
+      const result = await ctx.instances.delete(targetId)
+      if (!result.ok) return errorResponse(result.reason, 400)
+      return json({ deleted: true, id: targetId })
+    },
+  },
+]

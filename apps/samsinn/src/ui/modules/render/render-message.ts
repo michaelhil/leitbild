@@ -1,0 +1,394 @@
+// Message rendering — a single chat/system/pass/mute/room-summary message card.
+// Handles markdown rendering via marked+DOMPurify (globals) with graceful fallback.
+
+import type { UIMessage, AgentInfo } from '../render/render-types.ts'
+// Import order matters: mermaid first, then map. Each module self-registers
+// its post-render processor at module-load (see ../mermaid/index.ts and
+// ../map/index.ts). Adding a new built-in inline-block type = create a new
+// module that calls addPostRenderProcessor() at top-level and import it
+// here. Pack-gated extensions register/unregister via the extension mount
+// layer (../extensions/registry.ts), not via static import.
+import '../mermaid/index.ts'
+import '../map/index.ts'
+import { getPostRenderProcessors } from '../extensions/post-render-registry.ts'
+import { icon } from '../icon.ts'
+import { appendWhisperBadge } from '../whisper-badge.ts'
+import { showToast } from '../toast.ts'
+import { $messageThinking } from '../stores.ts'
+
+// Best-effort clipboard write. Tries the modern Async Clipboard API first
+// (https/localhost only; some browsers refuse on programmatic clicks), then
+// falls back to a hidden textarea + document.execCommand('copy') which works
+// on more contexts but is deprecated. Returns true if either path reported
+// success — caller decides what to surface to the user.
+const writeClipboard = async (text: string): Promise<boolean> => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through to legacy path */ }
+  // Legacy path: an offscreen textarea selected and copied via execCommand.
+  // Preserved here because navigator.clipboard rejects on insecure contexts
+  // and on some packaged WebViews even when the document is focused.
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.top = '-1000px'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  } catch {
+    // Legacy execCommand fallback failed (Safari Lockdown Mode, or browser
+    // without execCommand support). Caller already tried navigator.clipboard
+    // first; both paths failing returns false so the UI shows a hint instead.
+    return false
+  }
+}
+
+// Render Markdown content safely. Falls back to textContent if libraries not loaded.
+// Post-processes mermaid code blocks into rendered diagrams.
+//
+// marked + DOMPurify are loaded via CDN script tags in index.html. The
+// graceful textContent fallback covers the brief window during page load
+// when one or both are still fetching — must NOT throw, or the page
+// bricks on slow networks.
+const renderMarkdownContent = (el: HTMLElement, text: string): void => {
+  const w = globalThis as {
+    marked?: { parse: (src: string) => string }
+    DOMPurify?: { sanitize: (html: string) => string }
+  }
+  if (w.marked?.parse && w.DOMPurify?.sanitize) {
+    el.className += ' msg-prose'
+    el.innerHTML = w.DOMPurify.sanitize(w.marked.parse(text))
+    for (const proc of getPostRenderProcessors()) void proc(el)
+  } else {
+    el.textContent = text
+  }
+}
+
+export interface RenderMessageOptions {
+  readonly container: HTMLElement
+  readonly msg: UIMessage
+  readonly myAgentId: string
+  readonly agents: Record<string, AgentInfo> | Map<string, AgentInfo>
+  readonly onDelete?: (msgId: string) => void
+  readonly onViewContext?: (msgId: string) => void
+  readonly onBookmark?: (content: string) => void
+}
+
+export const renderMessage = (opts: RenderMessageOptions): void => {
+  const { container, msg, myAgentId, agents, onDelete, onViewContext, onBookmark } = opts
+  const getAgent = (id: string): AgentInfo | undefined =>
+    agents instanceof Map ? agents.get(id) : agents[id]
+
+  const isRoutineExternalMirror =
+    msg.cause?.kind === 'external-mirror' &&
+    !msg.content.includes('mirror error') &&
+    !msg.content.includes('CONTROL INSTANCE RESET')
+  if (isRoutineExternalMirror) return
+
+  const isJoinLeave = msg.type === 'join' || msg.type === 'leave'
+  const ageMs = Date.now() - msg.timestamp
+  // Join/leave messages auto-fade 10s after posting; skip rendering if already expired.
+  if (isJoinLeave && ageMs > 10_000) return
+
+  const div = document.createElement('div')
+  div.setAttribute('data-msg-id', msg.id)
+  // Stage cards (script engine setup messages) are sent with senderId='system'
+  // but senderName='Stage'. They are scene-boundary markers we want visible,
+  // not the muted system-line treatment.
+  const isStageCard = msg.senderId === 'system' && msg.senderName === 'Stage' && msg.type === 'chat'
+  const isSystem = !isStageCard && (msg.type === 'system' || msg.type === 'join' || msg.type === 'leave' || msg.senderId === 'system')
+  const isPass = msg.type === 'pass'
+  const isError = msg.type === 'error'
+  const isMute = msg.type === 'mute'
+  const isSelf = msg.senderId === myAgentId
+  const isRoomSummary = msg.type === 'room_summary'
+
+  if (isError) {
+    const senderInfo = getAgent(msg.senderId)
+    const senderName = senderInfo?.name ?? msg.senderName ?? msg.senderId
+    div.className = 'msg-error text-xs py-1 px-2 border-l-2 border-danger bg-danger/5 text-danger flex items-center gap-2'
+    const label = document.createElement('span')
+    label.textContent = `⚠ ${senderName} ${msg.content}`
+    label.className = 'flex-1'
+    div.appendChild(label)
+    // Offer "Change model" affordance for failures the user can fix in config.
+    const code = msg.errorCode
+    const offersChangeModel = code === 'no_api_key' || code === 'model_unavailable' || code === 'provider_down'
+    if (offersChangeModel) {
+      const btn = document.createElement('button')
+      btn.className = 'text-xs underline hover:text-danger-strong'
+      btn.textContent = 'Change model'
+      btn.onclick = (e) => {
+        e.stopPropagation()
+        // Open the agent inspector via a custom event the app shell listens for.
+        // Falls through silently if no listener is registered.
+        window.dispatchEvent(new CustomEvent('open-agent-inspector', {
+          detail: { agentId: msg.senderId, focus: 'model' },
+        }))
+      }
+      div.appendChild(btn)
+    }
+  } else if (isPass) {
+    const senderInfo = getAgent(msg.senderId)
+    const senderName = senderInfo?.name ?? msg.senderName ?? msg.senderId
+    div.className = 'msg-pass text-xs py-1 px-2'
+    div.textContent = `${senderName} ${msg.content}`
+  } else if (isMute) {
+    div.className = 'msg-system text-xs py-1 px-2 text-text-muted'
+    div.textContent = msg.content
+  } else if (isSystem || isRoomSummary) {
+    // System messages are normally plain text (compact, muted). Biometric-
+    // caused system messages carry a ```biometric fenced block that must
+    // go through the markdown + post-processor pipeline so the inline
+    // widget can replace it — otherwise the user sees raw JSON.
+    if (msg.cause?.kind === 'biometric') {
+      div.className = 'msg-system text-xs py-1 px-2'
+      renderMarkdownContent(div, msg.content)
+    } else {
+      div.className = 'msg-system text-xs py-1 px-2'
+      div.textContent = msg.content
+    }
+  } else {
+    // Tint by sender kind so the room reads as a conversation between two
+    // distinct populations: humans (blue) vs AI (green). Falls back to the
+    // legacy msg-self/msg-agent split for unresolved senders.
+    const senderInfo = getAgent(msg.senderId)
+    const kindClass = senderInfo?.kind === 'human' ? 'msg-human'
+      : senderInfo?.kind === 'ai' ? 'msg-agent'
+      : (isSelf ? 'msg-self' : 'msg-agent')
+    div.className = `rounded-md px-3 py-2 text-sm border border-border shadow-sm ${kindClass}`
+
+    const header = document.createElement('div')
+    header.className = 'flex items-center gap-2 mb-1'
+
+    const nameEl = document.createElement('span')
+    nameEl.className = 'font-semibold text-text-strong text-xs'
+    const sender = getAgent(msg.senderId)
+    nameEl.textContent = sender?.name ?? msg.senderName ?? msg.senderId
+
+    header.appendChild(nameEl)
+
+    // Header field order: time, duration, context (compact %), model.
+    // Each piece carries `data-mh-piece="<name>"` so the visibility toggles
+    // in the room-header eye popover can hide it via CSS without re-render.
+    // See src/ui/modules/message-header-prefs.ts.
+
+    const timeEl = document.createElement('span')
+    timeEl.className = 'text-xs text-text-muted'
+    timeEl.dataset.mhPiece = 'time'
+    // 24-hour HH:MM:SS — locale-invariant, no AM/PM.
+    timeEl.textContent = new Date(msg.timestamp).toLocaleTimeString('en-GB', { hour12: false })
+    header.appendChild(timeEl)
+
+    if (msg.generationMs) {
+      const genEl = document.createElement('span')
+      genEl.className = 'text-xs text-accent'
+      genEl.dataset.mhPiece = 'duration'
+      genEl.textContent = `${(msg.generationMs / 1000).toFixed(1)}s`
+      header.appendChild(genEl)
+    }
+
+    // Context usage: shown as a compact `N%` (or `N.N%` for low values).
+    // Hover tooltip carries the full `prompt / max tok (provider)` detail.
+    // Tone reflects pressure: amber at 75%, red at 90%. Unknown context
+    // window → grey text + the raw token count in the tooltip.
+    if (msg.promptTokens !== undefined) {
+      const ctxEl = document.createElement('span')
+      const ctx = msg.contextMax ?? 0
+      const usage = msg.promptTokens
+      const pct = ctx > 0 ? (usage / ctx) * 100 : 0
+      let tone = 'text-text-muted'
+      if (ctx > 0) {
+        if (pct >= 90) tone = 'text-danger'
+        else if (pct >= 75) tone = 'text-warning'
+        else tone = 'text-emerald-500'
+      }
+      ctxEl.className = `text-xs ${tone}`
+      ctxEl.dataset.mhPiece = 'context'
+      if (ctx > 0) {
+        const display = pct < 1 ? pct.toFixed(2) : pct < 10 ? pct.toFixed(1) : pct.toFixed(0)
+        ctxEl.textContent = `${display}%`
+        ctxEl.title = `${usage.toLocaleString()} / ${ctx.toLocaleString()} tok (${display}%)${msg.provider ? ` · via ${msg.provider}` : ''}`
+      } else {
+        ctxEl.textContent = '?%'
+        ctxEl.title = `${usage.toLocaleString()} tok (context window unknown)${msg.provider ? ` · via ${msg.provider}` : ''}`
+      }
+      header.appendChild(ctxEl)
+    }
+
+    if (msg.model) {
+      // Show only the part after the LAST colon — `gemini:gemini-2.5-pro`
+      // becomes `gemini-2.5-pro`. Models without a provider prefix render
+      // unchanged. Full `provider:model` lives in the tooltip.
+      const modelEl = document.createElement('span')
+      modelEl.className = 'text-xs text-text-muted font-mono'
+      modelEl.dataset.mhPiece = 'model'
+      const colonIdx = msg.model.lastIndexOf(':')
+      modelEl.textContent = colonIdx >= 0 ? msg.model.slice(colonIdx + 1) : msg.model
+      modelEl.title = msg.provider ? `${msg.model} (via ${msg.provider})` : msg.model
+      header.appendChild(modelEl)
+    }
+
+    {
+      const spacer = document.createElement('span')
+      spacer.className = 'ml-auto'
+      header.appendChild(spacer)
+      div.className += ' group'
+
+      // Copy-to-clipboard. Hover-only, available on every chat message
+      // regardless of which other actions are in scope. Uses navigator
+      // .clipboard when available; falls back silently on older contexts.
+      const copyBtn = document.createElement('button')
+      copyBtn.className = 'icon-btn text-text-subtle hover:text-text text-xs opacity-0 group-hover:opacity-100'
+      copyBtn.title = 'Copy message to clipboard'
+      copyBtn.setAttribute('aria-label', 'Copy message to clipboard')
+      copyBtn.appendChild(icon('copy', { size: 12 }))
+      copyBtn.onclick = async (e) => {
+        e.stopPropagation()
+        const ok = await writeClipboard(msg.content)
+        if (ok) {
+          copyBtn.replaceChildren(icon('check', { size: 12 }))
+          setTimeout(() => {
+            if (copyBtn.isConnected) copyBtn.replaceChildren(icon('copy', { size: 12 }))
+          }, 1200)
+          showToast(document.body, 'Copied to clipboard', { type: 'success', position: 'fixed' })
+        } else {
+          showToast(document.body, 'Copy failed — clipboard unavailable in this browser context', { type: 'error', position: 'fixed' })
+        }
+      }
+      header.appendChild(copyBtn)
+
+      if (onViewContext && msg.generationMs) {
+        const ctxBtn = document.createElement('button')
+        ctxBtn.className = 'text-border-strong hover:text-accent text-xs opacity-0 group-hover:opacity-100'
+        ctxBtn.textContent = '\ud83d\udccb'
+        ctxBtn.title = 'View prompt context'
+        ctxBtn.onclick = (e) => { e.stopPropagation(); onViewContext(msg.id) }
+        header.appendChild(ctxBtn)
+      }
+
+      if (onBookmark) {
+        const bmBtn = document.createElement('button')
+        bmBtn.className = 'icon-btn opacity-0 group-hover:opacity-100'
+        bmBtn.title = 'Bookmark message'
+        bmBtn.setAttribute('aria-label', 'Bookmark message')
+        bmBtn.appendChild(icon('bookmark', { size: 12, fill: 'var(--danger)', style: 'transform: rotate(45deg);' }))
+        bmBtn.onclick = (e) => { e.stopPropagation(); onBookmark(msg.content) }
+        header.appendChild(bmBtn)
+      }
+
+      if (onDelete) {
+        const delBtn = document.createElement('button')
+        delBtn.className = 'text-border-strong hover:text-danger text-xs opacity-0 group-hover:opacity-100'
+        delBtn.textContent = '×'
+        delBtn.title = 'Delete message'
+        delBtn.onclick = (e) => { e.stopPropagation(); onDelete(msg.id) }
+        header.appendChild(delBtn)
+      }
+    }
+
+    const content = document.createElement('div')
+    content.className = 'text-text'
+    renderMarkdownContent(content, msg.content)
+
+    div.appendChild(header)
+
+    // Persisted thinking (PR 4): renders above the response so reading
+    // order is reasoning → answer. `<details>` is open by default so
+    // the user sees the model's chain-of-thought after a kimi-k2.6 or
+    // o-series eval; when the user toggles the global "Thinking" piece
+    // off in the visibility popover (body.mh-hide-thinking), CSS
+    // suppresses the body and collapses to a single-line summary so
+    // the thinking pane doesn't dominate the chat. The user can still
+    // unfold any one message via the disclosure triangle.
+    const thinkingText = $messageThinking.get()[msg.id]
+    if (thinkingText && thinkingText.length > 0) {
+      const det = document.createElement('details')
+      det.className = 'thinking-block text-xs text-text-subtle mb-1 border-l-2 border-border pl-2'
+      det.setAttribute('data-mh-piece', 'thinking')
+      // Default open when the global pref allows; collapsed when hidden.
+      // User can always toggle individual messages via the disclosure
+      // triangle regardless of the global pref.
+      det.open = !document.body.classList.contains('mh-hide-thinking')
+      const sum = document.createElement('summary')
+      sum.className = 'cursor-pointer select-none hover:text-text'
+      sum.textContent = '💭 reasoning'
+      det.appendChild(sum)
+      const body = document.createElement('div')
+      body.className = 'mt-1 whitespace-pre-wrap break-words italic'
+      body.textContent = thinkingText
+      det.appendChild(body)
+      div.appendChild(det)
+    }
+
+    div.appendChild(content)
+
+    // Image attachments — render thumbnails below the text content.
+    // Click → full-size modal. Matches the composer-attachments preview
+    // pattern. Always inline; no virtualization (V1).
+    if (msg.attachments && msg.attachments.length > 0) {
+      const attHost = document.createElement('div')
+      attHost.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px'
+      for (const att of msg.attachments) {
+        if (att.kind !== 'image') continue
+        const wrap = document.createElement('div')
+        wrap.style.cssText = 'border:1px solid var(--border, #374151);border-radius:4px;overflow:hidden;cursor:zoom-in;max-width:200px'
+        wrap.title = `${att.width}×${att.height}${att.source ? ' · ' + att.source : ''} — click to enlarge`
+        const img = document.createElement('img')
+        img.src = att.dataUrl
+        img.style.cssText = 'display:block;max-width:200px;max-height:140px;object-fit:contain'
+        wrap.appendChild(img)
+        wrap.addEventListener('click', () => {
+          const overlay = document.createElement('div')
+          overlay.style.cssText = 'position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;cursor:zoom-out'
+          overlay.addEventListener('click', () => overlay.remove())
+          const big = document.createElement('img')
+          big.src = att.dataUrl
+          big.style.cssText = 'max-width:95vw;max-height:95vh;box-shadow:0 8px 32px rgba(0,0,0,0.5)'
+          overlay.appendChild(big)
+          document.body.appendChild(overlay)
+        })
+        attHost.appendChild(wrap)
+      }
+      div.appendChild(attHost)
+    }
+
+    // If a script is active in this room, append the whisper attached to
+    // THIS specific message (looked up by messageId in stepLogs). No-op
+    // when no script is active or no whisper has been classified yet.
+    appendWhisperBadge(div, msg.senderName, msg.roomId, msg.id)
+  }
+
+  // Causality caption — surfaces "via script: X step N" / "via trigger: Z"
+  // when an automation subsystem produced this message.
+  // Subtle (text-text-subtle, small) so it doesn't compete with the message
+  // body. Tooltip carries the full attribution. See Message.cause docs.
+  if (msg.cause) {
+    const cap = document.createElement('div')
+    cap.className = 'text-[10px] text-text-subtle mt-0.5'
+    const stepFragment = msg.cause.step !== undefined ? ` step ${msg.cause.step + 1}` : ''
+    const label = `via ${msg.cause.kind}: ${msg.cause.name}${stepFragment}`
+    cap.textContent = label
+    cap.title = label
+    div.appendChild(cap)
+  }
+
+  container.appendChild(div)
+
+  if (isJoinLeave) {
+    const remaining = Math.max(0, 10_000 - ageMs)
+    setTimeout(() => {
+      if (!div.isConnected) return
+      div.classList.add('msg-fading')
+      setTimeout(() => { if (div.isConnected) div.remove() }, 500)
+    }, remaining)
+  }
+}

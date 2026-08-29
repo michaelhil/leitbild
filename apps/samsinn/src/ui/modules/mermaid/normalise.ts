@@ -1,0 +1,152 @@
+// Normalises LLM-generated Mermaid source to what Mermaid 11 actually accepts.
+//
+// Pure function. No DOM, no network, no side effects.
+//
+// Design: there is no character allowlist / denylist. Mermaid accepts
+// quoted labels in every position where an unquoted label is also
+// accepted, so we always quote — bracket bodies and pipe-edge-label
+// bodies alike. This eliminates the maintenance pattern of "add another
+// character to the list when the next LLM output breaks mermaid."
+//
+// Rules applied in order:
+//   1. Strip trailing `;` from each line.
+//   2a. Quote pipe-delimited edge label bodies (`-->|label|`). Done BEFORE
+//       step 2b so the quote-mask in 2b doesn't have to know about edge
+//       labels.
+//   2b. Quote bracket-delimited bodies (`[...]`, `(...)`, `{...}`). Uses a
+//       quote-mask to skip content already inside `"..."` (introduced by
+//       step 2a or by the LLM) so we never recurse into a quoted label.
+//       Comment lines (`%% ...`) are passed through unchanged.
+//   3. Convert bare quoted node references (`"Foo" --> X`) into synthetic
+//      `nN["Foo"]` definitions with ID reuse.
+
+// Max source length accepted. Matches Mermaid's default `maxTextSize` so our
+// cap doesn't lie ahead of mermaid's. Callers detect exceeds-cap and route
+// to the fallback UI — normalise() itself still runs on oversized input
+// (harmless; cheap), but callers should check first.
+export const MAX_MERMAID_SOURCE = 50_000
+
+export const normaliseMermaidSource = (src: string): string => {
+  // 1. Strip trailing semicolons from each line.
+  const lines = src.split('\n').map(line => line.replace(/;\s*$/, ''))
+  let normalised = lines.join('\n')
+
+  // 2a. Quote pipe-delimited edge labels (`A -->|label| B`). Done BEFORE
+  //     bracket-quoting so a quoted edge-label body containing brackets
+  //     like `|"... (and core exit)"|` is shielded from step 2b.
+  //     Restricted to bodies that follow an arrow so we don't catch
+  //     unrelated `|...|` constructs.
+  normalised = normalised.replace(
+    /(--+>|<--+|--+)\|([^|\n]+?)\|/g,
+    (match, arrow: string, body: string) => {
+      const trimmed = body.trim()
+      if (trimmed.startsWith('"') && trimmed.endsWith('"')) return match
+      return `${arrow}|"${trimmed}"|`
+    },
+  )
+
+  // 2b. Quote bracket-delimited label bodies (`[...]`, `(...)`, `{...}`).
+  //     Operates line-by-line and quote-mask-aware:
+  //       - `%%`-comment lines pass through unchanged.
+  //       - Inside any line, `"..."` regions are masked with a sentinel
+  //         before bracket-matching so we never recurse into a quoted
+  //         label and re-quote its inner punctuation.
+  normalised = normalised.split('\n').map(line => {
+    if (/^\s*%%/.test(line)) return line
+    // Mask quoted runs with a length-preserving sentinel so character
+    // offsets stay aligned (not strictly required for `replace`, but
+    // makes the regex math straightforward).
+    const masks: string[] = []
+    const masked = line.replace(/"[^"\n]*"/g, run => {
+      const idx = masks.length
+      masks.push(run)
+      return `__MMQ__${idx}__MMQ__`
+    })
+    const quoted = masked.replace(
+      /(\[|\(|\{)([^\[\]\(\)\{\}"\n]+?)(\]|\)|\})/g,
+      (_m, open: string, body: string, close: string) => {
+        const trimmed = body.trim()
+        // Body that is only a mask sentinel was already quoted by the LLM
+        // (or by step 2a) — leave it for restoration.
+        if (/^__MMQ__\d+__MMQ__$/.test(trimmed)) return `${open}${trimmed}${close}`
+        return `${open}"${trimmed}"${close}`
+      },
+    )
+    return quoted.replace(/__MMQ__(\d+)__MMQ__/g, (_m, n: string) => masks[Number(n)] ?? '')
+  }).join('\n')
+
+  // 3. Bare-quoted references. Two-phase: mark every `"..."` with a sentinel,
+  //    restore the ones that turn out to be inside brackets (produced by
+  //    step 2), then expand the remaining sentinels into synthetic node
+  //    definitions. Edge-label quotes (preceded by `-- ` or followed by
+  //    ` -->`) are never marked in the first place.
+  const labelToId = new Map<string, string>()
+  const synthId = (label: string): string => {
+    const existing = labelToId.get(label)
+    if (existing) return existing
+    const id = `n${labelToId.size + 1}`
+    labelToId.set(label, id)
+    return id
+  }
+
+  // A quoted string is a bare node reference ONLY when it isn't in one of
+  // these mermaid contexts where `"..."` is already structurally meaningful:
+  //   A --"label"--> B           (between `--` and `--`)
+  //   A -->|"label"| B           (pipe-delimited edge label)
+  //   click X "url" _blank       (link directive — URL inside quotes)
+  // Anything else is treated as a bare node ref and replaced with a
+  // synthetic id (`n1["..."]`).
+  normalised = normalised.replace(
+    /"([^"\n]+)"/g,
+    (match, label: string, offset: number, full: string): string => {
+      const before = full.slice(Math.max(0, offset - 8), offset)
+      const after = full.slice(offset + match.length, offset + match.length + 8)
+      const isDashEdgeStart = /--\s*$/.test(before)
+      const isDashEdgeEnd = /^\s*--/.test(after)
+      const isPipeEdgeStart = /\|\s*$/.test(before)
+      const isPipeEdgeEnd = /^\s*\|/.test(after)
+      if (isDashEdgeStart && isDashEdgeEnd) return match
+      if (isPipeEdgeStart && isPipeEdgeEnd) return match
+      // Click directive: line starts with `click <id> ` and the quoted
+      // string is followed by an optional second string and/or a target
+      // keyword (_blank/_self/_parent/_top). Detect by scanning back to
+      // start-of-line.
+      const lineStart = full.lastIndexOf('\n', offset - 1) + 1
+      const linePrefix = full.slice(lineStart, offset)
+      if (/^\s*click\s+\S+\s*/.test(linePrefix)) return match
+      // Comment / callback: same context — leave alone.
+      if (/^\s*%%/.test(linePrefix)) return match
+      return `__MM_LABEL__${synthId(label)}__MM_END__`
+    },
+  )
+
+  // Restore bracketed sentinels to their original quoted form (step 2
+  // produced `["Foo"]` which got sentinel-ified; restore).
+  normalised = normalised.replace(
+    /(\[|\(|\{)__MM_LABEL__n(\d+)__MM_END__(\]|\)|\})/g,
+    (_m, open: string, n: string, close: string) => {
+      const label = [...labelToId.entries()].find(([, id]) => id === `n${n}`)?.[0] ?? ''
+      return `${open}"${label}"${close}`
+    },
+  )
+
+  // Remaining sentinels are bare references — expand to `id["label"]` on
+  // first occurrence, bare `id` on subsequent references.
+  const definedIds = new Set<string>()
+  normalised = normalised.replace(
+    /__MM_LABEL__(n\d+)__MM_END__/g,
+    (_m, id: string) => {
+      const label = [...labelToId.entries()].find(([, v]) => v === id)?.[0] ?? ''
+      if (definedIds.has(id)) return id
+      definedIds.add(id)
+      return `${id}["${label}"]`
+    },
+  )
+
+  return normalised
+}
+
+// Pass-through. Fallback cards show the full source so the user can debug
+// what broke. The fallback wrapper has its own `max-h` + overflow-scroll;
+// no need to amputate the content.
+export const truncateForDisplay = (src: string): string => src

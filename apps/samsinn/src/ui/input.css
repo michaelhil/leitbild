@@ -1,0 +1,199 @@
+/* Tailwind v4 entry — scans src/ui for used utility classes and emits the
+   matching CSS. Our palette lives as CSS custom properties on :root /
+   :root.dark (defined inline in index.html); the @theme inline block below
+   binds Tailwind color utilities to those vars, so `bg-surface` compiles
+   to `background-color: var(--surface)` and automatically flips with the
+   .dark class on <html>. */
+
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Explicit source roots so classes in these files get included. */
+@source "./index.html";
+@source "./modules/**/*.ts";
+
+@theme inline {
+  --color-surface:            var(--surface);
+  --color-surface-muted:      var(--surface-muted);
+  --color-surface-strong:     var(--surface-strong);
+  --color-surface-inverse:    var(--surface-inverse);
+
+  --color-text:               var(--text);
+  --color-text-strong:        var(--text-strong);
+  --color-text-muted:         var(--text-muted);
+  --color-text-subtle:        var(--text-subtle);
+
+  --color-border:             var(--border);
+  --color-border-strong:      var(--border-strong);
+
+  --color-accent:             var(--accent);
+  --color-accent-hover:       var(--accent-hover);
+  --color-accent-ring:        var(--accent-ring);
+
+  --color-danger:             var(--danger);
+  --color-danger-hover:       var(--danger-hover);
+
+  --color-success:            var(--success);
+  --color-success-hover:      var(--success-hover);
+  --color-success-soft-bg:    var(--success-soft-bg);
+
+  --color-warning:            var(--warning);
+  --color-warning-bg:         var(--warning-bg);
+  --color-warning-border:     var(--warning-border);
+
+  --color-thinking:           var(--thinking);
+
+  --color-msg-self:           var(--msg-self);
+  --color-msg-agent:          var(--msg-agent);
+
+  /* Elevation — drives Tailwind's shadow-{sm,md,lg}. shadow-xl stays the
+     Tailwind default (used only by modal cards). */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  /* Radius — drives rounded-{sm,md,lg}. */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+}
+
+/* ============================================================================
+ * Modal form-control theming
+ *
+ * Native <dialog> elements and the <div class="modal-card"> built by
+ * createModal both host form controls (inputs, selects, textareas) that
+ * inherited browser-default colours — typically white-on-black or vice
+ * versa, which collided with the modal's themed background and rendered
+ * black-text-on-dark-blue in dark mode.
+ *
+ * Bind these controls to the same design tokens that drive the rest of the
+ * app so they flip cleanly between light and dark with no per-element class
+ * sprawl. Inputs use surface-strong (slightly raised) so they read as
+ * distinct from the modal background; borders match the rest of the app.
+ *
+ * Scoped to dialogs and modal cards on purpose — non-modal forms across
+ * the app are sparse and already use Tailwind utility classes that work.
+ * ========================================================================= */
+@layer components {
+  dialog,
+  .modal-card {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+
+  /* Modal scroll body — subtle bottom-edge fade that appears ONLY when
+   * content overflows below the viewport, and disappears when scrolled
+   * to the bottom. Solves the "no scrollbar means I don't know there's
+   * more" UX problem on macOS auto-hide scrollbar setups, without an
+   * always-visible scrollbar. detail-modal.ts toggles the classes via a
+   * scroll + ResizeObserver pair. */
+  .modal-scroll {
+    position: relative;
+  }
+  .modal-scroll::before,
+  .modal-scroll::after {
+    content: '';
+    position: sticky;
+    left: 0;
+    right: 0;
+    height: 16px;
+    display: block;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 120ms ease;
+    z-index: 1;
+  }
+  .modal-scroll::before {
+    top: 0;
+    margin-bottom: -16px;
+    background: linear-gradient(to bottom, var(--surface) 0%, transparent 100%);
+  }
+  .modal-scroll::after {
+    bottom: 0;
+    margin-top: -16px;
+    background: linear-gradient(to top, var(--surface) 0%, transparent 100%);
+  }
+  .modal-scroll.has-overflow-top::before { opacity: 1; }
+  .modal-scroll.has-overflow-bottom::after { opacity: 1; }
+
+  dialog input[type="text"],
+  dialog input[type="number"],
+  dialog input[type="email"],
+  dialog input[type="password"],
+  dialog input[type="search"],
+  dialog input[type="url"],
+  dialog input[type="tel"],
+  dialog input[type="date"],
+  dialog input[type="time"],
+  dialog input:not([type]),
+  dialog textarea,
+  dialog select,
+  .modal-card input[type="text"],
+  .modal-card input[type="number"],
+  .modal-card input[type="email"],
+  .modal-card input[type="password"],
+  .modal-card input[type="search"],
+  .modal-card input[type="url"],
+  .modal-card input[type="tel"],
+  .modal-card input[type="date"],
+  .modal-card input[type="time"],
+  .modal-card input:not([type]),
+  .modal-card textarea,
+  .modal-card select {
+    background-color: var(--surface-strong);
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  /* Placeholder text — softer so it reads as hint, not value. */
+  dialog input::placeholder,
+  dialog textarea::placeholder,
+  .modal-card input::placeholder,
+  .modal-card textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 1;
+  }
+
+  /* Disabled controls — desaturate so users can tell. */
+  dialog input:disabled,
+  dialog textarea:disabled,
+  dialog select:disabled,
+  .modal-card input:disabled,
+  .modal-card textarea:disabled,
+  .modal-card select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Fieldset borders + legend text track the same tokens. */
+  dialog fieldset,
+  .modal-card fieldset {
+    border-color: var(--border);
+  }
+  dialog legend,
+  .modal-card legend {
+    color: var(--text);
+  }
+
+  /* Native checkbox / radio — accent-color picks up the brand colour
+     in browsers that support it (all modern). */
+  dialog input[type="checkbox"],
+  dialog input[type="radio"],
+  .modal-card input[type="checkbox"],
+  .modal-card input[type="radio"] {
+    accent-color: var(--accent);
+  }
+
+  /* Focus ring uses the existing accent-ring token for consistency. */
+  dialog input:focus-visible,
+  dialog textarea:focus-visible,
+  dialog select:focus-visible,
+  .modal-card input:focus-visible,
+  .modal-card textarea:focus-visible,
+  .modal-card select:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+  }
+}
+

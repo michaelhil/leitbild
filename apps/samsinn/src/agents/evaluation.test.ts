@@ -1,0 +1,525 @@
+// Tests for evaluation's error classification — ensures LLM/transport failures
+// produce typed `action: 'error'` decisions with the correct error code, never
+// a `pass` action. Pass is reserved for genuine agent decisions (the `pass`
+// tool); this distinction is what lets the UI surface real failures clearly
+// (red error chip + "Change model" affordance) instead of hiding them behind
+// a gray "[pass]".
+//
+// Direct unit tests for evaluate() / streamLLM / callLLM live in the
+// additional describe blocks below — they exercise evaluate.ts's public
+// surface without going through createAIAgent.
+
+import { describe, expect, test } from 'bun:test'
+import type { ChatRequest, ChatResponse, LLMProvider, StreamChunk } from '../core/types/llm.ts'
+import type { ToolDefinition, ToolExecutor } from '../core/types/tool.ts'
+import { createCloudProviderError, createGatewayError, createOllamaError } from '../llm/errors.ts'
+import { createAIAgent } from './ai-agent.ts'
+import type { Decision } from './ai-agent.ts'
+import type { AIAgentConfig } from '../core/types/agent.ts'
+import type { Message } from '../core/types/messaging.ts'
+import type { ContextResult } from './context-builder.ts'
+import { evaluate, callLLM, streamLLM } from './evaluation.ts'
+
+const makeConfig = (over: Partial<AIAgentConfig> = {}): AIAgentConfig => ({
+  name: 'Tester',
+  model: 'test-model',
+  persona: 'You are a tester.',
+  ...over,
+})
+
+const makeMessage = (over: Partial<Message> = {}): Message => ({
+  id: 'm1',
+  senderId: 'alice',
+  content: 'hello',
+  timestamp: Date.now(),
+  type: 'chat',
+  roomId: 'room-1',
+  ...over,
+})
+
+const errProvider = (err: unknown): LLMProvider => ({
+  chat: async () => { throw err },
+  models: async () => [],
+})
+
+describe('Evaluation — error classification', () => {
+  test('cloud auth error → no_api_key', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createCloudProviderError({
+      code: 'auth', provider: 'anthropic', message: 'invalid api key', status: 401,
+    }))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    expect(decisions[0]!.response.action).toBe('error')
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('no_api_key')
+      expect(decisions[0]!.response.providerHint).toBe('anthropic')
+    }
+  })
+
+  test('cloud bad_request → model_unavailable', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createCloudProviderError({
+      code: 'bad_request', provider: 'groq', message: 'unknown model', status: 400,
+    }))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('model_unavailable')
+      expect(decisions[0]!.response.providerHint).toBe('groq')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('cloud rate_limit → rate_limited', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createCloudProviderError({
+      code: 'rate_limit', provider: 'gemini', message: '429 too many requests', status: 429,
+    }))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('rate_limited')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('cloud provider_down → provider_down', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createCloudProviderError({
+      code: 'provider_down', provider: 'cerebras', message: '503 service unavailable', status: 503,
+    }))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('provider_down')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('ollama 4xx → model_unavailable', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createOllamaError(404, 'model "qwen99" not found'))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('model_unavailable')
+      expect(decisions[0]!.response.providerHint).toBe('ollama')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('gateway error → provider_down', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(createGatewayError('circuit_open', 'circuit open for ollama'))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('provider_down')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('network-shaped error → network', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(new Error('fetch failed: ECONNREFUSED'))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('network')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('unknown error → unknown', async () => {
+    const decisions: Decision[] = []
+    const provider = errProvider(new Error('something weird happened'))
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('unknown')
+    } else {
+      throw new Error('expected error action')
+    }
+  })
+
+  test('empty content from LLM → action:error / code:empty_response (NOT pass)', async () => {
+    const decisions: Decision[] = []
+    const provider: LLMProvider = {
+      chat: async () => ({ content: '', generationMs: 5, tokensUsed: { prompt: 1, completion: 0 } }),
+      models: async () => [],
+    }
+    const agent = createAIAgent(makeConfig(), provider, (d) => { decisions.push(d) })
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    expect(decisions[0]!.response.action).toBe('error')
+    if (decisions[0]!.response.action === 'error') {
+      expect(decisions[0]!.response.code).toBe('empty_response')
+    }
+  })
+
+  test('a real `pass` tool call still produces action:pass (sanity check)', async () => {
+    const decisions: Decision[] = []
+    const provider: LLMProvider = {
+      chat: async () => ({
+        content: '',
+        generationMs: 5,
+        tokensUsed: { prompt: 1, completion: 0 },
+        toolCalls: [{ function: { name: 'pass', arguments: { reason: 'no input' } } }],
+      }),
+      models: async () => [],
+    }
+    const agent = createAIAgent(
+      makeConfig(),
+      provider,
+      (d) => { decisions.push(d) },
+      {
+        toolDefinitions: [{ type: 'function', function: { name: 'pass', description: 'decline', parameters: {} } }],
+        toolExecutor: async () => [],
+      },
+    )
+    agent.receive(makeMessage())
+    await agent.whenIdle()
+
+    expect(decisions[0]!.response.action).toBe('pass')
+    if (decisions[0]!.response.action === 'pass') {
+      expect(decisions[0]!.response.reason).toBe('no input')
+    }
+  })
+})
+
+// ============================================================================
+// Direct evaluate() / streamWithRetry / streamLLM / callLLM tests.
+// Real LLMProvider implementations as fixtures (no mocks).
+// ============================================================================
+
+const baseContextResult = (): ContextResult => ({
+  messages: [
+    { role: 'system', content: 'sys' },
+    { role: 'user', content: 'hi' },
+  ],
+  flushInfo: { ids: new Set<string>(), triggerRoomId: 'room-1' },
+  warnings: [],
+})
+
+const asyncIterFromArray = <T>(items: ReadonlyArray<T>): AsyncIterable<T> => ({
+  [Symbol.asyncIterator]: () => {
+    let i = 0
+    return {
+      next: async () => i < items.length
+        ? { value: items[i++]!, done: false }
+        : { value: undefined as unknown as T, done: true },
+    }
+  },
+})
+
+interface StaticProviderOptions {
+  readonly content?: string
+  readonly toolCalls?: ChatResponse['toolCalls']
+  readonly streamChunks?: ReadonlyArray<StreamChunk>
+}
+
+const makeStaticProvider = (opts: StaticProviderOptions = {}): LLMProvider => {
+  const { content = '', toolCalls, streamChunks } = opts
+  const chat = async (): Promise<ChatResponse> => ({
+    content,
+    generationMs: 1,
+    tokensUsed: { prompt: 5, completion: 2 },
+    ...(toolCalls ? { toolCalls } : {}),
+  })
+  if (streamChunks) {
+    return {
+      chat,
+      stream: () => asyncIterFromArray(streamChunks),
+      models: async () => ['test-model'],
+    }
+  }
+  return { chat, models: async () => ['test-model'] }
+}
+
+const makeScriptedProvider = (
+  scripts: ReadonlyArray<{ content?: string; toolCalls?: ChatResponse['toolCalls'] }>,
+): { provider: LLMProvider; calls: ChatRequest[] } => {
+  const calls: ChatRequest[] = []
+  let i = 0
+  const provider: LLMProvider = {
+    chat: async (request): Promise<ChatResponse> => {
+      calls.push(request)
+      const s = scripts[Math.min(i++, scripts.length - 1)]!
+      return {
+        content: s.content ?? '',
+        generationMs: 1,
+        tokensUsed: { prompt: 1, completion: 1 },
+        ...(s.toolCalls ? { toolCalls: s.toolCalls } : {}),
+      }
+    },
+    models: async () => ['test-model'],
+  }
+  return { provider, calls }
+}
+
+const passToolDef: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'pass',
+    description: 'Decline',
+    parameters: { type: 'object', properties: {}, required: [] },
+  },
+}
+
+const baseConfig: AIAgentConfig = {
+  name: 'TestBot', model: 'test-model', persona: 'tester', historyLimit: 10,
+}
+
+// ---------------------------------------------------------------------------
+// evaluate() — tool loop, exhaustion, truncation. The pass-tool short-circuit
+// is already covered above via createAIAgent.
+// ---------------------------------------------------------------------------
+
+describe('evaluate (tool loop)', () => {
+  test('plain content → respond decision', async () => {
+    const provider = makeStaticProvider({ content: 'hello world' })
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, undefined, 5, 'room-1',
+    )
+    const r = result.decision.response
+    expect(r.action).toBe('respond')
+    if (r.action === 'respond') expect(r.content).toBe('hello world')
+  })
+
+  test('one tool round → result feeds next call → final content', async () => {
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'echo', arguments: { text: 'hi' } } }] },
+      { content: 'final answer' },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(c => ({ success: true, data: { echoed: c.arguments.text } }))
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 5, 'room-1',
+      { toolDefinitions: [] },
+    )
+    const r = result.decision.response
+    expect(r.action).toBe('respond')
+    if (r.action === 'respond') expect(r.content).toBe('final answer')
+    expect(calls).toHaveLength(2)
+    // Second call sees tool result injected as user message.
+    const last = calls[1]!
+    const userMsgs = last.messages.filter(m => m.role === 'user')
+    expect(userMsgs.some(m => m.content.includes('echoed'))).toBe(true)
+    // toolTrace populated.
+    expect(result.decision.toolTrace).toHaveLength(1)
+    expect(result.decision.toolTrace![0]!.tool).toBe('echo')
+    expect(result.decision.toolTrace![0]!.success).toBe(true)
+  })
+
+  test('multi-round tool loop (2 tools then content)', async () => {
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { toolCalls: [{ function: { name: 'b', arguments: {} } }] },
+      { content: 'done' },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(() => ({ success: true, data: 'ok' }))
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 5, 'room-1',
+      { toolDefinitions: [] },
+    )
+    expect(calls).toHaveLength(3)
+    const r = result.decision.response
+    if (r.action === 'respond') expect(r.content).toBe('done')
+    expect(result.decision.toolTrace).toHaveLength(2)
+  })
+
+  test('tool calls without executor → tools_unavailable', async () => {
+    const provider = makeStaticProvider({
+      toolCalls: [{ function: { name: 'echo', arguments: {} } }],
+    })
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, undefined, 5, 'room-1',
+      { toolDefinitions: [passToolDef] },
+    )
+    const r = result.decision.response
+    expect(r.action).toBe('error')
+    if (r.action === 'error') expect(r.code).toBe('tools_unavailable')
+  })
+
+  test('iteration cap with prior text → respond with partial-result footer', async () => {
+    // Every round emits both content AND a tool call → loop never ends via
+    // content; surfaces as exhaustion, BUT lastAssistantText was captured
+    // and is delivered with a footer instead of a bare error.
+    const { provider } = makeScriptedProvider([
+      { content: 'partial answer', toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { content: 'still working', toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { content: 'still working', toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+    ])
+    const exec: ToolExecutor = async (calls) =>
+      calls.map(() => ({ success: true, data: 'k' }))
+    // maxToolIterations = 1 → 2 rounds (0 and 1) before exhaustion.
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
+      { toolDefinitions: [] },
+    )
+    const r = result.decision.response
+    expect(r.action).toBe('respond')
+    if (r.action === 'respond') {
+      expect(r.content).toContain('still working')
+      expect(r.content).toContain('partial result')
+    }
+  })
+
+  test('checkin: paused at cap, user continues → loop resumes', async () => {
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { toolCalls: [{ function: { name: 'b', arguments: {} } }] },
+      { content: 'finally done' },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(() => ({ success: true, data: 'k' }))
+    let checkinCalls = 0
+    const requestToolCheckin = async (info: { iterations: number; recentTools: ReadonlyArray<{ tool: string; success: boolean }> }) => {
+      checkinCalls++
+      expect(info.iterations).toBeGreaterThan(0)
+      expect(info.recentTools.length).toBeGreaterThan(0)
+      return 5  // continue +5
+    }
+    // maxToolIterations = 1 → would normally cap at 2 rounds. With checkin
+    // returning +5, the loop continues until the content round.
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
+      { toolDefinitions: [], requestToolCheckin },
+    )
+    expect(checkinCalls).toBeGreaterThan(0)
+    const r = result.decision.response
+    expect(r.action).toBe('respond')
+    if (r.action === 'respond') expect(r.content).toBe('finally done')
+    expect(calls).toHaveLength(3)
+  })
+
+  test('checkin: user stops (null) → falls through to exceeded path with partial', async () => {
+    const { provider } = makeScriptedProvider([
+      { content: 'work in progress', toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { toolCalls: [{ function: { name: 'b', arguments: {} } }] },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(() => ({ success: true, data: 'k' }))
+    const requestToolCheckin = async () => null  // user clicks Stop
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
+      { toolDefinitions: [], requestToolCheckin },
+    )
+    const r = result.decision.response
+    // Partial content was captured → delivered with footer.
+    expect(r.action).toBe('respond')
+    if (r.action === 'respond') {
+      expect(r.content).toContain('work in progress')
+      expect(r.content).toContain('partial result')
+    }
+  })
+
+  test('checkin not wired → legacy tool_loop_exceeded behaviour preserved', async () => {
+    const { provider } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'a', arguments: {} } }] },
+      { toolCalls: [{ function: { name: 'b', arguments: {} } }] },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(() => ({ success: true, data: 'k' }))
+    // No requestToolCheckin in EvalOptions → falls through to legacy.
+    const result = await evaluate(
+      baseContextResult(), baseConfig, provider, exec, 1, 'room-1',
+      { toolDefinitions: [] },
+    )
+    const r = result.decision.response
+    // No prior text → error path, not respond path.
+    expect(r.action).toBe('error')
+    if (r.action === 'error') expect(r.code).toBe('tool_loop_exceeded')
+  })
+
+  test('large tool results are passed through verbatim (no truncation)', async () => {
+    // Fence-emitting tools like procedure_lookup / vatsim_arrivals routinely
+    // produce 5-50 KB payloads that must reach the model intact. Any cap
+    // here would slice the fence mid-content and break the renderer.
+    const huge = 'x'.repeat(10_000)
+    const { provider, calls } = makeScriptedProvider([
+      { toolCalls: [{ function: { name: 'big', arguments: {} } }] },
+      { content: 'done' },
+    ])
+    const exec: ToolExecutor = async (toolCalls) =>
+      toolCalls.map(() => ({ success: true, data: huge }))
+    await evaluate(
+      baseContextResult(), baseConfig,
+      provider, exec, 5, 'room-1',
+      { toolDefinitions: [] },
+    )
+    const second = calls[1]!
+    expect(second.messages.some(m => m.content.includes(huge))).toBe(true)
+    expect(second.messages.some(m => m.content.includes('characters omitted'))).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// streamLLM / callLLM
+// ---------------------------------------------------------------------------
+
+describe('streamLLM', () => {
+  test('yields deltas from provider stream', async () => {
+    const provider = makeStaticProvider({
+      streamChunks: [
+        { delta: 'hel', done: false },
+        { delta: 'lo', done: false },
+        { delta: '', done: true, tokensUsed: { prompt: 1, completion: 1 } },
+      ],
+    })
+    const got: string[] = []
+    for await (const chunk of streamLLM(provider, {
+      model: 'm', messages: [{ role: 'user', content: 'x' }],
+    })) {
+      if (chunk) got.push(chunk)
+    }
+    expect(got).toEqual(['hel', 'lo'])
+  })
+
+  test('falls back to chat() when provider has no stream method', async () => {
+    const provider = makeStaticProvider({ content: 'whole answer' })
+    expect(provider.stream).toBeUndefined()
+    const got: string[] = []
+    for await (const chunk of streamLLM(provider, {
+      model: 'm', messages: [{ role: 'user', content: 'x' }],
+    })) {
+      got.push(chunk)
+    }
+    expect(got).toEqual(['whole answer'])
+  })
+})
+
+describe('callLLM', () => {
+  test('returns raw chat content', async () => {
+    const provider = makeStaticProvider({ content: 'sync result' })
+    const out = await callLLM(provider, {
+      model: 'm', messages: [{ role: 'user', content: 'q' }],
+    })
+    expect(out).toBe('sync result')
+  })
+})

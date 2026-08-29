@@ -1,0 +1,193 @@
+// ============================================================================
+// HTTP Routes — Shared helpers + thin route-table dispatcher.
+//
+// Pure request→response functions. No WebSocket or server lifecycle concerns.
+// All routes delegate to System methods — no business logic here.
+//
+// Route modules live in routes/: rooms, agents, messages, house.
+// The dispatcher iterates the route table, matches method+pattern, calls handler.
+// ============================================================================
+
+import type { System } from '../main.ts'
+import type { WSOutbound } from '../core/types/ws-protocol.ts'
+import { authEnabled, isValidSession, sessionFromRequest } from './auth.ts'
+import { getInstanceId } from './instance-cookie.ts'
+import { houseRoutes } from './routes/house.ts'
+import { skillRoutes } from './routes/skills.ts'
+import { roomRoutes } from './routes/rooms.ts'
+import { agentRoutes } from './routes/agents.ts'
+import { agentMemoryRoutes } from './routes/agents-memory.ts'
+import { messageRoutes } from './routes/messages.ts'
+import { ollamaRoutes } from './routes/ollama.ts'
+import { providersListRoutes } from './routes/providers-list.ts'
+import { providersConfigRoutes } from './routes/providers-config.ts'
+import { providersTestRoutes } from './routes/providers-test.ts'
+import { triggerRoutes } from './routes/triggers.ts'
+import { packsRoutes } from './routes/packs.ts'
+import { authResponse, systemInfoResponse, systemRoutes } from './routes/system.ts'
+import { json } from './routes/helpers.ts'
+import { instanceRoutes } from './routes/instances.ts'
+import { bugRoutes } from './routes/bugs.ts'
+import { bookmarkRoutes } from './routes/bookmarks.ts'
+import { toolRoutes } from './routes/tools.ts'
+import { loggingRoutes } from './routes/logging.ts'
+import { scriptRoutes } from './routes/scripts.ts'
+import { geodataRoutes } from './routes/geodata.ts'
+import { documentRoutes } from './routes/documents.ts'
+import { diagnosticRoutes } from './routes/diagnostics.ts'
+import { leitbildMirrorRoutes } from './routes/leitbild-mirror.ts'
+import type { RouteContext } from './routes/types.ts'
+
+// Route helpers live in ./routes/helpers.ts to keep http-routes.ts cycle-free.
+
+// === Route Table ===
+// Order matters: more-specific patterns (e.g. /rooms/:name/todos/:id) before general ones.
+
+const allRoutes = [
+  // Tool routes come before houseRoutes so /api/tools/:name + /api/tools/rescan
+  // are matched before any catch-all patterns elsewhere.
+  ...toolRoutes,
+  ...houseRoutes,
+  ...skillRoutes,
+  ...ollamaRoutes,
+  ...providersListRoutes,
+  ...providersConfigRoutes,
+  ...providersTestRoutes,
+  // Trigger routes BEFORE agentRoutes so /api/agents/:name/triggers matches first.
+  ...triggerRoutes,
+  ...packsRoutes,
+  ...systemRoutes,
+  ...instanceRoutes,
+  ...bugRoutes,
+  ...loggingRoutes,
+  ...bookmarkRoutes,
+  // Scripts before rooms (avoids /rooms/:name/script being shadowed)
+  ...scriptRoutes,
+  // Geodata routes — process-wide, no instance binding.
+  ...geodataRoutes,
+  // RAG documents — per-instance corpus.
+  ...documentRoutes,
+  // Leitbild mirror — must come BEFORE roomRoutes so
+  // /rooms/:name/leitbild-mirror matches before the generic /rooms/:name.
+  ...leitbildMirrorRoutes,
+  ...roomRoutes,
+  // Agent-memory routes BEFORE agentRoutes so /api/agents/:name/memory
+  // matches before /api/agents/:name (which would shadow it).
+  ...agentMemoryRoutes,
+  // Diagnostic routes BEFORE agentRoutes so /api/agents/:name/surface
+  // matches before /api/agents/:name. Also covers /api/diagnostics/*.
+  ...diagnosticRoutes,
+  ...agentRoutes,
+  ...messageRoutes,
+]
+
+// === Dispatcher ===
+
+// Per-request dependencies: everything routes need that isn't `req` /
+// `pathname` / `system` / `instanceId`. Bundled into one shape so the
+// server.ts → handleAPI seam stays narrow as new cross-cutting capabilities
+// land (resetInstance, instances, diagnostics, …).
+export interface RouteDeps {
+  readonly broadcast: (msg: WSOutbound) => void
+  readonly subscribeAgentState: RouteContext['subscribeAgentState']
+  readonly unsubscribeAgentState?: (agentId: string) => void
+  readonly remoteAddress?: string
+  readonly resetInstance?: RouteContext['resetInstance']
+  readonly evictInstance?: RouteContext['evictInstance']
+  readonly broadcastToInstance?: RouteContext['broadcastToInstance']
+  readonly instances?: RouteContext['instances']
+  readonly diagnostics?: RouteContext['diagnostics']
+  readonly leitbildMirror?: RouteContext['leitbildMirror']
+}
+
+// Routes that are process-global and intentionally usable before an
+// instance cookie exists. Dispatch them before registry.getOrLoad: passing
+// these through the per-instance dispatcher used to materialize a seeded
+// instance for every diagnostics/auth/info probe.
+export const handleUnscopedAPI = async (
+  req: Request,
+  pathname: string,
+  deps: Pick<RouteDeps, 'remoteAddress' | 'diagnostics'>,
+): Promise<Response | null> => {
+  if (pathname === '/health' && req.method === 'GET' && getInstanceId(req) === null) {
+    const diagnostics = deps.diagnostics?.snapshot() ?? { instances: [], wsSessions: 0 }
+    return json({
+      status: 'ok',
+      scope: 'process',
+      instances: diagnostics.instances.length,
+      wsSessions: diagnostics.wsSessions,
+    })
+  }
+  if (pathname === '/api/system/info' && req.method === 'GET') {
+    return systemInfoResponse()
+  }
+  if (pathname === '/api/auth' && (req.method === 'GET' || req.method === 'POST')) {
+    return authResponse(req, deps.remoteAddress)
+  }
+  if (pathname === '/api/system/diagnostics' && req.method === 'GET') {
+    if (authEnabled() && !isValidSession(sessionFromRequest(req))) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+    if (!deps.diagnostics) return new Response('diagnostics not wired', { status: 500 })
+    return json(deps.diagnostics.snapshot())
+  }
+  return null
+}
+
+export const handleAPI = async (
+  req: Request,
+  pathname: string,
+  system: System,
+  instanceId: string,
+  deps: RouteDeps,
+): Promise<Response | null> => {
+  const ctx: RouteContext = { system, instanceId, ...deps }
+
+  // F5: cookieless /api/* → 401. Bots that probe the API without first
+  // going through /ws (which is where real UI flow mints a cookie) can't
+  // create instances. Exempted: /api/auth (UI calls this BEFORE having a
+  // cookie to render the token prompt) and /api/system/info (version
+  // banner on the same screen). All other /api/* require an existing
+  // cookie. Real UI never sees this — `GET /` minted the cookie before
+  // any /api call.
+  //
+  // The check uses getInstanceId() (raw cookie read) instead of trusting
+  // `instanceId`, because resolveOrMintInstance in server.ts may have
+  // minted a fresh id for a cookieless caller; we want the unminted view.
+  if (
+    pathname.startsWith('/api/') &&
+    pathname !== '/api/auth' &&
+    pathname !== '/api/system/info' &&
+    getInstanceId(req) === null
+  ) {
+    return new Response('No session', { status: 401 })
+  }
+
+  // Auth gate. Scoped to /api/* so static paths (/, /index.html, /dist.css,
+  // /favicon.ico) can load and the UI can boot to show the token prompt.
+  // Without this scope, the gate ran on every path (returning null fell
+  // through to serveStatic, but a 401 short-circuited the chain), so the
+  // root page returned "Unauthorized" plain text and invitees never saw
+  // the prompt.
+  // /api/auth itself is exempt so the UI can submit the token.
+  // /api/system/info is exempt so the version banner can render at the
+  // token-prompt screen without a session.
+  if (
+    authEnabled() &&
+    pathname.startsWith('/api/') &&
+    pathname !== '/api/auth' &&
+    pathname !== '/api/system/info'
+  ) {
+    if (!isValidSession(sessionFromRequest(req))) {
+      return new Response('Unauthorized', { status: 401 })
+    }
+  }
+
+  for (const route of allRoutes) {
+    if (route.method !== req.method) continue
+    const match = pathname.match(route.pattern)
+    if (match) return route.handler(req, match, ctx)
+  }
+
+  return null
+}

@@ -1,0 +1,63 @@
+// DOM element refs for the UI shell, queried once at module load.
+
+const $ = (sel: string) => document.querySelector(sel)!
+
+export const domRefs = {
+  roomList: $('#room-list') as HTMLElement,
+  roomHeader: $('#room-header') as HTMLElement,
+  roomNameEl: $('#room-name') as HTMLElement,
+  roomInfoBar: $('#room-info-bar') as HTMLElement,
+  roomMembers: $('#room-members') as HTMLElement,
+  roomsToggle: $('#rooms-toggle') as HTMLElement,
+  roomsHeader: $('#rooms-header') as HTMLElement,
+  agentList: $('#agent-list') as HTMLElement,
+  noRoomState: $('#no-room-state') as HTMLElement,
+  // (Agent inspector is now a modal — see #agent-detail-modal and
+  // src/ui/modules/agent-detail-modal.ts. The previous inline #agent-area
+  // div was removed.)
+  chatArea: $('#chat-area') as HTMLElement,
+  messagesDiv: $('#messages') as HTMLElement,
+  chatForm: $('#chat-form') as HTMLFormElement,
+  chatInput: $('#chat-input') as HTMLTextAreaElement,
+  // Pause status dot (header)
+  roomStatusDot: $('#room-status-dot') as HTMLButtonElement,
+  // Mode toggle (single button — swaps icon between broadcast and manual)
+  btnModeToggle: $('#btn-mode-toggle') as HTMLButtonElement,
+  // Summary & compression group
+  summaryGroup: $('#summary-group') as HTMLElement,
+  btnSummaryToggle: $('#btn-summary-toggle') as HTMLButtonElement,
+  btnSummarySettings: $('#btn-summary-settings') as HTMLButtonElement,
+  btnSummaryInspect: $('#btn-summary-inspect') as HTMLButtonElement,
+  btnSummaryRegenerate: $('#btn-summary-regenerate') as HTMLButtonElement,
+  // Scripts group
+  btnScriptStart: $('#btn-script-start') as HTMLButtonElement,
+  scriptRunningChip: $('#script-running-chip') as HTMLElement,
+  btnScriptAdvance: $('#btn-script-advance') as HTMLButtonElement,
+  btnScriptStop: $('#btn-script-stop') as HTMLButtonElement,
+  scriptStartPopover: $('#script-start-popover') as HTMLElement,
+  scriptDocRail: $('#script-doc-rail') as HTMLElement,
+  scriptDocResize: $('#script-doc-resize') as HTMLElement,
+  scriptDocBody: $('#script-doc-body') as HTMLPreElement,
+  scriptDocStatus: $('#script-doc-status') as HTMLElement,
+  btnScriptDocClose: $('#btn-script-doc-close') as HTMLButtonElement,
+  roomModeInfo: $('#room-mode-info') as HTMLElement,
+  nameModal: $('#name-modal') as HTMLDialogElement,
+  nameForm: $('#name-form') as HTMLFormElement,
+  roomModal: $('#room-modal') as HTMLDialogElement,
+  roomForm: $('#room-form') as HTMLFormElement,
+  agentModal: $('#agent-modal') as HTMLDialogElement,
+  agentForm: $('#agent-form') as HTMLFormElement,
+  sidebar: $('#sidebar') as HTMLElement,
+  agentsHeader: $('#agents-header') as HTMLElement,
+  agentsToggle: $('#agents-toggle') as HTMLElement,
+  settingsHeader: $('#settings-header') as HTMLElement,
+  settingsToggle: $('#settings-toggle') as HTMLElement,
+  settingsList: $('#settings-list') as HTMLElement,
+  loggingStateDot: $('#logging-state-dot') as HTMLElement,
+  ollamaStatusDot: document.getElementById('ollama-status-dot') as HTMLElement,
+  ollamaDashboard: document.getElementById('ollama-dashboard') as HTMLDialogElement,
+  ollamaUrlSelect: $('#ollama-url-select') as HTMLSelectElement,
+  ollamaUrlInput: $('#ollama-url-input') as HTMLInputElement,
+  btnOllamaUrlAdd: $('#btn-ollama-url-add') as HTMLElement,
+  btnOllamaUrlDelete: $('#btn-ollama-url-delete') as HTMLElement,
+} as const

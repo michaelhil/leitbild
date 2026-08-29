@@ -1,0 +1,250 @@
+import { z } from 'zod'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { System } from '../../../main.ts'
+import type { AIAgent } from '../../../core/types/agent.ts'
+import type { ToolContext } from '../../../core/types/tool.ts'
+import { asAIAgent } from '../../../agents/shared.ts'
+import { createListAgentsTool, createMuteAgentTool } from '../../../tools/built-in/agent-tools.ts'
+import { textResult, errorResult, resolveAgent } from './helpers.ts'
+
+const dummyContext: ToolContext = {
+  callerId: 'mcp-client',
+  callerName: 'mcp-client',
+}
+
+export const registerAgentTools = (mcpServer: McpServer, system: System): void => {
+  const listAgents = createListAgentsTool(system.team)
+  mcpServer.tool(
+    listAgents.name,
+    listAgents.description,
+    {},
+    async () => {
+      try {
+        const result = await listAgents.execute({}, dummyContext)
+        if (!result.success) return errorResult(result.error ?? 'Failed to list agents')
+        return textResult(result.data)
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to list agents')
+      }
+    },
+  )
+
+  const muteAgent = createMuteAgentTool(system.team, system.house)
+  mcpServer.tool(
+    muteAgent.name,
+    muteAgent.description,
+    {
+      roomName: z.string().describe('Name of the room'),
+      agentName: z.string().describe('Name of the agent to mute or unmute'),
+      muted: z.boolean().describe('true to mute, false to unmute'),
+    },
+    async ({ roomName, agentName, muted }) => {
+      try {
+        const result = await muteAgent.execute({ roomName, agentName, muted }, dummyContext)
+        if (!result.success) return errorResult(result.error ?? 'Failed to set mute')
+        return textResult(result.data)
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to set mute')
+      }
+    },
+  )
+
+  // Per-section prompt toggles. UI label → key mapping (for spec authors):
+  //   "Agent persona"   → persona
+  //   "Room prompt"     → room
+  //   "System prompt"   → house   (the global housePrompt, NOT the LLM role:'system')
+  //   "Response format" → responseFormat
+  //   "Skills"          → skills
+  const includePromptsShape = z.object({
+    persona: z.boolean().optional(),
+    room: z.boolean().optional(),
+    house: z.boolean().optional(),
+    responseFormat: z.boolean().optional(),
+    skills: z.boolean().optional(),
+  }).optional()
+
+  const includeContextShape = z.object({
+    participants: z.boolean().optional(),
+    activity: z.boolean().optional(),
+    knownAgents: z.boolean().optional(),
+  }).optional()
+
+  mcpServer.tool(
+    'create_agent',
+    'Create a new AI agent (not added to any room by default). Every optional field maps 1:1 to AIAgentConfig — see src/core/types/agent.ts. `includePrompts` uses keys (persona/room/house/responseFormat/skills); UI labels map as: "System prompt" = house, "Agent persona" = persona, "Room prompt" = room, "Skills" = skills, "Response format" = responseFormat.',
+    {
+      name: z.string().describe('Agent name'),
+      model: z.string().describe('Model ID. Cloud models are provider-prefixed: "anthropic:claude-haiku-4-5", "gemini:gemini-2.5-flash", "groq:llama-3.3-70b-versatile", etc. Ollama models are bare: "llama3.2" or "qwen2.5:14b". Call GET /api/models for the live list.'),
+      persona: z.string().describe('Persona defining who the agent is and how it should behave'),
+      temperature: z.number().optional().describe('LLM temperature (0-1)'),
+      seed: z.number().int().optional().describe('Deterministic seed forwarded to every LLM call this agent issues (best-effort per provider — Ollama and OpenAI-family honor it; Anthropic/Gemini silently discard).'),
+      tools: z.array(z.string()).optional().describe('Tool names available to this agent. When omitted, agent has access to every registered tool. Pass an empty array for no tools.'),
+      historyLimit: z.number().int().optional().describe('Max number of old messages retained per room in the agent\'s context window.'),
+      maxToolIterations: z.number().int().optional().describe('Max tool-loop iterations before the agent is forced to answer or pass.'),
+      tags: z.array(z.string()).optional().describe('Capability/role tags enabling [[tag:X]] addressing.'),
+      thinking: z.boolean().optional().describe('Enable model chain-of-thought (qwen3 thinking mode, etc.).'),
+      includePrompts: includePromptsShape.describe('Per-section prompt inclusion gates. All default to true. See tool description for UI-label mapping.'),
+      includeContext: includeContextShape.describe('CONTEXT sub-section toggles (participants/activity/knownAgents). All default to true.'),
+      includeTools: z.boolean().optional().describe('Master switch — send tool definitions to LLM at all (default: true).'),
+      promptsEnabled: z.boolean().optional().describe('Master switch for all includePrompts sections (false = every section off, default: true).'),
+      contextEnabled: z.boolean().optional().describe('Master switch for all includeContext sub-sections (default: true).'),
+    },
+    async (args) => {
+      try {
+        const { name, model, persona } = args
+        const agent = await system.spawnAIAgent({
+          name,
+          model,
+          persona,
+          ...(args.temperature !== undefined ? { temperature: args.temperature } : {}),
+          ...(args.seed !== undefined ? { seed: args.seed } : {}),
+          ...(args.tools !== undefined ? { tools: args.tools } : {}),
+          ...(args.historyLimit !== undefined ? { historyLimit: args.historyLimit } : {}),
+          ...(args.maxToolIterations !== undefined ? { maxToolIterations: args.maxToolIterations } : {}),
+          ...(args.tags !== undefined ? { tags: args.tags } : {}),
+          ...(args.thinking !== undefined ? { thinking: args.thinking } : {}),
+          ...(args.includePrompts !== undefined ? { includePrompts: args.includePrompts } : {}),
+          ...(args.includeContext !== undefined ? { includeContext: args.includeContext } : {}),
+          ...(args.includeTools !== undefined ? { includeTools: args.includeTools } : {}),
+          ...(args.promptsEnabled !== undefined ? { promptsEnabled: args.promptsEnabled } : {}),
+          ...(args.contextEnabled !== undefined ? { contextEnabled: args.contextEnabled } : {}),
+        })
+        return textResult({ id: agent.id, name: agent.name })
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to create agent')
+      }
+    },
+  )
+
+  mcpServer.tool(
+    'get_agent',
+    'Get detailed information about a specific agent',
+    { name: z.string().describe('Agent name') },
+    async ({ name }) => {
+      try {
+        const agent = resolveAgent(system, name)
+        const detail: Record<string, unknown> = {
+          id: agent.id, name: agent.name,
+          kind: agent.kind, state: agent.state.get(),
+          rooms: system.house.getRoomsForAgent(agent.id).map(r => r.profile.name),
+        }
+        const aiAgent = asAIAgent(agent)
+        if (aiAgent) {
+          detail.persona = aiAgent.getPersona()
+          detail.model = aiAgent.getModel()
+        }
+        return textResult(detail)
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Agent not found')
+      }
+    },
+  )
+
+  mcpServer.tool(
+    'remove_agent',
+    'Remove an agent from the system',
+    { name: z.string().describe('Agent name') },
+    async ({ name }) => {
+      try {
+        const agent = resolveAgent(system, name)
+        system.removeAgent(agent.id)
+        return textResult({ removed: true })
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to remove agent')
+      }
+    },
+  )
+
+  mcpServer.tool(
+    'update_agent_persona',
+    'Update an AI agent persona',
+    {
+      name: z.string().describe('Agent name'),
+      persona: z.string().describe('New persona'),
+    },
+    async ({ name, persona }) => {
+      try {
+        const agent = resolveAgent(system, name)
+        if (agent.kind !== 'ai' || !('updatePersona' in agent)) {
+          return errorResult('Only AI agents can be updated')
+        }
+        ;(agent as AIAgent).updatePersona(persona)
+        return textResult({ updated: true, name: agent.name })
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to update agent')
+      }
+    },
+  )
+
+  mcpServer.tool(
+    'update_agent_context',
+    'Update per-agent Context panel toggles and limits (includePrompts, includeContext, includeTools, maxToolIterations).',
+    {
+      name: z.string().describe('Agent name'),
+      includePrompts: z.object({
+        agent: z.boolean().optional(),
+        room: z.boolean().optional(),
+        house: z.boolean().optional(),
+        responseFormat: z.boolean().optional(),
+        skills: z.boolean().optional(),
+      }).optional().describe('Prompt-section toggles. Partial — only provided keys change.'),
+      includeContext: z.object({
+        participants: z.boolean().optional(),
+        activity: z.boolean().optional(),
+        knownAgents: z.boolean().optional(),
+      }).optional().describe('CONTEXT sub-section toggles. Partial.'),
+      includeTools: z.boolean().optional().describe('Master tools on/off (false = send zero tool definitions).'),
+      maxToolIterations: z.number().optional().describe('Max tool-call rounds per turn.'),
+    },
+    async ({ name, includePrompts, includeContext, includeTools, maxToolIterations }) => {
+      try {
+        const agent = resolveAgent(system, name)
+        const ai = agent as AIAgent
+        if (agent.kind !== 'ai' || !('updateIncludePrompts' in ai)) {
+          return errorResult('Only AI agents can be updated')
+        }
+        if (includePrompts) ai.updateIncludePrompts(includePrompts)
+        if (includeContext) ai.updateIncludeContext(includeContext)
+        if (typeof includeTools === 'boolean') ai.updateIncludeTools(includeTools)
+        if (typeof maxToolIterations === 'number') ai.updateMaxToolIterations(maxToolIterations)
+        return textResult({
+          updated: true,
+          name: agent.name,
+          includePrompts: ai.getIncludePrompts(),
+          includeContext: ai.getIncludeContext(),
+          includeTools: ai.getIncludeTools(),
+          maxToolIterations: ai.getMaxToolIterations() ?? null,
+        })
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : 'Failed to update agent context')
+      }
+    },
+  )
+
+  mcpServer.tool(
+    'get_house_prompts',
+    'Get the global house prompt and response format that guide all agents',
+    {},
+    async () => textResult({
+      housePrompt: system.house.getHousePrompt(),
+      responseFormat: system.house.getResponseFormat(),
+    }),
+  )
+
+  mcpServer.tool(
+    'set_house_prompts',
+    'Update the global house prompt and/or response format',
+    {
+      housePrompt: z.string().optional().describe('Global behavioral guidance for all agents'),
+      responseFormat: z.string().optional().describe('Response format instructions for agents'),
+    },
+    async ({ housePrompt, responseFormat }) => {
+      if (housePrompt !== undefined) system.house.setHousePrompt(housePrompt)
+      if (responseFormat !== undefined) system.house.setResponseFormat(responseFormat)
+      return textResult({
+        housePrompt: system.house.getHousePrompt(),
+        responseFormat: system.house.getResponseFormat(),
+      })
+    },
+  )
+}

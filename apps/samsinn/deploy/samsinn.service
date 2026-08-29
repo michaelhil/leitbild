@@ -1,0 +1,81 @@
+[Unit]
+Description=Samsinn — multi-agent collaboration server
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=samsinn
+Group=samsinn
+
+# Release layout:
+#   /opt/samsinn-deploy/current   — atomic link to one immutable code release
+#   /opt/samsinn-deploy/releases  — complete source artifacts + manifests
+#   /opt/samsinn-deploy/deps      — dependency trees keyed by bun.lock sha256
+#   /var/lib/samsinn              — persistent snapshots, providers, packs, logs
+WorkingDirectory=/opt/samsinn-deploy/current
+
+# Adjust the bun path if you installed Bun system-wide.
+# CSS is built and verified before upload. bootstrap.ts retains its stale-file
+# safety check, but normal production startup performs no package resolution.
+ExecStart=/home/samsinn/.bun/bin/bun run src/main.ts
+
+# Restart policy: bring the server back fast after a crash OR after the
+# /api/system/reset endpoint exits the process. Crash-loop guard
+# (StartLimitBurst above) caps to 5 restarts in 60 s.
+Restart=always
+RestartSec=5s
+
+# Resource caps. Tune up on bigger boxes; these defaults fit CAX11 (4 GB).
+MemoryMax=2G
+CPUQuota=180%
+LimitNOFILE=65536
+
+# Files created by the service (providers.json, snapshots) inherit 0600.
+UMask=0077
+
+# Defaults — override via /etc/samsinn/env (operator-edited, mode 0600).
+Environment=PORT=3000
+Environment=SAMSINN_BIND_HOST=127.0.0.1
+Environment=NODE_ENV=production
+# Bun is installed under the service account's home, outside systemd's
+# default PATH.
+Environment=PATH=/home/samsinn/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=SAMSINN_HOME=/var/lib/samsinn
+Environment=SAMSINN_SECURE_COOKIES=1
+Environment=SAMSINN_MAX_LOADED_INSTANCES=128
+EnvironmentFile=-/etc/samsinn/env
+
+# Logs go to journald — view with `journalctl -u samsinn -f`.
+StandardOutput=journal
+StandardError=journal
+
+# Hardening (best-effort; relax if a feature stops working).
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/samsinn
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+RemoveIPC=true
+
+[Install]
+WantedBy=multi-user.target
