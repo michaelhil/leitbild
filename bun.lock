@@ -20,6 +20,7 @@
         "@deck.gl/mapbox": "^9.3.2",
         "@mapbox/vector-tile": "^2.0.4",
         "@maplibre/maplibre-gl-style-spec": "^24.8.5",
+        "@samsinn-leitbild/platform-contracts": "workspace:*",
         "@sveltejs/vite-plugin-svelte": "^7.1.2",
         "earcut": "^3.0.2",
         "h3-js": "^4.4.0",
@@ -43,6 +44,7 @@
       "version": "0.15.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.27.1",
+        "@samsinn-leitbild/platform-contracts": "workspace:*",
         "unpdf": "^1.6.2",
         "zod": "^3.25 || ^4.0",
       },

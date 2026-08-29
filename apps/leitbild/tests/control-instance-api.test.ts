@@ -13,11 +13,18 @@ import { setDestinationCommandKind } from '../src/packs/ambulance/commands.ts'
 import { assetArrivedAtTargetSignalType } from '../src/packs/ambulance/sim/interactions.ts'
 import { createTestPackRuntimeAdapters, createTestScenarioCatalog, testPacks } from './helpers.ts'
 import { osloAmbulanceScenario } from '../src/scenarios/index.ts'
+import { accessContextSchema, newRequestId, newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 interface ApiResponse<T> {
   readonly status: number
   readonly body: T
 }
+
+const testAccessContext = accessContextSchema.parse({
+  workspaceId: newWorkspaceId(),
+  requestId: newRequestId(),
+  actor: { kind: 'anonymous' },
+})
 
 const procedureSource = {
   sourceId: 'pwr-ops',
@@ -127,6 +134,7 @@ const callRoute = async <T>(
   const request = new Request(`http://leitbild.test${path}`, init)
   const response = await handleControlInstanceApi(request, new URL(request.url), {
     registry,
+    accessContext: testAccessContext,
     ...(websocketClients === undefined ? {} : { websocketClients }),
   })
   if (!response) throw new Error(`route did not handle ${init?.method ?? 'GET'} ${path}`)

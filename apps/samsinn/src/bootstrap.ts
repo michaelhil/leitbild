@@ -65,6 +65,7 @@ import {
   createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
 } from './tools/built-in/index.ts'
 import { runGeodataMigrationOnce } from './geo/migrate.ts'
+import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
 
 const DRAIN_TIMEOUT_MS = 5_000
 
@@ -929,8 +930,13 @@ export const bootstrap = async (): Promise<void> => {
     await ensureCssBuilt({ uiPath })
   }
   const { createServer } = await import('./api/server.ts')
+  const workspaceDirectory = createLocalWorkspaceDirectory({
+    path: sharedPaths.workspaceDirectory(),
+    defaultDisplayName: 'Samsinn',
+  })
   createServer({
     registry,
+    workspaceDirectory,
     wsManager,
     port: parseInt(process.env.PORT ?? String(DEFAULTS.port), 10),
     resetInstance,

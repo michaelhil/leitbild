@@ -15,6 +15,8 @@ import { createLocalTrafficPackRuntimeAdapter } from './packs/traffic/sim/adapte
 import { createLocalWeatherPackRuntimeAdapter } from './packs/weather/sim/adapter.ts'
 import { createRoutingAdapterFromEnv } from './routing/config.ts'
 import { builtinMissions, createBuiltinScenarios } from './scenarios/index.ts'
+import { join } from 'node:path'
+import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
 
 const routing = createRoutingAdapterFromEnv()
 const scenarios = await createBuiltinScenarios(routing)
@@ -50,8 +52,15 @@ const aviationMultiAdapter: PackRuntimeAdapter | null = (aviationOpenSkyAdapter 
     })
   : null
 
+const dataDir = process.env.LEITBILD_DATA_DIR ?? 'data'
+const workspaceDirectory = createLocalWorkspaceDirectory({
+  path: join(dataDir, 'workspace-directory.json'),
+  defaultDisplayName: 'Leitbild',
+})
+const defaultWorkspace = await workspaceDirectory.ensureDefault()
+
 const registry = createControlInstanceRegistry({
-  dataDir: process.env.LEITBILD_DATA_DIR ?? 'data',
+  dataDir,
   scenarioCatalog,
   runtimeAdapters: [
     createLocalAmbulancePackRuntimeAdapter({ routing }),
@@ -68,6 +77,6 @@ const registry = createControlInstanceRegistry({
   interactionHandlers: leitbildPacks.flatMap(pack => pack.interactionHandlers ?? []),
 })
 
-const server = createServer({ registry })
+const server = createServer({ registry, workspaceId: defaultWorkspace.id })
 
 console.log(`Leitbild running at http://localhost:${server.port}`)

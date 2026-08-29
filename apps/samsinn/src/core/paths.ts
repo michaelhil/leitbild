@@ -60,6 +60,7 @@ export const sharedPaths = {
   // now so single-tenant agents keep their notes.log/facts.json.
   memoryLegacy: (): string => join(samsinnHome(), 'memory'),
   adminLog: (): string => join(samsinnHome(), 'logs', 'admin.jsonl'),
+  workspaceDirectory: (): string => join(samsinnHome(), 'workspace-directory.json'),
   instancesRoot: (): string => join(samsinnHome(), 'instances'),
   trashRoot: (): string => join(samsinnHome(), 'instances', '.trash'),
 }

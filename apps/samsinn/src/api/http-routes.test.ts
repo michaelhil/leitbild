@@ -11,6 +11,8 @@ import { createLimitMetrics } from '../core/limit-metrics.ts'
 import type { DeliverFn } from '../core/types/messaging.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { System } from '../main.ts'
+import { accessContextSchema, newRequestId } from '@samsinn-leitbild/platform-contracts'
+import { workspaceIdForLegacyInstance } from '../core/workspaces/request-context.ts'
 
 // === Helpers ===
 
@@ -20,6 +22,11 @@ const noopSubscribe = (): void => {}
 // 16-char lowercase alphanumeric to satisfy isValidInstanceId so the
 // cookie attached by `req()` below passes the F5 cookieless-→-401 gate.
 const TEST_INSTANCE_ID = 'testinstance1234'
+const TEST_ACCESS_CONTEXT = accessContextSchema.parse({
+  workspaceId: workspaceIdForLegacyInstance(TEST_INSTANCE_ID),
+  requestId: newRequestId(),
+  actor: { kind: 'anonymous' },
+})
 
 const makeSystem = (): System => {
   const house = createHouse({ deliver: noopDeliver })
@@ -82,7 +89,7 @@ const req = (method: string, path: string, body?: unknown): Request => {
 }
 
 const call = (system: System, r: Request, path: string, opts: { remoteAddress?: string } = {}) =>
-  handleAPI(r, path, system, TEST_INSTANCE_ID, {
+  handleAPI(r, path, system, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
     broadcast: noopBroadcast,
     subscribeAgentState: noopSubscribe,
     ...(opts.remoteAddress ? { remoteAddress: opts.remoteAddress } : {}),
@@ -278,7 +285,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/rooms → 401', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/rooms'), '/api/rooms', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/rooms'), '/api/rooms', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -287,7 +294,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/auth → allowed (exempt for UI bootstrap)', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/auth'), '/api/auth', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/auth'), '/api/auth', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -296,7 +303,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
 
   test('cookieless GET /api/system/info → allowed (exempt for token-prompt banner)', async () => {
     const sys = makeSystem()
-    const res = await handleAPI(reqNoCookie('GET', '/api/system/info'), '/api/system/info', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(reqNoCookie('GET', '/api/system/info'), '/api/system/info', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -309,7 +316,7 @@ describe('HTTP Routes — F5 cookieless /api/* gate', () => {
       method: 'GET',
       headers: { cookie: 'samsinn_instance=../etc/passwd' },
     })
-    const res = await handleAPI(r, '/api/rooms', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(r, '/api/rooms', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -507,7 +514,7 @@ describe('GET /api/system/limits (no auth)', () => {
   test('POST /api/system/evict returns 501 when evictInstance not wired', async () => {
     const r = req('POST', '/api/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
     })
@@ -525,7 +532,7 @@ describe('GET /api/system/limits (no auth)', () => {
       headers: { Cookie: `samsinn_instance=${TEST_INSTANCE_ID}` },
     })
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
       evictInstance,
@@ -541,7 +548,7 @@ describe('GET /api/system/limits (no auth)', () => {
     const evictInstance = async () => ({ ok: false as const, reason: 'no instance cookie' })
     const r = req('POST', '/api/system/evict')
     const sys = makeSystem()
-    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, {
+    const res = await handleAPI(r, '/api/system/evict', sys, TEST_INSTANCE_ID, TEST_ACCESS_CONTEXT, {
       broadcast: noopBroadcast,
       subscribeAgentState: noopSubscribe,
       evictInstance,

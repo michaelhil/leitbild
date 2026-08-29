@@ -37,6 +37,7 @@ import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
 import { leitbildMirrorRoutes } from './routes/leitbild-mirror.ts'
 import type { RouteContext } from './routes/types.ts'
+import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
 
 // Route helpers live in ./routes/helpers.ts to keep http-routes.ts cycle-free.
 
@@ -139,9 +140,10 @@ export const handleAPI = async (
   pathname: string,
   system: System,
   instanceId: string,
+  accessContext: AccessContext,
   deps: RouteDeps,
 ): Promise<Response | null> => {
-  const ctx: RouteContext = { system, instanceId, ...deps }
+  const ctx: RouteContext = { system, instanceId, accessContext, ...deps }
 
   // F5: cookieless /api/* → 401. Bots that probe the API without first
   // going through /ws (which is where real UI flow mints a cookie) can't

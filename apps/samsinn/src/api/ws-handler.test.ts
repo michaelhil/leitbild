@@ -13,10 +13,12 @@ import type { RouteMessage } from '../core/types/agent.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import type { System } from '../main.ts'
 import type { ClientSession, WSManager } from './ws-handler.ts'
+import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 // === Helpers ===
 
 const noopDeliver: DeliverFn = () => {}
+const TEST_WORKSPACE_ID = newWorkspaceId()
 
 const makeLLMProvider = () => ({
   chat: async () => ({ content: '', generationMs: 0, tokensUsed: { prompt: 0, completion: 0 }, toolCalls: [{ function: { name: 'pass', arguments: { reason: 'test' } } }] }),
@@ -122,7 +124,7 @@ describe('WS Handler', () => {
     const human = createHumanAgent({ name: 'Human' }, () => {})
     system.team.addAgent(human)
     humanId = human.id
-    session = { instanceId: 'test0123456789ab', sessionToken: 'tok-test', lastActivity: Date.now() }
+    session = { workspaceId: TEST_WORKSPACE_ID, instanceId: 'test0123456789ab', sessionToken: 'tok-test', lastActivity: Date.now() }
     wsManager = createWSManager({
       getSystem: () => system,
     })
@@ -364,6 +366,7 @@ describe('WSManager.safeSend backpressure', () => {
     const wsManager = createWSManager({ getSystem: () => undefined })
     const { ws, closed } = makeWS()
     wsManager.sessions.set('tab-token', {
+      workspaceId: TEST_WORKSPACE_ID,
       instanceId: 'old123def456ghij',
       sessionToken: 'tab-token',
       lastActivity: Date.now(),
@@ -380,6 +383,7 @@ describe('WSManager.safeSend backpressure', () => {
     const wsManager = createWSManager({ getSystem: () => undefined })
     const { ws, closed } = makeWS()
     wsManager.sessions.set('tab-token', {
+      workspaceId: TEST_WORKSPACE_ID,
       instanceId: 'same123def456ghi',
       sessionToken: 'tab-token',
       lastActivity: Date.now(),
@@ -410,6 +414,8 @@ describe('WSManager.safeSend backpressure', () => {
     const TEN_DAYS_AGO = Date.now() - 10 * 24 * 60 * 60 * 1000
     wsManager.sessions.set('stale-token', {
 
+      workspaceId: TEST_WORKSPACE_ID,
+
       instanceId: 'test0123456789ab',
       sessionToken: 'stale-token',
       lastActivity: TEN_DAYS_AGO,
@@ -417,12 +423,16 @@ describe('WSManager.safeSend backpressure', () => {
     // Recent + no live ws — should NOT be swept.
     wsManager.sessions.set('recent-token', {
 
+      workspaceId: TEST_WORKSPACE_ID,
+
       instanceId: 'test0123456789ab',
       sessionToken: 'recent-token',
       lastActivity: Date.now() - 60_000,
     })
     // Old but live connection — should NOT be swept.
     wsManager.sessions.set('live-token', {
+
+      workspaceId: TEST_WORKSPACE_ID,
 
       instanceId: 'test0123456789ab',
       sessionToken: 'live-token',
@@ -451,6 +461,8 @@ describe('WSManager.safeSend backpressure', () => {
       limitMetrics,
     })
     wsManager.sessions.set('orphan-token', {
+
+      workspaceId: TEST_WORKSPACE_ID,
 
       instanceId: 'test0123456789ab',
       sessionToken: 'orphan-token',

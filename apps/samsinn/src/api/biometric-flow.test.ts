@@ -27,7 +27,10 @@
 // ============================================================================
 
 import { describe, test, expect, afterEach } from 'bun:test'
+import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 import { mkdtemp, rm } from 'node:fs/promises'
+
+const TEST_WORKSPACE_ID = newWorkspaceId()
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSharedRuntime } from '../core/shared-runtime.ts'
@@ -124,7 +127,7 @@ describe('biometrics capture flow (no mocks)', () => {
       getBufferedAmount: () => 0,
       close: () => {},
     }
-    const session = { instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
+    const session = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
 
     await handleWSMessage(
       conn, session,
@@ -289,7 +292,7 @@ describe('biometrics capture flow (no mocks)', () => {
       const captureId = (startResult.data as { captureId: string }).captureId
 
       const conn: WSConnection = { send: () => {}, getBufferedAmount: () => 0, close: () => {} }
-      const sess = { instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
+      const sess = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-1', lastActivity: Date.now() }
       await handleWSMessage(conn, sess, JSON.stringify({ type: 'biometric_capture_started', captureId }), system, wsManager)
 
       // Agent stops while widget would still be live.
@@ -353,8 +356,8 @@ describe('biometrics capture flow (no mocks)', () => {
     const sentB: string[] = []
     const tabA: WSConnection = { send: (d) => sentA.push(d), getBufferedAmount: () => 0, close: () => {} }
     const tabB: WSConnection = { send: (d) => sentB.push(d), getBufferedAmount: () => 0, close: () => {} }
-    const sessA = { instanceId: cookieId, sessionToken: 'tab-A', lastActivity: Date.now() }
-    const sessB = { instanceId: cookieId, sessionToken: 'tab-B', lastActivity: Date.now() }
+    const sessA = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-A', lastActivity: Date.now() }
+    const sessB = { workspaceId: TEST_WORKSPACE_ID, instanceId: cookieId, sessionToken: 'tab-B', lastActivity: Date.now() }
 
     // Register both connections so wsManager.wsConnections can find them by token.
     wsManager.wsConnections.set('tab-A', tabA)

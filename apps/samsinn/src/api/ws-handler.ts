@@ -23,6 +23,7 @@ import { handleScreenshotCommand } from './ws-commands/screenshot-commands.ts'
 import { sendError } from './ws-commands/types.ts'
 import { validateWSInbound } from './ws-commands/validate.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 // === Constants ===
 
@@ -56,6 +57,7 @@ export interface WSConnection {
 // via senderId; non-content commands fall back to 'system' attribution.
 // The session map exists only for connection lifecycle (reconnect, sweep).
 export interface ClientSession {
+  readonly workspaceId: WorkspaceId
   readonly instanceId: string         // which per-tenant House this session belongs to
   readonly sessionToken: string       // per-WS-connection unique id, matches the wsConnections map key
   lastActivity: number
@@ -63,6 +65,7 @@ export interface ClientSession {
 
 export interface WSData {
   sessionToken: string
+  workspaceId: WorkspaceId
   instanceId: string                  // bound at upgrade from cookie
   // A deleted-instance handshake is upgraded only so the browser can
   // receive a meaningful 4xxx close code. The open handler closes it

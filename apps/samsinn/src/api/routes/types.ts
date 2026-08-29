@@ -1,6 +1,7 @@
 import type { System } from '../../main.ts'
 import type { Agent } from '../../core/types/agent.ts'
 import type { WSOutbound } from '../../core/types/ws-protocol.ts'
+import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
 
 export interface ResetInstanceOk {
   readonly ok: true
@@ -56,6 +57,7 @@ export interface DiagnosticsCapability {
 
 export interface RouteContext {
   readonly system: System
+  readonly accessContext: AccessContext
   // Instance bound to this request via the cookie (resolved before dispatch).
   readonly instanceId: string
   readonly broadcast: (msg: WSOutbound) => void

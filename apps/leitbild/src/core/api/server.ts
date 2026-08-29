@@ -34,12 +34,15 @@ import { createControlInstanceRealtimeManager, emptyRealtimeStatus, type Realtim
 import { json } from './responses.ts'
 import { buildManifest } from './discovery.ts'
 import { createSamsinnScreenshotConfigFromEnv } from './client-config.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { createOpenAccessContext } from '../workspaces/request-context.ts'
 
 const frameAncestorsHeader = "frame-ancestors 'self' https://samsinn.app https://*.samsinn.app"
 const defaultRealtimeInputActorId = actorIdSchema.parse('actor:operator')
 
 interface ServerConfig {
   readonly registry: ControlInstanceRegistry
+  readonly workspaceId: WorkspaceId
   readonly port?: number
   readonly bindHost?: string
   readonly uiDistPath?: string
@@ -47,6 +50,7 @@ interface ServerConfig {
 }
 
 interface WSData {
+  readonly workspaceId: WorkspaceId
   readonly controlInstanceId: ControlInstanceId
 }
 
@@ -377,6 +381,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
 
       const controlInstanceApiResponse = await handleControlInstanceApi(req, url, {
         registry: config.registry,
+        accessContext: createOpenAccessContext(config.workspaceId, req),
         websocketClients: realtime.status().controlInstances,
       })
       if (controlInstanceApiResponse) {
@@ -389,7 +394,7 @@ export const createServer = (config: ServerConfig): { readonly stop: () => void;
         if (!rawControlInstanceId) return secure(new Response('Missing controlInstance', { status: 400 }))
         const controlInstanceId = controlInstanceIdSchema.parse(rawControlInstanceId)
         if (!config.registry.get(controlInstanceId)) return secure(new Response('Control instance not found', { status: 404 }))
-        const upgraded = serverApi.upgrade(req, { data: { controlInstanceId } })
+        const upgraded = serverApi.upgrade(req, { data: { workspaceId: config.workspaceId, controlInstanceId } })
         return upgraded ? undefined : secure(new Response('WebSocket upgrade failed', { status: 400 }))
       }
 

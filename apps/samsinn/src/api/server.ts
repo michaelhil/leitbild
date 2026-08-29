@@ -18,12 +18,15 @@ import {
 } from './instance-cookie.ts'
 import { resolve, normalize } from 'node:path'
 import { getCaptureRegistry } from '../core/biometrics/registry.ts'
+import type { WorkspaceDirectory } from '../core/workspaces/directory.ts'
+import { createOpenAccessContext, workspaceIdForLegacyInstance } from '../core/workspaces/request-context.ts'
 
 
 // === Server Config ===
 
 interface ServerConfig {
   readonly registry: SystemRegistry
+  readonly workspaceDirectory: WorkspaceDirectory
   readonly wsManager: WSManager
   readonly port?: number
   readonly bindHost?: string
@@ -325,6 +328,7 @@ export const createServer = (config: ServerConfig) => {
           const upgraded = server.upgrade(req, {
             data: {
               sessionToken,
+              workspaceId: workspaceIdForLegacyInstance(cookieInstanceId!),
               instanceId: cookieInstanceId!,
               terminalClose: 'instance-deleted',
             },
@@ -391,13 +395,18 @@ export const createServer = (config: ServerConfig) => {
           return sec(new Response('Unauthorized', { status: 401 }))
         }
         const sessionToken = url.searchParams.get('session') ?? crypto.randomUUID()
+        const workspaceId = workspaceIdForLegacyInstance(instanceId)
+        await config.workspaceDirectory.ensure({
+          id: workspaceId,
+          displayName: `Samsinn ${instanceId}`,
+        })
 
         // An intentional instance switch keeps the tab's viewer token but
         // changes its cookie. Release the old binding before upgrade instead
         // of rejecting the new socket and leaving the UI blank.
         wsManager.releaseSessionForInstanceSwitch(sessionToken, instanceId)
 
-        const upgraded = server.upgrade(req, { data: { sessionToken, instanceId } })
+        const upgraded = server.upgrade(req, { data: { sessionToken, workspaceId, instanceId } })
         return upgraded ? undefined : sec(new Response('WebSocket upgrade failed', { status: 500 }))
       }
 
@@ -417,9 +426,15 @@ export const createServer = (config: ServerConfig) => {
       // === API + static dispatch ===
       // Resolve the system for this cookie (lazy-loads from disk if evicted).
       pendingInstanceIds.delete(instanceId)
+      const workspaceId = workspaceIdForLegacyInstance(instanceId)
+      await config.workspaceDirectory.ensure({
+        id: workspaceId,
+        displayName: `Samsinn ${instanceId}`,
+      })
+      const accessContext = createOpenAccessContext(workspaceId, req)
       const system = await registry.getOrLoad(instanceId)
       const remoteAddress = server.requestIP(req)?.address
-      const apiResponse = await handleAPI(req, pathname, system, instanceId, {
+      const apiResponse = await handleAPI(req, pathname, system, instanceId, accessContext, {
         broadcast: wsManager.broadcast,
         subscribeAgentState: wsManager.subscribeAgentState,
         unsubscribeAgentState: wsManager.unsubscribeAgentState,
@@ -461,7 +476,12 @@ export const createServer = (config: ServerConfig) => {
         pendingInstanceIds.delete(ws.data.instanceId)
         await registry.getOrLoad(ws.data.instanceId)
         const existing = wsManager.sessions.get(ws.data.sessionToken)
-        const session = existing ?? { instanceId: ws.data.instanceId, sessionToken: ws.data.sessionToken, lastActivity: Date.now() }
+        const session = existing ?? {
+          workspaceId: ws.data.workspaceId,
+          instanceId: ws.data.instanceId,
+          sessionToken: ws.data.sessionToken,
+          lastActivity: Date.now(),
+        }
         if (!existing) wsManager.sessions.set(ws.data.sessionToken, session)
         else session.lastActivity = Date.now()
         wsManager.wsConnections.set(ws.data.sessionToken, ws)
@@ -478,6 +498,10 @@ export const createServer = (config: ServerConfig) => {
         // it dispatch against its old System using the new session scope.
         if (session.instanceId !== ws.data.instanceId) {
           ws.close(4003, 'instance switched')
+          return
+        }
+        if (session.workspaceId !== ws.data.workspaceId) {
+          ws.close(4003, 'workspace switched')
           return
         }
         session.lastActivity = Date.now()

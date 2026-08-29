@@ -10,11 +10,13 @@ import {
   commandIdempotencyStoreForRuntime,
   issueCommandWithIdempotency,
 } from './command-idempotency.ts'
+import type { AccessContext } from '@samsinn-leitbild/platform-contracts'
 
 const defaultOperatorActorId = actorIdSchema.parse('actor:operator')
 
 export interface ControlInstanceRouteConfig {
   readonly registry: ControlInstanceRegistry
+  readonly accessContext: AccessContext
   readonly websocketClients?: ReadonlyArray<{
     readonly id: ControlInstanceId
     readonly websocketClientCount: number
@@ -22,7 +24,7 @@ export interface ControlInstanceRouteConfig {
 }
 
 const commandRequestSchema = z.object({
-  actorId: actorIdSchema.default(defaultOperatorActorId),
+  actorId: actorIdSchema.optional(),
   clientId: clientIdSchema.optional(),
   idempotencyKey: z.string().min(1).max(256).optional(),
   kind: z.string().min(1),
@@ -37,7 +39,7 @@ const createControlInstanceRequestSchema = z.object({
 })
 
 const signalRequestSchema = z.object({
-  actorId: actorIdSchema.default(defaultOperatorActorId),
+  actorId: actorIdSchema.optional(),
   clientId: clientIdSchema.optional(),
   source: interactionEndpointSchema.optional(),
   type: z.string().min(1),
@@ -62,12 +64,21 @@ export const buildControlInstanceActor = (actorId: Actor['id']): Actor => ({
   role: 'operator',
 })
 
-export const buildControlInstanceCommand = (controlInstanceId: ControlInstanceId, raw: unknown): CommandEnvelope => {
+const actorIdForAccessContext = (accessContext: AccessContext): Actor['id'] =>
+  accessContext.actor.id === undefined
+    ? defaultOperatorActorId
+    : actorIdSchema.parse(`actor:${accessContext.actor.kind}:${accessContext.actor.id}`)
+
+export const buildControlInstanceCommand = (
+  controlInstanceId: ControlInstanceId,
+  raw: unknown,
+  defaultActorId: Actor['id'] = defaultOperatorActorId,
+): CommandEnvelope => {
   const parsed = commandRequestSchema.parse(raw)
   const candidate = {
     id: `command:${crypto.randomUUID()}`,
     controlInstanceId,
-    actorId: parsed.actorId,
+    actorId: parsed.actorId ?? defaultActorId,
     ...(parsed.clientId === undefined ? {} : { clientId: parsed.clientId }),
     ...(parsed.idempotencyKey === undefined ? {} : { idempotencyKey: parsed.idempotencyKey }),
     kind: parsed.kind,
@@ -79,11 +90,12 @@ export const buildControlInstanceCommand = (controlInstanceId: ControlInstanceId
   return commandEnvelopeSchema.parse(candidate) as CommandEnvelope
 }
 
-const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
+const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown, defaultActorId: Actor['id']): {
   readonly signal: InteractionSignal
   readonly actor: Actor
 } => {
   const parsed = signalRequestSchema.parse(raw)
+  const actorId = parsed.actorId ?? defaultActorId
   const targets = parsed.targets ?? parsed.targetObjectIds?.map(objectId => ({ kind: 'object' as const, id: objectId })) ?? []
   const signal = interactionSignalSchema.parse({
     id: `signal:${crypto.randomUUID()}`,
@@ -91,7 +103,7 @@ const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
     at: nowIso(),
     source: parsed.source ?? (parsed.clientId
       ? { kind: 'client', id: parsed.clientId }
-      : { kind: 'actor', id: parsed.actorId }),
+      : { kind: 'actor', id: actorId }),
     targets,
     type: parsed.type,
     payload: parsed.payload,
@@ -100,7 +112,7 @@ const buildSignal = (controlInstanceId: ControlInstanceId, raw: unknown): {
     ...(parsed.causationId === undefined ? {} : { causationId: parsed.causationId }),
     ...(parsed.ttlMs === undefined ? {} : { ttlMs: parsed.ttlMs }),
   }) as InteractionSignal
-  return { signal, actor: buildControlInstanceActor(parsed.actorId) }
+  return { signal, actor: buildControlInstanceActor(actorId) }
 }
 
 const buildPackQuery = (raw: unknown): PackQueryRequest => {
@@ -355,7 +367,7 @@ const handleControlInstanceApiInner = async (
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
     const raw = await readJson(req)
-    const command = buildControlInstanceCommand(controlInstanceId, raw)
+    const command = buildControlInstanceCommand(controlInstanceId, raw, actorIdForAccessContext(config.accessContext))
     const actor = buildControlInstanceActor(command.actorId)
     const issued = await issueCommandWithIdempotency({
       store: commandIdempotencyStoreForRuntime(controlInstanceId),
@@ -375,7 +387,7 @@ const handleControlInstanceApiInner = async (
     const runtime = config.registry.get(controlInstanceId)
     if (!runtime) return apiError(404, 'control_instance_not_found', 'control instance not found')
     const raw = await readJson(req)
-    const { signal, actor } = buildSignal(controlInstanceId, raw)
+    const { signal, actor } = buildSignal(controlInstanceId, raw, actorIdForAccessContext(config.accessContext))
     await runtime.publishInteractionSignal(signal, { source: actor.id.startsWith('actor:ai') ? 'ai' : 'operator' })
     return json({ signal }, { status: 202 })
   }
