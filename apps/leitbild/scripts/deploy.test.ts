@@ -81,6 +81,7 @@ describe('Leitbild remote release transaction', () => {
         dirty: true,
         worktreeStatus: [' M src/index.ts'],
         sourceDigest: 'a'.repeat(64),
+        platformContractsDigest: 'd'.repeat(64),
         fileCount: 1,
         validation: 'quick',
         validationCommands: ['bun run check'],
@@ -91,12 +92,14 @@ describe('Leitbild remote release transaction', () => {
     }, '/tmp/release.tgz', true)
     expect(await bashSyntaxExit(deployScript)).toBe(0)
     expect(deployScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(deployScript).toContain('packages/platform-contracts/package.json')
+    expect(deployScript).toContain('systemctl reset-failed leitbild.service')
     expect(deployScript).toContain('https://leitbild.samsinn.app/health')
     expect(deployScript).toContain('/map/capabilities.json')
     const rollbackScript = remoteRollbackScript('release-1')
     expect(await bashSyntaxExit(rollbackScript)).toBe(0)
     expect(rollbackScript).toContain('/run/lock/samsinn-stack-deploy.lock')
-    expect(rollbackScript).toContain('/api/scenarios')
+    expect(rollbackScript).toContain('/.well-known/leitbild')
     expect(rollbackScript).toContain('https://leitbild.samsinn.app/health')
   })
 })

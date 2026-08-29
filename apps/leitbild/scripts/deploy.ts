@@ -13,10 +13,12 @@ const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const SERVICE = 'leitbild.service'
 const SERVICE_USER = 'leitbild'
 const BUN_BIN = '/opt/leitbild/runtime/bun'
+const PLATFORM_CONTRACTS_ROOT = resolve(import.meta.dir, '../../../packages/platform-contracts')
+const PLATFORM_CONTRACTS_ARTIFACT_PATH = 'packages/platform-contracts'
 export const REQUIRED_BUN_VERSION = '1.4.0'
 const LOCAL_HEALTH_URL = 'http://127.0.0.1:4177/health'
 const PUBLIC_URLS = ['https://leitbild.samsinn.app/health', 'https://samsinn.app/health'] as const
-const LOCAL_PROBES = ['/health', '/api/scenarios', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
+const LOCAL_PROBES = ['/health', '/.well-known/leitbild', '/map/capabilities.json', '/map/scenery/current/tileset.json'] as const
 
 export interface DeployOptions {
   readonly dryRun: boolean
@@ -38,6 +40,7 @@ export interface DeploymentManifest {
   readonly dirty: boolean
   readonly worktreeStatus: ReadonlyArray<string>
   readonly sourceDigest: string
+  readonly platformContractsDigest: string
   readonly fileCount: number
   readonly validation: 'quick' | 'full'
   readonly validationCommands: ReadonlyArray<string>
@@ -169,6 +172,14 @@ const collectArtifactPaths = async (repoRoot: string): Promise<string[]> => {
   return [...new Set(paths)].sort()
 }
 
+const collectPlatformContractPaths = async (): Promise<string[]> => {
+  const raw = await capture(
+    ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    PLATFORM_CONTRACTS_ROOT,
+  )
+  return raw.split('\0').filter(Boolean).sort()
+}
+
 const sourceDigest = async (repoRoot: string, paths: ReadonlyArray<string>): Promise<string> => {
   const hasher = new Bun.CryptoHasher('sha256')
   for (const path of paths) {
@@ -185,6 +196,12 @@ const sourceDigest = async (repoRoot: string, paths: ReadonlyArray<string>): Pro
     }
     hasher.update('\0')
   }
+  return hasher.digest('hex')
+}
+
+const combinedDigest = (appDigest: string, contractsDigest: string): string => {
+  const hasher = new Bun.CryptoHasher('sha256')
+  hasher.update(`app\0${appDigest}\0platform-contracts\0${contractsDigest}\0`)
   return hasher.digest('hex')
 }
 
@@ -230,7 +247,9 @@ const createArtifact = async (repoRoot: string, options: DeployOptions): Promise
   await mkdir(stageRoot)
 
   const paths = await collectArtifactPaths(repoRoot)
-  const digest = await sourceDigest(repoRoot, paths)
+  const contractPaths = await collectPlatformContractPaths()
+  const contractsDigest = await sourceDigest(PLATFORM_CONTRACTS_ROOT, contractPaths)
+  const digest = combinedDigest(await sourceDigest(repoRoot, paths), contractsDigest)
   const createdAt = new Date().toISOString()
   const baseCommit = (await capture(['git', 'rev-parse', 'HEAD'], repoRoot)).trim()
   const branch = (await capture(['git', 'branch', '--show-current'], repoRoot)).trim() || '(detached)'
@@ -246,7 +265,8 @@ const createArtifact = async (repoRoot: string, options: DeployOptions): Promise
     dirty: worktreeStatus.length > 0,
     worktreeStatus,
     sourceDigest: digest,
-    fileCount: paths.length,
+    platformContractsDigest: contractsDigest,
+    fileCount: paths.length + contractPaths.length,
     validation: options.full ? 'full' : 'quick',
     validationCommands: validationCommands(options),
     persistentRootsExcluded: [
@@ -258,6 +278,11 @@ const createArtifact = async (repoRoot: string, options: DeployOptions): Promise
   }
 
   await copyArtifactFiles(repoRoot, stageRoot, paths)
+  await copyArtifactFiles(
+    PLATFORM_CONTRACTS_ROOT,
+    join(stageRoot, PLATFORM_CONTRACTS_ARTIFACT_PATH),
+    contractPaths,
+  )
   await writeFile(join(stageRoot, 'DEPLOYMENT.json'), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o644 })
   const tarCommand = process.platform === 'darwin'
     ? ['tar', '--no-mac-metadata', '--no-xattrs', '-czf', archivePath, '-C', stageRoot, '.']
@@ -294,7 +319,7 @@ curl -fsS -o /dev/null http://127.0.0.1:3000/health
 available_kb="$(df --output=avail /opt | tail -n 1 | tr -d ' ')"
 test "$available_kb" -gt 4194304
 diag="$(curl -fsS http://127.0.0.1:3000/api/system/diagnostics)"
-generating="$(printf '%s' "$diag" | jq '[.workspaces[].generatingAgentCount // 0] | add // 0')"
+generating="$(printf '%s' "$diag" | jq '[.. | objects | .generatingAgentCount? // empty] | add // 0')"
 test "$generating" -eq 0 || { echo "Refusing deploy: $generating Samsinn agent generation(s) active" >&2; exit 1; }
 printf 'preflight_ok available_kb=%s generating=%s\n' "$available_kb" "$generating"
 working="$(systemctl show ${SERVICE} -p WorkingDirectory --value)"
@@ -325,8 +350,9 @@ release_dir=${shellQuote(releaseDir)}
 archive=${shellQuote(remoteArchive)}
 archive_sha=${shellQuote(artifact.archiveChecksum)}
 lock_sha=${shellQuote(artifact.lockChecksum)}
+contracts_sha=${shellQuote(artifact.manifest.platformContractsDigest)}
 incoming="$releases_dir/.incoming-$release_id"
-dep_dir="$deps_dir/$lock_sha"
+dep_dir="$deps_dir/$lock_sha-$contracts_sha"
 unit_backup="/etc/systemd/system/${SERVICE}.pre-release-$release_id"
 previous=""
 if test -L "$current_link"; then previous="$(readlink -f "$current_link")"; fi
@@ -347,7 +373,11 @@ rollback_activation() {
     cp "$unit_backup" /etc/systemd/system/${SERVICE}
     systemctl daemon-reload
   fi
-  systemctl restart ${SERVICE} || true
+  systemctl reset-failed ${SERVICE} || true
+  if ! systemctl restart ${SERVICE} || ! wait_for_health; then
+    echo "Previous Leitbild release did not recover cleanly" >&2
+    return 1
+  fi
 }
 wait_for_health() {
   for attempt in $(seq 1 30); do
@@ -371,18 +401,30 @@ fi
 test "$(jq -r '.app' "$incoming/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
 test "$(jq -r '.releaseId' "$incoming/DEPLOYMENT.json")" = "$release_id"
 test "$(sha256sum "$incoming/bun.lock" | cut -d ' ' -f 1)" = "$lock_sha"
+test "$(jq -r '.name' "$incoming/packages/platform-contracts/package.json")" = '@samsinn-leitbild/platform-contracts'
 test ! -e "$incoming/node_modules"
 
 if test ! -d "$dep_dir/node_modules"; then
-  dep_tmp="$deps_dir/.incoming-$lock_sha-$$"
+  dep_tmp="$deps_dir/.incoming-$lock_sha-$contracts_sha-$$"
   rm -rf -- "$dep_tmp"
   mkdir "$dep_tmp"
-  cp "$incoming/package.json" "$incoming/bun.lock" "$dep_tmp/"
+  jq 'del(.dependencies["@samsinn-leitbild/platform-contracts"])' "$incoming/package.json" > "$dep_tmp/package.json"
+  cp "$incoming/bun.lock" "$dep_tmp/"
   chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
   if ! sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile' sh "$dep_tmp" ${shellQuote(BUN_BIN)}; then
     rm -rf -- "$dep_tmp"
     exit 1
   fi
+  mkdir -p "$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts"
+  cp -a "$incoming/packages/platform-contracts/." "$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts/"
+  while IFS= read -r dependency; do
+    source_dependency="$dep_tmp/node_modules/$dependency"
+    bundled_dependency="$dep_tmp/node_modules/@samsinn-leitbild/platform-contracts/node_modules/$dependency"
+    test -e "$source_dependency"
+    mkdir -p "$(dirname "$bundled_dependency")"
+    cp -aL "$source_dependency" "$bundled_dependency"
+  done < <(jq -r '.dependencies // {} | keys[]' "$incoming/packages/platform-contracts/package.json")
+  chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp/node_modules/@samsinn-leitbild"
   mv "$dep_tmp" "$dep_dir"
 fi
 ln -s "$dep_dir/node_modules" "$incoming/node_modules"
@@ -401,18 +443,18 @@ if test ${updateService ? '1' : '0'} -eq 1; then
 fi
 
 if ! systemctl restart ${SERVICE} || ! wait_for_health; then
-  rollback_activation
+  rollback_activation || exit 2
   exit 1
 fi
 for path in ${LOCAL_PROBES.map(shellQuote).join(' ')}; do
   if ! curl -fsS -o /dev/null "http://127.0.0.1:4177$path"; then
-    rollback_activation
+    rollback_activation || exit 2
     exit 1
   fi
 done
 for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
   if ! curl -fsS -o /dev/null "$url"; then
-    rollback_activation
+    rollback_activation || exit 2
     exit 1
   fi
 done
