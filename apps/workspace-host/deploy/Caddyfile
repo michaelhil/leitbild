@@ -2,25 +2,25 @@
 # remains a distinct Experience on the same origin; all other routes fall
 # through to its Module server. Leitbild uses leitbild.samsinn.app.
 samsinn.app {
-  encode zstd gzip
+	encode zstd gzip
 
-  header {
-    Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
-    X-Frame-Options DENY
-    X-Content-Type-Options nosniff
-    Referrer-Policy strict-origin-when-cross-origin
-    -Server
-  }
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
 
-  @workspace_host path_regexp workspace_host ^(?:/|/health|/favicon\.ico|/assets/.*|/workspaces|/workspaces/[^/]+|/workspaces/[^/]+/experiences/[^/]+|/api/modules|/api/experiences|/api/workspaces|/api/workspaces/[^/]+|/api/workspaces/[^/]+/(?:resources|capabilities|experiences)|/api/workspaces/[^/]+/experiences/[^/]+|/api/workspaces/[^/]+/modules/[^/]+(?:/retry)?|/api/workspaces/[^/]+/capabilities/[^/]+/invoke)$
+	@workspace_host path_regexp workspace_host ^(?:/|/health|/favicon\.ico|/assets/.*|/workspaces|/workspaces/[^/]+|/workspaces/[^/]+/experiences/[^/]+|/api/modules|/api/experiences|/api/workspaces|/api/workspaces/[^/]+|/api/workspaces/[^/]+/(?:resources|capabilities|experiences)|/api/workspaces/[^/]+/experiences/[^/]+|/api/workspaces/[^/]+/modules/[^/]+(?:/retry)?|/api/workspaces/[^/]+/capabilities/[^/]+/invoke)$
 
-  handle @workspace_host {
-    reverse_proxy 127.0.0.1:3100
-  }
+	handle @workspace_host {
+		reverse_proxy 127.0.0.1:3100
+	}
 
-  handle {
-    reverse_proxy 127.0.0.1:3000
-  }
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
 }
 
 import /etc/caddy/sites-enabled/*.caddy
