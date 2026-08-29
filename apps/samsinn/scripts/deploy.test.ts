@@ -76,6 +76,8 @@ describe('release runtime version', () => {
 describe('remote release transaction', () => {
   test('renders syntactically valid guarded shell', async () => {
     expect(await bashSyntaxExit(remotePreflightScript(true))).toBe(0)
+    expect(remotePreflightScript(true)).toContain('.. | objects | .generatingAgentCount?')
+    expect(remotePreflightScript(true)).not.toContain('.workspaces[]')
     const deployScript = remoteDeployScript({
       manifest: {
         schemaVersion: 1,

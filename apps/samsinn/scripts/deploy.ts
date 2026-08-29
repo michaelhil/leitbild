@@ -258,7 +258,7 @@ curl -fsS -o /dev/null http://127.0.0.1:4177/health
 available_kb="$(df --output=avail /opt | tail -n 1 | tr -d ' ')"
 test "$available_kb" -gt 2097152
 diag="$(curl -fsS http://127.0.0.1:3000/api/system/diagnostics)"
-generating="$(printf '%s' "$diag" | jq '[.workspaces[].generatingAgentCount // 0] | add // 0')"
+generating="$(printf '%s' "$diag" | jq '[.. | objects | .generatingAgentCount? // empty] | add // 0')"
 sessions="$(printf '%s' "$diag" | jq '.wsSessions // 0')"
 test "$generating" -eq 0 || { echo "Refusing deploy: $generating agent generation(s) active" >&2; exit 1; }
 printf 'preflight_ok available_kb=%s ws_sessions=%s generating=%s\n' "$available_kb" "$sessions" "$generating"
