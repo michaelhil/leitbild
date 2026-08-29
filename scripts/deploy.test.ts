@@ -7,6 +7,7 @@ import {
   REQUIRED_BUN_VERSION,
   remoteDeployScript,
   remotePreflightScript,
+  remoteRollbackScript,
 } from './deploy.ts'
 
 const bashSyntaxExit = async (script: string): Promise<number> => {
@@ -62,14 +63,14 @@ describe('Leitbild release runtime version', () => {
     expect(packageJson.engines.bun).toBe(REQUIRED_BUN_VERSION)
     expect(() => assertBunVersion(REQUIRED_BUN_VERSION)).not.toThrow()
     expect(() => assertBunVersion('1.3.14')).toThrow('Bun 1.4.0 is required')
-    expect(remotePreflightScript(false)).toContain('/root/.bun/bin/bun --version')
+    expect(remotePreflightScript(false)).toContain('/usr/local/bin/bun --version')
   })
 })
 
 describe('Leitbild remote release transaction', () => {
   test('renders syntactically valid guarded shell', async () => {
     expect(await bashSyntaxExit(remotePreflightScript(true))).toBe(0)
-    expect(await bashSyntaxExit(remoteDeployScript({
+    const deployScript = remoteDeployScript({
       manifest: {
         schemaVersion: 1,
         app: 'leitbild',
@@ -87,6 +88,15 @@ describe('Leitbild remote release transaction', () => {
       },
       archiveChecksum: 'b'.repeat(64),
       lockChecksum: 'c'.repeat(64),
-    }, '/tmp/release.tgz', true))).toBe(0)
+    }, '/tmp/release.tgz', true)
+    expect(await bashSyntaxExit(deployScript)).toBe(0)
+    expect(deployScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(deployScript).toContain('https://leitbild.samsinn.app/health')
+    expect(deployScript).toContain('/map/capabilities.json')
+    const rollbackScript = remoteRollbackScript('release-1')
+    expect(await bashSyntaxExit(rollbackScript)).toBe(0)
+    expect(rollbackScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(rollbackScript).toContain('/api/scenarios')
+    expect(rollbackScript).toContain('https://leitbild.samsinn.app/health')
   })
 })

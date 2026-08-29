@@ -10,7 +10,7 @@ terrain, scenery, reference datasets, OSRM data, or Control Instance state.
 ## Normal loop
 
 ```bash
-# Quick rehearsal with tests relevant to this change.
+# Quick rehearsal; always runs the production smoke suite.
 bun run deploy -- --dry-run --test tests/discovery.test.ts
 
 # Interactive production deployment with the same selected tests.
@@ -20,9 +20,11 @@ bun run deploy -- --test tests/discovery.test.ts
 bun run deploy -- --full
 ```
 
-Quick mode always runs `bun run check` and `bun run build:ui`. Supply one or
-more `--test <path-or-pattern>` options for affected behavior. `--full` runs all
-tests and cannot be combined with `--test`.
+Quick mode always runs `bun run check`, `bun run test:deploy`, and
+`bun run build:ui`. The deploy suite covers the release transaction, discovery,
+server health, map artifacts, and the Control Instance API. Supply one or more
+`--test <path-or-pattern>` options for additional affected behavior. `--full`
+runs all tests and cannot be combined with `--test`.
 
 The first migration to the release-layout unit requires:
 
@@ -58,9 +60,11 @@ directly from their existing production paths.
 ## Safety and rollback
 
 Preflight checks Samsinn, Leitbild, Caddy, disk headroom, local health, and
-active Samsinn generations. Activation switches `current` atomically, restarts
-only Leitbild, and verifies health, scenario discovery, map capabilities, and
-the current scenery manifest. Failure reactivates the previous code release.
+active Samsinn generations. Activation holds a stack-wide deployment lock,
+switches `current` atomically, restarts only Leitbild, and verifies health,
+scenario discovery, map capabilities, the current scenery manifest, and both
+public health endpoints. Failure reactivates the previous code release. Manual
+rollback runs the same application and public probes before it is accepted.
 
 ```bash
 bun run deploy -- --list

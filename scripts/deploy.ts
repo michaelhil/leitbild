@@ -11,7 +11,8 @@ const CURRENT_LINK = `${DEPLOY_ROOT}/current`
 const RELEASES_DIR = `${DEPLOY_ROOT}/releases`
 const DEPS_DIR = `${DEPLOY_ROOT}/deps`
 const SERVICE = 'leitbild.service'
-const BUN_BIN = '/root/.bun/bin/bun'
+const SERVICE_USER = 'leitbild'
+const BUN_BIN = '/usr/local/bin/bun'
 export const REQUIRED_BUN_VERSION = '1.4.0'
 const LOCAL_HEALTH_URL = 'http://127.0.0.1:4177/health'
 const PUBLIC_URLS = ['https://leitbild.samsinn.app/health', 'https://samsinn.app/health'] as const
@@ -210,7 +211,9 @@ const copyArtifactFiles = async (repoRoot: string, stageRoot: string, paths: Rea
 
 const validationCommands = (options: DeployOptions): string[] => [
   'bun run check',
-  ...(options.full ? ['bun test'] : options.tests.length > 0 ? [`bun test ${options.tests.join(' ')}`] : []),
+  ...(options.full
+    ? ['bun test']
+    : ['bun run test:deploy', ...(options.tests.length > 0 ? [`bun test ${options.tests.join(' ')}`] : [])]),
   'bun run build:ui',
 ]
 
@@ -309,8 +312,10 @@ export const remoteDeployScript = (artifact: {
   const releaseId = artifact.manifest.releaseId
   const releaseDir = `${RELEASES_DIR}/${releaseId}`
   return `
-${remotePreflightScript(updateService)}
 set -euo pipefail
+exec 9>/run/lock/samsinn-stack-deploy.lock
+flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
+${remotePreflightScript(updateService)}
 deploy_root=${shellQuote(DEPLOY_ROOT)}
 current_link=${shellQuote(CURRENT_LINK)}
 releases_dir=${shellQuote(RELEASES_DIR)}
@@ -373,7 +378,8 @@ if test ! -d "$dep_dir/node_modules"; then
   rm -rf -- "$dep_tmp"
   mkdir "$dep_tmp"
   cp "$incoming/package.json" "$incoming/bun.lock" "$dep_tmp/"
-  if ! (cd "$dep_tmp" && ${BUN_BIN} install --frozen-lockfile); then
+  chown -R ${SERVICE_USER}:${SERVICE_USER} "$dep_tmp"
+  if ! sudo -u ${SERVICE_USER} sh -c 'cd "$1" && exec "$2" install --frozen-lockfile' sh "$dep_tmp" ${shellQuote(BUN_BIN)}; then
     rm -rf -- "$dep_tmp"
     exit 1
   fi
@@ -404,6 +410,12 @@ for path in ${LOCAL_PROBES.map(shellQuote).join(' ')}; do
     exit 1
   fi
 done
+for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
+  if ! curl -fsS -o /dev/null "$url"; then
+    rollback_activation
+    exit 1
+  fi
+done
 rm -f -- "$archive"
 printf 'activated_release=%s previous=%s\n' "$release_id" "\${previous:-none}"
 `
@@ -430,41 +442,57 @@ const listReleases = async (): Promise<void> => {
   `])
 }
 
-const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> => {
-  confirmMutation(`Rollback Leitbild production to ${releaseId}?`, yes)
-  await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(false)])
+export const remoteRollbackScript = (releaseId: string): string => {
   const target = `${RELEASES_DIR}/${releaseId}`
-  await run('Activate previous release', ['ssh', SSH_HOST, `set -euo pipefail
+  return `set -euo pipefail
+    exec 9>/run/lock/samsinn-stack-deploy.lock
+    flock -n 9 || { echo "Another Samsinn/Leitbild deployment is active" >&2; exit 1; }
     target=${shellQuote(target)}
     current=${shellQuote(CURRENT_LINK)}
     test -d "$target"
     test "$(jq -r '.app' "$target/DEPLOYMENT.json")" = ${shellQuote(APP_ID)}
     previous="$(readlink -f "$current")"
+    verify_target() {
+      for attempt in $(seq 1 30); do
+        if systemctl is-active --quiet ${SERVICE} && curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then break; fi
+        test "$attempt" -lt 30 || return 1
+        sleep 1
+      done
+      for path in ${LOCAL_PROBES.map(shellQuote).join(' ')}; do
+        curl -fsS -o /dev/null "http://127.0.0.1:4177$path" || return 1
+      done
+      for url in ${PUBLIC_URLS.map(shellQuote).join(' ')}; do
+        curl -fsS -o /dev/null "$url" || return 1
+      done
+    }
     next=${shellQuote(`${DEPLOY_ROOT}/.rollback-${releaseId}`)}
     ln -s "$target" "$next"
     mv -Tf "$next" "$current"
-    if systemctl restart ${SERVICE}; then
-      for attempt in $(seq 1 30); do
-        if curl -fsS -o /dev/null ${LOCAL_HEALTH_URL}; then exit 0; fi
-        sleep 1
-      done
-    fi
+    if systemctl restart ${SERVICE} && verify_target; then exit 0; fi
     restore=${shellQuote(`${DEPLOY_ROOT}/.restore-${releaseId}`)}
     ln -s "$previous" "$restore"
     mv -Tf "$restore" "$current"
     systemctl restart ${SERVICE}
+    verify_target || { echo "Previous Leitbild release did not recover cleanly" >&2; exit 2; }
     exit 1
-  `])
+  `
+}
+
+const rollbackRelease = async (releaseId: string, yes: boolean): Promise<void> => {
+  confirmMutation(`Rollback Leitbild production to ${releaseId}?`, yes)
+  await run('Production preflight', ['ssh', SSH_HOST, remotePreflightScript(false)])
+  await run('Activate previous release', ['ssh', SSH_HOST, remoteRollbackScript(releaseId)])
   await verifyPublicHealth()
 }
 
 const validate = async (repoRoot: string, options: DeployOptions): Promise<void> => {
   await run('TypeScript checks', ['bun', 'run', 'check'], repoRoot)
   if (options.full) await run('Full test suite', ['bun', 'test'], repoRoot)
-  else if (options.tests.length > 0) {
-    await run('Selected relevant tests', ['bun', 'test', ...options.tests], repoRoot)
-  } else {
-    console.log('\nℹ Quick mode: no --test values supplied; typecheck and production build are the deploy gate')
+  else {
+    await run('Always-on deploy smoke suite', ['bun', 'run', 'test:deploy'], repoRoot)
+    if (options.tests.length > 0) {
+      await run('Selected relevant tests', ['bun', 'test', ...options.tests], repoRoot)
+    }
   }
   await run('Build production UI', ['bun', 'run', 'build:ui'], repoRoot)
 }
@@ -479,6 +507,9 @@ const deploy = async (options: DeployOptions): Promise<void> => {
     console.log(`\nRelease: ${artifact.manifest.releaseId}`)
     console.log(`Base commit: ${artifact.manifest.baseCommit}`)
     console.log(`Dirty worktree: ${artifact.manifest.dirty ? 'yes' : 'no'}`)
+    if (artifact.manifest.dirty) {
+      for (const entry of artifact.manifest.worktreeStatus) console.log(`  ${entry}`)
+    }
     console.log(`Validation: ${artifact.manifest.validation}`)
     console.log(`Files: ${artifact.manifest.fileCount}`)
     console.log(`Artifact: ${(size / 1024 / 1024).toFixed(2)} MiB`)
