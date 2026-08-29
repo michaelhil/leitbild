@@ -89,6 +89,7 @@ describe('remote release transaction', () => {
         dirty: true,
         worktreeStatus: [' M src/main.ts'],
         sourceDigest: 'a'.repeat(64),
+        platformContractsDigest: 'd'.repeat(64),
         fileCount: 1,
         validation: 'full',
         validationCommands: ['bun run check'],
@@ -98,6 +99,8 @@ describe('remote release transaction', () => {
     }, '/tmp/release.tgz', true)
     expect(await bashSyntaxExit(deployScript)).toBe(0)
     expect(deployScript).toContain('/run/lock/samsinn-stack-deploy.lock')
+    expect(deployScript).toContain('packages/platform-contracts/package.json')
+    expect(deployScript).toContain('systemctl reset-failed samsinn.service')
     expect(deployScript).toContain('scripts/smoke-streaming.ts')
     expect(deployScript).toContain('https://samsinn.app/health')
     const rollbackScript = remoteRollbackScript('release-1')
