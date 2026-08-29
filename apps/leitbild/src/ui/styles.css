@@ -114,58 +114,10 @@ button:disabled { opacity: .55; cursor: wait; }
 .workspace-composer.dragging { cursor: col-resize; user-select: none; }
 .module-pane { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #f4f6f1; }
 .module-pane.collapsed { display: none; }
-.world-pane { display: grid; grid-template-rows: 38px minmax(0, 1fr); }
+.world-pane { background: #f4f6f1; }
 .agents-pane { background: #111; }
 .module-frame { width: 100%; height: 100%; display: none; border: 0; background: #fff; }
 .module-frame.active { display: block; }
-
-.simulation-tabs {
-  min-width: 0;
-  display: flex;
-  align-items: stretch;
-  overflow-x: auto;
-  overflow-y: hidden;
-  border-bottom: 1px solid #cbd1c7;
-  background: #e8ece5;
-}
-.simulation-tabs > button, .simulation-tab {
-  flex: 0 0 auto;
-  min-height: 38px;
-  border: 0;
-  border-right: 1px solid #cbd1c7;
-  border-radius: 0;
-  color: #59645a;
-  background: transparent;
-  font-size: .75rem;
-}
-.simulation-tabs > button { padding: 0 .9rem; }
-.simulation-tabs > button.active, .simulation-tab.active { color: #18211a; background: #fff; box-shadow: inset 0 -2px #55765a; }
-.simulation-tab { max-width: 260px; display: flex; align-items: stretch; }
-.simulation-tab > button {
-  min-height: 38px;
-  padding: 0 .35rem 0 .8rem;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.simulation-tab > .tab-close { width: 30px; padding: 0; color: #7a847a; font-size: 1rem; }
-.simulation-tab > .tab-close:hover { color: #8a2e29; }
-.world-content { position: relative; min-height: 0; overflow: hidden; }
-
-.simulation-browser { height: 100%; padding: clamp(1rem, 3vw, 2rem); overflow: auto; background: #f4f6f1; }
-.simulation-browser > header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
-.simulation-browser h1 { margin: .15rem 0 0; font-size: clamp(1.45rem, 3vw, 2.35rem); letter-spacing: -.045em; }
-.simulation-browser header button { min-height: 34px; padding: .4rem .65rem; font-size: .75rem; }
-.simulation-list { display: grid; gap: .55rem; }
-.simulation-list > button { min-width: 0; padding: .85rem 1rem; display: grid; justify-items: start; gap: .22rem; text-align: left; }
-.simulation-list span { max-width: 100%; overflow: hidden; font-weight: 720; text-overflow: ellipsis; white-space: nowrap; }
-.simulation-list small { max-width: 100%; overflow: hidden; color: #778078; font-family: ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
-.empty-state { min-height: 180px; display: grid; place-content: center; justify-items: center; gap: .5rem; color: #677168; text-align: center; }
-.empty-state p { margin: 0; }
-.inline-error { padding: .8rem; border: 1px solid; border-radius: 10px; }
 
 .split-handle {
   position: relative;

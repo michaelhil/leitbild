@@ -161,7 +161,7 @@
       {/each}
     </section>
   {:else if workspace}
-    <WorkspaceComposer workspaceId={workspace.id} openSettings={() => settingsDialog?.showModal()} />
+    <WorkspaceComposer workspaceId={workspace.id} />
 
     {#if error}<p class="workspace-error">{error}</p>{/if}
 
