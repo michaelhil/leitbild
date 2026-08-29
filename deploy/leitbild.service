@@ -35,20 +35,28 @@ LimitNOFILE=65536
 UMask=0077
 
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/opt/leitbild/data
 PrivateTmp=true
 PrivateDevices=true
+ProtectKernelLogs=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 ProtectClock=true
 ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
 RestrictSUIDSGID=true
+RestrictRealtime=true
 LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
+RemoveIPC=true
 
 [Install]
 WantedBy=multi-user.target
