@@ -46,6 +46,7 @@ by `bun.lock` checksum, so ordinary source changes do not reinstall them.
 /opt/leitbild/current                 atomic active-release symlink
 /opt/leitbild/releases/<release-id>  immutable code + UI + manifest
 /opt/leitbild/deps/<lock-sha>         Linux node_modules for one lock
+/opt/leitbild/runtime/bun             app-private pinned Bun runtime
 
 /opt/leitbild/data                    persistent Control Instance state
 /opt/leitbild/maps                    persistent static map artifacts

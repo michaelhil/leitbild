@@ -63,7 +63,7 @@ describe('Leitbild release runtime version', () => {
     expect(packageJson.engines.bun).toBe(REQUIRED_BUN_VERSION)
     expect(() => assertBunVersion(REQUIRED_BUN_VERSION)).not.toThrow()
     expect(() => assertBunVersion('1.3.14')).toThrow('Bun 1.4.0 is required')
-    expect(remotePreflightScript(false)).toContain('/usr/local/bin/bun --version')
+    expect(remotePreflightScript(false)).toContain('/opt/leitbild/runtime/bun --version')
   })
 })
 

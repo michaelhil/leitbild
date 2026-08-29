@@ -25,7 +25,7 @@ EnvironmentFile=-/etc/leitbild/runtime.env
 # Docker may be active before its restart-managed OSRM container is ready.
 # Bound the wait so a broken container remains a visible systemd failure.
 ExecStartPre=/bin/sh -c 'for attempt in $(seq 1 60); do /usr/bin/curl -fsS -o /dev/null "http://127.0.0.1:5000/route/v1/driving/10.7522,59.9139;10.7530,59.9145?overview=false" && exit 0; sleep 1; done; exit 1'
-ExecStart=/usr/local/bin/bun run src/index.ts
+ExecStart=/opt/leitbild/runtime/bun run src/index.ts
 Restart=on-failure
 RestartSec=5
 
