@@ -7,7 +7,7 @@ import {
   isValidWorkspaceId,
   samsinnHome,
   sharedPaths,
-  workspacePaths,
+  workspaceModulePaths,
 } from './paths.ts'
 
 const workspaceId = workspaceIdSchema.parse('9d2bd146-dc4a-4cbf-9754-f966884c5ca9')
@@ -31,18 +31,18 @@ describe('Samsinn path policy', () => {
     process.env.SAMSINN_HOME = '/tmp/x'
     expect(sharedPaths.providers()).toBe('/tmp/x/providers.json')
     expect(sharedPaths.packs()).toBe('/tmp/x/packs')
-    expect(sharedPaths.workspaceDirectory()).toBe('/tmp/x/workspace-directory.json')
     expect(sharedPaths.workspacesRoot()).toBe('/tmp/x/workspaces')
   })
 
   it('places Samsinn state in the Workspace-owned module shard', () => {
     process.env.SAMSINN_HOME = '/tmp/x'
-    const paths = workspacePaths(workspaceId)
-    expect(paths.root).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn`)
-    expect(paths.snapshot).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/snapshot.json`)
-    expect(paths.logs).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/logs`)
-    expect(paths.memory).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/memory`)
-    expect(paths.vectors).toBe(`/tmp/x/workspaces/${workspaceId}/samsinn/vectors.jsonl`)
+    const paths = workspaceModulePaths(workspaceId)
+    expect(paths.root).toBe(`/tmp/x/workspaces/${workspaceId}`)
+    expect(paths.collaboration.snapshot).toBe(`/tmp/x/workspaces/${workspaceId}/collaboration/snapshot.json`)
+    expect(paths.collaboration.documents).toBe(`/tmp/x/workspaces/${workspaceId}/collaboration/documents`)
+    expect(paths.agents.snapshot).toBe(`/tmp/x/workspaces/${workspaceId}/agents/snapshot.json`)
+    expect(paths.agents.memory).toBe(`/tmp/x/workspaces/${workspaceId}/agents/memory`)
+    expect(paths.agents.vectors).toBe(`/tmp/x/workspaces/${workspaceId}/agents/vectors.jsonl`)
   })
 
   it('rejects non-UUID and traversal-shaped identifiers', () => {

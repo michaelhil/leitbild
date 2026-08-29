@@ -169,10 +169,9 @@ export const systemRoutes: RouteEntry[] = [
     //   - per-provider monitor state (healthy / backoff / unhealthy / oneoff)
     //   - process-wide anomaly counters from limit-metrics
     //   - per-Workspace broadcast wiring + last-broadcast age
-    //   - per-Workspace leitbild mirror state (connected? lastSeq?)
     //   - WS session count
     //
-    // Counters are PROCESS-WIDE (aggregate across cookie-bound Workspaces),
+    // Counters are PROCESS-WIDE (aggregate across loaded Workspaces),
     // not per-tenant. That's the right shape for operator triage; per-tenant
     // breakdowns belong in /system/diagnostics.
     //
@@ -208,7 +207,6 @@ export const systemRoutes: RouteEntry[] = [
         anomalies: {
           wsInvalidJson: limits.wsInvalidJson,
           routerMissingRoom: limits.routerMissingRoom,
-          leitbildAttachErrors: limits.leitbildAttachErrors,
           multimodalImagesDropped: limits.multimodalImagesDropped,
           sseBufferExceeded: limits.sseBufferExceeded,
           wsBackpressureDropped: limits.wsBackpressureDropped,
@@ -242,11 +240,9 @@ export const systemRoutes: RouteEntry[] = [
     // window. Single-flight per Workspace.
     method: 'POST',
     pattern: /^\/system\/reset$/,
-    handler: async (req, _match, ctx) => {
+    handler: async (_req, _match, ctx) => {
       if (!ctx.resetWorkspace) return errorResponse('reset not supported in this mode', 501)
-      const { getWorkspaceId } = await import('../workspace-cookie.ts')
-      const id = getWorkspaceId(req)
-      if (!id) return errorResponse('no Workspace cookie', 400)
+      const id = ctx.workspaceId
 
       if (resetTimers.has(id)) return errorResponse('reset already in progress', 409)
       const commitsAtMs = Date.now() + RESET_COUNTDOWN_MS
@@ -260,16 +256,14 @@ export const systemRoutes: RouteEntry[] = [
       }
 
       const timer = setTimeout(async () => {
-        const result = await ctx.resetWorkspace!(req)
+        const result = await ctx.resetWorkspace!(id)
         if (!result.ok) {
           sendToWorkspace({ type: 'reset_failed', reason: result.reason })
           resetTimers.delete(id)
           return
         }
-        // The Workspace directory was moved to .trash. The browser keeps
-        // the same cookie; on reconnect, registry.getOrLoad creates a
-        // fresh empty RoomDirectory under the same id. WS connections were closed
-        // by the onWorkspaceRuntimeEvicted hook.
+        // The Host-owned Workspace remains; both Samsinn Module shards were
+        // reset and WS connections were closed by the eviction hook.
         sendToWorkspace({ type: 'reset_committed', workspaceId: result.workspaceId })
         resetTimers.delete(id)
       }, RESET_COUNTDOWN_MS)
@@ -281,16 +275,15 @@ export const systemRoutes: RouteEntry[] = [
     },
   },
   {
-    // Per-Workspace evict — drops the cookie's System from memory, leaves
-    // the snapshot on disk. Distinct from /reset (which trashes the dir).
-    // No countdown, no broadcast: the WS close on the cookie's session
+    // Per-Workspace evict — drops the URL-scoped runtime from memory and
+    // leaves Module snapshots on disk. No countdown or broadcast: the WS close
     // (handled by onWorkspaceRuntimeEvicted) is the user-visible signal, identical
-    // to the idle-evict path. Cookie-only auth, mirroring /reset.
+    // is the user-visible signal, identical to the idle-evict path.
     method: 'POST',
     pattern: /^\/system\/evict$/,
-    handler: async (req, _match, ctx) => {
+    handler: async (_req, _match, ctx) => {
       if (!ctx.evictWorkspace) return errorResponse('evict not supported in this mode', 501)
-      const result = await ctx.evictWorkspace(req)
+      const result = await ctx.evictWorkspace(ctx.workspaceId)
       if (!result.ok) return errorResponse(result.reason, 400)
       return json({ evicted: true, workspaceId: result.workspaceId })
     },
@@ -298,10 +291,8 @@ export const systemRoutes: RouteEntry[] = [
   {
     method: 'POST',
     pattern: /^\/system\/reset\/cancel$/,
-    handler: async (req, _match, ctx) => {
-      const { getWorkspaceId } = await import('../workspace-cookie.ts')
-      const id = getWorkspaceId(req)
-      if (!id) return errorResponse('no Workspace cookie', 400)
+    handler: async (_req, _match, ctx) => {
+      const id = ctx.workspaceId
       const timer = resetTimers.get(id)
       if (!timer) return errorResponse('no reset in progress', 404)
       clearTimeout(timer)
@@ -315,6 +306,6 @@ export const systemRoutes: RouteEntry[] = [
   },
 ]
 
-// --- Reset state — per-Workspace, keyed by cookie's Workspace id ---
+// --- Reset state — per URL-scoped Workspace ---
 const resetTimers = new Map<import('@samsinn-leitbild/platform-contracts').WorkspaceId, ReturnType<typeof setTimeout>>()
 const RESET_COUNTDOWN_MS = 10 * 1000

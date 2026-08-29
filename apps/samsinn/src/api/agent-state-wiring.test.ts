@@ -48,7 +48,8 @@ import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './agent-tracking.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
-import type { AutoSaver } from '../core/storage/snapshot.ts'
+import type { ModuleAutoSaver } from '../core/storage/module-snapshots.ts'
+import { createSamsinnModuleState } from '../core/workspaces/module-state.ts'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 const makeSetup = makeStubSetup
@@ -81,9 +82,11 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const broadcasts: Array<{ workspaceId: string; msg: WSOutbound }> = []
     const subscribed: Array<{ agentId: string; agentName: string; workspaceId: string }> = []
 
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
-      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
+      moduleState,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: ModuleAutoSaver) => {
         // Simulate bootstrap.ts's first async step (logging.configure).
         // Critical: this releases a microtask, so if buildWorkspaceRuntime doesn't
         // await this hook, Workspace seeding races ahead and spawns Helper
@@ -119,6 +122,8 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     wsManager = baseWs
 
     const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId, 'collaboration')
+    await moduleState.provision(cookieId, 'agents')
     const sys = await registry.getOrLoad(cookieId)
 
     // 1. Seed must have produced exactly one AI agent (Helper).
@@ -185,9 +190,11 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     let wsManager!: WSManager
     const unsubscribed: string[] = []
 
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
-      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
+      moduleState,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: ModuleAutoSaver) => {
         wireAgentTracking(system, id, {
           attach: registry.attachAgent,
           detach: registry.detachAgent,
@@ -204,7 +211,10 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const baseWs = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
     wsManager = baseWs
 
-    const sys = await registry.getOrLoad(newWorkspaceId())
+    const workspaceId = newWorkspaceId()
+    await moduleState.provision(workspaceId, 'collaboration')
+    await moduleState.provision(workspaceId, 'agents')
+    const sys = await registry.getOrLoad(workspaceId)
     const helper = sys.team.listAgents().find(a => a.kind === 'ai')!
     expect(helper.name).toBe('Aiden')
 
@@ -232,11 +242,13 @@ describe('per-agent state subscription is wired for every spawn path', () => {
 
     let wsManager!: WSManager
 
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
       idleMs: 10_000_000, // disable idle eviction; we'll evict explicitly
       drainMs: 100,
-      onWorkspaceRuntimeCreated: async (system, id, autoSaver: AutoSaver) => {
+      moduleState,
+      onWorkspaceRuntimeCreated: async (system, id, autoSaver: ModuleAutoSaver) => {
         wireAgentTracking(system, id, {
           attach: registry.attachAgent,
           detach: registry.detachAgent,
@@ -265,6 +277,8 @@ describe('per-agent state subscription is wired for every spawn path', () => {
     const wsMessages: string[] = []
     const fakeToken = 'fake-session-token'
     const cookieIdInstance = newWorkspaceId()
+    await moduleState.provision(cookieIdInstance, 'collaboration')
+    await moduleState.provision(cookieIdInstance, 'agents')
     wsManager.sessions.set(fakeToken, {
       workspaceId: cookieIdInstance,
       // The other ClientSession fields aren't read by broadcastToWorkspace;

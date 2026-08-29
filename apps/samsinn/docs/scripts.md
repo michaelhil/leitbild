@@ -178,7 +178,7 @@ location instead of hiding it behind a proxy.
 `ScriptRun` state (per-room script execution: current step, readiness,
 dialogue log, role overrides) lives RAM-only inside the runner closure.
 It is **not persisted** across restarts — by design, matching v1 (see
-`src/core/storage/snapshot.ts` versioning notes). A server restart mid-
+the strict Module snapshot notes in `README.md`). A server restart mid-
 script ends the run; the cast agents are torn down with their room as
 usual. This is a deliberate scope choice, not an accident; revisit only
 if a concrete use case for resumable scripts emerges (the obvious case —

@@ -328,7 +328,7 @@ describe('GET /system/limits (no auth)', () => {
   })
 
   // --- POST /system/evict ---
-  // Cookie-bound evict: drops the SamsinnWorkspaceRuntime from memory, snapshot stays.
+  // URL-scoped evict: drops the SamsinnWorkspaceRuntime from memory; Module snapshots stay.
   // Mirrors /system/reset's auth shape but without the countdown
   // and without trashing the directory.
 
@@ -343,14 +343,13 @@ describe('GET /system/limits (no auth)', () => {
   })
 
   test('POST /system/evict calls evictWorkspace and returns 200 on success', async () => {
-    let calledWith: Request | undefined
-    const evictWorkspace = async (rq: Request) => {
-      calledWith = rq
+    let calledWith: string | undefined
+    const evictWorkspace = async (workspaceId: typeof TEST_WORKSPACE_ID) => {
+      calledWith = workspaceId
       return { ok: true as const, workspaceId: TEST_WORKSPACE_ID }
     }
     const r = new Request('http://test/system/evict', {
       method: 'POST',
-      headers: { Cookie: `samsinn_workspace=${TEST_WORKSPACE_ID}` },
     })
     const sys = makeSystem()
     const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {
@@ -359,14 +358,14 @@ describe('GET /system/limits (no auth)', () => {
       evictWorkspace,
     })
     expect(res?.status).toBe(200)
-    expect(calledWith).toBe(r)
+    expect(calledWith).toBe(TEST_WORKSPACE_ID)
     const body = await res!.json() as { evicted: boolean; workspaceId: string }
     expect(body.evicted).toBe(true)
     expect(body.workspaceId).toBe(TEST_WORKSPACE_ID)
   })
 
   test('POST /system/evict surfaces evictWorkspace failure as 400', async () => {
-    const evictWorkspace = async () => ({ ok: false as const, reason: 'no Workspace cookie' })
+    const evictWorkspace = async () => ({ ok: false as const, reason: 'eviction failed' })
     const r = req('POST', '/system/evict')
     const sys = makeSystem()
     const res = await handleAPI(r, '/system/evict', sys, TEST_WORKSPACE_ID, TEST_ACCESS_CONTEXT, {

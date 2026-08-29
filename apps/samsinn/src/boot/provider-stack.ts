@@ -11,7 +11,6 @@
 import { sharedPaths } from '../core/paths.ts'
 import { createDeploymentRuntime, type DeploymentRuntime } from '../core/deployment-runtime.ts'
 import { createLimitMetrics, type LimitMetrics } from '../core/limit-metrics.ts'
-import { initWorkspaceLimiter } from '../api/workspace-api.ts'
 import { parseProviderConfig, summariseProviderConfig, type ProviderConfig } from '../llm/providers-config.ts'
 import { buildProvidersFromConfig } from '../llm/providers-setup.ts'
 import { loadProviderStore, mergeWithEnv } from '../llm/providers-store.ts'
@@ -54,12 +53,6 @@ export const buildProviderStack = async (): Promise<ProviderStack> => {
   // 6. Construct DeploymentRuntime — same providerKeys, same limitMetrics, same
   // setup. Single source for live key edits.
   const deployment = createDeploymentRuntime({ providerConfig, providerSetup, limitMetrics, providerKeys })
-
-  // 7. Wire the Workspace-create rate-limiter with the global metrics handle
-  // so LRU evictions are counted. Idempotent — safe if called more than
-  // once. Bug + auth limiters are scoped per-route-file and don't need
-  // metrics wiring (per-IP eviction is rare for those endpoints).
-  initWorkspaceLimiter(deployment.limitMetrics)
 
   return { providerConfig, providerKeys, limitMetrics, deployment }
 }

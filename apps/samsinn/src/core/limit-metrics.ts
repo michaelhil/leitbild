@@ -31,7 +31,6 @@ export interface LimitMetricsSnapshot {
   // stay in lockstep.
   wsInvalidJson: number                // invalid JSON received on a WS
   routerMissingRoom: number            // routeMessage skipped a non-existent room
-  leitbildAttachErrors: number         // mirror-service.attach threw
   multimodalImagesDropped: number      // images swapped for text placeholder
                                         // (model not in catalog allowlist AND
                                         // not in substring allowlist). Bumped
@@ -56,7 +55,6 @@ const zeroSnapshot = (): LimitMetricsSnapshot => ({
   staleSessionsEvicted: 0,
   wsInvalidJson: 0,
   routerMissingRoom: 0,
-  leitbildAttachErrors: 0,
   multimodalImagesDropped: 0,
 })
 

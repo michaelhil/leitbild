@@ -6,6 +6,7 @@ import type { ToolDefinition, ToolExecutor } from './tool.ts'
 import type { Room } from './room.ts'
 import type { RoomDirectory } from '../rooms/directory.ts'
 import type { Trigger } from '../triggers/types.ts'
+import type { ToolGrant } from '@samsinn-leitbild/platform-contracts'
 
 // === Agent State — subscribe/get pattern for observability ===
 
@@ -94,8 +95,8 @@ export interface AIAgent extends Agent {
   readonly updateThinking?: (enabled: boolean) => void
   readonly getTools: () => ReadonlyArray<string> | undefined
   readonly updateTools?: (tools: ReadonlyArray<string>) => void
-  readonly getLeitbildBinding?: () => LeitbildAgentBinding | undefined
-  readonly updateLeitbildBinding?: (binding: LeitbildAgentBinding | undefined) => void
+  readonly getToolGrants: () => ReadonlyArray<ToolGrant>
+  readonly updateToolGrants: (grants: ReadonlyArray<ToolGrant>) => void
   readonly refreshTools?: (support: {
     toolExecutor?: ToolExecutor
     toolDefinitions?: ReadonlyArray<ToolDefinition>
@@ -220,6 +221,7 @@ export interface AIAgentConfig {
   readonly seed?: number
   readonly historyLimit?: number
   readonly tools?: ReadonlyArray<string>        // tool names this agent can use
+  readonly toolGrants?: ReadonlyArray<ToolGrant> // Workspace Capabilities this Agent may invoke
   readonly maxToolIterations?: number           // default 5
   readonly tags?: ReadonlyArray<string>         // capability/role tags for [[tag:X]] addressing
   readonly thinking?: boolean                    // enable model CoT (qwen3 thinking mode)
@@ -230,18 +232,6 @@ export interface AIAgentConfig {
   readonly promptsEnabled?: boolean             // master for all per-section prompt toggles (default: true)
   readonly contextEnabled?: boolean             // master for all context sub-section toggles (default: true)
   readonly triggers?: ReadonlyArray<Trigger>    // scheduled prompts; see src/core/triggers/types.ts
-  // Per-Agent Leitbild binding. When set, the Agent gains the
-  // lb_state / lb_object / lb_query / lb_scenario tools (provided they
-  // appear in `tools[]`) and its context-builder filters room-mirror
-  // messages out (the agent has direct access; doesn't need narration).
-  // role: 'observer' is read-only; 'operator' will also see lb_command
-  // for operators. See src/integrations/leitbild/.
-  readonly leitbildBinding?: LeitbildAgentBinding
-}
-
-export interface LeitbildAgentBinding {
-  readonly simulationRunId: string
-  readonly role: 'observer' | 'operator'
 }
 
 // === Agent Response (parsed from LLM plain text output) ===

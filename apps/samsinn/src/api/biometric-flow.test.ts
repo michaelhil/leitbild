@@ -33,6 +33,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createDeploymentRuntime } from '../core/deployment-runtime.ts'
 import { createWorkspaceRuntimeRegistry } from '../core/workspaces/runtime-registry.ts'
+import { createSamsinnModuleState } from '../core/workspaces/module-state.ts'
 import { createWSManager, handleWSMessage, type WSManager, type WSConnection } from './ws-handler.ts'
 import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
@@ -74,8 +75,10 @@ describe('biometrics capture flow (no mocks)', () => {
     })
 
     let wsManager!: WSManager
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
+      moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
@@ -83,6 +86,8 @@ describe('biometrics capture flow (no mocks)', () => {
     wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
     const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId, 'collaboration')
+    await moduleState.provision(cookieId, 'agents')
     const system = await registry.getOrLoad(cookieId)
 
     // Activate the biometrics pack in the seed room so the per-room filter
@@ -205,8 +210,10 @@ describe('biometrics capture flow (no mocks)', () => {
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
+      moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
@@ -214,6 +221,8 @@ describe('biometrics capture flow (no mocks)', () => {
     wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
     const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId, 'collaboration')
+    await moduleState.provision(cookieId, 'agents')
     const system = await registry.getOrLoad(cookieId)
     const rooms = system.rooms.listAllRooms()
     const room = system.rooms.getRoom(rooms[0]!.id)!
@@ -259,8 +268,10 @@ describe('biometrics capture flow (no mocks)', () => {
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
+      moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
@@ -277,6 +288,8 @@ describe('biometrics capture flow (no mocks)', () => {
 
     try {
       const cookieId = newWorkspaceId()
+      await moduleState.provision(cookieId, 'collaboration')
+      await moduleState.provision(cookieId, 'agents')
       const system = await registry.getOrLoad(cookieId)
       const room = system.rooms.getRoom(system.rooms.listAllRooms()[0]!.id)!
       room.setActivePacks(['biometrics'])
@@ -324,8 +337,10 @@ describe('biometrics capture flow (no mocks)', () => {
       providerSetup: makeSetup(makeStubGateway()),
     })
     let wsManager!: WSManager
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
+      moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
       },
@@ -333,6 +348,8 @@ describe('biometrics capture flow (no mocks)', () => {
     wsManager = createWSManager({ getRuntime: (id) => registry.tryGetLive(id) })
 
     const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId, 'collaboration')
+    await moduleState.provision(cookieId, 'agents')
     const system = await registry.getOrLoad(cookieId)
     const rooms = system.rooms.listAllRooms()
     const room = system.rooms.getRoom(rooms[0]!.id)!

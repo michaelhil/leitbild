@@ -21,7 +21,7 @@
 // ============================================================================
 
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
-import type { AutoSaver } from '../core/storage/snapshot.ts'
+import type { ModuleAutoSaver } from '../core/storage/module-snapshots.ts'
 import type { WSManager } from './ws-handler.ts'
 import { asAIAgent } from '../agents/shared.ts'
 import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
@@ -36,7 +36,7 @@ type PromptContextSnapshot = {
 export const wireWorkspaceRuntimeEvents = (
   system: SamsinnWorkspaceRuntime,
   wsManager: WSManager,
-  autoSaver: AutoSaver,
+  autoSaver: ModuleAutoSaver,
   workspaceId: WorkspaceId,
 ): void => {
   // Tag this Workspace as wired in the wsManager — the diagnostics endpoint

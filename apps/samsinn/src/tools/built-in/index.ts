@@ -10,3 +10,4 @@ export { createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoLi
 export { createRecallTool, type RecallToolDeps } from './recall-tool.ts'
 export { createQueryDocumentsTool, type QueryDocumentsToolDeps } from './query-documents-tool.ts'
 export { createBiometricsTools, createBiometricsStartTool, createBiometricsStopTool, createBiometricsReadTool, BIOMETRICS_PACK_NAMESPACE } from './biometric-tools.ts'
+export { createWorkspaceCapabilityTools, type WorkspaceCapabilityToolsDeps } from './workspace-capability-tools.ts'

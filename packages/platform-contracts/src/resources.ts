@@ -7,7 +7,7 @@ import {
   resourceTypeSchema,
   workspaceIdSchema,
 } from './ids.ts'
-import { accessContextSchema } from './access.ts'
+import { accessContextSchema, actorContextSchema } from './access.ts'
 import { moduleFailureSchema } from './workspaces.ts'
 
 export const workspaceResourceReferenceSchema = z.object({
@@ -138,6 +138,14 @@ export const invokeCapabilityInputSchema = z.object({
   input: z.unknown(),
 }).strict()
 export type InvokeCapabilityInput = z.infer<typeof invokeCapabilityInputSchema>
+
+// Public Host request shape. `actor` is attribution supplied by the calling
+// client, not authentication; a future auth adapter can replace or validate
+// it before the Host constructs the authoritative AccessContext.
+export const workspaceCapabilityInvocationRequestSchema = invokeCapabilityInputSchema.extend({
+  actor: actorContextSchema.optional(),
+}).strict()
+export type WorkspaceCapabilityInvocationRequest = z.infer<typeof workspaceCapabilityInvocationRequestSchema>
 
 export const moduleCapabilityInvocationSchema = z.object({
   workspaceId: workspaceIdSchema,

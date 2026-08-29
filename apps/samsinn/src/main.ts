@@ -58,9 +58,9 @@ import {
   createPostToRoomTool, createGetRoomHistoryTool,
   createRecallTool,
   createQueryDocumentsTool,
+  createWorkspaceCapabilityTools,
 } from './tools/built-in/index.ts'
 import { createBiometricsTools, BIOMETRICS_PACK_NAMESPACE } from './tools/built-in/biometric-tools.ts'
-import { clearLeitbildToolCacheForAgent } from './integrations/leitbild/tools.ts'
 import { createEvalBuffer } from './diagnostics/eval-buffer.ts'
 import { getCaptureRegistry } from './core/biometrics/registry.ts'
 import { createVectorStore, type VectorStore } from './embed/vector-store.ts'
@@ -74,6 +74,7 @@ import { createScriptStore, type ScriptStore } from './core/scripts/script-store
 import { createScriptRunner, type ScriptRunner, type ScriptEventEmitter } from './core/scripts/script-runner.ts'
 import { createWriteScriptTool } from './tools/built-in/script-codegen.ts'
 import { sharedPaths } from './core/paths.ts'
+import type { WorkspaceId } from '@samsinn-leitbild/platform-contracts'
 
 import { createOllamaUrlRegistry, type OllamaUrlRegistry } from './core/ollama-urls.ts'
 export type { OllamaUrlRegistry }
@@ -239,6 +240,9 @@ export interface CreateSamsinnWorkspaceRuntimeOptions {
   // Diagnostic label used in unsubscribed-callback warnings (lateBinding).
   // Threaded by the registry; tests/headless paths can omit (becomes "?").
   readonly workspaceLabel?: string
+  // Host context is configured as one pair. Focused tests may omit both.
+  readonly workspaceId?: WorkspaceId
+  readonly workspaceHostUrl?: string
   // Per-Workspace vector store path (RAG features). When set, createSamsinnWorkspaceRuntime
   // wires the memory indexer + recall tool. Omitted in focused runtime tests
   // that do not have a Workspace ID; RAG features are no-op there.
@@ -246,6 +250,9 @@ export interface CreateSamsinnWorkspaceRuntimeOptions {
 }
 
 export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRuntimeOptions = {}): SamsinnWorkspaceRuntime => {
+  if ((options.workspaceId === undefined) !== (options.workspaceHostUrl === undefined)) {
+    throw new Error('workspaceId and workspaceHostUrl must be configured together')
+  }
   // Either reuse a deployment runtime or build one inline for focused tests.
   const deploymentWasGiven = options.deployment !== undefined
   const deployment: DeploymentRuntime = options.deployment ?? createDeploymentRuntime({
@@ -565,11 +572,6 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
       // Triggers live on the agent — they go with it. The scheduler's
       // anyTriggers cache might be stale; refresh it.
       triggerScheduler.invalidate()
-      // Evict per-agent caches held by integration modules (Leitbild's
-      // snapshot cache keyed by agentId). Without this, removed-agent
-      // entries persist for the life of the process — a slow leak in
-      // long-running prod with agent churn (audit Finding 2.1.2).
-      clearLeitbildToolCacheForAgent(id)
     }
     return removed
   }
@@ -603,6 +605,19 @@ export const createSamsinnWorkspaceRuntime = (options: CreateSamsinnWorkspaceRun
     ...(vectorStore ? [createRecallTool({ vectorStore, providerKeys, rooms })] : []),
     ...(vectorStore ? [createQueryDocumentsTool({ vectorStore, providerKeys })] : []),
   ])
+
+  // Cross-Module interaction is Host-routed. Agent Profiles keep only
+  // Capability grants; current Resource ids are discovered per invocation.
+  if (options.workspaceId !== undefined && options.workspaceHostUrl !== undefined) {
+    toolRegistry.registerAll(createWorkspaceCapabilityTools({
+      workspaceId: options.workspaceId,
+      hostBaseUrl: options.workspaceHostUrl,
+      getToolGrants: agentId => {
+        const agent = team.getAgent(agentId)
+        return agent === undefined ? undefined : asAIAgent(agent)?.getToolGrants()
+      },
+    }))
+  }
 
   // Biometrics tools — implementation lives in core (needs RoomDirectory + capture
   // registry), but registered with source.pack='biometrics' so the per-room

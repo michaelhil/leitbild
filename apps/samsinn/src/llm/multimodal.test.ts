@@ -114,10 +114,10 @@ describe('warnImageDroppedOnce', () => {
 
 describe('imagePlaceholder', () => {
   test('produces a descriptive placeholder string', () => {
-    const text = imagePlaceholder({ width: 1024, height: 768, mimeType: 'image/png', source: 'leitbild' })
+    const text = imagePlaceholder({ width: 1024, height: 768, mimeType: 'image/png', source: 'resource' })
     expect(text).toContain('1024')
     expect(text).toContain('768')
-    expect(text).toContain('leitbild')
+    expect(text).toContain('resource')
     expect(text).toContain('cannot view')
   })
   test('handles missing source gracefully', () => {

@@ -1,14 +1,14 @@
 // ============================================================================
-// Integration test: cookie-bound Workspaces get full broadcast wiring.
+// Integration test: lazily loaded Workspaces get full broadcast wiring.
 //
 // The bug fixed in 5d73a8e was that wireWorkspaceRuntimeEvents was silently skipped
 // for non-default Workspaces because onWorkspaceRuntimeCreated ran before the registry's
 // internal map.set() — autoSaverFor(id) returned null, the `if (autoSaver)`
-// guard short-circuited, and every cookie-bound Workspace booted with
+// guard short-circuited, and every lazily loaded Workspace booted with
 // setOnEvalEvent / setOnMessagePosted / state.subscribe all unwired.
 //
 // This test proves end-to-end that a Workspace loaded via the registry
-// path (the cookie-bound code path) has live broadcast wiring: posting a
+// path (the registry load path) has live broadcast wiring: posting a
 // message into one of its rooms fans out via wsManager.broadcastToWorkspace
 // scoped to that Workspace.
 //
@@ -28,10 +28,11 @@ import { wireWorkspaceRuntimeEvents } from './wire-workspace-runtime-events.ts'
 import { makeStubGateway, makeStubSetup, stubProviderConfig as baseConfig } from './stub-gateway.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { newWorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { createSamsinnModuleState } from '../core/workspaces/module-state.ts'
 
 const makeSetup = makeStubSetup
 
-describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () => {
+describe('lazy Workspace broadcast wiring (regression for 5d73a8e)', () => {
   let homeDir: string
 
   afterEach(async () => {
@@ -39,7 +40,7 @@ describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () 
     delete process.env.SAMSINN_HOME
   })
 
-  test('routeMessage in a cookie-bound Workspace reaches broadcastToWorkspace', async () => {
+  test('routeMessage in a loaded Workspace reaches broadcastToWorkspace', async () => {
     homeDir = await mkdtemp(join(tmpdir(), 'samsinn-streaming-'))
     process.env.SAMSINN_HOME = homeDir
 
@@ -54,8 +55,10 @@ describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () 
     let wsManager!: WSManager
     const broadcasts: Array<{ workspaceId: string; msg: WSOutbound }> = []
 
+    const moduleState = createSamsinnModuleState()
     const registry = createWorkspaceRuntimeRegistry({
       deployment: shared,
+      moduleState,
       onWorkspaceRuntimeCreated: async (system, id, autoSaver) => {
         // The exact same call that bootstrap.ts makes — this is the wiring
         // the bug skipped.
@@ -78,6 +81,8 @@ describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () 
     // an explicit cookie-shaped id (16 chars, lowercase alphanumeric) so we
     // exercise that exact path.
     const cookieId = newWorkspaceId()
+    await moduleState.provision(cookieId, 'collaboration')
+    await moduleState.provision(cookieId, 'agents')
     const sys = await registry.getOrLoad(cookieId)
 
     // Harness sanity: the seed should have produced at least one room.
@@ -94,7 +99,7 @@ describe('cookie-bound Workspace broadcast wiring (regression for 5d73a8e)', () 
     )
 
     // The broadcast must have reached our instrumented broadcastToWorkspace,
-    // scoped to OUR cookie-bound workspaceId. Pre-fix behavior: zero entries.
+    // scoped to our URL Workspace id. Pre-fix behavior: zero entries.
     const our = broadcasts.filter(b => b.workspaceId === cookieId)
     expect(our.length).toBeGreaterThan(0)
     expect(our.some(b => b.msg.type === 'message')).toBe(true)

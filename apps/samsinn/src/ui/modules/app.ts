@@ -160,7 +160,6 @@ const handleDeleteMessage = (msgId: string): void => {
 
 // Prompt-context modal + per-message view-context handler live in context-modal.ts.
 import { showContextModal, handleViewContext } from './modals/context-modal.ts'
-import { updateLeitbildPanelForRoom } from './leitbild-iframe-panel.ts'
 import { clearAttachments, getAttachments, mountAttachmentChips } from './composer-attachments.ts'
 
 // === Data fetching (triggered by subscriptions) ===
@@ -384,11 +383,6 @@ $selectedRoomId.listen((roomId, prevRoomId) => {
     // Apply room-specific state
     refreshRoomControls()
 
-    // Leitbild dashboard iframe — shows floating toggle when this room has a
-    // leitbildMirror binding; hides when it doesn't. Fetches the binding's
-    // baseUrl + workspaceId from /rooms/:name/leitbild-mirror to build the
-    // SPA URL. See docs/leitbild-walkthrough.md.
-    void updateLeitbildPanelForRoom(room.name, roomId)
     // Composer attachments chip strip re-targets to the new active room.
     refreshComposerChips()
 

@@ -10,10 +10,6 @@ export type ApplicationApiPath =
       readonly internalPath: string
     }
   | {
-      readonly kind: 'deployment'
-      readonly internalPath: string
-    }
-  | {
       readonly kind: 'not-api'
     }
   | {
@@ -24,14 +20,10 @@ export type ApplicationApiPath =
 
 /**
  * Resolves the one public application API shape into its internal dispatcher
- * path. Workspace-directory and bootstrap endpoints are handled before this
- * function; every other /api path is either canonical or rejected.
+ * path. Bootstrap endpoints are handled before this function; every other
+ * /api path is either Workspace-scoped or rejected.
  */
 export const resolveApplicationApiPath = (pathname: string): ApplicationApiPath => {
-  if (pathname === '/api/packs' || pathname.startsWith('/api/packs/')) {
-    return { kind: 'deployment', internalPath: pathname.slice('/api'.length) }
-  }
-
   const workspaceMatch = pathname.match(/^\/api\/workspaces\/([^/]+)(\/.*)$/)
   if (workspaceMatch) {
     let rawWorkspaceId: string

@@ -16,12 +16,10 @@
 //     geodata/.bundled/<version>/               ← cached samsinn-geodata snapshot (NOT user data)
 //     knowledge/                                ← shared knowledge files
 //     logs/admin.jsonl                          ← janitor + registry events
-//     workspaces/                               ← Workspace-scoped module state
+//     workspaces/                               ← Workspace-scoped Module state
 //       <workspace-id>/
-//         samsinn/                              ← Samsinn-owned shard
-//         snapshot.json
-//         logs/*.jsonl
-//         memory/<agentName>/{notes.log,facts.json}
+//         collaboration/                       ← Rooms, messages, membership
+//         agents/                              ← Agent profiles and runtime state
 //
 // SAMSINN_HOME defaults to ~/.samsinn.
 // ============================================================================
@@ -51,30 +49,52 @@ export const sharedPaths = {
   knowledge: (): string => join(samsinnHome(), 'knowledge'),
   geodata: (): string => join(localPack(), 'geodata'),
   adminLog: (): string => join(samsinnHome(), 'logs', 'admin.jsonl'),
-  workspaceDirectory: (): string => join(samsinnHome(), 'workspace-directory.json'),
   workspacesRoot: (): string => join(samsinnHome(), 'workspaces'),
 }
 
-// Samsinn's owned persistence shard inside one Workspace.
-export interface WorkspacePaths {
+export interface CollaborationWorkspacePaths {
   readonly root: string
+  readonly marker: string
   readonly snapshot: string
   readonly logs: string
+  readonly documents: string
+}
+
+export interface AgentsWorkspacePaths {
+  readonly root: string
+  readonly marker: string
+  readonly snapshot: string
   readonly memory: string
-  // per-Workspace vector index (RAG). Single JSONL file with header,
-  // vectors, and tombstones. See src/embed/vector-store.ts.
   readonly vectors: string
 }
 
-export const workspacePaths = (id: WorkspaceId): WorkspacePaths => {
+export interface WorkspaceModulePaths {
+  readonly root: string
+  readonly collaboration: CollaborationWorkspacePaths
+  readonly agents: AgentsWorkspacePaths
+}
+
+export const workspaceModulePaths = (id: WorkspaceId): WorkspaceModulePaths => {
   assertValidWorkspaceId(id)
-  const root = join(samsinnHome(), 'workspaces', id, 'samsinn')
+  const root = join(samsinnHome(), 'workspaces', id)
+  const collaborationRoot = join(root, 'collaboration')
+  const agentsRoot = join(root, 'agents')
   return {
     root,
-    snapshot: join(root, 'snapshot.json'),
-    logs: join(root, 'logs'),
-    memory: join(root, 'memory'),
-    vectors: join(root, 'vectors.jsonl'),
+    collaboration: {
+      root: collaborationRoot,
+      marker: join(collaborationRoot, 'workspace.json'),
+      snapshot: join(collaborationRoot, 'snapshot.json'),
+      logs: join(collaborationRoot, 'logs'),
+      documents: join(collaborationRoot, 'documents'),
+    },
+    agents: {
+      root: agentsRoot,
+      marker: join(agentsRoot, 'workspace.json'),
+      snapshot: join(agentsRoot, 'snapshot.json'),
+      memory: join(agentsRoot, 'memory'),
+      vectors: join(agentsRoot, 'vectors.jsonl'),
+    },
   }
 }
 

@@ -21,13 +21,6 @@ describe('canonical application API paths', () => {
     })
   })
 
-  test('resolves deployment Pack paths without a Workspace prefix', () => {
-    expect(resolveApplicationApiPath('/api/packs/example')).toEqual({
-      kind: 'deployment',
-      internalPath: '/packs/example',
-    })
-  })
-
   test('rejects unscoped application routes instead of aliasing them', () => {
     expect(resolveApplicationApiPath('/api/rooms')).toEqual({
       kind: 'invalid-api',

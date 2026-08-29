@@ -22,14 +22,6 @@ export type EvictWorkspaceResult =
   | { readonly ok: true; readonly workspaceId: WorkspaceId }
   | { readonly ok: false; readonly reason: string }
 
-// Capabilities that the Workspace routes need. Wired in bootstrap.ts.
-export interface WorkspaceAdmin {
-  readonly list: () => Promise<ReadonlyArray<{ id: WorkspaceId; displayName: string; snapshotMtimeMs: number; snapshotSizeBytes: number; isLive: boolean }>>
-  readonly create: (displayName?: string) => Promise<{ id: WorkspaceId }>
-  // Build a Set-Cookie value pointing at `id`. The route returns it on the response.
-  readonly buildSwitchCookie: (id: WorkspaceId, req: Request) => string
-}
-
 // Read-only health snapshot used by /system/diagnostics. Walks the
 // registry + wsManager to surface per-Workspace broadcast wiring state.
 // Catches the silent-skip class of bug fixed in 5d73a8e: zero-broadcast
@@ -52,28 +44,22 @@ export interface DiagnosticsCapability {
 export interface RouteContext {
   readonly system: SamsinnWorkspaceRuntime
   readonly accessContext: AccessContext
-  // Workspace bound to this request via the cookie (resolved before dispatch).
+  // Workspace bound to this request by the application URL.
   readonly workspaceId: WorkspaceId
   readonly broadcast: (msg: WSOutbound) => void
   readonly broadcastToWorkspace?: (workspaceId: WorkspaceId, msg: WSOutbound) => void
   readonly subscribeAgentState: (agent: Agent, workspaceId: WorkspaceId) => void
   readonly unsubscribeAgentState?: (agentId: string) => void
   readonly remoteAddress?: string
-  // Per-Workspace reset (Phase F5). Reads the cookie from req, trashes the
-  // Workspace directory, drops it from the registry. The same id is kept;
-  // the next request from the same cookie lazy-creates a fresh empty RoomDirectory.
-  readonly resetWorkspace?: (req: Request) => Promise<ResetWorkspaceResult>
-  // Drop the cookie's Workspace from memory without trashing its snapshot —
+  // Delete the Samsinn Module state and drop its runtime from memory. The
+  // Host-owned Workspace remains and can provision the Modules again.
+  readonly resetWorkspace?: (workspaceId: WorkspaceId) => Promise<ResetWorkspaceResult>
+  // Drop the URL-scoped Workspace runtime from memory without deleting snapshots —
   // the next WS upgrade lazy-reloads via restoreFromSnapshot. Used by the
   // post-deploy streaming probe to exercise the evict→reload boundary.
-  readonly evictWorkspace?: (req: Request) => Promise<EvictWorkspaceResult>
-  // Workspace discovery and selection (list / create / switch). Wired in bootstrap.
-  readonly workspaces?: WorkspaceAdmin
+  readonly evictWorkspace?: (workspaceId: WorkspaceId) => Promise<EvictWorkspaceResult>
   // Read-only health/wiring snapshot. Wired in bootstrap.
   readonly diagnostics?: DiagnosticsCapability
-  // Leitbild mirror service (process-level singleton). Wired in bootstrap.
-  // Absent if the integration was not initialized (e.g. in tests).
-  readonly leitbildMirror?: import('../../integrations/leitbild/mirror-service.ts').MirrorService
 }
 
 export interface RouteEntry {

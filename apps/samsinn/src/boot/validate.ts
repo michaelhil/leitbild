@@ -79,7 +79,7 @@ export const validateBootstrap = (system: SamsinnWorkspaceRuntime, ctx: Validate
   // per-Workspace system is wired by the registry's onWorkspaceRuntimeCreated hook,
   // which fires BEFORE onFirstLoad (where this validator is called from).
   // If wsManager was undefined when onWorkspaceRuntimeCreated fired, wireWorkspaceRuntimeEvents
-  // was silently skipped — the bug pattern that made cookie-bound Workspaces
+  // was silently skipped — the bug pattern that made lazily loaded Workspaces
   // broadcast nothing for three days unnoticed. Headless mode supplies
   // isWsWired=undefined (no WS clients to wire).
   if (ctx.isWsWired !== undefined && !ctx.isWsWired()) {

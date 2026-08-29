@@ -4,12 +4,12 @@ import {
   capabilityIdSchema,
   createWorkspaceInputSchema,
   experienceIdSchema,
-  invokeCapabilityInputSchema,
   moduleIdSchema,
   newRequestId,
   platformError,
   renameWorkspaceInputSchema,
   workspaceIdSchema,
+  workspaceCapabilityInvocationRequestSchema,
   type ExperienceId,
   type Workspace,
   type WorkspaceExperience,
@@ -131,11 +131,15 @@ export const createWorkspaceHostServer = (config: {
       if (invocationMatch && request.method === 'POST') {
         const workspaceId = workspaceIdSchema.parse(decodeURIComponent(invocationMatch[1] ?? ''))
         const capabilityId = capabilityIdSchema.parse(decodeURIComponent(invocationMatch[2] ?? ''))
-        const input = invokeCapabilityInputSchema.parse(await parseJson(request))
+        const requestInput = workspaceCapabilityInvocationRequestSchema.parse(await parseJson(request))
+        const input = {
+          ...(requestInput.resource === undefined ? {} : { resource: requestInput.resource }),
+          input: requestInput.input,
+        }
         const access = accessContextSchema.parse({
           workspaceId,
           requestId: newRequestId(),
-          actor: { kind: 'anonymous' },
+          actor: requestInput.actor ?? { kind: 'anonymous' },
           client: { id: 'workspace-host', kind: 'service' },
         })
         return Response.json({ result: await config.host.invoke(workspaceId, capabilityId, input, access) })

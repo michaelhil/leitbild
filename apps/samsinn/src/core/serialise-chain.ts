@@ -9,7 +9,7 @@
 // in-memory map) where two concurrent calls can interleave. Examples
 // already in the codebase before this extraction:
 //
-//   - src/core/storage/snapshot.ts — saveSnapshot + appendPendingScrub
+//   - src/core/storage/module-snapshots.ts — Module snapshot writes + pending scrubs
 //   - src/geo/pack-source.ts       — refreshPackGeodata (cross-Workspace)
 //   - src/core/scripts/script-store.ts — upsert / remove / reload
 //   - src/tools/built-in/pack-tools.ts — install / update / uninstall

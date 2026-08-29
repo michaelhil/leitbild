@@ -41,7 +41,7 @@ export type IconName =
   | 'pencil'               // inline edit / rename
   | 'clock'                // triggers — scheduled prompts
   | 'wand'                 // demos — magic-wand pin in room header
-  | 'camera'               // screenshot capture (leitbild iframe panel)
+  | 'camera'               // image capture
 
 // Path fragments only (no SVG wrapper). Each string is the inner markup of
 // a 24×24 viewBox. Keep alphabetical.

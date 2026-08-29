@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtemp, mkdir, rm, stat } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorkspaceRuntimeRegistry, type WorkspaceRuntimeRegistry } from './runtime-registry.ts'
 import { createDeploymentRuntime } from '../deployment-runtime.ts'
-import { workspacePaths } from '../paths.ts'
+import { workspaceModulePaths } from '../paths.ts'
 import { newWorkspaceId, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
+import { createSamsinnModuleState, type SamsinnModuleState } from './module-state.ts'
 
 // Phase D registry tests use the SAMSINN_HOME env var to redirect all paths
 // into a per-test tmpdir. The shared runtime is built with no providers
@@ -15,6 +16,12 @@ describe('WorkspaceRuntimeRegistry', () => {
   let originalHome: string | undefined
   let homeDir: string
   let registry: WorkspaceRuntimeRegistry
+  let moduleState: SamsinnModuleState
+
+  const provision = async (id: WorkspaceId): Promise<void> => {
+    await moduleState.provision(id, 'collaboration')
+    await moduleState.provision(id, 'agents')
+  }
 
   beforeEach(async () => {
     originalHome = process.env.SAMSINN_HOME
@@ -25,7 +32,8 @@ describe('WorkspaceRuntimeRegistry', () => {
     // Disable first-run seeding — these tests assert empty-RoomDirectory semantics.
     process.env.SAMSINN_SEED_WORKSPACE = '0'
     const shared = createDeploymentRuntime()
-    registry = createWorkspaceRuntimeRegistry({ deployment: shared, idleMs: 1_000_000 })  // long idle so no auto-evict in unit tests
+    moduleState = createSamsinnModuleState()
+    registry = createWorkspaceRuntimeRegistry({ deployment: shared, moduleState, idleMs: 1_000_000 })  // long idle so no auto-evict in unit tests
   })
 
   afterEach(async () => {
@@ -48,23 +56,15 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('round-trip: same id returns same system', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const a = await registry.getOrLoad(id)
     const b = await registry.getOrLoad(id)
     expect(a).toBe(b)
   })
 
-  it('seeds an explicitly empty snapshot when first-run seeding is enabled', async () => {
+  it('seeds only when Collaboration and Agents are composed', async () => {
     const id = newWorkspaceId()
-    // First materialize an empty Workspace with the test default (seeding off),
-    // then emulate an older autosave that left an empty snapshot on disk.
-    await registry.getOrLoad(id)
-    await registry.evictOne(id)
-    const paths = workspacePaths(id)
-    await mkdir(paths.root, { recursive: true })
-    await Bun.write(paths.snapshot, JSON.stringify({
-      version: '26', timestamp: Date.now(), rooms: [], agents: [], humans: [],
-    }))
-
+    await provision(id)
     delete process.env.SAMSINN_SEED_WORKSPACE
     const seeded = await registry.getOrLoad(id)
     expect(seeded.rooms.listAllRooms().some(r => r.name === 'Cafe')).toBe(true)
@@ -72,8 +72,12 @@ describe('WorkspaceRuntimeRegistry', () => {
   })
 
   it('different ids return different systems', async () => {
-    const a = await registry.getOrLoad(newWorkspaceId())
-    const b = await registry.getOrLoad(newWorkspaceId())
+    const idA = newWorkspaceId()
+    const idB = newWorkspaceId()
+    await provision(idA)
+    await provision(idB)
+    const a = await registry.getOrLoad(idA)
+    const b = await registry.getOrLoad(idB)
     expect(a).not.toBe(b)
   })
 
@@ -81,6 +85,7 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('concurrent getOrLoad on same id resolves to one system (pendingLoads dedupe)', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const [a, b, c] = await Promise.all([
       registry.getOrLoad(id),
       registry.getOrLoad(id),
@@ -94,6 +99,7 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('evicts then lazy-reloads with state preserved', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const sys1 = await registry.getOrLoad(id)
     sys1.rooms.createRoomSafe({ name: 'evict-test-room', createdBy: 'system' })
     expect(sys1.rooms.listAllRooms().some(r => r.name ==='evict-test-room')).toBe(true)
@@ -104,7 +110,7 @@ describe('WorkspaceRuntimeRegistry', () => {
     expect(registry.list().some(m => m.id === id)).toBe(false)
 
     // Snapshot file should exist on disk now.
-    const stats = await stat(workspacePaths(id).snapshot)
+    const stats = await stat(workspaceModulePaths(id).collaboration.snapshot)
     expect(stats.size).toBeGreaterThan(0)
 
     // Lazy reload — fresh system, but room restored from disk.
@@ -117,6 +123,7 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('request mid-eviction awaits the eviction then loads fresh from disk', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const sys1 = await registry.getOrLoad(id)
     sys1.rooms.createRoomSafe({ name: 'race-room', createdBy: 'system' })
 
@@ -141,6 +148,7 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('two concurrent evictOne calls share a single eviction', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     await registry.getOrLoad(id)
     const [a, b] = await Promise.all([registry.evictOne(id), registry.evictOne(id)])
     expect(a).toBeUndefined()
@@ -153,10 +161,13 @@ describe('WorkspaceRuntimeRegistry', () => {
   it('evictIdle drops Workspaces older than idleMs', async () => {
     const reg = createWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
+      moduleState,
       idleMs: 50,
     })
     const idA = newWorkspaceId()
     const idB = newWorkspaceId()
+    await provision(idA)
+    await provision(idB)
     await reg.getOrLoad(idA)
     await new Promise(r => setTimeout(r, 80))
     await reg.getOrLoad(idB)        // freshly touched
@@ -171,12 +182,16 @@ describe('WorkspaceRuntimeRegistry', () => {
   it('enforces the loaded-Workspace capacity by evicting least-recently-used state', async () => {
     const reg = createWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
+      moduleState,
       idleMs: 1_000_000,
       maxLoadedWorkspaces: 2,
     })
     const idA = newWorkspaceId()
     const idB = newWorkspaceId()
     const idC = newWorkspaceId()
+    await provision(idA)
+    await provision(idB)
+    await provision(idC)
     const a = await reg.getOrLoad(idA)
     a.rooms.createRoomSafe({ name: 'capacity-state', createdBy: 'system' })
     await new Promise(resolve => setTimeout(resolve, 2))
@@ -196,9 +211,11 @@ describe('WorkspaceRuntimeRegistry', () => {
   it('keeps the capacity bound when cold loads complete concurrently', async () => {
     const reg = createWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
+      moduleState,
       maxLoadedWorkspaces: 1,
     })
     const ids = [newWorkspaceId(), newWorkspaceId(), newWorkspaceId()]
+    await Promise.all(ids.map(provision))
 
     await Promise.all(ids.map(id => reg.getOrLoad(id)))
 
@@ -210,6 +227,7 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   it('exists is true after disk persistence', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const sys = await registry.getOrLoad(id)
     sys.rooms.createRoomSafe({ name: 'exists-test', createdBy: 'system' })
     await registry.evictOne(id)
@@ -222,30 +240,31 @@ describe('WorkspaceRuntimeRegistry', () => {
 
   // --- Reset ---
 
-  it('resetWorkspaceState deletes module state; same id is reusable for a fresh runtime', async () => {
+  it('resetWorkspaceState clears Module payloads while preserving provisioned membership', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     const sys = await registry.getOrLoad(id)
     sys.rooms.createRoomSafe({ name: 'reset-test', createdBy: 'system' })
     await registry.evictOne(id)
     expect(await registry.exists(id)).toBe(true)
 
     await registry.resetWorkspaceState(id)
-    expect(await registry.exists(id)).toBe(false)
+    expect(await registry.exists(id)).toBe(true)
 
     // Same id is now usable for a fresh empty RoomDirectory.
     const sys2 = await registry.getOrLoad(id)
     expect(sys2.rooms.listAllRooms().length).toBe(0)
   })
 
-  it('resetWorkspaceState is safe for nonexistent id (ENOENT swallowed)', async () => {
-    await registry.resetWorkspaceState(newWorkspaceId())
-    // Should not throw; nothing to do.
+  it('rejects loading an unprovisioned Workspace', async () => {
+    await expect(registry.getOrLoad(newWorkspaceId())).rejects.toThrow('no provisioned Samsinn Modules')
   })
 
   // --- list / meta ---
 
   it('list reflects current in-memory state', async () => {
     const id = newWorkspaceId()
+    await provision(id)
     expect(registry.list()).toEqual([])
     await registry.getOrLoad(id)
     const meta = registry.list()
@@ -259,6 +278,8 @@ describe('WorkspaceRuntimeRegistry', () => {
   it('shutdown flushes every active Workspace', async () => {
     const idA = newWorkspaceId()
     const idB = newWorkspaceId()
+    await provision(idA)
+    await provision(idB)
     const sa = await registry.getOrLoad(idA)
     const sb = await registry.getOrLoad(idB)
     sa.rooms.createRoomSafe({ name: 'shut-a', createdBy: 'system' })
@@ -266,8 +287,8 @@ describe('WorkspaceRuntimeRegistry', () => {
 
     await registry.shutdown()
     expect(registry.list()).toEqual([])
-    await stat(workspacePaths(idA).snapshot)
-    await stat(workspacePaths(idB).snapshot)
+    await stat(workspaceModulePaths(idA).collaboration.snapshot)
+    await stat(workspaceModulePaths(idB).collaboration.snapshot)
   })
 
   // --- Hooks ---
@@ -276,9 +297,11 @@ describe('WorkspaceRuntimeRegistry', () => {
     const calls: string[] = []
     const reg = createWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
+      moduleState,
       onWorkspaceRuntimeCreated: (_sys, id) => { calls.push(id) },
     })
     const id = newWorkspaceId()
+    await provision(id)
     await reg.getOrLoad(id)
     await reg.getOrLoad(id)        // same Workspace — no second hook
     expect(calls).toEqual([id])
@@ -292,9 +315,11 @@ describe('WorkspaceRuntimeRegistry', () => {
     const calls: string[] = []
     const reg = createWorkspaceRuntimeRegistry({
       deployment: createDeploymentRuntime(),
+      moduleState,
       onWorkspaceRuntimeEvicted: (_sys, id) => calls.push(id),
     })
     const id = newWorkspaceId()
+    await provision(id)
     await reg.getOrLoad(id)
     await reg.evictOne(id)
     expect(calls).toEqual([id])

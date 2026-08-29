@@ -61,19 +61,4 @@ describe('control-room demo catalog', () => {
     expect(script.cast).toHaveLength(4)
     expect(script.steps).toHaveLength(3)
   })
-
-  test('grounded demo provisions a read-only analyst with wiki and simulator tools', () => {
-    const demo = getDemo('pwr-evidence')!
-    const action = demo.prompts[0]!.action
-    expect(action?.kind).toBe('spawn-grounded')
-    if (action?.kind !== 'spawn-grounded') throw new Error('wrong action')
-
-    expect(demo.leitbildSetup?.requiredPackId).toBe('process-plant')
-    expect(action.agents).toHaveLength(1)
-    expect(action.agents[0]!.tools).toEqual(expect.arrayContaining([
-      'lb_query',
-      'procedure_lookup',
-      'wiki_lookup',
-    ]))
-  })
 })

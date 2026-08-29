@@ -9,9 +9,8 @@ import { createModal } from '../modals/detail-modal.ts'
 import { showToast } from '../toast.ts'
 import { send } from '../ws-send.ts'
 import { $selectedRoomId, $selectedAgentId, $rooms, $agents, $roomMembers, $selectedHumanByRoom } from '../stores.ts'
-import { updateLeitbildPanelForRoom } from '../leitbild-iframe-panel.ts'
 import { icon } from '../icon.ts'
-import { getDemo, type Demo, type DemoAgentSpec, type DemoPrompt, type LeitbildDemoSetup } from './catalog.ts'
+import { getDemo, type Demo, type DemoAgentSpec, type DemoPrompt } from './catalog.ts'
 import { $activeDemoByRoom } from './active-demo-store.ts'
 
 interface DedicatedDemoRoom {
@@ -211,36 +210,6 @@ const ensureRoomPacks = async (roomId: string, packs: ReadonlyArray<string>): Pr
   }
 }
 
-interface LeitbildSelectResponse {
-  readonly simulationRunId?: string
-  readonly created?: boolean
-  readonly reused?: boolean
-  readonly scenarioId?: string
-  readonly systemIds?: ReadonlyArray<string>
-}
-
-interface LeitbildSelectOk {
-  readonly ok: true
-  readonly simulationRunId: string
-  readonly created: boolean
-  readonly systemIds: ReadonlyArray<string>
-}
-
-interface LeitbildModelUpdate {
-  readonly agentName: string
-  readonly from: string
-  readonly to: string
-}
-
-interface LeitbildSetupOk extends LeitbildSelectOk {
-  readonly modelUpdates: ReadonlyArray<LeitbildModelUpdate>
-}
-
-interface LeitbildSetupFail {
-  readonly ok: false
-  readonly reason: string
-}
-
 interface DemoModelProvider {
   readonly name: string
   readonly availability: {
@@ -319,116 +288,6 @@ const rescueModelForDemo = (currentModel: string | undefined, catalog: DemoModel
   }
   if (!modelIsRoutable(catalog.defaultModel, catalog)) return undefined
   return catalog.defaultModel
-}
-
-const selectLeitbildSimulationRun = async (setup: LeitbildDemoSetup): Promise<LeitbildSelectOk | LeitbildSetupFail> => {
-  try {
-    const res = await apiFetch('/leitbild-proxy/simulation-runs/select', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({
-        preferredScenarioId: setup.preferredScenarioId,
-        candidateScenarioIds: setup.candidateScenarioIds,
-        requiredPackId: setup.requiredPackId,
-        requiredQueryKind: setup.requiredQueryKind,
-        probePayload: setup.probePayload,
-      }),
-    })
-    if (!res.ok) return { ok: false, reason: `Failed to select Leitbild Simulation Run: ${await parseErrorResponse(res)}` }
-    const body = await res.json() as LeitbildSelectResponse
-    const simulationRunId = body.simulationRunId
-    if (!simulationRunId) return { ok: false, reason: 'Leitbild selection returned no Simulation Run id' }
-    return {
-      ok: true,
-      simulationRunId,
-      created: body.created === true,
-      systemIds: Array.isArray(body.systemIds) ? body.systemIds.filter((v): v is string => typeof v === 'string') : [],
-    }
-  } catch (err) {
-    return { ok: false, reason: `Could not reach Samsinn Leitbild proxy: ${(err as Error).message}` }
-  }
-}
-
-// Leitbild demo setup: select or create a Simulation Run that satisfies the demo's
-// declared pack/query probe, bind the current room's mirror to it, and
-// patch any AI agents in the room to add a matching leitbildBinding plus
-// the demo's tool allowlist. If no AI is in the room, the mirror still
-// works and the iframe shows; the user just won't get agent answers until
-// they add an AI member.
-const setupLeitbildDemo = async (
-  roomId: string,
-  setup: LeitbildDemoSetup,
-  onlyAgentNames?: ReadonlySet<string>,
-): Promise<LeitbildSetupOk | LeitbildSetupFail> => {
-  const roomName = $rooms.get()[roomId]?.name
-  if (!roomName) return { ok: false, reason: 'Room not found' }
-
-  // 1. Select an existing readable Simulation Run or create a fresh one via the
-  //    Samsinn-side proxy (avoids CORS; Leitbild declares no direct browser
-  //    access in its manifest).
-  const selected = await selectLeitbildSimulationRun(setup)
-  if (selected.ok === false) return selected
-
-  // 2. Bind the room mirror
-  try {
-    const res = await apiFetch(`/rooms/${encodeURIComponent(roomName)}/leitbild-mirror`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ simulationRunId: selected.simulationRunId, format: 'summary' }),
-    })
-    if (!res.ok) return { ok: false, reason: `Failed to bind room mirror: HTTP ${res.status}` }
-  } catch (err) {
-    return { ok: false, reason: `Bind error: ${(err as Error).message}` }
-  }
-
-  // 3. PATCH any AI members of the room with leitbildBinding + lb_* tools.
-  const members = $roomMembers.get()[roomId] ?? []
-  const agents = $agents.get()
-  const ais: ReadonlyArray<{ readonly name: string; readonly model?: string }> = onlyAgentNames
-    ? [...onlyAgentNames].map(name => ({ name }))
-    : members
-      .map(id => agents[id])
-      .filter((a): a is NonNullable<typeof a> => !!a && a.kind === 'ai')
-      .map(a => ({ name: a.name, model: a.model }))
-  const modelCatalog = ais.length > 0 ? await fetchDemoModelCatalog() : undefined
-  const modelUpdates: LeitbildModelUpdate[] = []
-  for (const ai of ais) {
-    try {
-      // Fetch current tools so we don't overwrite the agent's allowlist.
-      const detailRes = await apiFetch(`/agents/${encodeURIComponent(ai.name)}`, { credentials: 'same-origin' })
-      const detail = detailRes.ok
-        ? await detailRes.json() as { model?: string; tools?: ReadonlyArray<string> }
-        : { model: ai.model, tools: [] as string[] }
-      const existingTools = new Set(detail.tools ?? [])
-      for (const t of setup.agentTools) existingTools.add(t)
-      const currentModel = typeof detail.model === 'string' ? detail.model : ai.model
-      const rescueModel = rescueModelForDemo(currentModel, modelCatalog)
-      const patchBody: {
-        tools: string[]
-        leitbildBinding: { simulationRunId: string; role: 'observer' }
-        model?: string
-      } = {
-        tools: [...existingTools],
-        leitbildBinding: { simulationRunId: selected.simulationRunId, role: 'observer' },
-        ...(rescueModel ? { model: rescueModel } : {}),
-      }
-      const patchRes = await apiFetch(`/agents/${encodeURIComponent(ai.name)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify(patchBody),
-      })
-      if (patchRes.ok && rescueModel && currentModel && currentModel !== rescueModel) {
-        modelUpdates.push({ agentName: ai.name, from: currentModel, to: rescueModel })
-      }
-    } catch (err) {
-      console.warn(`[demos] Non-fatal Leitbild agent setup failure for ${ai.name}: ${(err as Error).message}`)
-    }
-  }
-
-  return { ...selected, modelUpdates }
 }
 
 // Best-effort: install an external pack if it isn't already present.
@@ -515,8 +374,8 @@ const createDemoAgents = async (
       })
       if (!add.ok) return { ok: false, reason: `Created ${name}, but could not add it to the room: ${await parseErrorResponse(add)}` }
 
-      // Do not depend on websocket event ordering. Leitbild setup and prompt
-      // sending both inspect these stores immediately after this function.
+      // Do not depend on websocket event ordering. Follow-on demo actions
+      // inspect these stores immediately after this function.
       $agents.setKey(createdAgent.id, {
         id: createdAgent.id,
         name: createdAgent.name,
@@ -607,23 +466,6 @@ const executeDemoPrompt = async (demo: Demo, entry: DemoPrompt): Promise<boolean
     return false
   }
 
-  if (action.kind === 'spawn-grounded') {
-    if (!demo.leitbildSetup) {
-      showToast(document.body, 'Grounded demo has no Leitbild setup.', { type: 'error', position: 'fixed' })
-      return false
-    }
-    const setup = await setupLeitbildDemo(roomId, demo.leitbildSetup, new Set(created.names))
-    if (setup.ok === false) {
-      showToast(document.body, `Leitbild setup failed: ${setup.reason}`, { type: 'error', position: 'fixed', durationMs: 10000 })
-      return false
-    }
-    const prompt = entry.prompt?.replaceAll('{{agent}}', created.names[0] ?? '')
-    if (!prompt || !sendAsCurrentHuman(prompt)) return false
-    const roomForPanel = $rooms.get()[roomId]?.name
-    if (roomForPanel) void updateLeitbildPanelForRoom(roomForPanel, roomId)
-    showToast(document.body, `${created.names.join(', ')} created and connected read-only to Leitbild.`, { type: 'success', position: 'fixed', durationMs: 8000 })
-    return true
-  }
 
   const mode = await setRoomDeliveryMode(roomName, 'broadcast')
   if (mode.ok === false) {
@@ -698,35 +540,6 @@ export const openDemoModal = async (
     }
   }
 
-  if (demo.id === 'leitbild') {
-    if (!demo.leitbildSetup) {
-      showToast(document.body, 'Leitbild demo setup is missing from the catalog.', { type: 'error', position: 'fixed', durationMs: 10000 })
-      return
-    }
-    const setup = await setupLeitbildDemo(roomId, demo.leitbildSetup)
-    if (setup.ok === false) {
-      showToast(document.body, `Leitbild demo setup failed: ${setup.reason}`, { type: 'error', position: 'fixed', durationMs: 10000 })
-      return
-    }
-    // Inform the user — and warn if no AI to consume the agent tools.
-    const aiCount = ($roomMembers.get()[roomId] ?? [])
-      .map(id => $agents.get()[id])
-      .filter(a => !!a && a.kind === 'ai').length
-    const aiHint = aiCount > 0
-      ? `${aiCount} AI agent${aiCount > 1 ? 's' : ''} configured with Leitbild + procedure tools.`
-      : 'Add an AI agent to this room (from room members panel) so it can use the Leitbild + procedure tools — then try the prompts.'
-    const modelHint = setup.modelUpdates.length > 0
-      ? ` Model rescue applied: ${setup.modelUpdates.map(u => `${u.agentName} ${u.from}→${u.to}`).join(', ')}.`
-      : ''
-    const action = setup.created ? 'created' : 'reused'
-    const systems = setup.systemIds.length > 0 ? ` · systems: ${setup.systemIds.slice(0, 3).join(', ')}` : ''
-    showToast(document.body, `Leitbild ${action}: ${setup.simulationRunId.slice(0, 36)}…${systems} · ${aiHint}${modelHint}`, { type: 'success', position: 'fixed', durationMs: 10000 })
-    // Refresh the iframe panel for the current room — it was last evaluated
-    // when the room was selected (before the mirror existed), so the toggle
-    // button is currently hidden. Re-evaluate so it appears.
-    const roomName = $rooms.get()[roomId]?.name
-    if (roomName) void updateLeitbildPanelForRoom(roomName, roomId)
-  }
 
   $activeDemoByRoom.setKey(roomId, demo.id)
 

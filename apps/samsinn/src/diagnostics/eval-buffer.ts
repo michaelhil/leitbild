@@ -10,7 +10,7 @@
 // per session. The diagnostic value is "what just happened" — 50 evals
 // covers any reasonable post-mortem window without unbounded memory.
 //
-// Why per-Workspace (not process-wide): each cookie-bound System has its
+// Why per-Workspace (not process-wide): each URL-scoped runtime has its
 // own agents and rooms; cross-tenant trace bleed would be confusing
 // (and a soft privacy leak). One ring per System matches every other
 // per-Workspace store.

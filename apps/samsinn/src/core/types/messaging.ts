@@ -34,7 +34,7 @@ export type MessageErrorCode =
 // IMPORTANT: this is metadata, not LLM context. The agent's context-builder
 // strips `cause` so it doesn't bleed into the prompt as noise.
 
-export type MessageCauseKind = 'script' | 'trigger' | 'biometric' | 'external-mirror'
+export type MessageCauseKind = 'script' | 'trigger' | 'biometric' | 'resource-event'
 
 export interface MessageCause {
   readonly kind: MessageCauseKind
@@ -82,8 +82,8 @@ export interface Message {
   //     tool — enables analyses like "which variants used web_search? how often?".
   readonly toolTrace?: ReadonlyArray<ToolTraceEntry>
 
-  // --- Image attachments (v0.15+). User-posted images, e.g. screenshots
-  //     of the Leitbild dashboard. PNG only in V1. Inline data URLs (no
+  // --- Image attachments. User-posted images and images acquired through
+  //     generic Workspace Capabilities. PNG only. Inline data URLs (no
   //     external blob storage). For multimodal-capable agents the
   //     attachments are forwarded as native image content; for non-
   //     multimodal models a text placeholder substitutes (see
@@ -94,10 +94,10 @@ export interface Message {
 export interface MessageAttachment {
   readonly kind: 'image'
   readonly dataUrl: string          // data:image/png;base64,...
-  readonly mimeType: 'image/png'    // PNG only in V1; widen union later
+  readonly mimeType: 'image/png'
   readonly width: number            // pixels
   readonly height: number
-  readonly source?: 'leitbild' | 'user-upload'
+  readonly source?: 'resource' | 'user-upload'
   readonly capturedAt: number       // ms epoch
 }
 
@@ -198,4 +198,3 @@ export type ResolveTagFn = (tag: string) => ReadonlyArray<string>    // tag → 
 // `pass` and `error` are agent decisions/outcomes — they post to the room so
 // humans can see them, but they must not pollute LLM context, trigger summary
 // runs, or kick off another agent's evaluation.
-

@@ -136,7 +136,7 @@ export const createAIAgent = (
   let currentTools: ReadonlyArray<string> | undefined = config.tools
   let currentTags: ReadonlyArray<string> = config.tags ?? []
   let currentTriggers: ReadonlyArray<import('../core/triggers/types.ts').Trigger> = config.triggers ?? []
-  let currentLeitbildBinding = config.leitbildBinding
+  let currentToolGrants = [...(config.toolGrants ?? [])]
   // Context & Prompts toggles — resolve defaults to preserve current behavior
   const includePromptsState: Required<IncludePrompts> = {
     persona: config.includePrompts?.persona ?? true,
@@ -240,7 +240,6 @@ export const createAIAgent = (
     contextTokenBudget: resolveContextTokenBudget(),
     getCompressedIds: (roomId: string) => getCompressedIds?.(roomId) ?? new Set<string>(),
     getRoomMembers,
-    suppressLeitbildMirror: !!currentLeitbildBinding,
     supportsImages: modelSupportsImages(currentModel),
     modelForWarn: currentModel,
     metricsSink: options?.metricsSink,
@@ -612,8 +611,8 @@ export const createAIAgent = (
     updateThinking: (enabled: boolean) => { currentThinking = enabled },
     getTools: () => currentTools,
     updateTools: (tools: ReadonlyArray<string>) => { currentTools = tools },
-    getLeitbildBinding: () => currentLeitbildBinding,
-    updateLeitbildBinding: (binding: AIAgentConfig['leitbildBinding']) => { currentLeitbildBinding = binding },
+    getToolGrants: () => currentToolGrants,
+    updateToolGrants: (grants) => { currentToolGrants = [...grants] },
     getIncludePrompts: () => ({ ...includePromptsState }),
     updateIncludePrompts: (partial: IncludePrompts) => {
       for (const key of Object.keys(partial) as PromptSection[]) {
@@ -677,7 +676,7 @@ export const createAIAgent = (
       contextEnabled,
       maxToolIterations: maxToolIterationsCfg,
       ...(currentTriggers.length > 0 ? { triggers: [...currentTriggers] } : {}),
-      ...(currentLeitbildBinding ? { leitbildBinding: currentLeitbildBinding } : {}),
+      ...(currentToolGrants.length > 0 ? { toolGrants: [...currentToolGrants] } : {}),
     }),
     cancelGeneration: () => { activeAbortController?.abort(); activeAbortController = null; cm.cancelAll() },
     continueTools: (roomId: string, additionalIterations: number): boolean => {

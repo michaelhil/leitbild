@@ -506,43 +506,9 @@ Search academic papers via Semantic Scholar with citation counts and AI summarie
 
 ---
 
-## Integration Tools — Leitbild (`src/integrations/leitbild/`)
+## Workspace Capability Tools
 
-Available to any AI Agent whose config carries a `leitbildBinding: { simulationRunId, role }` and whose Workspace has a Leitbild Module Binding. Without both, every `lb_*` tool returns an explanatory error. Tools validate Leitbild discovery and never hardcode paths.
-
-### `lb_state`
-
-**Parameters:** none.
-**Description:** Returns the current Leitbild Simulation Run snapshot summary: scenarioId, clock state, object count by domain, current seq. Per-(Agent, Run) snapshot is cached for ~5 seconds so multiple tool calls in one turn do not all roundtrip.
-**Returns:** `{ scenarioId, clock, objectCount, objectsByDomain, seq }`.
-
-### `lb_object`
-
-**Parameters:** `id` (string — the operational object id).
-**Description:** Read one operational object from the bound Simulation Run by id. Use after `lb_state` to drill into a specific object.
-**Returns:** the full operational object record, or `{ error }` if not found in the current snapshot.
-
-### `lb_query`
-
-**Parameters:** `packId` (e.g. `"ambulance"`), `kind` (e.g. `"ambulance.dispatchState"`), `payload` (pack-specific object, pass `{}` if none).
-**Description:** Call a Leitbild Pack-defined read query. Discover valid `packId` / `kind` combinations through the Run capability link advertised by Leitbild discovery.
-**Returns:** the pack-defined result shape.
-
-### `lb_scenario`
-
-**Parameters:** none.
-**Description:** Active scenario metadata (title, description). Use once at start of reasoning to ground in the scenario.
-**Returns:** `{ id, title, description, ... }`.
-
-### `lb_command` *(operator role only)*
-
-**Parameters:** `kind` (string — must match one of `acceptedCommandKinds` from the Run capabilities), `targets` (array of object ids; pass `[]` if none), `payload` (command-kind-specific object).
-**Description:** Issue a control command. The tool POSTs with stable `actorId: "actor:samsinn:<agent-slug>"` and `clientId: "client:samsinn:<agent-slug>"` for full provenance in Leitbild's journal. Returns the immediate accept/reject result; live downstream events are visible to other Room participants via the Room mirror. The issuing Agent does not see its own command echo because bound Agents suppress mirrored copies.
-**Returns:** `{ ok: true, commandId, acceptedAt }` on accept; `{ ok: false, commandId, rejectedAt, reason }` on reject.
-
-**Note:** `lb_reset` and `lb_clock_set` are intentionally NOT exposed as agent tools — reset invalidates reasoning context and clock control alters experiment timing. Both stay human-only.
-
----
+Agents interact with other Workspace Modules through the generic Resource and Capability tools. Capability grants identify allowed operations; Resource identities are discovered and selected at invocation time rather than persisted in Agent profiles.
 
 ## Adding External Tools
 

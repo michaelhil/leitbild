@@ -4,9 +4,9 @@
 // Builds the shared runtime, the WorkspaceRuntimeRegistry, the WS manager, the
 // janitor, and either the HTTP+WS server or the headless MCP stdio server.
 //
-// Multi-tenant: WorkspaceRuntimeRegistry holds N per-cookie systems. Each one is
+// Multi-Workspace: WorkspaceRuntimeRegistry holds N URL-scoped runtimes. Each one is
 // lazy-loaded on first request, evicted after SAMSINN_IDLE_MS (default
-// 30 min), and persisted at $SAMSINN_HOME/Workspaces/<id>/snapshot.json.
+// 30 min), and persisted in independent Collaboration and Agents Module shards.
 // Shared runtime: provider router, gateways, ProviderKeys, MCP tools.
 //
 // === Construction order (matters; do not reshuffle without thinking) ===
@@ -18,17 +18,17 @@
 //   4. WorkspaceRuntimeRegistry — onWorkspaceRuntimeCreated hook closes over wsManager (set in 5).
 //   5. wsManager      — assigned BEFORE any registry.getOrLoad runs, so
 //                       the hook always sees a defined value. Failure to
-//                       respect this is how 5d73a8e happened: any cookie-
-//                       bound Workspace whose onWorkspaceRuntimeCreated fired with
+//                       respect this is how 5d73a8e happened: any lazily loaded
+//                       Workspace whose onWorkspaceRuntimeCreated fired with
 //                       wsManager undefined silently skipped wireWorkspaceRuntimeEvents.
 //   6. Pack admin     — install/update/uninstall_pack registered last
 //                       because they need the cross-Workspace refresh
 //                       callback that walks `registry.list()`.
-//   7. Boot system    — getOrLoad seeds the first cookieless visitor.
-//                       wsManager already exists; onWorkspaceRuntimeCreated wires it.
+//   7. First runtime  — the Workspace Host provisions Modules, then the
+//                       URL-scoped request triggers getOrLoad.
 //   8. Janitor + timers + HTTP server.
 //
-// Single wiring path: every Workspace (boot AND cookie-bound) gets its
+// Single wiring path: every loaded Workspace gets its
 // broadcasts wired by the same onWorkspaceRuntimeCreated hook. There is NO rescue
 // branch elsewhere in this file. If you find yourself reaching for one,
 // the lifecycle invariant above is broken — fix it there.
@@ -46,8 +46,8 @@ import { createPolicyStore } from './llm/llm-policy-store.ts'
 import { asAIAgent } from './agents/shared.ts'
 import { warmProviderModels } from './llm/providers-setup.ts'
 import { parseLogConfigFromEnv } from './logging/config.ts'
-import { sharedPaths, workspacePaths } from './core/paths.ts'
-import { appendPendingScrub } from './core/storage/snapshot.ts'
+import { sharedPaths, workspaceModulePaths } from './core/paths.ts'
+import { appendCollaborationPendingScrub } from './core/storage/module-snapshots.ts'
 import { createToolRegistry } from './core/tool-registry.ts'
 import { wireWorkspaceRuntimeEvents } from './api/wire-workspace-runtime-events.ts'
 import { wireAgentTracking } from './api/agent-tracking.ts'
@@ -62,15 +62,18 @@ import {
   createWebTools, createWriteSkillTool, createWriteToolTool, createPackTools,
   createGeoLookupTool, createGeoAddTool, createGeoRemoveTool, createGeoListCategoriesTool, createGeoListFeaturesTool,
 } from './tools/built-in/index.ts'
-import { createLocalWorkspaceDirectory } from './core/workspaces/directory.ts'
+import { createSamsinnModuleState } from './core/workspaces/module-state.ts'
 import { newWorkspaceId, type WorkspaceId } from '@samsinn-leitbild/platform-contracts'
-import type { WorkspaceAdmin } from './api/routes/types.ts'
 
 const DRAIN_TIMEOUT_MS = 5_000
 
 export const bootstrap = async (): Promise<void> => {
   const headless = process.argv.includes('--headless')
   const ephemeral = process.env.SAMSINN_EPHEMERAL === '1'
+  const workspaceHostUrl = process.env.WORKSPACE_HOST_URL
+  if (!headless && workspaceHostUrl === undefined) {
+    throw new Error('WORKSPACE_HOST_URL is required: Samsinn is entered through the Workspace Host')
+  }
 
   if (headless) {
     const stderrLog = (...args: unknown[]) => console.error(...args)
@@ -84,10 +87,7 @@ export const bootstrap = async (): Promise<void> => {
   // in commits f04e61e / d0c1f73 / 3729e50 surfaced; isolating the order
   // keeps the contract obvious.
   const { providerConfig, deployment } = await buildProviderStack()
-  const workspaceDirectory = createLocalWorkspaceDirectory({
-    path: sharedPaths.workspaceDirectory(),
-    defaultDisplayName: 'Samsinn Workspace',
-  })
+  const moduleState = createSamsinnModuleState()
   const providerSetup = deployment.providerSetup
 
   // Load LLM policy (system default fallback chain). Persisted at
@@ -230,80 +230,6 @@ export const bootstrap = async (): Promise<void> => {
   deployment.sharedToolRegistry.register(createGeoRemoveTool())
   deployment.sharedToolRegistry.register(createGeoListCategoriesTool())
   deployment.sharedToolRegistry.register(createGeoListFeaturesTool())
-  // Leitbild Agent tools are visible to all Rooms, but each requires
-  // the caller's agent to have a leitbildBinding in its config (otherwise
-  // returns an explanatory error). Tool execution looks up the binding via
-  // the closure below at call time; team is finalized by then.
-  {
-    const { createLeitbildTools } = await import('./integrations/leitbild/tools.ts')
-    const getLeitbildBinding = (agentId: string): import('./integrations/leitbild/types.ts').ResolvedLeitbildAgentBinding | undefined => {
-      for (const meta of registry.list()) {
-        const sys = registry.tryGetLive(meta.id)
-        if (!sys) continue
-        const agent = sys.team.getAgent(agentId)
-        if (!agent || agent.kind !== 'ai') continue
-        const cfg = (agent as { getConfig?: () => { leitbildBinding?: import('./core/types/agent.ts').LeitbildAgentBinding } }).getConfig?.()
-        const moduleBinding = sys.settings.getModuleBinding('leitbild')
-        if (cfg?.leitbildBinding && moduleBinding) {
-          return {
-            moduleBinding,
-            workspaceId: meta.id,
-            simulationRunId: cfg.leitbildBinding.simulationRunId,
-            role: cfg.leitbildBinding.role,
-          }
-        }
-      }
-      return undefined
-    }
-    // Audit Finding 2.1.3: getScope returns the cookie-bound Workspace id
-    // that owns the agent, so the underlying LeitbildClient pool is keyed
-    // per-tenant — two tenants binding to the same Leitbild deployment
-    // get isolated WS connections + manifest caches.
-    const getLeitbildScope = (agentId: string): WorkspaceId | undefined => {
-      return registry.workspaceForAgent(agentId)
-    }
-    for (const tool of createLeitbildTools({ getBinding: getLeitbildBinding, getScope: getLeitbildScope })) {
-      deployment.sharedToolRegistry.register(tool)
-    }
-    // Command tool (operator role only — enforced at execution time
-    // inside the tool, not at registration time). Same lookup for binding,
-    // plus a name resolver so the actor/client slug is human-readable.
-    const { createLeitbildCommandTools } = await import('./integrations/leitbild/command-tools.ts')
-    const getAgentName = (agentId: string): string | undefined => {
-      for (const meta of registry.list()) {
-        const sys = registry.tryGetLive(meta.id)
-        if (!sys) continue
-        const agent = sys.team.getAgent(agentId)
-        if (agent) return agent.name
-      }
-      return undefined
-    }
-    for (const tool of createLeitbildCommandTools({ getBinding: getLeitbildBinding, getAgentName, getScope: getLeitbildScope })) {
-      deployment.sharedToolRegistry.register(tool)
-    }
-    // The screenshot tool requires a connected
-    // browser session — broadcasts via wsManager.broadcastToWorkspace,
-    // first responder wins. See src/integrations/leitbild/screenshot-tool.ts.
-    const { createLeitbildScreenshotTool } = await import('./integrations/leitbild/screenshot-tool.ts')
-    const screenshotTool = createLeitbildScreenshotTool({
-      broadcastToWorkspace: (id, msg) => wsManager.broadcastToWorkspace(id, msg),
-      getScope: getLeitbildScope,
-      getRoomByName: (roomName: string) => {
-        // ctx.roomId in tool execution is set to the trigger room ID
-        // (see ai-agent.ts callContext), but our agent tools tend to be
-        // called with the ROOM NAME. Lookup by name → first matching
-        // live system's room.
-        for (const meta of registry.list()) {
-          const sys = registry.tryGetLive(meta.id)
-          if (!sys) continue
-          const room = sys.rooms.getRoom(roomName)
-          if (room) return room
-        }
-        return undefined
-      },
-    })
-    deployment.sharedToolRegistry.register(screenshotTool)
-  }
   // Wikis used to be a fetched-content subsystem. As of commit N, packs
   // declare wiki URLs as metadata only (pack.json `wikis: [{ name, url }]`)
   // and samsinn never fetches them — they're external links surfaced in
@@ -343,16 +269,11 @@ export const bootstrap = async (): Promise<void> => {
   // runs synchronously before any registry consumer code.
   let wsManager!: ReturnType<typeof createWSManager>
 
-  // Leitbild mirror service — created eagerly so the onWorkspaceRuntimeCreated hook
-  // can call restoreAll(system.rooms) for any room with persisted
-  // leitbildMirror config. Without this, restored mirrors stay dormant
-  // until a human hits the mirror endpoint (lazy reattach).
-  const { createMirrorService } = await import('./integrations/leitbild/mirror-service.ts')
-  const leitbildMirror = createMirrorService({ limitMetrics: deployment.limitMetrics })
-
   // === WorkspaceRuntimeRegistry ===
   const registry = createWorkspaceRuntimeRegistry({
     deployment,
+    moduleState,
+    ...(workspaceHostUrl === undefined ? {} : { workspaceHostUrl }),
     // Lazy validateBootstrap: fires once on the first successful getOrLoad.
     // Replaces the boot-time call against a throwaway boot system. Contract
     // still runs before any traffic actually reaches a System; we just
@@ -375,12 +296,6 @@ export const bootstrap = async (): Promise<void> => {
       } catch (err) {
         console.error(`[logging] failed to apply boot config: ${err instanceof Error ? err.message : String(err)}`)
       }
-      const workspaceRecord = await workspaceDirectory.get(id)
-      if (!workspaceRecord) throw new Error(`Workspace is not registered: ${id}`)
-      for (const existing of system.settings.listModuleBindings()) {
-        system.settings.removeModuleBinding(existing.moduleId)
-      }
-      for (const binding of workspaceRecord.modules) system.settings.setModuleBinding(binding)
       // Track agents for provider-event routing. Walk existing agents from
       // any snapshot restore; wrap spawn/remove for new ones.
       for (const agent of system.team.listAgents()) {
@@ -402,15 +317,6 @@ export const bootstrap = async (): Promise<void> => {
       // above). autoSaver is passed in directly because the registry map
       // entry isn't set until buildWorkspaceRuntime returns.
       wireWorkspaceRuntimeEvents(system, wsManager, autoSaver, id)
-      // Reattach any Leitbild mirrors whose room config was restored from
-      // snapshot. Without this, mirrors stay dormant until the lazy
-      // reattach-on-GET fires (which requires a human or agent hitting
-      // the endpoint). Fire-and-forget; mirror.attach handles its own
-      // errors by posting a [mirror error] system message.
-      const moduleBinding = system.settings.getModuleBinding('leitbild')
-      if (moduleBinding) {
-        void leitbildMirror.restoreAll(system.rooms, { moduleBinding, workspaceId: id }, id)
-      }
     },
     onWorkspaceRuntimeEvicted: (system, id) => {
       // Close WS sessions for this Workspace — they hold dangling references.
@@ -552,9 +458,9 @@ export const bootstrap = async (): Promise<void> => {
       const scrubPromises: Promise<unknown>[] = []
       for (const meta of registry.list()) {
         if (registry.tryGetLive(meta.id)) continue  // handled by live loop above
-        const snapshotPath = workspacePaths(meta.id).snapshot
+        const snapshotPath = workspaceModulePaths(meta.id).collaboration.snapshot
         scrubPromises.push(
-          appendPendingScrub(snapshotPath, { packId: packId, scheduledAt })
+          appendCollaborationPendingScrub(snapshotPath, { packId: packId, scheduledAt })
             .then(result => {
               if (!result.applied && result.reason && result.reason !== 'no snapshot file' && result.reason !== 'already queued') {
                 console.warn(`[packs] could not queue scrub for evicted Workspace ${meta.id}: ${result.reason}`)
@@ -671,6 +577,8 @@ export const bootstrap = async (): Promise<void> => {
   if (headless) {
     // Headless: fresh Workspace per process boot. No janitor or eviction.
     const headlessId = newWorkspaceId()
+    await moduleState.provision(headlessId, 'collaboration')
+    await moduleState.provision(headlessId, 'agents')
     const system = await registry.getOrLoad(headlessId)
 
     // wsManager not used in headless mode; create a stub so wireWorkspaceRuntimeEvents
@@ -715,11 +623,9 @@ export const bootstrap = async (): Promise<void> => {
   }
 
   // === HTTP mode ===
-  // No boot system. The first cookieless visitor (or a cookie-bound one)
-  // creates their Workspace lazily via the HTTP path. validateBootstrap
-  // runs on that first getOrLoad via onFirstLoad above. This eliminates
-  // the boot-orphan Workspace dir that watch-mode reloads used to mint on
-  // every restart — see commit log for the empty-Workspace-accumulation fix.
+  // No boot Workspace. The Workspace Host provisions Module membership;
+  // the first URL-scoped application request loads that state. validateBootstrap
+  // runs on the first getOrLoad via onFirstLoad above.
 
   // Warm provider model caches. Awaited synchronously: B3 of the audit
   // requires that warm complete BEFORE we accept traffic, so the router's
@@ -800,13 +706,8 @@ export const bootstrap = async (): Promise<void> => {
     }
   }, 60 * 60 * 1000)
 
-  // === Per-Workspace reset ===
-  // Trashes the cookie's Workspace dir; the same id persists. Browser
-  // reconnects → registry creates fresh empty RoomDirectory under the same id.
-  const resetWorkspace = async (req: Request) => {
-    const { getWorkspaceId } = await import('./api/workspace-cookie.ts')
-    const id = getWorkspaceId(req)
-    if (!id) return { ok: false as const, reason: 'no Workspace cookie' }
+  // Reset both Samsinn Module shards while preserving the Host-owned Workspace.
+  const resetWorkspace = async (id: WorkspaceId) => {
     try {
       await registry.resetWorkspaceState(id)
       return { ok: true as const, workspaceId: id }
@@ -815,47 +716,17 @@ export const bootstrap = async (): Promise<void> => {
     }
   }
 
-  // === Per-Workspace evict ===
-  // Drops the cookie's System from memory; the on-disk snapshot is
-  // untouched, so the next request lazy-reloads via restoreFromSnapshot.
+  // Drop the Workspace runtime from memory while leaving both Module
+  // snapshots untouched. The next URL-scoped request reloads it.
   // Used by the post-deploy streaming probe to exercise the
   // evict→reload boundary that hid the unsubscribeAgentState bug.
-  const evictWorkspace = async (req: Request) => {
-    const { getWorkspaceId } = await import('./api/workspace-cookie.ts')
-    const id = getWorkspaceId(req)
-    if (!id) return { ok: false as const, reason: 'no Workspace cookie' }
+  const evictWorkspace = async (id: WorkspaceId) => {
     try {
       await registry.evictOne(id)
       return { ok: true as const, workspaceId: id }
     } catch (err) {
       return { ok: false as const, reason: err instanceof Error ? err.message : String(err) }
     }
-  }
-
-  // === Workspace administration ===
-  const { buildWorkspaceCookie } = await import('./api/workspace-cookie.ts')
-  const workspacesAdmin: WorkspaceAdmin = {
-    list: async () => {
-      const [records, stored] = await Promise.all([workspaceDirectory.list(), registry.listOnDisk()])
-      const storedById = new Map(stored.map(entry => [entry.id, entry]))
-      const liveIds = new Set(registry.list().map(meta => meta.id))
-      return records.map(record => {
-        const moduleState = storedById.get(record.id)
-        return {
-          id: record.id,
-          displayName: record.displayName,
-          snapshotMtimeMs: moduleState?.snapshotMtimeMs ?? 0,
-          snapshotSizeBytes: moduleState?.snapshotSizeBytes ?? 0,
-          isLive: liveIds.has(record.id),
-        }
-      })
-    },
-    create: async (displayName = 'Samsinn Workspace') => {
-      const id = newWorkspaceId()
-      await workspaceDirectory.ensure({ id, displayName })
-      return { id }
-    },
-    buildSwitchCookie: (id, req) => buildWorkspaceCookie(id, req),
   }
 
   // === Diagnostics capability ===
@@ -896,14 +767,13 @@ export const bootstrap = async (): Promise<void> => {
   const { createServer } = await import('./api/server.ts')
   createServer({
     registry,
-    workspaceDirectory,
+    moduleState,
     wsManager,
     port: parseInt(process.env.PORT ?? String(DEFAULTS.port), 10),
     resetWorkspace,
     evictWorkspace,
-    workspaces: workspacesAdmin,
     diagnostics,
-    leitbildMirror,
+    workspaceHostUrl,
   })
 
   // === Graceful shutdown ===

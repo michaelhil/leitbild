@@ -2,18 +2,22 @@
 
 Samsinn is a multi-agent collaboration system. Humans and AI Agents work together in Rooms, with configurable delivery, tools, scripts, knowledge, and persistent Workspace state.
 
-Samsinn is independently deployable. It can also share a Workspace identity with Leitbild through the optional suite without importing Leitbild code or depending on the suite at runtime.
+Samsinn is independently deployable as two composable Workspace Modules. It imports no Leitbild code. A Workspace Host can compose it with Microworld or future Modules through shared contracts.
 
 ## Architecture
 
 - A **Deployment** is one running Samsinn installation and owns provider configuration plus installed Packs.
-- A **Workspace** is an isolated Samsinn data shard with its own Rooms, Agents, settings, messages, documents, logs, and vector index.
+- A **Workspace** is an opaque UUID owned by the Workspace Host.
+- The **Collaboration Module** owns Rooms, messages, membership, documents, and collaboration behavior.
+- The **Agents Module** owns AI Agent Profiles, model execution settings, tools, memory, and evaluations.
 - A **Room** is a durable collaboration space inside one Workspace.
 - An **Agent** is a human or AI collaboration identity inside one Workspace.
 - A **Pack** is a strict, Samsinn-specific extension installed at Deployment scope and activated per Room.
 - A **Capability Manifest** is derived from the effective Pack descriptors; it is never a second source of truth.
 
-Workspace identity is an opaque UUID. Display names and Room names are not identity. Cross-Workspace reads, writes, realtime subscriptions, and persistence paths are rejected by construction.
+The Modules share one runtime process today but publish separate manifests, lifecycle endpoints, state markers, snapshots, Resources, and Capabilities. They can be enabled independently without pretending their domain state has one owner.
+
+Workspace identity is URL-carried. No local directory, display name, cookie, or Samsinn record is allowed to become a second Workspace authority. Cross-Workspace reads, writes, realtime subscriptions, and persistence paths are rejected by construction.
 
 The canonical domain language is documented in [CONTEXT.md](CONTEXT.md). The cross-application boundaries are documented in the repository [context map](../../CONTEXT-MAP.md).
 
@@ -27,7 +31,7 @@ ollama pull llama3.2       # optional local provider
 bun run start
 ```
 
-Open `http://localhost:3000`. A standalone Deployment creates and selects a local default Workspace automatically.
+Run the Workspace Host and set `WORKSPACE_HOST_URL` for the Samsinn process. Enter through the Host; it creates and provisions Workspaces. Headless MCP mode can explicitly provision a local Workspace for its process-scoped session.
 
 Useful commands:
 
@@ -39,26 +43,31 @@ bun run build:css
 bun run headless
 ```
 
-## Workspaces and sharing
+## Workspaces and composition
 
-The Workspace Directory owns only Workspace metadata and Module Bindings. Samsinn owns all collaboration state beneath that identity.
+The Workspace Host is the sole owner of Workspace identity, names, enabled Module membership, and composition. Samsinn accepts Host-supplied UUIDs only through each Module's lifecycle endpoint and owns only its Module data beneath that identity.
 
-- `GET /api/workspaces` lists Workspaces.
-- `POST /api/workspaces` creates a Workspace with a generated UUID.
-- `PUT /api/workspaces/{workspaceId}` idempotently provisions a caller-supplied UUID, which is how the suite coordinates modules.
-- Navigate to `/workspaces/{workspaceId}` to select an existing Workspace in the browser.
-- `/workspaces/{workspaceId}` is the canonical UI and share URL.
+- The Host provisions Collaboration and Agents independently.
+- `/workspaces/{workspaceId}/samsinn` is Samsinn's specialized application URL.
+- `/workspaces` is the Host-managed Workspace collection UI.
+- Agents discover the current Workspace's Resources and Capabilities through the Host.
+- Agent Tool Grants store Capability ids only. The Agent selects a Resource at invocation time.
 
-Module Bindings are stored once on the Workspace. Rooms and Agents never copy application base URLs or discovery URLs.
+Rooms and Agents never copy Module base URLs, discovery URLs, or external Resource ids.
 
 ## API
 
 Samsinn has one versionless public API. There are no old aliases, redirects, alternate response shapes, or version negotiation.
 
-Discovery is available at:
+Module discovery and lifecycle are available at:
 
 ```text
-GET /.well-known/samsinn
+GET /.well-known/workspace-module/collaboration
+GET /.well-known/workspace-module/agents
+PUT|DELETE /internal/{moduleId}/workspaces/{workspaceId}
+GET /internal/{moduleId}/workspaces/{workspaceId}/resources
+GET /internal/{moduleId}/workspaces/{workspaceId}/capabilities
+POST /internal/{moduleId}/workspaces/{workspaceId}/capabilities/{capabilityId}/invoke
 ```
 
 Deployment resources are intentionally unscoped:
@@ -67,8 +76,6 @@ Deployment resources are intentionally unscoped:
 /api/auth
 /api/system/info
 /api/system/diagnostics
-/api/workspaces
-/api/packs
 ```
 
 All collaboration resources are Workspace-scoped:
@@ -80,11 +87,11 @@ All collaboration resources are Workspace-scoped:
 /api/workspaces/{workspaceId}/messages
 /api/workspaces/{workspaceId}/scripts
 /api/workspaces/{workspaceId}/documents
-/api/workspaces/{workspaceId}/capabilities
+/api/workspaces/{workspaceId}/packs
 /api/workspaces/{workspaceId}/ws
 ```
 
-The browser UI uses the selected Workspace cookie only to construct these explicit paths. The server validates that the path Workspace, cookie Workspace, and realtime scope agree.
+The browser derives Workspace identity only from the URL. The server rejects unscoped application routes.
 
 REST, WebSocket, and MCP are intentional task interfaces over the same Workspace runtime; they are not required to expose identical transport operations.
 
@@ -120,19 +127,15 @@ Malformed manifests, duplicate ids, missing dependencies, and unsupported contri
 
 Authored local extensions use the same layout under `$SAMSINN_HOME/packs/local/`. Samsinn does not migrate or interpret older extension layouts.
 
-## Leitbild integration
+## Cross-Module tools
 
-A Workspace may contain a Leitbild Module Binding. A Samsinn Room may then bind to one opaque Leitbild Simulation Run id and choose an observer or operator role.
+Samsinn contains no Microworld- or application-specific integration client. When the Workspace contains other Modules, AI Agents use three generic tools:
 
-The integration client:
+- `workspace_resources` discovers live Resource descriptors;
+- `workspace_capabilities` discovers callable operations;
+- `workspace_invoke` invokes a granted Capability against a Resource selected for that call.
 
-- discovers Leitbild through the Workspace Module Binding;
-- uses only the canonical Workspace-scoped links advertised by Leitbild;
-- mirrors ordered Run events into a Room when enabled;
-- exposes Run state, object, Scenario, Pack query, and operator command tools;
-- rejects alternate discovery and response shapes rather than guessing.
-
-Neither a Room nor an Agent may supply a Leitbild base URL. Topology belongs to the Workspace; the Room binding contains only the Simulation Run id and role.
+This keeps Agent behavior configurable and makes future Modules available without adding another Samsinn integration subsystem. Continuous event-driven behavior is a separate explicit Binding concern; ordinary discovery and commands do not create Bindings.
 
 ## Persistence
 
@@ -140,18 +143,23 @@ Neither a Room nor an Agent may supply a Leitbild base URL. Topology belongs to 
 
 ```text
 $SAMSINN_HOME/
-  workspace-directory.json
   providers.json
   llm-policy.json
   packs/
-  workspaces/{workspaceId}/samsinn/
-    snapshot.json
-    logs/
-    memory/
-    vectors.jsonl
+  workspaces/{workspaceId}/
+    collaboration/
+      workspace.json
+      snapshot.json
+      logs/
+      documents/
+    agents/
+      workspace.json
+      snapshot.json
+      memory/
+      vectors.jsonl
 ```
 
-Snapshot `29` is the only accepted Samsinn runtime snapshot shape. Module Bindings live in the Workspace Directory, not in the snapshot. Unsupported snapshots are rejected; there is no migration ladder or compatibility parser.
+Each Module accepts only its current strict snapshot shape. Unsupported or cross-owned fields are rejected; there is no migration ladder, compatibility parser, or combined legacy snapshot.
 
 ## Configuration and auth posture
 
@@ -160,10 +168,10 @@ Provider keys are configured through Settings or environment variables and are n
 Authentication remains deliberately simple while the architecture stabilizes:
 
 - without `SAMSINN_TOKEN`, the Deployment is open;
-- with `SAMSINN_TOKEN`, shared-token login issues a session cookie;
+- with `SAMSINN_TOKEN`, shared-token login issues an authentication session cookie;
 - every application use case already carries explicit Workspace and access context so richer policy can be added without changing domain signatures.
 
-Access policy does not alter Workspace identity or resource ownership.
+The session cookie authenticates access only; it never selects a Workspace. Access policy does not alter Workspace identity or resource ownership.
 
 ## Development and deployment
 

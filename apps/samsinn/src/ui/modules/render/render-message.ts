@@ -65,7 +65,7 @@ export const renderMessage = (opts: RenderMessageOptions): void => {
     agents instanceof Map ? agents.get(id) : agents[id]
 
   const isRoutineExternalMirror =
-    msg.cause?.kind === 'external-mirror' &&
+    msg.cause?.kind === 'resource-event' &&
     !msg.content.includes('mirror error') &&
     !msg.content.includes('SIMULATION RUN RESET')
   if (isRoutineExternalMirror) return

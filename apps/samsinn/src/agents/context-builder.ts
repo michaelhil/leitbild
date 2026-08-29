@@ -189,12 +189,6 @@ export interface BuildContextDeps {
   readonly promptsEnabled?: boolean              // group master for includePrompts; false forces all off
   readonly contextEnabled?: boolean              // group master for includeContext; false forces all off
   readonly contextTokenBudget?: number           // token budget for system+history (derived from model window)
-  // When true, drop Room-mirror messages (cause.kind === 'external-mirror').
-  // from the agent's LLM context EXCEPT reset-boundary messages. The bound
-  // agent has direct lb_* tools and doesn't need narrative duplication;
-  // reset boundaries still pass through so the agent knows its mental model
-  // was invalidated.
-  readonly suppressLeitbildMirror?: boolean
   // V0.15: when true, messages with image attachments forward the images
   // to the LLM as multimodal content parts. When false, images are replaced
   // with a text placeholder explaining what's attached so the model can ask
@@ -563,18 +557,9 @@ const createNormalStrategy = (
     const ctx = deps.history.rooms.get(triggerRoomId)
     const allRaw = ctx?.history ?? []
     const freshRaw = deps.history.incoming.filter(m => m.roomId === triggerRoomId)
-    // Bound-Agent filter: drop external-mirror messages except reset
-    // boundaries. Applied before historyLimit slicing so the budget counts
-    // only messages the agent actually sees.
-    const keepMessage = (m: { cause?: { kind?: string; name?: string } }): boolean => {
-      if (!deps.suppressLeitbildMirror) return true
-      if (m.cause?.kind !== 'external-mirror') return true
-      // Reset boundaries always pass through.
-      return typeof m.cause.name === 'string' && m.cause.name.includes(':reset-boundary')
-    }
-    const all = allRaw.filter(keepMessage)
+    const all = allRaw
     const old = all.length > deps.historyLimit ? all.slice(-deps.historyLimit) : all
-    const fresh = freshRaw.filter(keepMessage)
+    const fresh = freshRaw
     const roomCompressedIds = deps.getCompressedIds?.(triggerRoomId)
 
     const formattedOld: ChatRequest['messages'][number][] = []

@@ -11,7 +11,6 @@
 import type { SamsinnWorkspaceRuntime } from '../main.ts'
 import type { WSOutbound } from '../core/types/ws-protocol.ts'
 import { authEnabled, isValidSession, sessionFromRequest } from './auth.ts'
-import { getWorkspaceId } from './workspace-cookie.ts'
 import { runtimeRoutes } from './routes/runtime.ts'
 import { workspaceSettingsRoutes } from './routes/workspace-settings.ts'
 import { skillRoutes } from './routes/skills.ts'
@@ -35,7 +34,6 @@ import { scriptRoutes } from './routes/scripts.ts'
 import { geodataRoutes } from './routes/geodata.ts'
 import { documentRoutes } from './routes/documents.ts'
 import { diagnosticRoutes } from './routes/diagnostics.ts'
-import { leitbildMirrorRoutes } from './routes/leitbild-mirror.ts'
 import { capabilityRoutes } from './routes/capabilities.ts'
 import type { RouteContext } from './routes/types.ts'
 import type { AccessContext, WorkspaceId } from '@samsinn-leitbild/platform-contracts'
@@ -66,13 +64,11 @@ const allRoutes = [
   ...bookmarkRoutes,
   // Scripts before rooms (avoids /rooms/:name/script being shadowed)
   ...scriptRoutes,
-  // Geodata routes — process-wide, no Workspace binding.
+  // Geodata routes use Workspace-scoped application paths even though the
+  // underlying catalog is process-wide.
   ...geodataRoutes,
   // RAG documents — per-Workspace corpus.
   ...documentRoutes,
-  // Leitbild mirror — must come BEFORE roomRoutes so
-  // /rooms/:name/leitbild-mirror matches before the generic /rooms/:name.
-  ...leitbildMirrorRoutes,
   ...roomRoutes,
   // Agent-memory routes BEFORE agentRoutes so /agents/:name/memory
   // matches before /agents/:name (which would shadow it).
@@ -98,21 +94,17 @@ export interface RouteDeps {
   readonly resetWorkspace?: RouteContext['resetWorkspace']
   readonly evictWorkspace?: RouteContext['evictWorkspace']
   readonly broadcastToWorkspace?: RouteContext['broadcastToWorkspace']
-  readonly workspaces?: RouteContext['workspaces']
   readonly diagnostics?: RouteContext['diagnostics']
-  readonly leitbildMirror?: RouteContext['leitbildMirror']
 }
 
-// Routes that are process-global and intentionally usable before an
-// Workspace cookie exists. Dispatch them before registry.getOrLoad: passing
-// these through the per-Workspace dispatcher used to materialize a seeded
-// Workspace for every diagnostics/auth/info probe.
+// Routes that are process-global and intentionally usable without a
+// Workspace URL. Dispatch them before registry.getOrLoad.
 export const handleUnscopedAPI = async (
   req: Request,
   pathname: string,
   deps: Pick<RouteDeps, 'remoteAddress' | 'diagnostics'>,
 ): Promise<Response | null> => {
-  if (pathname === '/health' && req.method === 'GET' && getWorkspaceId(req) === null) {
+  if (pathname === '/health' && req.method === 'GET') {
     const diagnostics = deps.diagnostics?.snapshot() ?? { workspaces: [], wsSessions: 0 }
     return json({
       status: 'ok',

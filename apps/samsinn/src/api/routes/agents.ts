@@ -3,7 +3,8 @@ import { asAIAgent } from '../../agents/shared.ts'
 import { toolsToDefinitions } from '../../llm/tool-capability.ts'
 import { modelSupportsTools } from '../../llm/models/catalog.ts'
 import { estimateTokens } from '../../agents/context-builder.ts'
-import type { ContextSection, IncludeContext, IncludePrompts, LeitbildAgentBinding, PromptSection } from '../../core/types/agent.ts'
+import type { ContextSection, IncludeContext, IncludePrompts, PromptSection } from '../../core/types/agent.ts'
+import { toolGrantSetSchema } from '@samsinn-leitbild/platform-contracts'
 import type { ToolRegistry } from '../../core/types/tool.ts'
 import type { SamsinnWorkspaceRuntime } from '../../main.ts'
 import type { RouteEntry } from './types.ts'
@@ -16,18 +17,6 @@ import { parsePrefixedModel } from '../../llm/models/parse-prefix.ts'
 // neither knows about it. Result is informational — callers do NOT block
 // on it. Effective-model resolution at call time picks a working fallback.
 type ModelStatus = 'ok' | 'unavailable' | 'unverified'
-
-const parseLeitbildAgentBinding = (raw: unknown): LeitbildAgentBinding | { readonly error: string } => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { error: 'leitbildBinding must be an object' }
-  const body = raw as Record<string, unknown>
-  const unexpected = Object.keys(body).filter(key => key !== 'simulationRunId' && key !== 'role')
-  if (unexpected.length > 0) return { error: `leitbildBinding has unexpected fields: ${unexpected.join(', ')}` }
-  if (typeof body.simulationRunId !== 'string' || !/^run-[0-9a-f-]{36}$/.test(body.simulationRunId)) {
-    return { error: 'leitbildBinding.simulationRunId must be an opaque Simulation Run id' }
-  }
-  if (body.role !== 'observer' && body.role !== 'operator') return { error: 'leitbildBinding.role must be observer or operator' }
-  return { simulationRunId: body.simulationRunId, role: body.role }
-}
 
 const resolveModelStatus = async (system: SamsinnWorkspaceRuntime, requestedModel: string): Promise<ModelStatus> => {
   const ollamaAvailable = system.ollama?.getHealth().availableModels ?? []
@@ -121,8 +110,7 @@ export const agentRoutes: RouteEntry[] = [
         detail.promptsEnabled = aiAgent.getPromptsEnabled()
         detail.contextEnabled = aiAgent.getContextEnabled()
         detail.maxToolIterations = aiAgent.getMaxToolIterations()
-        const binding = aiAgent.getLeitbildBinding?.()
-        if (binding) detail.leitbildBinding = binding
+        detail.toolGrants = aiAgent.getToolGrants()
         // Registered tools + token cost estimates — enables per-tool UI panel
         const registered = system.toolRegistry.list().map(t => t.name)
         detail.registeredTools = registered
@@ -151,10 +139,10 @@ export const agentRoutes: RouteEntry[] = [
       // yellow warning chip; do NOT block creation. Effective-model
       // resolution at call time picks a working fallback.
       const requestedModel = body.model as string
-      const leitbildBinding = body.leitbildBinding === undefined
+      const toolGrants = body.toolGrants === undefined
         ? undefined
-        : parseLeitbildAgentBinding(body.leitbildBinding)
-      if (leitbildBinding && 'error' in leitbildBinding) return errorResponse(leitbildBinding.error, 400)
+        : toolGrantSetSchema.safeParse(body.toolGrants)
+      if (toolGrants && !toolGrants.success) return errorResponse(toolGrants.error.message, 400)
       const modelStatus = await resolveModelStatus(system, requestedModel)
       if (modelStatus === 'unavailable') {
         console.warn(`[agents] Model "${requestedModel}" not currently available — agent will use fallback when invoked.`)
@@ -171,7 +159,7 @@ export const agentRoutes: RouteEntry[] = [
           ...(body.tools && Array.isArray(body.tools)
             ? { tools: (body.tools as unknown[]).filter((t): t is string => typeof t === 'string') }
             : {}),
-          ...(leitbildBinding === undefined ? {} : { leitbildBinding }),
+          ...(toolGrants === undefined ? {} : { toolGrants: toolGrants.data }),
         })
         const aiA = asAIAgent(agent)
         const evt = { type: 'agent_joined' as const, agent: { id: agent.id, name: agent.name, kind: agent.kind, ...(aiA ? { model: aiA.getModel() } : {}) } }
@@ -275,13 +263,10 @@ export const agentRoutes: RouteEntry[] = [
           aiAgent.updateTools?.(resolved)
           await system.refreshAllAgentTools()
         }
-        // Leitbild binding — accept full replacement or explicit null to clear.
-        if (body.leitbildBinding === null) {
-          aiAgent.updateLeitbildBinding?.(undefined)
-        } else if (body.leitbildBinding !== undefined) {
-          const binding = parseLeitbildAgentBinding(body.leitbildBinding)
-          if ('error' in binding) return errorResponse(binding.error, 400)
-          aiAgent.updateLeitbildBinding?.(binding)
+        if (body.toolGrants !== undefined) {
+          const grants = toolGrantSetSchema.safeParse(body.toolGrants)
+          if (!grants.success) return errorResponse(grants.error.message, 400)
+          aiAgent.updateToolGrants(grants.data)
         }
       }
       if (typeof body.description === 'string' && agent.updateDescription) {

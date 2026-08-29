@@ -2,7 +2,7 @@ const workspaceIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9
 
 export const currentWorkspaceId = (): string => {
   if (typeof location === 'undefined') throw new Error('Samsinn Workspace URL is unavailable')
-  const match = location.pathname.match(/^\/workspaces\/([^/]+)$/)
+  const match = location.pathname.match(/^\/workspaces\/([^/]+)(?:\/samsinn)?$/)
   const value = match ? decodeURIComponent(match[1] ?? '') : ''
   if (!workspaceIdPattern.test(value)) {
     throw new Error('Samsinn Workspace URL is missing or invalid')
@@ -14,8 +14,6 @@ const isDeploymentPath = (path: string): boolean =>
   path === '/auth'
   || path === '/system/info'
   || path === '/system/diagnostics'
-  || path === '/workspaces'
-  || path.startsWith('/workspaces/')
   || path === '/packs'
   || path.startsWith('/packs/')
 

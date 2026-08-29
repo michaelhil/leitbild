@@ -13,32 +13,15 @@ export interface WorkspaceSettings {
   readonly setPrompt: (prompt: string) => void
   readonly getResponseFormat: () => string
   readonly setResponseFormat: (format: string) => void
-  readonly listModuleBindings: () => ReadonlyArray<ModuleBinding>
-  readonly getModuleBinding: (moduleId: ModuleId | string) => ModuleBinding | undefined
-  readonly setModuleBinding: (binding: ModuleBinding) => void
-  readonly removeModuleBinding: (moduleId: ModuleId | string) => boolean
 }
 
 export const createWorkspaceSettings = (): WorkspaceSettings => {
   let prompt = DEFAULT_WORKSPACE_PROMPT
   let responseFormat = DEFAULT_RESPONSE_FORMAT
-  const moduleBindings = new Map<string, ModuleBinding>()
   return {
     getPrompt: () => prompt,
     setPrompt: (next) => { prompt = next },
     getResponseFormat: () => responseFormat,
     setResponseFormat: (next) => { responseFormat = next },
-    listModuleBindings: () => [...moduleBindings.values()],
-    getModuleBinding: (moduleId) => moduleBindings.get(moduleId),
-    setModuleBinding: (binding) => {
-      const parsed = moduleBindingSchema.parse(binding)
-      moduleBindings.set(parsed.moduleId, parsed)
-    },
-    removeModuleBinding: (moduleId) => moduleBindings.delete(moduleId),
   }
 }
-import {
-  moduleBindingSchema,
-  type ModuleBinding,
-  type ModuleId,
-} from '@samsinn-leitbild/platform-contracts'

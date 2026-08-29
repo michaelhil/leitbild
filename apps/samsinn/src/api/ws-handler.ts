@@ -19,7 +19,6 @@ import { handleRoomCommand } from './ws-commands/room-commands.ts'
 import { handleAgentCommand } from './ws-commands/agent-commands.ts'
 import { handleMessageCommand } from './ws-commands/message-commands.ts'
 import { handleBiometricCommand } from './ws-commands/biometric-commands.ts'
-import { handleScreenshotCommand } from './ws-commands/screenshot-commands.ts'
 import { sendError } from './ws-commands/types.ts'
 import { validateWSInbound } from './ws-commands/validate.ts'
 import type { LimitMetrics } from '../core/limit-metrics.ts'
@@ -292,7 +291,6 @@ const commandHandlers = [
   handleRoomCommand,
   handleAgentCommand,
   handleBiometricCommand,
-  handleScreenshotCommand,
 ]
 
 // === Message Handler ===
@@ -303,7 +301,6 @@ export const handleWSMessage = async (
   raw: string,
   system: SamsinnWorkspaceRuntime,
   wsManager: WSManager,
-  leitbildMirror?: import('../integrations/leitbild/mirror-service.ts').MirrorService,
 ): Promise<void> => {
   let msg: WSInbound
   try {
@@ -328,7 +325,7 @@ export const handleWSMessage = async (
     return
   }
 
-  const ctx = { ws, session, system, broadcast: wsManager.broadcast, wsManager, leitbildMirror }
+  const ctx = { ws, session, system, broadcast: wsManager.broadcast, wsManager }
 
   try {
     for (const handler of commandHandlers) {

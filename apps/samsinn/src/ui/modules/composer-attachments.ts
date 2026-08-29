@@ -1,7 +1,6 @@
 // ============================================================================
 // Composer attachments — per-room pending image attachments for the chat
-// input. Used by the Leitbild iframe panel's screenshot button (and any
-// future "attach image" entry point).
+// input. Used by upload and future generic Resource image capabilities.
 //
 // Lifecycle:
 //   - addAttachment(roomId, attachment)  — pushed onto the pending list

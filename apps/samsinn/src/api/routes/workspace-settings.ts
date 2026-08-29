@@ -8,7 +8,6 @@ export const workspaceSettingsRoutes: RouteEntry[] = [
     handler: (_req, _match, { system }) => json({
       workspacePrompt: system.settings.getPrompt(),
       responseFormat: system.settings.getResponseFormat(),
-      modules: system.settings.listModuleBindings(),
     }),
   },
   {
@@ -26,7 +25,6 @@ export const workspaceSettingsRoutes: RouteEntry[] = [
       return json({
         workspacePrompt: system.settings.getPrompt(),
         responseFormat: system.settings.getResponseFormat(),
-        modules: system.settings.listModuleBindings(),
       })
     },
   },
