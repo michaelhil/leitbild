@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { isoTimestampSchema, moduleIdSchema, workspaceIdSchema } from './ids.ts'
+import { experienceIdSchema, isoTimestampSchema, moduleIdSchema, workspaceIdSchema } from './ids.ts'
 
 export const moduleFailureSchema = z.object({
   code: z.string().min(1).max(128).regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/),
@@ -43,14 +43,14 @@ export type Workspace = z.infer<typeof workspaceSchema>
 
 export const createWorkspaceInputSchema = z.object({
   name: z.string().trim().min(1).max(256).nullable().optional(),
-  moduleIds: z.array(moduleIdSchema).optional(),
+  experienceIds: z.array(experienceIdSchema).optional(),
 }).strict().superRefine((input, ctx) => {
   const seen = new Set<string>()
-  input.moduleIds?.forEach((moduleId, index) => {
-    if (seen.has(moduleId)) {
-      ctx.addIssue({ code: 'custom', path: ['moduleIds', index], message: `duplicate Module: ${moduleId}` })
+  input.experienceIds?.forEach((experienceId, index) => {
+    if (seen.has(experienceId)) {
+      ctx.addIssue({ code: 'custom', path: ['experienceIds', index], message: `duplicate Experience: ${experienceId}` })
     }
-    seen.add(moduleId)
+    seen.add(experienceId)
   })
 })
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceInputSchema>

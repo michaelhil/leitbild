@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { moduleRegistrationSchema } from '@samsinn-leitbild/platform-contracts'
+import { experienceDescriptorSchema, moduleRegistrationSchema } from '@samsinn-leitbild/platform-contracts'
 import { createServer as createMicroworldServer } from '../../../apps/leitbild/src/core/api/server.ts'
 import { createLocalWorkspaceDirectory } from '../../../apps/leitbild/src/core/workspaces/directory.ts'
 import { createLeitbildWorkspaceRuntimeRegistry } from '../../../apps/leitbild/src/core/workspaces/runtime-registry.ts'
@@ -51,6 +51,11 @@ describe('Workspace Host with the real Microworld Module', () => {
           manifestPath: '/.well-known/workspace-module',
         })],
       }),
+      experiences: [experienceDescriptorSchema.parse({
+        id: 'leitbild',
+        title: 'Leitbild',
+        requiredModules: ['microworld'],
+      })],
     })
     const hostServer = createWorkspaceHostServer({ host, bindHost: '127.0.0.1', port: 0 })
     cleanup.push(() => hostServer.stop(true))
@@ -59,7 +64,7 @@ describe('Workspace Host with the real Microworld Module', () => {
     const createdResponse = await fetch(`${baseUrl}/api/workspaces`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: null, moduleIds: ['microworld'] }),
+      body: JSON.stringify({ name: null, experienceIds: ['leitbild'] }),
     })
     expect(createdResponse.status).toBe(201)
     const workspace = (await createdResponse.json() as {

@@ -1,6 +1,10 @@
 import { resolve } from 'node:path'
 import { z } from 'zod'
-import { moduleIdSchema, moduleRegistrationSchema } from '@samsinn-leitbild/platform-contracts'
+import {
+  experienceDescriptorSchema,
+  experienceIdSchema,
+  moduleRegistrationSchema,
+} from '@samsinn-leitbild/platform-contracts'
 import { createWorkspaceHost } from './host.ts'
 import { createModuleGateway } from './module-gateway.ts'
 import { createWorkspaceHostServer } from './server.ts'
@@ -19,10 +23,13 @@ const parseEnvironmentJson = <T>(key: string, schema: z.ZodType<T>, fallback: T)
 }
 
 const registrations = parseEnvironmentJson('WORKSPACE_MODULES', z.array(moduleRegistrationSchema), [])
-const initialModuleIds = parseEnvironmentJson('INITIAL_MODULE_IDS', z.array(moduleIdSchema), [])
-const installed = new Set(registrations.map(registration => registration.moduleId))
-for (const moduleId of initialModuleIds) {
-  if (!installed.has(moduleId)) throw new Error(`INITIAL_MODULE_IDS contains an uninstalled Module: ${moduleId}`)
+const experiences = parseEnvironmentJson('WORKSPACE_EXPERIENCES', z.array(experienceDescriptorSchema), [])
+const initialExperienceIds = parseEnvironmentJson('INITIAL_EXPERIENCE_IDS', z.array(experienceIdSchema), [])
+const installedExperiences = new Set(experiences.map(experience => experience.id))
+for (const experienceId of initialExperienceIds) {
+  if (!installedExperiences.has(experienceId)) {
+    throw new Error(`INITIAL_EXPERIENCE_IDS contains an uninstalled Experience: ${experienceId}`)
+  }
 }
 
 const hostHome = resolve(process.env.WORKSPACE_HOST_HOME ?? './data/workspace-host')
@@ -30,10 +37,11 @@ const store = createWorkspaceStore(resolve(hostHome, 'workspaces.sqlite'))
 const host = createWorkspaceHost({
   store,
   modules: createModuleGateway({ registrations }),
+  experiences,
 })
 const server = createWorkspaceHostServer({
   host,
-  initialModuleIds,
+  initialExperienceIds,
   port: Number(process.env.PORT) || 3100,
   bindHost: process.env.BIND_HOST ?? '127.0.0.1',
 })
@@ -48,3 +56,4 @@ process.once('SIGTERM', shutdown)
 
 console.log(`Workspace Host listening on http://${server.hostname}:${server.port}`)
 console.log(`Installed Modules: ${registrations.map(registration => registration.moduleId).join(', ') || '(none)'}`)
+console.log(`Installed Experiences: ${experiences.map(experience => experience.id).join(', ') || '(none)'}`)

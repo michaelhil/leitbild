@@ -3,14 +3,16 @@ import {
   accessContextSchema,
   capabilityIdSchema,
   createWorkspaceInputSchema,
+  experienceIdSchema,
   invokeCapabilityInputSchema,
   moduleIdSchema,
   newRequestId,
   platformError,
   renameWorkspaceInputSchema,
   workspaceIdSchema,
-  type ModuleId,
+  type ExperienceId,
   type Workspace,
+  type WorkspaceExperience,
 } from '@samsinn-leitbild/platform-contracts'
 import { isHostError } from './errors.ts'
 import type { WorkspaceHost } from './host.ts'
@@ -40,28 +42,32 @@ document.querySelector('#create-workspace').addEventListener('submit',async even
 
 const moduleList = (workspace: Workspace): string => workspace.modules.map(item => `
 <li><strong>${escapeHtml(item.moduleId)}</strong> — ${escapeHtml(item.status)}
-${item.failure ? `<div class="failure">${escapeHtml(item.failure.message)}</div><button data-retry="${escapeHtml(item.moduleId)}">Retry</button>` : ''}
-<button class="danger" data-remove="${escapeHtml(item.moduleId)}">Remove</button></li>`).join('') || '<li>No Modules</li>'
+${item.failure ? `<div class="failure">${escapeHtml(item.failure.message)}</div><button data-retry="${escapeHtml(item.moduleId)}">Retry</button>` : ''}</li>`).join('') || '<li>No Modules</li>'
 
-const renderWorkspace = (workspace: Workspace, installedModuleIds: ReadonlyArray<ModuleId>): string => {
-  const joined = new Set(workspace.modules.map(item => item.moduleId))
-  const available = installedModuleIds.filter(moduleId => !joined.has(moduleId))
-  return shell(workspaceLabel(workspace), `
+const experienceCards = (experiences: ReadonlyArray<WorkspaceExperience>): string => experiences.map(experience => `
+<article><h3>${escapeHtml(experience.title)}</h3>${experience.description ? `<p>${escapeHtml(experience.description)}</p>` : ''}
+<p>Status: <strong>${experience.status}</strong></p>
+${experience.status === 'absent'
+  ? `<button data-add-experience="${escapeHtml(experience.id)}">Add</button>`
+  : `<button class="danger" data-remove-experience="${escapeHtml(experience.id)}">Remove</button>`}
+</article>`).join('') || '<p class="muted">No Experiences are installed in this distribution.</p>'
+
+const renderWorkspace = (workspace: Workspace, experiences: ReadonlyArray<WorkspaceExperience>): string =>
+  shell(workspaceLabel(workspace), `
   <header><h1>${escapeHtml(workspaceLabel(workspace))}</h1><code>${workspace.id}</code></header>
   <form id="rename"><h2>Name</h2><label>Optional name <input name="name" maxlength="256" value="${escapeHtml(workspace.name ?? '')}"></label><button>Save</button></form>
-  <article><h2>Modules</h2><ul>${moduleList(workspace)}</ul>
-  ${available.length > 0 ? `<form id="add-module"><label>Add Module <select name="moduleId">${available.map(moduleId => `<option>${escapeHtml(moduleId)}</option>`).join('')}</select></label><button>Add</button></form>` : '<p class="muted">All installed Modules are present.</p>'}</article>
+  <section><h2>Experiences</h2>${experienceCards(experiences)}</section>
+  <article><h2>Technical Modules</h2><ul>${moduleList(workspace)}</ul></article>
   <article><h2>Delete Workspace</h2><p>Deletion also removes Module-owned state. A failed Module cleanup leaves the Workspace visible for retry.</p><button class="danger" id="delete-workspace">Delete</button></article>
   <script>
   const workspaceId=${JSON.stringify(workspace.id)};
   const request=async(url,options)=>{const response=await fetch(url,options);if(response.status===204)return null;const body=await response.json();if(!response.ok)throw new Error(body.error.message);return body};
   document.querySelector('#rename').addEventListener('submit',async event=>{event.preventDefault();const raw=new FormData(event.target).get('name').trim();try{await request('/api/workspaces/'+workspaceId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:raw||null})});location.reload()}catch(error){alert(error.message)}});
-  document.querySelector('#add-module')?.addEventListener('submit',async event=>{event.preventDefault();const moduleId=new FormData(event.target).get('moduleId');try{await request('/api/workspaces/'+workspaceId+'/modules/'+encodeURIComponent(moduleId),{method:'PUT'});location.reload()}catch(error){alert(error.message)}});
-  document.querySelectorAll('[data-remove]').forEach(button=>button.addEventListener('click',async()=>{if(!confirm('Remove this Module and its Workspace state?'))return;try{await request('/api/workspaces/'+workspaceId+'/modules/'+encodeURIComponent(button.dataset.remove),{method:'DELETE'});location.reload()}catch(error){alert(error.message);location.reload()}}));
+  document.querySelectorAll('[data-add-experience]').forEach(button=>button.addEventListener('click',async()=>{try{await request('/api/workspaces/'+workspaceId+'/experiences/'+encodeURIComponent(button.dataset.addExperience),{method:'PUT'});location.reload()}catch(error){alert(error.message);location.reload()}}));
+  document.querySelectorAll('[data-remove-experience]').forEach(button=>button.addEventListener('click',async()=>{if(!confirm('Remove this Experience and its unshared Module state?'))return;try{await request('/api/workspaces/'+workspaceId+'/experiences/'+encodeURIComponent(button.dataset.removeExperience),{method:'DELETE'});location.reload()}catch(error){alert(error.message);location.reload()}}));
   document.querySelectorAll('[data-retry]').forEach(button=>button.addEventListener('click',async()=>{try{await request('/api/workspaces/'+workspaceId+'/modules/'+encodeURIComponent(button.dataset.retry)+'/retry',{method:'POST'});location.reload()}catch(error){alert(error.message);location.reload()}}));
   document.querySelector('#delete-workspace').addEventListener('click',async()=>{if(!confirm('Delete this Workspace and all Module-owned state?'))return;try{await request('/api/workspaces/'+workspaceId,{method:'DELETE'});location.href='/workspaces'}catch(error){alert(error.message);location.reload()}});
   </script>`)
-}
 
 const jsonError = (status: number, code: string, message: string, retryable = false, details?: Readonly<Record<string, unknown>>): Response =>
   Response.json(platformError({ code, message, retryable, ...(details === undefined ? {} : { details }) }), { status })
@@ -76,7 +82,7 @@ const parseJson = async (request: Request): Promise<unknown> => {
 
 export const createWorkspaceHostServer = (config: {
   readonly host: WorkspaceHost
-  readonly initialModuleIds?: ReadonlyArray<ModuleId>
+  readonly initialExperienceIds?: ReadonlyArray<ExperienceId>
   readonly port?: number
   readonly bindHost?: string
 }) => Bun.serve({
@@ -91,7 +97,7 @@ export const createWorkspaceHostServer = (config: {
       if (url.pathname === '/' && request.method === 'GET') {
         let workspaces = config.host.list()
         if (workspaces.length === 0) {
-          const workspace = await config.host.create({ name: null, moduleIds: [...(config.initialModuleIds ?? [])] })
+          const workspace = await config.host.create({ name: null, experienceIds: [...(config.initialExperienceIds ?? [])] })
           return Response.redirect(new URL(`/workspaces/${workspace.id}`, url), 303)
         }
         if (workspaces.length === 1) return Response.redirect(new URL(`/workspaces/${workspaces[0]!.id}`, url), 303)
@@ -105,11 +111,14 @@ export const createWorkspaceHostServer = (config: {
         const workspaceId = workspaceIdSchema.parse(decodeURIComponent(workspaceUiMatch[1] ?? ''))
         const workspace = config.host.get(workspaceId)
         return workspace
-          ? new Response(renderWorkspace(workspace, config.host.installedModuleIds()), { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+          ? new Response(renderWorkspace(workspace, config.host.experiences(workspaceId)), { headers: { 'Content-Type': 'text/html; charset=utf-8' } })
           : new Response(shell('Workspace not found', '<div class="panel"><h1>Workspace not found</h1></div>'), { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
       }
       if (url.pathname === '/api/modules' && request.method === 'GET') {
         return Response.json({ modules: config.host.installedModuleIds().map(moduleId => ({ id: moduleId })) })
+      }
+      if (url.pathname === '/api/experiences' && request.method === 'GET') {
+        return Response.json({ experiences: config.host.installedExperiences() })
       }
       if (url.pathname === '/api/workspaces' && request.method === 'GET') {
         return Response.json({ workspaces: config.host.list() })
@@ -140,6 +149,18 @@ export const createWorkspaceHostServer = (config: {
       if (capabilitiesMatch && request.method === 'GET') {
         const workspaceId = workspaceIdSchema.parse(decodeURIComponent(capabilitiesMatch[1] ?? ''))
         return Response.json(await config.host.capabilities(workspaceId))
+      }
+      const experienceMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/experiences\/([^/]+)$/)
+      if (experienceMatch) {
+        const workspaceId = workspaceIdSchema.parse(decodeURIComponent(experienceMatch[1] ?? ''))
+        const experienceId = experienceIdSchema.parse(decodeURIComponent(experienceMatch[2] ?? ''))
+        if (request.method === 'PUT') return Response.json({ experiences: await config.host.addExperience(workspaceId, experienceId) })
+        if (request.method === 'DELETE') return Response.json({ experiences: await config.host.removeExperience(workspaceId, experienceId) })
+      }
+      const experiencesMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/experiences$/)
+      if (experiencesMatch && request.method === 'GET') {
+        const workspaceId = workspaceIdSchema.parse(decodeURIComponent(experiencesMatch[1] ?? ''))
+        return Response.json({ experiences: config.host.experiences(workspaceId) })
       }
       const moduleMatch = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/modules\/([^/]+)(\/retry)?$/)
       if (moduleMatch) {

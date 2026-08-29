@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import {
   accessContextSchema,
   capabilityIdSchema,
+  experienceDescriptorSchema,
   moduleIdSchema,
   moduleRegistrationSchema,
   newRequestId,
@@ -98,11 +99,14 @@ const createMicroworldModule = () => {
   }
 }
 
-const createHost = (registrations: Parameters<typeof createModuleGateway>[0]['registrations']) => {
+const createHost = (
+  registrations: Parameters<typeof createModuleGateway>[0]['registrations'],
+  experiences: Parameters<typeof createWorkspaceHost>[0]['experiences'] = [],
+) => {
   const store = createWorkspaceStore(':memory:')
   return {
     store,
-    host: createWorkspaceHost({ store, modules: createModuleGateway({ registrations }) }),
+    host: createWorkspaceHost({ store, modules: createModuleGateway({ registrations }), experiences }),
   }
 }
 
@@ -133,8 +137,9 @@ describe('Workspace Host', () => {
     module.state.available = false
     const { host, store } = createHost([module.registration])
     const moduleId = moduleIdSchema.parse('microworld')
-    const workspace = await host.create({ name: null, moduleIds: [moduleId] })
-    expect(workspace.modules[0]).toMatchObject({
+    const workspace = await host.create({ name: null })
+    const failed = await host.addModule(workspace.id, moduleId)
+    expect(failed.modules[0]).toMatchObject({
       moduleId,
       status: 'join_failed',
       failure: { code: 'module_discovery_failed', retryable: true },
@@ -149,7 +154,8 @@ describe('Workspace Host', () => {
   test('aggregates typed discovery and invokes a Capability without a Module-specific URL', async () => {
     const module = createMicroworldModule()
     const { host, store } = createHost([module.registration])
-    const workspace = await host.create({ name: null, moduleIds: [moduleIdSchema.parse('microworld')] })
+    const workspace = await host.create({ name: null })
+    await host.addModule(workspace.id, moduleIdSchema.parse('microworld'))
 
     const resources = await host.resources(workspace.id)
     expect(resources.modules).toEqual([{ moduleId: moduleIdSchema.parse('microworld'), status: 'ready' }])
@@ -174,11 +180,31 @@ describe('Workspace Host', () => {
   test('does not hide failed cleanup by deleting the Workspace', async () => {
     const module = createMicroworldModule()
     const { host, store } = createHost([module.registration])
-    const workspace = await host.create({ name: null, moduleIds: [moduleIdSchema.parse('microworld')] })
+    const workspace = await host.create({ name: null })
+    await host.addModule(workspace.id, moduleIdSchema.parse('microworld'))
     module.state.failLeave = true
 
     await expect(host.delete(workspace.id)).rejects.toMatchObject({ code: 'workspace_delete_incomplete' })
     expect(host.get(workspace.id)?.modules[0]?.status).toBe('leave_failed')
+    store.close()
+  })
+
+  test('composes user-facing Experiences while retaining technical Module status', async () => {
+    const module = createMicroworldModule()
+    const leitbild = experienceDescriptorSchema.parse({
+      id: 'leitbild',
+      title: 'Leitbild',
+      requiredModules: ['microworld'],
+    })
+    const { host, store } = createHost([module.registration], [leitbild])
+    const workspace = await host.create({ name: null, experienceIds: [leitbild.id] })
+    expect(workspace.modules[0]?.status).toBe('ready')
+    expect(host.experiences(workspace.id)).toEqual([expect.objectContaining({ id: 'leitbild', status: 'ready' })])
+
+    expect(await host.removeExperience(workspace.id, leitbild.id)).toEqual([
+      expect.objectContaining({ id: 'leitbild', status: 'absent' }),
+    ])
+    expect(host.get(workspace.id)?.modules).toEqual([])
     store.close()
   })
 })

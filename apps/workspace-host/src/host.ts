@@ -1,6 +1,8 @@
 import {
   capabilityIdSchema,
   createWorkspaceInputSchema,
+  experienceDescriptorSchema,
+  experienceIdSchema,
   moduleIdSchema,
   moduleMembershipSchema,
   renameWorkspaceInputSchema,
@@ -8,9 +10,12 @@ import {
   workspaceIdSchema,
   workspaceResourceCatalogSchema,
   workspaceResourceReferenceSchema,
+  workspaceExperienceSchema,
   type AccessContext,
   type CapabilityId,
   type CreateWorkspaceInput,
+  type ExperienceDescriptor,
+  type ExperienceId,
   type InvokeCapabilityInput,
   type ModuleId,
   type ModuleMembership,
@@ -19,6 +24,7 @@ import {
   type WorkspaceCapabilityCatalog,
   type WorkspaceId,
   type WorkspaceResourceCatalog,
+  type WorkspaceExperience,
 } from '@samsinn-leitbild/platform-contracts'
 import { hostError } from './errors.ts'
 import type { ModuleGateway, ModuleOperationResult } from './module-gateway.ts'
@@ -33,10 +39,14 @@ export interface WorkspaceHost {
   readonly addModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
   readonly removeModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
   readonly retryModule: (id: WorkspaceId, moduleId: ModuleId) => Promise<Workspace>
+  readonly experiences: (id: WorkspaceId) => ReadonlyArray<WorkspaceExperience>
+  readonly addExperience: (id: WorkspaceId, experienceId: ExperienceId) => Promise<ReadonlyArray<WorkspaceExperience>>
+  readonly removeExperience: (id: WorkspaceId, experienceId: ExperienceId) => Promise<ReadonlyArray<WorkspaceExperience>>
   readonly resources: (id: WorkspaceId) => Promise<WorkspaceResourceCatalog>
   readonly capabilities: (id: WorkspaceId) => Promise<WorkspaceCapabilityCatalog>
   readonly invoke: (id: WorkspaceId, capabilityId: CapabilityId, input: InvokeCapabilityInput, access: AccessContext) => Promise<unknown>
   readonly installedModuleIds: () => ReadonlyArray<ModuleId>
+  readonly installedExperiences: () => ReadonlyArray<ExperienceDescriptor>
 }
 
 const membership = (
@@ -53,7 +63,17 @@ const membership = (
 export const createWorkspaceHost = (config: {
   readonly store: WorkspaceStore
   readonly modules: ModuleGateway
+  readonly experiences?: ReadonlyArray<ExperienceDescriptor>
 }): WorkspaceHost => {
+  const experiences = (config.experiences ?? []).map(experience => experienceDescriptorSchema.parse(experience))
+  const experienceById = new Map(experiences.map(experience => [experience.id, experience]))
+  if (experienceById.size !== experiences.length) throw new Error('Experience descriptors must have unique ids')
+  for (const experience of experiences) {
+    for (const moduleId of experience.requiredModules) {
+      if (!config.modules.has(moduleId)) throw new Error(`Experience ${experience.id} requires an uninstalled Module: ${moduleId}`)
+    }
+  }
+
   const requireWorkspace = (id: WorkspaceId): Workspace => {
     const workspace = config.store.get(id)
     if (!workspace) throw hostError({ status: 404, code: 'workspace_not_found', message: 'Workspace not found' })
@@ -64,6 +84,12 @@ export const createWorkspaceHost = (config: {
     if (!config.modules.has(moduleId)) {
       throw hostError({ status: 404, code: 'module_not_installed', message: `Module is not installed: ${moduleId}` })
     }
+  }
+
+  const requireExperience = (experienceId: ExperienceId): ExperienceDescriptor => {
+    const experience = experienceById.get(experienceId)
+    if (!experience) throw hostError({ status: 404, code: 'experience_not_installed', message: `Experience is not installed: ${experienceId}` })
+    return experience
   }
 
   const join = async (workspaceId: WorkspaceId, moduleId: ModuleId): Promise<Workspace> => {
@@ -86,12 +112,25 @@ export const createWorkspaceHost = (config: {
     retryable: item.status === 'joining' || item.status === 'leaving',
   }
 
+  const workspaceExperiences = (workspace: Workspace): ReadonlyArray<WorkspaceExperience> =>
+    experiences.map(experience => {
+      const memberships = experience.requiredModules
+        .map(moduleId => workspace.modules.find(item => item.moduleId === moduleId))
+      const status = memberships.every(item => item === undefined)
+        ? 'absent'
+        : memberships.every(item => item?.status === 'ready')
+          ? 'ready'
+          : 'degraded'
+      return workspaceExperienceSchema.parse({ ...experience, status })
+    })
+
   return {
     list: config.store.list,
     get: config.store.get,
     create: async rawInput => {
       const input = createWorkspaceInputSchema.parse(rawInput)
-      const moduleIds = input.moduleIds ?? []
+      const selectedExperiences = (input.experienceIds ?? []).map(requireExperience)
+      const moduleIds = [...new Set(selectedExperiences.flatMap(experience => experience.requiredModules))]
       for (const moduleId of moduleIds) requireInstalledModule(moduleId)
       const workspace = config.store.create({ name: input.name ?? null, moduleIds })
       await Promise.all(moduleIds.map(moduleId => join(workspace.id, moduleId)))
@@ -177,6 +216,46 @@ export const createWorkspaceHost = (config: {
         return await leave(id, moduleId)
       }
       throw hostError({ status: 409, code: 'module_not_retryable', message: `Module lifecycle is not failed: ${moduleId}` })
+    },
+    experiences: rawId => workspaceExperiences(requireWorkspace(workspaceIdSchema.parse(rawId))),
+    addExperience: async (rawId, rawExperienceId) => {
+      const id = workspaceIdSchema.parse(rawId)
+      const experience = requireExperience(experienceIdSchema.parse(rawExperienceId))
+      let workspace = requireWorkspace(id)
+      for (const moduleId of experience.requiredModules) {
+        if (workspace.modules.some(item => item.moduleId === moduleId)) continue
+        config.store.setMembership(id, membership(moduleId, 'joining'))
+        workspace = await join(id, moduleId)
+      }
+      return workspaceExperiences(requireWorkspace(id))
+    },
+    removeExperience: async (rawId, rawExperienceId) => {
+      const id = workspaceIdSchema.parse(rawId)
+      const experience = requireExperience(experienceIdSchema.parse(rawExperienceId))
+      let workspace = requireWorkspace(id)
+      if (experience.requiredModules.every(moduleId => !workspace.modules.some(item => item.moduleId === moduleId))) {
+        throw hostError({ status: 404, code: 'experience_not_joined', message: `Experience is not present in this Workspace: ${experience.id}` })
+      }
+      const retainedModuleIds = new Set(experiences
+        .filter(candidate => candidate.id !== experience.id)
+        .filter(candidate => candidate.requiredModules.every(moduleId => workspace.modules.some(item => item.moduleId === moduleId)))
+        .flatMap(candidate => candidate.requiredModules))
+      for (const moduleId of experience.requiredModules) {
+        if (retainedModuleIds.has(moduleId) || !workspace.modules.some(item => item.moduleId === moduleId)) continue
+        config.store.setMembership(id, membership(moduleId, 'leaving'))
+        workspace = await leave(id, moduleId)
+        const failed = workspace.modules.find(item => item.moduleId === moduleId && item.status === 'leave_failed')
+        if (failed) {
+          throw hostError({
+            status: 502,
+            code: 'experience_leave_failed',
+            message: failed.failure!.message,
+            retryable: failed.failure!.retryable,
+            details: { experienceId: experience.id, moduleId },
+          })
+        }
+      }
+      return workspaceExperiences(requireWorkspace(id))
     },
     resources: async rawId => {
       const id = workspaceIdSchema.parse(rawId)
@@ -264,5 +343,6 @@ export const createWorkspaceHost = (config: {
       return result.value.result
     },
     installedModuleIds: () => config.modules.list().map(registration => registration.moduleId),
+    installedExperiences: () => experiences,
   }
 }

@@ -16,3 +16,8 @@ export const experienceDescriptorSchema = z.object({
   })
 })
 export type ExperienceDescriptor = z.infer<typeof experienceDescriptorSchema>
+
+export const workspaceExperienceSchema = experienceDescriptorSchema.extend({
+  status: z.enum(['absent', 'ready', 'degraded']),
+}).strict()
+export type WorkspaceExperience = z.infer<typeof workspaceExperienceSchema>

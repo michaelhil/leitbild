@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  createWorkspaceInputSchema,
   experienceDescriptorSchema,
   moduleCapabilityDescriptorSchema,
   moduleCapabilityInvocationSchema,
@@ -25,6 +26,12 @@ describe('Workspace', () => {
     })
     expect(workspace.name).toBeNull()
     expect(workspace.modules).toEqual([])
+  })
+
+  test('creates by user-facing Experience ids rather than technical Modules', () => {
+    const input = createWorkspaceInputSchema.parse({ name: null, experienceIds: ['leitbild'] })
+    expect(input.experienceIds?.map(String)).toEqual(['leitbild'])
+    expect(input).not.toHaveProperty('moduleIds')
   })
 
   test('rejects duplicate Module Membership', () => {
