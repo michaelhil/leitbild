@@ -14,6 +14,7 @@
     "check:leitbild": "bun run --cwd apps/leitbild check",
     "check:host": "bun run --cwd apps/workspace-host check",
     "check:integration": "bun run --cwd packages/integration-tests check",
+    "benchmark:control-plane": "bun run scripts/benchmark-control-plane.ts",
     "check": "bun run check:boundaries && bun run check:contracts && bun run check:samsinn && bun run check:leitbild && bun run check:host && bun run check:integration",
     "test:contracts": "bun run --cwd packages/platform-contracts test",
     "test:samsinn": "bun run --cwd apps/samsinn test:unit",
