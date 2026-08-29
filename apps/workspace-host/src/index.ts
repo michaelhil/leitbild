@@ -1,22 +1,50 @@
 import { resolve } from 'node:path'
-import { createSuiteCoordinator, parseModuleTargets } from './coordinator.ts'
-import { createSuiteWorkspaceDirectory } from './directory.ts'
-import { createSuiteServer } from './server.ts'
+import { z } from 'zod'
+import { moduleIdSchema, moduleRegistrationSchema } from '@samsinn-leitbild/platform-contracts'
+import { createWorkspaceHost } from './host.ts'
+import { createModuleGateway } from './module-gateway.ts'
+import { createWorkspaceHostServer } from './server.ts'
+import { createWorkspaceStore } from './store.ts'
 
-const moduleTargets = parseModuleTargets([
-  ...(process.env.SAMSINN_URL ? [{ moduleId: 'samsinn', baseUrl: process.env.SAMSINN_URL }] : []),
-  ...(process.env.LEITBILD_URL ? [{ moduleId: 'leitbild', baseUrl: process.env.LEITBILD_URL }] : []),
-])
-const suiteHome = resolve(process.env.SUITE_HOME ?? './data/suite')
-const coordinator = createSuiteCoordinator({
-  directory: createSuiteWorkspaceDirectory(resolve(suiteHome, 'workspaces.json')),
-  modules: moduleTargets,
+const parseEnvironmentJson = <T>(key: string, schema: z.ZodType<T>, fallback: T): T => {
+  const raw = process.env[key]
+  if (raw === undefined) return fallback
+  let value: unknown
+  try {
+    value = JSON.parse(raw) as unknown
+  } catch (error) {
+    throw new Error(`${key} must be valid JSON`, { cause: error })
+  }
+  return schema.parse(value)
+}
+
+const registrations = parseEnvironmentJson('WORKSPACE_MODULES', z.array(moduleRegistrationSchema), [])
+const initialModuleIds = parseEnvironmentJson('INITIAL_MODULE_IDS', z.array(moduleIdSchema), [])
+const installed = new Set(registrations.map(registration => registration.moduleId))
+for (const moduleId of initialModuleIds) {
+  if (!installed.has(moduleId)) throw new Error(`INITIAL_MODULE_IDS contains an uninstalled Module: ${moduleId}`)
+}
+
+const hostHome = resolve(process.env.WORKSPACE_HOST_HOME ?? './data/workspace-host')
+const store = createWorkspaceStore(resolve(hostHome, 'workspaces.sqlite'))
+const host = createWorkspaceHost({
+  store,
+  modules: createModuleGateway({ registrations }),
 })
-const server = createSuiteServer({
-  coordinator,
+const server = createWorkspaceHostServer({
+  host,
+  initialModuleIds,
   port: Number(process.env.PORT) || 3100,
-  bindHost: process.env.BIND_HOST ?? '0.0.0.0',
+  bindHost: process.env.BIND_HOST ?? '127.0.0.1',
 })
 
-console.log(`Suite listening on http://${server.hostname}:${server.port}`)
-console.log(`Configured Modules: ${moduleTargets.map(target => target.moduleId).join(', ') || '(none)'}`)
+const shutdown = (): void => {
+  server.stop(true)
+  store.close()
+}
+
+process.once('SIGINT', shutdown)
+process.once('SIGTERM', shutdown)
+
+console.log(`Workspace Host listening on http://${server.hostname}:${server.port}`)
+console.log(`Installed Modules: ${registrations.map(registration => registration.moduleId).join(', ') || '(none)'}`)

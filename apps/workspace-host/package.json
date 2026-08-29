@@ -1,5 +1,5 @@
 {
-  "name": "@samsinn-leitbild/suite",
+  "name": "@samsinn-leitbild/workspace-host",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,7 @@
     "start": "bun run src/index.ts",
     "dev": "bun --watch src/index.ts",
     "check": "tsc --noEmit",
-    "test": "bun test",
-    "deploy": "bun run scripts/deploy.ts"
+    "test": "bun test"
   },
   "dependencies": {
     "@samsinn-leitbild/platform-contracts": "workspace:*",

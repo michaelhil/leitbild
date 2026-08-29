@@ -59,8 +59,8 @@
         "typescript": "npm:@typescript/typescript6@6.0.2",
       },
     },
-    "apps/suite": {
-      "name": "@samsinn-leitbild/suite",
+    "apps/workspace-host": {
+      "name": "@samsinn-leitbild/workspace-host",
       "version": "0.1.0",
       "dependencies": {
         "@samsinn-leitbild/platform-contracts": "workspace:*",
@@ -332,7 +332,7 @@
 
     "@samsinn-leitbild/platform-contracts": ["@samsinn-leitbild/platform-contracts@workspace:packages/platform-contracts"],
 
-    "@samsinn-leitbild/suite": ["@samsinn-leitbild/suite@workspace:apps/suite"],
+    "@samsinn-leitbild/workspace-host": ["@samsinn-leitbild/workspace-host@workspace:apps/workspace-host"],
 
     "@sveltejs/acorn-typescript": ["@sveltejs/acorn-typescript@1.0.13", "", { "peerDependencies": { "acorn": "^8.9.0" } }, "sha512-wgKggnhZVL9Bfx1OaKKTrYY9BFRk6C8UAkQNUcIv1+llzYrIqy+RZm5HPKzn0NpEBvTVhTqB4kQyllZywsRBRQ=="],
 

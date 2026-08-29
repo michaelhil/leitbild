@@ -1,19 +1,17 @@
-# Samsinn + Leitbild Suite
+# Workspace Host
 
-The suite is an optional Workspace directory and navigation shell. It discovers configured applications, provisions the same opaque Workspace ID in each, records Module Bindings and provisioning status, and links directly to each application.
-
-It does not proxy application traffic or store Rooms, Agents, Scenarios, Simulation Runs, Packs, events, or projections. Samsinn and Leitbild remain independently deployable and usable without it.
+The Workspace Host is the authoritative public entry point for Workspace lifecycle, Module Membership, navigation, and routing. It stores no Module domain state.
 
 ```sh
-SAMSINN_URL=http://localhost:3000 \
-LEITBILD_URL=http://localhost:3001 \
-bun run --cwd apps/suite start
+bun run --cwd apps/workspace-host start
 ```
 
-Set `SUITE_HOME` for the suite directory file and `PORT`/`BIND_HOST` for its HTTP listener.
+Configuration:
 
-The UI uses relative API links, so it works both at `/` locally and behind the
-production `/suite/` path prefix. Production uses a dedicated, hardened
-`samsinn-suite.service` on loopback port 3100; Caddy strips `/suite` before
-proxying. The suite's Workspace directory remains outside immutable releases
-under `/var/lib/samsinn-suite`.
+- `WORKSPACE_HOST_HOME` — directory containing the Host SQLite database; defaults to `./data/workspace-host`
+- `WORKSPACE_MODULES` — JSON array of strict Module registrations
+- `INITIAL_MODULE_IDS` — JSON array added only when the root route creates the first unnamed Workspace
+- `PORT` — HTTP port; defaults to `3100`
+- `BIND_HOST` — listener address; defaults to `127.0.0.1`
+
+The Host has no direct-application, Suite, cookie-selection, default-Workspace, compatibility, or migration mode.

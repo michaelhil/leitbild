@@ -1,9 +1,0 @@
-	redir /suite /suite/ 308
-
-	handle_path /suite/* {
-		reverse_proxy 127.0.0.1:3100
-	}
-
-	handle {
-		reverse_proxy 127.0.0.1:3000
-	}
