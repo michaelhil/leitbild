@@ -169,6 +169,44 @@ describe('SystemRegistry', () => {
     await reg.shutdown()
   })
 
+  it('enforces the loaded-instance capacity by evicting least-recently-used state', async () => {
+    const reg = createSystemRegistry({
+      shared: createSharedRuntime(),
+      idleMs: 1_000_000,
+      maxLoadedInstances: 2,
+    })
+    const idA = generateInstanceId()
+    const idB = generateInstanceId()
+    const idC = generateInstanceId()
+    const a = await reg.getOrLoad(idA)
+    a.house.createRoomSafe({ name: 'capacity-state', createdBy: 'system' })
+    await new Promise(resolve => setTimeout(resolve, 2))
+    await reg.getOrLoad(idB)
+    await new Promise(resolve => setTimeout(resolve, 2))
+    await reg.getOrLoad(idC)
+
+    expect(reg.list().map(meta => meta.id).sort()).toEqual([idB, idC].sort())
+    expect(reg.maxLoadedInstances()).toBe(2)
+
+    const restored = await reg.getOrLoad(idA)
+    expect(restored.house.listAllRooms().some(room => room.name === 'capacity-state')).toBe(true)
+    expect(reg.list().length).toBe(2)
+    await reg.shutdown()
+  })
+
+  it('keeps the capacity bound when cold loads complete concurrently', async () => {
+    const reg = createSystemRegistry({
+      shared: createSharedRuntime(),
+      maxLoadedInstances: 1,
+    })
+    const ids = [generateInstanceId(), generateInstanceId(), generateInstanceId()]
+
+    await Promise.all(ids.map(id => reg.getOrLoad(id)))
+
+    expect(reg.list()).toHaveLength(1)
+    await reg.shutdown()
+  })
+
   // --- exists ---
 
   it('exists is true after disk persistence', async () => {

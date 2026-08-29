@@ -26,6 +26,7 @@ interface ServerConfig {
   readonly registry: SystemRegistry
   readonly wsManager: WSManager
   readonly port?: number
+  readonly bindHost?: string
   readonly uiPath?: string
   // Per-instance reset wired by bootstrap.
   readonly resetInstance: (req: Request) => Promise<import('./routes/types.ts').ResetInstanceResult>
@@ -163,6 +164,7 @@ const applySecurityHeaders = (res: Response): Response => {
 export const createServer = (config: ServerConfig) => {
   const { registry, wsManager } = config
   const port = config.port ?? DEFAULTS.port
+  const bindHost = config.bindHost ?? process.env.SAMSINN_BIND_HOST ?? '0.0.0.0'
   const uiPath = resolve(config.uiPath ?? `${import.meta.dir}/../ui`)
   const transpiler = new Bun.Transpiler({ loader: 'ts' })
   // Root navigation issues an instance cookie before any per-instance
@@ -204,6 +206,7 @@ export const createServer = (config: ServerConfig) => {
 
   const server = Bun.serve<WSData>({
     port,
+    hostname: bindHost,
 
     async fetch(req, server) {
       const url = new URL(req.url)
@@ -497,9 +500,9 @@ export const createServer = (config: ServerConfig) => {
     },
   })
 
-  console.log(`Server listening on http://localhost:${port}`)
-  console.log(`WebSocket: ws://localhost:${port}/ws`)
-  console.log(`API: http://localhost:${port}/api/rooms`)
+  console.log(`Server listening on http://${bindHost}:${port}`)
+  console.log(`WebSocket: ws://${bindHost}:${port}/ws`)
+  console.log(`API: http://${bindHost}:${port}/api/rooms`)
 
   return server
 }

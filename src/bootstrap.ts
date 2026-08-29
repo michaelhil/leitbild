@@ -804,11 +804,23 @@ export const bootstrap = async (): Promise<void> => {
   const janitor = startJanitor({
     isActive: id => registry.list().some(m => m.id === id),
   })
-  const evictTimer = setInterval(() => {
-    void registry.evictIdle().catch(err =>
-      console.error(`[registry] evictIdle: ${err instanceof Error ? err.message : String(err)}`),
-    )
-  }, 60_000)
+  let evictionSweepRunning = false
+  const runEvictionSweep = async (): Promise<void> => {
+    if (evictionSweepRunning) {
+      console.warn('[registry] idle eviction sweep skipped because the previous sweep is still running')
+      return
+    }
+    evictionSweepRunning = true
+    try {
+      const evicted = await registry.evictIdle()
+      if (evicted > 0) console.log(`[registry] idle eviction sweep removed ${evicted} instance(s)`)
+    } catch (err) {
+      console.error(`[registry] evictIdle: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      evictionSweepRunning = false
+    }
+  }
+  const evictTimer = setInterval(() => { void runEvictionSweep() }, 60_000)
 
   // Stale-session sweep — every hour, drop sessions whose WS has been
   // closed for >7d and remove the inactive human agent from its team.
@@ -900,6 +912,8 @@ export const bootstrap = async (): Promise<void> => {
         }
       }),
       wsSessions: wsManager.sessionCount(),
+      configuredIdleMs: registry.idleMs(),
+      maxLoadedInstances: registry.maxLoadedInstances(),
     }),
   }
 

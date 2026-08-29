@@ -65,12 +65,24 @@ import { seedInstance } from './seed-instance.ts'
 
 const DEFAULT_IDLE_MS = 30 * 60_000   // 30 min
 const DEFAULT_DRAIN_MS = 5_000
+// The production service has a 2 GiB cgroup cap. A seeded instance currently
+// costs roughly 1 MiB, so 128 leaves ample room for shared provider/catalog/UI
+// state and transient generation spikes while still supporting far more
+// concurrent rooms than the sandbox normally sees.
+const DEFAULT_MAX_LOADED_INSTANCES = 128
 
 const idleMsFromEnv = (): number => {
   const v = process.env.SAMSINN_IDLE_MS
   if (!v) return DEFAULT_IDLE_MS
   const n = Number(v)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_IDLE_MS
+}
+
+const maxLoadedInstancesFromEnv = (): number => {
+  const v = process.env.SAMSINN_MAX_LOADED_INSTANCES
+  if (!v) return DEFAULT_MAX_LOADED_INSTANCES
+  const n = Number(v)
+  return Number.isSafeInteger(n) && n > 0 ? n : DEFAULT_MAX_LOADED_INSTANCES
 }
 
 // --- Types ---
@@ -100,6 +112,7 @@ export interface SystemRegistryOptions {
   readonly shared: SharedRuntime
   readonly idleMs?: number                      // override default 30 min
   readonly drainMs?: number                     // override default 5s
+  readonly maxLoadedInstances?: number          // hard LRU safety bound
   // Hook called immediately after a fresh System is constructed (either
   // first load or post-eviction reload). Bootstrap wires WS broadcasts here.
   // The autoSaver is passed in directly because the registry's map entry
@@ -147,6 +160,7 @@ export interface SystemRegistry {
   readonly shutdown: () => Promise<void>
   // For tests + boundary handlers that need to know the configured timer.
   readonly idleMs: () => number
+  readonly maxLoadedInstances: () => number
   // Boundary access to the in-memory autosaver for an active instance.
   // wireSystemEvents needs it to schedule saves from broadcast callbacks.
   // Returns null if the instance is not currently in memory.
@@ -175,6 +189,10 @@ export interface SystemRegistry {
 export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistry => {
   const idleMs = opts.idleMs ?? idleMsFromEnv()
   const drainMs = opts.drainMs ?? DEFAULT_DRAIN_MS
+  const maxLoadedInstances = opts.maxLoadedInstances ?? maxLoadedInstancesFromEnv()
+  if (!Number.isSafeInteger(maxLoadedInstances) || maxLoadedInstances <= 0) {
+    throw new Error(`[registry] maxLoadedInstances must be a positive integer; got ${String(maxLoadedInstances)}`)
+  }
   const map = new Map<string, InstanceEntry>()
   const pendingLoads = new Map<string, Promise<System>>()
   // Reverse index for provider event routing. Populated when an agent
@@ -310,6 +328,33 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     }
   }
 
+  const evictForCapacity = async (): Promise<number> => {
+    const excess = map.size - maxLoadedInstances + 1
+    if (excess <= 0) return 0
+    const targets = [...map.entries()]
+      .filter(([, entry]) => entry.state === 'active')
+      .sort((a, b) => a[1].lastTouchedAt - b[1].lastTouchedAt)
+      .slice(0, excess)
+      .map(([id]) => id)
+    await Promise.all(targets.map(evictOne))
+    return targets.length
+  }
+
+  // Cold loads build independently, then serialize only the capacity check
+  // and map insertion. Without this short queue, two completed loads can both
+  // observe one free slot and push the registry past its configured bound.
+  let capacityMutation = Promise.resolve()
+  const installLoadedEntry = async (id: string, entry: InstanceEntry): Promise<number> => {
+    let evicted = 0
+    const operation = capacityMutation.then(async () => {
+      evicted = await evictForCapacity()
+      map.set(id, entry)
+    })
+    capacityMutation = operation.then(() => undefined, () => undefined)
+    await operation
+    return evicted
+  }
+
   const getOrLoad = async (id: string): Promise<System> => {
     if (!isValidInstanceId(id)) {
       throw new Error(`[registry] invalid instance id: ${id}`)
@@ -344,7 +389,10 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
           state: 'active',
           onIdle: async () => { /* set later if needed */ },
         }
-        map.set(id, entry)
+        const evicted = await installLoadedEntry(id, entry)
+        if (evicted > 0) {
+          console.warn(`[registry] capacity ${maxLoadedInstances} reached; evicted ${evicted} least-recently-used instance(s)`)
+        }
         fireFirstLoadOnce(system, id)
         return system
       } finally {
@@ -575,6 +623,7 @@ export const createSystemRegistry = (opts: SystemRegistryOptions): SystemRegistr
     purgeTrash,
     shutdown,
     idleMs: () => idleMs,
+    maxLoadedInstances: () => maxLoadedInstances,
     autoSaverFor,
     tryGetLive,
     attachAgent,

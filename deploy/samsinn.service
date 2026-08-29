@@ -38,12 +38,14 @@ UMask=0077
 
 # Defaults — override via /etc/samsinn/env (operator-edited, mode 0600).
 Environment=PORT=3000
+Environment=SAMSINN_BIND_HOST=127.0.0.1
 Environment=NODE_ENV=production
 # Bun is installed under the service account's home, outside systemd's
 # default PATH.
 Environment=PATH=/home/samsinn/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=SAMSINN_HOME=/var/lib/samsinn
 Environment=SAMSINN_SECURE_COOKIES=1
+Environment=SAMSINN_MAX_LOADED_INSTANCES=128
 EnvironmentFile=-/etc/samsinn/env
 
 # Logs go to journald — view with `journalctl -u samsinn -f`.
@@ -52,7 +54,7 @@ StandardError=journal
 
 # Hardening (best-effort; relax if a feature stops working).
 NoNewPrivileges=true
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/var/lib/samsinn
 PrivateTmp=true

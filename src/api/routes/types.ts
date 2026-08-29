@@ -49,6 +49,8 @@ export interface DiagnosticsCapability {
       readonly lastBroadcastAt: number | null
     }>
     readonly wsSessions: number
+    readonly configuredIdleMs?: number
+    readonly maxLoadedInstances?: number
   }
 }
 
