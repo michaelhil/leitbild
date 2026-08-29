@@ -3,21 +3,20 @@
 //
 // Both probes need the same first three steps:
 //   1. Optionally authenticate (when SAMSINN_TOKEN is set in deploy mode).
-//   2. Hit /api/system/diagnostics to verify at least one wired Workspace.
-//   3. Pick a target Workspace + return the cookie string ready for use.
+//   2. Provision both Samsinn Modules for a fresh Workspace id, or select an
+//      already wired Workspace from diagnostics.
+//   3. Return canonical URL-scoped API and realtime coordinates.
 //
 // Centralizing here means both scripts share the SAME Workspace-selection
 // behavior. Rules:
 //   * The probe MUST use a fresh Workspace, NEVER evict or otherwise
 //     interfere with a real user's session.
-//   * The probe follows the browser contract: top-level navigation creates
-//     a Workspace record and issues its cookie, then the first API request
-//     materializes Samsinn state. F5 (cookieless
-//     /api/* → 401) is satisfied because every API request carries it.
+//   * Workspace identity lives only in canonical URL paths. The Workspace
+//     Host normally owns the lifecycle call; this local operational probe
+//     calls the same internal Module boundary directly.
 // ============================================================================
 
 const SESSION_COOKIE_PREFIX = 'samsinn_session='
-const WORKSPACE_COOKIE_PREFIX = 'samsinn_workspace='
 
 export interface ProbeContext {
   readonly baseUrl: string
@@ -68,17 +67,16 @@ export const bootstrapProbe = async (opts: BootstrapOptions): Promise<ProbeConte
   const sessionCookie = token ? await authenticate(baseUrl, token) : undefined
 
   if (target === 'fresh') {
-    const navigation = await fetch(`${baseUrl}/`, {
-      ...(sessionCookie ? { headers: { Cookie: sessionCookie } } : {}),
-    })
-    if (!navigation.ok) fail(`probe navigation ${navigation.status}`)
-    const issued = navigation.headers
-      .getSetCookie()
-      .find(c => c.startsWith(WORKSPACE_COOKIE_PREFIX))
-      ?.split(';')[0]
-    if (!issued) fail('probe navigation did not return a samsinn_workspace Set-Cookie')
-    const workspaceId = issued!.slice(WORKSPACE_COOKIE_PREFIX.length)
-    const cookie = sessionCookie ? `${sessionCookie}; ${issued}` : issued!
+    const workspaceId = crypto.randomUUID()
+    for (const moduleId of ['collaboration', 'agents'] as const) {
+      const provision = await fetch(`${baseUrl}/internal/${moduleId}/workspaces/${workspaceId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId }),
+      })
+      if (!provision.ok) fail(`probe ${moduleId} provisioning ${provision.status}`)
+    }
+    const cookie = sessionCookie ?? ''
     const warm = await fetch(`${baseUrl}/api/workspaces/${encodeURIComponent(workspaceId)}/rooms`, { headers: { Cookie: cookie } })
     if (!warm.ok) fail(`probe Workspace warmup ${warm.status}`)
     return { baseUrl, wsBaseUrl, cookie, workspaceId, sessionCookie }
@@ -95,8 +93,6 @@ export const bootstrapProbe = async (opts: BootstrapOptions): Promise<ProbeConte
   const wired = diag.workspaces.find(workspace => workspace.wired)
   if (!wired) fail('no wired Workspace available')
   const workspaceId = wired!.id
-  const cookie = sessionCookie
-    ? `${sessionCookie}; ${WORKSPACE_COOKIE_PREFIX}${workspaceId}`
-    : `${WORKSPACE_COOKIE_PREFIX}${workspaceId}`
+  const cookie = sessionCookie ?? ''
   return { baseUrl, wsBaseUrl, cookie, workspaceId, sessionCookie }
 }
